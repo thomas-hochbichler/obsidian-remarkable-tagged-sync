@@ -1,0 +1,36 @@
+import { describe, expect, it } from "vitest";
+import { buildDiagnostics } from "./diagnostics";
+
+const BASE = {
+	pluginVersion: "1.0.0",
+	obsidianVersion: "1.5.0",
+	platform: "macOS",
+	visionAvailability: "available",
+	backend: "vision",
+	mappedTagCount: 1,
+	lastSyncAt: "2026-07-24T09:00:00.000Z",
+	lastSyncError: null,
+};
+
+describe("buildDiagnostics", () => {
+	it("carries every fact a bug report otherwise has to be asked for", () => {
+		const text = buildDiagnostics(BASE);
+		expect(text).toContain("Plugin: 1.0.0");
+		expect(text).toContain("Obsidian: 1.5.0");
+		expect(text).toContain("Platform: macOS");
+		expect(text).toContain("Apple Vision: available");
+		expect(text).toContain("OCR backend: vision");
+		expect(text).toContain("Mapped tags: 1");
+	});
+
+	it("includes the raw last error, which is often the whole diagnosis", () => {
+		expect(buildDiagnostics({ ...BASE, lastSyncError: "TypeError: Failed to fetch" })).toContain("Last error: TypeError: Failed to fetch");
+	});
+
+	it("says so plainly when there is nothing to report, rather than printing null", () => {
+		const text = buildDiagnostics({ ...BASE, lastSyncAt: null, lastSyncError: null });
+		expect(text).toContain("Last sync: never");
+		expect(text).toContain("Last error: none");
+		expect(text).not.toContain("null");
+	});
+});

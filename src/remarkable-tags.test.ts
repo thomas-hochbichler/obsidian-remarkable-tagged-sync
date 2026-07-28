@@ -1,0 +1,169 @@
+import { describe, expect, it, vi } from "vitest";
+import type { Content, Entry } from "rmapi-js";
+import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
+
+function documentEntry(overrides: Partial<Entry> = {}): Entry {
+	return {
+		id: "doc-1",
+		hash: "hash-1",
+		visibleName: "Notebook",
+		lastModified: "0",
+		pinned: false,
+		type: "DocumentType",
+		fileType: "notebook",
+		lastOpened: "0",
+		...overrides,
+	} as Entry;
+}
+
+function documentContent(overrides: Partial<Content> = {}): Content {
+	return {
+		coverPageNumber: 0,
+		documentMetadata: {},
+		extraMetadata: {},
+		fileType: "notebook",
+		fontName: "",
+		lineHeight: -1,
+		orientation: "portrait",
+		pageCount: 1,
+		textAlignment: "",
+		textScale: 1,
+		...overrides,
+	} as Content;
+}
+
+function fakeApi(items: Entry[], contentById: Record<string, Content>) {
+	return {
+		listItems: vi.fn().mockResolvedValue(items),
+		getContent: vi.fn(async (id: string) => {
+			const content = contentById[id];
+			if (!content) throw new Error(`no content for ${id}`);
+			return content;
+		}),
+	};
+}
+
+describe("enumerateNotebookTags", () => {
+	it("reads document-level tags from the entry", async () => {
+		const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+		const api = fakeApi([entry], { "doc-1": documentContent() });
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks).toEqual([
+			{ docId: "doc-1", visibleName: "Notebook", tags: ["sync"], pageTags: [] },
+		]);
+	});
+
+	it("reads document-level tags from content.tags", async () => {
+		const entry = documentEntry();
+		const api = fakeApi([entry], {
+			"doc-1": documentContent({ tags: [{ name: "journal", timestamp: 0 }] }),
+		});
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].tags).toEqual(["journal"]);
+	});
+
+	it("merges and dedupes entry tags with content tags", async () => {
+		const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+		const api = fakeApi([entry], {
+			"doc-1": documentContent({ tags: [{ name: "sync", timestamp: 0 }, { name: "journal", timestamp: 0 }] }),
+		});
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].tags.sort()).toEqual(["journal", "sync"]);
+	});
+
+	it("handles legacy string[] tags", async () => {
+		const entry = documentEntry({ tags: ["legacy-tag"] });
+		const api = fakeApi([entry], {
+			"doc-1": documentContent({ tags: ["legacy-tag"] } as Partial<Content>),
+		});
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].tags).toEqual(["legacy-tag"]);
+	});
+
+	it("reads page-level tags pinned to a pageId", async () => {
+		const entry = documentEntry();
+		const api = fakeApi([entry], {
+			"doc-1": documentContent({
+				pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }],
+			}),
+		});
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].pageTags).toEqual([{ pageId: "page-a", tag: "todo" }]);
+	});
+
+	it("handles pages: null without crashing", async () => {
+		const entry = documentEntry();
+		const api = fakeApi([entry], {
+			"doc-1": documentContent({
+				pages: null,
+				pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }],
+			}),
+		});
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].pageTags).toEqual([{ pageId: "page-a", tag: "todo" }]);
+	});
+
+	it("skips non-document entries", async () => {
+		const collection: Entry = {
+			id: "col-1",
+			hash: "hash-c",
+			visibleName: "Folder",
+			lastModified: "0",
+			pinned: false,
+			type: "CollectionType",
+		} as Entry;
+		const api = fakeApi([collection], {});
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks).toEqual([]);
+		expect(api.getContent).not.toHaveBeenCalled();
+	});
+
+	it("skips a document whose content fails to load, and keeps the rest", async () => {
+		const broken = documentEntry({ id: "doc-broken", hash: "hash-broken" });
+		const ok = documentEntry({
+			id: "doc-1",
+			tags: [{ name: "sync", timestamp: 0 }],
+		});
+		const api = fakeApi([broken, ok], { "doc-1": documentContent() });
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks).toHaveLength(1);
+		expect(notebooks[0].docId).toBe("doc-1");
+	});
+});
+
+describe("collectTagNames", () => {
+	it("dedupes and sorts tags across notebooks, docs, and pages", () => {
+		const names = collectTagNames([
+			{
+				docId: "doc-1",
+				visibleName: "A",
+				tags: ["sync", "journal"],
+				pageTags: [{ pageId: "p1", tag: "todo" }],
+			},
+			{
+				docId: "doc-2",
+				visibleName: "B",
+				tags: ["sync"],
+				pageTags: [{ pageId: "p2", tag: "journal" }],
+			},
+		]);
+
+		expect(names).toEqual(["journal", "sync", "todo"]);
+	});
+});

@@ -1,0 +1,151 @@
+# reMarkable Tagged Sync
+
+Sync tagged reMarkable notebooks into Obsidian as searchable Markdown notes, routed to folders
+by tag.
+
+Tag a notebook or a single page on your reMarkable tablet (e.g. `sync`), and this plugin pulls
+it from the reMarkable cloud, renders the handwriting to a PDF, transcribes it to searchable
+text, and writes a Markdown note into the vault folder mapped to that tag — with the render
+embedded as an attachment and the transcript underneath it.
+
+This is a **desktop-only**, **one-way** (reMarkable → Obsidian) sync. It never writes back to
+your reMarkable.
+
+![A synced note: the handwriting render embedded on top, the searchable transcript below it](docs/screenshot-synced-note.png)
+
+## Before you install
+
+Two limits, so you know them up front:
+
+- **This version syncs one tag.** You map one reMarkable tag to one vault folder. You can change
+  or remove that mapping at any time.
+- **Text transcription needs macOS 13 or later.** On Windows and Linux your notes still sync,
+  with the full handwriting render embedded — but there is no transcript.
+
+## Handwriting transcription
+
+Transcription runs locally on **macOS 13 or later** using Apple's Vision framework — no account,
+no API key, no network. On **Windows and Linux** there is no transcription: notes sync with the
+handwriting render embedded, and no `## Transcript` text.
+
+You can also set the backend to **Off** if you only want the render. That is the default where
+Apple Vision cannot run.
+
+How the local backend works, for transparency:
+
+- Each page is rendered to a temporary PNG under your OS temp directory (`os.tmpdir()`), never
+  under Documents/Desktop/Downloads/iCloud. The plugin deletes these images as soon as
+  transcription finishes.
+- The PNGs are transcribed by invoking the built-in `/usr/bin/osascript` binary, which drives
+  Apple's Vision framework. This runs entirely on your machine with **no network egress** — no
+  page image or text ever leaves the device.
+
+Apple Vision auto-detects language and reads cursive well, but produces **flat text** — no
+headings, lists, task lists, or tables. Its structured API is macOS Swift-only and unavailable
+here. It can also misread; see [Correcting a transcript](#correcting-a-transcript).
+
+## Network use
+
+This plugin makes network requests to exactly one place:
+
+- **reMarkable cloud** (required) — the plugin authenticates to `my.remarkable.com` via a
+  one-time device code, then reads your notebook/page list, tags, and content over the
+  reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
+  your reMarkable account.
+
+Transcription is local. Nothing else is contacted.
+
+No telemetry or analytics of any kind are collected or sent by this plugin.
+
+## Setup
+
+1. Install and enable the plugin.
+2. Open **Settings → reMarkable Tagged Sync**, and follow the "Connect" link to
+   `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
+   **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
+3. Click **Discover tags** to scan your reMarkable notebooks and pages for tags, then map the
+   tag you want to sync to a vault folder. Only a mapped tag is synced — an unmapped tag is
+   simply not selected, not lost.
+4. Click **Sync now**.
+
+Sync is also available from the command palette as **reMarkable Tagged Sync: Sync now**.
+
+![The plugin settings: reMarkable connection, OCR backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
+
+### Automatic sync
+
+Off by default. Under **Automatic sync** you can turn on a sync when Obsidian launches, plus an
+interval backstop while it stays open. A manual sync pushes the next automatic one out rather
+than triggering a redundant run.
+
+### Re-transcribing
+
+To refresh transcripts on notes you already synced, run **reMarkable Tagged Sync: Re-transcribe
+all synced notes**. It re-fetches each notebook and rewrites only the transcript region, leaving
+your own notes and the embedded render untouched. It asks for confirmation first.
+
+## What gets synced
+
+- A notebook tagged with a mapped tag syncs as one note for the whole notebook.
+- An individual page tagged with a mapped tag syncs as its own note, independent of any
+  notebook-level tag.
+- Each note has the rendered PDF embedded, then a `## Highlights` section (one quote callout per
+  page, if you highlighted anything on the tablet), then the `## Transcript`. If transcription
+  fails or finds nothing, the note is still created with the render — the render is never lost.
+- A synced note carries **no frontmatter**. Everything the sync needs to track lives in the
+  plugin's own `data.json`, not in your notes.
+- Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
+  note exactly where it is, so nothing you already have can disappear.
+
+### Correcting a transcript
+
+Everything between the `tagged-sync:begin` and `tagged-sync:end` markers is rewritten on every
+sync. Your own writing belongs **below** that block, where it is preserved.
+
+If you do edit inside the block — for example to fix a misread word — the plugin notices and
+**refuses to overwrite that note**, telling you which notes it skipped. Your edit is never
+silently erased. Move it below the block to let syncing resume.
+
+## Limitations
+
+- Desktop only. Obsidian on mobile is unsupported.
+- One-way sync: reMarkable → Obsidian only. Nothing is ever written back to your tablet.
+- One tag → folder mapping.
+- Transcription requires **macOS 13 or later**. Windows and Linux get the render and no text.
+- Transcripts are flat text — no headings, lists, task lists, or tables.
+- The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
+  firmware changes on reMarkable's side can break sync. See below.
+
+> **What I do not control**
+>
+> This plugin talks to the reMarkable cloud. I do not work for reMarkable. I have no contract with
+> them and no advance warning of their plans. They can change or switch off their cloud at any
+> time. This already happened: in April 2026 a format change broke every tool in this space.
+>
+> If it happens again:
+>
+> - I will work on a fix as fast as I can. **I cannot promise a date.**
+> - **Your notes are safe.** Everything already synced is plain Markdown and PDF in your own
+>   vault. It stays there. Nothing is deleted.
+
+## Reporting a problem
+
+Open an issue at
+[github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues).
+
+Before you write it, press **Copy diagnostics** in the plugin settings and paste the result into
+the issue. It contains your plugin and Obsidian versions, your OS, whether Apple Vision is
+available, and the last error — nothing is sent anywhere by pressing it.
+
+## Development
+
+```bash
+npm install
+npm run dev      # watch build
+npm run build    # typecheck + production build
+npm test         # vitest
+```
+
+## License
+
+Apache-2.0 — see [LICENSE](./LICENSE). Third-party notices are in [NOTICE](./NOTICE).
