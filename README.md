@@ -91,7 +91,8 @@ your own notes and the embedded render untouched. It asks for confirmation first
   notebook-level tag.
 - Each note has the rendered PDF embedded, then a `## Highlights` section (one quote callout per
   page, if you highlighted anything on the tablet), then the `## Transcript`. If transcription
-  fails or finds nothing, the note is still created with the render — the render is never lost.
+  is off, fails, or finds nothing, the note is still created with the render and no `## Transcript`
+  section — the render is never lost.
 - A synced note carries **no frontmatter**. Everything the sync needs to track lives in the
   plugin's own `data.json`, not in your notes.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the

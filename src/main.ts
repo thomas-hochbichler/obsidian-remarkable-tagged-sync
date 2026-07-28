@@ -188,7 +188,14 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.addCommand({
 			id: "re-transcribe-all",
 			name: "Re-transcribe all synced notes",
-			callback: () => this.reTranscribeAll(),
+			// Pointless without a backend that produces text (Off, or Vision on Windows/Linux):
+			// hidden from the palette rather than failing at run time.
+			checkCallback: (checking) => {
+				const backend = this.resolveOcrBackend(true);
+				if (backend.id === "off" || backend instanceof UnavailableOcrBackend) return false;
+				if (!checking) void this.reTranscribeAll();
+				return true;
+			},
 		});
 
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).

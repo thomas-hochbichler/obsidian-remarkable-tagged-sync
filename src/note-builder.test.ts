@@ -187,7 +187,14 @@ describe("buildNoteContent", () => {
 		const content = buildNoteContent(baseFields({ transcript: "", highlights: [{ pageLabel: 1, embedPage: 1, quotes: ["Only a highlight."] }] }), null);
 
 		expect(content).toContain("## Highlights\n\n> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=1|Page 1]]\n> - Only a highlight.");
-		expect(content).toContain("## Transcript\n\n<!-- tagged-sync:end -->");
+		expect(content).not.toContain("## Transcript");
+	});
+
+	it("omits the Transcript section entirely when there is no transcript (backend off or nothing found)", () => {
+		const content = buildNoteContent(baseFields({ transcript: "" }), null);
+
+		expect(content).not.toContain("## Transcript");
+		expect(content).toContain("![[tagged-sync/attachments/doc-1.pdf]]\n\n<!-- tagged-sync:end -->");
 	});
 });
 
@@ -326,13 +333,31 @@ describe("updateTranscript", () => {
 		expect(content).toContain("My own annotation.");
 	});
 
-	it("writes an empty transcript region for an unavailable/blank result", async () => {
+	it("removes the whole Transcript section for an unavailable/blank result", async () => {
 		const store = fakeStore();
 		const path = await writeNote(store, "Work", baseFields({ transcript: "was here" }));
 
-		await updateTranscript(store, path, "");
+		const updated = await updateTranscript(store, path, "");
 
-		expect((await store.read(path))!).toContain("## Transcript\n\n<!-- tagged-sync:end -->");
+		expect(updated).toBe(true);
+		const content = (await store.read(path))!;
+		expect(content).not.toContain("## Transcript");
+		expect(content).toContain("![[tagged-sync/attachments/doc-1.pdf]]\n\n<!-- tagged-sync:end -->");
+	});
+
+	it("grows the Transcript section into a note written while transcription was off", async () => {
+		const store = fakeStore();
+		const path = await writeNote(store, "Work", baseFields({ transcript: "" }));
+		// Simulate a user's own note below the managed fence.
+		const withUserArea = (await store.read(path))!.replace(/\n$/, "") + "\n\nMy own annotation.\n";
+		await store.write(path, withUserArea);
+
+		const updated = await updateTranscript(store, path, "text from a newly enabled backend");
+
+		expect(updated).toBe(true);
+		const content = (await store.read(path))!;
+		expect(content).toContain("## Transcript\ntext from a newly enabled backend\n<!-- tagged-sync:end -->");
+		expect(content).toContain("My own annotation.");
 	});
 
 	it("treats a `$` in the transcript literally, not as a replacement pattern", async () => {

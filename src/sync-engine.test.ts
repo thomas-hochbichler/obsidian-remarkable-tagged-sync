@@ -335,7 +335,7 @@ describe("runSync", () => {
 		expect(deps.noteStore.write).toHaveBeenCalledTimes(1);
 		const [path, written] = deps.noteStore.write.mock.calls[0];
 		expect(path).toBe("Target/Notebook.md");
-		expect(written).toContain("## Transcript");
+		expect(written).not.toContain("## Transcript"); // empty OCR result -> no empty heading
 		expect(written).toContain("![[tagged-sync/attachments/doc-1.pdf]]");
 		expect(api.raw.getHash).toHaveBeenCalledWith("doc-1/page-a.rm", "hash-a");
 		expect(api.raw.getHash).toHaveBeenCalledWith("doc-1/page-b.rm", "hash-b");
@@ -681,7 +681,7 @@ describe("runSync", () => {
 
 		expect(result.notesWritten).toBe(1);
 		const [, written] = deps.noteStore.write.mock.calls[0];
-		expect(written).toContain("## Transcript\n\n<!-- tagged-sync:end -->"); // empty transcript on failure
+		expect(written).not.toContain("## Transcript"); // failure -> no empty heading
 		expect(written).toContain("![[tagged-sync/attachments/doc-1.pdf]]"); // render still written
 	});
 
@@ -1252,9 +1252,13 @@ describe("edited sync blocks", () => {
 		});
 	}
 
-	/** Syncs once so a note and its blockHash row exist, then hands both back for a second run. */
+	/**
+	 * Syncs once so a note and its blockHash row exist, then hands both back for a second run. The
+	 * OCR backend produces text, so the note has the "## Transcript" section these tests edit into.
+	 */
 	async function syncedOnce() {
-		const deps = baseDeps(taggedDoc(), { sync: "Target" });
+		const ocrBackend = fakeOcrBackend({ status: "ok", text: "misread text", confidence: 0.9 });
+		const deps = { ...baseDeps(taggedDoc(), { sync: "Target" }), ocrBackend };
 		const first = await runSync(deps, { rootHash: "root-1", rows: {} });
 		return { noteStore: deps.noteStore, index: first.index };
 	}

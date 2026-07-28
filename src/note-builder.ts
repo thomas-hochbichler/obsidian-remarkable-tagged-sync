@@ -56,6 +56,8 @@ const FENCE_END = "<!-- tagged-sync:end -->";
 // The transcript body inside the managed block: everything between the "## Transcript" heading and
 // the closing fence. Non-greedy so it stops at the first fence end (see buildManagedBlock).
 const TRANSCRIPT_RE = new RegExp(`(## Transcript\\n)[\\s\\S]*?(\\n${FENCE_END})`);
+// The whole section including its leading newline -- for removing it when a transcript goes away.
+const TRANSCRIPT_SECTION_RE = new RegExp(`\\n## Transcript\\n[\\s\\S]*?\\n${FENCE_END}`);
 // No trailing \n? -- the free area (including its leading blank line) starts right after "end -->"
 // and must be captured whole, or repeated re-syncs erode its separator by one newline each time.
 const FENCE_RE = /<!-- tagged-sync:begin[^\n]*-->\n[\s\S]*?<!-- tagged-sync:end -->/;
@@ -90,7 +92,9 @@ function renderHighlights(embedPath: string, groups: HighlightGroup[]): string {
 }
 
 function buildManagedBlock(embedPath: string, highlights: HighlightGroup[], transcript: string): string {
-	return `${FENCE_BEGIN}\n![[${embedPath}]]\n${renderHighlights(embedPath, highlights)}\n## Transcript\n${transcript}\n${FENCE_END}`;
+	// No transcript (backend off/unavailable, or OCR found nothing) -> no empty heading in the note.
+	const transcriptSection = transcript === "" ? "" : `\n## Transcript\n${transcript}`;
+	return `${FENCE_BEGIN}\n![[${embedPath}]]\n${renderHighlights(embedPath, highlights)}${transcriptSection}\n${FENCE_END}`;
 }
 
 /**
@@ -231,16 +235,28 @@ export async function moveNote(store: NoteStore, fromPath: string, toFolder: str
 /**
  * Rewrites just a note's transcript region (spec §8.4's re-transcribe), leaving the embed, the
  * user's free area, and any frontmatter untouched. Operates on the whole content so it works with or
- * without a leading frontmatter block. Returns false (a no-op) if the note is gone or has no managed
- * transcript region to rewrite.
+ * without a leading frontmatter block. The section is grown when a transcript arrives for a note
+ * written without one, and removed when a transcript goes away -- an empty "## Transcript" heading
+ * never ships. Returns false (a no-op) if the note is gone, has no managed block, or nothing changes.
  */
 export async function updateTranscript(store: NoteStore, path: string, transcript: string): Promise<boolean> {
 	const content = await store.read(path);
 	if (content === null) return false;
-	if (!TRANSCRIPT_RE.test(content)) return false;
 
-	// Function replacement so a `$` in the OCR text isn't treated as a replacement pattern.
-	const newContent = content.replace(TRANSCRIPT_RE, (_match, heading: string, fenceEnd: string) => `${heading}${transcript}${fenceEnd}`);
+	let newContent: string;
+	if (TRANSCRIPT_RE.test(content)) {
+		// Function replacements so a `$` in the OCR text isn't treated as a replacement pattern.
+		newContent =
+			transcript === ""
+				? content.replace(TRANSCRIPT_SECTION_RE, () => `\n${FENCE_END}`)
+				: content.replace(TRANSCRIPT_RE, (_match, heading: string, fenceEnd: string) => `${heading}${transcript}${fenceEnd}`);
+	} else if (transcript !== "" && content.includes(FENCE_END)) {
+		// The note was written while transcription was off: grow the section just above the fence end.
+		newContent = content.replace(`\n${FENCE_END}`, () => `\n## Transcript\n${transcript}\n${FENCE_END}`);
+	} else {
+		return false;
+	}
+
 	await store.write(path, newContent);
 	return true;
 }
