@@ -38,6 +38,13 @@ describe("normalizeAttachmentsFolder", () => {
 		expect(normalizeAttachmentsFolder("  ")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
 		expect(normalizeAttachmentsFolder("/")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
 	});
+
+	it("falls back to the default when a segment could escape the vault", () => {
+		expect(normalizeAttachmentsFolder("..")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
+		expect(normalizeAttachmentsFolder("../outside")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
+		expect(normalizeAttachmentsFolder("attachments/../../outside")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
+		expect(normalizeAttachmentsFolder("./attachments")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
+	});
 });
 
 describe("writeAttachment", () => {

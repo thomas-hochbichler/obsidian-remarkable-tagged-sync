@@ -1,4 +1,20 @@
-import { type App, apiVersion, type TAbstractFile, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, TFile, TFolder, type Vault } from "obsidian";
+import {
+	type App,
+	apiVersion,
+	debounce,
+	Modal,
+	normalizePath,
+	Notice,
+	Platform,
+	Plugin,
+	PluginSettingTab,
+	setIcon,
+	Setting,
+	type TAbstractFile,
+	TFile,
+	TFolder,
+	type Vault,
+} from "obsidian";
 import { session as remarkableSession } from "rmapi-js";
 import { type AttachmentStore, DEFAULT_ATTACHMENTS_FOLDER, normalizeAttachmentsFolder } from "./attachment-writer";
 import { isIntervalSyncDue, isMeteredProvider } from "./auto-sync";
@@ -7,7 +23,6 @@ import { explainError } from "./explain-error";
 import type { NoteStore, OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
-import { installObsidianFetch } from "./obsidian-fetch";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { EMPTY_SYNC_INDEX, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
@@ -102,7 +117,7 @@ function hasAlternativeBackends(): boolean {
 }
 
 async function ensureFolder(vault: Vault, path: string): Promise<void> {
-	if (vault.getAbstractFileByPath(path) instanceof TFolder) return;
+	if (vault.getFolderByPath(path)) return;
 	await vault.createFolder(path);
 }
 
@@ -110,17 +125,18 @@ function createNoteStore(app: App): NoteStore {
 	const { vault } = app;
 	return {
 		read: async (path) => {
-			const file = vault.getAbstractFileByPath(path);
-			return file instanceof TFile ? vault.read(file) : null;
+			const file = vault.getFileByPath(path);
+			return file ? vault.read(file) : null;
 		},
 		write: async (path, content) => {
-			const file = vault.getAbstractFileByPath(path);
-			if (file instanceof TFile) await vault.modify(file, content);
+			const file = vault.getFileByPath(path);
+			// process() over modify(): a sync writes notes the user may have open in an editor.
+			if (file) await vault.process(file, () => content);
 			else await vault.create(path, content);
 		},
 		move: async (fromPath, toPath) => {
-			const file = vault.getAbstractFileByPath(fromPath);
-			if (file instanceof TFile) await app.fileManager.renameFile(file, toPath);
+			const file = vault.getFileByPath(fromPath);
+			if (file) await app.fileManager.renameFile(file, toPath);
 		},
 		ensureFolder: (path) => ensureFolder(vault, path),
 	};
@@ -130,8 +146,8 @@ function createAttachmentStore(vault: Vault): AttachmentStore {
 	return {
 		ensureFolder: (path) => ensureFolder(vault, path),
 		writeBinary: async (path, data) => {
-			const file = vault.getAbstractFileByPath(path);
-			if (file instanceof TFile) await vault.modifyBinary(file, data);
+			const file = vault.getFileByPath(path);
+			if (file) await vault.modifyBinary(file, data);
 			else await vault.createBinary(path, data);
 		},
 	};
@@ -140,7 +156,6 @@ function createAttachmentStore(vault: Vault): AttachmentStore {
 export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
-	private uninstallFetch!: () => void;
 	private statusBar!: HTMLElement;
 	private syncing = false;
 	/**
@@ -153,8 +168,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	private autoSyncIntervalTimer: number | null = null;
 
 	async onload() {
-		this.uninstallFetch = installObsidianFetch();
 		this.statusBar = this.addStatusBarItem();
+		this.statusBar.addClass("tagged-sync-status");
 		this.statusBar.hide();
 		const saved = (await this.loadData()) as (Partial<TaggedSyncData> & { ocrBackendChoice?: unknown }) | null;
 		// Migration (multi-provider spec §7): coerce any backend that isn't a currently-valid literal to
@@ -205,13 +220,15 @@ export default class TaggedSyncPlugin extends Plugin {
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
 
-		// On-launch auto-sync (spec §Triggers): a few seconds out so auth/network are ready.
-		this.autoSyncLaunchTimer = window.setTimeout(() => this.triggerAutoSync(), AUTO_SYNC_LAUNCH_DELAY_MS);
+		// On-launch auto-sync (spec §Triggers): wait for the workspace to finish loading, then a few
+		// seconds more so auth/network are ready.
+		this.app.workspace.onLayoutReady(() => {
+			this.autoSyncLaunchTimer = window.setTimeout(() => this.triggerAutoSync(), AUTO_SYNC_LAUNCH_DELAY_MS);
+		});
 		this.rearmAutoSyncInterval();
 	}
 
 	onunload() {
-		this.uninstallFetch();
 		if (this.autoSyncLaunchTimer !== null) window.clearTimeout(this.autoSyncLaunchTimer);
 		if (this.autoSyncIntervalTimer !== null) window.clearInterval(this.autoSyncIntervalTimer);
 	}
@@ -267,33 +284,39 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	private notConfiguredFallback(id: OcrBackendId, label: string, silent: boolean): OcrBackendAdapter {
 		if (visionPlatformSupported()) {
-			if (!silent) new Notice(`Tagged Sync: no API key set for ${label} — using Apple Vision (local) for this sync.`);
+			if (!silent) new Notice(`No API key set for ${label} — using Apple Vision (local) for this sync.`);
 			return visionBackend();
 		}
 		return new UnavailableOcrBackend(id);
 	}
 
-	private setStatus(text: string): void {
-		this.statusBar.setText(text);
+	/** Lucide icon per sync state, rendered via setIcon() so it follows the theme (no raw glyphs). */
+	private static readonly STATUS_ICONS = { busy: "refresh-cw", ok: "check", failed: "x" } as const;
+
+	private setStatus(state: keyof typeof TaggedSyncPlugin.STATUS_ICONS, text: string): void {
+		this.statusBar.empty();
+		setIcon(this.statusBar.createSpan({ cls: "tagged-sync-status-icon" }), TaggedSyncPlugin.STATUS_ICONS[state]);
+		this.statusBar.createSpan({ text });
 		this.statusBar.show();
 	}
 
 	private showProgress(progress: SyncProgress): void {
 		this.setStatus(
+			"busy",
 			progress.phase === "scanning"
-				? "⟳ Tagged Sync: scanning…"
-				: `⟳ Tagged Sync: ${progress.index}/${progress.total} · ${progress.name}`,
+				? "Tagged Sync: scanning…"
+				: `Tagged Sync: ${progress.index}/${progress.total} · ${progress.name}`,
 		);
 	}
 
 	async syncNow(): Promise<void> {
 		if (!this.auth.isConnected()) {
-			new Notice("Tagged Sync: connect to reMarkable first.");
+			new Notice("Connect to reMarkable first.");
 			return;
 		}
 		// A sync can run for minutes; a second one started on top of it would race on the shared index.
 		if (this.syncing) {
-			new Notice("Tagged Sync: a sync is already running.");
+			new Notice("A sync is already running.");
 			return;
 		}
 		await this.runSyncNow(this.resolveOcrBackend(), false);
@@ -310,8 +333,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	private async runSyncNow(backend: OcrBackendAdapter, auto: boolean): Promise<void> {
 		this.syncing = true;
-		if (!auto) new Notice("Tagged Sync: syncing…");
-		this.setStatus("⟳ Tagged Sync: starting…");
+		if (!auto) new Notice("Syncing…");
+		this.setStatus("busy", "Tagged Sync: starting…");
 		try {
 			const sessionToken = await this.auth.session();
 			const api = remarkableSession(sessionToken);
@@ -321,7 +344,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					tagRouter: new TagRouter(this.data.tagFolderMap),
 					noteStore: createNoteStore(this.app),
 					attachmentStore: createAttachmentStore(this.app.vault),
-					attachmentsFolder: normalizeAttachmentsFolder(this.data.attachmentsFolder),
+					attachmentsFolder: normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
 					ocrBackend: backend,
 					now: () => new Date().toISOString(),
 					onProgress: (progress) => this.showProgress(progress),
@@ -341,15 +364,15 @@ export default class TaggedSyncPlugin extends Plugin {
 			await this.saveData(this.data);
 
 			const wrote = result.notesWritten > 0;
-			this.setStatus(wrote ? `✓ Tagged Sync: ${result.notesWritten} note(s)` : "✓ Tagged Sync: up to date");
-			if (wrote) new Notice(`Tagged Sync: synced ${result.notesWritten} note(s).`);
-			else if (!auto) new Notice("Tagged Sync: already up to date.");
+			this.setStatus("ok", wrote ? `Tagged Sync: ${result.notesWritten} note(s)` : "Tagged Sync: up to date");
+			if (wrote) new Notice(`Synced ${result.notesWritten} note(s).`);
+			else if (!auto) new Notice("Already up to date.");
 			// Both of these used to be console-only while the notice still reported plain success.
 			if (!auto) this.reportPartialOutcomes(result);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-			this.setStatus("✗ Tagged Sync: sync failed");
-			if (!auto) new Notice(`Tagged Sync: ${explainError(error, "sync")}`);
+			this.setStatus("failed", "Tagged Sync: sync failed");
+			if (!auto) new Notice(explainError(error, "sync"));
 		} finally {
 			this.syncing = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
@@ -372,6 +395,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 		const { enabled, intervalHours } = this.data.autoSync;
 		if (!enabled || intervalHours === null) return;
+		// Deliberately not registerInterval(): that would pile up a leaked interval on every re-arm,
+		// since registered intervals are only cleared on unload. This one id is cleared above and in
+		// onunload.
 		this.autoSyncIntervalTimer = window.setInterval(() => {
 			if (isIntervalSyncDue(this.data.lastSyncAt, intervalHours, Date.now())) this.triggerAutoSync();
 		}, intervalHours * 3_600_000);
@@ -403,7 +429,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (result.failedOcrUnits > 0) {
 			const noun = result.failedOcrUnits === 1 ? "note" : "notes";
 			new Notice(
-				`Tagged Sync: ${result.failedOcrUnits} ${noun} synced without a transcript because transcription failed. ` +
+				`${result.failedOcrUnits} ${noun} synced without a transcript because transcription failed. ` +
 					"The handwriting render is still there. Press Copy diagnostics in settings if it keeps happening.",
 				15_000,
 			);
@@ -411,14 +437,14 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (result.editedNotesSkipped > 0) {
 			const noun = result.editedNotesSkipped === 1 ? "note was" : "notes were";
 			new Notice(
-				`Tagged Sync: ${result.editedNotesSkipped} ${noun} not updated because they were edited inside the sync block. ` +
+				`${result.editedNotesSkipped} ${noun} not updated because they were edited inside the sync block. ` +
 					"Move your edits below the block, then sync again.",
 				15_000,
 			);
 		}
 		if (result.documentsSkipped > 0) {
 			const noun = result.documentsSkipped === 1 ? "notebook was" : "notebooks were";
-			new Notice(`Tagged Sync: ${result.documentsSkipped} ${noun} skipped — see the developer console for details.`, 10_000);
+			new Notice(`${result.documentsSkipped} ${noun} skipped — see the developer console for details.`, 10_000);
 		}
 	}
 
@@ -429,7 +455,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// State the limit; promise nothing. Pointing at an API key setting this build does not have is
 		// worse than silence, and a promise of a future fix would be a debt.
 		new Notice(
-			"Tagged Sync: text transcription needs macOS 13 or later. On this system, notes sync with the handwriting render only." +
+			"Text transcription needs macOS 13 or later. On this system, notes sync with the handwriting render only." +
 				(hasAlternativeBackends() ? " Choose another OCR backend in settings to transcribe here." : ""),
 			15_000,
 		);
@@ -442,18 +468,18 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	async reTranscribeAll(): Promise<void> {
 		if (!this.auth.isConnected()) {
-			new Notice("Tagged Sync: connect to reMarkable first.");
+			new Notice("Connect to reMarkable first.");
 			return;
 		}
 		if (this.syncing) {
-			new Notice("Tagged Sync: a sync is already running.");
+			new Notice("A sync is already running.");
 			return;
 		}
 
 		const backend = this.resolveOcrBackend();
 		const unitCount = Object.values(this.data.syncIndex.rows).filter((row) => row.status === "active").length;
 		if (unitCount === 0) {
-			new Notice("Tagged Sync: no synced notes to re-transcribe yet.");
+			new Notice("No synced notes to re-transcribe yet.");
 			return;
 		}
 		// Only a metered cloud adapter actually spends money; local/vision/unavailable backends do not.
@@ -467,7 +493,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (!confirmed) return;
 
 		this.syncing = true;
-		this.setStatus("⟳ Tagged Sync: re-transcribing…");
+		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		try {
 			const sessionToken = await this.auth.session();
 			const api = remarkableSession(sessionToken);
@@ -484,12 +510,12 @@ export default class TaggedSyncPlugin extends Plugin {
 			// re-transcribe as a hand edit and refuse to update every note it touched.
 			this.data.syncIndex = index;
 			await this.saveData(this.data);
-			this.setStatus(`✓ Tagged Sync: re-transcribed ${updated} note(s)`);
-			new Notice(`Tagged Sync: re-transcribed ${updated} note(s).`);
+			this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
+			new Notice(`Re-transcribed ${updated} note(s).`);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-			this.setStatus("✗ Tagged Sync: re-transcribe failed");
-			new Notice(`Tagged Sync: ${explainError(error, "sync")}`);
+			this.setStatus("failed", "Tagged Sync: re-transcribe failed");
+			new Notice(explainError(error, "sync"));
 		} finally {
 			this.syncing = false;
 		}
@@ -598,7 +624,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 								new Notice("Connected to reMarkable.");
 								this.display();
 							} catch (error) {
-								new Notice(`Tagged Sync: ${explainError(error, "connect")}`, 10_000);
+								new Notice(explainError(error, "connect"), 10_000);
 							}
 						}),
 				);
@@ -609,15 +635,17 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Attachments folder")
 			.setDesc("Vault folder for the rendered PDFs. Applies to notebooks synced from now on; already-synced files stay where they are.")
-			.addText((text) =>
+			.addText((text) => {
+				// Don't hit data.json on every keystroke; the in-memory value updates immediately.
+				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
 				text
 					.setPlaceholder(DEFAULT_ATTACHMENTS_FOLDER)
 					.setValue(this.plugin.data.attachmentsFolder)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.data.attachmentsFolder = value;
-						await this.plugin.saveData(this.plugin.data);
-					}),
-			);
+						persist();
+					});
+			});
 
 		this.renderOcrSettings(containerEl);
 		this.renderAutoSyncSettings(containerEl);
@@ -670,7 +698,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 							lastSyncError: this.plugin.lastSyncError,
 						}),
 					);
-					new Notice("Tagged Sync: diagnostics copied to the clipboard.");
+					new Notice("Diagnostics copied to the clipboard.");
 				}),
 			);
 	}
@@ -692,11 +720,10 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					// Show every backend; disable one that can't run here, so the gap explains itself in place (spec §4.2).
 					const unavailable = entry.unavailableLabel?.();
 					if (!unavailable) continue;
-					const option = dropdown.selectEl.querySelector<HTMLOptionElement>(`option[value="${entry.id}"]`);
-					if (option) {
-						option.disabled = true;
-						option.text = unavailable;
-					}
+					// addOption() appends, so the entry just added is the last option.
+					const option = dropdown.selectEl.options[dropdown.selectEl.options.length - 1];
+					option.disabled = true;
+					option.text = unavailable;
 				}
 				dropdown.setValue(this.plugin.data.ocrBackend);
 				dropdown.onChange(async (value) => {
@@ -709,7 +736,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		// Flat-text ceiling hint (structure-preserving-ocr spec §3.2): the moment the user picks a
 		// backend is where the Apple-Vision structure limit earns its place.
 		containerEl.createDiv({
-			cls: "setting-item-description",
+			cls: "tagged-sync-note",
 			text:
 				"Apple Vision: flat text only, no headings or tables." +
 				(hasAlternativeBackends() ? " Choose an LLM backend for structured Markdown." : ""),
@@ -850,7 +877,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					);
 			}
 			containerEl.createDiv({
-				cls: "setting-item-description",
+				cls: "tagged-sync-note",
 				text: "Removing a tag stops syncing it. Notes already in your vault stay where they are.",
 			});
 		}
@@ -866,7 +893,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		// the reason is stated in place rather than by disabling the dropdown.
 		if (mappedTags.length >= FREE_TAG_LIMIT) {
 			containerEl.createDiv({
-				cls: "setting-item-description",
+				cls: "tagged-sync-note",
 				text: "The free version syncs one tag. Remove the current mapping to choose a different one.",
 			});
 			for (const tag of unmappedTags) new Setting(containerEl).setName(tag).setDesc("Not synced.");

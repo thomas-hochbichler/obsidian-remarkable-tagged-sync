@@ -1,9 +1,10 @@
 {
 	"id": "remarkable-tagged-sync",
 	"name": "reMarkable Tagged Sync",
-	"version": "1.0.3",
-	"minAppVersion": "1.5.0",
-	"description": "Sync tagged reMarkable notebooks into Obsidian as searchable Markdown notes, routed to folders by tag.",
+	"version": "1.0.4",
+	"minAppVersion": "1.5.7",
+	"description": "Sync tagged reMarkable notebooks as searchable Markdown notes, routed to folders by tag.",
 	"author": "Thomas Hochbichler",
+	"authorUrl": "https://github.com/thomas-hochbichler",
 	"isDesktopOnly": true
 }

@@ -2,10 +2,17 @@ import { toArrayBuffer } from "./bytes";
 
 export const DEFAULT_ATTACHMENTS_FOLDER = "tagged-sync/attachments";
 
-/** Settings input → usable vault folder path; empty or slash-only input falls back to the default. */
+/**
+ * Settings input → usable vault folder path; empty or slash-only input falls back to the default.
+ * `.`/`..` segments also fall back: a relative segment could resolve outside the vault, and writing
+ * outside the vault is out of the question for a sync target.
+ */
 export function normalizeAttachmentsFolder(input: string): string {
 	const trimmed = input.trim().replace(/^\/+|\/+$/g, "");
-	return trimmed === "" ? DEFAULT_ATTACHMENTS_FOLDER : trimmed;
+	if (trimmed === "") return DEFAULT_ATTACHMENTS_FOLDER;
+	const segments = trimmed.split("/");
+	if (segments.some((segment) => segment === "." || segment === "..")) return DEFAULT_ATTACHMENTS_FOLDER;
+	return trimmed;
 }
 
 export interface AttachmentStore {

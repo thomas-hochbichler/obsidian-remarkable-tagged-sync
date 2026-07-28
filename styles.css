@@ -1,0 +1,19 @@
+/* Status bar item: icon (setIcon) + text side by side. */
+.tagged-sync-status {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.tagged-sync-status .tagged-sync-status-icon {
+	display: inline-flex;
+	--icon-size: var(--font-ui-small);
+}
+
+/* Free-standing explanatory text in the settings tab (same look as a setting's description). */
+.tagged-sync-note {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	padding-top: var(--size-4-1);
+	line-height: var(--line-height-tight);
+}

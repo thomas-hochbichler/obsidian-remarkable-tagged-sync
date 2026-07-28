@@ -17,8 +17,10 @@ your reMarkable.
 
 Two limits, so you know them up front:
 
-- **This version syncs one tag.** You map one reMarkable tag to one vault folder. You can change
-  or remove that mapping at any time.
+- **This free version syncs one tag.** You map one reMarkable tag to one vault folder. You can
+  change or remove that mapping at any time. The one-tag limit is a limit of the free version: a
+  paid version that lifts it is planned but not yet available. Everything described in this
+  README works without payment.
 - **Text transcription needs macOS 13 or later.** On Windows and Linux your notes still sync,
   with the full handwriting render embedded — but there is no transcript.
 

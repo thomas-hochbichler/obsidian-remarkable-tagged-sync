@@ -11,14 +11,16 @@ if you want to view the source, visit the plugin's github repository
 
 const prod = process.argv[2] === "production";
 
-// `src/entry.ts` registers the OCR backends that ship here. An optional `pro/` folder, present only
-// in the maintainer's working copy, registers additional ones on top; `src/` never references it, so
-// this builds unchanged wherever `pro/` is absent.
-//
-// Set TAGGED_SYNC_BUILD=free to force the `src/` entry point even when `pro/` is present -- that is
-// how you run exactly what users get without moving any files. Works for `dev` too.
-const forceBase = process.env.TAGGED_SYNC_BUILD === "free";
-const entryPoint = !forceBase && fs.existsSync("pro/entry.ts") ? "pro/entry.ts" : "src/entry.ts";
+// `src/entry.ts` registers the OCR backends that ship here, and it is what a plain build of this
+// repo produces -- what you see is what users get. An optional `pro/` folder, present only in the
+// maintainer's working copy, registers additional backends on top; building it is an explicit
+// opt-in via TAGGED_SYNC_BUILD=pro (which fails loudly if `pro/` is absent, rather than silently
+// producing the free build).
+const pro = process.env.TAGGED_SYNC_BUILD === "pro";
+if (pro && !fs.existsSync("pro/entry.ts")) {
+	throw new Error("TAGGED_SYNC_BUILD=pro but pro/entry.ts does not exist in this checkout");
+}
+const entryPoint = pro ? "pro/entry.ts" : "src/entry.ts";
 console.log(`entry: ${entryPoint}`);
 
 const context = await esbuild.context({
@@ -27,6 +29,10 @@ const context = await esbuild.context({
 	},
 	entryPoints: [entryPoint],
 	bundle: true,
+	// Rewrites free-identifier `fetch` references inside the bundle (rmapi-js has no fetch
+	// injection point) to the CORS-free requestUrl shim. Bundle-scoped: the global fetch of the
+	// Obsidian process is never touched. Rationale in src/obsidian-fetch.ts.
+	inject: ["src/fetch-shim.ts"],
 	external: [
 		"obsidian",
 		"electron",
