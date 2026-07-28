@@ -6,7 +6,7 @@ import type { AttachmentStore } from "./attachment-writer";
 import type { NoteStore } from "./note-builder";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
 import { collectHighlights, EMPTY_SYNC_INDEX, notebookSyncKey, pageSyncKey, RENDER_VERSION, reTranscribeAll, runSync, type SyncApi, type SyncIndex } from "./sync-engine";
-import { TagRouter } from "./tag-router";
+import { mappingFingerprint, TagRouter } from "./tag-router";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
 const PAGE_BYTES = new Uint8Array(readFileSync(FIXTURE_PATH));
@@ -211,14 +211,14 @@ describe("runSync", () => {
 		const onProgress = vi.fn();
 		const deps = { ...baseDeps(api, { sync: "Target" }), onProgress };
 
-		await runSync(deps, { rootHash: "root-1", rows: {} });
+		await runSync(deps, { rootHash: "root-1", mappings: mappingFingerprint({ sync: "Target" }), rows: {} });
 
 		expect(onProgress.mock.calls.map((call) => call[0])).toEqual([{ phase: "scanning" }]);
 	});
 
 	it("root-hash gate: unchanged root hash performs zero fetches beyond the root-hash check", async () => {
 		const api = fakeApi({ rootHash: "root-1", entries: [documentEntry()] });
-		const previousIndex: SyncIndex = { rootHash: "root-1", rows: {} };
+		const previousIndex: SyncIndex = { rootHash: "root-1", mappings: mappingFingerprint({ sync: "Target" }), rows: {} };
 		const deps = baseDeps(api, { sync: "Target" });
 
 		const result = await runSync(deps, previousIndex);
@@ -228,6 +228,26 @@ describe("runSync", () => {
 		expect(api.raw.getRootHash).toHaveBeenCalledTimes(1);
 		expect(api.listItems).not.toHaveBeenCalled();
 		expect(api.getContent).not.toHaveBeenCalled();
+	});
+
+	it("root-hash gate: a mapping change re-scans even though the root hash is unchanged", async () => {
+		const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+		const content = documentContent({ cPages: cPages(["page-a"]) });
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [entry],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		// The last sync ran with no mappings at all: it saved the root hash and zero rows. The user
+		// then mapped a tag in settings; nothing changed on the device, so the root hash is the same.
+		const previousIndex: SyncIndex = { rootHash: "root-1", mappings: mappingFingerprint({}), rows: {} };
+		const deps = baseDeps(api, { sync: "Target" });
+
+		const result = await runSync(deps, previousIndex);
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.index.mappings).toBe(mappingFingerprint({ sync: "Target" }));
 	});
 
 	it("self-heals: recreates a note the user deleted by hand, even though the root hash is unchanged", async () => {
@@ -241,6 +261,7 @@ describe("runSync", () => {
 		});
 		const previousIndex: SyncIndex = {
 			rootHash: "root-1", // unchanged since the last sync -- nothing moved on the device
+			mappings: mappingFingerprint({ sync: "Target" }), // unchanged too -- only the missing note reopens the gate
 			rows: {
 				[notebookSyncKey("doc-1", "sync")]: {
 					syncKey: notebookSyncKey("doc-1", "sync"),
@@ -273,6 +294,7 @@ describe("runSync", () => {
 		const api = fakeApi({ rootHash: "root-1", entries: [documentEntry({ hash: "hash-1" })] });
 		const previousIndex: SyncIndex = {
 			rootHash: "root-1",
+			mappings: mappingFingerprint({ sync: "Target" }),
 			rows: {
 				[notebookSyncKey("doc-1", "sync")]: {
 					syncKey: notebookSyncKey("doc-1", "sync"),

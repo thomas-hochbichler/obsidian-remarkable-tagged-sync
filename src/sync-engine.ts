@@ -55,6 +55,14 @@ export interface SyncIndexRow {
 export interface SyncIndex {
 	/** Last root hash the sync ran against -- level-1 change-detection gate. */
 	rootHash: string | null;
+	/**
+	 * Fingerprint of the tag->folder mappings the last sync ran with. The root hash only tracks the
+	 * reMarkable side, so without this a mapping change while the device is unchanged -- classically:
+	 * first sync before any tag was mapped -- would sit behind the level-1 gate as "up to date"
+	 * forever. Optional like `renderVersion`: an older index simply fails the comparison once and
+	 * takes one full scan.
+	 */
+	mappings?: string;
 	rows: Record<string, SyncIndexRow>;
 }
 
@@ -414,11 +422,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 	report({ phase: "scanning" });
 	const [rootHash] = await api.raw.getRootHash();
+	const mappings = tagRouter.fingerprint();
 	// The stale-render check has to happen here too, not just per doc: nothing on the device changes
 	// when the renderer does, so an unchanged root hash would otherwise return before any doc is
-	// even looked at, and notes rendered by an older version would never be corrected.
+	// even looked at, and notes rendered by an older version would never be corrected. The mappings
+	// fingerprint is here for the same reason from the other side: a settings change moves nothing
+	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
-	if (rootHash === previousIndex.rootHash && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
+	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
 		return { index: previousIndex, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0 };
 	}
 
@@ -432,9 +443,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const editedKeys = new Set<string>();
 	const skippedDocIds = new Set<string>();
 
-	// Keeps the previous rootHash so an interrupted run is re-scanned rather than mistaken for done.
+	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
+	// rather than mistaken for done.
 	const checkpoint = deps.saveIndex
-		? () => deps.saveIndex!({ rootHash: previousIndex.rootHash, rows: { ...rows } })
+		? () => deps.saveIndex!({ rootHash: previousIndex.rootHash, mappings: previousIndex.mappings, rows: { ...rows } })
 		: async () => {};
 
 	const entries = await api.listItems();
@@ -687,7 +699,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
 	}
 
-	return { index: { rootHash, rows }, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size };
+	return { index: { rootHash, mappings, rows }, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size };
 }
 
 export interface ReTranscribeDeps {
