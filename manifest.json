@@ -1,7 +1,7 @@
 {
 	"id": "remarkable-tagged-sync",
 	"name": "reMarkable Tagged Sync",
-	"version": "1.0.4",
+	"version": "1.0.5",
 	"minAppVersion": "1.5.7",
 	"description": "Sync tagged reMarkable notebooks as searchable Markdown notes, routed to folders by tag.",
 	"author": "Thomas Hochbichler",

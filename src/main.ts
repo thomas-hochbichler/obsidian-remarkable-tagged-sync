@@ -734,13 +734,16 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			});
 
 		// Flat-text ceiling hint (structure-preserving-ocr spec §3.2): the moment the user picks a
-		// backend is where the Apple-Vision structure limit earns its place.
-		containerEl.createDiv({
-			cls: "tagged-sync-note",
-			text:
-				"Apple Vision: flat text only, no headings or tables." +
-				(hasAlternativeBackends() ? " Choose an LLM backend for structured Markdown." : ""),
-		});
+		// backend is where the Apple-Vision structure limit earns its place. Off macOS, Vision is not
+		// selectable at all, so its ceiling is noise -- say nothing rather than name a limit of a
+		// backend this system cannot run.
+		const hint = [
+			visionPlatformSupported() ? "Apple Vision: flat text only, no headings or tables." : "",
+			hasAlternativeBackends() ? "Choose an LLM backend for structured Markdown." : "",
+		]
+			.filter(Boolean)
+			.join(" ");
+		if (hint) containerEl.createDiv({ cls: "tagged-sync-note", text: hint });
 
 		const id = this.plugin.data.ocrBackend;
 		ocrBackendEntry(id)?.renderSettings?.(containerEl, {
