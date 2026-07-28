@@ -2,6 +2,12 @@ import { toArrayBuffer } from "./bytes";
 
 export const DEFAULT_ATTACHMENTS_FOLDER = "tagged-sync/attachments";
 
+/** Settings input → usable vault folder path; empty or slash-only input falls back to the default. */
+export function normalizeAttachmentsFolder(input: string): string {
+	const trimmed = input.trim().replace(/^\/+|\/+$/g, "");
+	return trimmed === "" ? DEFAULT_ATTACHMENTS_FOLDER : trimmed;
+}
+
 export interface AttachmentStore {
 	ensureFolder(path: string): Promise<void>;
 	writeBinary(path: string, data: ArrayBuffer): Promise<void>;

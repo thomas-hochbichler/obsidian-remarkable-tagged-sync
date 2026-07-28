@@ -176,13 +176,18 @@ async function resolveFreePath(store: NoteStore, folder: string, baseName: strin
 	const suffixes = ["", ` (${sanitizeFilenamePart(tag)})`, ` (${docId.slice(0, 6)})`];
 
 	for (const suffix of suffixes) {
-		const path = `${folder}/${baseName}${suffix}.md`;
+		const path = joinFolder(folder, `${baseName}${suffix}.md`);
 		if ((await store.read(path)) === null) return path;
 	}
 	for (let n = 2; ; n++) {
-		const path = `${folder}/${baseName} (${n}).md`;
+		const path = joinFolder(folder, `${baseName} (${n}).md`);
 		if ((await store.read(path)) === null) return path;
 	}
+}
+
+/** Vault paths never start with a slash, so the root ("" after trimming) joins bare. */
+function joinFolder(trimmedFolder: string, name: string): string {
+	return trimmedFolder === "" ? name : `${trimmedFolder}/${name}`;
 }
 
 /** Writes fields at an already-resolved path -- no collision handling, the caller owns that. */
@@ -190,7 +195,8 @@ async function writeNoteAt(store: NoteStore, path: string, fields: NoteFields): 
 	const existingContent = await store.read(path);
 	const content = buildNoteContent(fields, existingContent);
 
-	await store.ensureFolder(path.slice(0, path.lastIndexOf("/")));
+	// A root-level path has no parent to create; slicing at lastIndexOf would mangle it.
+	if (path.includes("/")) await store.ensureFolder(path.slice(0, path.lastIndexOf("/")));
 	await store.write(path, content);
 	return path;
 }
@@ -221,12 +227,12 @@ export async function writeNote(store: NoteStore, folder: string, fields: NoteFi
 export async function moveNote(store: NoteStore, fromPath: string, toFolder: string, fields: NoteFields): Promise<string> {
 	const trimmedFolder = toFolder.replace(/\/+$/, "");
 	const baseName = deriveBaseName(fields.source, fields.pageIndex);
-	const candidatePath = `${trimmedFolder}/${baseName}.md`;
+	const candidatePath = joinFolder(trimmedFolder, `${baseName}.md`);
 
 	const toPath = candidatePath === fromPath ? candidatePath : await resolveFreePath(store, trimmedFolder, baseName, fields.tag, fields.docId);
 
 	if (fromPath !== toPath) {
-		await store.ensureFolder(trimmedFolder);
+		if (trimmedFolder !== "") await store.ensureFolder(trimmedFolder);
 		await store.move(fromPath, toPath);
 	}
 	return writeNoteAt(store, toPath, fields);

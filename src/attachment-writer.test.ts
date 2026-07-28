@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, writeAttachment, type AttachmentStore } from "./attachment-writer";
+import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, normalizeAttachmentsFolder, writeAttachment, type AttachmentStore } from "./attachment-writer";
 
 function fakeStore(): AttachmentStore & { ensureFolder: ReturnType<typeof vi.fn>; writeBinary: ReturnType<typeof vi.fn> } {
 	return {
@@ -21,6 +21,22 @@ describe("attachmentPath", () => {
 
 	it("normalizes a trailing slash on the folder", () => {
 		expect(attachmentPath("tagged-sync/attachments/", "doc-1", null)).toBe("tagged-sync/attachments/doc-1.pdf");
+	});
+});
+
+describe("normalizeAttachmentsFolder", () => {
+	it("trims whitespace and surrounding slashes", () => {
+		expect(normalizeAttachmentsFolder("  /attachments/ ")).toBe("attachments");
+	});
+
+	it("keeps a nested folder path intact", () => {
+		expect(normalizeAttachmentsFolder("files/remarkable")).toBe("files/remarkable");
+	});
+
+	it("falls back to the default for empty or slash-only input", () => {
+		expect(normalizeAttachmentsFolder("")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
+		expect(normalizeAttachmentsFolder("  ")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
+		expect(normalizeAttachmentsFolder("/")).toBe(DEFAULT_ATTACHMENTS_FOLDER);
 	});
 });
 

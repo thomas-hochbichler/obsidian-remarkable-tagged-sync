@@ -1,6 +1,6 @@
 import { type App, apiVersion, type TAbstractFile, Modal, Notice, Platform, Plugin, PluginSettingTab, Setting, TFile, TFolder, type Vault } from "obsidian";
 import { session as remarkableSession } from "rmapi-js";
-import type { AttachmentStore } from "./attachment-writer";
+import { type AttachmentStore, DEFAULT_ATTACHMENTS_FOLDER, normalizeAttachmentsFolder } from "./attachment-writer";
 import { isIntervalSyncDue, isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
 import { explainError } from "./explain-error";
@@ -62,6 +62,8 @@ interface TaggedSyncData {
 	autoSync: AutoSyncSettings;
 	/** ISO timestamp of the last *completed* sync (manual or auto); drives the interval backstop. */
 	lastSyncAt: string | null;
+	/** Vault folder for rendered PDFs (spec §8: configurable, default `tagged-sync/attachments`). Stored raw; normalized at use. */
+	attachmentsFolder: string;
 }
 
 const DEFAULT_DATA: TaggedSyncData = {
@@ -74,6 +76,7 @@ const DEFAULT_DATA: TaggedSyncData = {
 	ocrUnavailableNoticeShown: false,
 	autoSync: DEFAULT_AUTO_SYNC,
 	lastSyncAt: null,
+	attachmentsFolder: DEFAULT_ATTACHMENTS_FOLDER,
 };
 
 /**
@@ -168,6 +171,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			ocrUnavailableNoticeShown: saved?.ocrUnavailableNoticeShown ?? false,
 			autoSync: { ...DEFAULT_AUTO_SYNC, ...saved?.autoSync },
 			lastSyncAt: saved?.lastSyncAt ?? null,
+			attachmentsFolder: saved?.attachmentsFolder ?? DEFAULT_DATA.attachmentsFolder,
 		};
 
 		const store: AuthStore = {
@@ -317,6 +321,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					tagRouter: new TagRouter(this.data.tagFolderMap),
 					noteStore: createNoteStore(this.app),
 					attachmentStore: createAttachmentStore(this.app.vault),
+					attachmentsFolder: normalizeAttachmentsFolder(this.data.attachmentsFolder),
 					ocrBackend: backend,
 					now: () => new Date().toISOString(),
 					onProgress: (progress) => this.showProgress(progress),
@@ -599,6 +604,21 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 				);
 		}
 
+		// Existing notes keep embedding the old path until their notebook next changes; moving the
+		// files is the user's call, so the description says when the setting takes effect.
+		new Setting(containerEl)
+			.setName("Attachments folder")
+			.setDesc("Vault folder for the rendered PDFs. Applies to notebooks synced from now on; already-synced files stay where they are.")
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_ATTACHMENTS_FOLDER)
+					.setValue(this.plugin.data.attachmentsFolder)
+					.onChange(async (value) => {
+						this.plugin.data.attachmentsFolder = value;
+						await this.plugin.saveData(this.plugin.data);
+					}),
+			);
+
 		this.renderOcrSettings(containerEl);
 		this.renderAutoSyncSettings(containerEl);
 
@@ -784,11 +804,16 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const mapping = this.plugin.data.tagFolderMap;
 		const mappedTags = Object.keys(mapping).sort();
-		const folderPaths = this.app.vault
-			.getAllLoadedFiles()
-			.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
-			.map((folder) => folder.path)
-			.sort();
+		// The root always exists, so even a brand-new empty vault has one valid target.
+		const folderPaths = [
+			"/",
+			...this.app.vault
+				.getAllLoadedFiles()
+				.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
+				.map((folder) => folder.path)
+				.sort(),
+		];
+		const folderLabel = (path: string) => (path === "/" ? "Vault root" : path);
 
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
@@ -802,9 +827,9 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			for (const tag of mappedTags) {
 				new Setting(containerEl)
 					.setName(tag)
-					.setDesc(mapping[tag])
+					.setDesc(folderLabel(mapping[tag]))
 					.addDropdown((dropdown) => {
-						for (const path of folderPaths) dropdown.addOption(path, path);
+						for (const path of folderPaths) dropdown.addOption(path, folderLabel(path));
 						// The mapped folder may have been renamed or deleted since; keep it selectable either way.
 						if (!folderPaths.includes(mapping[tag])) dropdown.addOption(mapping[tag], `${mapping[tag]} (missing)`);
 						dropdown.setValue(mapping[tag]);
@@ -849,24 +874,18 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		}
 
 		for (const tag of unmappedTags) {
-			const setting = new Setting(containerEl).setName(tag);
-			if (folderPaths.length === 0) {
-				setting.setDesc(
-					"Not synced until mapped to a folder. No folders exist in your vault yet — create one, then reopen settings.",
-				);
-			} else {
-				setting
-					.setDesc("Not synced until mapped to a folder.")
-					.addDropdown((dropdown) => {
-						dropdown.addOption("", "Choose a folder…");
-						for (const path of folderPaths) dropdown.addOption(path, path);
-						dropdown.onChange(async (value) => {
-							if (!value) return;
-							mapping[tag] = value;
-							await persist();
-						});
+			new Setting(containerEl)
+				.setName(tag)
+				.setDesc("Not synced until mapped to a folder.")
+				.addDropdown((dropdown) => {
+					dropdown.addOption("", "Choose a folder…");
+					for (const path of folderPaths) dropdown.addOption(path, folderLabel(path));
+					dropdown.onChange(async (value) => {
+						if (!value) return;
+						mapping[tag] = value;
+						await persist();
 					});
-			}
+				});
 		}
 	}
 }

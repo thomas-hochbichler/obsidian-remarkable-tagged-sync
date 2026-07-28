@@ -251,6 +251,25 @@ describe("writeNote", () => {
 		expect(path).toBe("Work/My Notebook — Page 2 (todo).md");
 	});
 
+	it("writes to the vault root without a leading slash when the folder is '/'", async () => {
+		const store = fakeStore();
+
+		const path = await writeNote(store, "/", baseFields());
+
+		expect(path).toBe("My Notebook.md");
+		expect(store.ensureFolder).not.toHaveBeenCalled();
+		expect(store.write).toHaveBeenCalledWith("My Notebook.md", expect.any(String));
+	});
+
+	it("suffixes collisions at the vault root like any other folder", async () => {
+		const store = fakeStore();
+		await writeNote(store, "/", baseFields({ docId: "doc-1", tag: "sync" }));
+
+		const path = await writeNote(store, "/", baseFields({ docId: "doc-2-abcdef", tag: "todo" }));
+
+		expect(path).toBe("My Notebook (todo).md");
+	});
+
 	it("escalates to a docId suffix when the tag suffix is also taken", async () => {
 		const store = fakeStore();
 		await writeNote(store, "Work", baseFields({ docId: "doc-1", tag: "sync" })); // My Notebook.md
@@ -299,6 +318,19 @@ describe("moveNote", () => {
 		expect(path).toBe("New/My Notebook (work).md");
 		expect(store.move).toHaveBeenCalledWith("Old/My Notebook.md", "New/My Notebook (work).md");
 		expect((await store.read("New/My Notebook.md"))!).toContain("![[tagged-sync/attachments/doc-1.pdf]]"); // the unrelated note's own embed, untouched
+	});
+
+	it("moves a note to the vault root without a leading slash when the folder is '/'", async () => {
+		const store = fakeStore();
+		await writeNote(store, "Old", baseFields({ tag: "school" }));
+		store.ensureFolder.mockClear();
+
+		const path = await moveNote(store, "Old/My Notebook.md", "/", baseFields({ tag: "work", transcript: "moved text" }));
+
+		expect(path).toBe("My Notebook.md");
+		expect(store.move).toHaveBeenCalledWith("Old/My Notebook.md", "My Notebook.md");
+		expect(store.ensureFolder).not.toHaveBeenCalled();
+		expect((await store.read("My Notebook.md"))!).toContain("moved text");
 	});
 
 	it("doesn't treat the source file's own pre-move content as a collision when two tags share a folder", async () => {
