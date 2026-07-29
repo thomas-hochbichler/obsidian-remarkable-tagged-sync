@@ -59,6 +59,18 @@ Transcription is local. Nothing else is contacted.
 
 No telemetry or analytics of any kind are collected or sent by this plugin.
 
+## Other permissions this plugin uses
+
+Two behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
+
+- **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
+  version, Obsidian version, platform, selected OCR backend, number of mapped tags, and last sync
+  time to the clipboard, so you can paste them into a bug report. The plugin **never reads** your
+  clipboard, and nothing is sent anywhere — you choose where to paste it.
+- **Vault folder list.** The tag-routing settings read the list of folders in your vault to fill
+  the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
+  scanned for this, and the list never leaves your machine.
+
 ## Setup
 
 1. Install and enable the plugin.

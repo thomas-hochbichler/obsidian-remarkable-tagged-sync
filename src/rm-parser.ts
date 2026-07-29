@@ -1,7 +1,7 @@
 // Imported from the submodule path (not the "kaitai-struct" package root) to
 // dodge a CJS/ESM interop mismatch in that package's own root type declarations.
 import KaitaiStream from "kaitai-struct/KaitaiStream";
-// @ts-expect-error -- generated JS has no type declarations; see kaitai/PROVENANCE.md
+// Types live in the hand-written `rmv6-generated.d.ts` beside it; see kaitai/PROVENANCE.md.
 import { Rmv6 } from "./kaitai/rmv6-generated.js";
 import { toArrayBuffer } from "./bytes";
 

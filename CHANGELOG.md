@@ -1,0 +1,107 @@
+# Changelog
+
+All notable changes to this plugin are documented here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+New entries go under `## [Unreleased]`, **in the same commit as the change** -- not at release
+time. At release time that heading is renamed to `## [<version>] - <date>`, and the release
+workflow publishes the section as the GitHub release body. See
+[docs/RELEASING.md](docs/RELEASING.md).
+
+## [Unreleased]
+
+## [1.0.6] - 2026-07-29
+
+Fixes from the Obsidian community-store review.
+
+### Changed
+
+- The reMarkable connect field describes the one-time code instead of showing a lowercase
+  example.
+- The background-transcription description no longer refers to the "Sync now" button by name.
+
+### Fixed
+
+- The plugin bundle no longer creates `<script>` elements or calls `new Function`. These came
+  from a compression library bundled inside the reMarkable cloud client, not from this plugin's
+  own code, and were the reason the store review rejected 1.0.5. The library is now built from
+  source with those two polyfills replaced, and the resulting sync output is byte-for-byte
+  identical.
+- Requests are resolved correctly when given a `Request` object rather than a URL string. This
+  never happened in practice, but it would have failed as a malformed URL rather than as anything
+  readable.
+- Apple Vision transcription now fails with a clear message instead of hanging forever if the
+  helper process cannot be given input.
+
+### Added
+
+- The README now states that the clipboard is written but never read, and that the folder list is
+  read only to fill the tag-routing dropdown.
+
+## [1.0.5] - 2026-07-28
+
+### Fixed
+
+- Fixes the OCR backend hint on Windows and Linux: the settings screen no longer prints "Apple
+  Vision: flat text only, no headings or tables." on systems where Apple Vision is not selectable.
+
+## [1.0.4] - 2026-07-28
+
+Fixes from pre-submission review of the community-store release.
+
+### Added
+
+- The status bar shows theme-consistent icons instead of raw text glyphs. This release adds a
+  `styles.css` asset.
+
+### Changed
+
+- Synced notes are written with `vault.process()` so background writes merge safely with open
+  editors; settings text field saves are debounced.
+- Notices drop the "Tagged Sync: " prefix.
+- `minAppVersion` is now 1.5.7 (for `getFileByPath`/`getFolderByPath`).
+
+### Fixed
+
+- The plugin no longer replaces the app-wide `fetch`. The CORS workaround for the reMarkable
+  cloud API is now compiled into the plugin bundle at build time, so it cannot affect Obsidian
+  core or other plugins. Request bodies of all types the plugin sends are forwarded faithfully,
+  and 204/304 responses no longer error.
+- The attachments folder setting is normalized with `normalizePath()` and falls back to the
+  default if a `.`/`..` segment could point outside the vault.
+- On-launch auto-sync waits for `onLayoutReady` before its startup delay.
+
+## [1.0.3] - 2026-07-28
+
+### Added
+
+- **Sync to the vault root.** Tag mappings can now target "Vault root", so a brand-new empty
+  vault no longer shows "No folders exist in your vault yet" for every discovered tag.
+- **Configurable attachments folder.** The vault folder for rendered PDFs can be changed in
+  settings. The default (`tagged-sync/attachments`) is unchanged, and already-synced files stay
+  where they are.
+
+## [1.0.2] - 2026-07-28
+
+### Fixed
+
+- Notes synced without transcription (backend Off, or on Windows/Linux where Apple Vision is
+  unavailable) no longer contain an empty "## Transcript" section. The "Re-transcribe all synced
+  notes" command is hidden when the active backend produces no text. Enabling a backend later
+  grows the section into existing notes via re-transcribe.
+
+## [1.0.1] - 2026-07-28
+
+### Fixed
+
+- Adding or changing a tag mapping now triggers a sync even when nothing changed on the
+  reMarkable side. Previously the plugin reported "up to date" until the device contents changed.
+
+## [1.0.0] - 2026-07-28
+
+### Added
+
+- Initial release. Sync tagged reMarkable notebooks into Obsidian as searchable Markdown notes,
+  routed to folders by tag.

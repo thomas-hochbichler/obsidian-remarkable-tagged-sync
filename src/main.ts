@@ -223,7 +223,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		// On-launch auto-sync (spec §Triggers): wait for the workspace to finish loading, then a few
 		// seconds more so auth/network are ready.
 		this.app.workspace.onLayoutReady(() => {
-			this.autoSyncLaunchTimer = window.setTimeout(() => this.triggerAutoSync(), AUTO_SYNC_LAUNCH_DELAY_MS);
+			this.autoSyncLaunchTimer = window.setTimeout(() => {
+				void this.triggerAutoSync();
+			}, AUTO_SYNC_LAUNCH_DELAY_MS);
 		});
 		this.rearmAutoSyncInterval();
 	}
@@ -399,7 +401,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// since registered intervals are only cleared on unload. This one id is cleared above and in
 		// onunload.
 		this.autoSyncIntervalTimer = window.setInterval(() => {
-			if (isIntervalSyncDue(this.data.lastSyncAt, intervalHours, Date.now())) this.triggerAutoSync();
+			if (isIntervalSyncDue(this.data.lastSyncAt, intervalHours, Date.now())) void this.triggerAutoSync();
 		}, intervalHours * 3_600_000);
 	}
 
@@ -610,7 +612,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					}),
 				)
 				.addText((text) =>
-					text.setPlaceholder("abcdefgh").onChange((value) => {
+					text.setPlaceholder("Eight-letter code").onChange((value) => {
 						this.code = value;
 					}),
 				)
@@ -727,7 +729,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 				}
 				dropdown.setValue(this.plugin.data.ocrBackend);
 				dropdown.onChange(async (value) => {
-					this.plugin.data.ocrBackend = value as OcrBackendId;
+					this.plugin.data.ocrBackend = value;
 					await this.plugin.saveData(this.plugin.data);
 					this.display();
 				});
@@ -800,7 +802,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		if (isMeteredProvider(this.plugin.data.ocrBackend)) {
 			new Setting(containerEl)
 				.setName("Automatically transcribe during background sync (uses your paid API)")
-				.setDesc("Off by default: background sync is suppressed on a metered backend until you allow it here. Manual Sync now is unaffected.")
+				.setDesc("Off by default: background sync is suppressed on a metered backend until you allow it here. Manual syncs are unaffected.")
 				.addToggle((toggle) =>
 					toggle.setValue(auto.autoTranscribeMetered).onChange(async (value) => {
 						auto.autoTranscribeMetered = value;

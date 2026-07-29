@@ -1,0 +1,120 @@
+# Fires on a pushed SemVer tag and publishes the GitHub release.
+#
+# The human does not upload anything. That is the rule this workflow exists to enforce: a pro
+# build used to overwrite `main.js` -- the release asset -- in the folder releases are cut from,
+# so a hand-uploaded asset could publish premium code with nothing in git to show it. Here the
+# assets are built in a fresh checkout where `pro/` does not exist.
+#
+# Gate order is cheap-first. Publishing is the last thing that happens, which is why nothing can
+# publish after a failure -- that property is free, not enforced by an `if`.
+#
+# If the run fails and NO release exists: delete the tag, fix, re-tag the same version.
+# If a release EXISTS: never touch it -- bump to the next version.
+
+name: Release
+
+on:
+  push:
+    tags:
+      # No `v` prefix. The store resolves the tag from the manifest version, so `v1.0.6` is simply
+      # not found. The version gate below rejects it explicitly with that message.
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+# Deliberately no cancel-in-progress: a half-cancelled release is worse than a slow one.
+concurrency:
+  group: release-${{ github.ref }}
+
+permissions:
+  contents: write # create the release, upload assets
+  id-token: write # mint the OIDC token for the Sigstore signing certificate
+  attestations: write # persist the attestation
+  artifact-metadata: write # create the artifact storage record (actions/attest needs this)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # --- gate 2: version consistency, including the tag --------------------------------------
+      #
+      # The reason this pipeline exists. Five releases shipped from the old repo with a lock file
+      # still saying version 0.1.0 and license MIT, because `npm install` was never re-run after
+      # the bumps. No human checklist caught it.
+      - name: Version gate
+        run: node scripts/release-checks.mjs version --tag "${GITHUB_REF_NAME}"
+
+      # --- gate 3: changelog, and the release body ---------------------------------------------
+      #
+      # Hard fail unless a section matching the tag exists and `## [Unreleased]` is empty. The
+      # section becomes the release body verbatim; nothing is generated from commit messages.
+      - name: Changelog gate
+        env:
+          CHANGELOG_OUT: ${{ runner.temp }}/release-notes.md
+        run: node scripts/release-checks.mjs changelog --release "${GITHUB_REF_NAME}"
+
+      # --- gate 4: lint ratchet ----------------------------------------------------------------
+      - name: Lint ratchet
+        run: node scripts/release-checks.mjs lint
+
+      # --- gate 5: types and tests -------------------------------------------------------------
+      - name: Typecheck
+        run: npx tsc -noEmit -skipLibCheck
+
+      - name: Tests
+        run: npx vitest run
+
+      # --- gate 6: build the free bundle -------------------------------------------------------
+      #
+      # TAGGED_SYNC_BUILD is not set, and `pro/` does not exist in this checkout, so this is
+      # structurally the free build.
+      - name: Build
+        run: npm run build
+
+      # --- gate 7: bundle scan -----------------------------------------------------------------
+      - name: Bundle scan
+        run: node scripts/check-bundle.mjs
+
+      # --- step 8: attest ----------------------------------------------------------------------
+      #
+      # All three published files, so "was this built by CI?" has a yes/no answer for every asset.
+      # The sample plugin attests two; the third closes the gap.
+      #
+      # `actions/attest` picks its mode from its inputs: with NO predicate and NO sbom-path it
+      # auto-generates SLSA build provenance, which is what we want. Passing `predicate-type` +
+      # `predicate` would switch it to custom mode and publish whatever predicate we handed it --
+      # an empty one would be a hollow claim. This is the same call the official
+      # obsidian-sample-plugin makes.
+      #
+      # The docs.obsidian.md "Release with GitHub Actions" page is stale (Node 18, checkout@v3, no
+      # attestation) -- do not follow it.
+      - name: Attest release assets
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      # --- step 9: publish ---------------------------------------------------------------------
+      #
+      # `gh release create` internally creates a draft, uploads the assets, then publishes -- so a
+      # published release is never missing an asset. Holds under immutable releases too.
+      #
+      # Title is the bare version: no `v`, no name.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ runner.temp }}/release-notes.md
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file "$NOTES" \
+            main.js manifest.json styles.css

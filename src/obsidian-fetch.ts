@@ -10,6 +10,20 @@ import { requestUrl } from "obsidian";
  * free-identifier `fetch` reference inside the bundle to this function. The global fetch is never
  * touched, so other plugins and Obsidian core are unaffected.
  */
+/**
+ * The URL a fetch-style `input` refers to.
+ *
+ * A plain `input.toString()` looks right and is wrong for one of the three cases: `RequestInfo`
+ * includes `Request`, which has no meaningful `toString()` and stringifies to `"[object Object]"`.
+ * rmapi-js only ever passes a string today, so this has never fired -- but it would fail as a
+ * malformed URL rather than as anything diagnosable.
+ */
+function requestUrlOf(input: RequestInfo | URL): string {
+	if (typeof input === "string") return input;
+	if (input instanceof URL) return input.href;
+	return input.url;
+}
+
 export async function obsidianFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
 	const headers: Record<string, string> = {};
 	new Headers(init?.headers).forEach((value, key) => {
@@ -17,7 +31,7 @@ export async function obsidianFetch(input: RequestInfo | URL, init?: RequestInit
 	});
 
 	const response = await requestUrl({
-		url: input.toString(),
+		url: requestUrlOf(input),
 		method: init?.method ?? "GET",
 		headers,
 		body: toRequestBody(init?.body),
@@ -41,7 +55,7 @@ function toRequestBody(body: BodyInit | null | undefined): string | ArrayBuffer 
 	if (body === null || body === undefined) return undefined;
 	if (typeof body === "string" || body instanceof ArrayBuffer) return body;
 	if (ArrayBuffer.isView(body)) {
-		return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
+		return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
 	}
 	throw new TypeError(`obsidianFetch cannot forward a ${body.constructor.name} body to requestUrl`);
 }

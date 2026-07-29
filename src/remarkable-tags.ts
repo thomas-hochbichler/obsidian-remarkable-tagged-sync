@@ -1,4 +1,4 @@
-import type { DocumentContent, Entry, LegacyDocumentContent, RemarkableApi, Tag } from "rmapi-js";
+import type { DocumentContent, LegacyDocumentContent, RemarkableApi, Tag } from "rmapi-js";
 
 export interface PageTagOccurrence {
 	pageId: string;

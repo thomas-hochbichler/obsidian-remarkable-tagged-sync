@@ -539,7 +539,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// the *old* row's, which has no row at this tag's key yet.
 			const writtenRow = rename?.oldRow ?? existingRow;
 			if (await isBlockEdited(deps.noteStore, writtenRow)) {
-				editedKeys.add(writtenRow!.syncKey);
+				editedKeys.add(writtenRow.syncKey);
 				editedNotesSkipped++;
 				continue;
 			}
@@ -629,7 +629,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// As above: refuse before spending anything on a note we will not write.
 			const writtenRow = rename?.oldRow ?? existingRow;
 			if (await isBlockEdited(deps.noteStore, writtenRow)) {
-				editedKeys.add(writtenRow!.syncKey);
+				editedKeys.add(writtenRow.syncKey);
 				editedNotesSkipped++;
 				continue;
 			}

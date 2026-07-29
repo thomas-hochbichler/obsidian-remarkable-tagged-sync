@@ -62,5 +62,5 @@ export function ocrBackendEntry(id: OcrBackendId): OcrBackendEntry | null {
  * rather than selecting a backend that cannot be built.
  */
 export function isRegisteredOcrBackend(value: unknown): value is OcrBackendId {
-	return typeof value === "string" && entries.has(value as OcrBackendId);
+	return typeof value === "string" && entries.has(value);
 }

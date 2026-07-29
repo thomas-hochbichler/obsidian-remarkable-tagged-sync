@@ -9,14 +9,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as yaml from "js-yaml";
+import { parse as parseYaml } from "yaml";
 import compiler from "kaitai-struct-compiler";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const ksyPath = path.join(dir, "rmv6.ksy");
 const outPath = path.join(dir, "rmv6-generated.js");
 
-const ksy = yaml.load(fs.readFileSync(ksyPath, "utf8"));
+const ksy = parseYaml(fs.readFileSync(ksyPath, "utf8"));
 const files = await compiler.compile("javascript", ksy, null, false);
 
 const [name, content] = Object.entries(files)[0];

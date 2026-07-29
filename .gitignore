@@ -1,5 +1,26 @@
 node_modules/
 main.js
+# The pro overlay's build output (esbuild.config.mjs). Premium code -- never commit it.
+main.pro.js
 *.js.map
 data.json
 test/
+
+# --- Private. Never commit anything below this line. ---
+#
+# This repo is public. `pro/` is the premium OCR block: published once under Apache-2.0, it is
+# free forever, so a single mistake here is not repairable. This file is the ONLY protection --
+# there is no pre-commit hook and no CI check (decided in .scratch/public-repo-and-pipeline/map.md).
+#
+# `git add -A` and `git commit -a` respect these rules. `git add -f` does not. Do not force-add
+# anything below, and do not delete a line to "just check something".
+
+pro/
+.scratch/
+.scratch-inspect/
+.claude/
+docs/agents/
+Claude.md
+PRD.md
+skills-lock.json
+tools/

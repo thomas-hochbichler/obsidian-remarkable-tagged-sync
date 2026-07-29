@@ -1,0 +1,126 @@
+# Runs on every push and pull request to `main`. Publishes nothing.
+#
+# This is the same gate list as release.yml minus the two publishing steps, so a wrong version or
+# a broken bundle fails here -- on `main`, in seconds -- instead of after you have spent a tag on
+# it. Version numbers are expensive: the store's checker re-reads the repo, so every round of
+# reviewer fixes costs a whole new release.
+#
+# Actions are pinned by commit SHA. The trailing comment is the human-readable tag; update both
+# together.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A superseded run on the same branch has nothing to say. Releases are never cancelled -- see
+# release.yml, which deliberately has no cancel-in-progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Needed by the git identity gate below, which reads the authors of the pushed commits.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # --- gate 14: git identity ---------------------------------------------------------------
+      #
+      # The correct address lived only in a folder that has since been deleted; global git config
+      # here is a work address, and a fresh clone has no local identity. Without this gate the next
+      # public commit could carry a work address into a public repo forever.
+      #
+      # This DETECTS, it does not prevent -- a wrong address is already pushed by the time this
+      # runs. Accepted knowingly; the repo has no hook infrastructure.
+      - name: Git identity
+        env:
+          EXPECTED: thomas@hochbichler.com
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE" ]; then
+            range="$BASE..HEAD"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE..HEAD"
+          else
+            # First push of a branch, or a force-push whose old tip is gone. Check the tip only.
+            range="HEAD~0..HEAD"
+          fi
+          echo "checking authors in $range"
+          bad=0
+          while read -r email; do
+            [ -z "$email" ] && continue
+            if [ "$email" = "$EXPECTED" ]; then
+              echo "  ok    $email"
+            else
+              echo "  FAIL  $email is not $EXPECTED"
+              bad=1
+            fi
+          done < <(git log --format='%ae' "$range" 2>/dev/null || git log -1 --format='%ae')
+          if [ "$bad" = "1" ]; then
+            echo "::error::A commit carries the wrong author email. Set it locally: git config user.email $EXPECTED"
+            exit 1
+          fi
+
+      # --- gate 2: version consistency ---------------------------------------------------------
+      #
+      # No `--tag` here: on `main` there is no tag to compare against. Running the rest of the gate
+      # on every push is the point -- it forces the version bump and the versions.json entry into
+      # one commit, or `main` goes red.
+      - name: Version gate
+        run: node scripts/release-checks.mjs version
+
+      # --- gate 3: changelog (weak on purpose) -------------------------------------------------
+      #
+      # Only checks that the file parses and `## [Unreleased]` exists. It must NOT demand a section
+      # for the current version: entries live under `## [Unreleased]` until tag time, so on `main`
+      # no such section exists yet and a stricter check would make `main` permanently red.
+      - name: Changelog gate
+        run: node scripts/release-checks.mjs changelog --ci
+
+      # --- gate 4: lint ratchet ----------------------------------------------------------------
+      #
+      # Fails only when the problem count rises above .eslint-baseline.json. It does not fail on
+      # errors -- there are 86, and blocking every release until they are fixed is not affordable
+      # while a store reviewer is waiting.
+      - name: Lint ratchet
+        run: node scripts/release-checks.mjs lint
+
+      # --- gate 5: types and tests -------------------------------------------------------------
+      - name: Typecheck
+        run: npx tsc -noEmit -skipLibCheck
+
+      # 17 files, 211 tests. `pro/` is not in this repo and is not covered -- a known, accepted
+      # gap; those 66 tests run locally via `npm run test:pro`.
+      - name: Tests
+        run: npx vitest run
+
+      # --- gate 6: build -----------------------------------------------------------------------
+      - name: Build
+        run: npm run build
+
+      # --- gate 7: bundle scan -----------------------------------------------------------------
+      #
+      # Runs against the built main.js, not src/. This is the check that would have caught the
+      # 1.0.5 store rejection: the offending code was inside a bundled dependency, where no lint of
+      # our own source could ever see it.
+      - name: Bundle scan
+        run: node scripts/check-bundle.mjs

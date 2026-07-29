@@ -13,6 +13,7 @@
     "strict": true,
     "lib": ["DOM", "ES2020"]
   },
-  "include": ["**/*.ts"],
+  "//include": "The generated kaitai parser is listed explicitly. It used to enter the program via rm-parser.ts's import, but that now resolves to the hand-written rmv6-generated.d.ts beside it. Without this entry the .js is in no TS project, and type-aware ESLint rules can only report it as a parse error. allowJs (not checkJs) means it is parsed, not type-checked.",
+  "include": ["**/*.ts", "src/kaitai/*.js"],
   "exclude": ["node_modules", "esbuild.config.mjs"]
 }

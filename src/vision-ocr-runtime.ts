@@ -49,12 +49,23 @@ const DARWIN_MAJOR_MACOS_13 = 22; // Darwin 22.x == macOS 13 (spec §3.5 / §4.1
 const EXEC_MAX_BUFFER = 64 * 1024 * 1024;
 const EXEC_TIMEOUT_MS = 120_000;
 
-/** Dynamic `require` behind the desktop guard -- never a static top-level node import (spec §7 #1). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function nodeRequire(id: string): any {
+/**
+ * Dynamic `require` behind the desktop guard -- never a static top-level node import (spec §7 #1).
+ *
+ * The overloads carry the real `@types/node` shapes through to every caller. Without them this
+ * returned `any`, and each property read off the result cost a `no-unsafe-*` lint problem -- 40 of
+ * them in this file alone. The implementation signature returns `unknown`, so a module id that is
+ * not listed here cannot be used unchecked.
+ */
+function nodeRequire(id: "os"): typeof import("os");
+function nodeRequire(id: "fs"): typeof import("fs");
+function nodeRequire(id: "path"): typeof import("path");
+function nodeRequire(id: "child_process"): typeof import("child_process");
+function nodeRequire(id: string): unknown {
 	if (!Platform.isDesktop) throw new Error("Tagged Sync: node modules are desktop-only");
-	// eslint-disable-next-line @typescript-eslint/no-var-requires
-	return require(id);
+	// eslint-disable-next-line @typescript-eslint/no-require-imports -- Deliberate: a static import would load node modules on mobile, where they do not exist. The desktop guard above is the whole point of this function.
+	const loaded: unknown = require(id);
+	return loaded;
 }
 
 /**
@@ -88,6 +99,13 @@ function runOsascript(paths: string[]): Promise<string> {
 				else resolve(stdout);
 			},
 		);
+		// The driver script is fed on stdin, so no stdin means no work can happen. Node types this
+		// as nullable (it is null only when stdio is redirected, which we never do). Without the
+		// guard that case would leave this promise pending forever instead of failing.
+		if (!child.stdin) {
+			reject(new Error("osascript failed: the spawned process has no stdin"));
+			return;
+		}
 		child.stdin.end(VISION_OCR_JXA);
 	});
 }
