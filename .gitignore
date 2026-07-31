@@ -5,6 +5,8 @@ main.pro.js
 *.js.map
 data.json
 test/
+docs/_archive/
+.DS_Store
 
 # --- Private. Never commit anything below this line. ---
 #
