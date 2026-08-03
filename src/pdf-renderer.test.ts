@@ -285,6 +285,20 @@ describe("renderPagesToPdf", () => {
 		expect(Object.values(extGStates)).toContainEqual({ ca: 1, bm: "/Multiply" });
 	});
 
+	/**
+	 * Paper Pro firmware writes a stroke's real color as a palette id (e.g. 3 = YELLOW) while
+	 * filling color_rgba with an opaque-black placeholder -- the reverse of the HIGHLIGHT-9
+	 * convention. Preferring color_rgba unconditionally rendered those strokes black.
+	 */
+	it("prefers a known palette id over color_rgba, which only resolves the HIGHLIGHT placeholder", async () => {
+		const highlighter = stroke({ penType: 18, color: 3, colorRgba: { r: 0, g: 0, b: 0 } });
+
+		const bytes = await renderPagesToPdf([pageWithStrokes([highlighter])]);
+
+		const { ops } = await decodePageContent(bytes);
+		expect(ops).toContain("0.984313725490196 0.9686274509803922 0.09803921568627451 RG"); // YELLOW (251, 247, 25)
+	});
+
 	it("draws highlighter/shader strokes before every other stroke on the page, regardless of original order", async () => {
 		const ink = stroke({ penType: 17, color: 0 });
 		const highlighter = stroke({ penType: 5, color: 9, colorRgba: { r: 1, g: 2, b: 3 } });
@@ -450,6 +464,25 @@ describe("renderAnnotatedPdf", () => {
 		// Multiply, so the words underneath stay legible -- the fill alpha pdf-lib sets for a filled
 		// rectangle is the non-stroking `ca`, which this decoder doesn't read.
 		expect(Object.values(extGStates).map((state) => state.bm)).toContain("/Multiply");
+	});
+
+	/**
+	 * The Paper Pro bug from issue 04: a yellow smart highlight synced as opaque black bars.
+	 * Its glyph block names the real color as palette id 3 (YELLOW) and carries an
+	 * opaque-black color_rgba placeholder, so preferring color_rgba drew black.
+	 */
+	it("renders a text highlight in its palette color when color_rgba is only a black placeholder", async () => {
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			paperSize: { width: 1404, height: 1872 },
+			highlights: [{ color: 3, text: "", colorRgba: { r: 0, g: 0, b: 0 }, rects: [{ x: 549, y: 727, width: 163.5, height: 42 }] }],
+		};
+
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: page }]);
+
+		const { ops } = await decodePageContent(bytes);
+		expect(ops).toContain("0.984313725490196 0.9686274509803922 0.09803921568627451 rg"); // YELLOW (251, 247, 25)
 	});
 
 	it("draws text highlights under the ink that annotates them", async () => {

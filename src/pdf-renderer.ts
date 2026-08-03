@@ -119,9 +119,17 @@ const STROKE_COLORS: Record<number, Color> = {
 	13: paletteColor(247, 232, 81), // YELLOW_2
 };
 
+/**
+ * A known palette id is authoritative; `colorRgba` only resolves ids the palette doesn't name
+ * (the `HIGHLIGHT` placeholder, 9). Paper Pro firmware pairs a real palette id (3 = YELLOW)
+ * with an opaque-black `color_rgba` placeholder -- the reverse of the HIGHLIGHT-9 convention --
+ * so preferring `colorRgba` unconditionally rendered those highlights black (issue 04).
+ */
 function strokeColor(stroke: RmStroke): Color {
+	const palette = STROKE_COLORS[stroke.color];
+	if (palette) return palette;
 	if (stroke.colorRgba) return paletteColor(stroke.colorRgba.r, stroke.colorRgba.g, stroke.colorRgba.b);
-	return STROKE_COLORS[stroke.color] ?? STROKE_COLORS[0];
+	return STROKE_COLORS[0];
 }
 
 function strokeWidthPt(stroke: RmStroke, canvas: DeviceCanvas): number {
@@ -239,9 +247,12 @@ const DEFAULT_HIGHLIGHT_COLOR = STROKE_COLORS[3];
 
 /** Draws a text highlight's rectangles, in the same frame and translucent treatment as a marker stroke. */
 function drawHighlight(page: PDFPage, highlight: RmHighlight, canvas: DeviceCanvas): void {
-	const color = highlight.colorRgba
-		? paletteColor(highlight.colorRgba.r, highlight.colorRgba.g, highlight.colorRgba.b)
-		: (STROKE_COLORS[highlight.color] ?? DEFAULT_HIGHLIGHT_COLOR);
+	// Same precedence as `strokeColor`: a known palette id wins, `colorRgba` resolves the rest.
+	const color =
+		STROKE_COLORS[highlight.color] ??
+		(highlight.colorRgba
+			? paletteColor(highlight.colorRgba.r, highlight.colorRgba.g, highlight.colorRgba.b)
+			: DEFAULT_HIGHLIGHT_COLOR);
 	for (const rect of highlight.rects) {
 		// Rectangles are top-origin like every other scene coordinate; pdf-lib draws from the
 		// bottom-left, so the rect's *bottom* edge (y + height) is what maps to the PDF's y.
