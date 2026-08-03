@@ -1,9 +1,12 @@
-# Runs on every push and pull request to `main`. Publishes nothing.
+# Runs on every branch push and on pull requests to `main`. Publishes nothing.
 #
 # This is the same gate list as release.yml minus the two publishing steps, so a wrong version or
-# a broken bundle fails here -- on `main`, in seconds -- instead of after you have spent a tag on
-# it. Version numbers are expensive: the store's checker re-reads the repo, so every round of
+# a broken bundle fails here -- on any branch, in seconds -- instead of after you have spent a tag
+# on it. Version numbers are expensive: the store's checker re-reads the repo, so every round of
 # reviewer fixes costs a whole new release.
+#
+# Pushing a branch that has an open PR starts two runs: the push run checks the branch tip, the PR
+# run checks the merge result against `main`. Both are meaningful; the duplication is accepted.
 #
 # Actions are pinned by commit SHA. The trailing comment is the human-readable tag; update both
 # together.
@@ -12,7 +15,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # All branches. The explicit glob (rather than a bare `push:`) keeps tag pushes out -- a
+    # release tag would otherwise start a redundant run next to release.yml.
+    branches: ["**"]
   pull_request:
     branches: [main]
 

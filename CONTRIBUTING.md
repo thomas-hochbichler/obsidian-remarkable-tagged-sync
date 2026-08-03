@@ -15,6 +15,8 @@ Node version: see `.nvmrc`.
 
 ## Before you open a PR
 
+- **Branch workflow**: `main` only takes changes via PR (squash-merged, CI must be green) —
+  see `docs/DEVELOPING.md`. Branch names follow `feature/<slug>` / `fix/<slug>`.
 - **Tests**: `npm test` must pass. New behavior needs a test next to the module
   (`src/<module>.test.ts`).
 - **Lint ratchet**: `node scripts/release-checks.mjs lint` must not report more problems

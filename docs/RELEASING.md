@@ -144,4 +144,5 @@ npm run build   # production build + typecheck
 npm test        # 211 tests
 ```
 
-Then reload Obsidian to pick up the rebuilt plugin.
+Then reload Obsidian to pick up the rebuilt plugin. The branch workflow, the test vault, and
+beta pre-releases for BRAT are documented in `docs/DEVELOPING.md`.
