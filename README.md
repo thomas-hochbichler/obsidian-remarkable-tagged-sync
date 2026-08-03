@@ -171,7 +171,7 @@ available, and the last error — nothing is sent anywhere by pressing it.
 Suggest a feature by opening a
 [feature request](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/new?template=feature_request.md).
 Vote on
-[existing requests](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues?q=is%3Aopen+label%3Aenhancement+sort%3Areactions-%2B1-desc)
+[existing requests](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues?q=is%3Aopen+label%3Aenhancement+sort%3Areactions-desc)
 with a 👍 reaction — the most-wanted features rise to the top.
 
 ## Development

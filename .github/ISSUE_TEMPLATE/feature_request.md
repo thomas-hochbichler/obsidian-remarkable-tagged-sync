@@ -9,7 +9,7 @@ assignees: ""
 <!--
 Before filing: check the ranked list of existing requests and vote with a 👍
 reaction instead of opening a duplicate:
-https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues?q=is%3Aopen+label%3Aenhancement+sort%3Areactions-%2B1-desc
+https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues?q=is%3Aopen+label%3Aenhancement+sort%3Areactions-desc
 -->
 
 ## What would you like the plugin to do?
