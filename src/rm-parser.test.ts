@@ -125,6 +125,25 @@ describe("parseRmV6", () => {
 		expect(page.layers).toEqual([]);
 	});
 
+	it("does not fail the page on a layer_info block whose ids are longer than one varuint byte", () => {
+		// Shape observed in real files with high CrdtIds (issue: page skipped with
+		// ValidationNotEqualError expected [84] got [0]): ids are variable-length
+		// varuints, which the former fixed-width rm_layer_info type misread.
+		const body = new Uint8Array([
+			0x1f, 0x00, 0xb4, 0x01, // parent id with a two-byte varuint
+			0x2f, 0x00, 0xb5, 0x01, // item id, also two varuint bytes
+			0x3f, 0x00, 0x00, // left id
+			0x4f, 0x00, 0x00, // right id
+			0x54, 0x00, 0x00, 0x00, 0x00, // deleted_length = 0
+			0x6c, 0x04, 0x00, 0x00, 0x00, 0x02, 0x2f, 0x00, 0x0c, // value subblock: child node id
+		]);
+
+		const page = parseRmV6(fileWithBlock(4, body));
+
+		expect(page.formatVersion).toBe(6);
+		expect(page.layers).toEqual([]);
+	});
+
 	it("reads the true color of a SHADER/HIGHLIGHT stroke from its optional color_rgba field", () => {
 		const data = readFileSync(COLOR_FIXTURE_PATH);
 

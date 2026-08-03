@@ -12,6 +12,13 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- Annotated pages in large documents could fail to render and were skipped during sync
+  (console error `ValidationNotEqualError: not equal, expected [84], but got [0]`). The
+  parser misread a scene-tree block whose ids grow with document size; it no longer decodes
+  that block at all, since the sync never uses it.
+
 ## [1.0.7] - 2026-08-03
 
 **Renamed:** The plugin's display name is now **Tagged Sync for reMarkable** (previously

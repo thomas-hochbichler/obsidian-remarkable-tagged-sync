@@ -83,7 +83,7 @@ var Rmv6 = (function() {
       case Rmv6.BlockTypes.LAYER_INFO:
         this._raw_body = this._io.readBytes(this.lenBody);
         _io__raw_body = new KaitaiStream(this._raw_body);
-        this.body = new RmLayerInfo(_io__raw_body, this, this._root);
+        this.body = new RmRawBody(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.LAYER_NAMES:
         this._raw_body = this._io.readBytes(this.lenBody);
@@ -282,79 +282,6 @@ var Rmv6 = (function() {
   })();
 
   /**
-   * This is the final of the three types of blocks related to layers.
-   * Most of the fields appear to be in the `layer_id` style (see 
-   * `rm_layer_definition`) and may include the aforementioned incremented
-   * ids. I am not sure of the function of this block at the moment.
-   */
-
-  var RmLayerInfo = Rmv6.RmLayerInfo = (function() {
-    function RmLayerInfo(_io, _parent, _root) {
-      this._io = _io;
-      this._parent = _parent;
-      this._root = _root;
-
-      this._read();
-    }
-    RmLayerInfo.prototype._read = function() {
-      this.magic0 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic0, new Uint8Array([31])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([31]), this.magic0, this._io, "/types/rm_layer_info/seq/0");
-      }
-      this.idField1 = this._io.readU2le();
-      this.magic2f = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic2f, new Uint8Array([47])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([47]), this.magic2f, this._io, "/types/rm_layer_info/seq/2");
-      }
-      this.idField2 = this._io.readBytesTerm(63, false, false, true);
-      this.magic3f = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic3f, new Uint8Array([63])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([63]), this.magic3f, this._io, "/types/rm_layer_info/seq/4");
-      }
-      this.idField3 = this._io.readBytesTerm(79, false, false, true);
-      this.magic4f = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic4f, new Uint8Array([79])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([79]), this.magic4f, this._io, "/types/rm_layer_info/seq/6");
-      }
-      this.idField4 = this._io.readU2le();
-      this.magic54 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic54, new Uint8Array([84])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([84]), this.magic54, this._io, "/types/rm_layer_info/seq/8");
-      }
-      this.doneFlag = this._io.readU4le();
-      if (this.doneFlag == 0) {
-        this.magic6c = this._io.readBytes(1);
-        if (!((KaitaiStream.byteArrayCompare(this.magic6c, new Uint8Array([108])) == 0))) {
-          throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([108]), this.magic6c, this._io, "/types/rm_layer_info/seq/10");
-        }
-      }
-      if (this.doneFlag == 0) {
-        this.lenAlways4 = this._io.readBytes(4);
-      }
-      if (this.doneFlag == 0) {
-        this.magic = this._io.readBytes(2);
-        if (!((KaitaiStream.byteArrayCompare(this.magic, new Uint8Array([2, 47])) == 0))) {
-          throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([2, 47]), this.magic, this._io, "/types/rm_layer_info/seq/12");
-        }
-      }
-      if (this.doneFlag == 0) {
-        this.layerId = this._io.readU2le();
-      }
-    }
-
-    /**
-     * This is definitely a byte count, but is always 4.
-     */
-
-    /**
-     * If present, this is appears to be the actual identifier of the layer
-     * in question.
-     */
-
-    return RmLayerInfo;
-  })();
-
-  /**
    * The primary purpose of this block is to match textual names to
    * their associated layer ids. There is additional data here as well,
    * but it's not clear what it means. Also, once in a while there is
@@ -466,6 +393,12 @@ var Rmv6 = (function() {
    * Also used for `text_def` bodies, which are out of scope for this
    * parser's scene model (layers/strokes only); the upstream spec's text
    * types are left unused here.
+   * 
+   * Also used for `layer_info` bodies: the upstream spec's `rm_layer_info`
+   * had the same fixed-width misreading (CrdtIds hardcoded as `u2`), which
+   * threw a validation error -- aborting the whole page parse -- as soon as
+   * a file's ids needed more than one varuint byte. The adapter never reads
+   * this block, so its body stays raw and unparsed.
    */
 
   var RmRawBody = Rmv6.RmRawBody = (function() {

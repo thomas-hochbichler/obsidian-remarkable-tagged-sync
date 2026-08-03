@@ -66,8 +66,12 @@ enums:
     0x04:
       id: layer_info
       doc: |
-        Additional information about layers. Not yet reverse-engineered.
-        One block per layer. See `rm_layer_info`.
+        A group item in the scene tree (rmscene's `SceneGroupItemBlock`),
+        one block per layer. Another CRDT tagged-value stream whose CrdtIds
+        are variable-length varuints, so left as `rm_raw_body` -- the former
+        `rm_layer_info` type here read those ids as fixed-width `u2` and
+        threw on files whose ids grew past one varuint byte. Not consumed by
+        the TypeScript adapter at all.
     0x03:
       id: glyph_def
       doc: |
@@ -136,7 +140,7 @@ types:
             'block_types::layer_def': rm_layer_definition
             'block_types::layer_names': rm_layer_name
             'block_types::text_def': rm_raw_body
-            'block_types::layer_info': rm_layer_info
+            'block_types::layer_info': rm_raw_body
             'block_types::line_def': rm_raw_body
             'block_types::glyph_def': rm_raw_body
             'block_types::scene_info': rm_raw_body
@@ -163,6 +167,12 @@ types:
       Also used for `text_def` bodies, which are out of scope for this
       parser's scene model (layers/strokes only); the upstream spec's text
       types are left unused here.
+
+      Also used for `layer_info` bodies: the upstream spec's `rm_layer_info`
+      had the same fixed-width misreading (CrdtIds hardcoded as `u2`), which
+      threw a validation error -- aborting the whole page parse -- as soon as
+      a file's ids needed more than one varuint byte. The adapter never reads
+      this block, so its body stays raw and unparsed.
 
     seq:
       - id: raw
@@ -282,70 +292,6 @@ types:
       # there's more below here sometimes, related to when there's italic/bold?
       # how to deal with that? Does it even matter? Who knows! (It probably does)
     
-  rm_layer_info:
-    doc: |
-      This is the final of the three types of blocks related to layers.
-      Most of the fields appear to be in the `layer_id` style (see 
-      `rm_layer_definition`) and may include the aforementioned incremented
-      ids. I am not sure of the function of this block at the moment.
-
-    seq:
-    - id: magic_0
-      contents: [0x1f]
-
-    - id: id_field_1
-      type: u2
-
-    - id: magic_2f
-      contents: [0x2f]
-
-    - id: id_field_2
-      #type: u2
-      terminator: 0x3f
-      consume: false
-
-
-    - id: magic_3f
-      contents: [0x3f]
-
-    - id: id_field_3
-      #type: u2
-      terminator: 0x4f
-      consume: false
-
-    - id: magic_4f
-      contents: [0x4f]
-
-    - id: id_field_4
-      type: u2
-
-    - id: magic_54
-      contents: [0x54]
-
-    - id: done_flag
-      type: u4
-
-    - id: magic_6c
-      contents: [0x6c]
-      if: done_flag == 0
-
-    - id: len_always_4 # was 5 when a bunch of the ids were extra long
-      size: 4
-      #contents: [0x04, 0x00, 0x00, 0x00]
-      if: done_flag == 0
-      doc: This is definitely a byte count, but is always 4.
-
-    - id: magic
-      contents: [0x02, 0x2f]
-      if: done_flag == 0
-
-    - id: layer_id
-      type: u2
-      if: done_flag == 0
-      doc: |
-        If present, this is appears to be the actual identifier of the layer
-        in question.
-      
   rm_frontmatter:
     doc: |
       The frontmatter at the top of the file: just the version header.
