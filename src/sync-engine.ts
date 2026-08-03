@@ -127,6 +127,16 @@ export interface SyncResult {
 	editedNotesSkipped: number;
 	/** Documents that produced no note because reading or rendering them failed -- reported, not just logged. */
 	documentsSkipped: number;
+	/**
+	 * The raw error text behind each skip, one entry per skipped unit, for "Copy diagnostics" -- the
+	 * console.warn alone left diagnostics reporting "Last error: none" after a partially-failed sync.
+	 */
+	skipErrors: string[];
+}
+
+/** Raw error text for `SyncResult.skipErrors` -- the same shape main.ts records for a whole-sync failure. */
+function errorText(error: unknown): string {
+	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
 function findEntryHash(rows: Record<string, SyncIndexRow>, docId: string): string | undefined {
@@ -431,7 +441,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0 };
+		return { index: previousIndex, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, skipErrors: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -443,6 +453,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// level-2 check would skip the whole document and the user would never hear about it again.
 	const editedKeys = new Set<string>();
 	const skippedDocIds = new Set<string>();
+	const skipErrors: string[] = [];
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -477,6 +488,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
 		} catch (error) {
 			console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during sync, skipping`, error);
+			skipErrors.push(`failed to read "${entry.visibleName}" during sync: ${errorText(error)}`);
 			skippedDocIds.add(entry.id);
 			continue;
 		}
@@ -562,6 +574,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
+				skipErrors.push(`failed to render "${entry.visibleName}" for tag "${tag}": ${errorText(error)}`);
 				skippedDocIds.add(entry.id);
 				continue;
 			}
@@ -654,6 +667,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}", skipping`, error);
+				skipErrors.push(`failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}": ${errorText(error)}`);
 				skippedDocIds.add(entry.id);
 				continue;
 			}
@@ -700,7 +714,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
 	}
 
-	return { index: { rootHash, mappings, rows }, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size };
+	return { index: { rootHash, mappings, rows }, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, skipErrors };
 }
 
 export interface ReTranscribeDeps {

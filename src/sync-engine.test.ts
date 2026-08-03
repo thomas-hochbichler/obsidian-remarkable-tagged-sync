@@ -1380,6 +1380,21 @@ describe("skipped documents", () => {
 		expect(result.notesWritten).toBe(0);
 	});
 
+	it("carries each skip's raw error text, for Copy diagnostics", async () => {
+		// The console.warn alone was invisible to "Copy diagnostics": a partially-successful sync
+		// reported "Last error: none" while the skipped document's error sat only in the console.
+		const api = fakeApi({
+			rootHash: "root-2",
+			entries: [
+				documentEntry({ id: "doc-1", hash: "hash-1", visibleName: "Broken", tags: [{ name: "sync", timestamp: 0 }] }),
+			],
+			contentById: {},
+		});
+		const result = await runSync(baseDeps(api, { sync: "Target" }), { rootHash: "root-1", rows: {} });
+
+		expect(result.skipErrors).toEqual(['failed to read "Broken" during sync: Error: no content for doc-1']);
+	});
+
 	it("is zero on a clean sync", async () => {
 		const api = fakeApi({
 			rootHash: "root-2",
