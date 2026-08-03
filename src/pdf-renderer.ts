@@ -103,21 +103,25 @@ function paletteColor(r: number, g: number, b: number): Color {
  * (src/rmc/exporters/writing_tools.py, MIT, Rick Lupton) -- same author/lineage as `rmscene`.
  * Anything still unmapped falls back to black, per the pdf-color-rendering map's fallback policy.
  */
-const STROKE_COLORS: Record<number, Color> = {
-	0: paletteColor(0, 0, 0), // BLACK
-	1: paletteColor(144, 144, 144), // GRAY
-	2: paletteColor(255, 255, 255), // WHITE
-	3: paletteColor(251, 247, 25), // YELLOW
-	4: paletteColor(0, 255, 0), // GREEN
-	5: paletteColor(255, 192, 203), // PINK
-	6: paletteColor(78, 105, 201), // BLUE
-	7: paletteColor(179, 62, 57), // RED
-	8: paletteColor(125, 125, 125), // GRAY_OVERLAP
-	10: paletteColor(161, 216, 125), // GREEN_2
-	11: paletteColor(139, 208, 229), // CYAN
-	12: paletteColor(183, 130, 205), // MAGENTA
-	13: paletteColor(247, 232, 81), // YELLOW_2
+const PALETTE_RGB: Record<number, { r: number; g: number; b: number }> = {
+	0: { r: 0, g: 0, b: 0 }, // BLACK
+	1: { r: 144, g: 144, b: 144 }, // GRAY
+	2: { r: 255, g: 255, b: 255 }, // WHITE
+	3: { r: 251, g: 247, b: 25 }, // YELLOW
+	4: { r: 0, g: 255, b: 0 }, // GREEN
+	5: { r: 255, g: 192, b: 203 }, // PINK
+	6: { r: 78, g: 105, b: 201 }, // BLUE
+	7: { r: 179, g: 62, b: 57 }, // RED
+	8: { r: 125, g: 125, b: 125 }, // GRAY_OVERLAP
+	10: { r: 161, g: 216, b: 125 }, // GREEN_2
+	11: { r: 139, g: 208, b: 229 }, // CYAN
+	12: { r: 183, g: 130, b: 205 }, // MAGENTA
+	13: { r: 247, g: 232, b: 81 }, // YELLOW_2
 };
+
+const STROKE_COLORS: Record<number, Color> = Object.fromEntries(
+	Object.entries(PALETTE_RGB).map(([id, { r, g, b }]) => [id, paletteColor(r, g, b)]),
+);
 
 /**
  * A known palette id is authoritative; `colorRgba` only resolves ids the palette doesn't name
@@ -243,16 +247,21 @@ function drawStroke(page: PDFPage, stroke: RmStroke, canvas: DeviceCanvas): void
  * and carries no true colour -- the palette's yellow, since the alternative (`STROKE_COLORS`'
  * black fallback) would lay an opaque black bar over the words it is meant to mark.
  */
-const DEFAULT_HIGHLIGHT_COLOR = STROKE_COLORS[3];
+const DEFAULT_HIGHLIGHT_RGB = PALETTE_RGB[3];
+
+/**
+ * A text highlight's true colour as a 0-255 RGB triple -- same precedence as `strokeColor`: a known
+ * palette id wins, `colorRgba` resolves the rest. Shared with the note side, so a quote's `<mark>`
+ * tint always matches the rendered PDF.
+ */
+export function highlightRgb(highlight: RmHighlight): { r: number; g: number; b: number } {
+	return PALETTE_RGB[highlight.color] ?? highlight.colorRgba ?? DEFAULT_HIGHLIGHT_RGB;
+}
 
 /** Draws a text highlight's rectangles, in the same frame and translucent treatment as a marker stroke. */
 function drawHighlight(page: PDFPage, highlight: RmHighlight, canvas: DeviceCanvas): void {
-	// Same precedence as `strokeColor`: a known palette id wins, `colorRgba` resolves the rest.
-	const color =
-		STROKE_COLORS[highlight.color] ??
-		(highlight.colorRgba
-			? paletteColor(highlight.colorRgba.r, highlight.colorRgba.g, highlight.colorRgba.b)
-			: DEFAULT_HIGHLIGHT_COLOR);
+	const { r, g, b } = highlightRgb(highlight);
+	const color = paletteColor(r, g, b);
 	for (const rect of highlight.rects) {
 		// Rectangles are top-origin like every other scene coordinate; pdf-lib draws from the
 		// bottom-left, so the rect's *bottom* edge (y + height) is what maps to the PDF's y.

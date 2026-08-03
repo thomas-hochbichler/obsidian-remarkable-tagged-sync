@@ -12,6 +12,13 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- Highlighted quotes in notes now carry their highlighter color: each quote renders as a
+  `<mark>` tinted with the same palette color the rendered PDF uses (translucent, so text
+  stays legible in dark mode). Existing notes pick up the new format the next time their
+  document syncs.
+
 ## [1.0.8] - 2026-08-03
 
 ### Fixed

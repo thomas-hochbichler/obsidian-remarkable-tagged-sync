@@ -1139,19 +1139,33 @@ describe("reTranscribeAll", () => {
 describe("collectHighlights", () => {
 	/** A highlight with one rect at (x, y); `text` is the raw captured run. */
 	const hl = (text: string, x = 0, y = 0) => ({ color: 9, text, rects: [{ x, y, width: 1, height: 1 }] });
+	/** The quote `hl` collects to: bare `HIGHLIGHT` placeholder, so the palette's yellow fallback. */
+	const quote = (text: string) => ({ text, rgb: { r: 251, g: 247, b: 25 } });
 
 	it("orders a page's quotes top-to-bottom then left-to-right by rect anchor", () => {
 		const groups = collectHighlights([
 			{ pageLabel: 1, embedPage: 1, highlights: [hl("bottom", 0, 500), hl("top-right", 300, 10), hl("top-left", 20, 10)] },
 		]);
 
-		expect(groups).toEqual([{ pageLabel: 1, embedPage: 1, quotes: ["top-left", "top-right", "bottom"] }]);
+		expect(groups).toEqual([{ pageLabel: 1, embedPage: 1, quotes: [quote("top-left"), quote("top-right"), quote("bottom")] }]);
 	});
 
 	it("collapses internal newlines and whitespace runs so a wrapped run is one flowing bullet", () => {
 		const groups = collectHighlights([{ pageLabel: 1, embedPage: 1, highlights: [hl("  Reading changes\nthe   past.  ")] }]);
 
-		expect(groups[0].quotes).toEqual(["Reading changes the past."]);
+		expect(groups[0].quotes).toEqual([quote("Reading changes the past.")]);
+	});
+
+	it("carries each highlight's true colour onto its quote (colorRgba resolving the placeholder id)", () => {
+		const groups = collectHighlights([
+			{
+				pageLabel: 1,
+				embedPage: 1,
+				highlights: [{ color: 9, text: "a pink one", colorRgba: { r: 242, g: 158, b: 255 }, rects: [{ x: 0, y: 0, width: 1, height: 1 }] }],
+			},
+		]);
+
+		expect(groups[0].quotes).toEqual([{ text: "a pink one", rgb: { r: 242, g: 158, b: 255 } }]);
 	});
 
 	it("drops empty and whitespace-only runs, and omits a page left with no quotes", () => {
@@ -1160,13 +1174,13 @@ describe("collectHighlights", () => {
 			{ pageLabel: 2, embedPage: 2, highlights: [hl(""), hl("\t ")] },
 		]);
 
-		expect(groups).toEqual([{ pageLabel: 1, embedPage: 1, quotes: ["kept"] }]);
+		expect(groups).toEqual([{ pageLabel: 1, embedPage: 1, quotes: [quote("kept")] }]);
 	});
 
 	it("passes through the page label and embed anchor a page-level note supplies (label = notebook position, anchor = 1)", () => {
 		const groups = collectHighlights([{ pageLabel: 5, embedPage: 1, highlights: [hl("a quote")] }]);
 
-		expect(groups).toEqual([{ pageLabel: 5, embedPage: 1, quotes: ["a quote"] }]);
+		expect(groups).toEqual([{ pageLabel: 5, embedPage: 1, quotes: [quote("a quote")] }]);
 	});
 
 	it("returns an empty list when nothing has highlights", () => {

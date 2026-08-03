@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { renderAnnotatedPdf, renderPagesToPdf, toPdfPoint } from "./pdf-renderer";
+import { highlightRgb, renderAnnotatedPdf, renderPagesToPdf, toPdfPoint } from "./pdf-renderer";
 import { parseRmV6, type RmPage, type RmStroke } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -536,5 +536,21 @@ describe("renderAnnotatedPdf", () => {
 		const bytes = await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 5, annotations }]);
 
 		expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1);
+	});
+});
+
+describe("highlightRgb", () => {
+	const rects = [{ x: 0, y: 0, width: 10, height: 10 }];
+
+	it("resolves a known palette id, ignoring a black color_rgba placeholder (Paper Pro convention)", () => {
+		expect(highlightRgb({ color: 3, text: "", colorRgba: { r: 0, g: 0, b: 0 }, rects })).toEqual({ r: 251, g: 247, b: 25 });
+	});
+
+	it("resolves the HIGHLIGHT placeholder id from color_rgba", () => {
+		expect(highlightRgb({ color: 9, text: "", colorRgba: { r: 242, g: 158, b: 255 }, rects })).toEqual({ r: 242, g: 158, b: 255 });
+	});
+
+	it("falls back to the palette's yellow when the placeholder carries no true colour", () => {
+		expect(highlightRgb({ color: 9, text: "", rects })).toEqual({ r: 251, g: 247, b: 25 });
 	});
 });

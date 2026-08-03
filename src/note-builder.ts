@@ -7,6 +7,13 @@ export type OcrStatus = "ok" | "failed" | "skipped" | "unavailable";
  */
 export type OcrBackend = string;
 
+/** One highlighted quote: its normalized text plus the highlighter's true colour (see pdf-renderer's `highlightRgb`). */
+export interface HighlightQuote {
+	text: string;
+	/** 0-255 device palette colour the quote's `<mark>` is tinted with. */
+	rgb: { r: number; g: number; b: number };
+}
+
 /**
  * One page's highlighted quotes, render-ready: sorted, normalized, non-empty (see the sync-engine's
  * collection). Rendered as a single `> [!quote]` callout titled with a link into the embedded PDF page.
@@ -17,7 +24,7 @@ export interface HighlightGroup {
 	/** The `#page=` anchor into the embed: the page ordinal for a notebook-level note, `1` for a single-page embed. */
 	embedPage: number;
 	/** Ordered, normalized, non-empty highlighted quotes on the page. */
-	quotes: string[];
+	quotes: HighlightQuote[];
 }
 
 /**
@@ -77,15 +84,32 @@ export function deriveBaseName(notebookName: string, pageIndex: number | null): 
 }
 
 /**
+ * Translucent rather than the renderer's full-strength tint: the theme's own text colour shows
+ * through (`color: inherit`), so a light palette colour doesn't erase light dark-mode text.
+ */
+const MARK_TINT_ALPHA = 0.45;
+
+/** Quote text becomes an HTML text node inside `<mark>`, so anything that could open markup is escaped. */
+function escapeHtml(text: string): string {
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** One quote bullet: the text wrapped in a `<mark>` tinted with the highlighter's true colour. */
+function renderQuote(quote: HighlightQuote): string {
+	const { r, g, b } = quote.rgb;
+	return `> - <mark style="background: rgba(${r}, ${g}, ${b}, ${MARK_TINT_ALPHA}); color: inherit">${escapeHtml(quote.text)}</mark>`;
+}
+
+/**
  * Renders the `## Highlights` section body (a leading blank line + the heading + one `> [!quote]`
  * callout per page), or "" when there are no highlights (no empty heading). Each callout is titled
- * with a link into the embedded PDF page and carries one `> - <quote>` bullet per highlight.
+ * with a link into the embedded PDF page and carries one colour-tinted bullet per highlight.
  */
 function renderHighlights(embedPath: string, groups: HighlightGroup[]): string {
 	if (groups.length === 0) return "";
 	const callouts = groups.map((group) => {
 		const title = `[[${embedPath}#page=${group.embedPage}|Page ${group.pageLabel}]]`;
-		const bullets = group.quotes.map((quote) => `> - ${quote}`).join("\n");
+		const bullets = group.quotes.map(renderQuote).join("\n");
 		return `> [!quote] ${title}\n${bullets}`;
 	});
 	return `\n## Highlights\n\n${callouts.join("\n\n")}\n`;

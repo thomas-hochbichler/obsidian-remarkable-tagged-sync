@@ -13,7 +13,7 @@ import {
 } from "./note-builder";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
 import { getPageHashes } from "./page-hash";
-import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
+import { type AnnotatedPdfPage, highlightRgb, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
 import { validateSourcePdf } from "./pdf-source";
 import { tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
@@ -232,8 +232,8 @@ export function collectHighlights(pages: HighlightPage[]): HighlightGroup[] {
 				const anchorB = rectAnchor(b);
 				return anchorA.top - anchorB.top || anchorA.left - anchorB.left;
 			})
-			.map((highlight) => normalizeQuote(highlight.text))
-			.filter((quote) => quote.length > 0);
+			.map((highlight) => ({ text: normalizeQuote(highlight.text), rgb: highlightRgb(highlight) }))
+			.filter((quote) => quote.text.length > 0);
 		if (quotes.length > 0) groups.push({ pageLabel: page.pageLabel, embedPage: page.embedPage, quotes });
 	}
 	return groups;

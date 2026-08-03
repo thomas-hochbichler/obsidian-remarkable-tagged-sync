@@ -29,6 +29,16 @@ function fakeStore(files: Record<string, string> = {}): NoteStore & {
 	};
 }
 
+/** A quote in the collector's output shape, tinted with the palette's yellow fallback. */
+function quote(text: string) {
+	return { text, rgb: { r: 251, g: 247, b: 25 } };
+}
+
+/** The bullet `quote(text)` renders to. */
+function mark(text: string): string {
+	return `<mark style="background: rgba(251, 247, 25, 0.45); color: inherit">${text}</mark>`;
+}
+
 function baseFields(overrides: Partial<NoteFields> = {}): NoteFields {
 	return {
 		docId: "doc-1",
@@ -155,8 +165,8 @@ describe("buildNoteContent", () => {
 		const content = buildNoteContent(
 			baseFields({
 				highlights: [
-					{ pageLabel: 3, embedPage: 3, quotes: ["Reading changes the past.", "Memory is a reconstruction."] },
-					{ pageLabel: 7, embedPage: 7, quotes: ["A highlight from a later page."] },
+					{ pageLabel: 3, embedPage: 3, quotes: [quote("Reading changes the past."), quote("Memory is a reconstruction.")] },
+					{ pageLabel: 7, embedPage: 7, quotes: [quote("A highlight from a later page.")] },
 				],
 			}),
 			null,
@@ -166,27 +176,48 @@ describe("buildNoteContent", () => {
 			"![[tagged-sync/attachments/doc-1.pdf]]\n\n" +
 				"## Highlights\n\n" +
 				"> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=3|Page 3]]\n" +
-				"> - Reading changes the past.\n" +
-				"> - Memory is a reconstruction.\n\n" +
+				`> - ${mark("Reading changes the past.")}\n` +
+				`> - ${mark("Memory is a reconstruction.")}\n\n` +
 				"> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=7|Page 7]]\n" +
-				"> - A highlight from a later page.\n\n" +
+				`> - ${mark("A highlight from a later page.")}\n\n` +
 				"## Transcript\n",
 		);
 	});
 
-	it("points a page-level note's callout at the sole embedded page while labelling it with the notebook position", () => {
+	it("tints each quote's mark with its own highlighter colour", () => {
 		const content = buildNoteContent(
-			baseFields({ pageId: "page-a", pageIndex: 5, highlights: [{ pageLabel: 5, embedPage: 1, quotes: ["A quote."] }] }),
+			baseFields({ highlights: [{ pageLabel: 1, embedPage: 1, quotes: [{ text: "a pink one", rgb: { r: 242, g: 158, b: 255 } }] }] }),
 			null,
 		);
 
-		expect(content).toContain("> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=1|Page 5]]\n> - A quote.");
+		expect(content).toContain('> - <mark style="background: rgba(242, 158, 255, 0.45); color: inherit">a pink one</mark>');
+	});
+
+	it("escapes HTML in quote text so highlighted markup can't break the note", () => {
+		const content = buildNoteContent(
+			baseFields({ highlights: [{ pageLabel: 1, embedPage: 1, quotes: [quote("a < b & c > d")] }] }),
+			null,
+		);
+
+		expect(content).toContain(mark("a &lt; b &amp; c &gt; d"));
+	});
+
+	it("points a page-level note's callout at the sole embedded page while labelling it with the notebook position", () => {
+		const content = buildNoteContent(
+			baseFields({ pageId: "page-a", pageIndex: 5, highlights: [{ pageLabel: 5, embedPage: 1, quotes: [quote("A quote.")] }] }),
+			null,
+		);
+
+		expect(content).toContain(`> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=1|Page 5]]\n> - ${mark("A quote.")}`);
 	});
 
 	it("keeps a highlights section even when the transcript is empty (independent sections)", () => {
-		const content = buildNoteContent(baseFields({ transcript: "", highlights: [{ pageLabel: 1, embedPage: 1, quotes: ["Only a highlight."] }] }), null);
+		const content = buildNoteContent(
+			baseFields({ transcript: "", highlights: [{ pageLabel: 1, embedPage: 1, quotes: [quote("Only a highlight.")] }] }),
+			null,
+		);
 
-		expect(content).toContain("## Highlights\n\n> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=1|Page 1]]\n> - Only a highlight.");
+		expect(content).toContain(`## Highlights\n\n> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=1|Page 1]]\n> - ${mark("Only a highlight.")}`);
 		expect(content).not.toContain("## Transcript");
 	});
 
