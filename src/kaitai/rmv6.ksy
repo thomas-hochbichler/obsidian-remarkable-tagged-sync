@@ -46,8 +46,13 @@ enums:
     0x01:
       id: layer_def
       doc: |
-        Initial enumeration of layers present, including the text layer.
-        There is one block per layer. See `rm_layer_definition`.
+        Initial enumeration of layers present, including the text layer
+        (rmscene's `SceneTreeBlock`), one block per layer. Another CRDT
+        tagged-value stream, so left as `rm_raw_body` and hand-parsed by the
+        TypeScript adapter -- the former `rm_layer_definition` type here
+        scanned for fixed 0x2f/0x4c terminator bytes, which a CrdtId
+        containing either byte truncated, throwing on the misaligned bytes
+        that followed and aborting the whole page parse.
     0x02:
       id: layer_names
       doc: |
@@ -140,7 +145,7 @@ types:
         type:
           switch-on: block_type
           cases:
-            'block_types::layer_def': rm_layer_definition
+            'block_types::layer_def': rm_raw_body
             'block_types::layer_names': rm_raw_body
             'block_types::text_def': rm_raw_body
             'block_types::layer_info': rm_raw_body
@@ -182,50 +187,15 @@ types:
       bytes. The adapter hand-parses the raw body to recover each layer's
       name -- see `parseLayerNameBody` in rm-parser.ts.
 
+      Also used for `layer_def` bodies: the former `rm_layer_definition`
+      type scanned for fixed 0x2f/0x4c terminator bytes, which broke as soon
+      as a CrdtId's own encoding contained one of them. The adapter
+      hand-parses the raw body to recover each layer's id -- see
+      `parseLayerDefBody` in rm-parser.ts.
+
     seq:
       - id: raw
         size-eos: true
-
-  rm_layer_definition:
-    doc: Defines each layer's id.
-
-    seq:
-      - id: magic_0 
-        contents: [0x1f]
-
-      - id: layer_id
-        #size: 2
-        terminator: 0x2f
-        consume: false
-        doc: |
-          Identifier for this layer that appears in other structures in reference
-          to this layer. There are some data types (defined below) that have 
-          fields with layer ids that appear to be incremented by 1 or 2. Eg, for 
-          a `layer_id` of `00 0b` a field may have `00 0c` or `00 0d`. What this 
-          means is still unclear.
-
-      - id: magic_1
-        contents: [0x2f]
-
-      - id: unknown_00
-        #size: 4
-        terminator: 0x4c
-        consume: false
-
-      - id: magic_2
-        contents: [0x4c]
-
-      - id: len_unknown
-        type: u4
-        doc: |
-          This byte count refers to the remainder of the block, but it is
-          unclear what is present in that space.
-
-      - id: magic_3
-        contents: [0x1f]
-
-      - size: 1
-        repeat: eos
 
   rm_frontmatter:
     doc: |

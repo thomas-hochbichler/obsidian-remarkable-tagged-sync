@@ -176,6 +176,22 @@ describe("parseRmV6", () => {
 		expect(page.layers).toEqual([{ id: "000b", name: "Layer 1", strokes: [] }]);
 	});
 
+	it("reads a layer_def whose ids contain bytes the old terminator scan tripped on", () => {
+		// The former fixed-layout rm_layer_definition read up to the next 0x2f/0x4c byte as
+		// terminators, so a CrdtId containing 0x4c (or 0x2f) truncated the scan and threw
+		// on the misaligned bytes that followed, aborting the whole page parse.
+		const body = new Uint8Array([
+			0x1f, 0x00, 0x0b, // tree id
+			0x2f, 0x00, 0x4c, // node id whose second byte is the old unknown_00 terminator
+			0x31, 0x01, // is_update
+			0x4c, 0x03, 0x00, 0x00, 0x00, 0x1f, 0x00, 0x01, // parent-id subblock
+		]);
+
+		const page = parseRmV6(fileWithBlock(1, body));
+
+		expect(page.layers).toEqual([{ id: "000b", name: null, strokes: [] }]);
+	});
+
 	it("reads the true color of a SHADER/HIGHLIGHT stroke from its optional color_rgba field", () => {
 		const data = readFileSync(COLOR_FIXTURE_PATH);
 

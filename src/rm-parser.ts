@@ -196,6 +196,21 @@ function readColorRgba(stream: KaitaiStream, tag: number): RmStroke["colorRgba"]
 }
 
 /**
+ * Hand-parses a `layer_def` block body (rmscene's `SceneTreeBlock`), which the Kaitai spec
+ * leaves as raw bytes -- the former fixed-layout `rm_layer_definition` type scanned for
+ * 0x2f/0x4c terminator bytes, which a CrdtId containing either byte truncated, throwing on
+ * the misaligned bytes that followed and aborting the whole page parse. Returns the layer's
+ * id (raw CrdtId encoding as hex, matching ids read elsewhere); the rest of the body
+ * (node id, is_update, parent id) is ignored.
+ */
+function parseLayerDefBody(raw: Uint8Array): string {
+	const stream = new KaitaiStream(toArrayBuffer(raw));
+
+	expectTag(stream, 0x1f, "tree_id");
+	return readCrdtIdHex(stream, raw);
+}
+
+/**
  * Hand-parses a `layer_names` block body (rmscene's `TreeNodeBlock`), which the Kaitai
  * spec leaves as raw bytes -- the former fixed-layout `rm_layer_name` type read the
  * label's LWW-timestamp CrdtId as exactly two bytes and threw (aborting the whole page
@@ -319,7 +334,11 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 	for (const block of doc.blocks) {
 		switch (block.blockType) {
 			case Rmv6.BlockTypes.LAYER_DEF: {
-				layerOrder.push(hex(block.body.layerId));
+				try {
+					layerOrder.push(parseLayerDefBody(block.body.raw));
+				} catch (error) {
+					console.warn("Tagged Sync: failed to parse a layer definition, skipping it", error);
+				}
 				break;
 			}
 			case Rmv6.BlockTypes.LAYER_NAMES: {

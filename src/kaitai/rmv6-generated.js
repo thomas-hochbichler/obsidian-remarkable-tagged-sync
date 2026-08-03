@@ -78,7 +78,7 @@ var Rmv6 = (function() {
       case Rmv6.BlockTypes.LAYER_DEF:
         this._raw_body = this._io.readBytes(this.lenBody);
         _io__raw_body = new KaitaiStream(this._raw_body);
-        this.body = new RmLayerDefinition(_io__raw_body, this, this._root);
+        this.body = new RmRawBody(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.LAYER_INFO:
         this._raw_body = this._io.readBytes(this.lenBody);
@@ -228,60 +228,6 @@ var Rmv6 = (function() {
   })();
 
   /**
-   * Defines each layer's id.
-   */
-
-  var RmLayerDefinition = Rmv6.RmLayerDefinition = (function() {
-    function RmLayerDefinition(_io, _parent, _root) {
-      this._io = _io;
-      this._parent = _parent;
-      this._root = _root;
-
-      this._read();
-    }
-    RmLayerDefinition.prototype._read = function() {
-      this.magic0 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic0, new Uint8Array([31])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([31]), this.magic0, this._io, "/types/rm_layer_definition/seq/0");
-      }
-      this.layerId = this._io.readBytesTerm(47, false, false, true);
-      this.magic1 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic1, new Uint8Array([47])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([47]), this.magic1, this._io, "/types/rm_layer_definition/seq/2");
-      }
-      this.unknown00 = this._io.readBytesTerm(76, false, false, true);
-      this.magic2 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic2, new Uint8Array([76])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([76]), this.magic2, this._io, "/types/rm_layer_definition/seq/4");
-      }
-      this.lenUnknown = this._io.readU4le();
-      this.magic3 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic3, new Uint8Array([31])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([31]), this.magic3, this._io, "/types/rm_layer_definition/seq/6");
-      }
-      this._unnamed7 = [];
-      while (!this._io.isEof()) {
-        this._unnamed7.push(this._io.readBytes(1));
-      }
-    }
-
-    /**
-     * Identifier for this layer that appears in other structures in reference
-     * to this layer. There are some data types (defined below) that have 
-     * fields with layer ids that appear to be incremented by 1 or 2. Eg, for 
-     * a `layer_id` of `00 0b` a field may have `00 0c` or `00 0d`. What this 
-     * means is still unclear.
-     */
-
-    /**
-     * This byte count refers to the remainder of the block, but it is
-     * unclear what is present in that space.
-     */
-
-    return RmLayerDefinition;
-  })();
-
-  /**
    * Opaque capture of a block body that this spec does not decode further.
    * 
    * Used for `line_def` (stroke) bodies: the upstream spec's `rm_line`/
@@ -311,6 +257,12 @@ var Rmv6 = (function() {
    * `rm_layer_name` type hardcoded the label's LWW-timestamp CrdtId as 2
    * bytes. The adapter hand-parses the raw body to recover each layer's
    * name -- see `parseLayerNameBody` in rm-parser.ts.
+   * 
+   * Also used for `layer_def` bodies: the former `rm_layer_definition`
+   * type scanned for fixed 0x2f/0x4c terminator bytes, which broke as soon
+   * as a CrdtId's own encoding contained one of them. The adapter
+   * hand-parses the raw body to recover each layer's id -- see
+   * `parseLayerDefBody` in rm-parser.ts.
    */
 
   var RmRawBody = Rmv6.RmRawBody = (function() {

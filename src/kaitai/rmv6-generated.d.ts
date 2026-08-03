@@ -16,19 +16,10 @@ interface RmRawBody {
 	raw: Bytes;
 }
 
-interface RmLayerDefinition {
-	layerId: Bytes;
-}
-
 /**
- * One block of the scene stream. Which body class the generated parser builds depends on
- * `blockType` (a block type this schema does not model gets an empty body).
- *
- * `body` is typed as an *intersection* rather than a union on purpose: the generated JS carries no
- * discriminant onto the body object, so TypeScript cannot narrow it from `blockType`. An
- * intersection lets `rm-parser.ts` read the field that its own `switch` has already established is
- * present. The trade is real -- the compiler will not stop you reading `layerId` off a line-def
- * body -- but it types every field correctly, which is what the 23 lint problems were about.
+ * One block of the scene stream. Every block type this schema models keeps its body raw (an
+ * `RmRawBody`) for `rm-parser.ts` to hand-parse; a block type it does not model gets an empty
+ * body, which the parser's own `switch` never reads.
  */
 interface Block {
 	lenBody: number;
@@ -36,7 +27,7 @@ interface Block {
 	minVersion: number;
 	currentVersion: number;
 	blockType: number;
-	body: RmRawBody & RmLayerDefinition;
+	body: RmRawBody;
 }
 
 interface RmFrontmatterHeader {
