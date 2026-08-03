@@ -12,11 +12,21 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
-Store-scorecard cleanup: 341 automated-scan findings down to the 8 deliberately deferred
-settings-API notices (analysis in `.scratch/store-scorecard-fixes/`).
+## [1.0.7] - 2026-08-03
+
+**Renamed:** The plugin's display name is now **Tagged Sync for reMarkable** (previously
+"reMarkable Tagged Sync"). This is trademark hygiene only — "reMarkable" is a trademark of
+reMarkable AS, and the new name makes clear this is an unofficial, community-built plugin.
+Same plugin, same features, nothing to do on your side; updates arrive as usual.
+
+Also ships the store-scorecard cleanup: 341 automated-scan findings down to the 8 deliberately
+deferred settings-API notices (analysis in `.scratch/store-scorecard-fixes/`).
 
 ### Changed
 
+- Display name renamed to "Tagged Sync for reMarkable"; the store description now carries an
+  "Unofficial; not affiliated with reMarkable AS." note, and the README leads with a trademark
+  disclaimer. The plugin id is unchanged, so existing installs update in place.
 - The generated rmv6 parser is now post-processed by `generate:kaitai`: emitted as ESM
   (no UMD `require`/`define`), deduplicated `_io__raw_body` declarations, unused loop
   counters removed, and a scoped `eslint-disable` pair for the type-aware `no-unsafe-*`

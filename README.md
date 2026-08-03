@@ -1,4 +1,8 @@
-# reMarkable Tagged Sync
+# Tagged Sync for reMarkable
+
+> **Disclaimer:** Tagged Sync for reMarkable is an unofficial, community-built plugin. It is not
+> affiliated with, endorsed by, or supported by reMarkable AS. "reMarkable" is a trademark of
+> reMarkable AS, used only to describe compatibility.
 
 Sync tagged reMarkable notebooks into Obsidian as searchable Markdown notes, routed to folders
 by tag.
@@ -84,7 +88,7 @@ Two behaviours show up in Obsidian's automated plugin review, so they are spelle
 ## Setup
 
 1. Install and enable the plugin.
-2. Open **Settings → reMarkable Tagged Sync**, and follow the "Connect" link to
+2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
    `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
    **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
 3. Click **Discover tags** to scan your reMarkable notebooks and pages for tags, then map the
@@ -92,7 +96,7 @@ Two behaviours show up in Obsidian's automated plugin review, so they are spelle
    simply not selected, not lost.
 4. Click **Sync now**.
 
-Sync is also available from the command palette as **reMarkable Tagged Sync: Sync now**.
+Sync is also available from the command palette as **Tagged Sync for reMarkable: Sync now**.
 
 ![The plugin settings: reMarkable connection, OCR backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
 
@@ -104,7 +108,7 @@ than triggering a redundant run.
 
 ### Re-transcribing
 
-To refresh transcripts on notes you already synced, run **reMarkable Tagged Sync: Re-transcribe
+To refresh transcripts on notes you already synced, run **Tagged Sync for reMarkable: Re-transcribe
 all synced notes**. It re-fetches each notebook and rewrites only the transcript region, leaving
 your own notes and the embedded render untouched. It asks for confirmation first.
 

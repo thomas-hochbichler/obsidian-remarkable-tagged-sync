@@ -8,7 +8,7 @@ assignees: ""
 
 ## Diagnostics
 
-Open **Settings → reMarkable Tagged Sync → Report a problem**, press **Copy diagnostics**, and
+Open **Settings → Tagged Sync for reMarkable → Report a problem**, press **Copy diagnostics**, and
 paste the result here. It contains your plugin and Obsidian versions, your OS, whether Apple
 Vision is available, and the last error. Nothing is sent anywhere by pressing the button.
 

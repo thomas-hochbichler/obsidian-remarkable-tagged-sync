@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving reMarkable Tagged Sync.
+Thanks for your interest in improving Tagged Sync for reMarkable.
 
 ## Setup
 
