@@ -367,6 +367,11 @@ export default class TaggedSyncPlugin extends Plugin {
 			if (!auto) this.maybeShowUnavailableNotice(result.unavailableOcrUnits);
 			await this.saveData(this.data);
 
+			// A run that skipped units "succeeded" overall, but its errors are exactly what "Copy
+			// diagnostics" is for -- they used to be console.warn only, leaving "Last error: none"
+			// there. A clean run clears any stale error, so diagnostics reflects the latest sync.
+			this.lastSyncError = result.skipErrors.length > 0 ? result.skipErrors.join("\n") : null;
+
 			const wrote = result.notesWritten > 0;
 			this.setStatus("ok", wrote ? `Tagged Sync: ${result.notesWritten} note(s)` : "Tagged Sync: up to date");
 			if (wrote) new Notice(`Synced ${result.notesWritten} note(s).`);

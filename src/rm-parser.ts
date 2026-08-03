@@ -195,6 +195,47 @@ function readColorRgba(stream: KaitaiStream, tag: number): RmStroke["colorRgba"]
 	return { r: (packed >> 16) & 0xff, g: (packed >> 8) & 0xff, b: packed & 0xff };
 }
 
+/**
+ * Hand-parses a `layer_def` block body (rmscene's `SceneTreeBlock`), which the Kaitai spec
+ * leaves as raw bytes -- the former fixed-layout `rm_layer_definition` type scanned for
+ * 0x2f/0x4c terminator bytes, which a CrdtId containing either byte truncated, throwing on
+ * the misaligned bytes that followed and aborting the whole page parse. Returns the layer's
+ * id (raw CrdtId encoding as hex, matching ids read elsewhere); the rest of the body
+ * (node id, is_update, parent id) is ignored.
+ */
+function parseLayerDefBody(raw: Uint8Array): string {
+	const stream = new KaitaiStream(toArrayBuffer(raw));
+
+	expectTag(stream, 0x1f, "tree_id");
+	return readCrdtIdHex(stream, raw);
+}
+
+/**
+ * Hand-parses a `layer_names` block body (rmscene's `TreeNodeBlock`), which the Kaitai
+ * spec leaves as raw bytes -- the former fixed-layout `rm_layer_name` type read the
+ * label's LWW-timestamp CrdtId as exactly two bytes and threw (aborting the whole page
+ * parse) on files whose timestamp needed more than one varuint byte. Returns the layer's
+ * id (raw CrdtId encoding as hex, matching ids read elsewhere) and its name; the rest of
+ * the body (visibility, anchor fields) is ignored.
+ */
+function parseLayerNameBody(raw: Uint8Array): { id: string; name: string } {
+	const stream = new KaitaiStream(toArrayBuffer(raw));
+
+	expectTag(stream, 0x1f, "node_id");
+	const id = readCrdtIdHex(stream, raw);
+	expectTag(stream, 0x2c, "label subblock");
+	stream.readU4le(); // subblock byte length; unused, we read fields directly
+	expectTag(stream, 0x1f, "label timestamp");
+	skipCrdtId(stream);
+	expectTag(stream, 0x2c, "label string subblock");
+	stream.readU4le(); // string subblock byte length; unused
+	const strLen = readVaruint(stream);
+	stream.readU1(); // is_ascii encoding flag; UTF-8 decodes regardless
+	const name = new TextDecoder().decode(stream.readBytes(strLen));
+
+	return { id, name };
+}
+
 const GLYPH_ITEM_TYPE = 1;
 /** A rectangle is four little-endian doubles: x, y, width, height. */
 const RECT_BYTES = 32;
@@ -293,11 +334,20 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 	for (const block of doc.blocks) {
 		switch (block.blockType) {
 			case Rmv6.BlockTypes.LAYER_DEF: {
-				layerOrder.push(hex(block.body.layerId));
+				try {
+					layerOrder.push(parseLayerDefBody(block.body.raw));
+				} catch (error) {
+					console.warn("Tagged Sync: failed to parse a layer definition, skipping it", error);
+				}
 				break;
 			}
 			case Rmv6.BlockTypes.LAYER_NAMES: {
-				layerNames.set(hex(block.body.id), block.body.name);
+				try {
+					const layerName = parseLayerNameBody(block.body.raw);
+					layerNames.set(layerName.id, layerName.name);
+				} catch (error) {
+					console.warn("Tagged Sync: failed to parse a layer name, skipping it", error);
+				}
 				break;
 			}
 			case Rmv6.BlockTypes.LINE_DEF: {
