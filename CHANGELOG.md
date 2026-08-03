@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-08-03
+
 ### Fixed
 
 - Annotated pages in large documents could fail to render and were skipped during sync
