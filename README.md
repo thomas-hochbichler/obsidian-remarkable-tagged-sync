@@ -21,24 +21,7 @@ your reMarkable.
 4. Run **Sync now** (or let automatic sync do it).
 5. You get a Markdown note with the handwriting render embedded and a searchable transcript below.
 
-<img src="docs/remarkable-note.jpg" alt="A reMarkable tablet with a handwritten note open and the tag menu showing the sync tag selected" width="480">
-
-<details>
-<summary>See the full flow in screenshots</summary>
-
-**The note in the reMarkable desktop app (reMarkable cloud):**
-
-![The tagged note shown in the reMarkable desktop app](docs/screenshot-remarkable-desktop-app.png)
-
-**Running the sync from the command palette:**
-
-![The Obsidian command palette with the Sync now command](docs/screenshot-commands.png)
-
-**The result in Obsidian — render embedded, transcript below:**
-
-![The synced note in Obsidian next to the vault file tree](docs/screenshot-after-sync.png)
-
-</details>
+![The whole flow in under 30 seconds: writing a note on the reMarkable, tagging it sync, running Sync now in Obsidian, and the resulting note with render and searchable transcript](docs/showcase.gif)
 
 ## Before you install
 
