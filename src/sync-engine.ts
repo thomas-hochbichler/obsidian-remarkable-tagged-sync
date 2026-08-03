@@ -26,9 +26,10 @@ export type SyncRowStatus = "active" | "orphaned";
  * merely older -- a note rendered under an earlier version is re-rendered on the next sync even
  * though nothing changed on the device, which is otherwise the one thing change detection can't
  * notice. Rows written before this field existed re-render once, which is the intent: version 2
- * fixed where a PDF-backed document's annotations land on the page.
+ * fixed where a PDF-backed document's annotations land on the page; version 3 fixed Paper Pro
+ * highlights rendering opaque black instead of their palette color.
  */
-export const RENDER_VERSION = 2;
+export const RENDER_VERSION = 3;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
