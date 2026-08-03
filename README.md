@@ -166,6 +166,14 @@ Before you write it, press **Copy diagnostics** in the plugin settings and paste
 the issue. It contains your plugin and Obsidian versions, your OS, whether Apple Vision is
 available, and the last error — nothing is sent anywhere by pressing it.
 
+## Requesting a feature
+
+Suggest a feature by opening a
+[feature request](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/new?template=feature_request.md).
+Vote on
+[existing requests](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues?q=is%3Aopen+label%3Aenhancement+sort%3Areactions-%2B1-desc)
+with a 👍 reaction — the most-wanted features rise to the top.
+
 ## Development
 
 ```bash

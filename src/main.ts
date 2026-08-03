@@ -33,6 +33,8 @@ import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-r
 
 const DEVICE_CONNECT_URL = "https://my.remarkable.com/device/browser/connect";
 const ISSUES_URL = "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues";
+const FEATURE_REQUEST_URL = `${ISSUES_URL}/new?template=feature_request.md`;
+const FEATURE_VOTING_URL = `${ISSUES_URL}?q=is%3Aopen+label%3Aenhancement+sort%3Areactions-%2B1-desc`;
 
 /**
  * How many tag → folder mappings the free version allows. It gates *adding* a mapping and nothing
@@ -701,6 +703,18 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 						}),
 					);
 					new Notice("Diagnostics copied to the clipboard.");
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("Request a feature")
+			.setDesc(
+				createFragment((desc: DocumentFragment) => {
+					desc.appendText("Suggest a feature on ");
+					desc.createEl("a", { text: "GitHub", href: FEATURE_REQUEST_URL });
+					desc.appendText(" or vote on ");
+					desc.createEl("a", { text: "existing requests", href: FEATURE_VOTING_URL });
+					desc.appendText(" with a 👍 reaction.");
 				}),
 			);
 	}
