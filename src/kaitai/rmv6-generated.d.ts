@@ -20,11 +20,6 @@ interface RmLayerDefinition {
 	layerId: Bytes;
 }
 
-interface RmLayerName {
-	id: Bytes;
-	name: string;
-}
-
 /**
  * One block of the scene stream. Which body class the generated parser builds depends on
  * `blockType` (a block type this schema does not model gets an empty body).
@@ -41,7 +36,7 @@ interface Block {
 	minVersion: number;
 	currentVersion: number;
 	blockType: number;
-	body: RmRawBody & RmLayerDefinition & RmLayerName;
+	body: RmRawBody & RmLayerDefinition;
 }
 
 interface RmFrontmatterHeader {

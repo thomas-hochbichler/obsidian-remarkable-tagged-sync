@@ -51,9 +51,12 @@ enums:
     0x02:
       id: layer_names
       doc: |
-        Names given to each layer, if present. Also other related info that
-        has not yet been reverse-engineered. One block per layer. See
-        `rm_layer_name`.
+        Names given to each layer, if present (rmscene's `TreeNodeBlock`),
+        one block per layer. Another CRDT tagged-value stream, so left as
+        `rm_raw_body` and hand-parsed by the TypeScript adapter -- the former
+        `rm_layer_name` type here read the label's LWW-timestamp CrdtId as a
+        fixed 2 bytes and threw on files whose timestamp needed more than one
+        varuint byte, aborting the whole page parse.
     0x07:
       id: text_def
       doc: |
@@ -138,7 +141,7 @@ types:
           switch-on: block_type
           cases:
             'block_types::layer_def': rm_layer_definition
-            'block_types::layer_names': rm_layer_name
+            'block_types::layer_names': rm_raw_body
             'block_types::text_def': rm_raw_body
             'block_types::layer_info': rm_raw_body
             'block_types::line_def': rm_raw_body
@@ -173,6 +176,11 @@ types:
       threw a validation error -- aborting the whole page parse -- as soon as
       a file's ids needed more than one varuint byte. The adapter never reads
       this block, so its body stays raw and unparsed.
+
+      Also used for `layer_names` bodies, for the same reason: the former
+      `rm_layer_name` type hardcoded the label's LWW-timestamp CrdtId as 2
+      bytes. The adapter hand-parses the raw body to recover each layer's
+      name -- see `parseLayerNameBody` in rm-parser.ts.
 
     seq:
       - id: raw
@@ -219,79 +227,6 @@ types:
       - size: 1
         repeat: eos
 
-  rm_layer_name:
-    doc: |
-      The primary purpose of this block is to match textual names to
-      their associated layer ids. There is additional data here as well,
-      but it's not clear what it means. Also, once in a while there is
-      even more data at the end of this block that might be related to
-      either the bold/italic formatting, or the forced moving of drawn
-      lines when text is added.
-
-    seq:
-      - id: magic_0
-        contents: [0x1f]
-
-      - id: id
-        #size: 2
-        terminator: 0x2c
-        consume: false
-        doc: The layer's identifier.
-
-      - id: magic_1
-        contents: [0x2c]
-
-      - id: len_rest0
-        type: u4
-        doc: Byte length from here to magic_5 (3c)
-
-      - id: magic_2
-        contents: [0x1f]
-
-      - size: 2
-        doc: | 
-          This appears to be id plus 1. An id of `01 11` becomes `01 12`
-          here for some reason
-
-      - id: magic_3
-        contents: [0x2c]
-
-      - id: len_rest1
-        type: u4
-        doc: Byte length from here to magic_5 (3c)
-
-      - id: len_name
-        type: u1
-        doc: Single byte length of the layer name as a string.
-
-      - id: magic_4
-        contents: [0x01]
-        doc: 01 byte marks the start of a string.
-
-      - id: name
-        type: str
-        size: len_name
-
-      - id: magic_5
-        contents: [0x3c]
-
-      - id: len_unknown
-        type: u4
-        doc: |
-          This byte count refers to the remainder of the block, but it is
-          unclear what is present in that space.
-
-      - id: magic_6
-        contents: [0x1f]
-
-      - size: 2
-
-      - id: magic_7
-        contents: [0x21, 0x01]
-
-      # there's more below here sometimes, related to when there's italic/bold?
-      # how to deal with that? Does it even matter? Who knows! (It probably does)
-    
   rm_frontmatter:
     doc: |
       The frontmatter at the top of the file: just the version header.

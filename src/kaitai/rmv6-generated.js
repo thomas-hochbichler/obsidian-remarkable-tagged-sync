@@ -88,7 +88,7 @@ var Rmv6 = (function() {
       case Rmv6.BlockTypes.LAYER_NAMES:
         this._raw_body = this._io.readBytes(this.lenBody);
         _io__raw_body = new KaitaiStream(this._raw_body);
-        this.body = new RmLayerName(_io__raw_body, this, this._root);
+        this.body = new RmRawBody(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.LINE_DEF:
         this._raw_body = this._io.readBytes(this.lenBody);
@@ -282,99 +282,6 @@ var Rmv6 = (function() {
   })();
 
   /**
-   * The primary purpose of this block is to match textual names to
-   * their associated layer ids. There is additional data here as well,
-   * but it's not clear what it means. Also, once in a while there is
-   * even more data at the end of this block that might be related to
-   * either the bold/italic formatting, or the forced moving of drawn
-   * lines when text is added.
-   */
-
-  var RmLayerName = Rmv6.RmLayerName = (function() {
-    function RmLayerName(_io, _parent, _root) {
-      this._io = _io;
-      this._parent = _parent;
-      this._root = _root;
-
-      this._read();
-    }
-    RmLayerName.prototype._read = function() {
-      this.magic0 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic0, new Uint8Array([31])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([31]), this.magic0, this._io, "/types/rm_layer_name/seq/0");
-      }
-      this.id = this._io.readBytesTerm(44, false, false, true);
-      this.magic1 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic1, new Uint8Array([44])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([44]), this.magic1, this._io, "/types/rm_layer_name/seq/2");
-      }
-      this.lenRest0 = this._io.readU4le();
-      this.magic2 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic2, new Uint8Array([31])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([31]), this.magic2, this._io, "/types/rm_layer_name/seq/4");
-      }
-      this._unnamed5 = this._io.readBytes(2);
-      this.magic3 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic3, new Uint8Array([44])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([44]), this.magic3, this._io, "/types/rm_layer_name/seq/6");
-      }
-      this.lenRest1 = this._io.readU4le();
-      this.lenName = this._io.readU1();
-      this.magic4 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic4, new Uint8Array([1])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([1]), this.magic4, this._io, "/types/rm_layer_name/seq/9");
-      }
-      this.name = KaitaiStream.bytesToStr(this._io.readBytes(this.lenName), "UTF-8");
-      this.magic5 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic5, new Uint8Array([60])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([60]), this.magic5, this._io, "/types/rm_layer_name/seq/11");
-      }
-      this.lenUnknown = this._io.readU4le();
-      this.magic6 = this._io.readBytes(1);
-      if (!((KaitaiStream.byteArrayCompare(this.magic6, new Uint8Array([31])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([31]), this.magic6, this._io, "/types/rm_layer_name/seq/13");
-      }
-      this._unnamed14 = this._io.readBytes(2);
-      this.magic7 = this._io.readBytes(2);
-      if (!((KaitaiStream.byteArrayCompare(this.magic7, new Uint8Array([33, 1])) == 0))) {
-        throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([33, 1]), this.magic7, this._io, "/types/rm_layer_name/seq/15");
-      }
-    }
-
-    /**
-     * The layer's identifier.
-     */
-
-    /**
-     * Byte length from here to magic_5 (3c)
-     */
-
-    /**
-     * This appears to be id plus 1. An id of `01 11` becomes `01 12`
-     * here for some reason
-     */
-
-    /**
-     * Byte length from here to magic_5 (3c)
-     */
-
-    /**
-     * Single byte length of the layer name as a string.
-     */
-
-    /**
-     * 01 byte marks the start of a string.
-     */
-
-    /**
-     * This byte count refers to the remainder of the block, but it is
-     * unclear what is present in that space.
-     */
-
-    return RmLayerName;
-  })();
-
-  /**
    * Opaque capture of a block body that this spec does not decode further.
    * 
    * Used for `line_def` (stroke) bodies: the upstream spec's `rm_line`/
@@ -399,6 +306,11 @@ var Rmv6 = (function() {
    * threw a validation error -- aborting the whole page parse -- as soon as
    * a file's ids needed more than one varuint byte. The adapter never reads
    * this block, so its body stays raw and unparsed.
+   * 
+   * Also used for `layer_names` bodies, for the same reason: the former
+   * `rm_layer_name` type hardcoded the label's LWW-timestamp CrdtId as 2
+   * bytes. The adapter hand-parses the raw body to recover each layer's
+   * name -- see `parseLayerNameBody` in rm-parser.ts.
    */
 
   var RmRawBody = Rmv6.RmRawBody = (function() {

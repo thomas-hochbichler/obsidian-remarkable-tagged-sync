@@ -144,6 +144,38 @@ describe("parseRmV6", () => {
 		expect(page.layers).toEqual([]);
 	});
 
+	it("reads a layer name whose LWW timestamp id is longer than two bytes", () => {
+		// Shape observed in real files (issue: page skipped with ValidationNotEqualError
+		// expected [44] got [1]): the label's timestamp CrdtId is varuint-encoded, which
+		// the former fixed-width rm_layer_name type read as exactly two bytes.
+		const name = new TextEncoder().encode("Layer 1");
+		const bytes: number[] = [];
+		const u32 = (value: number) => {
+			const buffer = new DataView(new ArrayBuffer(4));
+			buffer.setUint32(0, value, true);
+			bytes.push(...new Uint8Array(buffer.buffer));
+		};
+		bytes.push(0x1f, 0x00, 0x0b); // node id
+		bytes.push(0x2c); // label LWW-string subblock
+		u32(3 + 1 + 4 + 1 + 1 + 1 + name.length);
+		bytes.push(0x1f, 0x01, 0x90, 0x01); // timestamp id with a two-byte varuint (three bytes total)
+		bytes.push(0x2c); // string subblock
+		u32(1 + 1 + name.length);
+		bytes.push(name.length, 0x01, ...name); // varuint length, is-ascii flag, then the name
+		bytes.push(0x3c, 0x07, 0x00, 0x00, 0x00, 0x1f, 0x00, 0x0c, 0x21, 0x01); // visible LWW bool
+
+		const layerDef = new Uint8Array([0x1f, 0x00, 0x0b, 0x2f, 0x00, 0x00, 0x4c, 0x01, 0x00, 0x00, 0x00, 0x1f]);
+		const nameBlock = fileWithBlock(2, new Uint8Array(bytes));
+		const defBlock = fileWithBlock(1, layerDef).slice(43); // strip the file header, keep the block
+		const data = new Uint8Array(nameBlock.length + defBlock.length);
+		data.set(nameBlock, 0);
+		data.set(defBlock, nameBlock.length);
+
+		const page = parseRmV6(data);
+
+		expect(page.layers).toEqual([{ id: "000b", name: "Layer 1", strokes: [] }]);
+	});
+
 	it("reads the true color of a SHADER/HIGHLIGHT stroke from its optional color_rgba field", () => {
 		const data = readFileSync(COLOR_FIXTURE_PATH);
 
