@@ -1,0 +1,103 @@
+# Fires on a pushed beta tag (`x.y.z-beta.n`) and publishes a GitHub PRE-release for BRAT testing.
+#
+# Cut a beta from any branch:
+#   git tag 1.0.9-beta.1 && git push origin 1.0.9-beta.1
+#
+# BRAT installs pre-releases directly (no manifest-beta.json; ordered by SemVer) and requires
+# tag == release title == `version` in the released manifest.json. Obsidian itself only understands
+# plain x.y.z, so the beta version exists ONLY on this tag: it is stamped into manifest.json in the
+# runner's workspace and never committed. That is also what keeps betas invisible to the community
+# store -- the store resolves exactly the tag matching `main`'s root manifest.json and never
+# enumerates releases. See .scratch/feature-branch-workflow/assets/brat-beta-releases-research.md.
+#
+# Same gate list as release.yml minus what cannot apply to an uncommitted version:
+#   - version gate: would demand a versions.json key for the beta version; versions.json must never
+#     contain pre-release strings (the store reads it for old-app fallbacks). A tag == stamped
+#     version check replaces it -- and holds by construction, since the tag IS the stamp source.
+#   - changelog gate: beta entries stay under `## [Unreleased]` until the real release.
+#   - attestation: betas are short-lived test builds; provenance is for store-served releases.
+#
+# If the run fails and no release exists: delete the tag, fix, re-tag. Betas are disposable --
+# when in doubt, bump n.
+#
+# Actions are pinned by commit SHA. The trailing comment is the human-readable tag; update both
+# together.
+
+name: Beta release
+
+on:
+  push:
+    tags:
+      # No `v` prefix, matching release.yml. `.` is literal and the pattern must match the whole
+      # ref, so release.yml's `[0-9]+.[0-9]+.[0-9]+` and this glob are disjoint.
+      - "[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+
+# Deliberately no cancel-in-progress, same as release.yml.
+concurrency:
+  group: beta-release-${{ github.ref }}
+
+permissions:
+  contents: write # create the pre-release, upload assets
+
+jobs:
+  beta-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # --- stamp the beta version --------------------------------------------------------------
+      #
+      # Workspace only, nothing committed. Runs before the gates so every later step -- and the
+      # published manifest.json -- carries the beta version.
+      - name: Stamp beta version
+        run: |
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            m.version = process.env.GITHUB_REF_NAME;
+            fs.writeFileSync('manifest.json', JSON.stringify(m, null, '\t') + '\n');
+            console.log('manifest.json version stamped to ' + m.version);
+          "
+
+      # --- gate: lint ratchet ------------------------------------------------------------------
+      - name: Lint ratchet
+        run: node scripts/release-checks.mjs lint
+
+      # --- gate: types and tests ---------------------------------------------------------------
+      - name: Typecheck
+        run: npx tsc -noEmit -skipLibCheck
+
+      - name: Tests
+        run: npx vitest run
+
+      # --- gate: build the free bundle ---------------------------------------------------------
+      #
+      # TAGGED_SYNC_BUILD is not set, and `pro/` does not exist in this checkout, so this is
+      # structurally the free build -- same property as release.yml.
+      - name: Build
+        run: npm run build
+
+      # --- gate: bundle scan -------------------------------------------------------------------
+      - name: Bundle scan
+        run: node scripts/check-bundle.mjs
+
+      # --- publish the pre-release -------------------------------------------------------------
+      #
+      # `--prerelease` keeps `releases/latest` and the repo UI on the stable release. Title is the
+      # bare tag -- BRAT matches tag, title, and manifest version against each other.
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --prerelease \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Beta pre-release for testing via BRAT. Changes are listed under [Unreleased] in CHANGELOG.md." \
+            main.js manifest.json styles.css
