@@ -58,6 +58,22 @@ export default defineConfig(
 	},
 	...obsidianmd.configs.recommended,
 	{
+		// The store scanner applies the five type-aware `no-unsafe-*` rules to plain `.js` files
+		// too; the published `recommended` preset scopes them to `.ts` (scanner overlay documented
+		// in obsidianmd/eslint-plugin PRs #158/#173, reproduced in
+		// .scratch/store-scorecard-fixes/issues/01-scanner-lint-behavior.md). Mirroring it keeps
+		// `eslint .` and the ratchet counting what the store counts -- and keeps the generated
+		// parser's scoped eslint-disable pair from being flagged as an unused directive.
+		files: ["**/*.js"],
+		rules: {
+			"@typescript-eslint/no-unsafe-member-access": "warn",
+			"@typescript-eslint/no-unsafe-call": "warn",
+			"@typescript-eslint/no-unsafe-assignment": "warn",
+			"@typescript-eslint/no-unsafe-return": "warn",
+			"@typescript-eslint/no-unsafe-argument": "warn",
+		},
+	},
+	{
 		rules: {
 			// "reMarkable" and "Obsidian" are brand names; without this the sentence-case rule
 			// lowercases them (8 hits).

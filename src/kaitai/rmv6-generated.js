@@ -1,18 +1,10 @@
 // GENERATED FILE -- do not edit by hand.
-// Source: kaitai/rmv6.ksy, compiled with kaitai-struct-compiler.
+// Source: kaitai/rmv6.ksy, compiled with kaitai-struct-compiler, post-processed below.
 // Regenerate with: npm run generate:kaitai
 
-// This is a generated file! Please edit source .ksy file and use kaitai-struct-compiler to rebuild
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument -- generated parser (see PROVENANCE.md): internals read from the untyped kaitai-struct runtime; the public surface is typed by rmv6-generated.d.ts */
+import KaitaiStream from "kaitai-struct/KaitaiStream";
 
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define(['exports', 'kaitai-struct/KaitaiStream'], factory);
-  } else if (typeof exports === 'object' && exports !== null && typeof exports.nodeType !== 'number') {
-    factory(exports, require('kaitai-struct/KaitaiStream'));
-  } else {
-    factory(root.Rmv6 || (root.Rmv6 = {}), root.KaitaiStream);
-  }
-})(typeof self !== 'undefined' ? self : this, function (Rmv6_, KaitaiStream) {
 /**
  * Spec for the ReMarkable tablet's notebook/annotation file format.
  * 
@@ -49,10 +41,8 @@ var Rmv6 = (function() {
   Rmv6.prototype._read = function() {
     this.frontmatter = new RmFrontmatter(this._io, this, this._root);
     this.blocks = [];
-    var i = 0;
     while (!this._io.isEof()) {
       this.blocks.push(new Block(this._io, this, this._root));
-      i++;
     }
   }
 
@@ -78,45 +68,46 @@ var Rmv6 = (function() {
       this.minVersion = this._io.readU1();
       this.currentVersion = this._io.readU1();
       this.blockType = this._io.readU1();
+      var _io__raw_body;
       switch (this.blockType) {
       case Rmv6.BlockTypes.GLYPH_DEF:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmRawBody(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.LAYER_DEF:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmLayerDefinition(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.LAYER_INFO:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmLayerInfo(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.LAYER_NAMES:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmLayerName(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.LINE_DEF:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmRawBody(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.SCENE_INFO:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmRawBody(_io__raw_body, this, this._root);
         break;
       case Rmv6.BlockTypes.TEXT_DEF:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmRawBody(_io__raw_body, this, this._root);
         break;
       default:
         this._raw_body = this._io.readBytes(this.lenBody);
-        var _io__raw_body = new KaitaiStream(this._raw_body);
+        _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new Empty(_io__raw_body, this, this._root);
         break;
       }
@@ -269,10 +260,8 @@ var Rmv6 = (function() {
         throw new KaitaiStream.ValidationNotEqualError(new Uint8Array([31]), this.magic3, this._io, "/types/rm_layer_definition/seq/6");
       }
       this._unnamed7 = [];
-      var i = 0;
       while (!this._io.isEof()) {
         this._unnamed7.push(this._io.readBytes(1));
-        i++;
       }
     }
 
@@ -507,5 +496,5 @@ var Rmv6 = (function() {
 
   return Rmv6;
 })();
-Rmv6_.Rmv6 = Rmv6;
-});
+export { Rmv6 };
+/* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument -- end of generated parser */

@@ -1,5 +1,5 @@
 {
 	"comment": "Never-worse ratchet: the gate fails when the problem count is HIGHER than this, and never on errors alone. Was 103 before the 1.0.6 review cleanup. Of the 22 left, 14 are in two files nobody can usefully fix -- 12 in src/kaitai/rmv6-generated.js (machine-generated; hand edits are lost on the next `npm run generate:kaitai`) and 2 in src/shims/setimmediate.ts (a bundle polyfill, where `globalThis` and a bare `setTimeout` are correct and Obsidian's popout-window rules do not apply). The other 8 are the deprecated imperative settings API in src/main.ts (`display`, `setWarning`). Those are DELIBERATE: the replacement needs Obsidian 1.13.0, which is Catalyst early-access only, so adopting it would restrict the plugin to paying insiders. Revisit when 1.13 ships publicly. Lower this number whenever you fix something; nothing forces it down. Re-measure with `node scripts/release-checks.mjs lint --write`.",
-	"measured": "2026-07-29",
-	"problems": 22
+	"measured": "2026-08-03",
+	"problems": 8
 }

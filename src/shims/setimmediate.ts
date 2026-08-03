@@ -11,7 +11,10 @@
 //
 // Like the package it replaces, this module is imported for its side effect only.
 
-const globals = globalThis as Record<string, unknown>;
+// `window`, not `globalThis`: this shim is only ever bundled into the plugin (esbuild alias), so
+// it always runs in the Electron renderer where `window` is the global scope jszip resolves
+// `setImmediate` from -- and the store scanner requires it for popout-window compatibility.
+const globals = window as unknown as Record<string, unknown>;
 
 if (typeof globals.setImmediate !== "function") {
 	let schedule: (task: () => void) => void;
@@ -37,7 +40,7 @@ if (typeof globals.setImmediate !== "function") {
 		};
 	} else {
 		schedule = (task) => {
-			setTimeout(task, 0);
+			window.setTimeout(task, 0);
 		};
 	}
 

@@ -12,6 +12,25 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+Store-scorecard cleanup: 341 automated-scan findings down to the 8 deliberately deferred
+settings-API notices (analysis in `.scratch/store-scorecard-fixes/`).
+
+### Changed
+
+- The generated rmv6 parser is now post-processed by `generate:kaitai`: emitted as ESM
+  (no UMD `require`/`define`), deduplicated `_io__raw_body` declarations, unused loop
+  counters removed, and a scoped `eslint-disable` pair for the type-aware `no-unsafe-*`
+  rules with the rationale inline.
+- `src/shims/setimmediate.ts` uses `window` instead of `globalThis`/bare `setTimeout` for
+  popout-window compatibility.
+- Local ESLint now mirrors the store scanner's `no-unsafe-*`-on-`.js` overlay, so the lint
+  ratchet counts what the store counts (baseline lowered 22 → 8).
+
+### Added
+
+- `CONTRIBUTING.md` (store scorecard hygiene finding), including the clean-room rule for
+  the rmv6 parser.
+
 ## [1.0.6] - 2026-07-29
 
 Fixes from the Obsidian community-store review.
