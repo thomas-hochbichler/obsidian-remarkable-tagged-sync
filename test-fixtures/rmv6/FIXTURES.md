@@ -25,3 +25,20 @@ per-stroke optional `color_rgba` field), and `Pen.BALLPOINT_2` strokes in
 `rm-parser.ts`'s `color_rgba` parsing and `pdf-renderer.ts`'s extended-palette
 lookup against real device-produced data, per the pdf-color-rendering map
 (`.scratch/pdf-color-rendering/map.md`).
+
+`pdf-page-highlights-and-margin-notes.rm` is a real firmware-v6 `.rm` page from a
+PDF-backed document, captured from the maintainer's own reMarkable:
+
+- Source: page 2 of the maintainer's annotated "Best Practices für Prompting.pdf"
+  (cloud page id `1347a005-20ae-401e-a4de-61b0403afbf7`)
+- Rights: the maintainer's own handwriting; highlight runs quote short snippets of
+  the annotated document's text
+- Retrieved: 2026-08-04
+
+Contains one layer with 65 pen strokes (handwritten margin notes) and 9 `glyph_def`
+text highlights with text, rects, and color. First real fixture with `glyph_def`
+blocks and the first from a PDF-backed page — used by the pdf-annotation effort
+(`.scratch/pdf-annotation/map.md`) to prove highlight parsing, margin-note
+clustering, and anchoring against device-produced data. The full raw document
+(source PDF, all 7 annotated pages, content/meta JSON) stays private in
+`.scratch/pdf-annotation/fixture/`.
