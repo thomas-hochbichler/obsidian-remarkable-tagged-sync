@@ -690,6 +690,51 @@ describe("loadPdfText", () => {
 		expect(headings).toEqual([{ pageIndex: 0, x: 72, y: 740, title: "1 Introduction" }]);
 	});
 
+	/** hyperref writes bookmarks unnumbered by default, and the number is then only on the page. */
+	it("takes the section number an unnumbered outline title has on its page", async () => {
+		const doc = singlePageDoc(
+			fakePage([
+				textItem("1", 72, 740, 12),
+				textItem("Introduction", 96, 740, 12),
+				textItem("2.1", 72, 700, 10),
+				textItem("Harness Engineering", 96, 700, 10),
+				textItem("A", 72, 660, 12),
+				textItem("Experimental Setup", 96, 660, 12),
+			]),
+			{
+				getOutline: () => Promise.resolve([{ title: "Introduction", dest: "a" }, { title: "Harness Engineering", dest: "a" }, { title: "Experimental Setup", dest: "a" }]),
+				getDestination: () => Promise.resolve([{ num: 1 }, { name: "XYZ" }, 72, 740, null]),
+				getPageIndex: () => Promise.resolve(0),
+			},
+		);
+
+		const headings = await (await loadPdfText(BYTES, fakeLoader(doc)))?.headings();
+
+		expect(headings?.map((heading) => heading.title)).toEqual(["1 Introduction", "2.1 Harness Engineering", "A Experimental Setup"]);
+	});
+
+	it("keeps the outline's own title where the page does not say exactly that, numbered", async () => {
+		const doc = singlePageDoc(
+			fakePage([
+				// The heading wraps, so its first line is not the whole title.
+				textItem("3", 72, 740, 12),
+				textItem("A heading that wraps", 96, 740, 12),
+				textItem("onto a second line", 72, 720, 12),
+				// Already numbered in the outline: the page must not number it twice.
+				textItem("4 Method", 72, 680, 12),
+			]),
+			{
+				getOutline: () => Promise.resolve([{ title: "A heading that wraps onto a second line", dest: "a" }, { title: "4 Method", dest: "a" }]),
+				getDestination: () => Promise.resolve([{ num: 1 }, { name: "XYZ" }, 72, 740, null]),
+				getPageIndex: () => Promise.resolve(0),
+			},
+		);
+
+		const headings = await (await loadPdfText(BYTES, fakeLoader(doc)))?.headings();
+
+		expect(headings?.map((heading) => heading.title)).toEqual(["A heading that wraps onto a second line", "4 Method"]);
+	});
+
 	it("cleans a title the font-size heuristic reads off the page too", async () => {
 		const doc = singlePageDoc(
 			fakePage([

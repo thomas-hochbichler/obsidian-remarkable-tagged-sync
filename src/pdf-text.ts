@@ -870,7 +870,40 @@ async function readPageLabels(doc: PdfJsDocument): Promise<string[] | null> {
 /** The outline is the only authoritative source of section headings; the font-size heuristic runs only where there is none. */
 async function readHeadings(doc: PdfJsDocument, textDocument: PdfTextDocument): Promise<PdfHeading[]> {
 	const outline = await outlineHeadings(doc);
-	return outline.length > 0 ? outline : await fontSizeHeadings(textDocument);
+	return outline.length > 0 ? await numberOutlineHeadings(outline, textDocument) : await fontSizeHeadings(textDocument);
+}
+
+/** A section number as the page sets it, with the trailing dot some styles add: `3`, `2.1`, `A`. The appendix letter is a single capital, which is what keeps a sentence opening with `A` from passing as one. */
+const HEADING_NUMBER = /^((?:\p{Nd}+(?:\.\p{Nd}+)*|\p{Lu})\.?)\s+(.+)$/u;
+
+/**
+ * The outline's titles with the section numbers their pages show.
+ *
+ * hyperref writes bookmarks unnumbered unless the document asks otherwise (`bookmarksnumbered`), so
+ * a paper's outline reads `Introduction` where its page reads `1 Introduction` -- and the digest
+ * heading, which is the outline's title, then drops the locator the reader is looking for.
+ *
+ * The number is only taken where the page's own line reads exactly `<number> <title>`. A heading
+ * broken across two lines and one whose bookmark was retitled both fail that test and keep the
+ * outline's wording, which is the safe direction: an unnumbered heading is the status quo, a
+ * misnumbered one is worse than it.
+ */
+async function numberOutlineHeadings(headings: PdfHeading[], textDocument: PdfTextDocument): Promise<PdfHeading[]> {
+	const numbered: PdfHeading[] = [];
+	for (const heading of headings) {
+		// The destination's y is not consulted: it points at the heading's line only in an `XYZ`
+		// destination, and the title has to match in full anyway, so the page is a fine search space.
+		const page = await textDocument.page(heading.pageIndex);
+		const number = page?.lines.map((line) => headingNumber(line.text, heading.title)).find((found) => found !== null);
+		numbered.push(number ? { ...heading, title: `${number} ${heading.title}` } : heading);
+	}
+	return numbered;
+}
+
+/** The number `line` carries in front of `title`, or null where the line is not that heading. */
+function headingNumber(line: string, title: string): string | null {
+	const match = HEADING_NUMBER.exec(line.trim());
+	return match && cleanHeadingTitle(match[2]) === title ? match[1] : null;
 }
 
 async function outlineHeadings(doc: PdfJsDocument): Promise<PdfHeading[]> {
