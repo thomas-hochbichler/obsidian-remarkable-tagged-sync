@@ -41,6 +41,17 @@ workflow publishes the section as the GitHub release body. See
   cloud sync over it.
 - The notice for skipped notes no longer points below the sync block; it explains that
   Tagged Sync only rewrites notes it wrote itself.
+- A digest section heading now carries the section number the page shows, so `Introduction`
+  reads `1 Introduction`. Many papers leave the number out of their PDF bookmarks, which is
+  where the digest takes its headings from.
+
+### Fixed
+
+- **Handwriting on a page full of figures came through one image per pen stroke.** The digest
+  measures a page's line spacing to tell handwriting on one line apart from the line below, and
+  a page of charts made it read the axis labels as text lines — a third of the real spacing, so
+  no two strokes belonged together. A note written beside such a page's last paragraph became
+  five notes. Highlights on those pages could also start quoting from the middle of a sentence.
 
 ## [1.0.8] - 2026-08-03
 
