@@ -546,12 +546,38 @@ const SAME_SIZE_PT = 0.5;
  */
 const LINE_SPACING_QUANTILE = 0.25;
 
-/** The page's usual baseline-to-baseline distance within a paragraph. Null when the page has no two lines to measure. */
+/** The type size that carries most of the page's text, weighted by characters. Null for a page with no lines. */
+function bodyTextSize(lines: PdfTextLine[]): number | null {
+	const sizes: { height: number; chars: number }[] = [];
+	for (const line of lines) {
+		const size = sizes.find((candidate) => Math.abs(candidate.height - line.height) <= SAME_SIZE_PT);
+		if (size) size.chars += line.text.length;
+		else sizes.push({ height: line.height, chars: line.text.length });
+	}
+	return sizes.reduce<{ height: number; chars: number } | null>((best, size) => (best === null || size.chars > best.chars ? size : best), null)?.height ?? null;
+}
+
+/**
+ * The page's usual baseline-to-baseline distance within a paragraph. Null when the page has no two
+ * lines of body text to measure.
+ *
+ * Only gaps between two body-size lines count. A figure's tick labels, a table's cells and a
+ * formula's sub- and superscripts all break into lines of their own that sit a point or two apart,
+ * and on a page made mostly of figures they outnumber the body: page 35 of the AHE paper has 88
+ * gaps of which 22 fall under 4 pt, so the quartile landed on 3.7 pt where the body sets 10.9. Every
+ * tolerance measured in line heights then shrank to a third -- and the handwriting beside that
+ * page's last paragraph came through as five margin notes, one per pen stroke.
+ */
 export function bodyLineSpacing(lines: PdfTextLine[]): number | null {
+	const body = bodyTextSize(lines);
+	if (body === null) return null;
+
 	const gaps: number[] = [];
 	for (let index = 1; index < lines.length; index++) {
 		const gap = lines[index - 1].y - lines[index].y;
-		if (gap > 0) gaps.push(gap);
+		if (gap <= 0) continue;
+		if (Math.abs(lines[index - 1].height - body) > SAME_SIZE_PT || Math.abs(lines[index].height - body) > SAME_SIZE_PT) continue;
+		gaps.push(gap);
 	}
 	if (gaps.length === 0) return null;
 

@@ -46,9 +46,12 @@ export type SyncRowStatus = "active" | "orphaned";
  * only its page; version 10 rebuilt the layout the digest-presentation map decided -- the section is
  * the `###` heading and runs on across page breaks, a highlight is body text instead of a callout,
  * every entry carries its page link, and a crop's paper is transparent so it no longer glares in a
- * dark theme.
+ * dark theme; version 11 measures a page's line spacing over its body text alone, without which a
+ * page made mostly of figures took its tick labels for lines and reported a third of the real
+ * spacing -- the handwriting beside one paper's last paragraph came through as five margin notes,
+ * one per pen stroke, and the highlight above it quoted from the middle of its sentence.
  */
-export const RENDER_VERSION = 10;
+export const RENDER_VERSION = 11;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

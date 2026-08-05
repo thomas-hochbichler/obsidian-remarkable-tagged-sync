@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	bodyLineSpacing,
 	cleanHeadingTitle,
 	dehyphenate,
 	groupTextLines,
@@ -151,6 +152,31 @@ describe("groupTextLines on a multi-column page", () => {
 		const lines = groupTextLines([...entry(700, "Introduction", "12"), ...entry(686, "Method", "34"), ...entry(672, "Results", "56")]);
 
 		expect(lines.map((line) => line.text)).toEqual(["Introduction 12", "Method 34", "Results 56"]);
+	});
+});
+
+describe("bodyLineSpacing", () => {
+	/** A run of body lines at `y`, `y - gap`, ... in the given type size. */
+	function body(count: number, gap: number, size = 10, from = 700): RawTextItem[] {
+		return Array.from({ length: count }, (_, index) => item(`body line ${index}`, 50, from - index * gap, size));
+	}
+
+	it("takes the lower quartile of the gaps between body lines", () => {
+		const items = [...body(5, 12), item("a paragraph away", 50, 620, 10)];
+
+		expect(bodyLineSpacing(groupTextLines(items))).toBe(12);
+	});
+
+	/** A figure's tick labels sit a point or two apart and can outnumber the body on a figure page. */
+	it("ignores the gaps a figure's smaller labels leave between them", () => {
+		const ticks = [0, 2, 4, 6, 8, 10, 12, 14].map((offset) => item(String(offset), 300, 500 - offset, 4));
+		const lines = groupTextLines([...body(3, 12), ...ticks]);
+
+		expect(bodyLineSpacing(lines)).toBe(12);
+	});
+
+	it("is null for a page whose lines never share a type size in sequence", () => {
+		expect(bodyLineSpacing(groupTextLines([item("heading", 50, 700, 20), item("body", 50, 680, 10)]))).toBeNull();
 	});
 });
 
