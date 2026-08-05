@@ -176,12 +176,14 @@ function inkyScene(): RmPage {
 }
 
 describe("buildDigest without a text layer", () => {
-	it("quotes every highlight from the .rm text and anchors every note on the page", async () => {
+	it("quotes every highlight from the .rm text and renders every note as an entry of its own", async () => {
 		const result = await build([fixturePage()], { ocrBackend: fakeOcr() });
 
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
 		expect(result.markdown.match(/\^nt-/g)).toHaveLength(5);
-		expect(result.markdown.match(/\[!note\] on this page/g)).toHaveLength(5);
+		// Nothing anchors without a text layer, and nothing needs to: each note is printed under the
+		// page's own heading, which is what an unanchored note has to say.
+		expect(result.markdown.match(/\[!note\] Handwritten/g)).toHaveLength(5);
 		expect(result.markdown).toContain("für alle aktuellen Claude-Modelle,");
 		// No text layer means no known run inside a sentence, so nothing is marked (F4's soft fail).
 		expect(result.markdown).not.toContain("==");
@@ -212,12 +214,12 @@ describe("buildDigest with the fixture page's text layer", () => {
 	it("resolves the five margin notes to the anchors measured on the real page", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		// Four notes sit level with a heading, and each is printed under that heading -- so the anchor
-		// says nothing the position does not, and the title is the bare `Handwritten`. The fifth
-		// belongs to the highlight `generieren.` and is printed right below it.
-		expect(result.markdown.match(/\[!note\] Handwritten/g)).toHaveLength(4);
-		expect(result.markdown).toContain("> [!note] next to the highlight");
-		expect(result.markdown).not.toContain("[!note] on this page");
+		// Four notes sit level with a heading and are printed under it; the fifth belongs to the
+		// highlight `generieren.` and is printed right below it. Either way the position says where the
+		// note sat, so every title is the bare `Handwritten` -- and none of the five falls through the
+		// cascade to a line or the bare page.
+		expect(result.markdown.match(/\[!note\] Handwritten/g)).toHaveLength(5);
+		expect(result.markdown).not.toContain("[!note] at »");
 	});
 
 	it("orders the page's entries by section and then top-down", async () => {
@@ -247,7 +249,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 		expect(result.cropIds.size).toBe(5);
 		// Only the two bare circled digits, which come back empty, announce themselves as untranscribed.
 		expect(result.markdown.match(/not transcribable, crop:/g)).toHaveLength(2);
-		expect(result.markdown).toMatch(/\[!note\] Handwritten\n> Basic Rule O\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
+		expect(result.markdown).toMatch(/\[!note\] Handwritten · \[\[attachments\/doc\.pdf#page=2\|p\. 2\]\]\n> Basic Rule O\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
 		expect(result.markdown).toMatch(/> → Claude valisate Examphs\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
 	});
 
@@ -520,7 +522,9 @@ describe("buildDigest merges highlights that share a sentence", () => {
 		const result = await build([{ ...page, scene }], { loadText: async () => document, ocrBackend: fakeOcr("Dazu.") });
 
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(1);
-		expect(result.markdown).toContain("> [!note] next to the highlight\n> Dazu.");
+		// No heading on this page, so the page is the heading and carries the link -- the entries, this
+		// note included, carry none.
+		expect(result.markdown).toContain("> [!note] Handwritten\n> Dazu.");
 	});
 });
 
@@ -605,7 +609,7 @@ describe("buildDigest resilience", () => {
 
 		expect(result.warnings[0]).toContain("pdf.js is missing");
 		// The device's own recorded highlight text still carries every entry (F4's soft fail).
-		expect(result.markdown).toContain("für alle aktuellen Claude-Modelle, ^hl-");
+		expect(result.markdown).toContain("für alle aktuellen Claude-Modelle,\n^hl-");
 	});
 });
 

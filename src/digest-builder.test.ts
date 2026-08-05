@@ -172,47 +172,56 @@ const P2 = " · [[Best Practices für Prompting.pdf#page=2|p. 2]]";
 const FIXTURE_MARKDOWN = `
 ### Allgemeine Prinzipien
 
-Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für alle aktuellen Claude-Modelle,== einschließlich Claude Fable 5 und Claude Mythos 5.${P2} ^hl-9f21c4
+Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für alle aktuellen Claude-Modelle,== einschließlich Claude Fable 5 und Claude Mythos 5.${P2}
+^hl-9f21c4
 
 ### Sei klar und direkt
 
-> [!note] Handwritten
+> [!note] Handwritten${P2}
 > Basic Rule O
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-4c8a17.png|600]]${P2} ^nt-4c8a17
+> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-4c8a17.png|600]] ^nt-4c8a17
 
-Claude reagiert gut auf ==klare, explizite Anweisungen.==${P2} ^hl-b03e52
+Claude reagiert gut auf ==klare, explizite Anweisungen.==${P2}
+^hl-b03e52
 
-Gib ==Anweisungen als aufeinanderfolgende Schritte mit nummerierten Listen oder Aufzählungspunkten an,== wenn die Reihenfolge oder Vollständigkeit der Schritte wichtig ist.${P2} ^hl-77d1a9
+Gib ==Anweisungen als aufeinanderfolgende Schritte mit nummerierten Listen oder Aufzählungspunkten an,== wenn die Reihenfolge oder Vollständigkeit der Schritte wichtig ist.${P2}
+^hl-77d1a9
 
 ### Füge Kontext hinzu, um die Leistung zu verbessern
 
-> [!note] Handwritten — not transcribable, crop:
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-e5f203.png|600]]${P2} ^nt-e5f203
+> [!note] Handwritten${P2} — not transcribable, crop:
+> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-e5f203.png|600]] ^nt-e5f203
 
-Das Bereitstellen von Kontext oder ==Motivation hinter deinen Anweisungen,== etwa indem du Claude erklärst, warum ein solches Verhalten wichtig ist, kann Claude helfen, deine Ziele besser zu verstehen und gezieltere Antworten zu liefern.${P2} ^hl-1a6b3d
+Das Bereitstellen von Kontext oder ==Motivation hinter deinen Anweisungen,== etwa indem du Claude erklärst, warum ein solches Verhalten wichtig ist, kann Claude helfen, deine Ziele besser zu verstehen und gezieltere Antworten zu liefern.${P2}
+^hl-1a6b3d
 
 ### Verwende Beispiele effektiv
 
-> [!note] Handwritten — not transcribable, crop:
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-90cc41.png|600]]${P2} ^nt-90cc41
+> [!note] Handwritten${P2} — not transcribable, crop:
+> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-90cc41.png|600]] ^nt-90cc41
 
-Beispiele sind eine der zuverlässigsten Methoden, ==um Claudes Ausgabeformat, Ton und Struktur zu steuern.==${P2} ^hl-c2447e
+Beispiele sind eine der zuverlässigsten Methoden, ==um Claudes Ausgabeformat, Ton und Struktur zu steuern.==${P2}
+^hl-c2447e
 
-Vielfältig sind: Sie ==decken Randfälle ab== und variieren genug, damit Claude keine unbeabsichtigten Muster aufgreift.${P2} ^hl-6e19f0
+Vielfältig sind: Sie ==decken Randfälle ab== und variieren genug, damit Claude keine unbeabsichtigten Muster aufgreift.${P2}
+^hl-6e19f0
 
-Du kannst Claude auch bitten, deine Beispiele auf Relevanz und Vielfalt zu bewerten oder zusätzliche auf Basis deines ursprünglichen Satzes zu ==generieren.==${P2} ^hl-8d5b26
+Du kannst Claude auch bitten, deine Beispiele auf Relevanz und Vielfalt zu bewerten oder zusätzliche auf Basis deines ursprünglichen Satzes zu ==generieren.==${P2}
+^hl-8d5b26
 
-> [!note] next to the highlight
+> [!note] Handwritten${P2}
 > → Claude valisate Examphs ^nt-f13a88
 
 ### Strukturiere Prompts mit XML-Tags
 
-> [!note] Handwritten
-> - Widu spruch zum Artikel ally. Pe${P2} ^nt-2b7c95
+> [!note] Handwritten${P2}
+> - Widu spruch zum Artikel ally. Pe ^nt-2b7c95
 
-XML-Tags helfen Claude, ==komplexe Prompts== eindeutig zu parsen, insbesondere wenn dein Prompt Anweisungen, Kontext, Beispiele und variable Eingaben mischt.${P2} ^hl-d94012
+XML-Tags helfen Claude, ==komplexe Prompts== eindeutig zu parsen, insbesondere wenn dein Prompt Anweisungen, Kontext, Beispiele und variable Eingaben mischt.${P2}
+^hl-d94012
 
-Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.${P2} ^hl-35ae67`;
+Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.${P2}
+^hl-35ae67`;
 
 describe("renderDigest", () => {
 	it("renders the fixture page exactly as the signed-off format prescribes", () => {
@@ -239,7 +248,8 @@ describe("renderDigest", () => {
 		expect(rendered).toBe(`
 ### [[${EMBED}#page=1|Page 1]]
 
-==A== sentence. ^hl-1`);
+==A== sentence.
+^hl-1`);
 	});
 
 	it("heads an entry with a section with that section, and ends the entry with its page link", () => {
@@ -253,8 +263,8 @@ describe("renderDigest", () => {
 		expect(rendered).toBe(`
 ### First
 
-> [!note] on this page
-> A margin note. · [[${EMBED}#page=4|p. iv]] ^nt-1`);
+> [!note] Handwritten · [[${EMBED}#page=4|p. iv]]
+> A margin note. ^nt-1`);
 	});
 
 	it("emits a section heading once, where the section changes", () => {
@@ -283,13 +293,16 @@ describe("renderDigest", () => {
 		expect(rendered).toBe(`
 ### First
 
-One. · [[${EMBED}#page=1|p. 1]] ^hl-1
+One. · [[${EMBED}#page=1|p. 1]]
+^hl-1
 
-Two. · [[${EMBED}#page=2|p. 2]] ^hl-2
+Two. · [[${EMBED}#page=2|p. 2]]
+^hl-2
 
 ### Second
 
-Three. · [[${EMBED}#page=3|p. 3]] ^hl-3`);
+Three. · [[${EMBED}#page=3|p. 3]]
+^hl-3`);
 	});
 
 	it("heads every page of a document without sections, since each heading names its own page", () => {
@@ -320,26 +333,42 @@ Three. · [[${EMBED}#page=3|p. 3]] ^hl-3`);
 		expect(rendered).toBe(`
 ### First
 
-One. · [[${EMBED}#page=1|p. 1]] ^hl-1
+One. · [[${EMBED}#page=1|p. 1]]
+^hl-1
 
 ### Second
 
-> [!note] Handwritten
-> Note. · [[${EMBED}#page=1|p. 1]] ^nt-1
+> [!note] Handwritten · [[${EMBED}#page=1|p. 1]]
+> Note. ^nt-1
 
-Two. · [[${EMBED}#page=1|p. 1]] ^hl-2`);
+Two. · [[${EMBED}#page=1|p. 1]]
+^hl-2`);
 	});
 });
 
 describe("renderDigest — highlight quotes", () => {
 	function quoteBody(overrides: Partial<DigestHighlight>): string {
 		const rendered = renderDigest(EMBED, [page({ highlights: [highlight({ id: "hl-1", ...overrides })] })]);
-		return rendered.split("\n").at(-1) ?? "";
+		return rendered.split("\n").at(-2) ?? "";
 	}
+
+	/**
+	 * Measured in a real Reading View: Obsidian hides a trailing `^id` inside a callout but prints it
+	 * as grey text at the end of a paragraph — so the move out of the callout made every id visible,
+	 * against F7. On a line of its own it is hidden again and still resolves as a link target. No
+	 * blank line in between, so the id stays part of the entry.
+	 */
+	it("puts a highlight's block id on a line of its own, directly under the quote", () => {
+		const rendered = renderDigest(EMBED, [
+			page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz.", section: "First" })] }),
+		]);
+
+		expect(rendered.split("\n").slice(-2)).toEqual([`Ein Satz. · [[${EMBED}#page=1|p. 1]]`, "^hl-1"]);
+	});
 
 	it("marks the first occurrence of the highlighted run", () => {
 		expect(quoteBody({ sentence: "Ein Wort und noch ein Wort.", marked: ["Wort"] })).toBe(
-			"Ein ==Wort== und noch ein Wort. ^hl-1",
+			"Ein ==Wort== und noch ein Wort.",
 		);
 	});
 
@@ -352,13 +381,13 @@ describe("renderDigest — highlight quotes", () => {
 	it("drops the marks from a quote that is almost entirely marked", () => {
 		// 21 of 26 characters, i.e. 81 %: what is left unmarked is a lead-in, not a distinction.
 		expect(quoteBody({ sentence: "Also ist das hier wichtig.", marked: ["ist das hier wichtig."] })).toBe(
-			"Also ist das hier wichtig. ^hl-1",
+			"Also ist das hier wichtig.",
 		);
 	});
 
 	it("keeps the marks where a quarter of the quote stays unmarked", () => {
 		expect(quoteBody({ sentence: "Also ist das hier wichtig.", marked: ["das hier wichtig."] })).toBe(
-			"Also ist ==das hier wichtig.== ^hl-1",
+			"Also ist ==das hier wichtig.==",
 		);
 	});
 
@@ -367,7 +396,7 @@ describe("renderDigest — highlight quotes", () => {
 		// raw these three cover the sentence more than once and the mark would be dropped; resolved
 		// they cover 13 of 23 characters.
 		expect(quoteBody({ sentence: "Ein Wort und noch mehr.", marked: ["Wort und", "Wort und", "und noch"] })).toBe(
-			"Ein ==Wort und noch== mehr. ^hl-1",
+			"Ein ==Wort und noch== mehr.",
 		);
 	});
 
@@ -378,7 +407,7 @@ describe("renderDigest — highlight quotes", () => {
 	 */
 	it("prints a quote of any length whole", () => {
 		const long = `${"Ein sehr langer Satz. ".repeat(30)}Ende.`;
-		expect(quoteBody({ sentence: long, marked: [] })).toBe(`${long} ^hl-1`);
+		expect(quoteBody({ sentence: long, marked: [] })).toBe(long);
 	});
 
 	/**
@@ -388,54 +417,54 @@ describe("renderDigest — highlight quotes", () => {
 	 */
 	it("escapes the angle brackets a quoted passage carries, so an XML tag cannot open raw HTML", () => {
 		expect(quoteBody({ sentence: 'Dokumente innerhalb von <document index="n"> hier.', marked: [] })).toBe(
-			'Dokumente innerhalb von \\<document index="n"> hier. ^hl-1',
+			'Dokumente innerhalb von \\<document index="n"> hier.',
 		);
 	});
 
 	it("escapes an ampersand, which would otherwise reach the reader as a decoded entity", () => {
-		expect(quoteBody({ sentence: "A &amp; B.", marked: [] })).toBe("A \\&amp; B. ^hl-1");
+		expect(quoteBody({ sentence: "A &amp; B.", marked: [] })).toBe("A \\&amp; B.");
 	});
 
 	it("escapes a leading `>`, which would open a blockquote instead of printing the character", () => {
-		expect(quoteBody({ sentence: "> zitiert.", marked: [] })).toBe("\\> zitiert. ^hl-1");
+		expect(quoteBody({ sentence: "> zitiert.", marked: [] })).toBe("\\> zitiert.");
 	});
 
 	it("leaves the digest's own `==` markers alone while escaping the text around them", () => {
 		expect(quoteBody({ sentence: "Nutze <tag> im Prompt.", marked: ["<tag>"] })).toBe(
-			"Nutze ==\\<tag>== im Prompt. ^hl-1",
+			"Nutze ==\\<tag>== im Prompt.",
 		);
 	});
 
 	it("quotes the sentence plain when no highlighted run is known", () => {
-		expect(quoteBody({ sentence: "Nur der Satz.", marked: [] })).toBe("Nur der Satz. ^hl-1");
+		expect(quoteBody({ sentence: "Nur der Satz.", marked: [] })).toBe("Nur der Satz.");
 	});
 
 	it("falls back to the plain sentence when the run is not in the sentence at all", () => {
-		expect(quoteBody({ sentence: "Nur der Satz.", marked: ["etwas anderes"] })).toBe("Nur der Satz. ^hl-1");
+		expect(quoteBody({ sentence: "Nur der Satz.", marked: ["etwas anderes"] })).toBe("Nur der Satz.");
 	});
 
 	it("marks each of several disjoint runs", () => {
 		expect(quoteBody({ sentence: "Ein Wort und noch ein Wort.", marked: ["Ein", "noch"] })).toBe(
-			"==Ein== Wort und ==noch== ein Wort. ^hl-1",
+			"==Ein== Wort und ==noch== ein Wort.",
 		);
 	});
 
 	it("marks the union of two overlapping runs once rather than twice", () => {
 		// What the device produces for one adjusted selection: the same passage, twice, differently cut.
 		expect(quoteBody({ sentence: "Ein Wort und noch mehr.", marked: ["Wort und", "und noch"] })).toBe(
-			"Ein ==Wort und noch== mehr. ^hl-1",
+			"Ein ==Wort und noch== mehr.",
 		);
 	});
 
 	it("marks a repeated run once", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Wort", "Wort"] })).toBe(
-			"Ein ==Wort== und mehr. ^hl-1",
+			"Ein ==Wort== und mehr.",
 		);
 	});
 
 	it("joins two runs that merely touch, so no empty `==...==` pair is emitted", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Ein ", "Wort"] })).toBe(
-			"==Ein Wort== und mehr. ^hl-1",
+			"==Ein Wort== und mehr.",
 		);
 	});
 
@@ -443,25 +472,25 @@ describe("renderDigest — highlight quotes", () => {
 		// One continuous sweep of the marker that the device recorded as two runs; `==A== ==B==` would
 		// render a seam the reader never drew.
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Ein", "Wort"] })).toBe(
-			"==Ein Wort== und mehr. ^hl-1",
+			"==Ein Wort== und mehr.",
 		);
 	});
 
 	it("keeps real unmarked words outside the marks", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Ein", "und"] })).toBe(
-			"==Ein== Wort ==und== mehr. ^hl-1",
+			"==Ein== Wort ==und== mehr.",
 		);
 	});
 
 	it("skips a run the sentence does not contain without losing the others", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["fehlt", "Wort"] })).toBe(
-			"Ein ==Wort== und mehr. ^hl-1",
+			"Ein ==Wort== und mehr.",
 		);
 	});
 
 	it("does not render the marker color (F9)", () => {
 		expect(quoteBody({ sentence: "Gelb ist die Farbe hier.", marked: ["Gelb"], color: { r: 255, g: 207, b: 0 } })).toBe(
-			"==Gelb== ist die Farbe hier. ^hl-1",
+			"==Gelb== ist die Farbe hier.",
 		);
 	});
 });
@@ -474,31 +503,18 @@ describe("renderDigest — note anchors and crops", () => {
 		return rendered.split("\n\n").slice(1).join("\n\n");
 	}
 
-	it("titles the callout with the anchor", () => {
-		expect(noteBlock({ anchor: { kind: "heading", heading: "Any" }, text: "x" })).toContain(
-			"> [!note] at the heading »Any«",
-		);
-		expect(noteBlock({ anchor: { kind: "highlight", highlightId: "hl-9" }, text: "x" })).toContain(
-			"> [!note] next to the highlight",
-		);
-		expect(noteBlock({ anchor: { kind: "page" }, text: "x" })).toContain("> [!note] on this page");
-	});
-
 	/**
-	 * Under its own section heading, "at the heading »X«" repeats the line right above it. The title
-	 * then says only what the entry is, which the box alone does not.
+	 * The layout shows what these anchors say: a note under a section heading sat at that heading,
+	 * one under a quote sat next to it, and a page-anchored note sits under its page's own heading.
+	 * Naming them there only repeats the position, so the title says what the entry is.
 	 */
-	it("titles a note »Handwritten« where its anchor names the section it is printed under", () => {
-		const rendered = renderDigest(EMBED, [
-			page({
-				notes: [
-					{ ...note({ id: "nt-1", anchor: { kind: "heading", heading: "First" }, text: "x" }), section: "First" },
-				],
-			}),
-		]);
-		expect(rendered).toContain("> [!note] Handwritten\n");
+	it("titles a note »Handwritten« wherever the layout already shows its anchor", () => {
+		expect(noteBlock({ anchor: { kind: "heading", heading: "Any" }, text: "x" })).toContain("> [!note] Handwritten");
+		expect(noteBlock({ anchor: { kind: "highlight", highlightId: "hl-9" }, text: "x" })).toContain("> [!note] Handwritten");
+		expect(noteBlock({ anchor: { kind: "page" }, text: "x" })).toContain("> [!note] Handwritten");
 	});
 
+	/** The one anchor the layout cannot show: which sentence the note stood beside. */
 	it("quotes the first words of the nearest line for a line anchor", () => {
 		expect(noteBlock({ anchor: { kind: "line", line: "Die Techniken in diesem Abschnitt gelten" }, text: "x" })).toContain(
 			"> [!note] at »Die Techniken in diesem…«",
@@ -510,7 +526,7 @@ describe("renderDigest — note anchors and crops", () => {
 
 	it("embeds the crop and says so when nothing was transcribed", () => {
 		expect(noteBlock({ cropEmbed: { path: "crops/nt-1.png", width: 600, height: 200 } })).toBe(
-			"> [!note] on this page — not transcribable, crop:\n> ![[crops/nt-1.png|600]] ^nt-1",
+			"> [!note] Handwritten — not transcribable, crop:\n> ![[crops/nt-1.png|600]] ^nt-1",
 		);
 	});
 
@@ -540,7 +556,7 @@ describe("renderDigest — note anchors and crops", () => {
 
 	it("shows the crop below the text without the suffix when the drawing guard fired", () => {
 		expect(noteBlock({ text: "Basic Rule O", cropEmbed: { path: "crops/nt-1.png", width: 600, height: 200 } })).toBe(
-			"> [!note] on this page\n> Basic Rule O\n> ![[crops/nt-1.png|600]] ^nt-1",
+			"> [!note] Handwritten\n> Basic Rule O\n> ![[crops/nt-1.png|600]] ^nt-1",
 		);
 	});
 
@@ -560,7 +576,8 @@ describe("renderDigest — note anchors and crops", () => {
 			}),
 		]);
 		expect(rendered).toContain(
-			`Ein ==Satz== mit Inhalt. · [[${EMBED}#page=1|p. 1]] ^hl-1\n\n> [!note] next to the highlight\n> Dazu. ^nt-1`,
+			`Ein ==Satz== mit Inhalt. · [[${EMBED}#page=1|p. 1]]
+^hl-1\n\n> [!note] Handwritten · [[${EMBED}#page=1|p. 1]]\n> Dazu. ^nt-1`,
 		);
 	});
 });

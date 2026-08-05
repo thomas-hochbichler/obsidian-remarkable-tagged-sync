@@ -114,31 +114,22 @@ function escapeText(text: string): string {
 }
 
 /**
- * The note callout's title: what the geometry established about where the note sat (F5). No hedged
- * wording -- the cascade already decided, and "on this page" is the honest floor.
+ * The note callout's title.
  *
- * `section` is the heading the entry is printed under. A heading anchor that names it says nothing
- * the position does not, and the note then announces only what it is.
+ * The anchor cascade (F5/F14) establishes where the note sat, and the layout now *shows* that: a
+ * note printed under a section heading sat at that heading, one printed under a quote sat next to
+ * that quote, and a note with no anchor at all sits under its page's own heading. Naming the anchor
+ * there only repeats the position -- so the title says what the entry is, and nothing else.
+ *
+ * The line anchor is the exception, and the only one: nothing in the layout says which sentence the
+ * note stood beside. It stays named. The cascade itself is untouched — it still decides where every
+ * note is printed, which is the part the reader acts on.
  */
-function anchorTitle(anchor: DigestAnchor, section: string | null): string {
-	switch (anchor.kind) {
-		case "heading":
-			if (anchor.heading === section) return "Handwritten";
-			// Named, not just "at the heading": the digest prints several notes per page and a bare
-			// "at the heading" says nothing the reader can act on. Naming it also keeps this apart from
-			// the line anchor below, which quotes a heading's text whenever that heading is the nearest
-			// line -- two different findings that read identically while both were unnamed.
-			return `at the heading »${escapeText(anchor.heading)}«`;
-		case "highlight":
-			return "next to the highlight";
-		case "line": {
-			const words = anchor.line.split(/\s+/).filter((word) => word !== "");
-			const head = words.slice(0, ANCHOR_LINE_WORDS).join(" ");
-			return `at »${escapeText(head)}${words.length > ANCHOR_LINE_WORDS ? "…" : ""}«`;
-		}
-		case "page":
-			return "on this page";
-	}
+function anchorTitle(anchor: DigestAnchor): string {
+	if (anchor.kind !== "line") return "Handwritten";
+	const words = anchor.line.split(/\s+/).filter((word) => word !== "");
+	const head = words.slice(0, ANCHOR_LINE_WORDS).join(" ");
+	return `at »${escapeText(head)}${words.length > ANCHOR_LINE_WORDS ? "…" : ""}«`;
 }
 
 /**
@@ -196,26 +187,31 @@ function markSentence(sentence: string, marked: string[]): string {
 	return quoted + sentence.slice(cut);
 }
 
-/** The entry's locator and block id (F7) terminate its last body line -- they have to sit on content, not on a callout's title line. */
-function withBlockId(lines: string[], id: string, locator: string): string[] {
+/** The block id (F7) terminates the entry's last body line -- it has to sit on content, not on a callout's title line. */
+function withBlockId(lines: string[], id: string): string[] {
 	const last = lines.length - 1;
-	return lines.map((line, index) => (index === last ? `${line}${locator} ^${id}` : line));
+	return lines.map((line, index) => (index === last ? `${line} ^${id}` : line));
 }
 
 /**
  * A margin note, the one entry that is still a callout: it is the reader's own hand, and the box is
  * what tells it apart from the document's text around it.
  *
- * `prefix` is `> ` for a note of its own and `> > ` for one printed under a highlight. `section` is
- * the heading it sits under, which decides how much its title has left to say.
+ * `prefix` is `> ` for a note of its own and `> > ` for one printed under a highlight.
+ *
+ * The locator rides on the **title** line rather than at the end of the entry, which is where a
+ * highlight carries it. A note's last line is usually its crop, and a crop is up to 600 px wide: the
+ * link then wrapped underneath the image and stood there on its own, and beside a narrow crop it sat
+ * flush against it -- the same link in a different place on every note. The title line is one place.
  */
-function renderNote(note: DigestNote, prefix: string, locator: string, section: string | null): string {
+function renderNote(note: DigestNote, prefix: string, locator: string): string {
 	const embed = note.cropEmbed === null ? [] : [`![[${note.cropEmbed.path}|${cropDisplayWidth(note.cropEmbed)}]]`];
 	const body = note.text === "" ? embed : [escapeText(note.text), ...embed];
 	// Only a crop-*only* note announces itself as not transcribable. Every note carries a crop now
-	// (F6), so the crop's presence says nothing about the text; its absence in the body does.
+	// (F6), so the crop's presence says nothing about the text; its absence in the body does. The
+	// suffix stays last: its colon points at the crop below it.
 	const suffix = note.text === "" && note.cropEmbed !== null ? CROP_TITLE_SUFFIX : "";
-	const lines = withBlockId([`[!note] ${anchorTitle(note.anchor, section)}${suffix}`, ...body], note.id, locator);
+	const lines = withBlockId([`[!note] ${anchorTitle(note.anchor)}${locator}${suffix}`, ...body], note.id);
 	return lines.map((line) => `${prefix}${line}`).join("\n");
 }
 
@@ -230,10 +226,19 @@ function renderNote(note: DigestNote, prefix: string, locator: string, section: 
 function renderHighlight(highlight: DigestHighlight, locator: string): string {
 	// Escaped after marking, not before: the runs are matched against the raw sentence, and `==` is
 	// the digest's own markup rather than the document's, so it must survive untouched.
-	const quote = `${escapeText(markSentence(highlight.sentence, highlight.marked))}${locator} ^${highlight.id}`;
+	//
+	// The block id goes on a line of its own, which is what keeps F7's "invisible in reading view"
+	// true. Measured in a real Reading View: Obsidian hides a trailing `^id` inside a callout but
+	// prints it as grey text at the end of a paragraph -- so moving the quote out of its callout made
+	// every id visible. On its own line (no blank line, so it stays part of the entry) it is hidden
+	// again and still resolves as a link target. A note keeps its id on the last body line: inside
+	// the callout it was never visible.
+	const quote = `${escapeText(markSentence(highlight.sentence, highlight.marked))}${locator}\n^${highlight.id}`;
 	// A note anchored to this highlight follows it as a block of its own -- there is no callout left
-	// to nest inside. It carries no locator: the entry it belongs to already gave one.
-	const nested = highlight.notes.map((note) => `\n\n${renderNote(note, "> ", "", highlight.section)}`);
+	// to nest inside. It repeats the locator rather than leaning on the quote above it: as a separate
+	// box it reads as an entry, and an entry whose title lacks the link every other one has reads as
+	// a link that went missing.
+	const nested = highlight.notes.map((note) => `\n\n${renderNote(note, "> ", locator)}`);
 	return `${quote}${nested.join("")}`;
 }
 
@@ -265,7 +270,7 @@ function pageEntries(page: DigestPage): DigestEntry[] {
 		...page.notes.map((note) => ({
 			section: note.section,
 			top: note.top,
-			render: (locator: string) => renderNote(note, "> ", locator, note.section),
+			render: (locator: string) => renderNote(note, "> ", locator),
 		})),
 	];
 
