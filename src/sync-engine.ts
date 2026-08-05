@@ -43,9 +43,12 @@ export type SyncRowStatus = "active" | "orphaned";
  * widened the cap that sizing scales down to, because a note written across the page was being held
  * to an aside's width and its handwriting came out too small to read; version 9 turned the digest's
  * section lines into `####` headings, so a section shows up in Obsidian's outline pane instead of
- * only its page.
+ * only its page; version 10 rebuilt the layout the digest-presentation map decided -- the section is
+ * the `###` heading and runs on across page breaks, a highlight is body text instead of a callout,
+ * every entry carries its page link, and a crop's paper is transparent so it no longer glares in a
+ * dark theme.
  */
-export const RENDER_VERSION = 9;
+export const RENDER_VERSION = 10;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

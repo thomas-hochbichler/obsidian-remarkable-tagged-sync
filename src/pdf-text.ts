@@ -33,12 +33,34 @@ export interface PdfPageText {
 	lines: PdfTextLine[];
 }
 
-/** A section heading with the position it points at. `y` is null when the destination names no coordinate (a `Fit` destination means "this page", i.e. its top); `x` is null whenever the destination carries no left edge, and on a multi-column page that leaves the column it sits in unknown. */
+/** A section heading with the position it points at. `y` is null when the destination names no coordinate (a `Fit` destination means "this page", i.e. its top); `x` is null whenever the destination carries no left edge, and on a multi-column page that leaves the column it sits in unknown. `title` arrives cleaned (see {@link cleanHeadingTitle}), and a title that cleans to nothing is not reported as a heading at all -- so nothing downstream learns about the junk a typeset title can carry. */
 export interface PdfHeading {
 	pageIndex: number;
 	x: number | null;
 	y: number | null;
 	title: string;
+}
+
+/** Control characters, soft hyphen (U+00AD), zero-width space (U+200B), BOM (U+FEFF) and the replacement character (U+FFFD) -- written as escapes because they are invisible in the source too. Deliberately not `\p{Cf}` as a class: that would also strip ZWJ/ZWNJ, which carry meaning in Indic and Arabic scripts. */
+const INVISIBLES = /[\p{Cc}\u00ad\u200b\ufeff\ufffd]/gu;
+/** Leading ornaments: Unicode symbols plus the bullet characters, repeatedly, with the whitespace behind them. Bullets are named because `•` is punctuation (`Po`), not a symbol, and it is the commonest ornament of all. */
+const LEADING_ORNAMENTS = /^(?:[\p{S}•‣⁃·∙◦]+\s*)+/u;
+
+/**
+ * A heading title as the digest may print it: the typeset page's ornaments removed, everything that
+ * locates the section kept.
+ *
+ * The title is the digest's only heading (digest-presentation ticket 03), so a `■` the PDF's outline
+ * carries for decoration lands as the loudest text on the page. Numbering and punctuation stay --
+ * `1.1` is a locator, and a title opening with `»`, `(` or `§` keeps its first character. Known cost:
+ * a currency sign is a `\p{S}`, so `€ 5 Budget` loses it; a heading opening with a bare currency sign
+ * is rarer than one opening with an ornament.
+ *
+ * "" means the title held nothing else, and the caller drops the heading entirely: it cannot become a
+ * section, cannot be looked up as one, and cannot be an anchor.
+ */
+export function cleanHeadingTitle(title: string): string {
+	return title.replace(INVISIBLES, "").replace(LEADING_ORNAMENTS, "").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -834,7 +856,7 @@ async function outlineHeadings(doc: PdfJsDocument): Promise<PdfHeading[]> {
 	const visit = async (items: unknown): Promise<void> => {
 		if (!Array.isArray(items)) return;
 		for (const entry of items as PdfJsOutlineItem[]) {
-			const title = typeof entry?.title === "string" ? entry.title.trim() : "";
+			const title = cleanHeadingTitle(typeof entry?.title === "string" ? entry.title : "");
 			const target = title.length > 0 ? await outlineTarget(doc, entry.dest) : null;
 			if (target) headings.push({ ...target, title });
 			await visit(entry?.items);
@@ -903,11 +925,12 @@ async function fontSizeHeadings(textDocument: PdfTextDocument): Promise<PdfHeadi
 	pages.forEach((page, pageIndex) => {
 		page?.lines.forEach((line, index) => {
 			if (line.height < body * HEADING_SIZE_RATIO) return;
-			if (line.text.length === 0 || line.text.length > HEADING_MAX_CHARS) return;
+			const title = cleanHeadingTitle(line.text);
+			if (title.length === 0 || title.length > HEADING_MAX_CHARS) return;
 			// Only the first line of a larger block is the heading; the rest of it is its continuation.
 			const previous = page.lines[index - 1];
 			if (previous && Math.abs(previous.height - line.height) < SAME_SIZE_PT) return;
-			headings.push({ pageIndex, x: line.x, y: line.y, title: line.text });
+			headings.push({ pageIndex, x: line.x, y: line.y, title });
 		});
 	});
 

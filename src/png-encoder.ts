@@ -90,6 +90,43 @@ function zlibStore(raw: Uint8Array): Uint8Array {
 	return result;
 }
 
+/** One unfiltered scanline per row, each preceded by its filter-type byte. */
+function scanlines(image: RasterImage): Uint8Array {
+	const { width, height, pixels } = image;
+	const raw = new Uint8Array(height * (width + 1)); // +1 filter-type byte per scanline
+	for (let y = 0; y < height; y++) {
+		const rowStart = y * (width + 1);
+		raw[rowStart] = 0; // filter type: None
+		raw.set(pixels.subarray(y * width, (y + 1) * width), rowStart + 1);
+	}
+	return raw;
+}
+
+function ihdr(width: number, height: number, colorType: number): Uint8Array {
+	const data = new Uint8Array(13);
+	writeU32BE(data, 0, width);
+	writeU32BE(data, 4, height);
+	data[8] = 8; // bit depth
+	data[9] = colorType;
+	data[10] = 0; // compression method
+	data[11] = 0; // filter method
+	data[12] = 0; // interlace method
+	return chunk("IHDR", data);
+}
+
+function assemble(chunks: Uint8Array[]): Uint8Array {
+	const signature = Uint8Array.from(PNG_SIGNATURE);
+	const result = new Uint8Array(signature.length + chunks.reduce((sum, part) => sum + part.length, 0));
+	let pos = 0;
+	result.set(signature, pos);
+	pos += signature.length;
+	for (const part of chunks) {
+		result.set(part, pos);
+		pos += part.length;
+	}
+	return result;
+}
+
 /**
  * Encodes a grayscale raster image as an 8-bit PNG (spec §6 / ticket 10). Both OCR backends consume
  * PNG: the LLM-vision APIs require PNG/JPEG/WEBP/GIF, and the native Vision backend hands Vision a
@@ -97,37 +134,40 @@ function zlibStore(raw: Uint8Array): Uint8Array {
  * rather than pulling in a compression dependency.
  */
 export function encodeGrayscalePng(image: RasterImage): Uint8Array {
-	const { width, height, pixels } = image;
+	return assemble([
+		ihdr(image.width, image.height, 0), // color type: grayscale
+		chunk("IDAT", zlibStore(scanlines(image))),
+		chunk("IEND", new Uint8Array(0)),
+	]);
+}
 
-	const raw = new Uint8Array(height * (width + 1)); // +1 filter-type byte per scanline
-	for (let y = 0; y < height; y++) {
-		const rowStart = y * (width + 1);
-		raw[rowStart] = 0; // filter type: None
-		raw.set(pixels.subarray(y * width, (y + 1) * width), rowStart + 1);
-	}
+/**
+ * The one grey a crop's ink is drawn in: about 3.7:1 against a light note background and 4:1 against
+ * a dark one, the single value that carries both ways.
+ */
+const INK_GRAY = 0x80;
 
-	const ihdrData = new Uint8Array(13);
-	writeU32BE(ihdrData, 0, width);
-	writeU32BE(ihdrData, 4, height);
-	ihdrData[8] = 8; // bit depth
-	ihdrData[9] = 0; // color type: grayscale
-	ihdrData[10] = 0; // compression method
-	ihdrData[11] = 0; // filter method
-	ihdrData[12] = 0; // interlace method
-
-	const ihdr = chunk("IHDR", ihdrData);
-	const idat = chunk("IDAT", zlibStore(raw));
-	const iend = chunk("IEND", new Uint8Array(0));
-
-	const signature = Uint8Array.from(PNG_SIGNATURE);
-	const result = new Uint8Array(signature.length + ihdr.length + idat.length + iend.length);
-	let pos = 0;
-	result.set(signature, pos);
-	pos += signature.length;
-	result.set(ihdr, pos);
-	pos += ihdr.length;
-	result.set(idat, pos);
-	pos += idat.length;
-	result.set(iend, pos);
-	return result;
+/**
+ * Encodes the same raster as {@link encodeGrayscalePng}, but with the paper transparent -- the form a
+ * crop is embedded in a note (digest-presentation ticket 01).
+ *
+ * The rasterizer's white paper is opaque in every grayscale PNG, which in a dark theme is a lit band
+ * and the brightest thing in the note. Turning the ink black on a transparent ground fixes the dark
+ * theme and loses the light one, so the grayscale value becomes the ink's *opacity* instead: an
+ * indexed image whose palette is one grey throughout, with a `tRNS` chunk giving index `i` the alpha
+ * `255 - i`. White paper (255) is fully transparent, black ink (0) fully opaque, and the strokes keep
+ * their antialiasing.
+ *
+ * Indexed rather than grey+alpha (color type 4), which renders identically and doubles every crop.
+ * OCR is not a caller: both backends are fed the opaque grayscale, where an alpha channel would only
+ * cost them.
+ */
+export function encodeInkPng(image: RasterImage): Uint8Array {
+	return assemble([
+		ihdr(image.width, image.height, 3), // color type: indexed
+		chunk("PLTE", new Uint8Array(256 * 3).fill(INK_GRAY)),
+		chunk("tRNS", Uint8Array.from({ length: 256 }, (_, index) => 255 - index)),
+		chunk("IDAT", zlibStore(scanlines(image))),
+		chunk("IEND", new Uint8Array(0)),
+	]);
 }

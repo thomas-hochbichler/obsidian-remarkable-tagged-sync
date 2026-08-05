@@ -9,7 +9,7 @@ export type OcrBackend = string;
 
 /**
  * One page's highlighted quotes, render-ready: sorted, normalized, non-empty (see the sync-engine's
- * collection). Rendered as a single `> [!quote]` callout titled with a link into the embedded PDF page.
+ * collection). Rendered under a `###` heading that links into the embedded PDF page.
  */
 export interface HighlightGroup {
 	/** Callout-title label: the notebook page ordinal, or the note's `pageIndex` for a page-level note. */
@@ -90,18 +90,25 @@ export function deriveBaseName(notebookName: string, pageIndex: number | null): 
 }
 
 /**
- * Renders the `## Highlights` section body (a leading blank line + the heading + one `> [!quote]`
- * callout per page), or "" when there are no highlights (no empty heading). Each callout is titled
- * with a link into the embedded PDF page and carries one `> - <quote>` bullet per highlight.
+ * Renders the `## Highlights` section body (a leading blank line + the heading + one `###` page
+ * heading per page), or "" when there are no highlights (no empty heading). The page heading is a
+ * link into the embedded PDF page and carries one `- <quote>` bullet per highlight.
+ *
+ * The `> [!quote]` callout this used to be went with the digest's boxes (digest-presentation ticket
+ * 04): a page of them read as a stack of boxes, in the same vault and often the same folder as a
+ * digest that no longer has any. The bullets stay, though -- these quotes are fragments, not
+ * sentences (median 49 characters over the fixture, up to nine on one page), and a list is the
+ * honest form for a list of fragments. This section is a fallback surface: a digest subsumes it, so
+ * it is reached only by a notebook with highlighted typed text or a PDF whose digest build failed.
  */
 function renderHighlights(embedPath: string, groups: HighlightGroup[]): string {
 	if (groups.length === 0) return "";
-	const callouts = groups.map((group) => {
-		const title = `[[${embedPath}#page=${group.embedPage}|Page ${group.pageLabel}]]`;
-		const bullets = group.quotes.map((quote) => `> - ${quote}`).join("\n");
-		return `> [!quote] ${title}\n${bullets}`;
+	const sections = groups.map((group) => {
+		const heading = `### [[${embedPath}#page=${group.embedPage}|Page ${group.pageLabel}]]`;
+		const bullets = group.quotes.map((quote) => `- ${quote}`).join("\n");
+		return `${heading}\n\n${bullets}`;
 	});
-	return `\n## Highlights\n\n${callouts.join("\n\n")}\n`;
+	return `\n## Highlights\n\n${sections.join("\n\n")}\n`;
 }
 
 function buildManagedBlock(fields: NoteFields): string {

@@ -25,7 +25,7 @@ import {
 	type PdfRect,
 } from "./pdf-renderer";
 import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
-import { encodeGrayscalePng } from "./png-encoder";
+import { encodeInkPng } from "./png-encoder";
 import type { RmPage, RmStroke } from "./rm-parser";
 
 export interface DigestPipelineDeps {
@@ -270,7 +270,7 @@ function anchorFor(rect: PdfRect, { geometry, highlights }: PageContext): Digest
 async function writeCrop(context: PageContext, id: string, image: RasterImage): Promise<string | null> {
 	const { deps, docSlug, page, cropIds, warnings } = context;
 	try {
-		const path = await writeCropAttachment(deps.attachmentStore, deps.attachmentsFolder, docSlug, id, encodeGrayscalePng(image));
+		const path = await writeCropAttachment(deps.attachmentStore, deps.attachmentsFolder, docSlug, id, encodeInkPng(image));
 		cropIds.add(id);
 		return path;
 	} catch (error) {
@@ -435,13 +435,9 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		highlight.section = sectionAt(page.sourceIndex, left, top, geometry.documentHeadings, geometry.pageText);
 	}
 
-	const entries = [...highlights.map((item) => item.highlight), ...standalone];
 	return {
 		pageLabel: geometry.pageText?.label ?? String(page.sourceIndex + 1),
 		embedPage: page.embedPage,
-		// The same ordering `pageEntries` derives its section order from, so the page heading names the
-		// section of the topmost entry and that section never repeats as a bold line right below it.
-		topSection: [...entries].sort((a, b) => a.top - b.top)[0]?.section ?? null,
 		highlights: highlights.map((item) => item.highlight),
 		notes: standalone,
 	};

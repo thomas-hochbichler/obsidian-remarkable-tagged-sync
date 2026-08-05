@@ -212,23 +212,24 @@ describe("buildDigest with the fixture page's text layer", () => {
 	it("resolves the five margin notes to the anchors measured on the real page", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		// Four notes sit level with a heading; the fourth belongs to the highlight `generieren.` and
-		// nests inside its quote, which is what the `> > ` prefix says.
-		expect(result.markdown.match(/\[!note\] at the heading »/g)).toHaveLength(4);
-		expect(result.markdown).toContain("> > [!note] next to the highlight");
+		// Four notes sit level with a heading, and each is printed under that heading -- so the anchor
+		// says nothing the position does not, and the title is the bare `Handwritten`. The fifth
+		// belongs to the highlight `generieren.` and is printed right below it.
+		expect(result.markdown.match(/\[!note\] Handwritten/g)).toHaveLength(4);
+		expect(result.markdown).toContain("> [!note] next to the highlight");
 		expect(result.markdown).not.toContain("[!note] on this page");
 	});
 
 	it("orders the page's entries by section and then top-down", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
-		const sections = result.markdown.match(/^#### .+$/gm);
+		const sections = result.markdown.match(/^### .+$/gm);
 
-		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=2|Page 2]] · Allgemeine Prinzipien");
 		expect(sections).toEqual([
-			"#### Sei klar und direkt",
-			"#### Füge Kontext hinzu, um die Leistung zu verbessern",
-			"#### Verwende Beispiele effektiv",
-			"#### Strukturiere Prompts mit XML-Tags",
+			"### Allgemeine Prinzipien",
+			"### Sei klar und direkt",
+			"### Füge Kontext hinzu, um die Leistung zu verbessern",
+			"### Verwende Beispiele effektiv",
+			"### Strukturiere Prompts mit XML-Tags",
 		]);
 		// Reading order runs down the page: `top` is a scene coordinate, which grows downwards.
 		const first = result.markdown.indexOf("für alle aktuellen Claude-Modelle,");
@@ -246,9 +247,8 @@ describe("buildDigest with the fixture page's text layer", () => {
 		expect(result.cropIds.size).toBe(5);
 		// Only the two bare circled digits, which come back empty, announce themselves as untranscribed.
 		expect(result.markdown.match(/not transcribable, crop:/g)).toHaveLength(2);
-		expect(result.markdown).toMatch(/\[!note\] at the heading »Sei klar und direkt«\n> Basic Rule O\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
-		// Nested inside its quote callout, hence the doubled prefix.
-		expect(result.markdown).toMatch(/> > → Claude valisate Examphs\n> > !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
+		expect(result.markdown).toMatch(/\[!note\] Handwritten\n> Basic Rule O\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
+		expect(result.markdown).toMatch(/> → Claude valisate Examphs\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
 	});
 
 	it("renders no note at all, and writes no crop, when margin notes are off", async () => {
@@ -338,8 +338,10 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("#page=1|Page 1]] · Erster Abschnitt");
-		expect(result.markdown).toContain("#page=2|Page 2]] · Erster Abschnitt");
+		// One heading for the section, and the page each entry sits on in the entry's own link.
+		expect(result.markdown.match(/^### .+$/gm)).toEqual(["### Erster Abschnitt"]);
+		expect(result.markdown).toContain("#page=1|p. 1]]");
+		expect(result.markdown).toContain("#page=2|p. 2]]");
 		expect(result.markdown).not.toContain("Zweiter Abschnitt");
 	});
 
@@ -353,7 +355,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("#page=2|Page 2]] · Zweiter Abschnitt");
+		expect(result.markdown).toContain("### Zweiter Abschnitt\n\nEin Satz auf dieser Seite. · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	it("orders a heading without a y at the top of its page", async () => {
@@ -367,7 +369,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("#page=2|Page 2]] · Ganze Seite");
+		expect(result.markdown).toContain("### Ganze Seite\n\nEin Satz auf dieser Seite. · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	/**
@@ -411,7 +413,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("#page=1|Page 1]] · 1 Einleitung");
+		expect(result.markdown).toContain("### 1 Einleitung");
 		expect(result.markdown).not.toContain("2 Methode");
 	});
 
@@ -468,7 +470,7 @@ describe("buildDigest merges highlights that share a sentence", () => {
 
 		const result = await build([page], { loadText: async () => document });
 
-		expect(result.markdown.match(/\[!quote\]/g)).toHaveLength(1);
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(1);
 		expect(result.markdown.match(/==/g)).toHaveLength(4);
 	});
 
@@ -499,7 +501,7 @@ describe("buildDigest merges highlights that share a sentence", () => {
 
 		const result = await build([page], { loadText: async () => document });
 
-		expect(result.markdown.match(/\[!quote\]/g)).toHaveLength(2);
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(2);
 	});
 
 	it("re-points a note anchored to a merged-away highlight at the surviving quote", async () => {
@@ -517,8 +519,8 @@ describe("buildDigest merges highlights that share a sentence", () => {
 
 		const result = await build([{ ...page, scene }], { loadText: async () => document, ocrBackend: fakeOcr("Dazu.") });
 
-		expect(result.markdown.match(/\[!quote\]/g)).toHaveLength(1);
-		expect(result.markdown).toContain("> > [!note] next to the highlight\n> > Dazu.");
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(1);
+		expect(result.markdown).toContain("> [!note] next to the highlight\n> Dazu.");
 	});
 });
 
@@ -562,7 +564,7 @@ describe("buildDigest resilience", () => {
 
 		expect(result.markdown.match(/not transcribable, crop:/g)).toHaveLength(5);
 		expect(result.cropIds.size).toBe(5);
-		expect(result.markdown.match(/\[!quote\]/g)).toHaveLength(9);
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
 		expect(result.markdown).toContain("Claude reagiert gut auf ==klare, explizite Anweisungen.==");
 	});
 
@@ -602,7 +604,8 @@ describe("buildDigest resilience", () => {
 		});
 
 		expect(result.warnings[0]).toContain("pdf.js is missing");
-		expect(result.markdown).toContain("[!quote]");
+		// The device's own recorded highlight text still carries every entry (F4's soft fail).
+		expect(result.markdown).toContain("für alle aktuellen Claude-Modelle, ^hl-");
 	});
 });
 

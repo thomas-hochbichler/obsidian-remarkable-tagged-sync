@@ -2,9 +2,11 @@
 // handed to it, so the format is decided in one place and testable as a single string. The pipeline
 // (T9) does the measuring, the OCR and the file writing; nothing of that leaks in here.
 //
-// The signed-off sample (prototype/05-sample-digest.md) is the contract, with one deviation: section
-// changes render as `####` headings rather than the sample's bold lines, so the digest's sections show
-// up in Obsidian's outline pane next to the `###` page headings.
+// The layout is the one the digest-presentation map settled: the *section* is the digest's `###`
+// heading and runs on across page breaks, a highlight is body text rather than a callout, and every
+// entry under a section heading ends with a link to the page it sits on. Only handwriting is still a
+// callout. The page steps in as the heading where no section is known, and then it carries the link
+// and its entries carry none.
 
 import type { DigestAnchor } from "./digest-anchoring";
 import { hashString } from "./note-builder";
@@ -51,7 +53,6 @@ export interface DigestHighlight {
 export interface DigestPage {
 	pageLabel: string;
 	embedPage: number;
-	topSection: string | null;
 	highlights: DigestHighlight[];
 	/** Notes not nested under a highlight, each with its own `section`. */
 	notes: (DigestNote & { section: string | null })[];
@@ -105,8 +106,8 @@ const CROP_TITLE_SUFFIX = " — not transcribable, crop:";
  * rendering at all. `&` is the same mechanism one step smaller: `&amp;` in the source would reach
  * the reader as a bare `&`.
  *
- * A leading `>` is escaped because a callout body is written as `> <text>`; a passage that starts
- * with one would open a nested blockquote inside the callout instead of printing the character.
+ * A leading `>` is escaped because a passage that starts with one would open a blockquote instead of
+ * printing the character -- as the entry's own paragraph, and as a nested one inside a note callout.
  */
 function escapeText(text: string): string {
 	return text.replace(/[<&]/g, "\\$&").replace(/^>/, "\\>");
@@ -115,10 +116,14 @@ function escapeText(text: string): string {
 /**
  * The note callout's title: what the geometry established about where the note sat (F5). No hedged
  * wording -- the cascade already decided, and "on this page" is the honest floor.
+ *
+ * `section` is the heading the entry is printed under. A heading anchor that names it says nothing
+ * the position does not, and the note then announces only what it is.
  */
-function anchorTitle(anchor: DigestAnchor): string {
+function anchorTitle(anchor: DigestAnchor, section: string | null): string {
 	switch (anchor.kind) {
 		case "heading":
+			if (anchor.heading === section) return "Handwritten";
 			// Named, not just "at the heading": the digest prints several notes per page and a bare
 			// "at the heading" says nothing the reader can act on. Naming it also keeps this apart from
 			// the line anchor below, which quotes a heading's text whenever that heading is the nearest
@@ -137,7 +142,20 @@ function anchorTitle(anchor: DigestAnchor): string {
 }
 
 /**
- * Wraps every run in `==...==` at its first occurrence.
+ * The share of a quote that may be marked before the marks are dropped altogether.
+ *
+ * A mark only says something by contrast: where it covers the whole entry there is nothing left for
+ * it to single out, and Obsidian paints one mark per wrapped line, so a long one reads as a striped
+ * slab rather than a highlight. Measured over the fixture's 77 marked lines, 31 sit at 75 % or above
+ * -- and every one of the 3 fragmented lines sits at 98 % or above, so the threshold removes the
+ * fragments with them. Below it the mark is the only carrier of which words the reader actually drew
+ * over, since the sentence around them is context the digest adds on purpose (F3).
+ */
+const FULLY_MARKED_COVERAGE = 0.75;
+
+/**
+ * Wraps every run in `==...==` at its first occurrence, or leaves the sentence plain when the runs
+ * cover {@link FULLY_MARKED_COVERAGE} of it.
  *
  * The runs are separate selections over one passage, so they overlap, repeat and touch each other.
  * They are resolved to non-overlapping character ranges first: nested or crossing `==` markers are
@@ -164,6 +182,11 @@ function markSentence(sentence: string, marked: string[]): string {
 		else ranges.push({ start, end: start + length });
 	}
 
+	// Over the resolved ranges, not over `marked`, whose runs overlap and repeat -- counting those
+	// would put the coverage of an adjusted selection over 100 %.
+	const covered = ranges.reduce((sum, range) => sum + (range.end - range.start), 0);
+	if (covered >= FULLY_MARKED_COVERAGE * sentence.length) return sentence;
+
 	let quoted = "";
 	let cut = 0;
 	for (const { start, end } of ranges) {
@@ -173,51 +196,52 @@ function markSentence(sentence: string, marked: string[]): string {
 	return quoted + sentence.slice(cut);
 }
 
-/** The block id terminates the entry's last body line (F7) -- it has to sit on content, not on a callout's title line. */
-function withBlockId(lines: string[], id: string): string[] {
+/** The entry's locator and block id (F7) terminate its last body line -- they have to sit on content, not on a callout's title line. */
+function withBlockId(lines: string[], id: string, locator: string): string[] {
 	const last = lines.length - 1;
-	return lines.map((line, index) => (index === last ? `${line} ^${id}` : line));
+	return lines.map((line, index) => (index === last ? `${line}${locator} ^${id}` : line));
 }
 
-/** `prefix` is `> ` for a page-level note and `> > ` for one nested inside a quote callout. */
-function renderNote(note: DigestNote, prefix: string): string {
+/**
+ * A margin note, the one entry that is still a callout: it is the reader's own hand, and the box is
+ * what tells it apart from the document's text around it.
+ *
+ * `prefix` is `> ` for a note of its own and `> > ` for one printed under a highlight. `section` is
+ * the heading it sits under, which decides how much its title has left to say.
+ */
+function renderNote(note: DigestNote, prefix: string, locator: string, section: string | null): string {
 	const embed = note.cropEmbed === null ? [] : [`![[${note.cropEmbed.path}|${cropDisplayWidth(note.cropEmbed)}]]`];
 	const body = note.text === "" ? embed : [escapeText(note.text), ...embed];
 	// Only a crop-*only* note announces itself as not transcribable. Every note carries a crop now
 	// (F6), so the crop's presence says nothing about the text; its absence in the body does.
 	const suffix = note.text === "" && note.cropEmbed !== null ? CROP_TITLE_SUFFIX : "";
-	const lines = withBlockId([`[!note] ${anchorTitle(note.anchor)}${suffix}`, ...body], note.id);
+	const lines = withBlockId([`[!note] ${anchorTitle(note.anchor, section)}${suffix}`, ...body], note.id, locator);
 	return lines.map((line) => `${prefix}${line}`).join("\n");
 }
 
 /**
- * Above this many characters a quote is folded shut. Nothing is dropped -- one click opens it, and
- * the PDF it quotes is embedded at the top of the same note.
+ * A highlight is body text: the sentence with its marked runs, then the locator and the block id.
  *
- * A highlight can legitimately run this long: the reader records a selection over several paragraphs
- * as one run, and page 7 of the acceptance document has one covering 1350 characters across three
- * passages. Printed open it buries the eight shorter highlights around it, which is the opposite of
- * what a digest is for. 600 is about a screenful in the reading pane and leaves every ordinary
- * sentence-scale quote -- the longest of the other 60 on that document is 320 -- open as before.
+ * No callout. A quote is prose and reads as prose; the box around it was the digest's loudest
+ * element and said nothing a reader could act on, and stacked against the note callouts it made the
+ * page alternate grey and blue for its whole length. With the box gone the fold it existed to keep
+ * short goes too -- a long quote is now simply a long paragraph.
  */
-const FOLD_QUOTE_CHARS = 600;
-
-function renderHighlight(highlight: DigestHighlight): string {
-	// `-` is Obsidian's foldable-and-collapsed callout marker.
-	const callout = highlight.sentence.length > FOLD_QUOTE_CHARS ? "[!quote]- Long highlight" : "[!quote]";
+function renderHighlight(highlight: DigestHighlight, locator: string): string {
 	// Escaped after marking, not before: the runs are matched against the raw sentence, and `==` is
 	// the digest's own markup rather than the document's, so it must survive untouched.
-	const lines = withBlockId([callout, escapeText(markSentence(highlight.sentence, highlight.marked))], highlight.id);
-	const quote = lines.map((line) => `> ${line}`).join("\n");
-	// A `>` line keeps the nested note a separate callout instead of a continuation of the quote.
-	const nested = highlight.notes.map((note) => `\n>\n${renderNote(note, "> > ")}`);
+	const quote = `${escapeText(markSentence(highlight.sentence, highlight.marked))}${locator} ^${highlight.id}`;
+	// A note anchored to this highlight follows it as a block of its own -- there is no callout left
+	// to nest inside. It carries no locator: the entry it belongs to already gave one.
+	const nested = highlight.notes.map((note) => `\n\n${renderNote(note, "> ", "", highlight.section)}`);
 	return `${quote}${nested.join("")}`;
 }
 
 interface DigestEntry {
 	section: string | null;
 	top: number;
-	markdown: string;
+	/** `locator` is the entry's trailing page link, "" where the page is the heading and carries it. */
+	render(locator: string): string;
 }
 
 /**
@@ -236,9 +260,13 @@ function pageEntries(page: DigestPage): DigestEntry[] {
 		...page.highlights.map((highlight) => ({
 			section: highlight.section,
 			top: highlight.top,
-			markdown: renderHighlight(highlight),
+			render: (locator: string) => renderHighlight(highlight, locator),
 		})),
-		...page.notes.map((note) => ({ section: note.section, top: note.top, markdown: renderNote(note, "> ") })),
+		...page.notes.map((note) => ({
+			section: note.section,
+			top: note.top,
+			render: (locator: string) => renderNote(note, "> ", locator, note.section),
+		})),
 	];
 
 	const sectionOrder = new Map<string | null, number>();
@@ -250,35 +278,39 @@ function pageEntries(page: DigestPage): DigestEntry[] {
 	);
 }
 
-function renderPage(embedPath: string, page: DigestPage): string {
-	const link = `[[${embedPath}#page=${page.embedPage}|Page ${page.pageLabel}]]`;
-	const blocks = [`### ${link}${page.topSection === null ? "" : ` · ${escapeText(page.topSection)}`}`];
-
-	// The page heading already names the top section, so it is the initial value here and never
-	// repeats as a `####` heading right below itself (F3).
-	let section = page.topSection;
-	for (const entry of pageEntries(page)) {
-		if (entry.section !== section) {
-			section = entry.section;
-			if (section !== null) blocks.push(`#### ${escapeText(section)}`);
-		}
-		blocks.push(entry.markdown);
-	}
-	return blocks.join("\n\n");
-}
-
 /**
  * The whole `## Digest` section body, or "" when there is nothing to show. Starts with a blank line
  * and carries no trailing newline, the shape `buildManagedBlock` expects of a section body.
  *
- * Pages without a single entry are dropped rather than rendered as a bare heading: a page with no
- * annotation is not part of the digest.
+ * One `###` heading per section, not per page. A section runs on across a page break, and repeating
+ * its heading there would say nothing the entry's own page link does not -- the pages are the
+ * locators, the sections are the structure. Where an entry has no section (a PDF with neither an
+ * outline nor larger headings) its page is the heading instead, and then the heading carries the
+ * link and the entries carry none.
+ *
+ * A page without a single entry contributes nothing, so it never appears as a bare heading: a page
+ * with no annotation is not part of the digest.
  */
 export function renderDigest(embedPath: string, pages: DigestPage[]): string {
-	const rendered = pages
-		.filter((page) => page.highlights.length > 0 || page.notes.length > 0)
-		.map((page) => renderPage(embedPath, page));
-	return rendered.length === 0 ? "" : `\n${rendered.join("\n\n")}`;
+	const blocks: string[] = [];
+	let heading: string | null = null;
+
+	for (const page of pages) {
+		const pageLink = (label: string) => `[[${embedPath}#page=${page.embedPage}|${label}]]`;
+		for (const entry of pageEntries(page)) {
+			// Compared as the rendered line, which is what settles both cases at once: the same section
+			// twice running is one heading, while two pages without a section are two -- their headings
+			// differ, because each names its own page.
+			const line = entry.section === null ? `### ${pageLink(`Page ${page.pageLabel}`)}` : `### ${escapeText(entry.section)}`;
+			if (line !== heading) {
+				heading = line;
+				blocks.push(line);
+			}
+			blocks.push(entry.render(entry.section === null ? "" : ` · ${pageLink(`p. ${page.pageLabel}`)}`));
+		}
+	}
+
+	return blocks.length === 0 ? "" : `\n${blocks.join("\n\n")}`;
 }
 
 /**

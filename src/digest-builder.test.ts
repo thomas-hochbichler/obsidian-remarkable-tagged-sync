@@ -21,14 +21,15 @@ function note(overrides: Partial<DigestNote> = {}): DigestNote {
 }
 
 function page(overrides: Partial<DigestPage> = {}): DigestPage {
-	return { pageLabel: "1", embedPage: 1, topSection: null, highlights: [], notes: [], ...overrides };
+	return { pageLabel: "1", embedPage: 1, highlights: [], notes: [], ...overrides };
 }
 
 // --- The fixture page ---------------------------------------------------------------------------
 // Page 2 of the private source PDF, exactly as the pipeline measures it (acceptance-page2.md):
 // 9 highlights, 5 margin notes, real Apple Vision text -- including its misreads, which is the point.
 // The tops are the measured PDF y values, the ids are the sample's. This one string is the format
-// regression net for the whole digest: headings, bold section lines, callouts, nesting, block ids.
+// regression net for the whole digest: section headings, body-text quotes, note callouts, the
+// per-entry page links and the block ids.
 
 const SECTION_A = "Allgemeine Prinzipien";
 const SECTION_B = "Sei klar und direkt";
@@ -47,7 +48,6 @@ const NOTE_NEXT_TO_HIGHLIGHT = note({
 const FIXTURE_PAGE: DigestPage = {
 	pageLabel: "2",
 	embedPage: 2,
-	topSection: SECTION_A,
 	highlights: [
 		highlight({
 			id: "hl-9f21c4",
@@ -166,59 +166,53 @@ const FIXTURE_PAGE: DigestPage = {
 	],
 };
 
+/** The locator every entry of this page ends with, since a section is what heads it. */
+const P2 = " · [[Best Practices für Prompting.pdf#page=2|p. 2]]";
+
 const FIXTURE_MARKDOWN = `
-### [[Best Practices für Prompting.pdf#page=2|Page 2]] · Allgemeine Prinzipien
+### Allgemeine Prinzipien
 
-> [!quote]
-> Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für alle aktuellen Claude-Modelle,== einschließlich Claude Fable 5 und Claude Mythos 5. ^hl-9f21c4
+Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für alle aktuellen Claude-Modelle,== einschließlich Claude Fable 5 und Claude Mythos 5.${P2} ^hl-9f21c4
 
-#### Sei klar und direkt
+### Sei klar und direkt
 
-> [!note] at the heading »Sei klar und direkt«
+> [!note] Handwritten
 > Basic Rule O
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-4c8a17.png|600]] ^nt-4c8a17
+> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-4c8a17.png|600]]${P2} ^nt-4c8a17
 
-> [!quote]
-> Claude reagiert gut auf ==klare, explizite Anweisungen.== ^hl-b03e52
+Claude reagiert gut auf ==klare, explizite Anweisungen.==${P2} ^hl-b03e52
 
-> [!quote]
-> Gib ==Anweisungen als aufeinanderfolgende Schritte mit nummerierten Listen oder Aufzählungspunkten an,== wenn die Reihenfolge oder Vollständigkeit der Schritte wichtig ist. ^hl-77d1a9
+Gib ==Anweisungen als aufeinanderfolgende Schritte mit nummerierten Listen oder Aufzählungspunkten an,== wenn die Reihenfolge oder Vollständigkeit der Schritte wichtig ist.${P2} ^hl-77d1a9
 
-#### Füge Kontext hinzu, um die Leistung zu verbessern
+### Füge Kontext hinzu, um die Leistung zu verbessern
 
-> [!note] at the heading »Füge Kontext hinzu, um die Leistung zu verbessern« — not transcribable, crop:
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-e5f203.png|600]] ^nt-e5f203
+> [!note] Handwritten — not transcribable, crop:
+> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-e5f203.png|600]]${P2} ^nt-e5f203
 
-> [!quote]
-> Das Bereitstellen von Kontext oder ==Motivation hinter deinen Anweisungen,== etwa indem du Claude erklärst, warum ein solches Verhalten wichtig ist, kann Claude helfen, deine Ziele besser zu verstehen und gezieltere Antworten zu liefern. ^hl-1a6b3d
+Das Bereitstellen von Kontext oder ==Motivation hinter deinen Anweisungen,== etwa indem du Claude erklärst, warum ein solches Verhalten wichtig ist, kann Claude helfen, deine Ziele besser zu verstehen und gezieltere Antworten zu liefern.${P2} ^hl-1a6b3d
 
-#### Verwende Beispiele effektiv
+### Verwende Beispiele effektiv
 
-> [!note] at the heading »Verwende Beispiele effektiv« — not transcribable, crop:
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-90cc41.png|600]] ^nt-90cc41
+> [!note] Handwritten — not transcribable, crop:
+> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-90cc41.png|600]]${P2} ^nt-90cc41
 
-> [!quote]
-> Beispiele sind eine der zuverlässigsten Methoden, ==um Claudes Ausgabeformat, Ton und Struktur zu steuern.== ^hl-c2447e
+Beispiele sind eine der zuverlässigsten Methoden, ==um Claudes Ausgabeformat, Ton und Struktur zu steuern.==${P2} ^hl-c2447e
 
-> [!quote]
-> Vielfältig sind: Sie ==decken Randfälle ab== und variieren genug, damit Claude keine unbeabsichtigten Muster aufgreift. ^hl-6e19f0
+Vielfältig sind: Sie ==decken Randfälle ab== und variieren genug, damit Claude keine unbeabsichtigten Muster aufgreift.${P2} ^hl-6e19f0
 
-> [!quote]
-> Du kannst Claude auch bitten, deine Beispiele auf Relevanz und Vielfalt zu bewerten oder zusätzliche auf Basis deines ursprünglichen Satzes zu ==generieren.== ^hl-8d5b26
->
-> > [!note] next to the highlight
-> > → Claude valisate Examphs ^nt-f13a88
+Du kannst Claude auch bitten, deine Beispiele auf Relevanz und Vielfalt zu bewerten oder zusätzliche auf Basis deines ursprünglichen Satzes zu ==generieren.==${P2} ^hl-8d5b26
 
-#### Strukturiere Prompts mit XML-Tags
+> [!note] next to the highlight
+> → Claude valisate Examphs ^nt-f13a88
 
-> [!note] at the heading »Strukturiere Prompts mit XML-Tags«
-> - Widu spruch zum Artikel ally. Pe ^nt-2b7c95
+### Strukturiere Prompts mit XML-Tags
 
-> [!quote]
-> XML-Tags helfen Claude, ==komplexe Prompts== eindeutig zu parsen, insbesondere wenn dein Prompt Anweisungen, Kontext, Beispiele und variable Eingaben mischt. ^hl-d94012
+> [!note] Handwritten
+> - Widu spruch zum Artikel ally. Pe${P2} ^nt-2b7c95
 
-> [!quote]
-> Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts. ^hl-35ae67`;
+XML-Tags helfen Claude, ==komplexe Prompts== eindeutig zu parsen, insbesondere wenn dein Prompt Anweisungen, Kontext, Beispiele und variable Eingaben mischt.${P2} ^hl-d94012
+
+Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.${P2} ^hl-35ae67`;
 
 describe("renderDigest", () => {
 	it("renders the fixture page exactly as the signed-off format prescribes", () => {
@@ -234,32 +228,38 @@ describe("renderDigest", () => {
 		expect(renderDigest(EMBED, [page()])).toBe("");
 	});
 
-	it("omits the ` · section` part of the page heading when the page has no top section", () => {
+	/**
+	 * Plenty of PDFs have neither an outline nor recognizably larger headings. The page then steps in
+	 * as the heading -- and carries the link, so its entries do not repeat it (ticket 04).
+	 */
+	it("heads an entry without a section with its page, and leaves that entry without a locator", () => {
 		const rendered = renderDigest(EMBED, [
 			page({ highlights: [highlight({ id: "hl-1", sentence: "A sentence.", marked: ["A"] })] }),
 		]);
 		expect(rendered).toBe(`
 ### [[${EMBED}#page=1|Page 1]]
 
-> [!quote]
-> ==A== sentence. ^hl-1`);
+==A== sentence. ^hl-1`);
 	});
 
-	it("emits no section heading for an entry without a section", () => {
-		const rendered = renderDigest(EMBED, [
-			page({ notes: [{ ...note({ id: "nt-1", text: "A margin note." }), section: null }] }),
-		]);
-		expect(rendered).toBe(`
-### [[${EMBED}#page=1|Page 1]]
-
-> [!note] on this page
-> A margin note. ^nt-1`);
-	});
-
-	it("repeats no section heading for the top section, and emits one only where the section changes", () => {
+	it("heads an entry with a section with that section, and ends the entry with its page link", () => {
 		const rendered = renderDigest(EMBED, [
 			page({
-				topSection: "First",
+				pageLabel: "iv",
+				embedPage: 4,
+				notes: [{ ...note({ id: "nt-1", text: "A margin note." }), section: "First" }],
+			}),
+		]);
+		expect(rendered).toBe(`
+### First
+
+> [!note] on this page
+> A margin note. · [[${EMBED}#page=4|p. iv]] ^nt-1`);
+	});
+
+	it("emits a section heading once, where the section changes", () => {
+		const rendered = renderDigest(EMBED, [
+			page({
 				highlights: [
 					highlight({ id: "hl-1", sentence: "One.", section: "First", top: 10 }),
 					highlight({ id: "hl-2", sentence: "Two.", section: "First", top: 20 }),
@@ -267,7 +267,37 @@ describe("renderDigest", () => {
 				],
 			}),
 		]);
-		expect(rendered.match(/^#### .*$/gm)).toEqual(["#### Second"]);
+		expect(rendered.match(/^### .*$/gm)).toEqual(["### First", "### Second"]);
+	});
+
+	/**
+	 * A section runs on across a page break -- repeating its heading there would say nothing the
+	 * entries' own page links do not.
+	 */
+	it("carries a section across pages rather than heading it again", () => {
+		const rendered = renderDigest(EMBED, [
+			page({ embedPage: 1, highlights: [highlight({ id: "hl-1", sentence: "One.", section: "First" })] }),
+			page({ pageLabel: "2", embedPage: 2, highlights: [highlight({ id: "hl-2", sentence: "Two.", section: "First" })] }),
+			page({ pageLabel: "3", embedPage: 3, highlights: [highlight({ id: "hl-3", sentence: "Three.", section: "Second" })] }),
+		]);
+		expect(rendered).toBe(`
+### First
+
+One. · [[${EMBED}#page=1|p. 1]] ^hl-1
+
+Two. · [[${EMBED}#page=2|p. 2]] ^hl-2
+
+### Second
+
+Three. · [[${EMBED}#page=3|p. 3]] ^hl-3`);
+	});
+
+	it("heads every page of a document without sections, since each heading names its own page", () => {
+		const rendered = renderDigest(EMBED, [
+			page({ pageLabel: "iv", embedPage: 4, highlights: [highlight({ id: "hl-1", sentence: "One." })] }),
+			page({ pageLabel: "7", embedPage: 7, highlights: [highlight({ id: "hl-2", sentence: "Two." })] }),
+		]);
+		expect(rendered.match(/^### .*$/gm)).toEqual([`### [[${EMBED}#page=4|Page iv]]`, `### [[${EMBED}#page=7|Page 7]]`]);
 	});
 
 	it("groups entries by section rather than by position, so a heading-anchored note lands under its section heading", () => {
@@ -275,7 +305,6 @@ describe("renderDigest", () => {
 		// but below the first section's. Sorting by `top` alone would print it before its section heading.
 		const rendered = renderDigest(EMBED, [
 			page({
-				topSection: "First",
 				highlights: [
 					highlight({ id: "hl-1", sentence: "One.", section: "First", top: 10 }),
 					highlight({ id: "hl-2", sentence: "Two.", section: "Second", top: 30 }),
@@ -289,27 +318,16 @@ describe("renderDigest", () => {
 			}),
 		]);
 		expect(rendered).toBe(`
-### [[${EMBED}#page=1|Page 1]] · First
+### First
 
-> [!quote]
-> One. ^hl-1
+One. · [[${EMBED}#page=1|p. 1]] ^hl-1
 
-#### Second
+### Second
 
-> [!note] at the heading »Second«
-> Note. ^nt-1
+> [!note] Handwritten
+> Note. · [[${EMBED}#page=1|p. 1]] ^nt-1
 
-> [!quote]
-> Two. ^hl-2`);
-	});
-
-	it("renders one `###` heading per page", () => {
-		const rendered = renderDigest(EMBED, [
-			page({ pageLabel: "iv", embedPage: 4, highlights: [highlight({ id: "hl-1", sentence: "One." })] }),
-			page({ pageLabel: "7", embedPage: 7, highlights: [highlight({ id: "hl-2", sentence: "Two." })] }),
-		]);
-		expect(rendered).toContain(`### [[${EMBED}#page=4|Page iv]]\n`);
-		expect(rendered).toContain(`### [[${EMBED}#page=7|Page 7]]\n`);
+Two. · [[${EMBED}#page=1|p. 1]] ^hl-2`);
 	});
 });
 
@@ -321,28 +339,46 @@ describe("renderDigest — highlight quotes", () => {
 
 	it("marks the first occurrence of the highlighted run", () => {
 		expect(quoteBody({ sentence: "Ein Wort und noch ein Wort.", marked: ["Wort"] })).toBe(
-			"> Ein ==Wort== und noch ein Wort. ^hl-1",
+			"Ein ==Wort== und noch ein Wort. ^hl-1",
+		);
+	});
+
+	/**
+	 * A mark only says something by contrast. Where it covers the whole entry there is nothing left
+	 * for it to single out, and Obsidian paints one mark per wrapped line, so a long one reads as a
+	 * striped slab -- which is what opened this map. The threshold also removes every fragmented mark
+	 * the fixture has, since each of those sits at 98 % or above.
+	 */
+	it("drops the marks from a quote that is almost entirely marked", () => {
+		// 21 of 26 characters, i.e. 81 %: what is left unmarked is a lead-in, not a distinction.
+		expect(quoteBody({ sentence: "Also ist das hier wichtig.", marked: ["ist das hier wichtig."] })).toBe(
+			"Also ist das hier wichtig. ^hl-1",
+		);
+	});
+
+	it("keeps the marks where a quarter of the quote stays unmarked", () => {
+		expect(quoteBody({ sentence: "Also ist das hier wichtig.", marked: ["das hier wichtig."] })).toBe(
+			"Also ist ==das hier wichtig.== ^hl-1",
+		);
+	});
+
+	it("counts the coverage over the resolved ranges, so an adjusted selection cannot over-count", () => {
+		// The device records every version of a selection, so the same run arrives repeatedly. Summed
+		// raw these three cover the sentence more than once and the mark would be dropped; resolved
+		// they cover 13 of 23 characters.
+		expect(quoteBody({ sentence: "Ein Wort und noch mehr.", marked: ["Wort und", "Wort und", "und noch"] })).toBe(
+			"Ein ==Wort und noch== mehr. ^hl-1",
 		);
 	});
 
 	/**
 	 * A highlight can legitimately run to thousands of characters -- the reader records a selection
-	 * over several paragraphs as one run. Printed open it buries every ordinary quote around it, so it
-	 * is folded shut instead of truncated: nothing is dropped, and one click opens it.
+	 * over several paragraphs as one run. It used to be folded shut to keep the callout short; without
+	 * the callout there is nothing to fold, and the quote is simply a long paragraph.
 	 */
-	it("folds a quote longer than a screenful shut, keeping its text", () => {
+	it("prints a quote of any length whole", () => {
 		const long = `${"Ein sehr langer Satz. ".repeat(30)}Ende.`;
-		const rendered = renderDigest(EMBED, [page({ highlights: [highlight({ id: "hl-1", sentence: long, marked: [] })] })]);
-
-		expect(rendered).toContain("> [!quote]- Long highlight\n");
-		expect(rendered).toContain(long);
-	});
-
-	it("leaves a sentence-scale quote open", () => {
-		const rendered = renderDigest(EMBED, [page({ highlights: [highlight({ id: "hl-1", sentence: "Kurz.", marked: [] })] })]);
-
-		expect(rendered).toContain("> [!quote]\n");
-		expect(rendered).not.toContain("[!quote]-");
+		expect(quoteBody({ sentence: long, marked: [] })).toBe(`${long} ^hl-1`);
 	});
 
 	/**
@@ -352,54 +388,54 @@ describe("renderDigest — highlight quotes", () => {
 	 */
 	it("escapes the angle brackets a quoted passage carries, so an XML tag cannot open raw HTML", () => {
 		expect(quoteBody({ sentence: 'Dokumente innerhalb von <document index="n"> hier.', marked: [] })).toBe(
-			'> Dokumente innerhalb von \\<document index="n"> hier. ^hl-1',
+			'Dokumente innerhalb von \\<document index="n"> hier. ^hl-1',
 		);
 	});
 
 	it("escapes an ampersand, which would otherwise reach the reader as a decoded entity", () => {
-		expect(quoteBody({ sentence: "A &amp; B.", marked: [] })).toBe("> A \\&amp; B. ^hl-1");
+		expect(quoteBody({ sentence: "A &amp; B.", marked: [] })).toBe("A \\&amp; B. ^hl-1");
 	});
 
-	it("escapes a leading `>`, which would open a nested blockquote inside the callout", () => {
-		expect(quoteBody({ sentence: "> zitiert.", marked: [] })).toBe("> \\> zitiert. ^hl-1");
+	it("escapes a leading `>`, which would open a blockquote instead of printing the character", () => {
+		expect(quoteBody({ sentence: "> zitiert.", marked: [] })).toBe("\\> zitiert. ^hl-1");
 	});
 
 	it("leaves the digest's own `==` markers alone while escaping the text around them", () => {
 		expect(quoteBody({ sentence: "Nutze <tag> im Prompt.", marked: ["<tag>"] })).toBe(
-			"> Nutze ==\\<tag>== im Prompt. ^hl-1",
+			"Nutze ==\\<tag>== im Prompt. ^hl-1",
 		);
 	});
 
 	it("quotes the sentence plain when no highlighted run is known", () => {
-		expect(quoteBody({ sentence: "Nur der Satz.", marked: [] })).toBe("> Nur der Satz. ^hl-1");
+		expect(quoteBody({ sentence: "Nur der Satz.", marked: [] })).toBe("Nur der Satz. ^hl-1");
 	});
 
 	it("falls back to the plain sentence when the run is not in the sentence at all", () => {
-		expect(quoteBody({ sentence: "Nur der Satz.", marked: ["etwas anderes"] })).toBe("> Nur der Satz. ^hl-1");
+		expect(quoteBody({ sentence: "Nur der Satz.", marked: ["etwas anderes"] })).toBe("Nur der Satz. ^hl-1");
 	});
 
 	it("marks each of several disjoint runs", () => {
 		expect(quoteBody({ sentence: "Ein Wort und noch ein Wort.", marked: ["Ein", "noch"] })).toBe(
-			"> ==Ein== Wort und ==noch== ein Wort. ^hl-1",
+			"==Ein== Wort und ==noch== ein Wort. ^hl-1",
 		);
 	});
 
 	it("marks the union of two overlapping runs once rather than twice", () => {
 		// What the device produces for one adjusted selection: the same passage, twice, differently cut.
 		expect(quoteBody({ sentence: "Ein Wort und noch mehr.", marked: ["Wort und", "und noch"] })).toBe(
-			"> Ein ==Wort und noch== mehr. ^hl-1",
+			"Ein ==Wort und noch== mehr. ^hl-1",
 		);
 	});
 
 	it("marks a repeated run once", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Wort", "Wort"] })).toBe(
-			"> Ein ==Wort== und mehr. ^hl-1",
+			"Ein ==Wort== und mehr. ^hl-1",
 		);
 	});
 
 	it("joins two runs that merely touch, so no empty `==...==` pair is emitted", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Ein ", "Wort"] })).toBe(
-			"> ==Ein Wort== und mehr. ^hl-1",
+			"==Ein Wort== und mehr. ^hl-1",
 		);
 	});
 
@@ -407,25 +443,25 @@ describe("renderDigest — highlight quotes", () => {
 		// One continuous sweep of the marker that the device recorded as two runs; `==A== ==B==` would
 		// render a seam the reader never drew.
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Ein", "Wort"] })).toBe(
-			"> ==Ein Wort== und mehr. ^hl-1",
+			"==Ein Wort== und mehr. ^hl-1",
 		);
 	});
 
 	it("keeps real unmarked words outside the marks", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["Ein", "und"] })).toBe(
-			"> ==Ein== Wort ==und== mehr. ^hl-1",
+			"==Ein== Wort ==und== mehr. ^hl-1",
 		);
 	});
 
 	it("skips a run the sentence does not contain without losing the others", () => {
 		expect(quoteBody({ sentence: "Ein Wort und mehr.", marked: ["fehlt", "Wort"] })).toBe(
-			"> Ein ==Wort== und mehr. ^hl-1",
+			"Ein ==Wort== und mehr. ^hl-1",
 		);
 	});
 
 	it("does not render the marker color (F9)", () => {
-		expect(quoteBody({ sentence: "Gelb.", marked: ["Gelb"], color: { r: 255, g: 207, b: 0 } })).toBe(
-			"> ==Gelb==. ^hl-1",
+		expect(quoteBody({ sentence: "Gelb ist die Farbe hier.", marked: ["Gelb"], color: { r: 255, g: 207, b: 0 } })).toBe(
+			"==Gelb== ist die Farbe hier. ^hl-1",
 		);
 	});
 });
@@ -446,6 +482,21 @@ describe("renderDigest — note anchors and crops", () => {
 			"> [!note] next to the highlight",
 		);
 		expect(noteBlock({ anchor: { kind: "page" }, text: "x" })).toContain("> [!note] on this page");
+	});
+
+	/**
+	 * Under its own section heading, "at the heading »X«" repeats the line right above it. The title
+	 * then says only what the entry is, which the box alone does not.
+	 */
+	it("titles a note »Handwritten« where its anchor names the section it is printed under", () => {
+		const rendered = renderDigest(EMBED, [
+			page({
+				notes: [
+					{ ...note({ id: "nt-1", anchor: { kind: "heading", heading: "First" }, text: "x" }), section: "First" },
+				],
+			}),
+		]);
+		expect(rendered).toContain("> [!note] Handwritten\n");
 	});
 
 	it("quotes the first words of the nearest line for a line anchor", () => {
@@ -493,21 +544,23 @@ describe("renderDigest — note anchors and crops", () => {
 		);
 	});
 
-	it("nests a highlight-anchored note inside that quote callout", () => {
+	/** There is no quote callout left to nest inside, and the note carries no locator: the highlight it belongs to already gave one. */
+	it("prints a highlight-anchored note right below that highlight", () => {
 		const rendered = renderDigest(EMBED, [
 			page({
 				highlights: [
 					highlight({
 						id: "hl-1",
-						sentence: "Ein Satz.",
+						sentence: "Ein Satz mit Inhalt.",
 						marked: ["Satz"],
+						section: "First",
 						notes: [note({ id: "nt-1", anchor: { kind: "highlight", highlightId: "hl-1" }, text: "Dazu." })],
 					}),
 				],
 			}),
 		]);
 		expect(rendered).toContain(
-			"> [!quote]\n> Ein ==Satz==. ^hl-1\n>\n> > [!note] next to the highlight\n> > Dazu. ^nt-1",
+			`Ein ==Satz== mit Inhalt. · [[${EMBED}#page=1|p. 1]] ^hl-1\n\n> [!note] next to the highlight\n> Dazu. ^nt-1`,
 		);
 	});
 });

@@ -164,7 +164,7 @@ describe("buildNoteContent", () => {
 		expect(content).toContain("![[tagged-sync/attachments/doc-1.pdf]]\n\n## Transcript\n");
 	});
 
-	it("renders a per-page quote callout above the transcript, titled with a page link into the embed", () => {
+	it("renders a per-page heading above the transcript, linking into the embedded page", () => {
 		const content = buildNoteContent(
 			baseFields({
 				highlights: [
@@ -178,28 +178,28 @@ describe("buildNoteContent", () => {
 		expect(content).toContain(
 			"![[tagged-sync/attachments/doc-1.pdf]]\n\n" +
 				"## Highlights\n\n" +
-				"> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=3|Page 3]]\n" +
-				"> - Reading changes the past.\n" +
-				"> - Memory is a reconstruction.\n\n" +
-				"> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=7|Page 7]]\n" +
-				"> - A highlight from a later page.\n\n" +
+				"### [[tagged-sync/attachments/doc-1.pdf#page=3|Page 3]]\n\n" +
+				"- Reading changes the past.\n" +
+				"- Memory is a reconstruction.\n\n" +
+				"### [[tagged-sync/attachments/doc-1.pdf#page=7|Page 7]]\n\n" +
+				"- A highlight from a later page.\n\n" +
 				"## Transcript\n",
 		);
 	});
 
-	it("points a page-level note's callout at the sole embedded page while labelling it with the notebook position", () => {
+	it("points a page-level note's heading at the sole embedded page while labelling it with the notebook position", () => {
 		const content = buildNoteContent(
 			baseFields({ pageId: "page-a", pageIndex: 5, highlights: [{ pageLabel: 5, embedPage: 1, quotes: ["A quote."] }] }),
 			null,
 		);
 
-		expect(content).toContain("> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=1|Page 5]]\n> - A quote.");
+		expect(content).toContain("### [[tagged-sync/attachments/doc-1.pdf#page=1|Page 5]]\n\n- A quote.");
 	});
 
 	it("keeps a highlights section even when the transcript is empty (independent sections)", () => {
 		const content = buildNoteContent(baseFields({ transcript: "", highlights: [{ pageLabel: 1, embedPage: 1, quotes: ["Only a highlight."] }] }), null);
 
-		expect(content).toContain("## Highlights\n\n> [!quote] [[tagged-sync/attachments/doc-1.pdf#page=1|Page 1]]\n> - Only a highlight.");
+		expect(content).toContain("## Highlights\n\n### [[tagged-sync/attachments/doc-1.pdf#page=1|Page 1]]\n\n- Only a highlight.");
 		expect(content).not.toContain("## Transcript");
 	});
 
@@ -211,7 +211,7 @@ describe("buildNoteContent", () => {
 	});
 
 	it("renders the digest below the embed, replacing both the Highlights and the Transcript section", () => {
-		const digest = "\n### [[tagged-sync/attachments/doc-1.pdf#page=2|Page 2]] · Allgemeine Prinzipien\n\n> [!quote]\n> A ==marked== sentence. ^hl-9f21c4";
+		const digest = "\n### Allgemeine Prinzipien\n\nA ==marked== sentence. · [[tagged-sync/attachments/doc-1.pdf#page=2|p. 2]] ^hl-9f21c4";
 
 		const content = buildNoteContent(
 			baseFields({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	cleanHeadingTitle,
 	dehyphenate,
 	groupTextLines,
 	loadPdfText,
@@ -649,5 +650,72 @@ describe("loadPdfText", () => {
 		const doc = singlePageDoc(fakePage([textItem("All the same size.", 72, 700, 9), textItem("Nothing stands out.", 72, 686, 9)]));
 
 		expect(await (await loadPdfText(BYTES, fakeLoader(doc)))?.headings()).toEqual([]);
+	});
+
+	it("cleans an outline title, and drops a heading whose title is nothing but an ornament", async () => {
+		const doc = singlePageDoc(fakePage([textItem("Body", 50, 700, 10)]), {
+			getOutline: () => Promise.resolve([{ title: "■ 1 Introduction", dest: "a" }, { title: "■", dest: "a" }]),
+			getDestination: () => Promise.resolve([{ num: 1 }, { name: "XYZ" }, 72, 740, null]),
+			getPageIndex: () => Promise.resolve(0),
+		});
+
+		const headings = await (await loadPdfText(BYTES, fakeLoader(doc)))?.headings();
+
+		expect(headings).toEqual([{ pageIndex: 0, x: 72, y: 740, title: "1 Introduction" }]);
+	});
+
+	it("cleans a title the font-size heuristic reads off the page too", async () => {
+		const doc = singlePageDoc(
+			fakePage([
+				textItem("• Bullet heading", 72, 740, 13.5),
+				textItem("Body text at nine points.", 72, 700, 9),
+				textItem("More body text at nine points.", 72, 686, 9),
+			]),
+			{ getOutline: () => Promise.resolve([]) },
+		);
+
+		const headings = await (await loadPdfText(BYTES, fakeLoader(doc)))?.headings();
+
+		expect(headings?.map((heading) => heading.title)).toEqual(["Bullet heading"]);
+	});
+});
+
+/**
+ * The heading is the digest's only heading now, so a `■` the outline carries for decoration lands as
+ * the loudest text on the page. Measured over the fixture: 0 of its 43 outline titles change, i.e.
+ * this is a repair for broken input, not a rewrite of good input.
+ */
+describe("cleanHeadingTitle", () => {
+	it("strips leading ornaments, however many", () => {
+		expect(cleanHeadingTitle("■ 1 Introduction")).toBe("1 Introduction");
+		expect(cleanHeadingTitle("• Bullet heading")).toBe("Bullet heading");
+		expect(cleanHeadingTitle("✦✦ Fancy")).toBe("Fancy");
+		expect(cleanHeadingTitle("→ Weiterführendes")).toBe("Weiterführendes");
+	});
+
+	it("removes invisibles wherever they sit", () => {
+		expect(cleanHeadingTitle("Soft­hyphen")).toBe("Softhyphen");
+		expect(cleanHeadingTitle("Zero​width")).toBe("Zerowidth");
+		expect(cleanHeadingTitle("﻿BOM")).toBe("BOM");
+	});
+
+	it("keeps ZWJ, which carries meaning rather than decorating", () => {
+		expect(cleanHeadingTitle("क‍ष")).toBe("क‍ष");
+	});
+
+	it("keeps numbering and punctuation, which locate the section", () => {
+		expect(cleanHeadingTitle("1.1 Related surveys")).toBe("1.1 Related surveys");
+		expect(cleanHeadingTitle("»Zitat« als Titel")).toBe("»Zitat« als Titel");
+		expect(cleanHeadingTitle("§ 5 Verfahren")).toBe("§ 5 Verfahren");
+		expect(cleanHeadingTitle("(Anhang) Tabellen")).toBe("(Anhang) Tabellen");
+	});
+
+	it("collapses whitespace and trims", () => {
+		expect(cleanHeadingTitle("  Zwei   Wörter  ")).toBe("Zwei Wörter");
+	});
+
+	it("returns nothing for a title that holds nothing but junk", () => {
+		expect(cleanHeadingTitle("■")).toBe("");
+		expect(cleanHeadingTitle("   ")).toBe("");
 	});
 });
