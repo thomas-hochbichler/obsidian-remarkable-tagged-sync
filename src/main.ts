@@ -25,7 +25,7 @@ import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
-import { EMPTY_SYNC_INDEX, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
+import { EMPTY_SYNC_INDEX, invalidateRenders, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
 import { TagRouter, type TagFolderMap } from "./tag-router";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 import { visionBackend } from "./vision-register";
@@ -81,6 +81,12 @@ interface TaggedSyncData {
 	lastSyncAt: string | null;
 	/** Vault folder for rendered PDFs (spec §8: configurable, default `tagged-sync/attachments`). Stored raw; normalized at use. */
 	attachmentsFolder: string;
+	/**
+	 * F20. Handwritten margin notes on annotated PDFs, off by default: each one keeps a crop of the
+	 * handwriting beside its transcription, which costs roughly 65 KB a note -- about 22 MB for an
+	 * annotated 200-page book -- and that is not something to write into someone's vault unasked.
+	 */
+	marginNotes: boolean;
 }
 
 const DEFAULT_DATA: TaggedSyncData = {
@@ -94,6 +100,7 @@ const DEFAULT_DATA: TaggedSyncData = {
 	autoSync: DEFAULT_AUTO_SYNC,
 	lastSyncAt: null,
 	attachmentsFolder: DEFAULT_ATTACHMENTS_FOLDER,
+	marginNotes: false,
 };
 
 /**
@@ -152,6 +159,20 @@ function createAttachmentStore(vault: Vault): AttachmentStore {
 			if (file) await vault.modifyBinary(file, data);
 			else await vault.createBinary(path, data);
 		},
+		list: async (path) => {
+			const folder = vault.getFolderByPath(path);
+			if (!folder) return [];
+			return folder.children.filter((child): child is TFile => child instanceof TFile).map((file) => file.name);
+		},
+		remove: async (path) => {
+			const file = vault.getFileByPath(path);
+			// Trash rather than delete: crop cleanup runs unattended on every sync, and a file the plugin
+			// removes by mistake is the user's, not ours -- it has to stay recoverable. `system: true` prefers
+			// the OS trash and falls back to the vault's local trash. `FileManager.trashFile`, which reads the
+			// user's own deletion preference, would be the better call but needs Obsidian 1.6.6; manifest.json
+			// declares 1.5.7.
+			if (file) await vault.trash(file, true);
+		},
 	};
 }
 
@@ -189,6 +210,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			autoSync: { ...DEFAULT_AUTO_SYNC, ...saved?.autoSync },
 			lastSyncAt: saved?.lastSyncAt ?? null,
 			attachmentsFolder: saved?.attachmentsFolder ?? DEFAULT_DATA.attachmentsFolder,
+			marginNotes: saved?.marginNotes ?? DEFAULT_DATA.marginNotes,
 		};
 
 		const store: AuthStore = {
@@ -350,6 +372,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					attachmentStore: createAttachmentStore(this.app.vault),
 					attachmentsFolder: normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
 					ocrBackend: backend,
+					marginNotes: this.data.marginNotes,
 					now: () => new Date().toISOString(),
 					onProgress: (progress) => this.showProgress(progress),
 					// Checkpoint after each document, so an interrupted sync can't strand written notes
@@ -446,8 +469,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (result.editedNotesSkipped > 0) {
 			const noun = result.editedNotesSkipped === 1 ? "note was" : "notes were";
 			new Notice(
-				`${result.editedNotesSkipped} ${noun} not updated because they were edited inside the sync block. ` +
-					"Move your edits below the block, then sync again.",
+				`${result.editedNotesSkipped} ${noun} not updated because they were edited. ` +
+					"Tagged Sync only rewrites notes it wrote itself. " +
+					"Undo the change to resume syncing, and keep your own text in a separate note.",
 				15_000,
 			);
 		}
@@ -655,6 +679,25 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 						persist();
 					});
 			});
+
+		// Off by default (F20), and the description says what switching it on costs: the crop beside
+		// every transcription is what makes a misread checkable, and it is also what fills the vault.
+		new Setting(containerEl)
+			.setName("Handwritten notes")
+			.setDesc(
+				"Include handwritten margin notes in the digest of annotated PDFs. On macOS they are transcribed; " +
+					"on Windows and Linux they appear as small images. Each note also stores an image of your handwriting " +
+					"(about 65 KB), so a whole annotated book can add tens of megabytes to your vault.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.data.marginNotes).onChange(async (value) => {
+					this.plugin.data.marginNotes = value;
+					// The device has not changed, so nothing would re-run without this: the switch decides
+					// what a note *contains*, and every already-synced note has to be rewritten to match.
+					this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex);
+					await this.plugin.saveData(this.plugin.data);
+				}),
+			);
 
 		this.renderOcrSettings(containerEl);
 		this.renderAutoSyncSettings(containerEl);

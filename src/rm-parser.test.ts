@@ -4,6 +4,7 @@ import { parseRmV6 } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
 const COLOR_FIXTURE_PATH = "./test-fixtures/rmv6/color-and-tool-v3.14.4.rm";
+const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
 
 /** Wraps a block body in a block header and the `.rm` v6 file header, as the smallest file containing it. */
 function fileWithBlock(blockType: number, body: Uint8Array): Uint8Array {
@@ -212,7 +213,7 @@ describe("parseRmV6", () => {
 		// same leading-0x01 color_rgba quirk (at index 10 here rather than a stroke's index 8).
 		const page = parseRmV6(fileWithBlock(3, glyphBody("past.", { x: -728, y: 810, width: 276, height: 42 })));
 
-		expect(page.highlights).toEqual([{ color: 9, text: "past.", colorRgba: { r: 242, g: 158, b: 255 }, rects: [{ x: -728, y: 810, width: 276, height: 42 }] }]);
+		expect(page.highlights).toEqual([{ id: "0000", color: 9, text: "past.", colorRgba: { r: 242, g: 158, b: 255 }, rects: [{ x: -728, y: 810, width: 276, height: 42 }] }]);
 	});
 
 	it("decodes a highlighted run longer than a single varuint byte", () => {
@@ -229,6 +230,33 @@ describe("parseRmV6", () => {
 		const page = parseRmV6(fileWithBlock(3, truncated));
 
 		expect(page.highlights).toEqual([]);
+	});
+
+	// The digest anchors every entry on the device's own CRDT ids, so a note keeps its block id
+	// across re-syncs no matter how the transcription changes -- ids that repeat would collapse
+	// two annotations into one entry.
+	it("gives every stroke and every highlight of a real PDF page its own CRDT id", () => {
+		const data = readFileSync(PDF_PAGE_FIXTURE_PATH);
+
+		const page = parseRmV6(new Uint8Array(data));
+
+		const strokeIds = page.layers.flatMap((layer) => layer.strokes).map((stroke) => stroke.id);
+		const highlightIds = (page.highlights ?? []).map((highlight) => highlight.id);
+		expect(strokeIds).toHaveLength(65);
+		expect(highlightIds).toHaveLength(9);
+		expect(strokeIds.every((id) => id.length > 0)).toBe(true);
+		expect(highlightIds.every((id) => id.length > 0)).toBe(true);
+		expect(new Set(strokeIds).size).toBe(strokeIds.length);
+		expect(new Set(highlightIds).size).toBe(highlightIds.length);
+	});
+
+	it("reads a stroke's timestamp id, which margin-note clustering uses to tell writing phases apart", () => {
+		const data = readFileSync(PDF_PAGE_FIXTURE_PATH);
+
+		const page = parseRmV6(new Uint8Array(data));
+
+		const strokes = page.layers.flatMap((layer) => layer.strokes);
+		expect(strokes.every((stroke) => stroke.timestamp.length > 0)).toBe(true);
 	});
 
 	it("leaves colorRgba undefined for strokes that don't carry one, including the extended palette", () => {

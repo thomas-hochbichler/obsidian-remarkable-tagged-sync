@@ -1,5 +1,5 @@
 import { BlendMode, type Color, LineCapStyle, PDFDocument, PDFNumber, PDFOperator, PDFOperatorNames, type PDFPage, rgb } from "pdf-lib";
-import type { RmHighlight, RmPage, RmStroke } from "./rm-parser";
+import type { RmHighlight, RmPage, RmRect, RmStroke } from "./rm-parser";
 
 /** `LineJoinStyle.Round` in PDF's numbering; pdf-lib exports the cap styles but not the join ones. */
 const ROUND_LINE_JOIN = 1;
@@ -14,7 +14,7 @@ const ROUND_LINE_JOIN = 1;
  * DPI, and needs it exactly: the wrong DPI mis-scales every stroke about the page's top
  * centre, worsening down and away from the midline.
  */
-interface DeviceCanvas {
+export interface DeviceCanvas {
 	widthPx: number;
 	heightPx: number;
 	pxToPt: number;
@@ -49,6 +49,15 @@ function declaredCanvas(pages: RmPage[]): DeviceCanvas | null {
 }
 
 /**
+ * Which device a PDF-backed document's annotations were drawn on. A book's strokes are page-framed,
+ * so `detectCanvas`'s screen-extent test can't read the device off them; without a declared screen,
+ * assume the commoner 226-DPI family (every model but the Pro).
+ */
+export function resolveDeviceCanvas(scenes: RmPage[]): DeviceCanvas {
+	return declaredCanvas(scenes) ?? RM_1_2;
+}
+
+/**
  * Which device drew these scenes, for handwritten notebooks whose scenes don't say
  * (`declaredCanvas` is preferred wherever it answers). Only sound for a notebook, whose
  * strokes are measured against the screen: a PDF-backed document's are measured against
@@ -78,7 +87,7 @@ const DEFAULT_STROKE_WIDTH_PX = 2;
 const HIGHLIGHTER_PEN_TYPES = new Set([5, 18]);
 const SHADER_PEN_TYPE = 23;
 
-function isHighlighterOrShader(penType: number): boolean {
+export function isHighlighterOrShader(penType: number): boolean {
 	return HIGHLIGHTER_PEN_TYPES.has(penType) || penType === SHADER_PEN_TYPE;
 }
 
@@ -154,6 +163,24 @@ function strokeWidthPx(stroke: RmStroke): number {
 export function toPdfPoint(point: { x: number; y: number }, canvas: DeviceCanvas = RM_1_2): { x: number; y: number } {
 	const { x, y } = toPagePoint(point, canvas);
 	return { x, y: canvas.heightPt - y };
+}
+
+/** A rectangle in PDF points with the PDF's own bottom-left origin. */
+export interface PdfRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+/**
+ * A scene rectangle (a text highlight's run) in the PDF's frame. Rectangles are top-origin like
+ * every other scene coordinate while the PDF's y grows upwards, so the rect's *bottom* edge
+ * (y + height) is what maps to the PDF rect's origin.
+ */
+export function sceneRectToPdf(rect: RmRect, frame: DeviceCanvas): PdfRect {
+	const { x, y } = toPdfPoint({ x: rect.x, y: rect.y + rect.height }, frame);
+	return { x, y, width: rect.width * frame.pxToPt, height: rect.height * frame.pxToPt };
 }
 
 /** Same mapping as `toPdfPoint` but keeping y measured from the page top, which is the axis `drawSvgPath` expects. */
@@ -254,14 +281,8 @@ function drawHighlight(page: PDFPage, highlight: RmHighlight, canvas: DeviceCanv
 			? paletteColor(highlight.colorRgba.r, highlight.colorRgba.g, highlight.colorRgba.b)
 			: DEFAULT_HIGHLIGHT_COLOR);
 	for (const rect of highlight.rects) {
-		// Rectangles are top-origin like every other scene coordinate; pdf-lib draws from the
-		// bottom-left, so the rect's *bottom* edge (y + height) is what maps to the PDF's y.
-		const { x, y } = toPdfPoint({ x: rect.x, y: rect.y + rect.height }, canvas);
 		page.drawRectangle({
-			x,
-			y,
-			width: rect.width * canvas.pxToPt,
-			height: rect.height * canvas.pxToPt,
+			...sceneRectToPdf(rect, canvas),
 			color,
 			opacity: HIGHLIGHTER_OPACITY,
 			blendMode: BlendMode.Multiply,
@@ -364,7 +385,7 @@ export interface AnnotatedPdfPage {
  * fitToWidth, a custom zoom, wherever the page is scrolled to) doesn't enter into placement at all;
  * only the DPI does.
  */
-function pageFrame(widthPt: number, heightPt: number, device: DeviceCanvas): DeviceCanvas {
+export function pageFrame(widthPt: number, heightPt: number, device: DeviceCanvas): DeviceCanvas {
 	return { widthPx: widthPt / device.pxToPt, heightPx: heightPt / device.pxToPt, pxToPt: device.pxToPt, widthPt, heightPt };
 }
 
@@ -378,9 +399,7 @@ function pageFrame(widthPt: number, heightPt: number, device: DeviceCanvas): Dev
 export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: AnnotatedPdfPage[]): Promise<Uint8Array> {
 	if (pages.length === 0) throw new Error("renderAnnotatedPdf: no pages to render");
 
-	// A book's strokes are page-framed, so `detectCanvas`'s screen-extent test can't read the device
-	// off them; without a declared screen, assume the commoner 226-DPI family (every model but the Pro).
-	const device = declaredCanvas(pages.map((page) => page.annotations).filter((scene): scene is RmPage => scene !== null)) ?? RM_1_2;
+	const device = resolveDeviceCanvas(pages.map((page) => page.annotations).filter((scene): scene is RmPage => scene !== null));
 	const src = await PDFDocument.load(sourcePdfBytes);
 	const out = await PDFDocument.create();
 

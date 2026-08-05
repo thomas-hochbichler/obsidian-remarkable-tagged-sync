@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { renderAnnotatedPdf, renderPagesToPdf, toPdfPoint } from "./pdf-renderer";
+import { pageFrame, renderAnnotatedPdf, renderPagesToPdf, resolveDeviceCanvas, sceneRectToPdf, toPdfPoint } from "./pdf-renderer";
 import { parseRmV6, type RmPage, type RmStroke } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -15,6 +15,8 @@ function loadFixturePage(): RmPage {
 function stroke(overrides: Partial<RmStroke>): RmStroke {
 	return {
 		layerId: "layer-1",
+		id: "stroke-1",
+		timestamp: "0001",
 		penType: 17, // fineliner
 		color: 0,
 		brushSize: 2,
@@ -165,7 +167,7 @@ describe("renderPagesToPdf", () => {
 		const highlighted: RmPage = {
 			formatVersion: 6,
 			layers: [{ id: "layer-1", name: null, strokes: [] }],
-			highlights: [{ color: 3, text: "", rects: [{ x: 0, y: 3000, width: 100, height: 20 }] }],
+			highlights: [{ id: "hl-1", color: 3, text: "", rects: [{ x: 0, y: 3000, width: 100, height: 20 }] }],
 		};
 
 		const { height } = (await PDFDocument.load(await renderPagesToPdf([highlighted]))).getPage(0).getSize();
@@ -248,6 +250,8 @@ describe("renderPagesToPdf", () => {
 					strokes: [
 						{
 							layerId: "layer-1",
+							id: "stroke-1",
+							timestamp: "0001",
 							penType: 17,
 							color: 0,
 							brushSize: 2,
@@ -450,7 +454,7 @@ describe("renderAnnotatedPdf", () => {
 			paperSize: { width: 1404, height: 1872 },
 			// The "“Reading" run from the reported book, rounded: it covers x 472.5-524.6, y 231.6-244.9 pt
 			// down the A4 page -- exactly the word the reader highlighted.
-			highlights: [{ color: 9, text: "", colorRgba: { r: 242, g: 158, b: 255 }, rects: [{ x: 549, y: 727, width: 163.5, height: 42 }] }],
+			highlights: [{ id: "hl-1", color: 9, text: "", colorRgba: { r: 242, g: 158, b: 255 }, rects: [{ x: 549, y: 727, width: 163.5, height: 42 }] }],
 		};
 
 		const bytes = await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: page }]);
@@ -467,6 +471,22 @@ describe("renderAnnotatedPdf", () => {
 	});
 
 	/**
+	 * The digest reads a highlight's position without rendering anything, so the helper it uses has to
+	 * land on the same points the renderer draws: these are the numbers the test above asserts on the
+	 * decoded content stream, for the same rect and the same page.
+	 */
+	it("exposes that same rectangle placement through sceneRectToPdf", () => {
+		const frame = pageFrame(A4.width, A4.height, resolveDeviceCanvas([]));
+
+		const rect = sceneRectToPdf({ x: 549, y: 727, width: 163.5, height: 42 }, frame);
+
+		expect(rect.x).toBeCloseTo(472.5, 1);
+		expect(rect.width).toBeCloseTo(52.1, 1);
+		expect(rect.height).toBeCloseTo(13.4, 1);
+		expect(A4.height - rect.y - rect.height).toBeCloseTo(231.6, 1); // top edge, measured down the page
+	});
+
+	/**
 	 * The Paper Pro bug from issue 04: a yellow smart highlight synced as opaque black bars.
 	 * Its glyph block names the real color as palette id 3 (YELLOW) and carries an
 	 * opaque-black color_rgba placeholder, so preferring color_rgba drew black.
@@ -476,7 +496,7 @@ describe("renderAnnotatedPdf", () => {
 			formatVersion: 6,
 			layers: [],
 			paperSize: { width: 1404, height: 1872 },
-			highlights: [{ color: 3, text: "", colorRgba: { r: 0, g: 0, b: 0 }, rects: [{ x: 549, y: 727, width: 163.5, height: 42 }] }],
+			highlights: [{ id: "hl-1", color: 3, text: "", colorRgba: { r: 0, g: 0, b: 0 }, rects: [{ x: 549, y: 727, width: 163.5, height: 42 }] }],
 		};
 
 		const bytes = await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: page }]);
@@ -489,7 +509,7 @@ describe("renderAnnotatedPdf", () => {
 		const page: RmPage = {
 			formatVersion: 6,
 			layers: [{ id: "layer-1", name: null, strokes: [stroke({})] }],
-			highlights: [{ color: 9, text: "", rects: [{ x: 0, y: 0, width: 10, height: 10 }] }],
+			highlights: [{ id: "hl-1", color: 9, text: "", rects: [{ x: 0, y: 0, width: 10, height: 10 }] }],
 		};
 
 		const { ops } = await decodePageContent(await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: page }]));

@@ -16,6 +16,10 @@ export interface RmPoint {
 
 export interface RmStroke {
 	layerId: string;
+	/** The stroke's own CRDT id (`item_id`), same hex encoding as `layerId` -- the device's stable identity for it. */
+	id: string;
+	/** The stroke's CRDT timestamp id, an ordinal (not a clock): strokes written in one phase share or neighbour it. */
+	timestamp: string;
 	penType: number;
 	color: number;
 	brushSize: number;
@@ -53,6 +57,8 @@ export interface RmRect {
  * `strokes` alone miss every text highlight on the page.
  */
 export interface RmHighlight {
+	/** The run's own CRDT id (`item_id`), same hex encoding as `RmStroke.id`. */
+	id: string;
 	color: number;
 	/** The document text the run covers, decoded from the `0x5c` subblock. May be empty (a highlight with no captured text). */
 	text: string;
@@ -132,7 +138,7 @@ function parseStrokeBody(raw: Uint8Array): RmStroke | null {
 	expectTag(stream, 0x1f, "parent_id");
 	const layerId = readCrdtIdHex(stream, raw);
 	expectTag(stream, 0x2f, "item_id");
-	skipCrdtId(stream);
+	const id = readCrdtIdHex(stream, raw);
 	expectTag(stream, 0x3f, "left_id");
 	skipCrdtId(stream);
 	expectTag(stream, 0x4f, "right_id");
@@ -173,9 +179,9 @@ function parseStrokeBody(raw: Uint8Array): RmStroke | null {
 	// may follow it, then an optional color_rgba (0x84) -- the real color for a highlighter/
 	// shader stroke, since `color` above is just the shared HIGHLIGHT placeholder for those.
 	expectTag(stream, 0x6f, "timestamp");
-	skipCrdtId(stream);
+	const timestamp = readCrdtIdHex(stream, raw);
 	if (tryTag(stream, 0x7f)) skipCrdtId(stream);
-	return { layerId, penType, color, brushSize, points, colorRgba: readColorRgba(stream, STROKE_COLOR_RGBA_TAG) };
+	return { layerId, id, timestamp, penType, color, brushSize, points, colorRgba: readColorRgba(stream, STROKE_COLOR_RGBA_TAG) };
 }
 
 /** The optional true-color field's tag, which differs by block: index 8 on a stroke, index 10 on a highlight. */
@@ -252,7 +258,7 @@ function parseGlyphBody(raw: Uint8Array): RmHighlight | null {
 	expectTag(stream, 0x1f, "parent_id");
 	skipCrdtId(stream);
 	expectTag(stream, 0x2f, "item_id");
-	skipCrdtId(stream);
+	const id = readCrdtIdHex(stream, raw);
 	expectTag(stream, 0x3f, "left_id");
 	skipCrdtId(stream);
 	expectTag(stream, 0x4f, "right_id");
@@ -290,7 +296,7 @@ function parseGlyphBody(raw: Uint8Array): RmHighlight | null {
 		rects.push({ x: stream.readF8le(), y: stream.readF8le(), width: stream.readF8le(), height: stream.readF8le() });
 	}
 
-	return { color, text, colorRgba: readColorRgba(stream, HIGHLIGHT_COLOR_RGBA_TAG), rects };
+	return { id, color, text, colorRgba: readColorRgba(stream, HIGHLIGHT_COLOR_RGBA_TAG), rects };
 }
 
 /** Index 5 of the `scene_info` block: the paper size, a length-prefixed subblock (tag = index<<4 | type, type 0xc = length-prefixed). */

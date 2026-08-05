@@ -58,7 +58,7 @@ How the local backend works, for transparency:
 
 Apple Vision auto-detects language and reads cursive well, but produces **flat text** — no
 headings, lists, task lists, or tables. Its structured API is macOS Swift-only and unavailable
-here. It can also misread; see [Correcting a transcript](#correcting-a-transcript).
+here. It can also misread; see [Writing your own notes](#writing-your-own-notes).
 
 ## Network use
 
@@ -117,23 +117,46 @@ your own notes and the embedded render untouched. It asks for confirmation first
 - A notebook tagged with a mapped tag syncs as one note for the whole notebook.
 - An individual page tagged with a mapped tag syncs as its own note, independent of any
   notebook-level tag.
-- Each note has the rendered PDF embedded, then a `## Highlights` section (one quote callout per
-  page, if you highlighted anything on the tablet), then the `## Transcript`. If transcription
-  is off, fails, or finds nothing, the note is still created with the render and no `## Transcript`
-  section — the render is never lost.
+- A handwritten notebook's note has the rendered PDF embedded, then a `## Highlights` section (one
+  quote callout per page, if you highlighted anything on the tablet), then the `## Transcript`. If
+  transcription is off, fails, or finds nothing, the note is still created with the render and no
+  `## Transcript` section — the render is never lost. An annotated PDF gets a `## Digest` instead,
+  described below.
 - A synced note carries **no frontmatter**. Everything the sync needs to track lives in the
   plugin's own `data.json`, not in your notes.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
 
-### Correcting a transcript
+### Annotated PDFs
 
-Everything between the `tagged-sync:begin` and `tagged-sync:end` markers is rewritten on every
-sync. Your own writing belongs **below** that block, where it is preserved.
+A PDF you highlighted or wrote on gets a `## Digest` in place of the transcript: one section per
+annotated page, each highlight quoted with the sentence around it from the PDF and the nearest
+heading above it. Every entry ends with a block ID, so you can link a single annotation from
+elsewhere in your vault — `[[My Book^hl-d449a3]]` embeds that one quote.
 
-If you do edit inside the block — for example to fix a misread word — the plugin notices and
-**refuses to overwrite that note**, telling you which notes it skipped. Your edit is never
-silently erased. Move it below the block to let syncing resume.
+**Handwritten notes in the margin are off by default.** Turn on *Handwritten notes* in the settings
+to include them. Two things to know before you do:
+
+- Each note is transcribed (macOS only) **and** stored as a small image of your own handwriting. The
+  image is the point: handwriting recognition misreads, and nothing in the text tells you when it
+  did — with the image beside it you can see for yourself what you wrote.
+- That image costs roughly 65 KB per note. A heavily annotated book can add tens of megabytes to
+  your vault, which is why the setting starts off rather than on.
+
+On Windows and Linux there is no handwriting recognition, so margin notes appear as images only.
+
+### Writing your own notes
+
+A synced note belongs to the plugin: **every sync rewrites it from scratch**. Each note says so
+at the top, in a collapsed callout. So keep your own writing in a note of your own, and link back
+to the synced one.
+
+If you do edit a synced note — for example to fix a misread word — the plugin notices and
+**refuses to overwrite it**, telling you how many notes it skipped. Your edit is never silently
+erased; that note simply stops updating until you undo the change.
+
+Notes synced by earlier versions had a free area below the sync block. Anything you wrote there
+stays where it is and is still preserved on every sync — new notes just no longer offer it.
 
 ## Limitations
 

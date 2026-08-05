@@ -12,6 +12,8 @@ function page(): RmPage {
 				strokes: [
 					{
 						layerId: "layer-1",
+						id: "stroke-1",
+						timestamp: "0001",
 						penType: 0,
 						color: 0,
 						brushSize: 2,

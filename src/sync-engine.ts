@@ -1,5 +1,7 @@
 import type { DocumentContent, LegacyDocumentContent, RawRemarkableApi, RemarkableApi } from "rmapi-js";
-import { DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, writeAttachment } from "./attachment-writer";
+import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, pruneCrops, writeAttachment } from "./attachment-writer";
+import { slugify } from "./digest-builder";
+import { buildDigest, type DigestPageInput } from "./digest-pipeline";
 import {
 	blockHashOf,
 	extractManagedBlock,
@@ -8,6 +10,7 @@ import {
 	moveNote,
 	type NoteFields,
 	type NoteStore,
+	type OcrStatus,
 	updateTranscript,
 	writeNote,
 } from "./note-builder";
@@ -27,9 +30,22 @@ export type SyncRowStatus = "active" | "orphaned";
  * though nothing changed on the device, which is otherwise the one thing change detection can't
  * notice. Rows written before this field existed re-render once, which is the intent: version 2
  * fixed where a PDF-backed document's annotations land on the page; version 3 fixed Paper Pro
- * highlights rendering opaque black instead of their palette color.
+ * highlights rendering opaque black instead of their palette color; version 4 added the annotation
+ * digest, which an already-synced PDF note has no way to grow on its own -- nothing changes on the
+ * device when the plugin learns to read a page, so without the bump those notes would keep their
+ * bare highlight list forever; version 5 fixed what the digest *says*: a highlight that skips over
+ * text quoted everything between its ends (a whole page, in one case), section headings lost the
+ * spaces between their words, and two margin notes on one handwritten line came out as two entries
+ * in the wrong order; version 6 escaped the markup a quoted passage carries, without which a
+ * document that quotes XML emitted an unclosed tag and Obsidian stopped rendering the digest from
+ * there on; version 7 sized a margin-note crop from its own raster instead of pinning every one to a
+ * fixed width, which had magnified the small marks -- a 116x417 bracket rendered 280x1007; version 8
+ * widened the cap that sizing scales down to, because a note written across the page was being held
+ * to an aside's width and its handwriting came out too small to read; version 9 turned the digest's
+ * section lines into `####` headings, so a section shows up in Obsidian's outline pane instead of
+ * only its page.
  */
-export const RENDER_VERSION = 3;
+export const RENDER_VERSION = 9;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -98,6 +114,13 @@ export interface SyncDeps {
 	attachmentStore: AttachmentStore;
 	attachmentsFolder?: string;
 	ocrBackend: OcrBackend;
+	/**
+	 * F20's setting, default **off** -- the same default the plugin ships, so a caller that says
+	 * nothing gets the shipped behaviour rather than a second, quieter policy. A PDF unit still runs
+	 * its digest build: that is what keeps `digest.ocr` non-null and so keeps the whole-scene OCR pass
+	 * switched off, which is the point (a page's handwriting must not come back as a flat transcript).
+	 */
+	marginNotes?: boolean;
 	/** Injectable clock -- returns the current time as an ISO string. */
 	now: () => string;
 	onProgress?: (progress: SyncProgress) => void;
@@ -130,6 +153,8 @@ export interface SyncResult {
 	/**
 	 * The raw error text behind each skip, one entry per skipped unit, for "Copy diagnostics" -- the
 	 * console.warn alone left diagnostics reporting "Last error: none" after a partially-failed sync.
+	 * Also carries a digest build's non-fatal warnings: those cost a sentence or an anchor rather than
+	 * a note, but a degraded digest that says so nowhere is exactly the silent loss spec §6 forbids.
 	 */
 	skipErrors: string[];
 }
@@ -256,6 +281,8 @@ interface UnitParams {
 	ocrPages: RmPage[];
 	/** Render-ready highlighted quotes, grouped by page (empty when the unit has no text highlights). */
 	highlights: HighlightGroup[];
+	/** The `## Digest` body of a PDF-backed unit; "" for every other unit, and for a digest that failed to build. */
+	digest: string;
 	docId: string;
 	pageId: string | null;
 	pageIndex: number | null;
@@ -284,6 +311,7 @@ async function writeUnit(
 		embedPath,
 		highlights: params.highlights,
 		transcript: ocr.text,
+		digest: params.digest,
 	};
 	const notePath = await write(fields);
 
@@ -352,6 +380,22 @@ function isStaleRender(row: SyncIndexRow): boolean {
 
 function hasStaleRender(rows: Record<string, SyncIndexRow>, docId: string): boolean {
 	return Object.values(rows).some((row) => row.docId === docId && isStaleRender(row));
+}
+
+/**
+ * Marks every active row stale, so the next sync rewrites every note even though nothing changed on
+ * the device. Called when a *setting* changes what a note contains -- F20's margin notes -- which
+ * `RENDER_VERSION` cannot express: that is a constant, bumped for code changes, and it has no way to
+ * say "this vault's output rule changed". Without this the toggle would sit there doing nothing until
+ * the device happened to change, which reads as a broken switch.
+ */
+export function invalidateRenders(index: SyncIndex): SyncIndex {
+	const rows: Record<string, SyncIndexRow> = {};
+	for (const [key, row] of Object.entries(index.rows)) {
+		const { renderVersion: _dropped, ...withoutVersion } = row;
+		rows[key] = row.status === "active" ? withoutVersion : row;
+	}
+	return { ...index, rows };
 }
 
 /**
@@ -523,6 +567,52 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		let sourcePdf: Promise<Uint8Array> | null = null;
 		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
 
+		// Crops are named per document, not per unit, so they are collected per document too -- see the
+		// prune below. `digestUnits` counts the units that actually produced a set of ids this round.
+		const docSlug = slugify(entry.visibleName);
+		const cropIds = new Set<string>();
+		let digestUnits = 0;
+
+		/**
+		 * The `## Digest` body for one PDF-backed unit, or "" when it could not be built. A failure here
+		 * costs the digest and never the note: the unit is still written with today's highlights, because
+		 * losing an annotation is worse than losing the section that explains it. Warnings from a build
+		 * that did succeed travel the same road -- a digest that degraded silently is what spec §6 forbids.
+		 *
+		 * `ocr` is the outcome the digest's own per-cluster transcription came to, and `null` means there
+		 * is no digest and the unit still needs the whole-scene pass. It exists so a PDF unit is not
+		 * transcribed twice: the clusters have already been through the backend, and running `writeUnit`'s
+		 * pass as well would spend a second round of Vision processes on a result that is then discarded.
+		 */
+		const buildUnitDigest = async (
+			pageId: string | null,
+			pages: DigestPageInput[],
+			unit: string,
+		): Promise<{ markdown: string; ocr: OcrStatus | null }> => {
+			try {
+				const build = await buildDigest(
+					{ ocrBackend, attachmentStore: deps.attachmentStore, attachmentsFolder, marginNotes: deps.marginNotes ?? false },
+					{
+						sourcePdfBytes: await getSourcePdf(),
+						docSlug,
+						// The embed the note is about to carry. It is derived from the same two ids
+						// `writeAttachment` derives it from, so the digest can link into it before the
+						// attachment is written and `writeUnit` needs no reordering.
+						embedPath: attachmentPath(attachmentsFolder, entry.id, pageId),
+						pages,
+					},
+				);
+				skipErrors.push(...build.warnings);
+				for (const id of build.cropIds) cropIds.add(id);
+				digestUnits++;
+				return { markdown: build.markdown, ocr: build.ocr };
+			} catch (error) {
+				console.warn(`Tagged Sync: failed to build the digest for ${unit}, the note keeps its highlights`, error);
+				skipErrors.push(`failed to build the digest for ${unit}: ${errorText(error)}`);
+				return { markdown: "", ocr: null };
+			}
+		};
+
 		// A tagged page's change-detection hash: its own `.rm` hash for handwritten pages, else the
 		// whole-doc hash -- for a PDF page (no `.rm`) or a blank page (never drawn), the page changes
 		// exactly when the document does.
@@ -560,6 +650,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			let pdfBytes: Uint8Array;
 			let ocrPages: RmPage[];
 			let highlights: HighlightGroup[];
+			// Non-null exactly for a PDF-backed unit, i.e. the units that get a digest instead of a transcript.
+			let digestPages: DigestPageInput[] | null = null;
 			try {
 				if (isPdf) {
 					// The unfiltered `composite` (nulls kept) preserves page ordinals, unlike `ocrPages` which drops null scenes.
@@ -567,6 +659,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
 					ocrPages = annotationScenes(composite);
 					highlights = collectHighlights(composite.map((page, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: page.annotations?.highlights ?? [] })));
+					digestPages = composite.map((page, i) => ({ pageId: docPages[i].id, sourceIndex: page.sourceIndex, embedPage: i + 1, scene: page.annotations }));
 				} else {
 					ocrPages = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					pdfBytes = await renderPagesToPdf(ocrPages); // throws on an empty notebook -- surfaced, not written as a blank note
@@ -579,12 +672,19 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				continue;
 			}
 
+			const digest = digestPages
+				? await buildUnitDigest(null, digestPages, `"${entry.visibleName}" for tag "${tag}"`)
+				: { markdown: "", ocr: null };
+
 			const { row, ocr } = await writeUnit(
 				writeDeps,
 				{
+					// An empty page list makes `runOcr` return `skipped` without spawning anything -- the
+					// digest already transcribed this unit, cluster by cluster.
+					ocrPages: digest.ocr === null ? ocrPages : [],
 					pdfBytes,
-					ocrPages,
 					highlights,
+					digest: digest.markdown,
 					docId: entry.id,
 					pageId: null,
 					pageIndex: null,
@@ -598,8 +698,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			consumeRename(rows, rename);
 			rows[row.syncKey] = row;
 			notesWritten++;
-			if (ocr === "unavailable") unavailableOcrUnits++;
-			if (ocr === "failed") failedOcrUnits++;
+			// The digest's own outcome when it produced one, so the platform notice still fires for a
+			// user whose margin notes could not be transcribed here.
+			const unitOcr = digest.ocr ?? ocr;
+			if (unitOcr === "unavailable") unavailableOcrUnits++;
+			if (unitOcr === "failed") failedOcrUnits++;
 		}
 
 		// Same diff, per tagged (and still-live) page -- a page's tags are their own independent unit.
@@ -630,11 +733,16 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const syncKey = pageSyncKey(entry.id, pageTag.pageId, pageTag.name);
 			const existingRow = rows[syncKey];
 			// level 3: page unchanged, don't re-render it -- unless it's currently orphaned (revive), a
-			// rename target, or its note went missing from the vault (deleted by hand).
+			// rename target, its note went missing from the vault (deleted by hand), or it was rendered
+			// by an older renderer. That last one has to be here as well as at the document gate: nothing
+			// on the device changes when the renderer does, so a page-tag note whose page never changes
+			// again would keep an outdated render forever -- which is exactly what the digest's
+			// RENDER_VERSION bump would otherwise fail to reach.
 			if (
 				!rename &&
 				existingRow?.status === "active" &&
 				existingRow.pageHash === pageHash &&
+				!isStaleRender(existingRow) &&
 				(await deps.noteStore.read(existingRow.notePath)) !== null
 			) {
 				continue;
@@ -654,12 +762,15 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			let pdfBytes: Uint8Array;
 			let ocrPages: RmPage[];
 			let highlights: HighlightGroup[];
+			let digestPages: DigestPageInput[] | null = null;
 			try {
 				if (isPdf) {
 					const composite = await annotatedPdfPages(api, entry.id, [{ id: pageTag.pageId, sourceIndex: sourceIndexById.get(pageTag.pageId)! }], pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
 					ocrPages = annotationScenes(composite);
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: composite[0]?.annotations?.highlights ?? [] }]);
+					// A single-page embed, so the `#page=` anchor is 1 -- the same ordinal `collectHighlights` gets.
+					digestPages = composite.map((page) => ({ pageId: pageTag.pageId, sourceIndex: page.sourceIndex, embedPage: 1, scene: page.annotations }));
 				} else {
 					ocrPages = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
 					pdfBytes = await renderPagesToPdf(ocrPages);
@@ -672,12 +783,18 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				continue;
 			}
 
+			const digest = digestPages
+				? await buildUnitDigest(pageTag.pageId, digestPages, `page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}"`)
+				: { markdown: "", ocr: null };
+
 			const { row, ocr } = await writeUnit(
 				writeDeps,
 				{
+					// See the notebook-tag branch: a built digest has already transcribed this unit.
+					ocrPages: digest.ocr === null ? ocrPages : [],
 					pdfBytes,
-					ocrPages,
 					highlights,
+					digest: digest.markdown,
 					docId: entry.id,
 					pageId: pageTag.pageId,
 					pageIndex: pageIndex > 0 ? pageIndex : null,
@@ -691,8 +808,20 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			consumeRename(rows, rename);
 			rows[row.syncKey] = row;
 			notesWritten++;
-			if (ocr === "unavailable") unavailableOcrUnits++;
-			if (ocr === "failed") failedOcrUnits++;
+			const unitOcr = digest.ocr ?? ocr;
+			if (unitOcr === "unavailable") unavailableOcrUnits++;
+			if (unitOcr === "failed") failedOcrUnits++;
+		}
+
+		// One prune per document, over the union of every unit rebuilt this round (F17). Crops are
+		// namespaced per document (`<doc-slug>-<nt-id>.png`), so a notebook-tag note and a page-tag note
+		// of the same document share the namespace and a per-unit prune would delete the other unit's
+		// crops. And only when every mapped unit of the document did rebuild: a unit the change-detection
+		// gate skipped, or one left alone as hand-edited, contributes no ids while its note still embeds
+		// its crops, and pruning against the remainder would delete exactly those.
+		const mappedUnits = mappedNotebookTags.length + mappedPageTags.filter((pageTag) => livePageIds.has(pageTag.pageId)).length;
+		if (digestUnits > 0 && digestUnits === mappedUnits) {
+			await pruneCrops(deps.attachmentStore, attachmentsFolder, docSlug, cropIds);
 		}
 
 		// Bump entryHash on any of this doc's rows we didn't touch this round (e.g. a page-tag row
