@@ -119,16 +119,24 @@ function inkBounds(page: RmPage): { minX: number; minY: number; width: number; h
 	};
 }
 
-/** Rasterizes a parsed `.rm` scene into a white-background grayscale bitmap, for OCR backends that need a page image (the Vision and LLM-vision backends). */
-export function rasterizePage(page: RmPage): RasterImage {
+/**
+ * Rasterizes a parsed `.rm` scene into a white-background grayscale bitmap, for OCR backends that
+ * need a page image (the Vision and LLM-vision backends).
+ *
+ * `paddingPx` widens the bitmap on all four sides beyond the ink box. A margin-note crop is produced
+ * by handing this a scene holding one cluster's strokes only, and OCR reads a few words far better
+ * with quiet space around them than with the ink touching the image edge.
+ */
+export function rasterizePage(page: RmPage, options?: { paddingPx?: number }): RasterImage {
+	const padding = Math.max(0, Math.round(options?.paddingPx ?? 0));
 	const bounds = inkBounds(page);
-	const width = bounds?.width ?? PAGE_WIDTH_PX;
-	const height = bounds?.height ?? PAGE_HEIGHT_PX;
+	const width = (bounds?.width ?? PAGE_WIDTH_PX) + 2 * padding;
+	const height = (bounds?.height ?? PAGE_HEIGHT_PX) + 2 * padding;
 	const image: RasterImage = { width, height, pixels: new Uint8Array(width * height).fill(255) };
 
 	for (const layer of page.layers) {
 		for (const stroke of layer.strokes) {
-			drawStroke(image, stroke, bounds?.minX ?? 0, bounds?.minY ?? 0);
+			drawStroke(image, stroke, (bounds?.minX ?? 0) - padding, (bounds?.minY ?? 0) - padding);
 		}
 	}
 

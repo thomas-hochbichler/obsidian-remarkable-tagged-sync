@@ -42,6 +42,8 @@ describe("rasterizePage", () => {
 					strokes: [
 						{
 							layerId: "layer-1",
+							id: "stroke-1",
+							timestamp: "0001",
 							penType: 0,
 							color: 0,
 							brushSize: 4,
@@ -73,6 +75,8 @@ describe("rasterizePage", () => {
 					strokes: [
 						{
 							layerId: "layer-1",
+							id: "stroke-1",
+							timestamp: "0001",
 							penType: 0,
 							color: 0,
 							brushSize: 2,
@@ -92,6 +96,27 @@ describe("rasterizePage", () => {
 		expect(image.width).toBeGreaterThanOrEqual(200); // the full 200px-wide stroke, not a sliver
 	});
 
+	it("grows the bitmap by the padding on all four sides, carrying the ink along with it", () => {
+		const page = loadFixturePage();
+		const padding = 12;
+		const plain = rasterizePage(page);
+
+		const padded = rasterizePage(page, { paddingPx: padding });
+
+		expect(padded.width).toBe(plain.width + 2 * padding);
+		expect(padded.height).toBe(plain.height + 2 * padding);
+		let darkCount = 0;
+		for (let y = 0; y < plain.height; y++) {
+			for (let x = 0; x < plain.width; x++) {
+				const pixel = plain.pixels[y * plain.width + x];
+				if (pixel === 255) continue;
+				darkCount++;
+				expect(padded.pixels[(y + padding) * padded.width + (x + padding)]).toBe(pixel);
+			}
+		}
+		expect(darkCount).toBeGreaterThan(0);
+	});
+
 	it("clips strokes that fall outside the page bounds instead of throwing", () => {
 		const outOfBoundsPage: RmPage = {
 			formatVersion: 6,
@@ -102,6 +127,8 @@ describe("rasterizePage", () => {
 					strokes: [
 						{
 							layerId: "layer-1",
+							id: "stroke-1",
+							timestamp: "0001",
 							penType: 0,
 							color: 0,
 							brushSize: 2,

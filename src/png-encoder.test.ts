@@ -1,6 +1,6 @@
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { encodeGrayscalePng } from "./png-encoder";
+import { encodeGrayscalePng, encodeInkPng } from "./png-encoder";
 import type { RasterImage } from "./page-rasterizer";
 
 function readU32BE(bytes: Uint8Array, offset: number): number {
@@ -85,15 +85,51 @@ describe("encodeGrayscalePng", () => {
 		}
 
 		const image: RasterImage = { width: 2, height: 2, pixels: new Uint8Array([0, 64, 128, 255]) };
-		const png = encodeGrayscalePng(image);
 
-		let offset = 8;
-		while (offset < png.length) {
-			const length = readU32BE(png, offset);
-			const typeAndData = png.subarray(offset + 4, offset + 8 + length);
-			const storedCrc = readU32BE(png, offset + 8 + length);
-			expect(storedCrc).toBe(referenceCrc32(typeAndData));
-			offset += 12 + length;
+		for (const png of [encodeGrayscalePng(image), encodeInkPng(image)]) {
+			let offset = 8;
+			while (offset < png.length) {
+				const length = readU32BE(png, offset);
+				const typeAndData = png.subarray(offset + 4, offset + 8 + length);
+				const storedCrc = readU32BE(png, offset + 8 + length);
+				expect(storedCrc).toBe(referenceCrc32(typeAndData));
+				offset += 12 + length;
+			}
 		}
+	});
+});
+
+/**
+ * The crop's form in a note: the grayscale value becomes the ink's opacity, so the rasterizer's white
+ * paper disappears instead of glaring as a lit band in a dark theme.
+ */
+describe("encodeInkPng", () => {
+	it("writes an indexed image whose palette is one grey and whose alpha is the inverted pixel value", () => {
+		const image: RasterImage = { width: 2, height: 1, pixels: new Uint8Array([0, 255]) };
+
+		const chunks = readChunks(encodeInkPng(image));
+
+		expect(chunks.map((chunk) => chunk.type)).toEqual(["IHDR", "PLTE", "tRNS", "IDAT", "IEND"]);
+		expect(chunks[0].data[8]).toBe(8); // bit depth
+		expect(chunks[0].data[9]).toBe(3); // color type: indexed
+
+		const palette = chunks[1].data;
+		expect(palette).toHaveLength(256 * 3);
+		expect([...new Set(palette)]).toEqual([0x80]);
+
+		const alpha = chunks[2].data;
+		expect(alpha).toHaveLength(256);
+		expect(alpha[0]).toBe(255); // black ink: fully opaque
+		expect(alpha[255]).toBe(0); // white paper: fully transparent
+		expect(alpha[128]).toBe(127); // a half-tone stroke edge keeps its antialiasing
+	});
+
+	it("writes the same pixel bytes as the grayscale form, so a crop costs no more than it did", () => {
+		const image: RasterImage = { width: 3, height: 2, pixels: new Uint8Array([10, 20, 30, 40, 50, 60]) };
+
+		const idat = (png: Uint8Array) => inflateSync(readChunks(png).find((chunk) => chunk.type === "IDAT")!.data);
+
+		expect([...idat(encodeInkPng(image))]).toEqual([0, 10, 20, 30, 0, 40, 50, 60]);
+		expect([...idat(encodeInkPng(image))]).toEqual([...idat(encodeGrayscalePng(image))]);
 	});
 });
