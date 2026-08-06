@@ -78,6 +78,11 @@ async function decodePageContent(bytes: Uint8Array): Promise<{ ops: string; extG
 	return { ops, extGStates };
 }
 
+/** pdf-lib writes a drawn string as a hex-encoded PDF string, which is what a content stream carries. */
+function drawnText(value: string): string {
+	return `<${[...value].map((character) => (character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(2, "0")).join("")}> Tj`;
+}
+
 describe("renderPagesToPdf", () => {
 	it("renders a real page fixture into a one-page PDF", async () => {
 		const page = loadFixturePage();
@@ -87,6 +92,51 @@ describe("renderPagesToPdf", () => {
 		expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
 		const doc = await PDFDocument.load(bytes);
 		expect(doc.getPageCount()).toBe(1);
+	});
+
+	it("draws the page's typed text, so a page with text and no strokes is not a blank PDF", async () => {
+		// `Schnellnotiz-8c6044dc` is this case in the corpus: 1144 characters, no ink, a 724-byte blank.
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: "typed", deleted: 0 }], styles: new Map() },
+		};
+
+		const { ops } = await decodePageContent(await renderPagesToPdf([page]));
+
+		expect(ops).toContain(drawnText("typed"));
+	});
+
+	it("draws a list item's bullet, which is the style's doing and not a character of the text", async () => {
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: {
+				posX: -468,
+				posY: 234,
+				width: 936,
+				runs: [{ id: "1:10", text: "an item", deleted: 0 }],
+				styles: new Map([["0:0", 4]]),
+			},
+		};
+
+		const { ops } = await decodePageContent(await renderPagesToPdf([page]));
+
+		expect(ops).toContain(drawnText("an item"));
+		expect(ops).toContain("<95> Tj"); // the bullet, at WinAnsi's own code point
+	});
+
+	it("grows a page to fit typed text that runs past the screen, which ink alone would not size", async () => {
+		const manyLines = Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n");
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: manyLines, deleted: 0 }], styles: new Map() },
+		};
+
+		const doc = await PDFDocument.load(await renderPagesToPdf([page]));
+
+		expect(doc.getPage(0).getHeight()).toBeGreaterThan(1872 * (72 / 226));
 	});
 
 	it("throws rather than producing an empty PDF when there are no pages", async () => {

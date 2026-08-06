@@ -538,8 +538,13 @@ function parseRootTextBody(raw: Uint8Array): RmText | null {
 }
 
 /**
- * The per-paragraph style map: `count × { charId, timestamp, { u8 style } }`. An entry names the
+ * The per-paragraph style map: `count × { charId, timestamp, { u8 style, ... } }`. An entry names the
  * character a style takes effect at, so the codes are read as-is and interpreted by the layout.
+ *
+ * The value subblock is not always two bytes -- a heading's carries five more after the style code --
+ * so an entry is skipped to the length the subblock declares. Reading only the code and walking on
+ * desynchronised the rest of the map: on the corpus's one styled page the last two entries came back
+ * as two nonsense ids, and the two paragraphs they styled silently lost their list marker.
  */
 function readStyleMap(stream: KaitaiStream, end: number, styles: Map<string, number>): void {
 	try {
@@ -551,9 +556,11 @@ function readStyleMap(stream: KaitaiStream, end: number, styles: Map<string, num
 			readTag(stream);
 			skipCrdtId(stream);
 			readTag(stream);
-			stream.readU4le();
+			const valueLength = stream.readU4le();
+			const valueEnd = stream.pos + valueLength;
 			readTag(stream);
 			styles.set(charId, stream.readU1());
+			stream.seek(valueEnd);
 		}
 	} catch {
 		// An unreadable style map costs the page its styles, never its ink.

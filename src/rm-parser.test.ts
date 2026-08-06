@@ -18,6 +18,18 @@ function u32le(value: number): number[] {
 	return [...new Uint8Array(view.buffer)];
 }
 
+/** A little-endian f32 / f64 as bytes, for hand-building block bodies. */
+function f32le(value: number): number[] {
+	const view = new DataView(new ArrayBuffer(4));
+	view.setFloat32(0, value, true);
+	return [...new Uint8Array(view.buffer)];
+}
+function f64le(value: number): number[] {
+	const view = new DataView(new ArrayBuffer(8));
+	view.setFloat64(0, value, true);
+	return [...new Uint8Array(view.buffer)];
+}
+
 /** Wraps a block body in a block header and the `.rm` v6 file header, as the smallest file containing it. */
 function fileWithBlock(blockType: number, body: Uint8Array): Uint8Array {
 	const header = new TextEncoder().encode("reMarkable .lines file, version=6          ");
@@ -137,6 +149,42 @@ describe("parseRmV6", () => {
 			runs: [{ id: "1:14", text: "A", deleted: 0 }],
 			styles: new Map(),
 		});
+	});
+
+	it("reads every style-map entry, including one that follows an entry with a longer value", () => {
+		// A heading's value subblock carries five bytes after the style code. Reading only the code and
+		// walking on desynchronised the rest of the map: on the corpus's one styled page the last two
+		// entries came back as nonsense ids, and the two list paragraphs they styled lost their marker.
+		const crdtId = (part1: number, part2: number) => [part1, part2]; // one-byte varuints suffice here
+		const entry = (id: number[], value: number[]) => [
+			...id,
+			0x1f, ...crdtId(1, 9), // timestamp
+			0x2c, ...u32le(value.length), ...value,
+		];
+		const entries = [
+			...entry(crdtId(1, 20), [0x11, 3, 0x21, 2, 0x34, ...u32le(3)]), // a heading, value 9 bytes long
+			...entry(crdtId(1, 40), [0x11, 4]), // the list item that used to be lost
+		];
+		const styleMap = [0x1c, ...u32le(entries.length + 1), 2, ...entries];
+		const body = new Uint8Array([
+			0x1f, ...crdtId(1, 1), // text block id
+			0x2c, ...u32le(3 * 5 + 1), // text subblock: two nested subblock headers and an empty run list
+			0x1c, ...u32le(5 + 1),
+			0x1c, ...u32le(1),
+			0, // run count
+			0x2c, ...u32le(styleMap.length), ...styleMap,
+			0x3c, ...u32le(16), ...f64le(-468), ...f64le(234),
+			0x44, ...f32le(936),
+		]);
+
+		const page = parseRmV6(fileWithBlock(7, body));
+
+		expect(page.text?.styles).toEqual(
+			new Map([
+				["1:20", 3],
+				["1:40", 4],
+			]),
+		);
 	});
 
 	it("leaves text absent on a page that has none, rather than inventing an empty box", () => {
