@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import { parseRmV6 } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
+
+// Stroke x is measured from the page midline, y from the page top -- so real ink on a reMarkable
+// 1/2 stays inside these bounds, and a misparsed point does not.
+const RM_1_2_HALF_WIDTH_PX = 702;
+const RM_1_2_HEIGHT_PX = 1872;
 const COLOR_FIXTURE_PATH = "./test-fixtures/rmv6/color-and-tool-v3.14.4.rm";
 const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
 
@@ -85,15 +90,20 @@ describe("parseRmV6", () => {
 		expect(stroke.penType).toBe(17);
 		expect(stroke.color).toBe(0);
 		expect(stroke.brushSize).toBeCloseTo(2);
-		expect(stroke.points).toHaveLength(12);
-		expect(stroke.points[0]).toEqual({
-			x: expect.any(Number),
-			y: expect.any(Number),
-			speed: expect.any(Number),
-			width: expect.any(Number),
-			direction: expect.any(Number),
-			pressure: expect.any(Number),
-		});
+		// This fixture's line_def blocks are version 1, whose points are six f32s (24 bytes) rather
+		// than version 2's packed 14. Read as 14, it decoded one point's bytes as parts of the next
+		// and yielded 12 points with coordinates like 1.5e38 -- which `expect.any(Number)` happily
+		// accepted. Assert the values, not just their type.
+		expect(stroke.points).toHaveLength(7);
+		for (const point of stroke.points) {
+			// Every point of this stroke sits within a few px of the same spot on a 1404px-wide page.
+			expect(Math.abs(point.x)).toBeLessThan(RM_1_2_HALF_WIDTH_PX);
+			expect(Math.abs(point.y)).toBeLessThan(RM_1_2_HEIGHT_PX);
+			// v1 records width in px; the parser scales it to v2's quarter-px so consumers see one unit.
+			expect(point.width).toBe(16);
+			expect(point.pressure).toBeGreaterThanOrEqual(0);
+			expect(point.pressure).toBeLessThanOrEqual(255);
+		}
 	});
 
 	it("accepts an ArrayBuffer as well as a Uint8Array", () => {

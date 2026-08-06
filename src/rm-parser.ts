@@ -127,12 +127,52 @@ function tryTag(stream: KaitaiStream, expected: number): boolean {
 }
 
 /**
+ * Bytes per point, by the `line_def` block's own version. Version 1 stores all six fields as
+ * f32 (24 bytes); version 2 packs them (14 bytes: two f32 coordinates, two u16, two u8). The
+ * parser read every file as version 2, so a version-1 file decoded one point's bytes as parts
+ * of the next -- yielding coordinates like 1.5e38 and widths in the thousands. It went unnoticed
+ * because nothing read `width` for a pen and the renderers clamp absurd coordinates away
+ * (`detectCanvas` bounds outliers, `scrolledCanvas` caps at 20 screens).
+ */
+const POINT_BYTES_V1 = 24;
+const POINT_BYTES_V2 = 14;
+
+/** v1 records speed/width as pixels and pressure as 0..1; v2's integer units are 4x, 4x and 255x those. */
+function readPointV1(stream: KaitaiStream): RmPoint {
+	const x = stream.readF4le();
+	const y = stream.readF4le();
+	const speed = stream.readF4le();
+	const direction = stream.readF4le();
+	const width = stream.readF4le();
+	const pressure = stream.readF4le();
+	return {
+		x,
+		y,
+		speed: Math.round(speed * 4),
+		width: Math.round(width * 4),
+		direction: Math.round((255 * direction) / (2 * Math.PI)),
+		pressure: Math.round(pressure * 255),
+	};
+}
+
+function readPointV2(stream: KaitaiStream): RmPoint {
+	return {
+		x: stream.readF4le(),
+		y: stream.readF4le(),
+		speed: stream.readU2le(),
+		width: stream.readU2le(),
+		direction: stream.readU1(),
+		pressure: stream.readU1(),
+	};
+}
+
+/**
  * Hand-parses a `line_def` block body (a pen stroke), which the Kaitai spec
  * leaves as raw bytes -- see kaitai/rmv6.ksy's `rm_raw_body` doc and
  * kaitai/PROVENANCE.md for why. Returns null for tombstoned lines (deleted,
- * carrying no stroke data).
+ * carrying no stroke data). `blockVersion` selects the point layout above.
  */
-function parseStrokeBody(raw: Uint8Array): RmStroke | null {
+function parseStrokeBody(raw: Uint8Array, blockVersion: number): RmStroke | null {
 	const stream = new KaitaiStream(toArrayBuffer(raw));
 
 	expectTag(stream, 0x1f, "parent_id");
@@ -163,16 +203,10 @@ function parseStrokeBody(raw: Uint8Array): RmStroke | null {
 	expectTag(stream, 0x5c, "points");
 	const pointsLen = stream.readU4le();
 
+	const pointBytes = blockVersion === 1 ? POINT_BYTES_V1 : POINT_BYTES_V2;
 	const points: RmPoint[] = [];
-	for (let i = 0; i < Math.floor(pointsLen / 14); i++) {
-		points.push({
-			x: stream.readF4le(),
-			y: stream.readF4le(),
-			speed: stream.readU2le(),
-			width: stream.readU2le(),
-			direction: stream.readU1(),
-			pressure: stream.readU1(),
-		});
+	for (let i = 0; i < Math.floor(pointsLen / pointBytes); i++) {
+		points.push(blockVersion === 1 ? readPointV1(stream) : readPointV2(stream));
 	}
 
 	// timestamp (tag 0x6f, a CRDT id) always follows the points; an optional move_id (0x7f)
@@ -359,7 +393,7 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 			case Rmv6.BlockTypes.LINE_DEF: {
 				let stroke: RmStroke | null;
 				try {
-					stroke = parseStrokeBody(block.body.raw);
+					stroke = parseStrokeBody(block.body.raw, block.currentVersion);
 				} catch (error) {
 					console.warn("Tagged Sync: failed to parse a stroke, skipping it", error);
 					stroke = null;
