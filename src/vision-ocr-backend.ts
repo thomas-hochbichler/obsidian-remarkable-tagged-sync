@@ -5,6 +5,7 @@ import { inkBounds, type InkBounds, rasterizePage } from "./page-rasterizer";
 import { isHighlighterOrShader } from "./pdf-renderer";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage, RmStroke } from "./rm-parser";
+import { layoutText } from "./text-layout";
 
 /** One recognized line's box, normalized against the image it was read from, with a bottom-left origin. */
 export interface VisionBox {
@@ -185,18 +186,14 @@ function sameLine(a: string, b: string): boolean {
 }
 
 /**
- * Puts one rescued line where its ink sits, or drops it as a duplicate.
+ * Puts one line into a page's read at the height it belongs to.
  *
- * Reading order is worth more here than the rescue pass itself -- appending recovered lines to the
- * end of a page costs 2.4 CER points against splicing them in, because a line in the wrong place is
- * charged twice: missing where it belongs, spurious where it landed. The page pass owns the order and
- * is never re-sorted; a rescued line goes in ahead of the first line whose box sits lower.
- *
- * Duplicates are common, not an edge case: on the corpus 14 uncovered clusters yielded 6 new lines.
+ * Reading order is worth more than the rescue pass itself: appending recovered lines to the end of a
+ * page costs 2.4 CER points against splicing them in, because a line in the wrong place is charged
+ * twice -- missing where it belongs, spurious where it landed. The page pass owns the order and is
+ * never re-sorted; an inserted line goes in ahead of the first line whose box sits lower.
  */
-function spliceRescued(read: ReadLines, line: string, centerY: number): boolean {
-	if (read.lines.some((existing) => sameLine(existing, line))) return false;
-
+function insertLine(read: ReadLines, line: string, centerY: number): void {
 	let at = read.lines.length;
 	for (let i = 0; i < read.boxes.length; i++) {
 		if (read.boxes[i].y + read.boxes[i].h / 2 < centerY) {
@@ -206,7 +203,28 @@ function spliceRescued(read: ReadLines, line: string, centerY: number): boolean 
 	}
 	read.lines.splice(at, 0, line);
 	read.boxes.splice(at, 0, { x: 0, y: centerY, w: 1, h: 0 });
-	return true;
+}
+
+/**
+ * Adds the text the user typed on the page, at the height the device lays each line out at.
+ *
+ * Typed text is not on the image at all -- the rasterizer draws ink -- so without this it is simply
+ * absent from the note, and putting it through OCR would be worse than useless: it is already exact
+ * digital text, and Vision would only introduce errors into it.
+ *
+ * Never deduplicated against what came back from Vision. A typed line cannot be a re-read of the same
+ * words, because Vision never saw it, so a resemblance to nearby handwriting is a coincidence -- and
+ * dropping the user's own text over a coincidence is not a trade worth making.
+ */
+function insertTypedText(read: ReadLines, page: RmPage): void {
+	if (!page.text) return;
+	const frame = inkBounds(page);
+	for (const line of layoutText(page.text).lines) {
+		if (line.text.trim() === "") continue;
+		// Without ink there is no frame and no observation either, so every line simply appends in
+		// document order -- which is the order they are laid out in.
+		insertLine(read, line.text, frame ? 1 - (line.yPx - frame.minY) / frame.height : 0);
+	}
 }
 
 /**
@@ -271,7 +289,9 @@ export class VisionOcrBackend implements OcrBackend {
 			// the honest count of what is missing from the note, and the only in-product signal for it.
 			if (lines.length === 0) visionRunStats.unreadableInkRegions++;
 			if (!read) return;
-			for (const line of lines) spliceRescued(read, line, cluster.centerY);
+			// A rescued crop often re-reads a neighbour the page pass already returned, and an unmerged
+			// duplicate costs twice: 14 uncovered clusters on the corpus yielded 6 genuinely new lines.
+			for (const line of lines) if (!read.lines.some((existing) => sameLine(existing, line))) insertLine(read, line, cluster.centerY);
 		});
 	}
 
@@ -285,6 +305,9 @@ export class VisionOcrBackend implements OcrBackend {
 			for (const result of perPage) if ("revision" in result && result.revision !== undefined) visionRunStats.revision = result.revision;
 
 			await this.rescue(pages, reads);
+			reads.forEach((read, index) => {
+				if (read) insertTypedText(read, pages[index]);
+			});
 
 			const text = reads
 				.map((read) => (read?.lines ?? []).join("\n").trim())

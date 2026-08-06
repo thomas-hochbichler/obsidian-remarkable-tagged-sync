@@ -196,6 +196,41 @@ describe("VisionOcrBackend", () => {
 		expect((await backend.recognize([twoLinePage()])).text).toBe("lower");
 	});
 
+	/**
+	 * Typed text is never on the image -- the rasterizer draws ink -- so it is in the note only if it
+	 * is put there, and it is exact digital text that OCR could only damage.
+	 */
+	it("adds the page's typed text at the height the device lays it out at", async () => {
+		const typed: RmPage = {
+			...twoLinePage(),
+			text: { posX: 0, posY: 200, width: 800, runs: [{ id: "1:1", text: "Hello World!", deleted: 0 }], styles: new Map() },
+		};
+		// Both lines of writing are covered, so nothing is rescued and only the typed line is added.
+		const pageRead: VisionBatchResult = {
+			lines: ["upper", "lower"],
+			boxes: [{ x: 0, y: 0.93, w: 1, h: 0.07 }, { x: 0, y: 0, w: 1, h: 0.1 }],
+		};
+		const { runBatch, batchSizes } = stubRunner([[pageRead]]);
+		const backend = new VisionOcrBackend({ runBatch, probe: available });
+
+		const result = await backend.recognize([typed]);
+
+		expect(batchSizes).toEqual([1]);
+		expect(result.text).toBe("upper\nHello World!\nlower");
+	});
+
+	it("transcribes a page that is nothing but typed text, which Vision reads as blank", async () => {
+		const typed: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: 0, posY: 0, width: 800, runs: [{ id: "1:1", text: "first\nsecond", deleted: 0 }], styles: new Map() },
+		};
+		const { runBatch } = stubRunner([[readAll("")]]);
+		const backend = new VisionOcrBackend({ runBatch, probe: available });
+
+		expect(await backend.recognize([typed])).toEqual({ status: "ok", text: "first\nsecond", confidence: null });
+	});
+
 	it("counts ink that stays wordless at its own framing, for the diagnostics block", async () => {
 		const pageRead: VisionBatchResult = { lines: ["lower"], boxes: [{ x: 0, y: 0, w: 1, h: 0.1 }] };
 		const { runBatch } = stubRunner([[pageRead], [readAll("")]]);

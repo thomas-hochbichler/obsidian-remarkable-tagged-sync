@@ -199,9 +199,11 @@ export function renderNotes(scenes: RmPage[], label: (pageIndex: number) => stri
  * so a bump silently bills a metered backend for a whole vault. It need not: a rebuild triggered by
  * the renderer alone is looking at exactly the bytes it looked at last time.
  *
- * The exception is the reason the bump exists. Placing anchored ink changes what the OCR rasterizer
+ * The exceptions are the reason the bump exists. Placing anchored ink changes what the OCR rasterizer
  * sees, so a page whose parse *did* place something is genuinely worth re-reading -- that is the
- * ~4% of pages where the old transcript was garbage. Everything else keeps what it has.
+ * ~4% of pages where the old transcript was garbage. A page carrying typed text is the other: its
+ * transcript was written before typed text was ever transcribed, so it is missing words the page
+ * plainly has. Everything else keeps what it has.
  *
  * Fail-soft: an unreadable note, a missing section or a digest note falls through to running OCR.
  * Never write an empty transcript over a real one.
@@ -213,7 +215,7 @@ async function reusableTranscript(
 	scenes: RmPage[],
 ): Promise<string | undefined> {
 	if (!row || row.status !== "active" || !deviceUnchanged || !isStaleRender(row)) return undefined;
-	if (scenes.some((scene) => scene.layers.some((layer) => layer.placement === "applied"))) return undefined;
+	if (scenes.some((scene) => scene.text || scene.layers.some((layer) => layer.placement === "applied"))) return undefined;
 	const content = await noteStore.read(row.notePath);
 	return content === null ? undefined : (readTranscript(content) ?? undefined);
 }
