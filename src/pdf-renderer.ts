@@ -145,8 +145,30 @@ function strokeWidthPt(stroke: RmStroke, canvas: DeviceCanvas): number {
 	return strokeWidthPx(stroke) * canvas.pxToPt;
 }
 
+/**
+ * `thickness_scale` is the tool's size *setting*, not a width: measured across 23,323 strokes of
+ * the 80-page corpus, drawing a pen at it makes 99.7% of strokes too thin, none too thick, by a
+ * median of exactly 2.00x and up to 5.6x. The device records what it actually drew per point, so
+ * that is what we draw -- the same source the highlighter branch below has always used.
+ *
+ * The mean rather than the widest, because there is almost nothing to taper: pen 17 (10,657 strokes
+ * in the corpus) never varies within a stroke at all, and pen 15 (11,165) varies by at most 1.5px.
+ * The calligraphy pen does vary, and keeps its per-segment path in `drawTaperedStroke`.
+ *
+ * `thickness_scale` remains the fallback for a file whose points record no width.
+ */
 function strokeWidthPx(stroke: RmStroke): number {
-	if (!isHighlighterOrShader(stroke.penType)) return stroke.brushSize > 0 ? stroke.brushSize : DEFAULT_STROKE_WIDTH_PX;
+	if (!isHighlighterOrShader(stroke.penType)) {
+		let total = 0;
+		let counted = 0;
+		for (const point of stroke.points)
+			if (point.width > 0) {
+				total += point.width;
+				counted++;
+			}
+		if (counted > 0) return total / counted / POINT_WIDTH_PER_PX;
+		return stroke.brushSize > 0 ? stroke.brushSize : DEFAULT_STROKE_WIDTH_PX;
+	}
 	// The band is as wide as the widest point the tool laid down; we draw one constant width per
 	// stroke, so a shader's pressure-tapered ends round up to its full width rather than down.
 	let widest = 0;
@@ -207,8 +229,11 @@ function strokePath(stroke: RmStroke, canvas: DeviceCanvas): string {
 /**
  * The calligraphy pen is a chisel tip: its width swells and thins *within* a stroke with tilt and
  * pressure, and the device records the result per point. Drawing it at one constant width is what
- * flattens it into a plain line. Every other ink tool records a constant per-point width, so they
- * stay on the cheaper single-path route -- pencil grain and brush texture remain unmodeled (ticket 05).
+ * flattens it into a plain line.
+ *
+ * Other tools do vary a little -- pen 15 by up to 1.5px within a stroke, pen 17 not at all, measured
+ * over the corpus -- but not enough for a reader to see, so they stay on the cheaper single-path
+ * route at their mean width (`strokeWidthPx`). Pencil grain and brush texture remain unmodeled.
  */
 const CALLIGRAPHY_PEN_TYPE = 21;
 

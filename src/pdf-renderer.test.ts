@@ -339,15 +339,48 @@ describe("renderPagesToPdf", () => {
 		const strokes = [
 			banded(120, 18), // device highlighter: 120 quarter-px -> 30 px
 			banded(48, 23), // shader -> 12 px
-			stroke({ penType: 17, color: 0, brushSize: 1 }), // pen -> thickness_scale, unchanged
 		];
 
 		const bytes = await renderPagesToPdf([pageWithStrokes(strokes)]);
 
 		const { ops } = await decodePageContent(bytes);
 		const widths = Array.from(ops.matchAll(/([\d.]+) w\b/g), (match) => Number(match[1]));
-		expect(widths).toHaveLength(3);
-		for (const [i, px] of [30, 12, 1].entries()) expect(widths[i]).toBeCloseTo((px * 72) / 226, 6);
+		expect(widths).toHaveLength(2);
+		for (const [i, px] of [30, 12].entries()) expect(widths[i]).toBeCloseTo((px * 72) / 226, 6);
+	});
+
+	it("takes a pen's width from the mean recorded point width, not from the thickness_scale that draws it 2x too thin", async () => {
+		// A device fineliner: thickness_scale 2, but the ink it actually laid down is 16 quarter-px
+		// (4px) wide. Drawing it at thickness_scale is the 2.00x median under-thickening measured
+		// across the 80-page corpus.
+		const pen = (widths: number[]) =>
+			stroke({
+				penType: 17,
+				color: 0,
+				brushSize: 2,
+				points: widths.map((width, i) => ({ x: i * 10, y: 0, speed: 0, width, direction: 0, pressure: 0 })),
+			});
+		const strokes = [
+			pen([16, 16, 16]), // constant, as pen 17 is on every corpus stroke -> 4px
+			pen([12, 16, 20]), // varying: the mean, not the widest -- the taper is not modeled
+		];
+
+		const bytes = await renderPagesToPdf([pageWithStrokes(strokes)]);
+
+		const { ops } = await decodePageContent(bytes);
+		const widths = Array.from(ops.matchAll(/([\d.]+) w\b/g), (match) => Number(match[1]));
+		expect(widths).toHaveLength(2);
+		for (const [i, px] of [4, 4].entries()) expect(widths[i]).toBeCloseTo((px * 72) / 226, 6);
+	});
+
+	it("falls back to thickness_scale for a pen whose points record no width, so pre-width files still render", async () => {
+		const widthless = stroke({ penType: 17, color: 0, brushSize: 3 });
+
+		const bytes = await renderPagesToPdf([pageWithStrokes([widthless])]);
+
+		const { ops } = await decodePageContent(bytes);
+		const widths = Array.from(ops.matchAll(/([\d.]+) w\b/g), (match) => Number(match[1]));
+		expect(widths).toEqual([expect.closeTo((3 * 72) / 226, 6)]);
 	});
 
 	it("varies a calligraphy stroke's width per segment from the recorded point widths, instead of flattening it to thickness_scale", async () => {
