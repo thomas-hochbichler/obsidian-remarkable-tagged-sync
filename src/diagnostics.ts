@@ -5,6 +5,18 @@ export interface DiagnosticsInput {
 	/** What the Apple Vision gate says here -- the single most common cause of "there is no text". */
 	visionAvailability: string;
 	backend: string;
+	/**
+	 * The Vision request revision the OS chose on the last run, or null when Vision has not run here.
+	 * Deliberately never pinned -- a revision that is accepted and then returns nothing would hand out
+	 * empty transcripts instead of an error -- so which one ran is a fact only the machine knows.
+	 */
+	visionRevision: number | null;
+	/**
+	 * Writing that came back with no words over it at any framing, on the last sync. There is no
+	 * confidence to report -- Vision claims 1.000 over plain misreads -- so this is the one honest
+	 * signal that a note is missing something.
+	 */
+	unreadableInkRegions: number;
 	mappedTagCount: number;
 	lastSyncAt: string | null;
 	/** Raw text of the last failure, or null. Two error messages end with "see the developer console", which most users have never opened. */
@@ -27,6 +39,8 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
 		`Platform: ${input.platform}`,
 		`Apple Vision: ${input.visionAvailability}`,
 		`OCR backend: ${input.backend}`,
+		`Vision revision: ${input.visionRevision ?? "not run here"}`,
+		`Unreadable ink regions: ${input.unreadableInkRegions}`,
 		`Mapped tags: ${input.mappedTagCount}`,
 		`Last sync: ${input.lastSyncAt ?? "never"}`,
 		`Last error: ${input.lastSyncError ?? "none"}`,

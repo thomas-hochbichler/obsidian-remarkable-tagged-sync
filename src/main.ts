@@ -27,7 +27,7 @@ import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { EMPTY_SYNC_INDEX, invalidateRenders, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
 import { TagRouter, type TagFolderMap } from "./tag-router";
-import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { UnavailableOcrBackend, visionRunStats } from "./vision-ocr-backend";
 import { visionBackend } from "./vision-register";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
 
@@ -520,7 +520,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		const confirmed = await confirmDialog(
 			this.app,
 			"Re-transcribe synced notes",
-			`Re-transcribe ${unitCount} synced note(s) with the "${backend.id}" backend? This re-fetches each notebook from reMarkable${costCaveat}.`,
+			// Transcription quality is stated here because it is the fact that decides the answer: notes
+			// synced before it keep the transcript they earned until this command is run.
+			`Re-transcribe ${unitCount} synced note(s) with the "${backend.id}" backend? Handwriting is read more accurately than it used to be, and typed text is transcribed too. This re-fetches each notebook from reMarkable${costCaveat}.`,
 			"Re-transcribe",
 		);
 		if (!confirmed) return;
@@ -745,6 +747,8 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 							platform: Platform.isMacOS ? "macOS" : Platform.isWin ? "Windows" : Platform.isLinux ? "Linux" : "other",
 							visionAvailability: visionUnavailableReason() ?? "available",
 							backend: this.plugin.data.ocrBackend,
+							visionRevision: visionRunStats.revision,
+							unreadableInkRegions: visionRunStats.unreadableInkRegions,
 							mappedTagCount: Object.keys(this.plugin.data.tagFolderMap).length,
 							lastSyncAt: this.plugin.data.lastSyncAt,
 							lastSyncError: this.plugin.lastSyncError,
