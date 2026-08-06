@@ -4,6 +4,7 @@ import KaitaiStream from "kaitai-struct/KaitaiStream";
 // Types live in the hand-written `rmv6-generated.d.ts` beside it; see kaitai/PROVENANCE.md.
 import { Rmv6 } from "./kaitai/rmv6-generated.js";
 import { toArrayBuffer } from "./bytes";
+import { layoutText, SENTINEL_ANCHOR_BOTTOM, SENTINEL_ANCHOR_TOP } from "./text-layout";
 
 export interface RmPoint {
 	x: number;
@@ -58,6 +59,15 @@ export interface RmLayer {
 	visible?: boolean;
 	/** The node's placement, or absent when it carries no anchor group. */
 	anchor?: RmAnchor;
+	/**
+	 * Whether this node's strokes were placed, and why not when they weren't. Absent for a node that
+	 * carries no anchor at all, which is the overwhelming majority and is not a failure.
+	 *
+	 * Nobody is obliged to read it, but a consumer that wants to tell the user "this page's writing
+	 * may appear overlapped" needs to know we knew -- the alternative is guessing from the geometry,
+	 * which measures badly.
+	 */
+	placement?: "applied" | "no-text" | "unknown-anchor";
 }
 
 /** One run of the page's typed text: a stretch of characters sharing a starting CRDT id. */
@@ -635,6 +645,52 @@ function parseSceneInfoBody(raw: Uint8Array): RmPaperSize | null {
 	return null;
 }
 
+/**
+ * Moves each anchored node's strokes to where the device draws them, in place.
+ *
+ * A node's strokes are stored in an unplaced frame: `anchor_origin_x` is the x offset, and the y is
+ * the laid-out line position of the character `anchor_id` names. Doing this here rather than in each
+ * renderer is what makes `RmPage` mean one thing -- ink where the device put it -- for every
+ * consumer, including the digest's margin-note clustering, which groups strokes *by geometry* and so
+ * silently produces wrong groups on unplaced coordinates rather than merely drawing them wrong.
+ *
+ * Fail-soft throughout: a node whose anchor names a character the text does not contain, or a page
+ * with anchors and no readable text, keeps its ink exactly where the file put it. That is wrong and
+ * visible, which beats a page that renders nothing.
+ */
+function placeAnchoredStrokes(layers: RmLayer[], text: RmText | undefined): void {
+	if (!layers.some((layer) => layer.anchor)) return;
+	const layout = text ? layoutText(text) : null;
+
+	for (const layer of layers) {
+		const anchor = layer.anchor;
+		if (!anchor) continue;
+		if (!layout) {
+			layer.placement = "no-text";
+			continue;
+		}
+		// The two sentinels name no character by design -- they pin a node to the top of the text or
+		// below its end. An id that names no character for any other reason is an anchor that outlived
+		// the character it hung from; the device resolves that to the top too, so we do and say so.
+		let y: number | undefined;
+		if (anchor.anchorId === SENTINEL_ANCHOR_TOP) y = layout.topY;
+		else if (anchor.anchorId === SENTINEL_ANCHOR_BOTTOM) y = layout.bottomY;
+		else y = layout.yOfChar.get(anchor.anchorId);
+
+		if (y === undefined) {
+			layer.placement = "unknown-anchor";
+			y = layout.topY;
+		} else {
+			layer.placement = "applied";
+		}
+		for (const stroke of layer.strokes)
+			for (const point of stroke.points) {
+				point.x += anchor.originX;
+				point.y += y;
+			}
+	}
+}
+
 /** Parses a firmware-v6 `.rm` page binary into a scene model (layers + strokes). */
 export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 	const doc = new Rmv6(new KaitaiStream(toArrayBuffer(data)));
@@ -721,6 +777,7 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 		visible: layerVisible.get(id),
 		anchor: layerAnchors.get(id),
 	}));
+	placeAnchoredStrokes(layers, text);
 
 	return { formatVersion: doc.frontmatter.header.versionNumber, layers, highlights, paperSize, text };
 }

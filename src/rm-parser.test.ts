@@ -163,6 +163,26 @@ describe("parseRmV6", () => {
 		expect(parseRmV6(fileWithBlock(2, body)).formatVersion).toBe(6);
 	});
 
+	it("places an anchored node's strokes where the device draws them", () => {
+		// The fixture's two group nodes are anchored to its single typed character "A", which sits on
+		// the first line: y = the text box's 234 + the first line's 62. Both carry originX -464.
+		const raw = parseRmV6(new Uint8Array(readFileSync(COLOR_FIXTURE_PATH))); // a page with no anchors
+		const page = parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH)));
+
+		const anchored = page.layers.filter((layer) => layer.anchor);
+		expect(anchored.map((layer) => layer.placement)).toEqual(["applied", "applied"]);
+		for (const layer of anchored) {
+			for (const point of layer.strokes.flatMap((stroke) => stroke.points)) {
+				// Unplaced, this fixture's ink sits within ~40px of the origin; placed, it is shifted
+				// left by 464 and down onto the text's first line.
+				expect(point.x).toBeLessThan(-400);
+				expect(point.y).toBeGreaterThan(234 + 62 - 60);
+			}
+		}
+		// A page with no anchors records no placement at all -- it is not a failure to have nothing to do.
+		expect(raw.layers.every((layer) => layer.placement === undefined)).toBe(true);
+	});
+
 	it("accepts an ArrayBuffer as well as a Uint8Array", () => {
 		const data = readFileSync(FIXTURE_PATH);
 		const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
