@@ -31,10 +31,61 @@ export interface RmStroke {
 	colorRgba?: { r: number; g: number; b: number };
 }
 
+/**
+ * A scene-tree node's placement. The node's strokes are stored in an unplaced frame and belong at
+ * this offset: `originX` is stored outright, while the y is *not* -- `anchorId` names a character in
+ * the page's typed text (`RmText`) and the y is that character's laid-out line position.
+ *
+ * Absent when the node carries no anchor group, which is every node of the 74 corpus pages that have
+ * no typed text. The group is all-or-nothing: a node has all four fields or none.
+ */
+export interface RmAnchor {
+	/** The character id the node hangs from, as `part1:part2` -- the key form `RmText.charIds` uses. */
+	anchorId: string;
+	/** The x translation, in the same frame and unit as stroke points. */
+	originX: number;
+}
+
 export interface RmLayer {
 	id: string;
 	name: string | null;
 	strokes: RmStroke[];
+	/**
+	 * The device's layer-panel eye toggle. Absent means the node carried no flag; nothing drops ink
+	 * for it either way (a hidden layer still holds the user's writing, and the OCR path reads the
+	 * same scene), it is reported instead.
+	 */
+	visible?: boolean;
+	/** The node's placement, or absent when it carries no anchor group. */
+	anchor?: RmAnchor;
+}
+
+/** One run of the page's typed text: a stretch of characters sharing a starting CRDT id. */
+export interface RmTextRun {
+	/** The run's starting character id, as `part1:part2`. */
+	id: string;
+	text: string;
+	/**
+	 * Non-zero for a tombstoned run: the characters were typed and deleted, so their ids still
+	 * occupy the id space but the run occupies no line when the text is laid out.
+	 */
+	deleted: number;
+}
+
+/**
+ * A notebook page's typed text (the `root_text` block). Distinct from `RmHighlight`, which is text
+ * highlighted in an annotated PDF: this is text the user typed on the device, and it both places
+ * anchored handwriting (`RmAnchor`) and is drawn in its own right.
+ */
+export interface RmText {
+	/** The text box's top-left corner, in the same frame as stroke points. */
+	posX: number;
+	posY: number;
+	/** The text box's width, which is what line breaking wraps against. */
+	width: number;
+	runs: RmTextRun[];
+	/** Every character id the text occupies -> the paragraph-relative style code that applies at it. */
+	styles: Map<string, number>;
 }
 
 /** The pixel size of the device screen a scene was drawn on -- see `parseSceneInfoBody`. */
@@ -74,6 +125,8 @@ export interface RmPage {
 	highlights?: RmHighlight[];
 	/** The screen the page was drawn on, when the scene declares one (absent on pre-`scene_info` firmware). */
 	paperSize?: RmPaperSize;
+	/** The text the user typed on the page, when it has any (72 of the 80 corpus pages have none). */
+	text?: RmText;
 }
 
 const LINE_ITEM_TYPE = 3;
@@ -119,6 +172,65 @@ function skipCrdtId(stream: KaitaiStream): void {
 	while (stream.readU1() & 0x80) {
 		// consume varuint continuation bytes (part2)
 	}
+}
+
+/**
+ * Reads a CRDT id as its two parts. `part1:part2` is the form the device's own anchor ids and text
+ * character ids are compared in -- unlike `readCrdtIdHex`, which preserves the raw encoding and so
+ * cannot be matched against an id written with a different varuint length.
+ */
+function readCrdtIdKey(stream: KaitaiStream): string {
+	const part1 = stream.readU1();
+	return `${part1}:${readVaruint(stream)}`;
+}
+
+/** A tag's field index and value type, the two halves of `(index << 4) | type`. */
+function tagParts(tag: number): { index: number; type: number } {
+	return { index: tag >> 4, type: tag & 0x0f };
+}
+
+const LWW_TYPE = 0x0c;
+
+/**
+ * Reads one LWW ("last writer wins") field: a length-prefixed subblock holding a timestamp CRDT id
+ * and then the value. Returns null and rewinds if the next tag is not an LWW field or the subblock
+ * would run past the body, which is how a caller walks an optional, open-ended tail.
+ *
+ * The value is returned by type rather than decoded to one shape, because the four fields this
+ * parser wants out of a tail are a CRDT id, a u8 and two f32s.
+ */
+function readLww(stream: KaitaiStream): { index: number; valueType: number; id?: string; num?: number } | null {
+	const start = stream.pos;
+	if (stream.size - stream.pos < 5) return null;
+	let tag: number;
+	try {
+		tag = readTag(stream);
+	} catch {
+		stream.seek(start);
+		return null;
+	}
+	const { index, type } = tagParts(tag);
+	if (type !== LWW_TYPE) {
+		stream.seek(start);
+		return null;
+	}
+	const length = stream.readU4le();
+	if (length > stream.size - stream.pos) {
+		stream.seek(start);
+		return null;
+	}
+	const end = stream.pos + length;
+	readTag(stream); // the value's own timestamp, which no consumer reads
+	skipCrdtId(stream);
+	const valueTag = readTag(stream);
+	const valueType = tagParts(valueTag).type;
+	const field: { index: number; valueType: number; id?: string; num?: number } = { index, valueType };
+	if (valueType === 0x0f) field.id = readCrdtIdKey(stream);
+	else if (valueType === 0x01) field.num = stream.readU1();
+	else if (valueType === 0x04) field.num = stream.readF4le();
+	else if (valueType === 0x08) field.num = stream.readF8le();
+	stream.seek(end);
+	return field;
 }
 
 /** Reads a CRDT id and returns its raw encoding as hex, for identity comparisons against layer ids read elsewhere in the spec. */
@@ -269,16 +381,28 @@ function parseLayerDefBody(raw: Uint8Array): string {
  * spec leaves as raw bytes -- the former fixed-layout `rm_layer_name` type read the
  * label's LWW-timestamp CrdtId as exactly two bytes and threw (aborting the whole page
  * parse) on files whose timestamp needed more than one varuint byte. Returns the layer's
- * id (raw CrdtId encoding as hex, matching ids read elsewhere) and its name; the rest of
- * the body (visibility, anchor fields) is ignored.
+ * id (raw CrdtId encoding as hex, matching ids read elsewhere), its name, its visibility
+ * and its placement.
+ *
+ * The tail after the label is a run of LWW fields: `visible` at index 3, then -- on a node whose
+ * strokes are anchored to typed text -- `anchor_id`, `anchor_type`, `anchor_threshold` and
+ * `anchor_origin_x` at indices 7 to 10. `anchor_type` and `anchor_threshold` are device constants
+ * (2 and ~35.75 on every node of every corpus page) that no renderer reads.
+ *
+ * Every field is optional and read best-effort: an unreadable tail costs the node its placement,
+ * never the page its ink.
  */
-function parseLayerNameBody(raw: Uint8Array): { id: string; name: string } {
+function parseLayerNameBody(raw: Uint8Array): { id: string; name: string; visible?: boolean; anchor?: RmAnchor } {
 	const stream = new KaitaiStream(toArrayBuffer(raw));
 
 	expectTag(stream, 0x1f, "node_id");
 	const id = readCrdtIdHex(stream, raw);
 	expectTag(stream, 0x2c, "label subblock");
-	stream.readU4le(); // subblock byte length; unused, we read fields directly
+	// The label's own length, which the tail read below seeks to: the string inside may be shorter
+	// than the subblock (a renamed layer keeps the longer allocation), so reading fields
+	// sequentially would leave the cursor mid-field.
+	const labelLength = stream.readU4le();
+	const labelEnd = stream.pos + labelLength;
 	expectTag(stream, 0x1f, "label timestamp");
 	skipCrdtId(stream);
 	expectTag(stream, 0x2c, "label string subblock");
@@ -286,8 +410,144 @@ function parseLayerNameBody(raw: Uint8Array): { id: string; name: string } {
 	const strLen = readVaruint(stream);
 	stream.readU1(); // is_ascii encoding flag; UTF-8 decodes regardless
 	const name = new TextDecoder().decode(stream.readBytes(strLen));
+	stream.seek(labelEnd);
 
-	return { id, name };
+	let visible: boolean | undefined;
+	let anchorId: string | undefined;
+	let originX: number | undefined;
+	try {
+		for (let field = readLww(stream); field !== null; field = readLww(stream)) {
+			if (field.index === VISIBLE_INDEX && field.num !== undefined) visible = field.num !== 0;
+			else if (field.index === ANCHOR_ID_INDEX) anchorId = field.id;
+			else if (field.index === ANCHOR_ORIGIN_X_INDEX) originX = field.num;
+		}
+	} catch {
+		// Best effort by design -- see the doc comment. Whatever was read before the failure stands.
+	}
+
+	const anchor = anchorId !== undefined && originX !== undefined ? { anchorId, originX } : undefined;
+	return { id, name, visible, anchor };
+}
+
+const VISIBLE_INDEX = 3;
+const ANCHOR_ID_INDEX = 7;
+const ANCHOR_ORIGIN_X_INDEX = 10;
+
+const TEXT_STYLE_INDEX = 2;
+const TEXT_POSITION_INDEX = 3;
+const TEXT_WIDTH_INDEX = 4;
+
+/**
+ * Hand-parses a `root_text` block body (rmscene's `RootTextBlock`) -- the text the user typed on the
+ * page, as opposed to `glyph_def`'s highlights of a PDF's own text. The body is a list of runs, then
+ * an open-ended tail of length-prefixed subblocks holding the per-paragraph style map (index 2) and
+ * the text box's geometry (index 3, plus a tagged f32 width at index 4).
+ *
+ * Returns null rather than throwing on anything it cannot read: a page whose text is unreadable
+ * renders its ink unplaced, which is wrong and visible, rather than not at all.
+ */
+function parseRootTextBody(raw: Uint8Array): RmText | null {
+	const stream = new KaitaiStream(toArrayBuffer(raw));
+	try {
+		expectTag(stream, 0x1f, "text block id");
+		skipCrdtId(stream);
+		expectTag(stream, 0x2c, "text subblock");
+		stream.readU4le();
+		expectTag(stream, 0x1c, "items subblock");
+		stream.readU4le();
+		expectTag(stream, 0x1c, "items inner subblock");
+		stream.readU4le();
+
+		const runs: RmTextRun[] = [];
+		const count = readVaruint(stream);
+		for (let i = 0; i < count; i++) {
+			expectTag(stream, 0x0c, "text run subblock");
+			const runLength = stream.readU4le();
+			const end = stream.pos + runLength;
+			readTag(stream);
+			const id = readCrdtIdKey(stream);
+			readTag(stream); // left id
+			skipCrdtId(stream);
+			readTag(stream); // right id
+			skipCrdtId(stream);
+			readTag(stream);
+			const deleted = stream.readU4le();
+			// A live run carries its string in one more length-prefixed subblock; a tombstoned one
+			// does not. Matched on the tag's *type*, not the whole tag: the index varies by run.
+			let text = "";
+			if (stream.pos < end) {
+				const stringStart = stream.pos;
+				if (tagParts(readTag(stream)).type === LWW_TYPE) {
+					stream.readU4le();
+					const length = readVaruint(stream);
+					stream.readU1(); // is_ascii encoding flag; UTF-8 decodes regardless
+					text = new TextDecoder().decode(stream.readBytes(length));
+				} else {
+					stream.seek(stringStart);
+				}
+			}
+			runs.push({ id, text, deleted });
+			stream.seek(end);
+		}
+
+		const styles = new Map<string, number>();
+		let posX: number | undefined;
+		let posY: number | undefined;
+		let width: number | undefined;
+		// The tail's subblocks are ordered but not all present; walk them rather than assuming offsets.
+		while (stream.size - stream.pos >= 5) {
+			const start = stream.pos;
+			const tag = readTag(stream);
+			const { index, type } = tagParts(tag);
+			if (index === TEXT_POSITION_INDEX && type === LWW_TYPE) {
+				stream.readU4le();
+				posX = stream.readF8le();
+				posY = stream.readF8le();
+				if (tryTag(stream, (TEXT_WIDTH_INDEX << 4) | 0x04)) width = stream.readF4le();
+				break;
+			}
+			if (type !== LWW_TYPE) {
+				stream.seek(start);
+				break;
+			}
+			const length = stream.readU4le();
+			if (length > stream.size - stream.pos) {
+				stream.seek(start);
+				break;
+			}
+			const end = stream.pos + length;
+			if (index === TEXT_STYLE_INDEX) readStyleMap(stream, end, styles);
+			stream.seek(end);
+		}
+
+		if (posX === undefined || posY === undefined || width === undefined) return null;
+		return { posX, posY, width, runs, styles };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The per-paragraph style map: `count × { charId, timestamp, { u8 style } }`. An entry names the
+ * character a style takes effect at, so the codes are read as-is and interpreted by the layout.
+ */
+function readStyleMap(stream: KaitaiStream, end: number, styles: Map<string, number>): void {
+	try {
+		expectTag(stream, 0x1c, "style map subblock");
+		stream.readU4le();
+		const count = readVaruint(stream);
+		for (let i = 0; i < count && stream.pos < end; i++) {
+			const charId = readCrdtIdKey(stream);
+			readTag(stream);
+			skipCrdtId(stream);
+			readTag(stream);
+			stream.readU4le();
+			readTag(stream);
+			styles.set(charId, stream.readU1());
+		}
+	} catch {
+		// An unreadable style map costs the page its styles, never its ink.
+	}
 }
 
 const GLYPH_ITEM_TYPE = 1;
@@ -381,9 +641,12 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 
 	const layerOrder: string[] = [];
 	const layerNames = new Map<string, string>();
+	const layerVisible = new Map<string, boolean>();
+	const layerAnchors = new Map<string, RmAnchor>();
 	const strokesByLayer = new Map<string, RmStroke[]>();
 	const highlights: RmHighlight[] = [];
 	let paperSize: RmPaperSize | undefined;
+	let text: RmText | undefined;
 
 	for (const block of doc.blocks) {
 		switch (block.blockType) {
@@ -397,8 +660,10 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 			}
 			case Rmv6.BlockTypes.LAYER_NAMES: {
 				try {
-					const layerName = parseLayerNameBody(block.body.raw);
-					layerNames.set(layerName.id, layerName.name);
+					const node = parseLayerNameBody(block.body.raw);
+					layerNames.set(node.id, node.name);
+					if (node.visible !== undefined) layerVisible.set(node.id, node.visible);
+					if (node.anchor) layerAnchors.set(node.id, node.anchor);
 				} catch (error) {
 					console.warn("Tagged Sync: failed to parse a layer name, skipping it", error);
 				}
@@ -428,6 +693,14 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 				}
 				break;
 			}
+			case Rmv6.BlockTypes.TEXT_DEF: {
+				try {
+					text = parseRootTextBody(block.body.raw) ?? undefined;
+				} catch (error) {
+					console.warn("Tagged Sync: failed to parse the page's typed text, skipping it", error);
+				}
+				break;
+			}
 			case Rmv6.BlockTypes.SCENE_INFO: {
 				try {
 					paperSize = parseSceneInfoBody(block.body.raw) ?? undefined;
@@ -445,7 +718,9 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 		id,
 		name: layerNames.get(id) ?? null,
 		strokes: strokesByLayer.get(id) ?? [],
+		visible: layerVisible.get(id),
+		anchor: layerAnchors.get(id),
 	}));
 
-	return { formatVersion: doc.frontmatter.header.versionNumber, layers, highlights, paperSize };
+	return { formatVersion: doc.frontmatter.header.versionNumber, layers, highlights, paperSize, text };
 }

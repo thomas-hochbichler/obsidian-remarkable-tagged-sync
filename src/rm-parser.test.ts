@@ -11,6 +11,13 @@ const RM_1_2_HEIGHT_PX = 1872;
 const COLOR_FIXTURE_PATH = "./test-fixtures/rmv6/color-and-tool-v3.14.4.rm";
 const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
 
+/** A little-endian uint32 as four bytes, for hand-building block bodies. */
+function u32le(value: number): number[] {
+	const view = new DataView(new ArrayBuffer(4));
+	view.setUint32(0, value, true);
+	return [...new Uint8Array(view.buffer)];
+}
+
 /** Wraps a block body in a block header and the `.rm` v6 file header, as the smallest file containing it. */
 function fileWithBlock(blockType: number, body: Uint8Array): Uint8Array {
 	const header = new TextEncoder().encode("reMarkable .lines file, version=6          ");
@@ -104,6 +111,56 @@ describe("parseRmV6", () => {
 			expect(point.pressure).toBeGreaterThanOrEqual(0);
 			expect(point.pressure).toBeLessThanOrEqual(255);
 		}
+	});
+
+	it("reads a scene-tree node's visibility and its placement out of the layer_names tail", () => {
+		// The fixture's two unnamed group nodes are both anchored to the page's single typed
+		// character. anchor_type and anchor_threshold are device constants and deliberately not carried.
+		const page = parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH)));
+
+		expect(page.layers.map((layer) => layer.visible)).toEqual([true, true, true, true]);
+		expect(page.layers.map((layer) => layer.anchor)).toEqual([
+			undefined,
+			undefined,
+			{ anchorId: "1:14", originX: -464 },
+			{ anchorId: "1:14", originX: -464 },
+		]);
+	});
+
+	it("reads the page's typed text, its box and its runs", () => {
+		const page = parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH)));
+
+		expect(page.text).toEqual({
+			posX: -468,
+			posY: 234,
+			width: 936,
+			runs: [{ id: "1:14", text: "A", deleted: 0 }],
+			styles: new Map(),
+		});
+	});
+
+	it("leaves text absent on a page that has none, rather than inventing an empty box", () => {
+		const page = parseRmV6(new Uint8Array(readFileSync(COLOR_FIXTURE_PATH)));
+
+		expect(page.text).toBeUndefined();
+		expect(page.layers.every((layer) => layer.anchor === undefined)).toBe(true);
+	});
+
+	it("keeps a node whose tail stops after the label, instead of losing it to a missing anchor", () => {
+		// Fail-soft is binding: the tail after the label is optional and read best-effort, so a body
+		// that simply ends there costs the node its placement and its visibility -- never its identity.
+		const name = new TextEncoder().encode("Layer 1");
+		const body = new Uint8Array([
+			0x1f, 1, 5, // node_id
+			0x2c, ...u32le(4 + 3 + 4 + 1 + 1 + name.length), // label subblock length
+			0x1f, 1, 6, // label timestamp
+			0x2c, ...u32le(1 + 1 + name.length), // label string subblock
+			name.length, 1, ...name, // varuint length, is-ascii flag, the name
+		]);
+
+		// The block parses to completion rather than throwing, which is what the page's ink depends on.
+		expect(() => parseRmV6(fileWithBlock(2, body))).not.toThrow();
+		expect(parseRmV6(fileWithBlock(2, body)).formatVersion).toBe(6);
 	});
 
 	it("accepts an ArrayBuffer as well as a Uint8Array", () => {
