@@ -371,6 +371,32 @@ function inkBottomPx(rmPage: RmPage, limitPx: number): number | null {
  * Only the bottom moves: y=0 stays the page top (the direction the device's canvas actually grows),
  * so growth costs no coordinate offset and a page whose ink fits one screen is sized exactly as before.
  */
+/**
+ * The frame widens when the writer panned sideways. A notebook canvas expands horizontally in one
+ * discrete step -- the device's own PDF exports are 445x594pt for a normal page and 594x594 for an
+ * expanded one, i.e. 1404 -> 1872px, which is the screen's own portrait height; a Paper Pro steps
+ * 1620 -> 2160 the same way. Unlike the vertical growth, which follows the ink to fitted values
+ * (630, 716, 824, 878pt were all observed), the width never lands between the two.
+ *
+ * So the box is not sized to the ink: it takes the step whenever the ink needs more room than the
+ * screen. Measured over the corpus, 13 of 45 notebook pages need it and every one of them fits
+ * inside the step, the tightest with 11px to spare.
+ *
+ * Ink beyond the expanded frame is decode noise rather than a third canvas size, and is ignored --
+ * the same guard `detectCanvas` applies for the same reason.
+ */
+function expandedCanvas(rmPage: RmPage, canvas: DeviceCanvas): DeviceCanvas {
+	const half = canvas.widthPx / 2;
+	for (const layer of rmPage.layers)
+		for (const stroke of layer.strokes)
+			for (const { x } of stroke.points)
+				if (Number.isFinite(x) && Math.abs(x) > half && Math.abs(x) <= canvas.heightPx) {
+					const widthPx = canvas.heightPx;
+					return { ...canvas, widthPx, widthPt: widthPx * canvas.pxToPt };
+				}
+	return canvas;
+}
+
 function scrolledCanvas(rmPage: RmPage, canvas: DeviceCanvas): DeviceCanvas {
 	const bottom = inkBottomPx(rmPage, canvas.heightPx * MAX_SCROLLED_SCREENS);
 	if (bottom === null || bottom <= canvas.heightPx) return canvas;
@@ -386,8 +412,9 @@ export async function renderPagesToPdf(pages: RmPage[]): Promise<Uint8Array> {
 	const canvas = declaredCanvas(pages) ?? detectCanvas(pages);
 	const doc = await PDFDocument.create();
 	for (const rmPage of pages) {
-		// Per page, not per document: each page scrolls on its own, so they legitimately differ in height.
-		const pageCanvas = scrolledCanvas(rmPage, canvas);
+		// Per page, not per document: each page scrolls and expands on its own, so they legitimately
+		// differ in both dimensions.
+		const pageCanvas = scrolledCanvas(rmPage, expandedCanvas(rmPage, canvas));
 		const page = doc.addPage([pageCanvas.widthPt, pageCanvas.heightPt]);
 		drawPageStrokes(page, rmPage, pageCanvas);
 	}

@@ -222,6 +222,82 @@ describe("renderPagesToPdf", () => {
 		expect((await PDFDocument.load(await renderPagesToPdf([noisy]))).getPage(0).getSize().width).toBeCloseTo(447.32, 1);
 	});
 
+	it("widens the page to the device's expanded canvas when ink runs past the screen edge", async () => {
+		// A notebook page's canvas expands sideways by one step -- the device's own exports are
+		// 445x594pt normally and 594x594 when expanded, i.e. 1404 -> 1872px, the portrait height.
+		// Nothing grew the box sideways before, so this ink was clipped away.
+		const expanded = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: 800, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 810, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1404, height: 1872 },
+		);
+
+		const { width, height } = (await PDFDocument.load(await renderPagesToPdf([expanded]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo((1872 * 72) / 226, 1); // 596.39 -- the device's 594pt wide page
+		expect(height).toBeCloseTo((1872 * 72) / 226, 1); // unchanged: only the width steps
+	});
+
+	it("takes the Paper Pro's own expansion step, not the reMarkable 1/2's", async () => {
+		const expanded = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: 900, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 950, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1620, height: 2160 },
+		);
+
+		const { width } = (await PDFDocument.load(await renderPagesToPdf([expanded]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo((2160 * 72) / 229, 1); // 679.24
+	});
+
+	it("leaves the page at screen width when its ink fits, so an unexpanded page is sized exactly as before", async () => {
+		const fits = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: -700, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 700, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1404, height: 1872 },
+		);
+
+		const { width } = (await PDFDocument.load(await renderPagesToPdf([fits]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo(447.32, 1);
+	});
+
+	it("does not widen the page for a non-physical outlier, the same guard detectCanvas applies", async () => {
+		const noisy = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: 1e38, y: 0, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 10, y: 10, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1404, height: 1872 },
+		);
+
+		const { width } = (await PDFDocument.load(await renderPagesToPdf([noisy]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo(447.32, 1);
+	});
+
 	it("renders an empty scene (no strokes) without throwing", async () => {
 		const emptyPage: RmPage = { formatVersion: 6, layers: [] };
 
