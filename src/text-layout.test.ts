@@ -7,7 +7,10 @@ function text(runs: RmText["runs"], overrides: Partial<RmText> = {}): RmText {
 	return { posX: -468, posY: 234, width: 936, runs, styles: new Map(), ...overrides };
 }
 
-const FIRST_LINE_Y = 234 + 62;
+// A page whose first paragraph is plain starts at 33.8 below the box's top; the 62 every earlier
+// measurement found is that plus the 28.2 a code-2 first paragraph opens above itself.
+const FIRST_LINE_Y = 234 + 33.8;
+const STYLE_2_FIRST_LINE_Y = 234 + 62;
 const PARAGRAPH_ADVANCE = 69.5;
 const WRAPPED_LINE_ADVANCE = 45.5;
 
@@ -38,6 +41,29 @@ describe("layoutText", () => {
 
 		expect(layout.lines.map((line) => line.text)).toEqual(["aa bb", "cc dd"]);
 		expect(layout.lines.map((line) => line.yPx)).toEqual([FIRST_LINE_Y, FIRST_LINE_Y + WRAPPED_LINE_ADVANCE]);
+	});
+
+	it("opens the space a code-2 first paragraph asks for, which is what 62 always was", () => {
+		// Every page the 62 was ever fitted against opens with a code-2 paragraph. Measured against the
+		// device's exports, a page that opens plain starts 28.2px higher -- and both ends of a
+		// sentinel-anchored page follow, so this is a placement change, not only a drawing one.
+		const runs = [{ id: "1:10", text: "opening", deleted: 0 }];
+
+		const plain = layoutText(text(runs));
+		const code2 = layoutText(text(runs, { styles: new Map([["0:0", 2]]) }));
+
+		expect(plain.lines[0].yPx).toBeCloseTo(FIRST_LINE_Y, 1);
+		expect(code2.lines[0].yPx).toBeCloseTo(STYLE_2_FIRST_LINE_Y, 1);
+		expect(plain.topY).toBeCloseTo(FIRST_LINE_Y, 1);
+		expect(code2.topY).toBeCloseTo(STYLE_2_FIRST_LINE_Y, 1);
+	});
+
+	it("anchors a page whose runs are all tombstoned where its first line would have been", () => {
+		// `Daily-41a34af6` and `Schnellnotiz-de294e7a` are this case, and both are sentinel-anchored: with
+		// nothing laid out there is no first line to read the top off, and their ink still has to land.
+		const empty = layoutText(text([{ id: "1:10", text: "", deleted: 40 }], { styles: new Map([["0:0", 2]]) }));
+
+		expect(empty.topY).toBeCloseTo(STYLE_2_FIRST_LINE_Y, 1);
 	});
 
 	it("breaks a long token after a slash, which is the only way the device's URL page can break", () => {

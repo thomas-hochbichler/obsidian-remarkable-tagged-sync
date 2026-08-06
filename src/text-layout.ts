@@ -28,24 +28,28 @@ const LEADING_PX: Record<number, number> = {
 const DEFAULT_LEADING_PX = 45.5;
 
 /**
- * What a heading paragraph adds above itself, beyond the uniform gap.
+ * Where the first line sits below the text box's own top, once the space its own style opens above
+ * it is added.
  *
- * Left unmodelled while nothing needed it -- no anchored page carries a heading, so it could not move
- * ink. Drawing the text is what needs it: without this, the one corpus page that has a heading draws
- * it, and everything below it, about a line too high. Measured baseline-to-baseline on the device's
- * export of that page, and it still moves no ink: code 3 appears on exactly one page, which has none.
+ * 62 for years, and 62 is style 2's value: every page the constant was ever fitted against opens
+ * with a code-2 paragraph. Measured against the device's own exports -- typed baselines on the three
+ * pages with drawn text, vector ink on all six anchored ones -- a page that opens plain starts at
+ * **33.8** and the five that open with code 2 start at 62.
  */
-const HEADING_EXTRA_SPACE_PX = 34.4;
+const TEXT_TOP_PX = 33.8;
 
 /**
- * Where the first line sits below the text box's own top. Fitted against a device image by
- * cross-correlating ink-per-row profiles, and verified on all six anchored corpus pages.
+ * What a paragraph's own style opens above it, beyond the uniform gap. Both values are measured
+ * against the device's exports and neither moves ink that was already right: code 2 is what `62 -
+ * 33.8` always was, and code 3 is on one corpus page, which has no ink at all.
  *
- * Not the paragraph gap: 45.5 + 24.0 = 69.5 is the paragraph-to-paragraph advance, and that is the
- * number the fit and rmc both landed on, so a page of single-line paragraphs lays out exactly as the
- * verified model did before wrapping existed.
+ * Code 2 is still unidentified as a *kind* of paragraph -- every corpus page carries it only as its
+ * first, so what it opens in the middle of a page is unobserved and assumed to be the same.
  */
-const TEXT_TOP_PX = 62;
+const SPACE_ABOVE_PX: Record<number, number> = {
+	2: 28.2, // whatever code 2 is, it is what made the first line look like it sat at 62
+	3: 34.4, // heading: 116.5px baseline-to-baseline into it, against the 82.1 the gap alone gives
+};
 
 /** A list item's whole paragraph is indented, continuation lines included, so it wraps against less width. */
 export const LIST_INDENT_PX = 48.0;
@@ -54,7 +58,7 @@ export const LIST_MARKER_OFFSET_PX = 19.9;
 const LIST_STYLE = 4;
 const HEADING_STYLE = 3;
 
-/** Style codes seen on the corpus. 2 and 6 also occur and are not identified; they fall back to plain. */
+/** Style codes seen on the corpus. 6 also occurs and is not identified; it falls back to plain. */
 const PLAIN_STYLE = 1;
 
 /**
@@ -170,7 +174,11 @@ export function layoutText(text: RmText, measure: MeasureText = measureDeviceTex
 	const lines: LaidOutLine[] = [];
 	const yOfChar = new Map<string, number>();
 
-	let y = text.posY + TEXT_TOP_PX;
+	// The first paragraph's own style opens its space before any of it is laid out, because a page
+	// whose runs are all tombstoned lays out nothing at all and still anchors ink to where its first
+	// line would have been -- which is `Daily-41a34af6` and `Schnellnotiz-de294e7a`.
+	const firstStyle = text.styles.get(FIRST_PARAGRAPH_STYLE_KEY) ?? PLAIN_STYLE;
+	let y = text.posY + TEXT_TOP_PX + (SPACE_ABOVE_PX[firstStyle] ?? 0);
 	let paragraphStart = 0;
 	/**
 	 * What the bottom sentinel resolves to: the last line's own slot, mirroring the top sentinel's
@@ -193,10 +201,10 @@ export function layoutText(text: RmText, measure: MeasureText = measureDeviceTex
 		const leading = LEADING_PX[style] ?? DEFAULT_LEADING_PX;
 		const paragraph = characters.slice(paragraphStart, endExclusive).map((c) => c.char).join("");
 
-		// A paragraph's own leading and gap carry it down from the one above -- so a heading's larger
-		// leading opens the space above the heading, not below it. For a page of plain paragraphs this
-		// is the same arithmetic as before, which is why the six anchored pages cannot move.
-		if (paragraphStart > 0) y += leading + PARAGRAPH_GAP_PX + (style === HEADING_STYLE ? HEADING_EXTRA_SPACE_PX : 0);
+		// A paragraph's own leading, gap and style carry it down from the one above -- so a heading's
+		// larger leading opens the space above the heading, not below it, and the same goes for the
+		// first paragraph, which has only its style's own space between it and the box's top.
+		if (paragraphStart > 0) y += leading + PARAGRAPH_GAP_PX + (SPACE_ABOVE_PX[style] ?? 0);
 
 		let offset = 0;
 		let lastLineY = y;
@@ -223,7 +231,8 @@ export function layoutText(text: RmText, measure: MeasureText = measureDeviceTex
 	}
 	if (paragraphStart < characters.length) flushParagraph(characters.length);
 
-	return { lines, yOfChar, topY: text.posY + TEXT_TOP_PX, bottomY };
+	// The top sentinel pins to the top of the text: the first line, or where it would have been.
+	return { lines, yOfChar, topY: lines[0]?.yPx ?? text.posY + TEXT_TOP_PX + (SPACE_ABOVE_PX[firstStyle] ?? 0), bottomY };
 }
 
 /**
