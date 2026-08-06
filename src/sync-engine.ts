@@ -11,6 +11,7 @@ import {
 	type NoteFields,
 	type NoteStore,
 	type OcrStatus,
+	readTranscript,
 	updateTranscript,
 	writeNote,
 } from "./note-builder";
@@ -51,7 +52,7 @@ export type SyncRowStatus = "active" | "orphaned";
  * spacing -- the handwriting beside one paper's last paragraph came through as five margin notes,
  * one per pen stroke, and the highlight above it quoted from the middle of its sentence.
  */
-export const RENDER_VERSION = 11;
+export const RENDER_VERSION = 12;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -191,6 +192,32 @@ export function renderNotes(scenes: RmPage[], label: (pageIndex: number) => stri
 	return notes;
 }
 
+/**
+ * The transcript a unit can keep rather than re-earn, or undefined when it must be re-run.
+ *
+ * A `RENDER_VERSION` bump re-renders every note, and `writeUnit` transcribes whatever it renders --
+ * so a bump silently bills a metered backend for a whole vault. It need not: a rebuild triggered by
+ * the renderer alone is looking at exactly the bytes it looked at last time.
+ *
+ * The exception is the reason the bump exists. Placing anchored ink changes what the OCR rasterizer
+ * sees, so a page whose parse *did* place something is genuinely worth re-reading -- that is the
+ * ~4% of pages where the old transcript was garbage. Everything else keeps what it has.
+ *
+ * Fail-soft: an unreadable note, a missing section or a digest note falls through to running OCR.
+ * Never write an empty transcript over a real one.
+ */
+async function reusableTranscript(
+	noteStore: NoteStore,
+	row: SyncIndexRow | undefined,
+	deviceUnchanged: boolean,
+	scenes: RmPage[],
+): Promise<string | undefined> {
+	if (!row || row.status !== "active" || !deviceUnchanged || !isStaleRender(row)) return undefined;
+	if (scenes.some((scene) => scene.layers.some((layer) => layer.placement === "applied"))) return undefined;
+	const content = await noteStore.read(row.notePath);
+	return content === null ? undefined : (readTranscript(content) ?? undefined);
+}
+
 /** Raw error text for `SyncResult.skipErrors` -- the same shape main.ts records for a whole-sync failure. */
 function errorText(error: unknown): string {
 	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -311,6 +338,11 @@ interface UnitParams {
 	pdfBytes: Uint8Array;
 	/** Pages to run OCR over -- empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
 	ocrPages: RmPage[];
+	/**
+	 * A transcript to keep instead of producing one, for a unit being rebuilt only because the
+	 * renderer changed. See `reusableTranscript` at the call sites for when that is safe.
+	 */
+	keepTranscript?: string;
 	/** Render-ready highlighted quotes, grouped by page (empty when the unit has no text highlights). */
 	highlights: HighlightGroup[];
 	/** The `## Digest` body of a PDF-backed unit; "" for every other unit, and for a digest that failed to build. */
@@ -331,7 +363,10 @@ async function writeUnit(
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"] }> {
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
-	const ocr = await runOcr(deps.ocrBackend, params.ocrPages);
+	const ocr: OcrResult =
+		params.keepTranscript !== undefined
+			? { status: "ok", text: params.keepTranscript, confidence: null }
+			: await runOcr(deps.ocrBackend, params.ocrPages);
 
 	const synced = deps.now();
 	const fields: NoteFields = {
@@ -715,6 +750,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					// An empty page list makes `runOcr` return `skipped` without spawning anything -- the
 					// digest already transcribed this unit, cluster by cluster.
 					ocrPages: digest.ocr === null ? ocrPages : [],
+					keepTranscript: await reusableTranscript(deps.noteStore, writtenRow, existingRow?.entryHash === entry.hash, ocrPages),
 					pdfBytes,
 					highlights,
 					digest: digest.markdown,
@@ -826,6 +862,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				{
 					// See the notebook-tag branch: a built digest has already transcribed this unit.
 					ocrPages: digest.ocr === null ? ocrPages : [],
+					keepTranscript: await reusableTranscript(deps.noteStore, writtenRow, existingRow?.pageHash === pageHash, ocrPages),
 					pdfBytes,
 					highlights,
 					digest: digest.markdown,

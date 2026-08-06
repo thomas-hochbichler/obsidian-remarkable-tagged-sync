@@ -33,6 +33,9 @@ vi.mock("./digest-pipeline", async (importOriginal) => {
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
 const PAGE_BYTES = new Uint8Array(readFileSync(FIXTURE_PATH));
+// A page whose nodes carry no anchor, so nothing about it is placed -- unlike FIXTURE_PATH, whose two
+// group nodes are anchored to its typed text.
+const UNANCHORED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/color-and-tool-v3.14.4.rm"));
 const NOW = "2026-01-01T00:00:00.000Z";
 
 function documentEntry(overrides: Partial<Entry> = {}): Entry {
@@ -708,6 +711,82 @@ describe("runSync", () => {
 
 		expect((await run(RENDER_VERSION - 1)).notesWritten).toBe(1);
 		expect((await run(RENDER_VERSION)).notesWritten).toBe(0);
+	});
+
+	it("keeps the transcript a stale-render rebuild already has, instead of re-running a metered backend", async () => {
+		// A RENDER_VERSION bump re-renders every note, and writeUnit transcribes whatever it renders --
+		// so without this a bump bills an llm-vision user for the whole vault to get the same text back.
+		// The device has not changed; only our renderer has.
+		const entry = documentEntry({ hash: "hash-1" });
+		const content = documentContent({
+			cPages: cPages(["page-a"]),
+			pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }],
+		});
+		const staleRow = {
+			syncKey: pageSyncKey("doc-1", "page-a", "todo"),
+			docId: "doc-1",
+			pageId: "page-a",
+			tag: "todo",
+			entryHash: "hash-1",
+			pageHash: "hash-a",
+			notePath: "Todo/Notebook — Page 1.md",
+			status: "active" as const,
+			syncedAt: "2025-12-01T00:00:00.000Z",
+			renderVersion: RENDER_VERSION - 1,
+		};
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [entry],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		api.raw.getHash.mockResolvedValue(UNANCHORED_PAGE_BYTES);
+		const deps = baseDeps(api, { todo: "Todo" });
+		await deps.noteStore.write(
+			"Todo/Notebook — Page 1.md",
+			"> [!info]- x\n\n![[a.pdf]]\n\n## Transcript\nwhat the backend said last time\n<!-- tagged-sync:end -->\n",
+		);
+		deps.noteStore.write.mockClear();
+
+		const result = await runSync(deps, { rootHash: "root-1", rows: { [staleRow.syncKey]: staleRow } });
+
+		expect(result.notesWritten).toBe(1);
+		expect(deps.ocrBackend.recognize).not.toHaveBeenCalled();
+		expect(deps.noteStore.write.mock.calls[0][1]).toContain("what the backend said last time");
+	});
+
+	it("re-transcribes a stale-render rebuild whose ink the parser has now placed", async () => {
+		// The one case worth paying for: placing anchored ink changes what the OCR rasterizer sees, so
+		// the stored transcript was made from an overlapped page. The fixture's nodes are anchored.
+		const entry = documentEntry({ hash: "hash-1" });
+		const content = documentContent({
+			cPages: cPages(["page-a"]),
+			pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }],
+		});
+		const staleRow = {
+			syncKey: pageSyncKey("doc-1", "page-a", "todo"),
+			docId: "doc-1",
+			pageId: "page-a",
+			tag: "todo",
+			entryHash: "hash-1",
+			pageHash: "hash-a",
+			notePath: "Todo/Notebook — Page 1.md",
+			status: "active" as const,
+			syncedAt: "2025-12-01T00:00:00.000Z",
+			renderVersion: RENDER_VERSION - 1,
+		};
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [entry],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = baseDeps(api, { todo: "Todo" });
+		await deps.noteStore.write("Todo/Notebook — Page 1.md", "> [!info]- x\n\n![[a.pdf]]\n\n## Transcript\nstale\n<!-- tagged-sync:end -->\n");
+
+		await runSync(deps, { rootHash: "root-1", rows: { [staleRow.syncKey]: staleRow } });
+
+		expect(deps.ocrBackend.recognize).toHaveBeenCalled();
 	});
 
 	it("skips a page tag whose page no longer exists on the device", async () => {

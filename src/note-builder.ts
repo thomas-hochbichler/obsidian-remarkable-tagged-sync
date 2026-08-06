@@ -67,6 +67,8 @@ const FENCE_END = "<!-- tagged-sync:end -->";
 // The transcript body inside the managed block: everything between the "## Transcript" heading and
 // the closing fence. Non-greedy so it stops at the first fence end (see buildManagedBlock).
 const TRANSCRIPT_RE = new RegExp(`(## Transcript\\n)[\\s\\S]*?(\\n${FENCE_END})`);
+// The transcript's body alone, for reading it back out (see `readTranscript`).
+const TRANSCRIPT_BODY_RE = new RegExp(`## Transcript\\n([\\s\\S]*?)\\n${FENCE_END}`);
 // The whole section including its leading newline -- for removing it when a transcript goes away.
 const TRANSCRIPT_SECTION_RE = new RegExp(`\\n## Transcript\\n[\\s\\S]*?\\n${FENCE_END}`);
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n?/;
@@ -284,6 +286,17 @@ export async function moveNote(store: NoteStore, fromPath: string, toFolder: str
 		await store.move(fromPath, toPath);
 	}
 	return writeNoteAt(store, toPath, fields);
+}
+
+/**
+ * The transcript a note already carries, or null when it has none (no section, or the note is gone).
+ *
+ * The mirror of `updateTranscript`, and it exists for the same reason the section is addressable at
+ * all: a re-render triggered by a renderer change alone has a perfectly good transcript already, and
+ * re-running the backend to get the same text back would bill a metered backend for nothing.
+ */
+export function readTranscript(content: string): string | null {
+	return content.match(TRANSCRIPT_BODY_RE)?.[1] ?? null;
 }
 
 /**
