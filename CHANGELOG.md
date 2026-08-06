@@ -14,6 +14,10 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **Text you typed on the device now appears in the transcript**, in the right place between the
+  handwriting around it. It is taken from the file exactly as you typed it — never read off an
+  image — so it cannot come out misspelled. It was missing entirely before: transcription reads a
+  picture of your ink, and typed text is not ink.
 - **Handwritten notes** setting, **off by default**: handwritten margin notes on annotated PDFs are
   left out of the digest unless you turn it on. Highlights are unaffected.
 - Every margin note now keeps a small image of your handwriting beside its transcription. Apple
@@ -22,6 +26,17 @@ workflow publishes the section as the GitHub release body. See
 
 ### Changed
 
+- **Handwriting is transcribed noticeably more accurately.** Ink was drawn far too thin in the
+  image handed to Apple Vision — two to nine times thinner than you wrote it — and a hairline is
+  what its layout pass declines to call text. Writing that still comes back with nothing over it is
+  now read a second time on its own. Over a ten-page corpus with hand-corrected ground truth,
+  character errors fall from 31.6% to 26.1% and the share of lines found rises from 72% to 80%, in
+  about the same time per page.
+- **Existing notes keep the transcripts they have.** Run **Re-transcribe all synced notes** to redo
+  them with the better transcription — the command now says so. It is the only thing that can spend
+  an API quota, so it stays your choice.
+- The diagnostics block reports which Apple Vision revision your Mac ran, and how much writing it
+  refused to read at all. Nothing is sent anywhere; you copy it and paste it into a bug report.
 - The **Highlights** section is no longer a stack of quote boxes. Each page is a heading that links
   into the PDF, with your highlights as a plain list under it — the same boxless look the digest has.
   Nothing about the highlights themselves changes.
