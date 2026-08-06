@@ -82,8 +82,19 @@ function hex(bytes: Uint8Array): string {
 	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * A field tag is `(index << 4) | type` encoded as a LEB128 varuint, not as a byte -- so every tag
+ * from index 8 up takes two bytes. Only two of the tags this parser reads are that large
+ * (`color_rgba`, index 8 on a stroke and 10 on a highlight); the rest fit in one byte and encode
+ * identically either way. Reading them as bytes left the continuation byte in the stream, which
+ * `readColorRgba` used to skip by hand and mistook for a device quirk.
+ */
+function readTag(stream: KaitaiStream): number {
+	return readVaruint(stream);
+}
+
 function expectTag(stream: KaitaiStream, expected: number, what: string): void {
-	const actual = stream.readU1();
+	const actual = readTag(stream);
 	if (actual !== expected) {
 		throw new Error(`rm-parser: expected ${what} tag 0x${expected.toString(16)}, got 0x${actual.toString(16)}`);
 	}
@@ -117,11 +128,15 @@ function readCrdtIdHex(stream: KaitaiStream, raw: Uint8Array): string {
 	return hex(raw.subarray(start, stream.pos));
 }
 
-/** Consumes the next byte and returns true if it matches `expected`; otherwise leaves the stream position unchanged. */
+/** Consumes the next tag and returns true if it matches `expected`; otherwise leaves the stream position unchanged. */
 function tryTag(stream: KaitaiStream, expected: number): boolean {
 	if (stream.pos >= stream.size) return false;
 	const start = stream.pos;
-	if (stream.readU1() === expected) return true;
+	try {
+		if (readTag(stream) === expected) return true;
+	} catch {
+		// A truncated varuint at the end of a body is simply not the tag we were looking for.
+	}
 	stream.seek(start);
 	return false;
 }
@@ -224,13 +239,12 @@ const HIGHLIGHT_COLOR_RGBA_TAG = 0xa4;
 
 /** Reads the optional `color_rgba` field at the end of a stroke or highlight body, if present. */
 function readColorRgba(stream: KaitaiStream, tag: number): RmStroke["colorRgba"] {
+	// The tag is a varuint, so index 8 (`0x84 0x01`) and index 10 (`0xa4 0x01`) are two bytes and
+	// `tryTag` consumes both. That second byte was previously read here as a device quirk -- a
+	// "single 0x01 between the tag and the BGRA word" -- which happened to land on the right offset
+	// while misnaming what it was. Reading only four bytes shifts every channel and drops red
+	// entirely (yellow 255,237,117 reads as 237,117,1), which is the bug that comment was chasing.
 	if (!tryTag(stream, tag)) return undefined;
-	// Device files put a single 0x01 byte between the tag and the BGRA word, so the field is
-	// five bytes, not the four rmscene's `read_color_optional` assumes -- reading four shifts
-	// every channel one byte and drops red entirely (yellow 255,237,117 reads as 237,117,1).
-	// Confirmed on device data and on the vendored v3.14.4 fixture, which rmscene itself
-	// leaves a trailing unread byte on. Four bytes remaining means no leading byte to skip.
-	if (stream.size - stream.pos > 4) stream.readU1();
 	const packed = stream.readU4le(); // little-endian uint32, packed BGRA
 	return { r: (packed >> 16) & 0xff, g: (packed >> 8) & 0xff, b: packed & 0xff };
 }
