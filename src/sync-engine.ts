@@ -165,6 +165,32 @@ export interface SyncResult {
 	skipErrors: string[];
 }
 
+/**
+ * Plain-language notes about what a render knowingly got wrong, one line per page, for
+ * `SyncResult.skipErrors`.
+ *
+ * Both conditions are read off what the parser recorded, never measured back off the geometry: an
+ * overlap test flags pages that are fine (it did so on two of six while this was being diagnosed)
+ * and misses pages that are not, and a flag users learn to ignore is worse than no flag. What the
+ * parser knew it could not do, it says.
+ *
+ * Silent on the common case by construction -- across the 80-page corpus every node places and every
+ * layer is visible, so neither line appears.
+ */
+export function renderNotes(scenes: RmPage[], label: (pageIndex: number) => string): string[] {
+	const notes: string[] = [];
+	scenes.forEach((scene, index) => {
+		// Per page, not per layer: eleven unplaceable nodes are still one thing the reader can act on.
+		if (scene.layers.some((layer) => layer.placement !== undefined && layer.placement !== "applied")) {
+			notes.push(`${label(index)}: some handwriting could not be placed and may appear overlapped or shifted. Open the page on the device to read it.`);
+		}
+		if (scene.layers.some((layer) => layer.visible === false)) {
+			notes.push(`${label(index)}: a layer hidden on the device is shown in the render.`);
+		}
+	});
+	return notes;
+}
+
 /** Raw error text for `SyncResult.skipErrors` -- the same shape main.ts records for a whole-sync failure. */
 function errorText(error: unknown): string {
 	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -670,6 +696,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					ocrPages = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					pdfBytes = await renderPagesToPdf(ocrPages); // throws on an empty notebook -- surfaced, not written as a blank note
 					highlights = collectHighlights(ocrPages.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
+					skipErrors.push(...renderNotes(ocrPages, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
@@ -781,6 +808,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					ocrPages = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
 					pdfBytes = await renderPagesToPdf(ocrPages);
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: ocrPages[0].highlights ?? [] }]);
+					skipErrors.push(...renderNotes(ocrPages, () => `Page ${pageIndex} of "${entry.visibleName}"`));
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}", skipping`, error);

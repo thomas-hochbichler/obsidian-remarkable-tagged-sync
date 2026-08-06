@@ -6,7 +6,7 @@ import type { AttachmentStore } from "./attachment-writer";
 import { buildDigest } from "./digest-pipeline";
 import { blockHashOf, extractManagedBlock, type NoteStore } from "./note-builder";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
-import type { RmPage } from "./rm-parser";
+import type { RmLayer, RmPage } from "./rm-parser";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
@@ -14,6 +14,7 @@ import {
 	notebookSyncKey,
 	pageSyncKey,
 	RENDER_VERSION,
+	renderNotes,
 	reTranscribeAll,
 	runSync,
 	type SyncApi,
@@ -1817,5 +1818,43 @@ describe("invalidateRenders", () => {
 
 		expect(result.mappings).toBe("fingerprint");
 		expect(result.rows["doc-1::sync"]).toMatchObject({ notePath: "Target/My Notebook.md", blockHash: "abcd1234", status: "active" });
+	});
+});
+
+describe("renderNotes", () => {
+	const layer = (overrides: Partial<RmLayer>): RmLayer => ({ id: "l", name: null, strokes: [], ...overrides });
+	const scene = (layers: RmLayer[]): RmPage => ({ formatVersion: 6, layers });
+	const label = (index: number) => `Page ${index + 1}`;
+
+	it("says nothing when every node placed and every layer is visible", () => {
+		const page = scene([layer({ placement: "applied", visible: true }), layer({ visible: true })]);
+
+		expect(renderNotes([page], label)).toEqual([]);
+	});
+
+	it("tells the reader what to do about a page it could not place, without naming the format", () => {
+		const page = scene([layer({ placement: "no-text" })]);
+
+		expect(renderNotes([page], label)).toEqual([
+			"Page 1: some handwriting could not be placed and may appear overlapped or shifted. Open the page on the device to read it.",
+		]);
+	});
+
+	it("reports a page once, however many of its nodes could not be placed", () => {
+		const page = scene([layer({ placement: "unknown-anchor" }), layer({ placement: "no-text" }), layer({ placement: "applied" })]);
+
+		expect(renderNotes([page], label)).toHaveLength(1);
+	});
+
+	it("reports a layer the device hides, since the render shows it anyway", () => {
+		const page = scene([layer({ visible: false })]);
+
+		expect(renderNotes([page], label)).toEqual(["Page 1: a layer hidden on the device is shown in the render."]);
+	});
+
+	it("numbers each page of a notebook separately", () => {
+		const pages = [scene([layer({ placement: "applied" })]), scene([layer({ placement: "no-text" })])];
+
+		expect(renderNotes(pages, label)).toEqual([expect.stringContaining("Page 2")]);
 	});
 });
