@@ -78,6 +78,11 @@ async function decodePageContent(bytes: Uint8Array): Promise<{ ops: string; extG
 	return { ops, extGStates };
 }
 
+/** pdf-lib writes a drawn string as a hex-encoded PDF string, which is what a content stream carries. */
+function drawnText(value: string): string {
+	return `<${[...value].map((character) => (character.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(2, "0")).join("")}> Tj`;
+}
+
 describe("renderPagesToPdf", () => {
 	it("renders a real page fixture into a one-page PDF", async () => {
 		const page = loadFixturePage();
@@ -87,6 +92,51 @@ describe("renderPagesToPdf", () => {
 		expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
 		const doc = await PDFDocument.load(bytes);
 		expect(doc.getPageCount()).toBe(1);
+	});
+
+	it("draws the page's typed text, so a page with text and no strokes is not a blank PDF", async () => {
+		// `Schnellnotiz-8c6044dc` is this case in the corpus: 1144 characters, no ink, a 724-byte blank.
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: "typed", deleted: 0 }], styles: new Map() },
+		};
+
+		const { ops } = await decodePageContent(await renderPagesToPdf([page]));
+
+		expect(ops).toContain(drawnText("typed"));
+	});
+
+	it("draws a list item's bullet, which is the style's doing and not a character of the text", async () => {
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: {
+				posX: -468,
+				posY: 234,
+				width: 936,
+				runs: [{ id: "1:10", text: "an item", deleted: 0 }],
+				styles: new Map([["0:0", 4]]),
+			},
+		};
+
+		const { ops } = await decodePageContent(await renderPagesToPdf([page]));
+
+		expect(ops).toContain(drawnText("an item"));
+		expect(ops).toContain("<95> Tj"); // the bullet, at WinAnsi's own code point
+	});
+
+	it("grows a page to fit typed text that runs past the screen, which ink alone would not size", async () => {
+		const manyLines = Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n");
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: manyLines, deleted: 0 }], styles: new Map() },
+		};
+
+		const doc = await PDFDocument.load(await renderPagesToPdf([page]));
+
+		expect(doc.getPage(0).getHeight()).toBeGreaterThan(1872 * (72 / 226));
 	});
 
 	it("throws rather than producing an empty PDF when there are no pages", async () => {
@@ -222,6 +272,82 @@ describe("renderPagesToPdf", () => {
 		expect((await PDFDocument.load(await renderPagesToPdf([noisy]))).getPage(0).getSize().width).toBeCloseTo(447.32, 1);
 	});
 
+	it("widens the page to the device's expanded canvas when ink runs past the screen edge", async () => {
+		// A notebook page's canvas expands sideways by one step -- the device's own exports are
+		// 445x594pt normally and 594x594 when expanded, i.e. 1404 -> 1872px, the portrait height.
+		// Nothing grew the box sideways before, so this ink was clipped away.
+		const expanded = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: 800, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 810, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1404, height: 1872 },
+		);
+
+		const { width, height } = (await PDFDocument.load(await renderPagesToPdf([expanded]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo((1872 * 72) / 226, 1); // 596.39 -- the device's 594pt wide page
+		expect(height).toBeCloseTo((1872 * 72) / 226, 1); // unchanged: only the width steps
+	});
+
+	it("takes the Paper Pro's own expansion step, not the reMarkable 1/2's", async () => {
+		const expanded = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: 900, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 950, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1620, height: 2160 },
+		);
+
+		const { width } = (await PDFDocument.load(await renderPagesToPdf([expanded]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo((2160 * 72) / 229, 1); // 679.24
+	});
+
+	it("leaves the page at screen width when its ink fits, so an unexpanded page is sized exactly as before", async () => {
+		const fits = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: -700, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 700, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1404, height: 1872 },
+		);
+
+		const { width } = (await PDFDocument.load(await renderPagesToPdf([fits]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo(447.32, 1);
+	});
+
+	it("does not widen the page for a non-physical outlier, the same guard detectCanvas applies", async () => {
+		const noisy = pageWithStrokes(
+			[
+				stroke({
+					points: [
+						{ x: 1e38, y: 0, speed: 0, width: 0, direction: 0, pressure: 0 },
+						{ x: 10, y: 10, speed: 0, width: 0, direction: 0, pressure: 0 },
+					],
+				}),
+			],
+			{ width: 1404, height: 1872 },
+		);
+
+		const { width } = (await PDFDocument.load(await renderPagesToPdf([noisy]))).getPage(0).getSize();
+
+		expect(width).toBeCloseTo(447.32, 1);
+	});
+
 	it("renders an empty scene (no strokes) without throwing", async () => {
 		const emptyPage: RmPage = { formatVersion: 6, layers: [] };
 
@@ -339,15 +465,48 @@ describe("renderPagesToPdf", () => {
 		const strokes = [
 			banded(120, 18), // device highlighter: 120 quarter-px -> 30 px
 			banded(48, 23), // shader -> 12 px
-			stroke({ penType: 17, color: 0, brushSize: 1 }), // pen -> thickness_scale, unchanged
 		];
 
 		const bytes = await renderPagesToPdf([pageWithStrokes(strokes)]);
 
 		const { ops } = await decodePageContent(bytes);
 		const widths = Array.from(ops.matchAll(/([\d.]+) w\b/g), (match) => Number(match[1]));
-		expect(widths).toHaveLength(3);
-		for (const [i, px] of [30, 12, 1].entries()) expect(widths[i]).toBeCloseTo((px * 72) / 226, 6);
+		expect(widths).toHaveLength(2);
+		for (const [i, px] of [30, 12].entries()) expect(widths[i]).toBeCloseTo((px * 72) / 226, 6);
+	});
+
+	it("takes a pen's width from the mean recorded point width, not from the thickness_scale that draws it 2x too thin", async () => {
+		// A device fineliner: thickness_scale 2, but the ink it actually laid down is 16 quarter-px
+		// (4px) wide. Drawing it at thickness_scale is the 2.00x median under-thickening measured
+		// across the 80-page corpus.
+		const pen = (widths: number[]) =>
+			stroke({
+				penType: 17,
+				color: 0,
+				brushSize: 2,
+				points: widths.map((width, i) => ({ x: i * 10, y: 0, speed: 0, width, direction: 0, pressure: 0 })),
+			});
+		const strokes = [
+			pen([16, 16, 16]), // constant, as pen 17 is on every corpus stroke -> 4px
+			pen([12, 16, 20]), // varying: the mean, not the widest -- the taper is not modeled
+		];
+
+		const bytes = await renderPagesToPdf([pageWithStrokes(strokes)]);
+
+		const { ops } = await decodePageContent(bytes);
+		const widths = Array.from(ops.matchAll(/([\d.]+) w\b/g), (match) => Number(match[1]));
+		expect(widths).toHaveLength(2);
+		for (const [i, px] of [4, 4].entries()) expect(widths[i]).toBeCloseTo((px * 72) / 226, 6);
+	});
+
+	it("falls back to thickness_scale for a pen whose points record no width, so pre-width files still render", async () => {
+		const widthless = stroke({ penType: 17, color: 0, brushSize: 3 });
+
+		const bytes = await renderPagesToPdf([pageWithStrokes([widthless])]);
+
+		const { ops } = await decodePageContent(bytes);
+		const widths = Array.from(ops.matchAll(/([\d.]+) w\b/g), (match) => Number(match[1]));
+		expect(widths).toEqual([expect.closeTo((3 * 72) / 226, 6)]);
 	});
 
 	it("varies a calligraphy stroke's width per segment from the recorded point widths, instead of flattening it to thickness_scale", async () => {

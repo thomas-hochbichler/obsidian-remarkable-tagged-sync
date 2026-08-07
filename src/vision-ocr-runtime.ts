@@ -1,6 +1,6 @@
 import { Platform } from "obsidian";
 import { encodeGrayscalePng } from "./png-encoder";
-import { DEFAULT_MAX_PARALLELISM, type VisionBatchResult, type VisionBatchRunner, VisionOcrBackend } from "./vision-ocr-backend";
+import { DEFAULT_MAX_PARALLELISM, type VisionBatchResult, type VisionBatchRunner, type VisionBox, VisionOcrBackend } from "./vision-ocr-backend";
 
 /**
  * The Vision driver, piped to `osascript -l JavaScript` on stdin (spec §3.1). Nothing is ever
@@ -25,13 +25,18 @@ function ocrOne(path) {
   if (!ok) return { error: 'unreadable_image' };
   var res = req.results;
   if (res.isNil()) return { error: 'no_results' };
-  var lines = [];
+  var lines = [], boxes = [];
   for (var i = 0; i < res.count; i++) {
-    var cands = res.objectAtIndex(i).topCandidates(1);
-    if (cands.isNil() || cands.count == 0) continue;
+    var obs = res.objectAtIndex(i);
+    var cands = obs.topCandidates(1);
+    if (cands.isNil() || cands.count == 0) continue;   // no candidate: nothing to place either
     lines.push(ObjC.unwrap(cands.objectAtIndex(0).string));
+    // Normalised against the image, origin BOTTOM-LEFT. Pushed only beside a kept line, so the
+    // two arrays stay index-aligned -- the caller pairs them by position.
+    var bb = obs.boundingBox;
+    boxes.push({ x: bb.origin.x, y: bb.origin.y, w: bb.size.width, h: bb.size.height });
   }
-  return { text: lines.join('\\n') };
+  return { lines: lines, boxes: boxes, revision: req.revision };
 }
 function run(argv) {
   var pages = [];
@@ -128,8 +133,10 @@ const runBatch: VisionBatchRunner = async (images) => {
 			return filePath;
 		});
 		const stdout = await runOsascript(paths);
-		const parsed = JSON.parse(stdout) as { pages: Array<{ text?: string; error?: string }> };
-		return parsed.pages.map((pg): VisionBatchResult => (pg.error ? { error: pg.error } : { text: pg.text ?? "" }));
+		const parsed = JSON.parse(stdout) as { pages: Array<{ lines?: string[]; boxes?: VisionBox[]; revision?: number; error?: string }> };
+		return parsed.pages.map((pg): VisionBatchResult =>
+			pg.error ? { error: pg.error } : { lines: pg.lines ?? [], boxes: pg.boxes ?? [], revision: pg.revision },
+		);
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}

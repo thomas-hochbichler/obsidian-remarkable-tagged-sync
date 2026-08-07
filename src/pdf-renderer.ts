@@ -1,5 +1,19 @@
-import { BlendMode, type Color, LineCapStyle, PDFDocument, PDFNumber, PDFOperator, PDFOperatorNames, type PDFPage, rgb } from "pdf-lib";
+import {
+	BlendMode,
+	type Color,
+	LineCapStyle,
+	PDFDocument,
+	type PDFFont,
+	PDFNumber,
+	PDFOperator,
+	PDFOperatorNames,
+	type PDFPage,
+	rgb,
+	StandardFonts,
+} from "pdf-lib";
+import { HEADING_TEXT_SIZE_PX, PLAIN_TEXT_SIZE_PX, TEXT_LEFT_PADDING_PX } from "./device-font";
 import type { RmHighlight, RmPage, RmRect, RmStroke } from "./rm-parser";
+import { faceOf, layoutText, LIST_MARKER_OFFSET_PX } from "./text-layout";
 
 /** `LineJoinStyle.Round` in PDF's numbering; pdf-lib exports the cap styles but not the join ones. */
 const ROUND_LINE_JOIN = 1;
@@ -145,8 +159,30 @@ function strokeWidthPt(stroke: RmStroke, canvas: DeviceCanvas): number {
 	return strokeWidthPx(stroke) * canvas.pxToPt;
 }
 
+/**
+ * `thickness_scale` is the tool's size *setting*, not a width: measured across 23,323 strokes of
+ * the 80-page corpus, drawing a pen at it makes 99.7% of strokes too thin, none too thick, by a
+ * median of exactly 2.00x and up to 5.6x. The device records what it actually drew per point, so
+ * that is what we draw -- the same source the highlighter branch below has always used.
+ *
+ * The mean rather than the widest, because there is almost nothing to taper: pen 17 (10,657 strokes
+ * in the corpus) never varies within a stroke at all, and pen 15 (11,165) varies by at most 1.5px.
+ * The calligraphy pen does vary, and keeps its per-segment path in `drawTaperedStroke`.
+ *
+ * `thickness_scale` remains the fallback for a file whose points record no width.
+ */
 function strokeWidthPx(stroke: RmStroke): number {
-	if (!isHighlighterOrShader(stroke.penType)) return stroke.brushSize > 0 ? stroke.brushSize : DEFAULT_STROKE_WIDTH_PX;
+	if (!isHighlighterOrShader(stroke.penType)) {
+		let total = 0;
+		let counted = 0;
+		for (const point of stroke.points)
+			if (point.width > 0) {
+				total += point.width;
+				counted++;
+			}
+		if (counted > 0) return total / counted / POINT_WIDTH_PER_PX;
+		return stroke.brushSize > 0 ? stroke.brushSize : DEFAULT_STROKE_WIDTH_PX;
+	}
 	// The band is as wide as the widest point the tool laid down; we draw one constant width per
 	// stroke, so a shader's pressure-tapered ends round up to its full width rather than down.
 	let widest = 0;
@@ -207,8 +243,11 @@ function strokePath(stroke: RmStroke, canvas: DeviceCanvas): string {
 /**
  * The calligraphy pen is a chisel tip: its width swells and thins *within* a stroke with tilt and
  * pressure, and the device records the result per point. Drawing it at one constant width is what
- * flattens it into a plain line. Every other ink tool records a constant per-point width, so they
- * stay on the cheaper single-path route -- pencil grain and brush texture remain unmodeled (ticket 05).
+ * flattens it into a plain line.
+ *
+ * Other tools do vary a little -- pen 15 by up to 1.5px within a stroke, pen 17 not at all, measured
+ * over the corpus -- but not enough for a reader to see, so they stay on the cheaper single-path
+ * route at their mean width (`strokeWidthPx`). Pencil grain and brush texture remain unmodeled.
  */
 const CALLIGRAPHY_PEN_TYPE = 21;
 
@@ -309,6 +348,40 @@ function drawPageStrokes(page: PDFPage, rmPage: RmPage, canvas: DeviceCanvas): v
 }
 
 /**
+ * The page's typed text, drawn where the device lays it out.
+ *
+ * Without this a page that carries only typed text renders blank -- `Schnellnotiz-8c6044dc` is 1144
+ * characters and no strokes, and our PDF for it was 724 bytes of nothing.
+ *
+ * **The face is Helvetica; the metrics are the device's.** Where a line breaks is what has to match,
+ * because a wrong break moves every line below it and every node anchored to one; which letterforms
+ * carry it is not something a reader can act on. So the break is computed in `text-layout.ts` from
+ * the device's own advance widths and the drawing simply follows, at the device's own size -- a
+ * base-14 face costs no bytes and needs no licence.
+ *
+ * A line's y is the same slot its anchored handwriting is placed at, so the baseline is drawn on it
+ * rather than offset from it: the typed line and the ink that hangs off it must agree.
+ */
+function drawPageText(page: PDFPage, rmPage: RmPage, canvas: DeviceCanvas, font: PDFFont, encodable: Set<number>): void {
+	if (!rmPage.text) return;
+	for (const line of layoutText(rmPage.text).lines) {
+		const heading = faceOf(line.style) === "heading";
+		const sizePt = (heading ? HEADING_TEXT_SIZE_PX : PLAIN_TEXT_SIZE_PX) * canvas.pxToPt;
+		if (line.firstLine && line.xPx > rmPage.text.posX) {
+			// The bullet is the style's doing, not a character: the stored paragraph starts at its text.
+			const marker = toPdfPoint({ x: rmPage.text.posX + LIST_MARKER_OFFSET_PX, y: line.yPx }, canvas);
+			page.drawText("•", { x: marker.x, y: marker.y, size: sizePt, font, color: rgb(0, 0, 0) });
+		}
+		if (line.text === "") continue;
+		const at = toPdfPoint({ x: line.xPx + TEXT_LEFT_PADDING_PX, y: line.yPx }, canvas);
+		// pdf-lib's WinAnsi encoder throws on anything it cannot encode, which would cost the page its
+		// whole text for one stray glyph. Fail soft to the substitute the device's own export uses.
+		const drawable = [...line.text].map((character) => (encodable.has(character.codePointAt(0) ?? 0) ? character : "·")).join("");
+		page.drawText(drawable, { x: at.x, y: at.y, size: sizePt, font, color: rgb(0, 0, 0) });
+	}
+}
+
+/**
  * How tall a scrolled page is allowed to get, in screen-heights. Scenes decode a handful of garbage
  * coordinates -- this repo's own `normal-a-stroke-2-layers` fixture carries y values around 1e12,
  * and `page-rasterizer.ts` hit the same thing at ~1e38 -- and one of them would stretch a page to
@@ -320,11 +393,16 @@ function drawPageStrokes(page: PDFPage, rmPage: RmPage, canvas: DeviceCanvas): v
 const MAX_SCROLLED_SCREENS = 20;
 
 /**
- * How far down the page a scene's ink reaches, in device px, ignoring anything past `limitPx`
- * (see `MAX_SCROLLED_SCREENS`). Null for a page with no ink. Half a stroke's width is included so
- * a thick mark at the very bottom isn't shaved in half.
+ * How far down the page a scene's content reaches, in device px, ignoring anything past `limitPx`
+ * (see `MAX_SCROLLED_SCREENS`). Null for a page with nothing on it. Half a stroke's width is
+ * included so a thick mark at the very bottom isn't shaved in half.
+ *
+ * Typed text counts, not only ink: `Schnellnotiz-8c6044dc` is 1144 characters and no strokes, and
+ * its text reaches a third of a screen past the bottom. Sized by ink alone the page stays screen
+ * height and the render clips two thirds of the text away -- which looked like the text not being
+ * drawn at all.
  */
-function inkBottomPx(rmPage: RmPage, limitPx: number): number | null {
+function contentBottomPx(rmPage: RmPage, limitPx: number): number | null {
 	let bottom = Number.NEGATIVE_INFINITY;
 	for (const layer of rmPage.layers) {
 		for (const stroke of layer.strokes) {
@@ -334,8 +412,18 @@ function inkBottomPx(rmPage: RmPage, limitPx: number): number | null {
 	}
 	for (const highlight of rmPage.highlights ?? [])
 		for (const rect of highlight.rects) if (rect.y + rect.height <= limitPx) bottom = Math.max(bottom, rect.y + rect.height);
+	if (rmPage.text) {
+		for (const line of layoutText(rmPage.text).lines) {
+			if (line.text === "" || line.yPx > limitPx) continue;
+			// A baseline is not the bottom of the line: the descenders below it are part of the text.
+			bottom = Math.max(bottom, line.yPx + (faceOf(line.style) === "heading" ? HEADING_TEXT_SIZE_PX : PLAIN_TEXT_SIZE_PX) * TEXT_DESCENT);
+		}
+	}
 	return bottom > Number.NEGATIVE_INFINITY ? bottom : null;
 }
+
+/** Helvetica's descender, as a fraction of the em -- how far a `g` reaches below its baseline. */
+const TEXT_DESCENT = 0.212;
 
 /**
  * The frame one notebook page is drawn in: the device screen, grown downwards when the page's ink
@@ -346,8 +434,34 @@ function inkBottomPx(rmPage: RmPage, limitPx: number): number | null {
  * Only the bottom moves: y=0 stays the page top (the direction the device's canvas actually grows),
  * so growth costs no coordinate offset and a page whose ink fits one screen is sized exactly as before.
  */
+/**
+ * The frame widens when the writer panned sideways. A notebook canvas expands horizontally in one
+ * discrete step -- the device's own PDF exports are 445x594pt for a normal page and 594x594 for an
+ * expanded one, i.e. 1404 -> 1872px, which is the screen's own portrait height; a Paper Pro steps
+ * 1620 -> 2160 the same way. Unlike the vertical growth, which follows the ink to fitted values
+ * (630, 716, 824, 878pt were all observed), the width never lands between the two.
+ *
+ * So the box is not sized to the ink: it takes the step whenever the ink needs more room than the
+ * screen. Measured over the corpus, 13 of 45 notebook pages need it and every one of them fits
+ * inside the step, the tightest with 11px to spare.
+ *
+ * Ink beyond the expanded frame is decode noise rather than a third canvas size, and is ignored --
+ * the same guard `detectCanvas` applies for the same reason.
+ */
+function expandedCanvas(rmPage: RmPage, canvas: DeviceCanvas): DeviceCanvas {
+	const half = canvas.widthPx / 2;
+	for (const layer of rmPage.layers)
+		for (const stroke of layer.strokes)
+			for (const { x } of stroke.points)
+				if (Number.isFinite(x) && Math.abs(x) > half && Math.abs(x) <= canvas.heightPx) {
+					const widthPx = canvas.heightPx;
+					return { ...canvas, widthPx, widthPt: widthPx * canvas.pxToPt };
+				}
+	return canvas;
+}
+
 function scrolledCanvas(rmPage: RmPage, canvas: DeviceCanvas): DeviceCanvas {
-	const bottom = inkBottomPx(rmPage, canvas.heightPx * MAX_SCROLLED_SCREENS);
+	const bottom = contentBottomPx(rmPage, canvas.heightPx * MAX_SCROLLED_SCREENS);
 	if (bottom === null || bottom <= canvas.heightPx) return canvas;
 	return { ...canvas, heightPx: bottom, heightPt: bottom * canvas.pxToPt };
 }
@@ -360,10 +474,15 @@ export async function renderPagesToPdf(pages: RmPage[]): Promise<Uint8Array> {
 
 	const canvas = declaredCanvas(pages) ?? detectCanvas(pages);
 	const doc = await PDFDocument.create();
+	const font = await doc.embedFont(StandardFonts.Helvetica);
+	const encodable = new Set(font.getCharacterSet());
 	for (const rmPage of pages) {
-		// Per page, not per document: each page scrolls on its own, so they legitimately differ in height.
-		const pageCanvas = scrolledCanvas(rmPage, canvas);
+		// Per page, not per document: each page scrolls and expands on its own, so they legitimately
+		// differ in both dimensions.
+		const pageCanvas = scrolledCanvas(rmPage, expandedCanvas(rmPage, canvas));
 		const page = doc.addPage([pageCanvas.widthPt, pageCanvas.heightPt]);
+		// Typed text under the handwriting, as the device stacks them.
+		drawPageText(page, rmPage, pageCanvas, font, encodable);
 		drawPageStrokes(page, rmPage, pageCanvas);
 	}
 	return doc.save();

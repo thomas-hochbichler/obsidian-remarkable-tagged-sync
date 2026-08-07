@@ -3,8 +3,32 @@ import { describe, expect, it } from "vitest";
 import { parseRmV6 } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
+
+// Stroke x is measured from the page midline, y from the page top -- so real ink on a reMarkable
+// 1/2 stays inside these bounds, and a misparsed point does not.
+const RM_1_2_HALF_WIDTH_PX = 702;
+const RM_1_2_HEIGHT_PX = 1872;
 const COLOR_FIXTURE_PATH = "./test-fixtures/rmv6/color-and-tool-v3.14.4.rm";
 const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
+
+/** A little-endian uint32 as four bytes, for hand-building block bodies. */
+function u32le(value: number): number[] {
+	const view = new DataView(new ArrayBuffer(4));
+	view.setUint32(0, value, true);
+	return [...new Uint8Array(view.buffer)];
+}
+
+/** A little-endian f32 / f64 as bytes, for hand-building block bodies. */
+function f32le(value: number): number[] {
+	const view = new DataView(new ArrayBuffer(4));
+	view.setFloat32(0, value, true);
+	return [...new Uint8Array(view.buffer)];
+}
+function f64le(value: number): number[] {
+	const view = new DataView(new ArrayBuffer(8));
+	view.setFloat64(0, value, true);
+	return [...new Uint8Array(view.buffer)];
+}
 
 /** Wraps a block body in a block header and the `.rm` v6 file header, as the smallest file containing it. */
 function fileWithBlock(blockType: number, body: Uint8Array): Uint8Array {
@@ -85,15 +109,126 @@ describe("parseRmV6", () => {
 		expect(stroke.penType).toBe(17);
 		expect(stroke.color).toBe(0);
 		expect(stroke.brushSize).toBeCloseTo(2);
-		expect(stroke.points).toHaveLength(12);
-		expect(stroke.points[0]).toEqual({
-			x: expect.any(Number),
-			y: expect.any(Number),
-			speed: expect.any(Number),
-			width: expect.any(Number),
-			direction: expect.any(Number),
-			pressure: expect.any(Number),
+		// This fixture's line_def blocks are version 1, whose points are six f32s (24 bytes) rather
+		// than version 2's packed 14. Read as 14, it decoded one point's bytes as parts of the next
+		// and yielded 12 points with coordinates like 1.5e38 -- which `expect.any(Number)` happily
+		// accepted. Assert the values, not just their type.
+		expect(stroke.points).toHaveLength(7);
+		for (const point of stroke.points) {
+			// Every point of this stroke sits within a few px of the same spot on a 1404px-wide page.
+			expect(Math.abs(point.x)).toBeLessThan(RM_1_2_HALF_WIDTH_PX);
+			expect(Math.abs(point.y)).toBeLessThan(RM_1_2_HEIGHT_PX);
+			// v1 records width in px; the parser scales it to v2's quarter-px so consumers see one unit.
+			expect(point.width).toBe(16);
+			expect(point.pressure).toBeGreaterThanOrEqual(0);
+			expect(point.pressure).toBeLessThanOrEqual(255);
+		}
+	});
+
+	it("reads a scene-tree node's visibility and its placement out of the layer_names tail", () => {
+		// The fixture's two unnamed group nodes are both anchored to the page's single typed
+		// character. anchor_type and anchor_threshold are device constants and deliberately not carried.
+		const page = parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH)));
+
+		expect(page.layers.map((layer) => layer.visible)).toEqual([true, true, true, true]);
+		expect(page.layers.map((layer) => layer.anchor)).toEqual([
+			undefined,
+			undefined,
+			{ anchorId: "1:14", originX: -464 },
+			{ anchorId: "1:14", originX: -464 },
+		]);
+	});
+
+	it("reads the page's typed text, its box and its runs", () => {
+		const page = parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH)));
+
+		expect(page.text).toEqual({
+			posX: -468,
+			posY: 234,
+			width: 936,
+			runs: [{ id: "1:14", text: "A", deleted: 0 }],
+			styles: new Map(),
 		});
+	});
+
+	it("reads every style-map entry, including one that follows an entry with a longer value", () => {
+		// A heading's value subblock carries five bytes after the style code. Reading only the code and
+		// walking on desynchronised the rest of the map: on the corpus's one styled page the last two
+		// entries came back as nonsense ids, and the two list paragraphs they styled lost their marker.
+		const crdtId = (part1: number, part2: number) => [part1, part2]; // one-byte varuints suffice here
+		const entry = (id: number[], value: number[]) => [
+			...id,
+			0x1f, ...crdtId(1, 9), // timestamp
+			0x2c, ...u32le(value.length), ...value,
+		];
+		const entries = [
+			...entry(crdtId(1, 20), [0x11, 3, 0x21, 2, 0x34, ...u32le(3)]), // a heading, value 9 bytes long
+			...entry(crdtId(1, 40), [0x11, 4]), // the list item that used to be lost
+		];
+		const styleMap = [0x1c, ...u32le(entries.length + 1), 2, ...entries];
+		const body = new Uint8Array([
+			0x1f, ...crdtId(1, 1), // text block id
+			0x2c, ...u32le(3 * 5 + 1), // text subblock: two nested subblock headers and an empty run list
+			0x1c, ...u32le(5 + 1),
+			0x1c, ...u32le(1),
+			0, // run count
+			0x2c, ...u32le(styleMap.length), ...styleMap,
+			0x3c, ...u32le(16), ...f64le(-468), ...f64le(234),
+			0x44, ...f32le(936),
+		]);
+
+		const page = parseRmV6(fileWithBlock(7, body));
+
+		expect(page.text?.styles).toEqual(
+			new Map([
+				["1:20", 3],
+				["1:40", 4],
+			]),
+		);
+	});
+
+	it("leaves text absent on a page that has none, rather than inventing an empty box", () => {
+		const page = parseRmV6(new Uint8Array(readFileSync(COLOR_FIXTURE_PATH)));
+
+		expect(page.text).toBeUndefined();
+		expect(page.layers.every((layer) => layer.anchor === undefined)).toBe(true);
+	});
+
+	it("keeps a node whose tail stops after the label, instead of losing it to a missing anchor", () => {
+		// Fail-soft is binding: the tail after the label is optional and read best-effort, so a body
+		// that simply ends there costs the node its placement and its visibility -- never its identity.
+		const name = new TextEncoder().encode("Layer 1");
+		const body = new Uint8Array([
+			0x1f, 1, 5, // node_id
+			0x2c, ...u32le(4 + 3 + 4 + 1 + 1 + name.length), // label subblock length
+			0x1f, 1, 6, // label timestamp
+			0x2c, ...u32le(1 + 1 + name.length), // label string subblock
+			name.length, 1, ...name, // varuint length, is-ascii flag, the name
+		]);
+
+		// The block parses to completion rather than throwing, which is what the page's ink depends on.
+		expect(() => parseRmV6(fileWithBlock(2, body))).not.toThrow();
+		expect(parseRmV6(fileWithBlock(2, body)).formatVersion).toBe(6);
+	});
+
+	it("places an anchored node's strokes where the device draws them", () => {
+		// The fixture's two group nodes are anchored to its single typed character "A", which sits on
+		// the first line: y = the text box's 234 + the first line's 62. Both carry originX -464.
+		const raw = parseRmV6(new Uint8Array(readFileSync(COLOR_FIXTURE_PATH))); // a page with no anchors
+		const page = parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH)));
+
+		const anchored = page.layers.filter((layer) => layer.anchor);
+		expect(anchored.map((layer) => layer.placement)).toEqual(["applied", "applied"]);
+		for (const layer of anchored) {
+			for (const point of layer.strokes.flatMap((stroke) => stroke.points)) {
+				// Unplaced, this fixture's ink sits within ~40px of the origin; placed, it is shifted
+				// left by 464 and down onto the text's first line.
+				expect(point.x).toBeLessThan(-400);
+				expect(point.y).toBeGreaterThan(234 + 62 - 60);
+			}
+		}
+		// A page with no anchors records no placement at all -- it is not a failure to have nothing to do.
+		expect(raw.layers.every((layer) => layer.placement === undefined)).toBe(true);
 	});
 
 	it("accepts an ArrayBuffer as well as a Uint8Array", () => {

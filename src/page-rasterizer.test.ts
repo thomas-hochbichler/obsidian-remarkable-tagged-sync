@@ -117,6 +117,51 @@ describe("rasterizePage", () => {
 		expect(darkCount).toBeGreaterThan(0);
 	});
 
+	/** A horizontal stroke of `width` quarter-pixels per point, drawn with the given pen and setting. */
+	function horizontalStroke(penType: number, brushSize: number, width: number): RmPage {
+		return {
+			formatVersion: 6,
+			layers: [
+				{
+					id: "layer-1",
+					name: null,
+					strokes: [
+						{
+							layerId: "layer-1",
+							id: "stroke-1",
+							timestamp: "0001",
+							penType,
+							color: 0,
+							brushSize,
+							points: [
+								{ x: 0, y: 300, speed: 0, width, direction: 0, pressure: 0 },
+								{ x: 100, y: 300, speed: 0, width, direction: 0, pressure: 0 },
+							],
+						},
+					],
+				},
+			],
+		};
+	}
+
+	/**
+	 * `brushSize` is the tool's size setting (1/2/3), not a width -- drawing at it made every pen
+	 * stroke 2x-9x too thin, and thin hairlines are what Vision misread and lost whole lines of.
+	 */
+	it("draws a pen stroke at the width the device recorded per point, not at its size setting", () => {
+		const image = rasterizePage(horizontalStroke(15, 1, 32)); // 32 quarter-px = 8 px wide
+
+		expect(image.height).toBeGreaterThanOrEqual(8);
+		expect(image.height).toBeLessThanOrEqual(10); // the 8px band, plus the bounds' own rounding
+	});
+
+	/** The raster is 1-bit, so a highlighter at its true 30px would bury the words instead of marking them. */
+	it("keeps a highlighter stroke at its size setting, where its true width would black out the line", () => {
+		const image = rasterizePage(horizontalStroke(18, 1, 120)); // 120 quarter-px = 30 px if believed
+
+		expect(image.height).toBeLessThanOrEqual(3);
+	});
+
 	it("clips strokes that fall outside the page bounds instead of throwing", () => {
 		const outOfBoundsPage: RmPage = {
 			formatVersion: 6,

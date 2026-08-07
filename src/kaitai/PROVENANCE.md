@@ -14,6 +14,19 @@ implementations only; **Tim Dommett's `Remarkable-Sync---Obsidian-Plugin`
   and correct the parts of `rmv6.ksy` below — this is the same reference
   the project's build spec (`.scratch/tagged-sync-plugin/spec.md`, §3)
   names as the intended clean-room source for the parser.
+- **rmc** (https://github.com/ricklupton/rmc), the SVG/PDF exporter by
+  rmscene's author, `main` as of 2026-08-06. License: MIT (Copyright (c)
+  Rick Lupton). Consulted for **the y half of scene-tree group placement
+  only**: `exporters/svg.py`'s `get_anchor` / `build_anchor_pos` /
+  `draw_group` — that a group's y comes from the laid-out line position of
+  the character its `anchor_id` names, the paragraph accumulator that
+  computes it, and the two reserved `anchor_id` sentinels for top and
+  bottom of the text. Its constants (`TEXT_TOP_Y`, `LINE_HEIGHTS`) are
+  treated as starting values to be measured against device output, not as
+  delivered values — rmc itself documents the line height as fitted. The x
+  half (`anchor_origin_x` as a translation in the stroke frame) was derived
+  from our own files and is not owed to rmc. No rmc code is copied or
+  bundled; rmc is Python, this plugin is TypeScript.
 - Test fixtures: also from rmscene's `tests/data/` (MIT). See
   `/test-fixtures/rmv6/FIXTURES.md`.
 - `kaitai-struct-compiler` (devDependency, generates `rmv6-generated.js`

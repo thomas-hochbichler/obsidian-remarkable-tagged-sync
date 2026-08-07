@@ -11,6 +11,7 @@ import {
 	type NoteFields,
 	type NoteStore,
 	type OcrStatus,
+	readTranscript,
 	updateTranscript,
 	writeNote,
 } from "./note-builder";
@@ -51,7 +52,7 @@ export type SyncRowStatus = "active" | "orphaned";
  * spacing -- the handwriting beside one paper's last paragraph came through as five margin notes,
  * one per pen stroke, and the highlight above it quoted from the middle of its sentence.
  */
-export const RENDER_VERSION = 11;
+export const RENDER_VERSION = 12;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -163,6 +164,60 @@ export interface SyncResult {
 	 * a note, but a degraded digest that says so nowhere is exactly the silent loss spec §6 forbids.
 	 */
 	skipErrors: string[];
+}
+
+/**
+ * Plain-language notes about what a render knowingly got wrong, one line per page, for
+ * `SyncResult.skipErrors`.
+ *
+ * Both conditions are read off what the parser recorded, never measured back off the geometry: an
+ * overlap test flags pages that are fine (it did so on two of six while this was being diagnosed)
+ * and misses pages that are not, and a flag users learn to ignore is worse than no flag. What the
+ * parser knew it could not do, it says.
+ *
+ * Silent on the common case by construction -- across the 80-page corpus every node places and every
+ * layer is visible, so neither line appears.
+ */
+export function renderNotes(scenes: RmPage[], label: (pageIndex: number) => string): string[] {
+	const notes: string[] = [];
+	scenes.forEach((scene, index) => {
+		// Per page, not per layer: eleven unplaceable nodes are still one thing the reader can act on.
+		if (scene.layers.some((layer) => layer.placement !== undefined && layer.placement !== "applied")) {
+			notes.push(`${label(index)}: some handwriting could not be placed and may appear overlapped or shifted. Open the page on the device to read it.`);
+		}
+		if (scene.layers.some((layer) => layer.visible === false)) {
+			notes.push(`${label(index)}: a layer hidden on the device is shown in the render.`);
+		}
+	});
+	return notes;
+}
+
+/**
+ * The transcript a unit can keep rather than re-earn, or undefined when it must be re-run.
+ *
+ * A `RENDER_VERSION` bump re-renders every note, and `writeUnit` transcribes whatever it renders --
+ * so a bump silently bills a metered backend for a whole vault. It need not: a rebuild triggered by
+ * the renderer alone is looking at exactly the bytes it looked at last time.
+ *
+ * The exceptions are the reason the bump exists. Placing anchored ink changes what the OCR rasterizer
+ * sees, so a page whose parse *did* place something is genuinely worth re-reading -- that is the
+ * ~4% of pages where the old transcript was garbage. A page carrying typed text is the other: its
+ * transcript was written before typed text was ever transcribed, so it is missing words the page
+ * plainly has. Everything else keeps what it has.
+ *
+ * Fail-soft: an unreadable note, a missing section or a digest note falls through to running OCR.
+ * Never write an empty transcript over a real one.
+ */
+async function reusableTranscript(
+	noteStore: NoteStore,
+	row: SyncIndexRow | undefined,
+	deviceUnchanged: boolean,
+	scenes: RmPage[],
+): Promise<string | undefined> {
+	if (!row || row.status !== "active" || !deviceUnchanged || !isStaleRender(row)) return undefined;
+	if (scenes.some((scene) => scene.text || scene.layers.some((layer) => layer.placement === "applied"))) return undefined;
+	const content = await noteStore.read(row.notePath);
+	return content === null ? undefined : (readTranscript(content) ?? undefined);
 }
 
 /** Raw error text for `SyncResult.skipErrors` -- the same shape main.ts records for a whole-sync failure. */
@@ -285,6 +340,11 @@ interface UnitParams {
 	pdfBytes: Uint8Array;
 	/** Pages to run OCR over -- empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
 	ocrPages: RmPage[];
+	/**
+	 * A transcript to keep instead of producing one, for a unit being rebuilt only because the
+	 * renderer changed. See `reusableTranscript` at the call sites for when that is safe.
+	 */
+	keepTranscript?: string;
 	/** Render-ready highlighted quotes, grouped by page (empty when the unit has no text highlights). */
 	highlights: HighlightGroup[];
 	/** The `## Digest` body of a PDF-backed unit; "" for every other unit, and for a digest that failed to build. */
@@ -305,7 +365,10 @@ async function writeUnit(
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"] }> {
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
-	const ocr = await runOcr(deps.ocrBackend, params.ocrPages);
+	const ocr: OcrResult =
+		params.keepTranscript !== undefined
+			? { status: "ok", text: params.keepTranscript, confidence: null }
+			: await runOcr(deps.ocrBackend, params.ocrPages);
 
 	const synced = deps.now();
 	const fields: NoteFields = {
@@ -670,6 +733,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					ocrPages = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					pdfBytes = await renderPagesToPdf(ocrPages); // throws on an empty notebook -- surfaced, not written as a blank note
 					highlights = collectHighlights(ocrPages.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
+					skipErrors.push(...renderNotes(ocrPages, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
@@ -688,6 +752,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					// An empty page list makes `runOcr` return `skipped` without spawning anything -- the
 					// digest already transcribed this unit, cluster by cluster.
 					ocrPages: digest.ocr === null ? ocrPages : [],
+					keepTranscript: await reusableTranscript(deps.noteStore, writtenRow, existingRow?.entryHash === entry.hash, ocrPages),
 					pdfBytes,
 					highlights,
 					digest: digest.markdown,
@@ -781,6 +846,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					ocrPages = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
 					pdfBytes = await renderPagesToPdf(ocrPages);
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: ocrPages[0].highlights ?? [] }]);
+					skipErrors.push(...renderNotes(ocrPages, () => `Page ${pageIndex} of "${entry.visibleName}"`));
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}", skipping`, error);
@@ -798,6 +864,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				{
 					// See the notebook-tag branch: a built digest has already transcribed this unit.
 					ocrPages: digest.ocr === null ? ocrPages : [],
+					keepTranscript: await reusableTranscript(deps.noteStore, writtenRow, existingRow?.pageHash === pageHash, ocrPages),
 					pdfBytes,
 					highlights,
 					digest: digest.markdown,

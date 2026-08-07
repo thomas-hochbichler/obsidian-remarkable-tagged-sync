@@ -7,6 +7,8 @@ const BASE = {
 	platform: "macOS",
 	visionAvailability: "available",
 	backend: "vision",
+	visionRevision: 3,
+	unreadableInkRegions: 0,
 	mappedTagCount: 1,
 	lastSyncAt: "2026-07-24T09:00:00.000Z",
 	lastSyncError: null,
@@ -21,6 +23,13 @@ describe("buildDiagnostics", () => {
 		expect(text).toContain("Apple Vision: available");
 		expect(text).toContain("OCR backend: vision");
 		expect(text).toContain("Mapped tags: 1");
+		expect(text).toContain("Vision revision: 3");
+		expect(text).toContain("Unreadable ink regions: 0");
+	});
+
+	/** The revision is the OS's choice, never ours -- so "which one ran" is a fact only the machine has. */
+	it("says Vision has not run here rather than printing a null revision", () => {
+		expect(buildDiagnostics({ ...BASE, visionRevision: null })).toContain("Vision revision: not run here");
 	});
 
 	it("includes the raw last error, which is often the whole diagnosis", () => {
