@@ -30,7 +30,7 @@ lookup against real device-produced data, per the pdf-color-rendering map
 PDF-backed document, captured from the maintainer's own reMarkable:
 
 - Source: page 2 of the maintainer's annotated "Best Practices für Prompting.pdf"
-  (cloud page id `1347a005-20ae-401e-a4de-61b0403afbf7`)
+  (the cloud page id stays out of this file; it is in the private raw copy)
 - Rights: the maintainer's own handwriting; highlight runs quote short snippets of
   the annotated document's text
 - Retrieved: 2026-08-04
