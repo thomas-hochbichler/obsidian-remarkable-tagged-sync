@@ -43,6 +43,16 @@ jobs:
 
       - run: npm ci
 
+      # --- gate 0: private paths ---------------------------------------------------------------
+      #
+      # Mirrors ci.yml. A tag build has no base to compare against, so only the HEAD-tree check
+      # does work here -- which is the one that matters at publish time: it reads what is about to
+      # be released. See ci.yml for why the gate exists at all.
+      - name: Private paths gate
+        env:
+          PRIVATE_CONTENT_PATTERNS: ${{ secrets.PRIVATE_CONTENT_PATTERNS }}
+        run: node scripts/private-gate.mjs
+
       # --- gate 2: version consistency, including the tag --------------------------------------
       #
       # The reason this pipeline exists. Five releases shipped from the old repo with a lock file
