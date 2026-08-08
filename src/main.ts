@@ -180,6 +180,13 @@ export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
 	private statusBar!: HTMLElement;
+	/**
+	 * The status bar's two parts are held, not rebuilt per update: recreating the icon on every
+	 * progress tick would restart the busy spin from zero, so it would jerk instead of turn.
+	 */
+	private statusIcon!: HTMLElement;
+	private statusText!: HTMLElement;
+	private statusState: keyof typeof TaggedSyncPlugin.STATUS_ICONS | null = null;
 	private syncing = false;
 	/**
 	 * Raw text of the last failure, for "Copy diagnostics". Held in memory rather than persisted: it
@@ -193,6 +200,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	async onload() {
 		this.statusBar = this.addStatusBarItem();
 		this.statusBar.addClass("tagged-sync-status");
+		this.statusIcon = this.statusBar.createSpan({ cls: "tagged-sync-status-icon" });
+		this.statusText = this.statusBar.createSpan();
 		this.statusBar.hide();
 		const saved = (await this.loadData()) as (Partial<TaggedSyncData> & { ocrBackendChoice?: unknown }) | null;
 		// Migration (multi-provider spec §7): coerce any backend that isn't a currently-valid literal to
@@ -323,9 +332,15 @@ export default class TaggedSyncPlugin extends Plugin {
 	private static readonly STATUS_ICONS = { busy: "refresh-cw", ok: "check", failed: "x" } as const;
 
 	private setStatus(state: keyof typeof TaggedSyncPlugin.STATUS_ICONS, text: string): void {
-		this.statusBar.empty();
-		setIcon(this.statusBar.createSpan({ cls: "tagged-sync-status-icon" }), TaggedSyncPlugin.STATUS_ICONS[state]);
-		this.statusBar.createSpan({ text });
+		// Only the text moves while a state lasts -- the icon is left alone so `is-busy` keeps spinning
+		// it across progress ticks, including the long silent ones (OCR, re-transcribe).
+		if (state !== this.statusState) {
+			this.statusIcon.empty();
+			setIcon(this.statusIcon, TaggedSyncPlugin.STATUS_ICONS[state]);
+			this.statusBar.toggleClass("is-busy", state === "busy");
+			this.statusState = state;
+		}
+		this.statusText.setText(text);
 		this.statusBar.show();
 	}
 
