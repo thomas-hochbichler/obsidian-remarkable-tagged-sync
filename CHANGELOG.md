@@ -26,6 +26,11 @@ workflow publishes the section as the GitHub release body. See
 
 ### Changed
 
+- **The status bar icon turns while a sync is running.** A long page could sit on the same
+  "3/8 · Meeting" for minutes with nothing to say whether the sync was working or stuck. The icon
+  now spins for as long as there is work — during a sync and during **Re-transcribe all synced
+  notes** — and stops on the check or the cross. If your system asks for reduced motion, it stays
+  still.
 - **Handwriting is transcribed noticeably more accurately.** Ink was drawn far too thin in the
   image handed to Apple Vision — two to nine times thinner than you wrote it — and a hairline is
   what its layout pass declines to call text. Writing that still comes back with nothing over it is
