@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BACKGROUND_CONSENT_DESC, type CardCopy, cardCopy, deleteConfirmation, type LocalCardState, QUALITY_LINE } from "./local-model-card";
-import { ENOUGH_PAGES_FOR_MEAN, recordPageDuration } from "./local-model-settings";
+import { ENOUGH_PAGES_TO_MEASURE, recordPageDuration } from "./local-model-settings";
 
 const EVERY_STATE: LocalCardState[] = [
 	{ kind: "absent" },
@@ -120,7 +120,7 @@ describe("the speed line (§7.3)", () => {
 
 	it("quotes this machine's own once it has", () => {
 		const settings = {};
-		for (let i = 0; i < ENOUGH_PAGES_FOR_MEAN; i++) recordPageDuration(settings, 11_000);
+		for (let i = 0; i < ENOUGH_PAGES_TO_MEASURE; i++) recordPageDuration(settings, 11_000);
 
 		expect(copyFor({ kind: "ready" }, settings).paragraphs[0]).toContain("11 seconds a page on this machine");
 	});

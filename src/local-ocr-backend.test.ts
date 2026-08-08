@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
-import { ENOUGH_PAGES_FOR_MEAN, readLocalModelSettings } from "./local-model-settings";
+import { ENOUGH_PAGES_TO_MEASURE, readLocalModelSettings } from "./local-model-settings";
 import type { RmPage } from "./rm-parser";
 
 /** A page with one stroke, which is all the rasterizer needs to produce an image. */
@@ -194,11 +194,11 @@ describe("timing", () => {
 
 	it("keeps the window bounded across many pages", async () => {
 		const blob: Record<string, unknown> = {};
-		const outcomes = Array.from({ length: ENOUGH_PAGES_FOR_MEAN + 4 }, () => textOutcome("x"));
+		const outcomes = Array.from({ length: ENOUGH_PAGES_TO_MEASURE + 4 }, () => textOutcome("x"));
 		const { backend } = backendOver(outcomes, blob);
 
 		await backend.recognize(outcomes.map(() => page()));
-		expect(readLocalModelSettings(blob).recentPageMs).toHaveLength(ENOUGH_PAGES_FOR_MEAN);
+		expect(readLocalModelSettings(blob).recentPageMs).toHaveLength(ENOUGH_PAGES_TO_MEASURE);
 	});
 });
 
