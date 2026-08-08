@@ -46,6 +46,25 @@ jobs:
 
       - run: npm ci
 
+      # --- gate 0: private paths ---------------------------------------------------------------
+      #
+      # Numbered 0 because it runs before the rest and because it is the only failure a later
+      # commit cannot undo: a published blob stays in the history whatever the next commit says.
+      #
+      # It exists because `.gitignore` did not hold. On 2026-08-08, 196 files under `.scratch/`
+      # were found tracked on a branch, force-added past the rule, some of them transcripts of
+      # real handwritten notes. `git add -f` ignores the ignore file, and a local hook -- which
+      # this repo has none of -- would yield to `--no-verify` anyway. This runs on the server, and
+      # `verify` is a required check, so it is the layer nothing local can talk its way past.
+      - name: Private paths gate
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          # Optional. The patterns are themselves the strings being protected, so they live in a
+          # secret rather than in this file; without it the two path checks still run.
+          PRIVATE_CONTENT_PATTERNS: ${{ secrets.PRIVATE_CONTENT_PATTERNS }}
+        run: node scripts/private-gate.mjs
+
       # --- gate 14: git identity ---------------------------------------------------------------
       #
       # The correct address lived only in a folder that has since been deleted; global git config
