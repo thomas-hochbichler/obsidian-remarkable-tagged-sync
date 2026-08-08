@@ -10,6 +10,27 @@
 	--icon-size: var(--font-ui-small);
 }
 
+/* Busy: the icon turns, so a sync whose text sits still for minutes still reads as running. */
+.tagged-sync-status.is-busy .tagged-sync-status-icon {
+	animation: tagged-sync-spin 1.5s linear infinite;
+}
+
+@keyframes tagged-sync-spin {
+	from {
+		transform: rotate(0deg);
+	}
+
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tagged-sync-status.is-busy .tagged-sync-status-icon {
+		animation: none;
+	}
+}
+
 /* Free-standing explanatory text in the settings tab (same look as a setting's description). */
 .tagged-sync-note {
 	font-size: var(--font-ui-smaller);
