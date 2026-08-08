@@ -27,14 +27,16 @@ function fakeStore(): AttachmentStore & { writeBinary: ReturnType<typeof vi.fn> 
 }
 
 /** Answers the clusters in call order, which the pipeline guarantees by transcribing them sequentially. */
-function fakeOcr(...results: (string | OcrResult)[]): OcrBackend {
+// The digest transcribes one cluster at a time, so a per-page breakdown says nothing here: `pages`
+// is null throughout, which is what a single-unit `recognize` legitimately reports.
+function fakeOcr(...results: (string | Omit<OcrResult, "pages">)[]): OcrBackend {
 	let call = 0;
 	return {
 		id: "vision",
 		metered: false,
 		recognize: async () => {
 			const result = results[call++] ?? "";
-			return typeof result === "string" ? { status: "ok", text: result, confidence: null } : result;
+			return typeof result === "string" ? { status: "ok", pages: null, text: result, confidence: null } : { pages: null, ...result };
 		},
 	};
 }
@@ -562,7 +564,7 @@ describe("buildDigest crop decision", () => {
 
 describe("buildDigest resilience", () => {
 	it("renders every margin note as a crop when OCR is off or unavailable, leaving the highlights alone", async () => {
-		const off: OcrBackend = { id: "off", metered: false, recognize: async () => ({ status: "unavailable", text: "", confidence: null }) };
+		const off: OcrBackend = { id: "off", metered: false, recognize: async () => ({ status: "unavailable", pages: null, text: "", confidence: null }) };
 
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: off });
 
@@ -643,5 +645,66 @@ describe("buildDigest page selection", () => {
 
 		expect(result.markdown).toBe("");
 		expect(result.cropIds.size).toBe(0);
+	});
+});
+
+/**
+ * A page the user added on the device behind the PDF's own pages (F21): no `cPages.redir`, so it maps
+ * to no source page. The fixture scene stands in for its ink -- what is under test is the *shape* of
+ * what such a page produces, not which strokes it holds.
+ */
+describe("buildDigest on a page added on the device", () => {
+	function appendedPage(): DigestPageInput {
+		return { pageId: "added-page", sourceIndex: 15, embedPage: 16, scene: fixtureScene(), appended: true };
+	}
+
+	it("transcribes the whole page as one entry instead of one note per line", async () => {
+		const ocr = vi.fn().mockResolvedValue({ status: "ok", text: "first line\nsecond line", confidence: null });
+
+		const result = await build([appendedPage()], { ocrBackend: { id: "vision", metered: false, recognize: ocr } });
+
+		// One OCR call for the page, where the margin-note path makes one per cluster.
+		expect(ocr).toHaveBeenCalledTimes(1);
+		expect(result.markdown.match(/^> \[!note\]/gm)).toHaveLength(1);
+		expect(result.markdown).toContain("[!note] Handwritten page");
+		expect(result.markdown).toContain("> first line\n> second line");
+	});
+
+	it("writes no crop for it, so the page does not cost the vault its own image", async () => {
+		const store = fakeStore();
+
+		const result = await build([appendedPage()], { attachmentStore: store, ocrBackend: fakeOcr("some text") });
+
+		expect(store.writeBinary).not.toHaveBeenCalled();
+		expect(result.cropIds.size).toBe(0);
+		expect(result.markdown).not.toContain("![[");
+	});
+
+	it("does not report the PDF's missing text for it, which is neither missing nor a failure", async () => {
+		// A document whose pages exist only up to index 0 -- exactly what a 15-page PDF does to page 16.
+		const text = fakeTextDocument({ 0: { label: "1", width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: [] } });
+
+		const result = await build([appendedPage()], { loadText: async () => text, ocrBackend: fakeOcr("text") });
+
+		expect(result.warnings).toEqual([]);
+	});
+
+	it("gives it its own page heading rather than the last section of a document it is not part of", async () => {
+		const headings: PdfHeading[] = [{ pageIndex: 0, x: null, y: 700, title: "A chapter of the PDF" }];
+		const text = fakeTextDocument({ 0: { label: "1", width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: [] } }, headings);
+
+		const result = await build([appendedPage()], { loadText: async () => text, ocrBackend: fakeOcr("text") });
+
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=16|Page 16]]");
+		expect(result.markdown).not.toContain("A chapter of the PDF");
+	});
+
+	it("drops it entirely with handwritten notes off, like every other handwriting on the page", async () => {
+		const ocr = vi.fn();
+
+		const result = await build([appendedPage()], { marginNotes: false, ocrBackend: { id: "vision", metered: false, recognize: ocr } });
+
+		expect(result.markdown).toBe("");
+		expect(ocr).not.toHaveBeenCalled();
 	});
 });

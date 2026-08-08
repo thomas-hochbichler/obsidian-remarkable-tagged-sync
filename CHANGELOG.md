@@ -14,6 +14,25 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **A local AI model you can switch transcription to**, on Apple Silicon Macs with 18 GB of memory
+  or more and on Windows-on-ARM PCs with 24 GB or more. It reads handwriting about three times more
+  accurately than Apple Vision and keeps your headings and lists, and it runs entirely on your
+  machine — no account, no key, nothing sent anywhere. **It is never a default**: a fresh install
+  downloads nothing, and Apple Vision stays the default on macOS.
+
+  It is a real cost, stated before you agree to it: **5.5 GB of model files plus a 12 MB program**,
+  checked against a published SHA-256 before anything runs, roughly 15 seconds a page against
+  Vision's 0.4, and about 14 GB of memory while it runs. **The first pages after the download are
+  far slower than that** while your system indexes 5.5 GB of new files, which settings now says
+  rather than leaving you to discover it; it settles by itself. **The download picks itself up when the
+  connection drops** — it keeps what it already has and carries on, and only gives up if several
+  attempts in a row get nowhere. Settings has a button to delete the whole thing again — which you will need, because it lives
+  outside your vault and uninstalling the plugin does not remove it.
+
+  It also misreads *differently*. Vision's mistakes usually look broken on the page; this model
+  writes its mistakes as fluent text. Check anything that matters against the handwriting.
+
+  Windows on x64 and Linux do not get the option, and settings says so on the machine itself.
 - **Text you typed on the device now appears in the transcript**, in the right place between the
   handwriting around it. It is taken from the file exactly as you typed it — never read off an
   image — so it cannot come out misspelled. It was missing entirely before: transcription reads a
@@ -25,6 +44,32 @@ workflow publishes the section as the GitHub release body. See
   what you actually wrote. It costs about 65 KB a note — which is why the setting starts off.
 
 ### Changed
+
+- **The transcript now tells you which page each part came from.** A long notebook used to arrive as
+  one unbroken wall of text — a 29-page notebook gave you 29 pages of handwriting with nothing
+  marking where one ended and the next began. Every page that produced text now gets its own heading
+  that links straight into that page of the embedded PDF, so you can read a line and jump to the
+  handwriting behind it.
+
+  Pages with nothing on them stay out of the way: instead of a heading each, they are named once at
+  the end — *No text on pages 2–6, 9–29.* A page that could not be read says so on its own page,
+  because that is something you can act on.
+
+  **Notes you have already synced keep the transcript they have.** The new format applies as each
+  note is next synced. To convert everything at once, run **Re-transcribe synced notes** from the
+  command palette — it tells you the cost before it starts.
+
+  A trade-off worth knowing: a notebook with text on every page now puts one entry per page in
+  Obsidian's outline pane. That was the price of being able to navigate to a page at all, and it
+  seemed the better half of the deal.
+
+- **Cloud transcription sends one page per request instead of the whole notebook at once.** This is
+  what makes the page split trustworthy rather than a request the model could ignore, and it fixes
+  two older problems on the way: a long notebook could exceed the response limit and come back
+  truncated while still reporting success, and a local Ollama server could not fit a whole notebook's
+  images in its default context at all. A page that hits a provider's rate limit is now retried
+  before it is given up on. Expect a few percent more input tokens — the page images themselves cost
+  the same either way.
 
 - **The status bar icon turns while a sync is running.** A long page could sit on the same
   "3/8 · Meeting" for minutes with nothing to say whether the sync was working or stuck. The icon

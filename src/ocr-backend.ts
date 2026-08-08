@@ -1,11 +1,58 @@
 import type { OcrBackend as OcrBackendId, OcrStatus } from "./note-builder";
 import type { RmPage } from "./rm-parser";
 
+/**
+ * A single page's outcome. Deliberately narrower than the unit-level `OcrStatus`: `unavailable` is a
+ * property of the *backend* -- it never looked at a page at all -- so it can never describe one.
+ */
+export type OcrPageStatus = "ok" | "skipped" | "failed";
+
+export interface OcrPageResult {
+	status: OcrPageStatus;
+	/** Empty unless `status` is "ok". */
+	text: string;
+}
+
 export interface OcrResult {
 	status: OcrStatus;
+	/**
+	 * One entry per page handed to `recognize`, in input order -- `pages[i]` describes input page `i`.
+	 * This is what lets the note say which text came from which page.
+	 *
+	 * `null` means *no per-page information exists*: either the backend transcribed nothing at all
+	 * (`off`, unavailable), or it produced text it cannot attribute to a page. Never a partial,
+	 * filtered or reordered list -- a backend that cannot meet the arity returns `null` and keeps
+	 * `text`, because misattributing a transcript to the wrong page is worse than an honest
+	 * unlabelled blob.
+	 */
+	pages: OcrPageResult[] | null;
+	/** The whole-unit transcript, unlabelled. Derived from `pages` when they exist; the only carrier when they don't. */
 	text: string;
 	/** 0-100 if the backend reports one, otherwise null. */
 	confidence: number | null;
+	/**
+	 * Things that went wrong inside a unit the backend still considers a success — a page that failed
+	 * while the others read fine. They land in `SyncResult.skipErrors`, so "Copy diagnostics" and the
+	 * end-of-sync report can name them.
+	 *
+	 * Without this channel a partial transcript is silent, and silence is permanent: the sync skips a
+	 * document whose device-side hash is unchanged, so the missing page is never revisited.
+	 */
+	warnings?: string[];
+}
+
+/**
+ * The unit's status stated from its pages, rather than inferred from whether the joined text came
+ * out empty. Shared so all four backends answer it the same way.
+ *
+ * A unit with one failed page among thirty good ones still counts `ok` -- deliberately, because that
+ * is what the end-of-sync counters have always reported. The failure is not swallowed: it is now
+ * visible in the note, on the page it happened to, which is a better place for it than a whole-unit
+ * counter.
+ */
+export function unitStatus(pages: OcrPageResult[]): OcrStatus {
+	if (pages.some((page) => page.status === "ok")) return "ok";
+	return pages.some((page) => page.status === "failed") ? "failed" : "skipped";
 }
 
 /**

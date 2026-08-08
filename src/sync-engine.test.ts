@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
 import { buildDigest } from "./digest-pipeline";
 import { blockHashOf, extractManagedBlock, type NoteStore } from "./note-builder";
-import type { OcrBackend, OcrResult } from "./ocr-backend";
+import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import type { RmLayer, RmPage } from "./rm-parser";
 import {
 	collectHighlights,
@@ -196,8 +196,16 @@ function fakeAttachmentStore(existing: string[] = []): AttachmentStore {
 	};
 }
 
-/** A backend that never actually transcribes, matching pre-OCR-wiring test expectations unless a test overrides it. */
-function fakeOcrBackend(result: OcrResult = { status: "skipped", text: "", confidence: null }): OcrBackend {
+/**
+ * A backend that never actually transcribes, matching pre-OCR-wiring test expectations unless a test
+ * overrides it.
+ *
+ * `pages` defaults to null -- no per-page information, the shape `off` and every pre-page-anchoring
+ * backend return -- so a test that says nothing about pages keeps asserting the flat transcript it
+ * always did. Tests that care about page anchoring pass `pages` explicitly.
+ */
+function fakeOcrBackend(result: Omit<OcrResult, "pages"> & { pages?: OcrPageResult[] | null } = { status: "skipped", text: "", confidence: null }): OcrBackend {
+	const full: OcrResult = { pages: null, ...result };
 	return {
 		id: "vision",
 		metered: false,
@@ -205,7 +213,7 @@ function fakeOcrBackend(result: OcrResult = { status: "skipped", text: "", confi
 		// nothing in, `skipped` out, no work done. The sync engine leans on it to keep a PDF unit from
 		// being transcribed a second time over its whole scene, and a fake that answered anyway would
 		// hide exactly the regression these tests are here to catch.
-		recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => (pages.length === 0 ? { status: "skipped", text: "", confidence: null } : result)),
+		recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => (pages.length === 0 ? { status: "skipped", pages: [], text: "", confidence: null } : full)),
 	};
 }
 
@@ -1935,5 +1943,128 @@ describe("renderNotes", () => {
 		const pages = [scene([layer({ placement: "applied" })]), scene([layer({ placement: "no-text" })])];
 
 		expect(renderNotes(pages, label)).toEqual([expect.stringContaining("Page 2")]);
+	});
+});
+
+describe("page-anchored transcripts", () => {
+	/** A backend that answers with exactly the per-page results a test names, in input order. */
+	function perPageBackend(...pages: OcrPageResult[]): OcrBackend {
+		return {
+			id: "vision",
+			metered: false,
+			recognize: vi.fn(async (input: RmPage[]): Promise<OcrResult> => {
+				const given = pages.slice(0, input.length);
+				return {
+					status: "ok",
+					pages: given,
+					text: given
+						.filter((page) => page.status === "ok")
+						.map((page) => page.text)
+						.join("\n\n"),
+					confidence: null,
+				};
+			}),
+		};
+	}
+
+	/** A notebook with `count` pages, all tagged for sync -- the shape the reported "Daily" note has. */
+	function notebookOf(count: number, rootHash: string) {
+		const pageIds = Array.from({ length: count }, (_, i) => `page-${i}`);
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(pageIds) }) },
+			pageHashesByDoc: { "doc-1": Object.fromEntries(pageIds.map((id, i) => [id, `hash-${i}`])) },
+		});
+	}
+
+	it("heads each page of a notebook and names the blank ones once", async () => {
+		const deps = {
+			...baseDeps(notebookOf(3, "root-anchored"), { sync: "Target" }),
+			ocrBackend: perPageBackend({ status: "ok", text: "first page" }, { status: "skipped", text: "" }, { status: "ok", text: "third page" }),
+		};
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const written = deps.noteStore.write.mock.calls[0][1] as string;
+		const embed = "tagged-sync/attachments/doc-1.pdf";
+		expect(written).toContain(`## Transcript\n### [[${embed}#page=1|Page 1]]\n\nfirst page`);
+		expect(written).toContain(`### [[${embed}#page=3|Page 3]]\n\nthird page`);
+		expect(written).toContain("*No text on page 2.*");
+		// The page that produced nothing gets no heading of its own.
+		expect(written).not.toContain("Page 2]]");
+	});
+
+	it("marks a page the backend could not read, on the page it happened to", async () => {
+		const deps = {
+			...baseDeps(notebookOf(2, "root-anchored-fail"), { sync: "Target" }),
+			ocrBackend: perPageBackend({ status: "ok", text: "readable" }, { status: "failed", text: "" }),
+		};
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const written = deps.noteStore.write.mock.calls[0][1] as string;
+		expect(written).toContain("|Page 2]]\n\n> [!warning] Could not read this page");
+		// A failure is named once, on its page -- never again in the blank-page footnote.
+		expect(written).not.toContain("No text on");
+	});
+
+	// Attaching a transcript to the wrong page is worse than an honest unlabelled blob, so a backend
+	// that miscounts loses its page structure rather than having it guessed at.
+	it("drops the page structure, keeping the text, when a backend returns the wrong number of results", async () => {
+		const backend: OcrBackend = {
+			id: "vision",
+			metered: false,
+			recognize: vi.fn(async (): Promise<OcrResult> => ({ status: "ok", pages: [{ status: "ok", text: "only one" }], text: "only one", confidence: null })),
+		};
+		const deps = { ...baseDeps(notebookOf(3, "root-anchored-arity"), { sync: "Target" }), ocrBackend: backend };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const written = deps.noteStore.write.mock.calls[0][1] as string;
+		expect(written).toContain("## Transcript\nonly one");
+		expect(written).not.toContain("Page 1]]");
+		expect(result.skipErrors.some((error) => error.includes("could not be split by page"))).toBe(true);
+	});
+
+	// `off` and an unavailable backend never looked at a page, so the note reads exactly as it did
+	// before transcripts were page-anchored.
+	it("leaves a backend with no per-page information rendering flat", async () => {
+		const deps = {
+			...baseDeps(notebookOf(3, "root-anchored-flat"), { sync: "Target" }),
+			ocrBackend: fakeOcrBackend({ status: "ok", text: "one flat blob", confidence: null }),
+		};
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(deps.noteStore.write.mock.calls[0][1] as string).toContain("## Transcript\none flat blob\n");
+	});
+
+	// The ordinal used to be destroyed before any backend saw it: a PDF written on pages 1, 3 and 5
+	// reached `recognize` as a three-element array indexed 0, 1, 2, with nothing to recover it from.
+	// `annotationOcrPages` now keeps the label beside every scene.
+	//
+	// Not exercised end-to-end here, and deliberately: a PDF-backed unit gets a `## Digest` instead of
+	// a transcript, and only falls through to one if the digest build throws. The digest is already
+	// page-anchored by its own route, so this fix now serves that fallback and `reTranscribeAll`.
+	it("sends only the annotated pages of a PDF to the backend", async () => {
+		const drawnOn = ["p0", "p2", "p4"];
+		const api = fakeApi({
+			rootHash: "root-anchored-pdf",
+			entries: [documentEntry({ fileType: "pdf", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: {
+				"doc-1": documentContent({ fileType: "pdf", pageCount: 5, cPages: cPagesWith([0, 1, 2, 3, 4].map((i) => ({ id: `p${i}`, redir: i }))) }),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100], [100, 100], [100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": Object.fromEntries(drawnOn.map((id) => [id, `${id}-anno`])) },
+		});
+		const deps = { ...baseDeps(api, { sync: "Target" }), marginNotes: false };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		// Blank pages are never sent: a cloud backend bills per page, and padding a 40-page PDF
+		// annotated on five would cost eight times over for nothing.
+		const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[]);
+		expect(scenes.length).toBeLessThanOrEqual(drawnOn.length);
 	});
 });

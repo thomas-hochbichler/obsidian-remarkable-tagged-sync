@@ -508,12 +508,56 @@ export function pageFrame(widthPt: number, heightPt: number, device: DeviceCanva
 	return { widthPx: widthPt / device.pxToPt, heightPx: heightPt / device.pxToPt, pxToPt: device.pxToPt, widthPt, heightPt };
 }
 
+/** Quiet space beyond the outermost ink on a page sized to its own strokes, in device px. */
+const MAX_INK_MARGIN_PX = 24;
+
+/**
+ * Ceiling on a self-sized page, in device px -- about ten screens. Corrupt point data has been seen at
+ * ~1e38 (`page-rasterizer.ts`), and a PDF page is capped at 14400 pt whatever we ask for.
+ */
+const MAX_CANVAS_PX = 20000;
+
+/**
+ * The frame for a page the PDF has no source page for: one sized to the ink itself.
+ *
+ * This is not the "shouldn't happen" case it was written as. A page the user *adds on the device*
+ * behind a PDF's last page has no `cPages.redir`, so it lands past the source's last index -- and it
+ * is a notebook page, which means it can be scrolled far taller than a screen. The fixture's is
+ * 1939x5078 px against a 1620x2160 device canvas, so drawn against the screen it lost 58 % of its
+ * height and part of its left column, silently, in every document that has such a page.
+ *
+ * The mapping fixes what can be moved and what cannot: `toPagePoint` puts scene x=0 on the canvas
+ * midline, so a symmetric width centred on the ink fits any x; scene y=0 is the page top with no
+ * offset to give, so the height simply has to reach the lowest ink and any blank band above it stays.
+ * `pxToPt` is carried over untouched -- the ink keeps the device's own scale and only the sheet grows.
+ */
+function inkCanvas(scene: RmPage, device: DeviceCanvas): DeviceCanvas {
+	// Deliberately not `page-rasterizer`'s `inkBounds`: that module imports this one, and what a sheet
+	// needs is only how far the ink reaches, without the per-stroke radius padding a bitmap wants.
+	let reachX = 0;
+	let reachY = 0;
+	for (const layer of scene.layers) {
+		for (const stroke of layer.strokes) {
+			for (const point of stroke.points) {
+				if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+				reachX = Math.max(reachX, Math.abs(point.x));
+				reachY = Math.max(reachY, point.y);
+			}
+		}
+	}
+	// A stroke is drawn centred on its path, so half a generous nib clears the outermost one.
+	const margin = MAX_INK_MARGIN_PX;
+	const widthPx = Math.min(Math.max(device.widthPx, 2 * reachX + 2 * margin), MAX_CANVAS_PX);
+	const heightPx = Math.min(Math.max(device.heightPx, reachY + margin), MAX_CANVAS_PX);
+	return { widthPx, heightPx, pxToPt: device.pxToPt, widthPt: widthPx * device.pxToPt, heightPt: heightPx * device.pxToPt };
+}
+
 /**
  * Composites a PDF-backed document (spec §5's PDF path): each output page is the source PDF page at
  * its own size with the handwritten annotation scene drawn on top, placed in the page's own frame
- * (see `pageFrame`) so every stroke lands on the words it marks. A `sourceIndex` with no matching
- * source page (shouldn't happen) degrades to an annotations-only page, drawn against the device
- * screen for want of a page to measure against, rather than failing the whole document.
+ * (see `pageFrame`) so every stroke lands on the words it marks. A page with no matching source page
+ * -- one added on the device behind the PDF -- becomes an annotations-only page sized to its own ink
+ * (see `inkCanvas`) rather than failing the whole document.
  */
 export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: AnnotatedPdfPage[]): Promise<Uint8Array> {
 	if (pages.length === 0) throw new Error("renderAnnotatedPdf: no pages to render");
@@ -524,7 +568,10 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 
 	for (const { sourceIndex, annotations } of pages) {
 		const srcPage = sourceIndex >= 0 && sourceIndex < src.getPageCount() ? src.getPage(sourceIndex) : null;
-		const { width, height } = srcPage?.getSize() ?? { width: device.widthPt, height: device.heightPt };
+		// Only computed where there is no source page to measure against; `annotations` is what such a
+		// page is made of, so a null scene there leaves the device canvas as the last resort.
+		const ownCanvas = srcPage || !annotations ? device : inkCanvas(annotations, device);
+		const { width, height } = srcPage?.getSize() ?? { width: ownCanvas.widthPt, height: ownCanvas.heightPt };
 		const outPage = out.addPage([width, height]);
 		if (srcPage) {
 			try {
@@ -536,7 +583,7 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 				console.warn(`Tagged Sync: couldn't embed source page ${sourceIndex}, keeping its annotations only`, error);
 			}
 		}
-		if (annotations) drawPageStrokes(outPage, annotations, srcPage ? pageFrame(width, height, device) : device);
+		if (annotations) drawPageStrokes(outPage, annotations, srcPage ? pageFrame(width, height, device) : ownCanvas);
 	}
 
 	return out.save();

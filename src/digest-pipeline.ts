@@ -50,6 +50,15 @@ export interface DigestPageInput {
 	/** `#page=` anchor into the embed. */
 	embedPage: number;
 	scene: RmPage | null;
+	/**
+	 * True for a page the user added on the device behind the PDF's own pages -- its `cPages` entry
+	 * carries no `redir`, so it maps to no source page at all (F21).
+	 *
+	 * Carried here as a fact rather than inferred from `sourceIndex >= document.pageCount`, which looks
+	 * equivalent and is not: a PDF that fails to open reports a page count of 0, and every page of the
+	 * document would then read as added on the device.
+	 */
+	appended?: boolean;
 }
 
 export interface DigestBuild {
@@ -403,10 +412,59 @@ function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings:
 	return best ?? carried;
 }
 
+/**
+ * The single entry a page added on the device produces: the whole page transcribed in one pass (F21).
+ *
+ * None of the margin-note machinery means anything here. There is no source page under the ink, so
+ * there is no text to sit beside, no heading to anchor to and no section to belong to -- the cascade
+ * would hand all of it the same "on this page" it already has by being printed under the page's own
+ * heading. And the page is not annotation of the document, so carrying the last section heading of the
+ * PDF onto it would file the reader's own notes under someone else's chapter.
+ *
+ * **No crop.** Ticket 11's rule -- every note carries its image, so a misread can be checked -- is
+ * about a margin note, and this is not one: the whole page rasterizes to nearly 10 MB, twice what the
+ * per-line crops cost and more than the entire document does. What makes it checkable is the embed,
+ * which now shows the page whole (`inkCanvas` in `pdf-renderer.ts`).
+ */
+async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink: RmStroke[]): Promise<DigestNote & { section: string | null }> {
+	let text = "";
+	try {
+		const result = await state.deps.ocrBackend.recognize([clusterScene(ink, page.scene?.formatVersion ?? 0)]);
+		// Newlines survive here where a margin note collapses them: the page's line structure is most of
+		// what a page of notes says, and `renderNote` gives every line its own callout prefix.
+		text = result.text.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trim()).filter((line) => line !== "").join("\n");
+		state.ocrStatuses.push(result.status);
+	} catch (error) {
+		state.ocrStatuses.push("failed");
+		state.warnings.push(`Page ${page.embedPage}: this page was added on the device and could not be transcribed (${describeError(error)}).`);
+	}
+	return {
+		// The entry *is* the page, so the page is its identity -- stable across re-syncs without
+		// depending on which stroke happens to carry the smallest CRDT id.
+		id: digestId("nt", page.pageId, "page"),
+		anchor: { kind: "page" },
+		text,
+		cropEmbed: null,
+		top: 0,
+		wholePage: true,
+		section: null,
+	};
+}
+
 /** Null for a page with neither a highlight nor a margin note: an unannotated page is not part of the digest. */
 async function buildPage(state: BuildState, page: DigestPageInput, geometry: PageGeometry): Promise<DigestPage | null> {
 	const placed = buildHighlights(page, geometry);
 	const ink = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => !isHighlighterOrShader(stroke.penType));
+
+	// F21, and gated by F20 exactly as the margin notes are: this is handwriting transcription, which is
+	// what the setting governs, and leaving it ungated would put the handwriting back in the note as a
+	// flat transcript with the setting off -- the leak ticket 12 closed.
+	if (page.appended) {
+		if (!state.deps.marginNotes || ink.length === 0) return null;
+		const transcript = await buildPageTranscript(state, page, ink);
+		return { pageLabel: geometry.pageText?.label ?? String(page.sourceIndex + 1), embedPage: page.embedPage, highlights: [], notes: [transcript] };
+	}
+
 	// F20 off stops here, before any cluster exists: no cluster, no OCR call, no crop, no callout.
 	const clusters = state.deps.marginNotes ? clusterStrokes(ink, geometry.lineHeightPt / geometry.frame.pxToPt) : [];
 	if (placed.length === 0 && clusters.length === 0) return null;
@@ -445,6 +503,10 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 
 async function readPageText(document: PdfTextDocument | null, page: DigestPageInput, warnings: string[]): Promise<PdfPageText | null> {
 	if (!document) return null;
+	// A page added on the device has no source page, so `getPage` throws and the reader returns null --
+	// which is not a failure and must not be reported as one. Both halves of the message below would be
+	// false for it: nothing failed to be read, and such a page carries no highlights to fall back on.
+	if (page.appended) return null;
 	try {
 		const text = await document.page(page.sourceIndex);
 		if (text === null) {

@@ -21,6 +21,13 @@ export interface DigestNote {
 	cropEmbed: { path: string; width: number; height: number } | null;
 	/** Scene y, for reading order. */
 	top: number;
+	/**
+	 * True for the single entry a page added on the device produces: the whole page transcribed at
+	 * once, rather than one note per line (F21). It changes only the callout's title -- such a page is
+	 * not annotation *of* anything, so "at this heading" would be a claim about a document it is not
+	 * part of.
+	 */
+	wholePage?: boolean;
 }
 
 export interface DigestHighlight {
@@ -94,6 +101,13 @@ const ANCHOR_LINE_WORDS = 4;
 
 /** All fixed labels are English, matching the plugin's other note surfaces (F8). */
 const CROP_TITLE_SUFFIX = " — not transcribable, crop:";
+
+/**
+ * The title of a page added on the device (F21). It says what the entry is -- a page of the reader's
+ * own notes rather than a mark on someone else's text -- because that is the one thing about it a
+ * reader cannot see from where it is printed.
+ */
+const WHOLE_PAGE_TITLE = "Handwritten page";
 
 /**
  * Neutralises the markup a quoted passage can carry into the note. Every string that comes from the
@@ -206,12 +220,17 @@ function withBlockId(lines: string[], id: string): string[] {
  */
 function renderNote(note: DigestNote, prefix: string, locator: string): string {
 	const embed = note.cropEmbed === null ? [] : [`![[${note.cropEmbed.path}|${cropDisplayWidth(note.cropEmbed)}]]`];
-	const body = note.text === "" ? embed : [escapeText(note.text), ...embed];
+	// Split before escaping, not after: a page transcript is the one body that keeps its newlines, and
+	// every line of it needs the callout prefix of its own -- plus `escapeText`'s leading-`>` guard,
+	// which only ever looks at the start of the string it is given.
+	const textLines = note.text === "" ? [] : note.text.split("\n").map(escapeText);
+	const body = [...textLines, ...embed];
 	// Only a crop-*only* note announces itself as not transcribable. Every note carries a crop now
 	// (F6), so the crop's presence says nothing about the text; its absence in the body does. The
 	// suffix stays last: its colon points at the crop below it.
 	const suffix = note.text === "" && note.cropEmbed !== null ? CROP_TITLE_SUFFIX : "";
-	const lines = withBlockId([`[!note] ${anchorTitle(note.anchor)}${locator}${suffix}`, ...body], note.id);
+	const title = note.wholePage ? WHOLE_PAGE_TITLE : anchorTitle(note.anchor);
+	const lines = withBlockId([`[!note] ${title}${locator}${suffix}`, ...body], note.id);
 	return lines.map((line) => `${prefix}${line}`).join("\n");
 }
 
