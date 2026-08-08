@@ -27,14 +27,16 @@ function fakeStore(): AttachmentStore & { writeBinary: ReturnType<typeof vi.fn> 
 }
 
 /** Answers the clusters in call order, which the pipeline guarantees by transcribing them sequentially. */
-function fakeOcr(...results: (string | OcrResult)[]): OcrBackend {
+// The digest transcribes one cluster at a time, so a per-page breakdown says nothing here: `pages`
+// is null throughout, which is what a single-unit `recognize` legitimately reports.
+function fakeOcr(...results: (string | Omit<OcrResult, "pages">)[]): OcrBackend {
 	let call = 0;
 	return {
 		id: "vision",
 		metered: false,
 		recognize: async () => {
 			const result = results[call++] ?? "";
-			return typeof result === "string" ? { status: "ok", text: result, confidence: null } : result;
+			return typeof result === "string" ? { status: "ok", pages: null, text: result, confidence: null } : { pages: null, ...result };
 		},
 	};
 }
@@ -562,7 +564,7 @@ describe("buildDigest crop decision", () => {
 
 describe("buildDigest resilience", () => {
 	it("renders every margin note as a crop when OCR is off or unavailable, leaving the highlights alone", async () => {
-		const off: OcrBackend = { id: "off", metered: false, recognize: async () => ({ status: "unavailable", text: "", confidence: null }) };
+		const off: OcrBackend = { id: "off", metered: false, recognize: async () => ({ status: "unavailable", pages: null, text: "", confidence: null }) };
 
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: off });
 

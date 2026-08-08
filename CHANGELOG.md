@@ -45,6 +45,32 @@ workflow publishes the section as the GitHub release body. See
 
 ### Changed
 
+- **The transcript now tells you which page each part came from.** A long notebook used to arrive as
+  one unbroken wall of text — a 29-page notebook gave you 29 pages of handwriting with nothing
+  marking where one ended and the next began. Every page that produced text now gets its own heading
+  that links straight into that page of the embedded PDF, so you can read a line and jump to the
+  handwriting behind it.
+
+  Pages with nothing on them stay out of the way: instead of a heading each, they are named once at
+  the end — *No text on pages 2–6, 9–29.* A page that could not be read says so on its own page,
+  because that is something you can act on.
+
+  **Notes you have already synced keep the transcript they have.** The new format applies as each
+  note is next synced. To convert everything at once, run **Re-transcribe synced notes** from the
+  command palette — it tells you the cost before it starts.
+
+  A trade-off worth knowing: a notebook with text on every page now puts one entry per page in
+  Obsidian's outline pane. That was the price of being able to navigate to a page at all, and it
+  seemed the better half of the deal.
+
+- **Cloud transcription sends one page per request instead of the whole notebook at once.** This is
+  what makes the page split trustworthy rather than a request the model could ignore, and it fixes
+  two older problems on the way: a long notebook could exceed the response limit and come back
+  truncated while still reporting success, and a local Ollama server could not fit a whole notebook's
+  images in its default context at all. A page that hits a provider's rate limit is now retried
+  before it is given up on. Expect a few percent more input tokens — the page images themselves cost
+  the same either way.
+
 - **The status bar icon turns while a sync is running.** A long page could sit on the same
   "3/8 · Meeting" for minutes with nothing to say whether the sync was working or stuck. The icon
   now spins for as long as there is work — during a sync and during **Re-transcribe all synced

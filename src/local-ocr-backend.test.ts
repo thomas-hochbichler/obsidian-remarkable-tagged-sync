@@ -42,7 +42,7 @@ describe("LocalOcrBackend", () => {
 	it("skips an empty page set without spawning anything", async () => {
 		const { backend, runPage } = backendOver([]);
 
-		expect(await backend.recognize([])).toEqual({ status: "skipped", text: "", confidence: null });
+		expect(await backend.recognize([])).toEqual({ status: "skipped", pages: [], text: "", confidence: null });
 		expect(runPage).not.toHaveBeenCalled();
 	});
 

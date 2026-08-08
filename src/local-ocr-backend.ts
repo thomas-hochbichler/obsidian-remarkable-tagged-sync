@@ -6,7 +6,7 @@
 import { typedText } from "./llm-transcript";
 import { recordPageDuration } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
-import type { OcrBackend, OcrResult } from "./ocr-backend";
+import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import { rasterizePage } from "./page-rasterizer";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage } from "./rm-parser";
@@ -80,7 +80,8 @@ export interface LocalOcrOptions {
 	onRuntimeFailure?: (message: string) => void;
 }
 
-const SKIPPED: OcrResult = { status: "skipped", text: "", confidence: null };
+// Returned only for an empty page set, where one entry per input page is zero entries.
+const SKIPPED: OcrResult = { status: "skipped", pages: [], text: "", confidence: null };
 
 /**
  * One `llama-mtmd-cli` spawn per page, strictly sequential, nothing kept alive between pages or
@@ -113,9 +114,11 @@ export class LocalOcrBackend implements OcrBackend {
 	async recognize(pages: RmPage[]): Promise<OcrResult> {
 		if (pages.length === 0) return SKIPPED;
 		// Case 1, remembered: without this it is 39 more pages of fans for 39 identical failures.
-		if (this.runtimeBroken) return { status: "unavailable", text: "", confidence: null };
+		if (this.runtimeBroken) return { status: "unavailable", pages: null, text: "", confidence: null };
 
-		const transcripts: string[] = [];
+		// One entry per input page, in input order -- this backend already reads one page at a time, so
+		// the boundary is a fact about the loop rather than something to reconstruct.
+		const pageResults: OcrPageResult[] = [];
 		const warnings: string[] = [];
 		for (const [index, page] of pages.entries()) {
 			const outcome = await this.runPage(encodeGrayscalePng(rasterizePage(page)));
@@ -123,14 +126,17 @@ export class LocalOcrBackend implements OcrBackend {
 			if (outcome.kind === "runtime-broken") {
 				this.runtimeBroken = true;
 				this.onRuntimeFailure(outcome.message);
-				// Nothing already read is kept. The sync skips a document whose device-side hash is
-				// unchanged, so half a transcript written now is half a transcript forever (§8.1).
-				return { status: "unavailable", text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`] };
+				// Nothing already read is kept, and `pages` stays null rather than reporting the prefix:
+				// the sync skips a document whose device-side hash is unchanged, so half a transcript
+				// written now is half a transcript forever (§8.1).
+				return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`] };
 			}
 			if (outcome.kind === "page-failed") {
 				// Vision keeps the other pages and says nothing; this backend keeps them and says so,
-				// because under §8.1 a silently lost page is a permanently lost one.
+				// because under §8.1 a silently lost page is a permanently lost one. The warning stays
+				// alongside the per-page status: one feeds "Copy diagnostics", the other feeds the note.
 				warnings.push(`page ${index + 1} could not be transcribed: ${outcome.message}`);
+				pageResults.push({ status: "failed", text: "" });
 				continue;
 			}
 
@@ -139,13 +145,13 @@ export class LocalOcrBackend implements OcrBackend {
 			// the model either, being exact already. Appended per page: one image per invocation means
 			// there is no line box to splice it against, which is the one thing Vision can do here.
 			const pageTranscript = [outcome.text.trim(), typedText([page])].filter((part) => part !== "").join("\n\n");
-			if (pageTranscript !== "") transcripts.push(pageTranscript);
+			pageResults.push(pageTranscript !== "" ? { status: "ok", text: pageTranscript } : { status: "skipped", text: "" });
 		}
 
-		if (transcripts.length > 0) {
-			return { status: "ok", text: transcripts.join("\n\n"), confidence: null, ...(warnings.length > 0 ? { warnings } : {}) };
-		}
-		// No text anywhere: a genuinely blank set is `skipped`, one that errored is `failed`.
-		return warnings.length > 0 ? { status: "failed", text: "", confidence: null, warnings } : SKIPPED;
+		const text = pageResults
+			.filter((page) => page.status === "ok")
+			.map((page) => page.text)
+			.join("\n\n");
+		return { status: unitStatus(pageResults), pages: pageResults, text, confidence: null, ...(warnings.length > 0 ? { warnings } : {}) };
 	}
 }

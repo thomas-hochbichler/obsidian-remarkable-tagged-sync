@@ -1,14 +1,25 @@
 import type { RmPage } from "./rm-parser";
 import { layoutText } from "./text-layout";
 
-/** The transcription prompt shared verbatim by every LLM-vision backend (multi-provider spec §3). */
+/**
+ * The transcription prompt shared verbatim by every LLM-vision backend (multi-provider spec §3).
+ *
+ * Phrased for **one** image, because every backend now sends one: the local model always did
+ * (`local-ocr-runtime.ts`), and the cloud adapters joined it under page-anchored-transcripts §6. The
+ * plural wording it replaces was already wrong for the local backend.
+ *
+ * The boilerplate is load-bearing, not politeness -- four shorter alternatives were measured and each
+ * was equal or worse, one collapsing to 836.8 % CER on a page. Only the plurals changed here.
+ *
+ * "No page labels" now means what it says: the sync-engine attaches the page header, so a
+ * model-written "Page 3" would be a duplicate at best and wrong at worst.
+ */
 export const TRANSCRIPTION_PROMPT =
-	"Transcribe the handwritten text in each of the following page images into clean Markdown, " +
+	"Transcribe the handwritten text in this page image into clean Markdown, " +
 	"preserving reading order and visible structure: headings, lists, GFM task lists (- [ ] / - [x]), " +
 	"and tables. Do not invent structure that is not visually present; when unsure, use plain " +
-	"paragraphs. Output only the transcript text, with each page's transcript separated by a blank " +
-	"line -- no commentary, preamble, code fences, or page labels. If a page has no legible text, " +
-	"output nothing for that page.";
+	"paragraphs. Output only the transcript text -- no commentary, preamble, code fences, or page " +
+	"labels. If the page has no legible text, output nothing.";
 
 /**
  * The text the user typed on these pages, which no page image carries: the rasterizer draws ink, and

@@ -102,7 +102,7 @@ describe("VisionOcrBackend", () => {
 		const runBatch = vi.fn();
 		const backend = new VisionOcrBackend({ runBatch, probe });
 
-		expect(await backend.recognize([])).toEqual({ status: "skipped", text: "", confidence: null });
+		expect(await backend.recognize([])).toEqual({ status: "skipped", pages: [], text: "", confidence: null });
 		expect(probe).not.toHaveBeenCalled();
 		expect(runBatch).not.toHaveBeenCalled();
 	});
@@ -111,7 +111,7 @@ describe("VisionOcrBackend", () => {
 		const runBatch = vi.fn();
 		const backend = new VisionOcrBackend({ runBatch, probe: () => Promise.resolve(false) });
 
-		expect(await backend.recognize([page()])).toEqual({ status: "unavailable", text: "", confidence: null });
+		expect(await backend.recognize([page()])).toEqual({ status: "unavailable", pages: null, text: "", confidence: null });
 		expect(runBatch).not.toHaveBeenCalled();
 	});
 
@@ -132,7 +132,15 @@ describe("VisionOcrBackend", () => {
 
 		const result = await backend.recognize([page(), page()]);
 
-		expect(result).toEqual({ status: "ok", text: "page one\n\npage two", confidence: null });
+		expect(result).toEqual({
+			status: "ok",
+			pages: [
+				{ status: "ok", text: "page one" },
+				{ status: "ok", text: "page two" },
+			],
+			text: "page one\n\npage two",
+			confidence: null,
+		});
 	});
 
 	it("batches pages per process and caps parallelism", async () => {
@@ -155,21 +163,47 @@ describe("VisionOcrBackend", () => {
 		const { runBatch } = stubRunner([[readAll(""), readAll("   ")], [readAll(""), readAll("")]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
-		expect(await backend.recognize([page(), page()])).toEqual({ status: "skipped", text: "", confidence: null });
+		expect(await backend.recognize([page(), page()])).toEqual({
+			status: "skipped",
+			// One entry per input page even when every one of them is blank -- the note names them.
+			pages: [
+				{ status: "skipped", text: "" },
+				{ status: "skipped", text: "" },
+			],
+			text: "",
+			confidence: null,
+		});
 	});
 
 	it("reports failed when an image errored and no text came back", async () => {
 		const { runBatch } = stubRunner([[{ error: "unreadable_image" }, readAll("")], [readAll("")]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
-		expect(await backend.recognize([page(), page()])).toEqual({ status: "failed", text: "", confidence: null });
+		expect(await backend.recognize([page(), page()])).toEqual({
+			status: "failed",
+			// The errored page stays in place rather than being filtered away, so the note can say *which*.
+			pages: [
+				{ status: "failed", text: "" },
+				{ status: "skipped", text: "" },
+			],
+			text: "",
+			confidence: null,
+		});
 	});
 
 	it("keeps good text even when a sibling image errored", async () => {
 		const { runBatch } = stubRunner([[readAll("kept"), { error: "unreadable_image" }]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
-		expect(await backend.recognize([page(), page()])).toEqual({ status: "ok", text: "kept", confidence: null });
+		expect(await backend.recognize([page(), page()])).toEqual({
+			status: "ok",
+			pages: [
+				{ status: "ok", text: "kept" },
+				{ status: "failed", text: "" },
+			],
+			text: "kept",
+			confidence: null,
+		});
 	});
 
 	/**
@@ -228,7 +262,12 @@ describe("VisionOcrBackend", () => {
 		const { runBatch } = stubRunner([[readAll("")]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
-		expect(await backend.recognize([typed])).toEqual({ status: "ok", text: "first\nsecond", confidence: null });
+		expect(await backend.recognize([typed])).toEqual({
+			status: "ok",
+			pages: [{ status: "ok", text: "first\nsecond" }],
+			text: "first\nsecond",
+			confidence: null,
+		});
 	});
 
 	it("counts ink that stays wordless at its own framing, for the diagnostics block", async () => {
@@ -245,7 +284,7 @@ describe("VisionOcrBackend", () => {
 		const runBatch = vi.fn().mockRejectedValue(new Error("spawn EACCES"));
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
-		expect(await backend.recognize([page()])).toEqual({ status: "failed", text: "", confidence: null });
+		expect(await backend.recognize([page()])).toEqual({ status: "failed", pages: null, text: "", confidence: null });
 	});
 });
 
@@ -254,7 +293,7 @@ describe("UnavailableOcrBackend", () => {
 		const backend = new UnavailableOcrBackend("openai");
 
 		expect(backend.id).toBe("openai");
-		expect(await backend.recognize([])).toEqual({ status: "skipped", text: "", confidence: null });
-		expect(await backend.recognize([page()])).toEqual({ status: "unavailable", text: "", confidence: null });
+		expect(await backend.recognize([])).toEqual({ status: "skipped", pages: [], text: "", confidence: null });
+		expect(await backend.recognize([page()])).toEqual({ status: "unavailable", pages: null, text: "", confidence: null });
 	});
 });

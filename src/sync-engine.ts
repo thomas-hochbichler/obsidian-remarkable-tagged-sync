@@ -11,11 +11,14 @@ import {
 	type NoteFields,
 	type NoteStore,
 	type OcrStatus,
+	readEmbedPath,
 	readTranscript,
+	renderTranscript,
+	type TranscriptPage,
 	updateTranscript,
 	writeNote,
 } from "./note-builder";
-import type { OcrBackend, OcrResult } from "./ocr-backend";
+import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { getPageHashes } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
 import { validateSourcePdf } from "./pdf-source";
@@ -212,10 +215,10 @@ async function reusableTranscript(
 	noteStore: NoteStore,
 	row: SyncIndexRow | undefined,
 	deviceUnchanged: boolean,
-	scenes: RmPage[],
+	pages: OcrPage[],
 ): Promise<string | undefined> {
 	if (!row || row.status !== "active" || !deviceUnchanged || !isStaleRender(row)) return undefined;
-	if (scenes.some((scene) => scene.text || scene.layers.some((layer) => layer.placement === "applied"))) return undefined;
+	if (pages.some(({ scene }) => scene !== null && (scene.text || scene.layers.some((layer) => layer.placement === "applied")))) return undefined;
 	const content = await noteStore.read(row.notePath);
 	return content === null ? undefined : (readTranscript(content) ?? undefined);
 }
@@ -286,9 +289,39 @@ async function annotatedPdfPages(api: SyncApi, docId: string, docPages: DocPageR
 	);
 }
 
-/** The annotation scenes among composite pages -- the handwriting worth OCR-ing (the source PDF's own text is not re-transcribed). */
-function annotationScenes(pages: AnnotatedPdfPage[]): RmPage[] {
-	return pages.map((page) => page.annotations).filter((scene): scene is RmPage => scene !== null);
+/**
+ * One page of a unit, plus the labels its transcript heading needs -- the OCR twin of `HighlightPage`.
+ *
+ * `scene` is null for a page with no handwriting at all, which is never sent to a backend: cloud
+ * providers bill per page, and padding a 40-page PDF annotated on 5 would cost eight times over for
+ * nothing. The entry still exists so the note can say the page had nothing to read.
+ */
+export interface OcrPage {
+	scene: RmPage | null;
+	/** The notebook page ordinal the human reads. */
+	pageLabel: number;
+	/** The `#page=` anchor into the embed; `1` for a single-page embed. */
+	embedPage: number;
+}
+
+/**
+ * Every composite page, carrying the ordinal it sits at -- the handwriting worth OCR-ing (the source
+ * PDF's own text is not re-transcribed), plus a null scene for each page with none.
+ *
+ * This used to return bare scenes and `.filter()` the un-annotated pages away, which destroyed the
+ * page ordinal *before any backend saw it*: a 5-page PDF written on 1, 3 and 5 arrived as a
+ * three-element array indexed 0, 1, 2, and `RmPage` carries no page number to recover it from. That
+ * is why a transcript could not say which page a line came from -- the labels were gone upstream of
+ * every backend, not lost inside one. The highlights path a few lines below never had the bug,
+ * because it maps the unfiltered composite.
+ */
+function annotationOcrPages(pages: AnnotatedPdfPage[]): OcrPage[] {
+	return pages.map((page, index) => ({ scene: page.annotations, pageLabel: index + 1, embedPage: index + 1 }));
+}
+
+/** Every page of a notebook unit, which always has a scene -- `renderPage` returns a blank one for a page never drawn on. */
+function notebookOcrPages(scenes: RmPage[]): OcrPage[] {
+	return scenes.map((scene, index) => ({ scene, pageLabel: index + 1, embedPage: index + 1 }));
 }
 
 /** One page's highlights plus the labels its callout needs -- the collection input, one entry per page in document order (a page with no highlights is still passed, and simply yields no group). */
@@ -333,24 +366,74 @@ export function collectHighlights(pages: HighlightPage[]): HighlightGroup[] {
 	return groups;
 }
 
-/** OCR must never block or lose a sync (spec §6): a throwing backend degrades to "failed" rather than aborting the unit's render+note write. */
-async function runOcr(backend: OcrBackend, pages: RmPage[]): Promise<OcrResult> {
+/** A unit's transcription, with the backend's per-page results already zipped back onto the page labels. */
+interface UnitOcr {
+	status: OcrResult["status"];
+	warnings: string[];
+	/** One entry per page of the unit, or null when there is no per-page information to render from. */
+	pages: TranscriptPage[] | null;
+	/** The unlabelled whole-unit transcript -- the fallback when `pages` is null. */
+	text: string;
+}
+
+/**
+ * OCR must never block or lose a sync (spec §6): a throwing backend degrades to "failed" rather than
+ * aborting the unit's render+note write.
+ *
+ * Also the guard point for the per-page contract. A backend returns one result per page it was
+ * *handed*; this zips those back onto the unit's labels, filling in the pages that were never sent.
+ * If the arity doesn't match, the per-page results are dropped entirely and the unlabelled text is
+ * kept: attaching a transcript to the wrong page is worse than an honest unlabelled blob, and no text
+ * is lost either way.
+ */
+async function runOcr(backend: OcrBackend, pages: OcrPage[]): Promise<UnitOcr> {
+	const sent = pages.filter((page): page is OcrPage & { scene: RmPage } => page.scene !== null);
+
+	let result: OcrResult;
 	try {
-		return await backend.recognize(pages);
+		result = await backend.recognize(sent.map((page) => page.scene));
 	} catch (error) {
 		console.warn(`Tagged Sync: OCR backend "${backend.id}" failed, note will ship with render only`, error);
-		return { status: "failed", text: "", confidence: null };
+		return { status: "failed", warnings: [], pages: null, text: "" };
 	}
+
+	const warnings = result.warnings ?? [];
+	// `?? null` and not `=== null`: an omitted field says the same thing a null one does -- this
+	// backend has nothing per-page to report -- and the guard exists precisely not to trust the answer.
+	const perPage = result.pages ?? null;
+	if (perPage === null) return { status: result.status, warnings, pages: null, text: result.text };
+	if (perPage.length !== sent.length) {
+		console.warn(`Tagged Sync: OCR backend "${backend.id}" returned ${perPage.length} page result(s) for ${sent.length} page(s); transcript will not be page-anchored`);
+		return {
+			status: result.status,
+			warnings: [...warnings, `the "${backend.id}" backend returned ${perPage.length} page result(s) for ${sent.length} page(s), so the transcript could not be split by page`],
+			pages: null,
+			text: result.text,
+		};
+	}
+
+	const bySent = new Map<OcrPage, OcrPageResult>(sent.map((page, index) => [page, perPage[index]]));
+	return {
+		status: result.status,
+		warnings,
+		// A page that never reached the backend reads as "nothing to read here", which is what it is.
+		pages: pages.map((page) => {
+			const outcome = bySent.get(page);
+			return { pageLabel: page.pageLabel, embedPage: page.embedPage, status: outcome?.status ?? "skipped", text: outcome?.text ?? "" };
+		}),
+		text: result.text,
+	};
 }
 
 interface UnitParams {
 	/** Finished attachment bytes: a `.rm` render for handwritten docs, the embedded source for PDF-backed ones. */
 	pdfBytes: Uint8Array;
-	/** Pages to run OCR over -- empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
-	ocrPages: RmPage[];
+	/** The unit's pages with their labels -- empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
+	ocrPages: OcrPage[];
 	/**
 	 * A transcript to keep instead of producing one, for a unit being rebuilt only because the
-	 * renderer changed. See `reusableTranscript` at the call sites for when that is safe.
+	 * renderer changed. Already rendered -- it was read back out of the note -- so it is written
+	 * through as-is rather than laid out again. See `reusableTranscript` for when that is safe.
 	 */
 	keepTranscript?: string;
 	/** Render-ready highlighted quotes, grouped by page (empty when the unit has no text highlights). */
@@ -373,9 +456,9 @@ async function writeUnit(
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"]; ocrWarnings: string[] }> {
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
-	const ocr: OcrResult =
+	const ocr: UnitOcr =
 		params.keepTranscript !== undefined
-			? { status: "ok", text: params.keepTranscript, confidence: null }
+			? { status: "ok", warnings: [], pages: null, text: params.keepTranscript }
 			: await runOcr(deps.ocrBackend, params.ocrPages);
 
 	const synced = deps.now();
@@ -387,7 +470,7 @@ async function writeUnit(
 		source: params.source,
 		embedPath,
 		highlights: params.highlights,
-		transcript: ocr.text,
+		transcript: renderTranscript(embedPath, ocr.pages, ocr.text),
 		digest: params.digest,
 	};
 	const notePath = await write(fields);
@@ -412,7 +495,7 @@ async function writeUnit(
 			blockHash: managedBlockHash(fields),
 		},
 		ocr: ocr.status,
-		ocrWarnings: ocr.warnings ?? [],
+		ocrWarnings: ocr.warnings,
 	};
 }
 
@@ -726,23 +809,23 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 
 			let pdfBytes: Uint8Array;
-			let ocrPages: RmPage[];
+			let ocrPages: OcrPage[];
 			let highlights: HighlightGroup[];
 			// Non-null exactly for a PDF-backed unit, i.e. the units that get a digest instead of a transcript.
 			let digestPages: DigestPageInput[] | null = null;
 			try {
 				if (isPdf) {
-					// The unfiltered `composite` (nulls kept) preserves page ordinals, unlike `ocrPages` which drops null scenes.
 					const composite = await annotatedPdfPages(api, entry.id, docPages, pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
-					ocrPages = annotationScenes(composite);
+					ocrPages = annotationOcrPages(composite);
 					highlights = collectHighlights(composite.map((page, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: page.annotations?.highlights ?? [] })));
 					digestPages = composite.map((page, i) => ({ pageId: docPages[i].id, sourceIndex: page.sourceIndex, embedPage: i + 1, scene: page.annotations, appended: docPages[i].appended }));
 				} else {
-					ocrPages = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
-					pdfBytes = await renderPagesToPdf(ocrPages); // throws on an empty notebook -- surfaced, not written as a blank note
-					highlights = collectHighlights(ocrPages.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
-					skipErrors.push(...renderNotes(ocrPages, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
+					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
+					ocrPages = notebookOcrPages(scenes);
+					pdfBytes = await renderPagesToPdf(scenes); // throws on an empty notebook -- surfaced, not written as a blank note
+					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
+					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
@@ -843,7 +926,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const folder = tagRouter.resolveFolder(pageTag.name)!;
 
 			let pdfBytes: Uint8Array;
-			let ocrPages: RmPage[];
+			let ocrPages: OcrPage[];
 			let highlights: HighlightGroup[];
 			let digestPages: DigestPageInput[] | null = null;
 			try {
@@ -851,15 +934,16 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const pageRef = pageRefById.get(pageTag.pageId)!;
 					const composite = await annotatedPdfPages(api, entry.id, [pageRef], pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
-					ocrPages = annotationScenes(composite);
+					// A single-page embed, so the `#page=` anchor is 1 -- the same ordinals `collectHighlights` gets.
+					ocrPages = [{ scene: composite[0]?.annotations ?? null, pageLabel: pageIndex, embedPage: 1 }];
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: composite[0]?.annotations?.highlights ?? [] }]);
-					// A single-page embed, so the `#page=` anchor is 1 -- the same ordinal `collectHighlights` gets.
 					digestPages = composite.map((page) => ({ pageId: pageTag.pageId, sourceIndex: page.sourceIndex, embedPage: 1, scene: page.annotations, appended: pageRef.appended }));
 				} else {
-					ocrPages = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
-					pdfBytes = await renderPagesToPdf(ocrPages);
-					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: ocrPages[0].highlights ?? [] }]);
-					skipErrors.push(...renderNotes(ocrPages, () => `Page ${pageIndex} of "${entry.visibleName}"`));
+					const scenes = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
+					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
+					pdfBytes = await renderPagesToPdf(scenes);
+					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
+					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}", skipping`, error);
@@ -941,18 +1025,20 @@ export interface ReTranscribeDeps {
 	onProgress?: (progress: SyncProgress) => void;
 }
 
-/** The OCR input for one already-synced unit: annotation scenes for a PDF-backed doc, every live page's scene otherwise. */
-async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, isPdf: boolean): Promise<RmPage[] | null> {
+/** The OCR input for one already-synced unit, labelled: annotation scenes for a PDF-backed doc, every live page's scene otherwise. */
+async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, isPdf: boolean): Promise<OcrPage[] | null> {
 	if (row.pageId === null) {
 		return isPdf
-			? annotationScenes(await annotatedPdfPages(api, docId, docPages, pageHashes))
-			: Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id))));
+			? annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes))
+			: notebookOcrPages(await Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id)))));
 	}
-	const page = docPages.find((candidate) => candidate.id === row.pageId);
-	if (!page) return null; // the tagged page no longer exists on the device
+	const pageIndex = docPages.findIndex((candidate) => candidate.id === row.pageId);
+	if (pageIndex === -1) return null; // the tagged page no longer exists on the device
+	// A single-page embed, so the `#page=` anchor is 1 -- matching the page-tag branch of `runSync`.
+	const labels = { pageLabel: pageIndex + 1, embedPage: 1 };
 	return isPdf
-		? annotationScenes(await annotatedPdfPages(api, docId, [page], pageHashes))
-		: [await renderPage(api, docId, row.pageId, pageHashes.get(row.pageId))];
+		? [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }]
+		: [{ scene: await renderPage(api, docId, row.pageId, pageHashes.get(row.pageId)), ...labels }];
 }
 
 /**
@@ -997,7 +1083,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 		const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
 
 		for (const row of rowsByDoc.get(docId)!) {
-			let ocrPages: RmPage[] | null;
+			let ocrPages: OcrPage[] | null;
 			try {
 				ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, isPdf);
 			} catch (error) {
@@ -1007,7 +1093,13 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			if (ocrPages === null) continue;
 
 			const ocr = await runOcr(ocrBackend, ocrPages);
-			if (!(await updateTranscript(noteStore, row.notePath, ocr.text))) continue;
+			// The per-page headings link into the note's own embed, which this path knows only from the
+			// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
+			// written by a much older version) falls back to the unlabelled transcript rather than
+			// emitting links that go nowhere.
+			const embedPath = readEmbedPath((await noteStore.read(row.notePath)) ?? "");
+			const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, ocr.pages, ocr.text);
+			if (!(await updateTranscript(noteStore, row.notePath, transcript))) continue;
 			updated++;
 
 			const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");

@@ -184,6 +184,11 @@ confirmation tells you how long it will take on your machine, measured from your
   transcription is off, fails, or finds nothing, the note is still created with the render and no
   `## Transcript` section — the render is never lost. An annotated PDF gets a `## Digest` instead,
   described below.
+- **The transcript is split by page.** Each page that produced text gets its own heading linking
+  into that page of the embedded PDF, so a long notebook stays navigable. Pages with nothing to read
+  are named once at the end instead of taking a heading each, and a page transcription could not
+  read says so where it happened. Notes synced before this keep the transcript they have — run
+  **Re-transcribe synced notes** to bring them over.
 - A synced note carries **no frontmatter**. Everything the sync needs to track lives in the
   plugin's own `data.json`, not in your notes.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the

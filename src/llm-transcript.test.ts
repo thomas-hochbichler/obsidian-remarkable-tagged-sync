@@ -29,6 +29,16 @@ describe("TRANSCRIPTION_PROMPT", () => {
 		expect(TRANSCRIPTION_PROMPT).toContain("no commentary, preamble, code fences, or page labels");
 	});
 
+	// Every backend sends exactly one image now -- the local model always did, and the cloud adapters
+	// joined it so the page boundary comes from the request rather than from the model's goodwill.
+	// The plural wording this replaced was already wrong for the local backend.
+	it("addresses a single page image", () => {
+		expect(TRANSCRIPTION_PROMPT).toContain("this page image");
+		expect(TRANSCRIPTION_PROMPT).not.toContain("each of the following");
+		// "No page labels" now means what it says: the sync engine attaches the page heading.
+		expect(TRANSCRIPTION_PROMPT).not.toContain("separated by a blank line");
+	});
+
 	// One prompt, shared verbatim by the six Pro providers and the free local model. A second copy
 	// that drifts would silently regress whichever build owns it.
 	it("is one string, not a template", () => {

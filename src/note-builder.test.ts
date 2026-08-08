@@ -3,11 +3,13 @@ import {
 	buildNoteContent,
 	deriveBaseName,
 	moveNote,
+	renderTranscript,
 	sanitizeFilenamePart,
 	updateTranscript,
 	writeNote,
 	type NoteFields,
 	type NoteStore,
+	type TranscriptPage,
 } from "./note-builder";
 
 function fakeStore(files: Record<string, string> = {}): NoteStore & {
@@ -463,5 +465,86 @@ describe("updateTranscript", () => {
 		const store = fakeStore({ "Work/Plain.md": "Just my own note, no fence.\n" });
 
 		expect(await updateTranscript(store, "Work/Plain.md", "x")).toBe(false);
+	});
+});
+
+describe("renderTranscript", () => {
+	const EMBED = "Attachments/Meeting Notes 2026.pdf";
+
+	function page(pageLabel: number, status: TranscriptPage["status"], text = ""): TranscriptPage {
+		return { pageLabel, embedPage: pageLabel, status, text };
+	}
+
+	it("heads each page that produced text with a link into the embedded page", () => {
+		const rendered = renderTranscript(EMBED, [page(1, "ok", "Kickoff"), page(2, "ok", "Standup")], "unused");
+
+		expect(rendered).toBe(`### [[${EMBED}#page=1|Page 1]]\n\nKickoff\n\n### [[${EMBED}#page=2|Page 2]]\n\nStandup`);
+	});
+
+	// The reported case: a 5-page PDF written on 1, 3 and 5. The numbering has to jump rather than
+	// renumber, or the header points at a page the reader never wrote on.
+	it("skips pages with no text and lets the numbering jump", () => {
+		const rendered = renderTranscript(
+			EMBED,
+			[page(1, "ok", "first"), page(2, "skipped"), page(3, "ok", "third"), page(4, "skipped"), page(5, "ok", "fifth")],
+			"unused",
+		);
+
+		expect(rendered).toContain(`### [[${EMBED}#page=3|Page 3]]`);
+		expect(rendered).not.toContain("Page 2");
+		expect(rendered).toContain("*No text on pages 2, 4.*");
+	});
+
+	it("collapses a run of three or more blank pages, and keeps a pair spelled out", () => {
+		const pages = [page(1, "ok", "first"), page(2, "skipped"), page(3, "skipped"), page(4, "skipped"), page(5, "skipped"), page(6, "ok", "sixth"), page(7, "skipped"), page(8, "skipped")];
+
+		expect(renderTranscript(EMBED, pages, "unused")).toContain("*No text on pages 2–5, 7, 8.*");
+	});
+
+	it("says page, singular, for a single blank page", () => {
+		expect(renderTranscript(EMBED, [page(1, "ok", "first"), page(2, "skipped"), page(3, "ok", "third")], "unused")).toContain("*No text on page 2.*");
+	});
+
+	// A 29-page notebook drawn on but never written on: the line is the whole transcript, which says
+	// more than the empty section it replaces.
+	it("is just the summary line when no page produced text", () => {
+		const pages = Array.from({ length: 29 }, (_, i) => page(i + 1, "skipped"));
+
+		expect(renderTranscript(EMBED, pages, "unused")).toBe("*No text on pages 1–29.*");
+	});
+
+	it("keeps a failed page's heading and says so, and leaves it out of the summary line", () => {
+		const rendered = renderTranscript(EMBED, [page(1, "ok", "first"), page(2, "failed"), page(3, "skipped")], "unused");
+
+		expect(rendered).toContain(`### [[${EMBED}#page=2|Page 2]]\n\n> [!warning] Could not read this page`);
+		// Named once, on its own page -- not a second time in the blank-page footnote.
+		expect(rendered).toContain("*No text on page 3.*");
+		expect(rendered).not.toContain("pages 2");
+	});
+
+	// The filename already carries "— Page 7" and the highlight callout repeats it; a third would be noise.
+	it("renders a single-page unit bare, with no heading", () => {
+		expect(renderTranscript(EMBED, [{ pageLabel: 7, embedPage: 1, status: "ok", text: "just this" }], "unused")).toBe("just this");
+		expect(renderTranscript(EMBED, [{ pageLabel: 7, embedPage: 1, status: "skipped", text: "" }], "unused")).toBe("");
+		expect(renderTranscript(EMBED, [{ pageLabel: 7, embedPage: 1, status: "failed", text: "" }], "unused")).toBe("> [!warning] Could not read this page");
+	});
+
+	// `off`, an unavailable backend, and any arity violation the sync engine refused to trust.
+	it("falls back to the unlabelled text when there is no per-page information", () => {
+		expect(renderTranscript(EMBED, null, "one flat blob")).toBe("one flat blob");
+	});
+
+	// The managed block is swapped by regex, so a transcript that broke the swap would take the
+	// user's own notes below the fence with it.
+	it("survives the managed-block swap with every page form in it", async () => {
+		const transcript = renderTranscript(EMBED, [page(1, "ok", "first"), page(2, "failed"), page(3, "skipped")], "unused");
+		const note = buildNoteContent(baseFields({ embedPath: EMBED, transcript }), null) + "My own notes.\n";
+		const store = fakeStore({ "Work/Note.md": note });
+
+		expect(await updateTranscript(store, "Work/Note.md", "REPLACED")).toBe(true);
+
+		const after = (await store.read("Work/Note.md"))!;
+		expect(after).toContain("## Transcript\nREPLACED\n<!-- tagged-sync:end -->");
+		expect(after).toContain("My own notes.");
 	});
 });

@@ -551,7 +551,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			"Re-transcribe synced notes",
 			// Transcription quality is stated here because it is the fact that decides the answer: notes
 			// synced before it keep the transcript they earned until this command is run.
-			`Re-transcribe ${unitCount} synced note(s) with the "${backend.id}" backend? Handwriting is read more accurately than it used to be, and typed text is transcribed too. This re-fetches each notebook from reMarkable${costCaveat}${timeCaveat}.`,
+			`Re-transcribe ${unitCount} synced note(s) with the "${backend.id}" backend? Transcripts are now split by page, so you can tell which page a line came from. Handwriting is also read more accurately than it used to be, and typed text is transcribed too. This re-fetches each notebook from reMarkable${costCaveat}${timeCaveat}.`,
 			"Re-transcribe",
 		);
 		if (!confirmed) return;
