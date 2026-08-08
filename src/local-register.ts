@@ -145,7 +145,11 @@ function beginDownload(paths: LocalModelPaths, rerender: () => void): void {
 	const platform = localModelPlatform();
 	if (!platform) return;
 	if (isLocalModelBusy(paths)) {
-		new Notice("Another vault is downloading the model right now.");
+		// The guard names a *transcription*, not a download: `isLocalModelBusy` is only true for a held
+		// lock with no `.part` beside it (§5.4). A vault that is downloading is caught earlier and much
+		// more usefully, by the `foreign-download` card state, which shows its progress instead of a
+		// notice.
+		new Notice("Another vault is transcribing right now. Try again in a moment.");
 		return;
 	}
 	runtimeFailure = null;

@@ -5,7 +5,7 @@
 
 import { Platform } from "obsidian";
 import { sanitizeTranscript, TRANSCRIPTION_PROMPT } from "./llm-transcript";
-import { LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
+import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
 import { readLocalModelState, readLock, releaseLock, resolveLocalModelPaths, writeLock } from "./local-model-runtime";
 import { isTranscriptionInProgress, LOCK_HEARTBEAT_MS, type LocalModelPaths } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
@@ -38,11 +38,8 @@ function nodeRequire(id: string): unknown {
 	return loaded;
 }
 
-interface RunOutput {
-	stdout: string;
-	stderr: string;
-	code: number | null;
-}
+/** What one spawn did, before {@link classifyRun} says what it means. */
+type RunOutput = Omit<FinishedRun, "executablePresent">;
 
 /** One `llama-mtmd-cli` run. Resolves with whatever the process did; rejects only when it never started. */
 function spawnOnce(executable: string, args: string[]): Promise<RunOutput> {
@@ -50,13 +47,20 @@ function spawnOnce(executable: string, args: string[]): Promise<RunOutput> {
 	return new Promise((resolve, reject) => {
 		execFile(executable, args, { maxBuffer: EXEC_MAX_BUFFER, timeout: PAGE_TIMEOUT_MS }, (error, stdout, stderr) => {
 			if (!error) {
-				resolve({ stdout, stderr, code: 0 });
+				resolve({ stdout, stderr, code: 0, timedOut: false });
 				return;
 			}
 			const code = (error as NodeJS.ErrnoException & { code?: number | string }).code;
 			// A string code (ENOENT, EACCES) means the process never ran; a number is its exit status.
-			if (typeof code === "string") reject(new Error(`${code}: ${error.message}`));
-			else resolve({ stdout, stderr, code: typeof code === "number" ? code : null });
+			if (typeof code === "string") {
+				reject(new Error(`${code}: ${error.message}`));
+				return;
+			}
+			// `execFile`'s own timer kills the process, which leaves no exit status at all -- so without
+			// this flag a timeout is indistinguishable from a crash, and the release gate found it being
+			// read as the far more serious one.
+			const timedOut = (error as { killed?: boolean }).killed === true;
+			resolve({ stdout, stderr, code: typeof code === "number" ? code : null, timedOut });
 		});
 	});
 }
@@ -135,20 +139,10 @@ function createRunner(paths: LocalModelPaths): LocalPageRunner {
 				run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile));
 			}
 
-			if (run.code !== 0) {
-				// No output and a dead process with the binary gone underneath it is the removed-runtime
-				// case, which resolves to the same state rather than a new category (§5.7).
-				if (!fs.existsSync(paths.runtimeExecutable)) {
-					return { kind: "runtime-broken", message: "the transcription engine was removed while it ran" };
-				}
-				// Exit code 1 with nothing on stdout on the *first* page is the shape of a runtime that
-				// cannot run here at all -- a missing MSVC redistributable fails exactly this silently.
-				if (run.stdout.trim() === "") {
-					return { kind: "runtime-broken", message: `the engine exited with ${run.code}: ${run.stderr.trim().split("\n").pop() ?? "no output"}` };
-				}
-				return { kind: "page-failed", message: `the engine exited with ${run.code}` };
-			}
-
+			const outcome = classifyRun({ ...run, executablePresent: fs.existsSync(paths.runtimeExecutable) });
+			// The transcript is the one thing the classifier cannot produce: it holds no clock and does no
+			// sanitising, so a successful run is finished here.
+			if (outcome.kind !== "text") return outcome;
 			return { kind: "text", text: sanitizeTranscript(run.stdout), durationMs: Date.now() - startedAt };
 		} catch (error) {
 			// execFile rejected: the process never started at all.

@@ -27,6 +27,42 @@ export type LocalPageOutcome =
 /** Runs one page image through the model. Never throws -- every failure is one of the outcomes. */
 export type LocalPageRunner = (image: Uint8Array) => Promise<LocalPageOutcome>;
 
+/** What one finished `llama-mtmd-cli` process left behind, as {@link classifyRun} needs to read it. */
+export interface FinishedRun {
+	/** Exit status, or null when the process was killed rather than exiting on its own. */
+	code: number | null;
+	/** True when the page timer killed it. A timeout is a slow page, never a broken runtime. */
+	timedOut: boolean;
+	stdout: string;
+	stderr: string;
+	/** Re-checked *after* the run: antivirus can take the engine between two pages of one sync (§5.7). */
+	executablePresent: boolean;
+}
+
+/**
+ * Which of §8.2's cases a finished process is.
+ *
+ * Pure, and split out of the spawn layer for one reason: **the release gate found this wrong.** A page
+ * that hit the ten-minute timer was being read as case 1, which discards the whole document, remembers
+ * the runtime as broken and returns `unavailable` for every further unit of the sync -- from one slow
+ * page. §8.2 case 1 is *"immediate exit with no output"*; a process that ran for ten minutes is the
+ * plainest possible case 2, *"one page fails while the runtime is healthy"*, and the six pages this run
+ * had already transcribed were the proof of the health.
+ */
+export function classifyRun(run: FinishedRun): LocalPageOutcome {
+	if (run.code === 0 && !run.timedOut) return { kind: "text", text: run.stdout, durationMs: 0 };
+	// Checked before anything else about the exit: a dead process with the binary gone underneath it is
+	// §5.7's removed engine whatever its exit status looked like.
+	if (!run.executablePresent) return { kind: "runtime-broken", message: "the transcription engine was removed while it ran" };
+	if (run.timedOut) return { kind: "page-failed", message: "the page took longer than ten minutes and was given up on" };
+	// Exit code 1 with nothing on stdout is the shape of a runtime that cannot run here at all -- a
+	// missing MSVC redistributable fails exactly this silently.
+	if (run.stdout.trim() === "") {
+		return { kind: "runtime-broken", message: `the engine exited with ${run.code}: ${run.stderr.trim().split("\n").pop() ?? "no output"}` };
+	}
+	return { kind: "page-failed", message: `the engine exited with ${run.code}` };
+}
+
 export interface LocalOcrOptions {
 	runPage: LocalPageRunner;
 	/**

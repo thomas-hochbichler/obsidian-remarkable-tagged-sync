@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
+import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
 import { ENOUGH_PAGES_FOR_MEAN, readLocalModelSettings } from "./local-model-settings";
 import type { RmPage } from "./rm-parser";
 
@@ -199,5 +199,48 @@ describe("timing", () => {
 
 		await backend.recognize(outcomes.map(() => page()));
 		expect(readLocalModelSettings(blob).recentPageMs).toHaveLength(ENOUGH_PAGES_FOR_MEAN);
+	});
+});
+
+describe("classifyRun", () => {
+	function run(overrides: Partial<FinishedRun> = {}): FinishedRun {
+		return { code: 0, timedOut: false, stdout: "a transcript", stderr: "", executablePresent: true, ...overrides };
+	}
+
+	it("reads a clean exit as the page's text", () => {
+		expect(classifyRun(run())).toEqual({ kind: "text", text: "a transcript", durationMs: 0 });
+	});
+
+	/**
+	 * The defect the release gate found, and the reason this function exists.
+	 *
+	 * A page that hit the ten-minute timer was read as case 1, which throws the whole document away,
+	 * remembers the runtime as broken and returns `unavailable` for every further unit of the sync. The
+	 * run that found it had already transcribed six pages, so the runtime was demonstrably healthy --
+	 * and the same page took 7.3 s on the next attempt.
+	 */
+	it("reads a timeout as one slow page, never as a broken runtime", () => {
+		const outcome = classifyRun(run({ code: null, timedOut: true, stdout: "" }));
+
+		expect(outcome.kind).toBe("page-failed");
+	});
+
+	// §8.2 case 1: a missing MSVC redistributable fails exactly this silently.
+	it("reads an immediate exit with nothing on stdout as a runtime that cannot run here", () => {
+		const outcome = classifyRun(run({ code: 1, stdout: "", stderr: "The code execution cannot proceed" }));
+
+		expect(outcome.kind).toBe("runtime-broken");
+		expect(outcome.kind === "runtime-broken" && outcome.message).toContain("The code execution cannot proceed");
+	});
+
+	it("keeps a non-zero exit that still wrote something to case 2", () => {
+		expect(classifyRun(run({ code: 3 })).kind).toBe("page-failed");
+	});
+
+	// §5.7: antivirus takes the 12 MB engine and can do it between two pages of one sync.
+	it("reads a vanished executable as the removed engine, whatever the exit looked like", () => {
+		for (const extra of [{ code: 1, stdout: "" }, { code: null, timedOut: true, stdout: "" }, { code: 3 }]) {
+			expect(classifyRun(run({ ...extra, executablePresent: false })).kind).toBe("runtime-broken");
+		}
 	});
 });
