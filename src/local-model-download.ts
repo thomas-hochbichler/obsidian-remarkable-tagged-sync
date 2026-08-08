@@ -42,6 +42,94 @@ export function planRangeResponse(status: number, requestedOffset: number): Rang
 }
 
 /**
+ * How many attempts in a row may fail **without gaining a byte** before the download gives up.
+ *
+ * Deliberately not a cap on total attempts. The release gate's own run dropped three times inside
+ * 5.2 GB and every drop had made progress first, so a total cap would abandon a flaky-but-advancing
+ * connection at the worst possible moment — several gigabytes in — while still spending its whole
+ * budget on a connection that is simply dead.
+ */
+export const MAX_FRUITLESS_ATTEMPTS = 5;
+
+/**
+ * The base backoff, doubled per *fruitless* attempt — so the wait says what the evidence says.
+ *
+ * A drop that had gained ground resets the count and waits this long flat: the transfer is working
+ * and there is no reason to be slow about resuming it. A run that gains nothing climbs 2, 4, 8, 16 s
+ * and gives up about half a minute after the first drop.
+ */
+const FIRST_BACKOFF_MS = 1_000;
+
+/** Whether to try again after a failed attempt, and how long to wait first. */
+export type RetryPlan = { kind: "retry"; delayMs: number } | { kind: "give-up" };
+
+/**
+ * §5.3's automatic resume: whether a dropped connection is worth another attempt.
+ *
+ * **The counter is of *consecutive fruitless* attempts and any progress resets it**, which is the
+ * whole design. A 4.7 GB file over a domestic connection drops occasionally; each drop leaves the
+ * `.part` longer than it found it, and an attempt that gained ground is evidence the transfer works
+ * rather than evidence against it. Only a run of attempts that moved nothing means the download is
+ * not going to happen — a dead network, a withdrawn URL, a host refusing every request — and that
+ * runs out in about half a minute rather than hanging on hope.
+ *
+ * The backoff doubles so those five attempts are not five hammer blows in a second.
+ */
+export function planNetworkRetry(consecutiveFruitlessAttempts: number): RetryPlan {
+	if (consecutiveFruitlessAttempts >= MAX_FRUITLESS_ATTEMPTS) return { kind: "give-up" };
+	return { kind: "retry", delayMs: FIRST_BACKOFF_MS * 2 ** consecutiveFruitlessAttempts };
+}
+
+/** What {@link withNetworkRetry} needs from the caller. Everything impure is one of these. */
+export interface NetworkRetryHarness {
+	/** One download attempt. Resolving means done; throwing means the connection went away. */
+	attempt: () => Promise<void>;
+	/** Bytes of this artefact on disk right now — the only trustworthy measure of progress. */
+	bytesOnDisk: () => number;
+	/** Called before each attempt, so the caller can snapshot whatever the attempt will mutate. */
+	mark: () => void;
+	/** Called after a failed attempt, to put that snapshot back. */
+	reset: () => void;
+	sleep: (ms: number) => Promise<void>;
+	cancelled: () => boolean;
+	/** Called once per retry, so the card can redraw the rewound figure. */
+	onRetry?: () => void;
+}
+
+/**
+ * Runs an attempt until it succeeds, the retry budget runs out, or the user cancels.
+ *
+ * This lives here rather than beside the socket because all three ways it can be quietly wrong are
+ * logic, not networking: a counter that is not rewound climbs past 100 % on every retry, a budget
+ * that never reaches zero hangs the settings pane forever, and a cancel that is not honoured keeps
+ * downloading after the user said stop. With the impure parts passed in, all three are testable in a
+ * millisecond.
+ */
+export async function withNetworkRetry(harness: NetworkRetryHarness): Promise<void> {
+	let fruitless = 0;
+	for (;;) {
+		const before = harness.bytesOnDisk();
+		harness.mark();
+		try {
+			await harness.attempt();
+			return;
+		} catch (error) {
+			// A cancel is the user's decision, never something to retry past.
+			if (harness.cancelled()) throw error;
+			harness.reset();
+			// Progress is read off the disk, because an interrupted attempt is exactly what makes the
+			// caller's own byte count untrustworthy.
+			fruitless = harness.bytesOnDisk() > before ? 0 : fruitless + 1;
+			const plan = planNetworkRetry(fruitless);
+			if (plan.kind === "give-up") throw error;
+			await harness.sleep(plan.delayMs);
+			if (harness.cancelled()) throw error;
+			harness.onRetry?.();
+		}
+	}
+}
+
+/**
  * Room for the archive to sit beside what `tar` unpacks out of it.
  *
  * The archive is deleted once extraction succeeds, but both exist while it runs, so the peak is what

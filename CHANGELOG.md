@@ -22,8 +22,9 @@ workflow publishes the section as the GitHub release body. See
 
   It is a real cost, stated before you agree to it: **5.5 GB of model files plus a 12 MB program**,
   checked against a published SHA-256 before anything runs, roughly 15 seconds a page against
-  Vision's 0.4, and about 14 GB of memory while it runs. The download resumes if it is interrupted,
-  and settings has a button to delete the whole thing again — which you will need, because it lives
+  Vision's 0.4, and about 14 GB of memory while it runs. **The download picks itself up when the
+  connection drops** — it keeps what it already has and carries on, and only gives up if several
+  attempts in a row get nowhere. Settings has a button to delete the whole thing again — which you will need, because it lives
   outside your vault and uninstalling the plugin does not remove it.
 
   It also misreads *differently*. Vision's mistakes usually look broken on the page; this model

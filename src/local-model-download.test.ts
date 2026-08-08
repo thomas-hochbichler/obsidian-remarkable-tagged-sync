@@ -3,12 +3,15 @@ import { MODEL_ARTEFACTS, RUNTIME_ARTEFACTS, totalDownloadBytes } from "./local-
 import {
 	formatBytes,
 	freeSpaceShortfall,
+	MAX_FRUITLESS_ATTEMPTS,
 	planCleanup,
+	planNetworkRetry,
 	planRangeResponse,
 	planResume,
 	requiredFreeBytes,
 	shortfallMessage,
 	verificationOutcome,
+	withNetworkRetry,
 } from "./local-model-download";
 import { MMPROJ_BYTES, MODEL_BYTES } from "./local-model-store";
 
@@ -207,5 +210,141 @@ describe("the pinned table", () => {
 	it("ships one Windows artefact, arm64 and CPU", () => {
 		expect(RUNTIME_ARTEFACTS.win32.fileName).toContain("win-cpu-arm64");
 		expect(RUNTIME_ARTEFACTS.win32.fileName).not.toContain("x64");
+	});
+});
+
+describe("planNetworkRetry", () => {
+	it("tries again after a drop, rather than making the user press Resume", () => {
+		expect(planNetworkRetry(0)).toEqual({ kind: "retry", delayMs: 1_000 });
+	});
+
+	it("backs off further each time, so five attempts are not five hammer blows", () => {
+		const delays = [0, 1, 2, 3, 4].map((n) => planNetworkRetry(n));
+		expect(delays.map((d) => (d.kind === "retry" ? d.delayMs : null))).toEqual([1_000, 2_000, 4_000, 8_000, 16_000]);
+	});
+
+	/**
+	 * The whole point of counting *fruitless* attempts rather than all of them.
+	 *
+	 * The release gate's own run dropped three times inside 5.2 GB, each drop after real progress. A
+	 * total cap would have abandoned it gigabytes in; here the caller resets the count on any gain, so
+	 * the budget is only ever spent by a connection that is moving nothing.
+	 */
+	it("gives up only after a run of attempts that gained nothing", () => {
+		expect(planNetworkRetry(MAX_FRUITLESS_ATTEMPTS - 1).kind).toBe("retry");
+		expect(planNetworkRetry(MAX_FRUITLESS_ATTEMPTS)).toEqual({ kind: "give-up" });
+	});
+
+	// A dead host must not hold a settings pane open for minutes before saying so.
+	it("spends its whole budget in well under a minute", () => {
+		let total = 0;
+		for (let n = 0; ; n++) {
+			const plan = planNetworkRetry(n);
+			if (plan.kind === "give-up") break;
+			total += plan.delayMs;
+		}
+		expect(total).toBeLessThan(60_000);
+	});
+});
+
+describe("withNetworkRetry", () => {
+	/** A harness whose attempts fail on cue, over a `.part` the caller can grow. */
+	function harness(script: ("fail" | "fail-with-progress" | "ok")[]) {
+		const state = { onDisk: 0, credited: 0, snapshot: 0, attempts: 0, slept: [] as number[], cancelled: false, retries: 0 };
+		return {
+			state,
+			options: {
+				attempt: async () => {
+					const step = script[state.attempts++] ?? "ok";
+					// Every attempt credits bytes before it can know whether it will finish -- which is the
+					// double-counting hazard `reset` exists for.
+					state.credited += 100;
+					if (step === "fail-with-progress") state.onDisk += 100;
+					if (step !== "ok") throw new Error(`attempt ${state.attempts} dropped`);
+					state.onDisk += 100;
+				},
+				bytesOnDisk: () => state.onDisk,
+				mark: () => (state.snapshot = state.credited),
+				reset: () => (state.credited = state.snapshot),
+				sleep: async (ms: number) => void state.slept.push(ms),
+				cancelled: () => state.cancelled,
+				onRetry: () => state.retries++,
+			},
+		};
+	}
+
+	it("returns without sleeping when the first attempt works", async () => {
+		const h = harness(["ok"]);
+		await withNetworkRetry(h.options);
+
+		expect(h.state.attempts).toBe(1);
+		expect(h.state.slept).toEqual([]);
+	});
+
+	it("carries a download through a drop instead of surfacing it", async () => {
+		const h = harness(["fail-with-progress", "ok"]);
+		await withNetworkRetry(h.options);
+
+		expect(h.state.attempts).toBe(2);
+		expect(h.state.retries).toBe(1);
+	});
+
+	/**
+	 * The bug this rewind exists for: the caller credits the resume offset the moment it opens the
+	 * stream, so without `reset` a retry counts the whole part again and the card's bar sails past
+	 * 100 % on a download that is merely flaky.
+	 */
+	it("rewinds the caller's byte count once per failed attempt", async () => {
+		const h = harness(["fail-with-progress", "fail-with-progress", "ok"]);
+		await withNetworkRetry(h.options);
+
+		// Three attempts each credited 100, but only the one that finished may still be counted.
+		expect(h.state.credited).toBe(100);
+	});
+
+	// A flaky-but-advancing connection must finish, however many times it drops.
+	it("never runs out of budget while ground is being gained", async () => {
+		const h = harness(Array.from({ length: MAX_FRUITLESS_ATTEMPTS * 3 }, () => "fail-with-progress" as const));
+		await withNetworkRetry(h.options);
+
+		expect(h.state.attempts).toBe(MAX_FRUITLESS_ATTEMPTS * 3 + 1);
+		// And it never climbs the backoff: a drop that gained ground resets the count, so every wait is
+		// the shortest one. A connection that is working stays quick to pick up again.
+		expect(new Set(h.state.slept)).toEqual(new Set([1_000]));
+	});
+
+	// And a dead one must stop, rather than hanging the settings pane on hope.
+	it("gives up after a run of attempts that moved nothing", async () => {
+		const h = harness(Array.from({ length: 50 }, () => "fail" as const));
+
+		await expect(withNetworkRetry(h.options)).rejects.toThrow("dropped");
+		expect(h.state.attempts).toBe(MAX_FRUITLESS_ATTEMPTS);
+	});
+
+	it("counts a run of fruitless attempts even when earlier ones made progress", async () => {
+		const script = ["fail-with-progress" as const, ...Array.from({ length: 50 }, () => "fail" as const)];
+		const h = harness(script);
+
+		await expect(withNetworkRetry(h.options)).rejects.toThrow();
+		expect(h.state.attempts).toBe(MAX_FRUITLESS_ATTEMPTS + 1);
+	});
+
+	it("stops the moment the user cancels, without waiting out a backoff", async () => {
+		const h = harness(Array.from({ length: 50 }, () => "fail" as const));
+		h.state.cancelled = true;
+
+		await expect(withNetworkRetry(h.options)).rejects.toThrow();
+		expect(h.state.attempts).toBe(1);
+		expect(h.state.slept).toEqual([]);
+	});
+
+	it("does not start another attempt when the cancel lands during the backoff", async () => {
+		const h = harness(Array.from({ length: 50 }, () => "fail" as const));
+		h.options.sleep = async () => {
+			h.state.cancelled = true;
+		};
+
+		await expect(withNetworkRetry(h.options)).rejects.toThrow();
+		expect(h.state.attempts).toBe(1);
 	});
 });

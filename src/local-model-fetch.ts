@@ -21,6 +21,7 @@ import {
 	requiredFreeBytes,
 	verificationOutcome,
 	type VerificationOutcome,
+	withNetworkRetry,
 } from "./local-model-download";
 import {
 	LOCK_HEARTBEAT_MS,
@@ -216,6 +217,58 @@ async function fetchArtefact(
 	fs.renameSync(partFile, targetFile);
 }
 
+/** A cancellable pause between two attempts. */
+function wait(ms: number): Promise<void> {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/**
+ * {@link fetchArtefact}, retried through a dropped connection (§5.3).
+ *
+ * The release gate found why this is needed: a 5.5 GB download dropped three times on an ordinary
+ * connection, at unrelated offsets and with `curl` pulling the same URL happily, and each drop was a
+ * terminal state the user had to clear by hand. **No byte is ever lost** — the `.part` and the 206
+ * rule already guarantee that — so a drop is a pause, not a failure, and the only question is when to
+ * stop calling it one. {@link planNetworkRetry} answers it: any attempt that gained ground resets the
+ * budget, so a flaky connection finishes and a dead one gives up in about half a minute.
+ *
+ * **The byte counter is rewound on every failed attempt.** `fetchArtefact` credits the resume offset
+ * as soon as it opens the stream, so without this the card's percentage would climb by the whole part
+ * again on each retry and sail past 100 %.
+ */
+async function fetchWithRetry(
+	artefact: PinnedArtefact,
+	targetFile: string,
+	counter: ByteCounter,
+	signal: { cancelled: boolean },
+	onProgress: () => void,
+): Promise<void> {
+	const fs = nodeRequire("fs");
+	const partSize = (): number => {
+		try {
+			return fs.statSync(targetFile + PART_SUFFIX).size;
+		} catch {
+			// Not started, or already renamed into place by a finished attempt.
+			return 0;
+		}
+	};
+
+	let credited = counter.received;
+	return withNetworkRetry({
+		attempt: () => fetchArtefact(artefact, targetFile, counter, signal, onProgress),
+		bytesOnDisk: partSize,
+		mark: () => {
+			credited = counter.received;
+		},
+		reset: () => {
+			counter.received = credited;
+		},
+		sleep: wait,
+		cancelled: () => signal.cancelled,
+		onRetry: onProgress,
+	});
+}
+
 /**
  * Downloads one artefact and verifies it, applying §5.3's two-strikes rule.
  *
@@ -235,7 +288,7 @@ async function fetchAndVerify(
 	const fs = nodeRequire("fs");
 	for (let attempt = 0; ; attempt++) {
 		publish({ phase: "downloading", receivedBytes: counter.received, totalBytes: counter.total });
-		await fetchArtefact(artefact, targetFile, counter, signal, onProgress);
+		await fetchWithRetry(artefact, targetFile, counter, signal, onProgress);
 
 		publish({ phase: "verifying" });
 		const outcome = verificationOutcome((await hashFile(targetFile)) === artefact.sha256, attempt > 0);
