@@ -79,6 +79,43 @@ const MAX_LINE_STROKE = 2.5;
  */
 const HORIZONTAL_TOLERANCE = 3;
 
+/**
+ * How thin a cluster's box must be, in line heights, to be read as a fragment of the line beside it
+ * rather than as a note of its own.
+ *
+ * A dot on an `i`, a stray tick, the tail of a descender the line rules did not catch: on the fixture
+ * document four of the 51 clusters are one of these, and each one costs a callout with no text, an OCR
+ * process and a crop showing a speck. Measured, they sit at 0.10, 0.13, 0.32 and 0.67 line heights
+ * tall, while the smallest *real* note -- a circled digit -- is 1.04 tall.
+ *
+ * This is emphatically **not** the paragraph merging that pdf-annotation ticket 15 measured and
+ * rejected: a fragment carries no readable text (all four transcribe to "" or one character), so
+ * absorbing one cannot fuse two notes. Nine rules that join *notes* were built and every one broke a
+ * real case; the failure mode there is silent, and here the worst case is a crop box a few px larger.
+ */
+const FRAGMENT_MAX_HEIGHT = 0.4;
+
+/**
+ * How narrow a cluster must be to count as a fragment on width instead, and how tall it may then be.
+ *
+ * Width alone is not enough, and the bracket down page 3's left margin is why: 10 px wide and 390 tall,
+ * narrower than any speck and unmistakably a mark of its own. The height bound is what separates them,
+ * and it is placed in the measured gap -- the tallest fragment is 0.67 line heights, the shortest real
+ * note 1.04.
+ */
+const FRAGMENT_MAX_WIDTH = 0.3;
+const FRAGMENT_SLIVER_MAX_HEIGHT = 0.7;
+
+/**
+ * How close a fragment must sit to the cluster that takes it in, in line heights.
+ *
+ * A speck belongs to the ink it was written against, so it is touching it or nearly so; something this
+ * small further away is not a fragment *of* anything, and absorbing it would undo a separation the line
+ * rules made on purpose. With no cluster this close a fragment stays an entry of its own -- visible,
+ * which is the failure mode this file prefers throughout.
+ */
+const FRAGMENT_MAX_GAP = 0.5;
+
 /** One stroke's geometry: the box for the horizontal test, the vertical center for the vertical one. */
 interface StrokeGeometry {
 	/** Position in the input array, so a cluster can report its strokes in parse order. */
@@ -152,6 +189,68 @@ function linkedComponents(inked: StrokeGeometry[], lineHeightPx: number): Stroke
 	return [...components.values()];
 }
 
+/** A cluster too thin to be a note: a sliver of a line either way, but never a tall narrow mark. See {@link FRAGMENT_MAX_HEIGHT}. */
+function isFragment(bounds: Bounds, lineHeightPx: number): boolean {
+	const height = bounds.maxY - bounds.minY;
+	if (height < lineHeightPx * FRAGMENT_MAX_HEIGHT) return true;
+	return bounds.maxX - bounds.minX < lineHeightPx * FRAGMENT_MAX_WIDTH && height <= lineHeightPx * FRAGMENT_SLIVER_MAX_HEIGHT;
+}
+
+/** The gap between two boxes, 0 where they overlap on that axis. */
+function boxGap(a: Bounds, b: Bounds): number {
+	const gapX = Math.max(0, a.minX - b.maxX, b.minX - a.maxX);
+	const gapY = Math.max(0, a.minY - b.maxY, b.minY - a.maxY);
+	return Math.hypot(gapX, gapY);
+}
+
+/** A cluster and the fragments that were absorbed into it -- kept apart so the id can ignore them. */
+interface Component {
+	host: StrokeGeometry[];
+	absorbed: StrokeGeometry[];
+}
+
+/**
+ * Folds every fragment cluster into its nearest real neighbour, so a speck does not become an entry.
+ *
+ * The host keeps its own strokes for the purpose of identity: `anchorStrokeId` is computed over
+ * `host` alone, so absorbing a fragment never changes the F15 block id of the note that takes it in.
+ * Letting the fragment's CRDT id compete would rewrite the id of every note that has one -- and rename
+ * its crop attachment -- for no gain the reader can see.
+ *
+ * A page whose clusters are *all* fragments keeps them: there is nothing to absorb into, and dropping
+ * them would lose the page's only ink. Deterministic as F16 requires -- fragments are taken in cluster
+ * order and ties on distance go to the earlier host.
+ */
+function absorbFragments(components: StrokeGeometry[][], lineHeightPx: number): Component[] {
+	const boxes = components.map((component) => unionBounds(component));
+	const hosts = components.filter((_, index) => !isFragment(boxes[index], lineHeightPx));
+	if (hosts.length === 0) return components.map((component) => ({ host: component, absorbed: [] }));
+
+	const result: Component[] = hosts.map((component) => ({ host: component, absorbed: [] }));
+	const hostBoxes = result.map((component) => unionBounds(component.host));
+
+	const orphans: StrokeGeometry[][] = [];
+	components.forEach((component, index) => {
+		if (!isFragment(boxes[index], lineHeightPx)) return;
+		let best = -1;
+		let bestGap = Number.POSITIVE_INFINITY;
+		hostBoxes.forEach((hostBox, hostIndex) => {
+			const gap = boxGap(boxes[index], hostBox);
+			// Strictly nearer, so an exact tie stays with the earlier host and the result is a pure
+			// function of the input, as F16 requires.
+			if (gap < bestGap) {
+				bestGap = gap;
+				best = hostIndex;
+			}
+		});
+		// Nothing near enough: it stays an entry of its own rather than crossing the page to find a host.
+		if (best < 0 || bestGap > lineHeightPx * FRAGMENT_MAX_GAP) orphans.push(component);
+		else result[best].absorbed.push(...component);
+	});
+
+	return [...result, ...orphans.map((component) => ({ host: component, absorbed: [] }))];
+}
+
 function unionBounds(geometries: StrokeGeometry[]): Bounds {
 	return geometries.reduce(
 		(union, { bounds }) => ({
@@ -178,9 +277,20 @@ function compareCrdtIds(a: string, b: string): number {
  * bands, not notes, and the caller filters them out.
  *
  * Deliberately no line-merging stage: a note spanning two lines becomes two clusters, i.e. two
- * entries in the digest. Every note on all 7 fixture pages is a single line, so there is no data to
- * tune a merge on, and guessing one would split the fixture's two overlapping notes wrongly. The
- * failure mode is visible in the note (one entry too many), never silent loss.
+ * entries in the digest. The failure mode is visible in the note (one entry too many), never silent
+ * loss.
+ *
+ * That was first written because every note on the original 7 fixture pages was a single line. It no
+ * longer is -- the refreshed fixture holds a 12-line summary and a 9-line list -- and the rule
+ * survives on measurement instead. Nine merge rules were built and run over every page with real OCR
+ * under each cluster, and each one broke a real case: the two overlapping notes named above have boxes
+ * that overlap on *both* axes, exactly as two lines of one paragraph do, so no gap rule separates them;
+ * a left-edge rule that does keep them apart splits an indented paragraph instead. Both features that
+ * could break the tie are dead -- all 2450 ink strokes of the fixture share one timestamp CRDT id, and
+ * the pair's stroke indices are adjacent. Merging also *grows* the crops by a third, since a block's
+ * box takes its whitespace with it. See `.scratch/pdf-annotation/issues/15-paragraph-clusters.md`.
+ *
+ * Fragments are the one exception, and they are not notes at all -- see {@link FRAGMENT_MAX_HEIGHT}.
  */
 export function clusterStrokes(strokes: RmStroke[], lineHeightPx: number): StrokeCluster[] {
 	const inked: StrokeGeometry[] = [];
@@ -189,13 +299,14 @@ export function clusterStrokes(strokes: RmStroke[], lineHeightPx: number): Strok
 		if (bounds) inked.push({ index, bounds, centerY: (bounds.minY + bounds.maxY) / 2 });
 	});
 
-	const clusters = linkedComponents(inked, lineHeightPx)
-		.map((component) => {
-			const ordered = [...component].sort((a, b) => a.index - b.index);
+	const clusters = absorbFragments(linkedComponents(inked, lineHeightPx), lineHeightPx)
+		.map(({ host, absorbed }) => {
+			const ordered = [...host, ...absorbed].sort((a, b) => a.index - b.index);
 			return {
 				strokes: ordered.map(({ index }) => strokes[index]),
 				bounds: unionBounds(ordered),
-				anchorStrokeId: ordered
+				// Over the host only: an absorbed fragment must not move the note's F15 id.
+				anchorStrokeId: host
 					.map(({ index }) => strokes[index].id)
 					.reduce((smallest, id) => (compareCrdtIds(id, smallest) < 0 ? id : smallest)),
 			};

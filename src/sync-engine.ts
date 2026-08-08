@@ -236,6 +236,12 @@ interface DocPageRef {
 	id: string;
 	/** 0-based index of the source-PDF page this maps to (`cPages.redir`, else document position). Meaningful only for PDF-backed docs. */
 	sourceIndex: number;
+	/**
+	 * True for a page added on the device behind the PDF's own pages: its `cPages` entry has no
+	 * `redir`, so `sourceIndex` above is the document position standing in for a source page that does
+	 * not exist. The digest transcribes such a page whole instead of hunting margin notes on it (F21).
+	 */
+	appended: boolean;
 }
 
 /**
@@ -254,11 +260,13 @@ function orderedPages(doc: DocumentContent | LegacyDocumentContent, liveIds: Rea
 		return cPages
 			.filter((page) => !page.deleted?.value)
 			.sort((a, b) => (a.idx.value < b.idx.value ? -1 : a.idx.value > b.idx.value ? 1 : 0))
-			.map((page, i) => ({ id: page.id, sourceIndex: page.redir?.value ?? i }));
+			.map((page, i) => ({ id: page.id, sourceIndex: page.redir?.value ?? i, appended: isPdf && page.redir === undefined }));
 	}
 	const pages = Array.isArray(doc.pages) ? doc.pages : [];
 	const filtered = isPdf ? pages : pages.filter((id) => liveIds.has(id));
-	return filtered.map((id, i) => ({ id, sourceIndex: i }));
+	// A legacy `pages[]` doc records no source mapping at all, so nothing here can be called added on
+	// the device -- the position *is* the mapping, for every page alike.
+	return filtered.map((id, i) => ({ id, sourceIndex: i, appended: false }));
 }
 
 /** Renders one handwritten page, or a blank page when it has no `.rm` file yet (`pageHash` undefined) -- a real, still-live page the user simply never drew on. */
@@ -630,7 +638,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const docPages = orderedPages(content, liveIds, isPdf);
 		const pageOrder = docPages.map((page) => page.id);
 		const livePageIds = new Set(pageOrder);
-		const sourceIndexById = new Map(docPages.map((page) => [page.id, page.sourceIndex]));
+		const pageRefById = new Map(docPages.map((page) => [page.id, page]));
 
 		// Fetched once per doc, only if some unit actually needs it (a doc may open just to orphan rows).
 		let sourcePdf: Promise<Uint8Array> | null = null;
@@ -728,7 +736,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
 					ocrPages = annotationScenes(composite);
 					highlights = collectHighlights(composite.map((page, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: page.annotations?.highlights ?? [] })));
-					digestPages = composite.map((page, i) => ({ pageId: docPages[i].id, sourceIndex: page.sourceIndex, embedPage: i + 1, scene: page.annotations }));
+					digestPages = composite.map((page, i) => ({ pageId: docPages[i].id, sourceIndex: page.sourceIndex, embedPage: i + 1, scene: page.annotations, appended: docPages[i].appended }));
 				} else {
 					ocrPages = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					pdfBytes = await renderPagesToPdf(ocrPages); // throws on an empty notebook -- surfaced, not written as a blank note
@@ -836,12 +844,13 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			let digestPages: DigestPageInput[] | null = null;
 			try {
 				if (isPdf) {
-					const composite = await annotatedPdfPages(api, entry.id, [{ id: pageTag.pageId, sourceIndex: sourceIndexById.get(pageTag.pageId)! }], pageHashes);
+					const pageRef = pageRefById.get(pageTag.pageId)!;
+					const composite = await annotatedPdfPages(api, entry.id, [pageRef], pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
 					ocrPages = annotationScenes(composite);
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: composite[0]?.annotations?.highlights ?? [] }]);
 					// A single-page embed, so the `#page=` anchor is 1 -- the same ordinal `collectHighlights` gets.
-					digestPages = composite.map((page) => ({ pageId: pageTag.pageId, sourceIndex: page.sourceIndex, embedPage: 1, scene: page.annotations }));
+					digestPages = composite.map((page) => ({ pageId: pageTag.pageId, sourceIndex: page.sourceIndex, embedPage: 1, scene: page.annotations, appended: pageRef.appended }));
 				} else {
 					ocrPages = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
 					pdfBytes = await renderPagesToPdf(ocrPages);
