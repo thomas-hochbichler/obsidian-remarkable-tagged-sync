@@ -12,6 +12,24 @@ export type BackendSettings = Record<string, unknown>;
 export interface BackendSettingsContext {
 	settings: BackendSettings;
 	save(): Promise<void>;
+	/**
+	 * Hands the selection back to the platform default, for a backend that has just made itself
+	 * unusable on purpose — the one case being a "delete the model" button.
+	 *
+	 * Without it the user is left selecting a backend the listing rule has just hidden: the entry
+	 * stays in the dropdown because it is selected, disabled, pointing at a card, and every sync from
+	 * then on transcribes nothing until they work out what to change it to.
+	 */
+	selectDefaultBackend(): Promise<void>;
+}
+
+/** Context for building an adapter, for the rare backend whose refusal has something to say. */
+export interface CreateOptions {
+	/**
+	 * True on a background auto-sync, which must never interrupt with a popup. A backend that would
+	 * otherwise explain why it is standing this run out stays quiet instead; the next interval retries.
+	 */
+	silent: boolean;
 }
 
 /**
@@ -48,7 +66,16 @@ export interface OcrBackendEntry {
 	 * with no key) — the caller decides the fallback, so this never silently spends money. A backend
 	 * that must not fall back returns its own unavailable adapter instead.
 	 */
-	create(settings: BackendSettings): OcrBackendAdapter | null;
+	create(settings: BackendSettings, options?: CreateOptions): OcrBackendAdapter | null;
+	/**
+	 * What this backend's transcripts look like, in one sentence under the dropdown — headings and
+	 * lists or flat text, and where its ceiling is.
+	 *
+	 * Shown only while this backend is selected, and it replaces the generic hint rather than joining
+	 * it: a sentence about Apple Vision's flat-text ceiling is simply not true of the notes a user
+	 * with another backend selected is about to get.
+	 */
+	readonly noteContract?: string;
 	/** Renders this backend's own settings rows under the backend dropdown, when it has any. */
 	renderSettings?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
 	/**
@@ -68,8 +95,29 @@ export interface OcrBackendEntry {
 	 * This backend's own sentence for the re-transcribe confirmation, or null when it has nothing to
 	 * add. The core cannot compute it: a figure like "about ten minutes per notebook" is a rolling mean
 	 * over the user's own pages, and it lives in the backend's opaque settings blob.
+	 *
+	 * `unitCount` is what makes it a total rather than a rate. The confirmation already names how many
+	 * notes are about to be re-transcribed, and "about 50 minutes" is the fact that decides the answer
+	 * where "about 15 seconds a note" only hands the user a multiplication.
 	 */
-	reTranscribeCaveat?(settings: BackendSettings): string | null;
+	reTranscribeCaveat?(settings: BackendSettings, unitCount: number): string | null;
+	/**
+	 * This backend's own background-sync consent, for a backend whose {@link needsBackgroundConsent}
+	 * is true.
+	 *
+	 * Deliberately **not** the auto-sync money flag. That one authorises spending, and a user who
+	 * agreed to run a free local model unattended has not agreed to be billed by a cloud provider they
+	 * select later. Two consents, because they are two different promises.
+	 *
+	 * The accessors keep the blob opaque: the plugin renders the row and gates the run without ever
+	 * learning which key inside it holds the answer.
+	 */
+	backgroundConsent?: {
+		get(settings: BackendSettings): boolean;
+		set(settings: BackendSettings, value: boolean): void;
+		/** The row's description under *Automatic sync* — the canonical control for this consent. */
+		readonly description: string;
+	};
 }
 
 /** Registration order is the settings-dropdown order; the free backends register first. */

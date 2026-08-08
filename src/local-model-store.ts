@@ -187,6 +187,21 @@ export function isLocalModelRunnable(state: LocalModelState): boolean {
 }
 
 /**
+ * Whether a held lock belongs to a *transcription* rather than to a download (§5.4).
+ *
+ * The two jobs share one lock file and it holds a timestamp and nothing else, so it cannot name its
+ * own holder -- but they are still told apart, because a download always has a `.part` open and a
+ * transcription never does. That is the same discriminator {@link deriveLocalModelState} already
+ * uses, and getting it wrong is not cosmetic in either direction: **a sync that finds a
+ * transcription running must not start** (two runs are 27 GB), and **a sync that finds a download
+ * running must**, because a download lasts hours and refusing to sync for hours would cost renders,
+ * notes and highlights, which are the plugin's actual job.
+ */
+export function isTranscriptionInProgress(snapshot: Pick<LocalModelSnapshot, "lockHeldAtMs" | "partPresent">, nowMs: number): boolean {
+	return isLockFresh(snapshot.lockHeldAtMs, nowMs) && !snapshot.partPresent;
+}
+
+/**
  * The `.lock` file's body: a timestamp and nothing else.
  *
  * **No PID, deliberately.** Two vaults commonly run in one Obsidian process, where the PID is

@@ -35,14 +35,16 @@ Two limits, so you know them up front:
   change or remove that mapping at any time. The one-tag limit is a limit of the free version: a
   paid version that lifts it is planned but not yet available. Everything described in this
   README works without payment.
-- **Text transcription needs macOS 13 or later.** On Windows and Linux your notes still sync,
-  with the full handwriting render embedded — but there is no transcript.
+- **Text transcription needs macOS 13 or later**, or the optional
+  [local model](#local-model-optional-opt-in) on Apple Silicon or Windows on ARM. Everywhere else
+  your notes still sync, with the full handwriting render embedded — but there is no transcript.
 
 ## Handwriting transcription
 
 Transcription runs locally on **macOS 13 or later** using Apple's Vision framework — no account,
-no API key, no network. On **Windows and Linux** there is no transcription: notes sync with the
-handwriting render embedded, and no `## Transcript` text.
+no API key, no network. On **Windows and Linux** there is no transcription by default: notes sync
+with the handwriting render embedded, and no `## Transcript` text. Some machines can opt in to a
+[local model](#local-model-optional-opt-in) instead, including Windows on ARM.
 
 You can also set the backend to **Off** if you only want the render. That is the default where
 Apple Vision cannot run.
@@ -60,18 +62,73 @@ Apple Vision auto-detects language and reads cursive well, but produces **flat t
 headings, lists, task lists, or tables. Its structured API is macOS Swift-only and unavailable
 here. It can also misread; see [Writing your own notes](#writing-your-own-notes).
 
+### Local model (optional, opt-in)
+
+On some machines you can switch the backend to a **local AI model** instead. It reads handwriting
+about three times more accurately than Apple Vision and keeps headings and lists, and like Vision
+it runs entirely on your machine. It is **never a default**: a fresh install downloads nothing,
+and Apple Vision stays the default on macOS.
+
+Choosing it downloads **5.5 GB of model files plus a 12 MB program**, after an explicit opt-in in
+settings. Both are checked against a SHA-256 published in the plugin before anything runs. It is
+slow compared with Vision — roughly 15 seconds a page on a fast Mac against Vision's 0.4 — and it
+holds about 14 GB of memory while it runs.
+
+**Offered only on:**
+
+| | Requirement |
+|---|---|
+| macOS | Apple Silicon, 18 GB of memory or more (32 GB recommended) |
+| Windows | ARM (Snapdragon X and similar), 24 GB of memory or more |
+
+Intel Macs, Windows on x64 and Linux do not get the option, and settings says why on the machine
+itself. **Windows x64 is excluded because Windows Defender quarantines the engine** — the
+`llama.cpp` builds for x64 have been flagged as `Trojan:Win32/Wacatac.B!ml` for years, the builds
+are unsigned, and nothing this plugin does to its own download changes what a malware scanner
+decides about someone else's binary. Windows on ARM uses a different build, which is not flagged.
+
+Like any transcription it misreads sometimes, and it misreads *differently*: Vision's mistakes
+usually look broken on the page, while this model writes its mistakes as fluent text. Check
+anything that matters against the handwriting.
+
 ## Network use
 
-This plugin makes network requests to exactly one place:
+This plugin makes network requests to exactly one place by default:
 
 - **reMarkable cloud** (required) — the plugin authenticates to `my.remarkable.com` via a
   one-time device code, then reads your notebook/page list, tags, and content over the
   reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
   your reMarkable account.
 
-Transcription is local. Nothing else is contacted.
+Two more hosts are contacted **only if you opt in to the local model** (see above), once, to
+download it — never during a sync, and never again once the files are on disk:
+
+- **`huggingface.co`** — the two model files, from
+  `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`, pinned to one commit (4.68 GB + 853 MB).
+- **`github.com`** — the `llama.cpp` engine, from release `b10295` of `ggml-org/llama.cpp`
+  (11–12 MB depending on platform).
+
+Nothing is uploaded to either. Transcription itself is always local: no page image and no
+transcript ever leaves the device, whichever backend you use.
 
 No telemetry or analytics of any kind are collected or sent by this plugin.
+
+## Accessing files outside of Obsidian vaults
+
+Two things, both only on the paths your OS reserves for exactly this:
+
+- **Page images during transcription.** Each page is written as a temporary PNG under your OS
+  temp directory (`os.tmpdir()`) and deleted as soon as the page has been read.
+- **The local model, if you opt in to it.** The 5.5 GB of model files and the engine are written
+  to the standard per-application data directory — `~/Library/Application Support/remarkable-tagged-sync/`
+  on macOS, `%LOCALAPPDATA%\remarkable-tagged-sync\` on Windows — and read from there when you
+  transcribe.
+
+  They live **outside your vault on purpose**: inside it they would go through Obsidian Sync and
+  every vault backup, once per vault, and 5.5 GB is not something to put in someone's backup
+  without saying so. The price is that **uninstalling the plugin does not delete them.** The
+  *Delete the model* button in settings does, and settings names the exact size before you agree
+  to download anything.
 
 ## Other permissions this plugin uses
 
@@ -111,6 +168,11 @@ than triggering a redundant run.
 To refresh transcripts on notes you already synced, run **Tagged Sync for reMarkable: Re-transcribe
 all synced notes**. It re-fetches each notebook and rewrites only the transcript region, leaving
 your own notes and the embedded render untouched. It asks for confirmation first.
+
+This is also the way to fill in a transcript that never arrived — a note synced while the local
+model was still downloading, or while its engine was missing, keeps its render and no text, and
+nothing refills it on its own. Re-transcribing does. With the local model selected the
+confirmation tells you how long it will take on your machine, measured from your own pages.
 
 ## What gets synced
 
@@ -163,8 +225,12 @@ stays where it is and is still preserved on every sync — new notes just no lon
 - Desktop only. Obsidian on mobile is unsupported.
 - One-way sync: reMarkable → Obsidian only. Nothing is ever written back to your tablet.
 - One tag → folder mapping.
-- Transcription requires **macOS 13 or later**. Windows and Linux get the render and no text.
-- Transcripts are flat text — no headings, lists, task lists, or tables.
+- Transcription with Apple Vision requires **macOS 13 or later**, and its transcripts are flat
+  text — no headings, lists, task lists, or tables.
+- The optional [local model](#local-model-optional-opt-in) keeps headings and lists, but needs
+  Apple Silicon with 18 GB of memory or Windows on ARM with 24 GB, and a 5.5 GB download. Tables
+  come out as plain lines.
+- **Windows on x64 and Linux get the render and no text**, on either backend.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
   firmware changes on reMarkable's side can break sync. See below.
 

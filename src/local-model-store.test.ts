@@ -3,6 +3,7 @@ import {
 	deriveLocalModelState,
 	formatLock,
 	isLockFresh,
+	isTranscriptionInProgress,
 	localModelPaths,
 	LOCK_STALE_MS,
 	MMPROJ_BYTES,
@@ -13,6 +14,33 @@ import {
 
 const join = (...parts: string[]) => parts.join("/");
 const NOW = 1_700_000_000_000;
+
+describe("isTranscriptionInProgress", () => {
+	/**
+	 * Two vaults, one 13 GB model: a sync that finds a transcription running must not start beside it.
+	 * The lock holds a timestamp and nothing else, so the `.part` is what names the holder's job.
+	 */
+	it("blocks a second run while a transcription holds the lock", () => {
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: false }, NOW)).toBe(true);
+	});
+
+	/**
+	 * A *download* holds the same lock and must not block anything. Hours with a progress bar: write.
+	 * Minutes with nothing on screen: wait. Refusing to sync for the hours a download takes would cost
+	 * renders, notes and highlights, which are the plugin's actual job.
+	 */
+	it("lets a sync run while a download holds it", () => {
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: true }, NOW)).toBe(false);
+	});
+
+	it("ignores a lock nobody is renewing any more", () => {
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - LOCK_STALE_MS - 1, partPresent: false }, NOW)).toBe(false);
+	});
+
+	it("is not busy when there is no lock at all", () => {
+		expect(isTranscriptionInProgress({ lockHeldAtMs: null, partPresent: false }, NOW)).toBe(false);
+	});
+});
 
 describe("localModelPaths", () => {
 	it("puts the model under Application Support on macOS, never under Caches", () => {

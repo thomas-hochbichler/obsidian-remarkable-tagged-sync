@@ -6,6 +6,15 @@ export interface OcrResult {
 	text: string;
 	/** 0-100 if the backend reports one, otherwise null. */
 	confidence: number | null;
+	/**
+	 * Things that went wrong inside a unit the backend still considers a success — a page that failed
+	 * while the others read fine. They land in `SyncResult.skipErrors`, so "Copy diagnostics" and the
+	 * end-of-sync report can name them.
+	 *
+	 * Without this channel a partial transcript is silent, and silence is permanent: the sync skips a
+	 * document whose device-side hash is unchanged, so the missing page is never revisited.
+	 */
+	warnings?: string[];
 }
 
 /**

@@ -14,6 +14,22 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **A local AI model you can switch transcription to**, on Apple Silicon Macs with 18 GB of memory
+  or more and on Windows-on-ARM PCs with 24 GB or more. It reads handwriting about three times more
+  accurately than Apple Vision and keeps your headings and lists, and it runs entirely on your
+  machine — no account, no key, nothing sent anywhere. **It is never a default**: a fresh install
+  downloads nothing, and Apple Vision stays the default on macOS.
+
+  It is a real cost, stated before you agree to it: **5.5 GB of model files plus a 12 MB program**,
+  checked against a published SHA-256 before anything runs, roughly 15 seconds a page against
+  Vision's 0.4, and about 14 GB of memory while it runs. The download resumes if it is interrupted,
+  and settings has a button to delete the whole thing again — which you will need, because it lives
+  outside your vault and uninstalling the plugin does not remove it.
+
+  It also misreads *differently*. Vision's mistakes usually look broken on the page; this model
+  writes its mistakes as fluent text. Check anything that matters against the handwriting.
+
+  Windows on x64 and Linux do not get the option, and settings says so on the machine itself.
 - **Text you typed on the device now appears in the transcript**, in the right place between the
   handwriting around it. It is taken from the file exactly as you typed it — never read off an
   image — so it cannot come out misspelled. It was missing entirely before: transcription reads a

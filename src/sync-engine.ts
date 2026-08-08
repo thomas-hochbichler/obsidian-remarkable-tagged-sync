@@ -371,7 +371,7 @@ async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "now" | "ocrBackend"> & { attachmentsFolder: string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
-): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"] }> {
+): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"]; ocrWarnings: string[] }> {
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
 	const ocr: OcrResult =
 		params.keepTranscript !== undefined
@@ -412,6 +412,7 @@ async function writeUnit(
 			blockHash: managedBlockHash(fields),
 		},
 		ocr: ocr.status,
+		ocrWarnings: ocr.warnings ?? [],
 	};
 }
 
@@ -754,7 +755,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				? await buildUnitDigest(null, digestPages, `"${entry.visibleName}" for tag "${tag}"`)
 				: { markdown: "", ocr: null };
 
-			const { row, ocr } = await writeUnit(
+			const { row, ocr, ocrWarnings } = await writeUnit(
 				writeDeps,
 				{
 					// An empty page list makes `runOcr` return `skipped` without spawning anything -- the
@@ -780,6 +781,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// The digest's own outcome when it produced one, so the platform notice still fires for a
 			// user whose margin notes could not be transcribed here.
 			const unitOcr = digest.ocr ?? ocr;
+			// A page the backend lost while the rest of the unit read fine: the note is written and the
+			// unit counts as ok, so this line is the only trace the loss leaves anywhere.
+			skipErrors.push(...ocrWarnings);
 			if (unitOcr === "unavailable") unavailableOcrUnits++;
 			if (unitOcr === "failed") failedOcrUnits++;
 		}
@@ -868,7 +872,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				? await buildUnitDigest(pageTag.pageId, digestPages, `page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}"`)
 				: { markdown: "", ocr: null };
 
-			const { row, ocr } = await writeUnit(
+			const { row, ocr, ocrWarnings } = await writeUnit(
 				writeDeps,
 				{
 					// See the notebook-tag branch: a built digest has already transcribed this unit.
@@ -891,6 +895,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			rows[row.syncKey] = row;
 			notesWritten++;
 			const unitOcr = digest.ocr ?? ocr;
+			// See the notebook-tag branch: without this the lost page leaves no trace at all.
+			skipErrors.push(...ocrWarnings);
 			if (unitOcr === "unavailable") unavailableOcrUnits++;
 			if (unitOcr === "failed") failedOcrUnits++;
 		}

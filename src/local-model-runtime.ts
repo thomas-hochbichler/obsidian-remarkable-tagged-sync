@@ -9,7 +9,12 @@ import {
 	deriveLocalModelState,
 	formatLock,
 	localModelPaths,
+	MMPROJ_BYTES,
+	MMPROJ_FILE,
+	MODEL_BYTES,
+	MODEL_FILE,
 	parseLock,
+	PART_SUFFIX,
 	type LocalModelPaths,
 	type LocalModelPlatform,
 	type LocalModelSnapshot,
@@ -118,6 +123,57 @@ export function readLocalModelSnapshot(paths: LocalModelPaths): LocalModelSnapsh
 		lockHeldAtMs: readLock(paths),
 		corruptMarked: exists(paths.corruptMarker),
 	};
+}
+
+/** One model directory beside the pinned one, described by what it holds. */
+export interface ModelDirectoryEntry {
+	name: string;
+	hasPart: boolean;
+	complete: boolean;
+}
+
+/**
+ * Every model directory on disk, so the caller can decide which are superseded.
+ *
+ * Reading the directory belongs here rather than in the settings card that asks the question: this
+ * file is the only one in the local-model set that is allowed to touch a disk, and keeping that true
+ * is what lets every rule above it be tested without one.
+ */
+export function readModelDirectories(paths: LocalModelPaths): ModelDirectoryEntry[] {
+	const fs = nodeRequire("fs");
+	const path = nodeRequire("path");
+	const modelsRoot = path.dirname(paths.modelDir);
+	let names: string[];
+	try {
+		names = fs
+			.readdirSync(modelsRoot, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name);
+	} catch {
+		return [];
+	}
+	return names.map((name) => {
+		const directory = path.join(modelsRoot, name);
+		return {
+			name,
+			hasPart: exists(path.join(directory, MODEL_FILE + PART_SUFFIX)) || exists(path.join(directory, MMPROJ_FILE + PART_SUFFIX)),
+			complete: sizeOf(path.join(directory, MODEL_FILE)) === MODEL_BYTES && sizeOf(path.join(directory, MMPROJ_FILE)) === MMPROJ_BYTES,
+		};
+	});
+}
+
+/** Removes one model directory by name, for a partial this build can no longer finish (§5.3). */
+export function removeModelDirectory(paths: LocalModelPaths, name: string): void {
+	const fs = nodeRequire("fs");
+	const path = nodeRequire("path");
+	fs.rmSync(path.join(path.dirname(paths.modelDir), name), { recursive: true, force: true });
+}
+
+/** This machine's architecture and memory, for the gate in `local-model-gate.ts`. */
+export function machineFacts(): { platform: string; arch: string; totalMemoryBytes: number } | null {
+	if (!Platform.isDesktop) return null;
+	const os = nodeRequire("os");
+	return { platform: os.platform(), arch: os.arch(), totalMemoryBytes: os.totalmem() };
 }
 
 /**
