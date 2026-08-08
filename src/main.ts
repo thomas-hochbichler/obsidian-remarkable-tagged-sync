@@ -22,7 +22,7 @@ import { buildDiagnostics } from "./diagnostics";
 import { explainError } from "./explain-error";
 import type { NoteStore, OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
-import { type BackendSettings, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { type BackendSettings, isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { EMPTY_SYNC_INDEX, invalidateRenders, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
@@ -784,6 +784,10 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			)
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {
+					// A backend whose gap its own setup card is already explaining is hidden rather than
+					// shown disabled -- otherwise picking it would persist a setting that transcribes
+					// nothing, since Obsidian saves a dropdown change the moment it is made.
+					if (!isListedBackend(entry, this.plugin.data.ocrBackend)) continue;
 					dropdown.addOption(entry.id, entry.label);
 					// Show every backend; disable one that can't run here, so the gap explains itself in place (spec §4.2).
 					const unavailable = entry.unavailableLabel?.();
@@ -818,6 +822,16 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			settings: (this.plugin.data.llmProviders[id] ??= {}),
 			save: () => this.plugin.saveData(this.plugin.data),
 		});
+
+		// Setup cards, for *every* registered backend rather than the selected one. A backend that has
+		// to be downloaded before it can be chosen is not selectable yet, so `renderSettings` above
+		// would never fire for it and it would have no way to say what it needs.
+		for (const entry of ocrBackendEntries()) {
+			entry.renderSetup?.(containerEl, {
+				settings: (this.plugin.data.llmProviders[entry.id] ??= {}),
+				save: () => this.plugin.saveData(this.plugin.data),
+			});
+		}
 	}
 
 	/**
