@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-08-09
+
 ### Fixed
 
 - **A single old notebook could stop the whole plugin working.** **Discover tags** and **Sync now**
