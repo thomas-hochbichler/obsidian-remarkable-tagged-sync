@@ -29,8 +29,8 @@
 //    and says so loudly: the path gates still run, so it degrades, it does not fail open in
 //    silence.
 //
-//    A match prints the file and line NUMBER and never the matched text. CI logs of a public repo
-//    are public; a gate that quoted the secret it just found would leak it to catch it.
+//    A match prints the file path and never the matched text. CI logs of a public repo are public;
+//    a gate that quoted the secret it just found would leak it to catch it.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -115,13 +115,35 @@ if (range) {
 
 // --- 3. content ---------------------------------------------------------------------------------
 
-const patterns = (process.env.PRIVATE_CONTENT_PATTERNS ?? (existsSync(".private-patterns") ? readFileSync(".private-patterns", "utf8") : ""))
+let patterns = (process.env.PRIVATE_CONTENT_PATTERNS ?? (existsSync(".private-patterns") ? readFileSync(".private-patterns", "utf8") : ""))
 	.split("\n")
 	.map((line) => line.trim())
 	.filter((line) => line && !line.startsWith("#"));
 
+// `git grep -E` is POSIX ERE, where these escapes are not word/digit classes. `\b` is the one that
+// bites: it is accepted without complaint and simply never matches, so the gate reports ok forever
+// and reads exactly like a gate that works. Caught the day this file's own patterns were written.
+// The others are GNU extensions -- honoured on the Linux runner, not on a macOS checkout, which is
+// worse than either: the same pattern would guard CI and quietly do nothing locally.
+const UNSUPPORTED = /\\[bBdDwWsS]/;
+const silent = patterns.filter((pattern) => UNSUPPORTED.test(pattern));
+if (silent.length) {
+	fail(`${silent.length} pattern(s) use an escape POSIX ERE does not have -- they would never match`);
+	console.log("  spell the boundary out instead: (^|[^[:alnum:]])TERM([^[:alnum:]]|$)");
+	// Dropped rather than scanned: a dead pattern counted among the live ones would let the line
+	// below report a reassuring "ok, 5 patterns" for a check that only really ran four.
+	patterns = patterns.filter((pattern) => !UNSUPPORTED.test(pattern));
+}
+
 if (!patterns.length) {
-	console.log("content                SKIPPED  (no PRIVATE_CONTENT_PATTERNS secret, no .private-patterns)");
+	// Two different silences, and saying "none configured" for the second would be the same lie the
+	// escape check exists to prevent: one means nobody armed the check, the other that everything
+	// armed was unusable.
+	console.log(
+		silent.length
+			? "content                NOT RUN  (every configured pattern was rejected above)"
+			: "content                SKIPPED  (no PRIVATE_CONTENT_PATTERNS secret, no .private-patterns)",
+	);
 } else {
 	// `git grep -l` over the revisions in the range: a blob that appeared and vanished inside one
 	// PR still gets read. -l, never -n with context: the file is the finding, the text is the leak.
