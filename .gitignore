@@ -13,14 +13,20 @@ docs/_archive/
 # This repo is public. `pro/` is the premium OCR block: published once under Apache-2.0, it is
 # free forever, so a single mistake here is not repairable.
 #
-# This file is no longer the only protection: `scripts/private-gate.mjs` runs as gate 0 in CI and
-# at release, and refuses to publish anything tracked below this line. It reads this list from its
-# own copy on purpose, so that editing THIS file does not disarm it. But it only ever runs after a
-# commit exists -- so the lines below are still what keeps the mistake from being made.
+# This file is no longer the only protection. Three checks read the same list, and none of them
+# reads it from HERE -- it lives in `scripts/private-paths.mjs`, on purpose, so that editing this
+# file disarms nothing:
+#
+#   .githooks/pre-commit      refuses to stage a private path
+#   .githooks/pre-push        refuses the whole history being pushed, not just the tip
+#   scripts/private-gate.mjs  gate 0 in CI and at release -- the one `--no-verify` cannot reach
+#
+# The hooks need `core.hooksPath` set; `npm install` does it. All three run after the fact, so the
+# lines below are still what keeps the mistake from being made.
 #
 # `git add -A` and `git commit -a` respect these rules. `git add -f` does NOT -- except where the
-# folder is a nested git repo (`pro/`, `.scratch/`), which stages nothing at all. Do not force-add
-# anything below, and do not delete a line to "just check something".
+# folder is a nested git repo (`pro/`, `.scratch/`, `tools/`), which stages nothing at all. Do not
+# force-add anything below, and do not delete a line to "just check something".
 
 pro/
 .scratch/
