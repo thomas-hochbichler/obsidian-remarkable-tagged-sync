@@ -10,6 +10,7 @@ import {
 	PluginSettingTab,
 	setIcon,
 	Setting,
+	setTooltip,
 	type TAbstractFile,
 	TFile,
 	TFolder,
@@ -208,6 +209,10 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.statusBar.addClass("tagged-sync-status");
 		this.statusIcon = this.statusBar.createSpan({ cls: "tagged-sync-status-icon" });
 		this.statusText = this.statusBar.createSpan();
+		// The whole item, not just the icon: a status bar item is already a small target, and the text
+		// beside the spinner is the part that says a run is happening. Whether it does anything is
+		// decided at click time -- `mod-clickable` and the tooltip come and go with the busy state.
+		this.registerDomEvent(this.statusBar, "click", () => void this.confirmStop());
 		this.statusBar.hide();
 		const saved = (await this.loadData()) as (Partial<TaggedSyncData> & { ocrBackendChoice?: unknown }) | null;
 		// Migration (multi-provider spec §7): coerce any backend that isn't a currently-valid literal to
@@ -242,6 +247,18 @@ export default class TaggedSyncPlugin extends Plugin {
 			id: "sync-now",
 			name: "Sync now",
 			callback: () => this.syncNow(),
+		});
+		this.addCommand({
+			id: "stop-sync",
+			name: "Stop sync",
+			// Hidden unless something is running, like `re-transcribe-all` below. No confirmation: a
+			// command the user went looking for and named "Stop sync" *is* the intent. The status-bar
+			// click asks first because a click there could be a slip.
+			checkCallback: (checking) => {
+				if (!this.isSyncing()) return false;
+				if (!checking) this.requestStop();
+				return true;
+			},
 		});
 		this.addCommand({
 			id: "re-transcribe-all",
@@ -350,17 +367,48 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.statusBar.toggleClass("is-busy", state === "busy");
 			this.statusState = state;
 		}
+		// Outside that guard on purpose: this follows `stopRequested` too, which flips without a state
+		// change. Cheap enough to redo every tick -- a class and an attribute, not a rebuilt icon.
+		const stoppable = state === "busy" && !this.stopRequested;
+		this.statusBar.toggleClass("mod-clickable", stoppable);
+		setTooltip(this.statusBar, stoppable ? "Click to stop the sync" : "");
 		this.statusText.setText(text);
 		this.statusBar.show();
 	}
 
 	private showProgress(progress: SyncProgress): void {
+		// A pending stop outranks the progress ticks: they would go on announcing work the user has
+		// already asked to end.
+		if (this.stopRequested) {
+			this.setStatus("busy", "Tagged Sync: stopping…");
+			return;
+		}
 		this.setStatus(
 			"busy",
 			progress.phase === "scanning"
 				? "Tagged Sync: scanning…"
 				: `Tagged Sync: ${progress.index}/${progress.total} · ${progress.name}`,
 		);
+	}
+
+	/**
+	 * The status-bar click. Silent when there is nothing to stop: the item stays visible after a run
+	 * ends, showing its outcome, and clicking that should do nothing rather than explain itself. Also
+	 * silent on a second click, since the first stop is already pending.
+	 */
+	private async confirmStop(): Promise<void> {
+		if (!this.isSyncing() || this.stopRequested) return;
+		const confirmed = await confirmDialog(
+			this.app,
+			"Stop sync",
+			// The delay is stated because it is the one thing that would otherwise read as a broken
+			// button: the user clicks Stop and the spinner keeps turning, possibly for minutes on a
+			// large notebook with the local model.
+			"Stop the run that is in progress? The note being transcribed right now is finished first, so this can take a moment. Everything already written is kept, and the next sync carries on from there.",
+			"Stop",
+		);
+		// The run may well have ended while the dialog sat open; requestStop() ignores that.
+		if (confirmed) this.requestStop();
 	}
 
 	async syncNow(): Promise<void> {
@@ -396,6 +444,9 @@ export default class TaggedSyncPlugin extends Plugin {
 	requestStop(): void {
 		if (!this.syncing) return;
 		this.stopRequested = true;
+		// Said now rather than at the next progress tick, which can be a whole unit away: a click that
+		// changes nothing visible reads as a click that did not register.
+		this.setStatus("busy", "Tagged Sync: stopping…");
 	}
 
 	/** Whether a long-running job is in flight, and so whether there is anything to stop. */
