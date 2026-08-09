@@ -5,6 +5,7 @@
   "main": "main.js",
   "private": true,
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "test": "vitest run",

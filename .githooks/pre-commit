@@ -1,0 +1,3 @@
+#!/bin/sh
+# Layer 2 of .scratch/leak-protection/plan.md. The check itself is scripts/private-hook.mjs.
+exec node scripts/private-hook.mjs pre-commit

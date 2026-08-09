@@ -1,0 +1,4 @@
+#!/bin/sh
+# Layer 3 of .scratch/leak-protection/plan.md. The refs being pushed arrive on stdin, which `exec`
+# hands straight to the node process.
+exec node scripts/private-hook.mjs pre-push
