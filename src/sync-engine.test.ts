@@ -1453,6 +1453,55 @@ describe("reTranscribeAll", () => {
 		});
 	}
 
+	// Worse than the sync's duplicate: a note whose block was rewritten while its stored blockHash was
+	// lost reads as a hand edit forever after, and nothing signals it. Without the per-note checkpoint
+	// an interrupted re-transcribe froze every note it had already touched.
+	it("checkpoints each refreshed block hash, so an interruption cannot freeze the notes it already rewrote", async () => {
+		function twoDocs(rootHash: string, hashSuffix: string) {
+			return fakeApi({
+				rootHash,
+				entries: [
+					documentEntry({ id: "doc-1", hash: `hash-1${hashSuffix}`, visibleName: "First", tags: [{ name: "sync", timestamp: 0 }] }),
+					documentEntry({ id: "doc-2", hash: `hash-2${hashSuffix}`, visibleName: "Second", tags: [{ name: "sync", timestamp: 0 }] }),
+				],
+				contentById: {
+					"doc-1": documentContent({ cPages: cPages(["page-a"]) }),
+					"doc-2": documentContent({ cPages: cPages(["page-b"]) }),
+				},
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" }, "doc-2": { "page-b": "hash-b" } },
+			});
+		}
+
+		const noteStore = fakeNoteStore();
+		const synced = await runSync({ ...baseDeps(twoDocs("root-1", ""), { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
+
+		// Re-transcribe both, dying right after the first note's hash was checkpointed.
+		const saved: SyncIndex[] = [];
+		await expect(
+			reTranscribeAll(
+				{
+					api: twoDocs("root-1", ""),
+					noteStore,
+					ocrBackend: fakeOcrBackend({ status: "ok", text: "fresh text", confidence: null }),
+					saveIndex: async (index) => {
+						saved.push(index);
+						if (saved.length === 2) throw new Error("interrupted");
+					},
+				},
+				synced.index,
+			),
+		).rejects.toThrow("interrupted");
+
+		expect(saved).not.toHaveLength(0); // the whole point: something reached disk before the throw
+
+		// The next sync reopens both documents (device hashes moved). The note the re-transcribe
+		// rewrote must still read as the plugin's own work, not as a hand edit.
+		// Resuming from the pre-re-transcribe index instead yields 2 -- both rewritten notes frozen.
+		const after = await runSync({ ...baseDeps(twoDocs("root-2", "b"), { sync: "Target" }), noteStore }, saved.at(-1)!);
+
+		expect(after.editedNotesSkipped).toBe(0);
+	});
+
 	// The dangerous half of a stopped re-transcribe: a note whose block was rewritten but whose
 	// blockHash was dropped reads as a hand edit to the next sync, which then never touches it again.
 	it("hands back the block hashes it already refreshed when stopped", async () => {

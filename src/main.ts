@@ -596,6 +596,13 @@ export default class TaggedSyncPlugin extends Plugin {
 					ocrBackend: backend,
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
+					// Checkpoint after each note, so an interrupted re-transcribe can't leave notes whose
+					// stored blockHash no longer describes them -- the next sync would read those as hand
+					// edits and never touch them again.
+					saveIndex: async (index) => {
+						this.data.syncIndex = index;
+						await this.saveData(this.data);
+					},
 				},
 				this.data.syncIndex,
 			);

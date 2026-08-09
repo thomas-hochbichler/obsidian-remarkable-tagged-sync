@@ -1077,6 +1077,14 @@ export interface ReTranscribeDeps {
 	onProgress?: (progress: SyncProgress) => void;
 	/** Polled at note boundaries; see `SyncDeps.shouldStop`. A note already being re-transcribed finishes. */
 	shouldStop?: () => boolean;
+	/**
+	 * Persists the index after every note re-transcribed. Rewriting a note's managed block invalidates
+	 * its stored `blockHash`, so a run that dies before the refreshed hashes are saved leaves notes the
+	 * next sync reads as hand-edited -- and `isBlockEdited` then refuses to touch them ever again. That
+	 * is a worse outcome than the sync checkpoint's duplicates: nothing signals it, and it does not
+	 * self-heal. No `rootHash` moves here, so unlike the sync checkpoint this is simply the index.
+	 */
+	saveIndex?: (index: SyncIndex) => Promise<void>;
 }
 
 /** The OCR input for one already-synced unit, labelled: annotation scenes for a PDF-backed doc, every live page's scene otherwise. */
@@ -1120,6 +1128,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 	let updated = 0;
 	const docIds = [...rowsByDoc.keys()];
+	const checkpoint = deps.saveIndex ? () => deps.saveIndex!({ ...index, rows: { ...rows } }) : async () => {};
 	// A stopped run still hands back every `blockHash` it refreshed: those notes were rewritten, and a
 	// caller that drops them would leave the next sync reading the plugin's own work as a hand edit.
 	const stopHere = (): { updated: number; index: SyncIndex; stopped: boolean } => ({ updated, index: { ...index, rows }, stopped: true });
@@ -1165,6 +1174,9 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 			const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
 			if (block !== null) rows[row.syncKey] = { ...row, blockHash: blockHashOf(block) };
+			// Per note, for the same reason the sync checkpoints per unit: the note on disk and the hash
+			// that describes it must not be allowed to drift apart across an interruption.
+			await checkpoint();
 		}
 	}
 	return { updated, index: { ...index, rows }, stopped: false };
