@@ -42,4 +42,49 @@
 	color: var(--text-muted);
 	padding-top: var(--size-4-1);
 	line-height: var(--line-height-tight);
+	/*
+	 * Obsidian 1.13 draws each setting as a card with its own inset, so text placed straight into the
+	 * tab starts a good 16 px left of every label around it and reads as falling out of the column.
+	 * The inset is the same variable the cards use, and it resolves to nothing on the versions that
+	 * have no cards -- which is where flush-left was right all along.
+	 */
+	padding-inline: var(--setting-items-padding-x, 0);
+}
+
+/*
+ * The local model's setup card: one block that carries prose, a progress bar and a button row, so it
+ * takes the card treatment itself rather than sitting between the cards as loose text.
+ */
+.tagged-sync-card {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	line-height: var(--line-height-tight);
+	background: var(--setting-items-background, transparent);
+	border-radius: var(--setting-items-radius, 0);
+	padding: var(--setting-items-padding-y, var(--size-4-2)) var(--setting-items-padding-x, 0);
+}
+
+.tagged-sync-card > h4,
+.tagged-sync-card > p,
+.tagged-sync-card > progress {
+	margin: 0 0 var(--size-4-2);
+}
+
+.tagged-sync-card > *:last-child {
+	margin-bottom: 0;
+}
+
+/* Rows that already work without being touched, folded away until someone wants them. */
+.tagged-sync-advanced > summary {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: var(--size-4-2) var(--setting-items-padding-x, 0);
+}
+
+/* A row inside the card is already inside the card's padding; a second inset would step it right. */
+.tagged-sync-card > .setting-item {
+	padding-inline: 0;
+	background: transparent;
+	border: none;
 }

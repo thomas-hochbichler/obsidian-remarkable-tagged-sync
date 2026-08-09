@@ -42,8 +42,8 @@ const NOTE_CONTRACT = "Structure depends on the model you load — a capable vis
  * model field ships empty rather than seeding a number we cannot stand behind.
  */
 const MODEL_RECOMMENDATION =
-	"We measured Qwen2.5-VL-7B at 7.6 % character error running it directly — about three times more " +
-	"accurate than Apple Vision on the same pages. Through a local server the result may differ; we have not measured that.";
+	"Qwen2.5-VL-7B is the model we measured — about three times more accurate than Apple Vision when run " +
+	"directly, though through a local server the result may differ.";
 
 /**
  * Background-sync consent (spec §3.2), which Pro's own Ollama and LM Studio entries do **not** ask
@@ -148,18 +148,10 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 	const cfg = ctx.settings as LocalhostSettings;
 	const save = () => ctx.save();
 
-	new Setting(containerEl)
-		.setName("Endpoint (base URL)")
-		.setDesc(meta.id === "custom" ? "Your server's OpenAI-compatible base URL." : "Change this only if the server runs on another host or port.")
-		.addText((text) => {
-			text.setPlaceholder(meta.baseURL || "http://localhost:…/v1").setValue(cfg.baseURL ?? meta.baseURL);
-			text.onChange(async (value) => {
-				cfg.baseURL = value || undefined;
-				await save();
-				scheduleVisionCheck(meta, cfg);
-			});
-		});
-
+	// The model field ships empty and nothing transcribes until it is filled, so it stays in the open.
+	// Everything else here already has a working value -- the endpoint is the provider's own default,
+	// and a key is only wanted by a server that asks for one -- and a row nobody has to touch is a row
+	// that can wait behind a disclosure.
 	new Setting(containerEl)
 		.setName("Model")
 		.setDesc("The vision model to transcribe with — whichever one you loaded.")
@@ -177,8 +169,23 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 	visionWarningEl = containerEl.createDiv({ cls: "tagged-sync-note" });
 	scheduleVisionCheck(meta, cfg);
 
+	const advanced = containerEl.createEl("details", { cls: "tagged-sync-advanced" });
+	advanced.createEl("summary", { text: "Advanced" });
+
+	new Setting(advanced)
+		.setName("Endpoint (base URL)")
+		.setDesc(meta.id === "custom" ? "Your server's OpenAI-compatible base URL." : "Change this only if the server runs on another host or port.")
+		.addText((text) => {
+			text.setPlaceholder(meta.baseURL || "http://localhost:…/v1").setValue(cfg.baseURL ?? meta.baseURL);
+			text.onChange(async (value) => {
+				cfg.baseURL = value || undefined;
+				await save();
+				scheduleVisionCheck(meta, cfg);
+			});
+		});
+
 	if (meta.key !== "none") {
-		new Setting(containerEl)
+		new Setting(advanced)
 			.setName("API key (optional)")
 			.setDesc("Only if your server requires one.")
 			.addText((text) => {
@@ -190,6 +197,10 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 				});
 			});
 	}
+
+	// A custom server has no default endpoint to fall back on: leaving it folded away would hide the
+	// one field that makes the backend work at all.
+	if (meta.id === "custom" || cfg.baseURL !== undefined) advanced.open = true;
 }
 
 // Registered after Vision and the managed local model, so they sit below both in the dropdown.

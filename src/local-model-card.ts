@@ -72,6 +72,17 @@ export const QUALITY_LINE =
 	"usually look broken on the page. This model gets fewer wrong and writes them as fluent text — so a " +
 	"mistake reads like something you meant to write. Check anything that matters against the handwriting.";
 
+/**
+ * The same warning for a card the user is not deciding anything on.
+ *
+ * {@link QUALITY_LINE} earns its four sentences where the choice is still open: it is a comparison
+ * against the alternative, and dropping the comparison there would leave a bare warning on the
+ * accurate option. On a model already downloaded and selected there is nothing left to compare -- the
+ * only sentence still doing work is the one that says what a mistake will look like.
+ */
+export const QUALITY_LINE_SHORT =
+	"This model's misreads come out as fluent text, so check anything that matters against the handwriting.";
+
 /** The background-sync gate's own copy. Money is gone from it entirely: this costs none (§7.5). */
 export const BACKGROUND_CONSENT_DESC =
 	"Off by default. In the background the model holds 14 GB and pushes the fans for as long as it runs. Manual syncs are unaffected.";
@@ -178,7 +189,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 		case "ready":
 			return {
 				heading: "Local model — ready",
-				paragraphs: [`Speed: ${estimateLine(platform, settings)}`, QUALITY_LINE],
+				paragraphs: [`Speed: ${estimateLine(platform, settings)}`, QUALITY_LINE_SHORT],
 				actions: [{ id: "delete", label: "Delete the model", emphasis: "warning" }],
 				percent: null,
 				showsBackgroundConsent: true,

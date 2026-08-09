@@ -13,6 +13,12 @@ export interface BackendSettingsContext {
 	settings: BackendSettings;
 	save(): Promise<void>;
 	/**
+	 * Whether this backend is the selected one. A setup card renders for every backend, so a card that
+	 * has nothing left to set up — the model is downloaded and the backend is now selectable — is
+	 * noise beside whichever backend the user actually picked.
+	 */
+	isSelected: boolean;
+	/**
 	 * Hands the selection back to the platform default, for a backend that has just made itself
 	 * unusable on purpose — the one case being a "delete the model" button.
 	 *
