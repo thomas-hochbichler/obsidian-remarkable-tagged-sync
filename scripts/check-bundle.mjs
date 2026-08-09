@@ -18,8 +18,16 @@
 //    at the root (the pro build writes `main.pro.js` now), but this stays as the second layer:
 //    it reads the actual bytes about to be published.
 //
-//    Measured against a real pro build, not just against `pro/` source: 6 of the 7 needles fire
-//    (2-7 hits each) and 0 fire on the free bundle.
+//    Measured against a real pro build, not just against `pro/` source: 5 of the 6 needles fire
+//    (1-7 hits each) and 0 fire on the free bundle. Re-measured 2026-08-09 after the retirement
+//    below, on both bundles built from this tree.
+//
+//    One needle was retired on 2026-08-09: "Transcribe the handwritten", the opening of the shared
+//    transcription prompt, added in 1.0.6 when only pro could send it. The downloadable local model
+//    ships in the free build and sends the same prompt, so the string moved to
+//    `src/llm-transcript.ts` and `pro/llm-transcript.ts` now re-exports it. It stopped separating
+//    the two bundles and started firing on every correct free build -- a needle that cannot tell
+//    them apart is worse than one fewer, because a gate nobody can keep green gets waved past.
 //
 //    The 7th, "premium", is live too, and it is worth knowing why: the build does not minify, so
 //    first-party COMMENTS are copied into `main.js` verbatim. This gate failed during the 1.0.6
@@ -42,7 +50,6 @@ const PREMIUM = [
 	"lmstudio",
 	"x-api-key",
 	"chat/completions",
-	"Transcribe the handwritten",
 	"premium",
 ];
 
