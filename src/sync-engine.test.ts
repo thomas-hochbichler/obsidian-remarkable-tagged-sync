@@ -1588,17 +1588,70 @@ describe("index checkpointing", () => {
 		});
 	}
 
-	it("saves the index once per document, each time carrying that document's new row", async () => {
+	it("saves the index as soon as each note is written, then again at the end of its document", async () => {
 		const saveIndex = vi.fn().mockResolvedValue(undefined);
 		const deps = { ...baseDeps(twoTaggedDocs(), { sync: "Target" }), saveIndex };
 
 		await runSync(deps, { rootHash: "root-1", rows: {} });
 
-		expect(saveIndex).toHaveBeenCalledTimes(2);
-		const firstRows = Object.keys(saveIndex.mock.calls[0][0].rows);
-		const secondRows = Object.keys(saveIndex.mock.calls[1][0].rows);
-		expect(firstRows).toEqual([notebookSyncKey("doc-1", "sync")]);
-		expect(secondRows).toEqual([notebookSyncKey("doc-1", "sync"), notebookSyncKey("doc-2", "sync")]);
+		// One note per document here, so: note, document, note, document.
+		const rowKeys = saveIndex.mock.calls.map((call) => Object.keys(call[0].rows));
+		expect(rowKeys).toEqual([
+			[notebookSyncKey("doc-1", "sync")],
+			[notebookSyncKey("doc-1", "sync")],
+			[notebookSyncKey("doc-1", "sync"), notebookSyncKey("doc-2", "sync")],
+			[notebookSyncKey("doc-1", "sync"), notebookSyncKey("doc-2", "sync")],
+		]);
+	});
+
+	// The document-level checkpoint never closed the window *inside* a document, and a document is one
+	// unit per mapped tag -- two tags routed to one folder collide on the same filename, which is
+	// exactly where a lost row turns into a permanent "Notebook (sync).md" beside the real note.
+	it("survives an interruption BETWEEN two units of one document without duplicating", async () => {
+		function twoTaggedUnits() {
+			return fakeApi({
+				rootHash: "root-2",
+				entries: [
+					documentEntry({
+						id: "doc-1",
+						hash: "hash-1",
+						visibleName: "Notebook",
+						tags: [
+							{ name: "sync", timestamp: 0 },
+							{ name: "work", timestamp: 0 },
+						],
+					}),
+				],
+				contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+		}
+		// Both tags route to one folder, so the second unit can only be told apart by its suffix.
+		const folders = { sync: "Target", work: "Target" };
+
+		const noteStore = fakeNoteStore();
+		const realWrite = noteStore.write;
+		let writes = 0;
+		noteStore.write = vi.fn(async (path: string, content: string) => {
+			if (++writes === 2) throw new Error("interrupted"); // died after the first unit was written
+			await realWrite(path, content);
+		});
+
+		const saved: SyncIndex[] = [];
+		await expect(
+			runSync({ ...baseDeps(twoTaggedUnits(), folders), noteStore, saveIndex: async (index) => void saved.push(index) }, { rootHash: "root-1", rows: {} }),
+		).rejects.toThrow("interrupted");
+
+		// The first unit's row reached disk before the second one was even attempted.
+		expect(saved.at(-1)!.rows).toHaveProperty(notebookSyncKey("doc-1", "sync"));
+
+		// Resume against the same vault, with writing restored.
+		noteStore.write = realWrite;
+		const resumed = await runSync({ ...baseDeps(twoTaggedUnits(), folders), noteStore }, saved.at(-1)!);
+
+		const paths = Object.values(resumed.index.rows).map((row) => row.notePath);
+		expect(paths).toEqual(["Target/Notebook.md", "Target/Notebook (work).md"]);
+		expect(paths.some((path) => path.includes("(sync)"))).toBe(false);
 	});
 
 	it("checkpoints the PREVIOUS root hash, so an interrupted run is re-scanned rather than looking complete", async () => {
@@ -1684,6 +1737,31 @@ describe("index checkpointing", () => {
 			expect(paths).toEqual(["Target/First.md", "Target/Second.md"]);
 			expect(paths.some((path) => path.includes("(sync)"))).toBe(false);
 			expect(resumed.index.rootHash).toBe("root-2");
+		});
+
+		// Not a correctness fix -- the sweep reads the *full* enumeration, so its verdict would be right
+		// however far the loop got. It is skipped because orphaning is user-visible state, and a run the
+		// user cut short should make no judgement it was not asked for. The next complete run sweeps.
+		it("makes no orphaning judgements it was cut short of finishing", async () => {
+			const goneRow: SyncIndexRow = {
+				syncKey: notebookSyncKey("doc-gone", "sync"),
+				docId: "doc-gone",
+				pageId: null,
+				tag: "sync",
+				entryHash: "hash-gone",
+				pageHash: null,
+				notePath: "Target/Gone.md",
+				status: "active",
+				syncedAt: NOW,
+				renderVersion: RENDER_VERSION,
+			};
+			const previous = { rootHash: "root-1", rows: { [goneRow.syncKey]: goneRow } };
+
+			const stopped = await runSync({ ...baseDeps(twoTaggedDocs(), { sync: "Target" }), shouldStop: () => true }, previous);
+			expect(stopped.index.rows[goneRow.syncKey].status).toBe("active");
+
+			const completed = await runSync(baseDeps(twoTaggedDocs(), { sync: "Target" }), previous);
+			expect(completed.index.rows[goneRow.syncKey].status).toBe("orphaned");
 		});
 
 		it("reports a completed run as not stopped", async () => {

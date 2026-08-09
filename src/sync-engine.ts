@@ -135,12 +135,13 @@ export interface SyncDeps {
 	now: () => string;
 	onProgress?: (progress: SyncProgress) => void;
 	/**
-	 * Persists the index mid-run, after each document. Without it a sync that is interrupted -- quit,
-	 * lost network, any throw -- leaves already-written notes with no index row, and the next sync,
-	 * refusing to clobber a file it does not own, writes `Notebook (sync).md` beside each of them.
-	 * Those duplicates never self-heal, and the first sync is both the longest and the likeliest to be
-	 * interrupted. The checkpoint carries the *previous* `rootHash` on purpose: the new one is written
-	 * only by the final result, so an interrupted run never looks complete to the next one.
+	 * Persists the index mid-run: after every note written, and again at the end of each document to
+	 * carry the entryHash bump for that document's untouched rows. Without it a sync that is
+	 * interrupted -- quit, lost network, any throw -- leaves already-written notes with no index row,
+	 * and the next sync, refusing to clobber a file it does not own, writes `Notebook (sync).md` beside
+	 * each of them. Those duplicates never self-heal, and the first sync is both the longest and the
+	 * likeliest to be interrupted. The checkpoint carries the *previous* `rootHash` on purpose: the new
+	 * one is written only by the final result, so an interrupted run never looks complete to the next one.
 	 */
 	saveIndex?: (index: SyncIndex) => Promise<void>;
 	/**
@@ -903,6 +904,13 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			consumeRename(rows, rename);
 			rows[row.syncKey] = row;
 			notesWritten++;
+			// Per unit, not just per document: a document is one tagged notebook *plus* one unit for every
+			// tagged page in it, so a single document can be dozens of notes and many minutes of work. A
+			// note that reaches the vault without its row reaching `data.json` is the duplicate bug the
+			// document-level checkpoint was introduced to close -- it was simply never closed *inside* a
+			// document. The write costs milliseconds against a unit that just spent a render and an OCR
+			// pass, and only units that actually produced a note get here, so the cost tracks the work.
+			await checkpoint();
 			// The digest's own outcome when it produced one, so the platform notice still fires for a
 			// user whose margin notes could not be transcribed here.
 			const unitOcr = digest.ocr ?? ocr;
@@ -1021,6 +1029,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			consumeRename(rows, rename);
 			rows[row.syncKey] = row;
 			notesWritten++;
+			await checkpoint(); // see the notebook-tag branch
 			const unitOcr = digest.ocr ?? ocr;
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
 			skipErrors.push(...ocrWarnings);
