@@ -15,7 +15,7 @@ import {
 	TFolder,
 	type Vault,
 } from "obsidian";
-import { session as remarkableSession } from "rmapi-js";
+import { type RemarkableApi, session as remarkableSession } from "rmapi-js";
 import { type AttachmentStore, DEFAULT_ATTACHMENTS_FOLDER, normalizeAttachmentsFolder } from "./attachment-writer";
 import { isIntervalSyncDue, isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
@@ -24,6 +24,7 @@ import type { NoteStore, OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
+import { tolerateLegacyMetadata } from "./remarkable-metadata";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { EMPTY_SYNC_INDEX, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
 import { TagRouter, type TagFolderMap } from "./tag-router";
@@ -116,6 +117,13 @@ const BUILT_IN_BACKENDS: ReadonlySet<string> = new Set(["vision", "off"]);
  */
 function hasAlternativeBackends(): boolean {
 	return ocrBackendEntries().some((entry) => !BUILT_IN_BACKENDS.has(entry.id));
+}
+
+/** The only way this plugin opens a cloud session -- see tolerateLegacyMetadata for what it fixes. */
+function openSession(sessionToken: string): RemarkableApi {
+	const api = remarkableSession(sessionToken);
+	tolerateLegacyMetadata(api.raw);
+	return api;
 }
 
 async function ensureFolder(vault: Vault, path: string): Promise<void> {
@@ -341,7 +349,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.setStatus("busy", "Tagged Sync: starting…");
 		try {
 			const sessionToken = await this.auth.session();
-			const api = remarkableSession(sessionToken);
+			const api = openSession(sessionToken);
 			const result = await runSync(
 				{
 					api,
@@ -500,7 +508,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		try {
 			const sessionToken = await this.auth.session();
-			const api = remarkableSession(sessionToken);
+			const api = openSession(sessionToken);
 			const { updated, index } = await reTranscribeAll(
 				{
 					api,
@@ -837,7 +845,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					button.setDisabled(true);
 					try {
 						const sessionToken = await this.plugin.auth.session();
-						const api = remarkableSession(sessionToken);
+						const api = openSession(sessionToken);
 						const notebooks = await enumerateNotebookTags(api);
 						this.discoveredTags = collectTagNames(notebooks);
 						new Notice(`Found ${this.discoveredTags.length} tag(s).`);
