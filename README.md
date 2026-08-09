@@ -155,6 +155,16 @@ Two behaviours show up in Obsidian's automated plugin review, so they are spelle
 
 Sync is also available from the command palette as **Tagged Sync for reMarkable: Sync now**.
 
+### Stopping a sync
+
+While a sync is running, the status bar shows a turning icon. Click it and confirm, or run **Tagged
+Sync for reMarkable: Stop sync** from the command palette. This works for an automatic sync and for
+re-transcribing too.
+
+Stopping is safe rather than instant: the note being transcribed right now is finished first, so it
+can take a moment — the status bar says `stopping…` meanwhile. Everything already written is kept,
+and the next sync carries on from where it left off.
+
 ![The plugin settings: reMarkable connection, OCR backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
 
 ### Automatic sync

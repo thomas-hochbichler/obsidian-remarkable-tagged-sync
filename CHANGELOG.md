@@ -14,6 +14,16 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **You can stop a sync that is running.** Click the turning icon in the status bar and confirm, or
+  run **Stop sync** from the command palette. It works on every kind of run — a manual sync, an
+  automatic one you never started, and **Re-transcribe all synced notes** — and there was no way to
+  do it before: once a sync began, it ran to the end.
+
+  It stops **safely rather than instantly**: the note being transcribed right now is finished first,
+  so on a large notebook with the local model this can take a moment. The status bar says
+  `stopping…` while it winds down. Everything already written is kept, and the next sync carries on
+  from where it left off — no duplicates, and nothing is left half-written.
+
 - **A local AI model you can switch transcription to**, on Apple Silicon Macs with 18 GB of memory
   or more and on Windows-on-ARM PCs with 24 GB or more. It reads handwriting about three times more
   accurately than Apple Vision and keeps your headings and lists, and it runs entirely on your
@@ -117,6 +127,16 @@ workflow publishes the section as the GitHub release body. See
   a page of charts made it read the axis labels as text lines — a third of the real spacing, so
   no two strokes belonged together. A note written beside such a page's last paragraph became
   five notes. Highlights on those pages could also start quoting from the middle of a sentence.
+- **A sync interrupted partway through a notebook could duplicate its notes.** The plugin recorded
+  what it had done once per notebook, but a notebook with several mapped tags — or many tagged pages
+  — is several notes, and quitting Obsidian in the middle of one left the notes already written
+  unrecorded. The next sync would not overwrite a file it no longer recognised, so it wrote a second
+  copy beside each of them, and they never healed. It now records each note the moment it is written.
+- **A re-transcribe that did not finish could silently freeze the notes it had already rewritten.**
+  Refreshing a transcript changes the note, so the plugin's record of it has to change too — and that
+  record was only saved once the whole run finished. If it did not, every note already refreshed
+  looked hand-edited on the next sync, and the plugin will not touch a note you have edited. They
+  would have stopped updating for good, with nothing to say why. The record is now saved per note.
 
 ## [1.0.8] - 2026-08-03
 
