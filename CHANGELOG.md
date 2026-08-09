@@ -138,6 +138,18 @@ workflow publishes the section as the GitHub release body. See
   looked hand-edited on the next sync, and the plugin will not touch a note you have edited. They
   would have stopped updating for good, with nothing to say why. The record is now saved per note.
 
+## [1.0.9] - 2026-08-09
+
+### Fixed
+
+- **A single old notebook could stop the whole plugin working.** **Discover tags** and **Sync now**
+  both failed with "reMarkable's cloud answered in a way this plugin did not expect", and no tag was
+  ever found. reMarkable stores four leftover fields from an older version of its sync on every
+  document, and on some older documents it sends them as `null` rather than leaving them out — which
+  the library this plugin reads the cloud with rejected. The document list is fetched in one go, so
+  one such document failed the listing for the entire account. The plugin never reads those four
+  fields, and now treats them as absent.
+
 ## [1.0.8] - 2026-08-03
 
 ### Fixed
