@@ -105,6 +105,34 @@ describe("clusterStrokes", () => {
 		expect(clusterStrokes([descender, rowBelow], 41)).toHaveLength(2);
 	});
 
+	it("absorbs a speck into the line beside it instead of making it an entry", () => {
+		const line = boxStroke("0a", 0, 0, 300, 38);
+		// A dot on an `i` far enough above the line's own box that the line rules leave it standing.
+		const speck = boxStroke("0b", 120, -8, 4, 5);
+
+		const clusters = clusterStrokes([line, speck], LINE_HEIGHT_PX);
+
+		expect(clusters).toHaveLength(1);
+		expect(clusters[0].strokes).toHaveLength(2);
+	});
+
+	it("keeps the host's own id when it absorbs a speck, so the note's block id does not move", () => {
+		const line = boxStroke("0b", 0, 0, 300, 38);
+		// A smaller CRDT id than the line's: it would win the id outright if it were allowed to compete.
+		const speck = boxStroke("0a", 120, -8, 4, 5);
+
+		expect(clusterStrokes([line, speck], LINE_HEIGHT_PX)[0].anchorStrokeId).toBe("0b");
+		// And the id is the one the line alone would have had.
+		expect(clusterStrokes([line], LINE_HEIGHT_PX)[0].anchorStrokeId).toBe("0b");
+	});
+
+	it("leaves a speck with nothing near it as its own entry rather than sending it across the page", () => {
+		const line = boxStroke("0a", 0, 0, 300, 38);
+		const distant = boxStroke("0b", 900, 400, 4, 5);
+
+		expect(clusterStrokes([line, distant], LINE_HEIGHT_PX)).toHaveLength(2);
+	});
+
 	it("does not let a bracket taller than a line claim a note by overlap alone", () => {
 		const bracket = boxStroke("0a", 0, 0, 10, 390);
 		// Far from the bracket's center, so only the overlap rule could join them -- and a stroke this

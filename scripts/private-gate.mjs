@@ -34,23 +34,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-
-// Mirrors the private block of .gitignore. Kept here rather than parsed from that file on purpose:
-// the gate must survive someone editing the ignore rules, which is the one route the ignore-only
-// design never covered.
-// All nine entries, verified untracked on origin/main at the time this was written -- a partial
-// mirror would be worse than none, because it reads as coverage.
-const PRIVATE = [
-	/^pro\//,
-	/^\.scratch\//,
-	/^\.scratch-inspect\//,
-	/^\.claude\//,
-	/^docs\/agents\//,
-	/^Claude\.md$/,
-	/^PRD\.md$/,
-	/^skills-lock\.json$/,
-	/^tools\//,
-];
+import { isPrivate } from "./private-paths.mjs";
 
 // A range this long is a first push or a rewritten branch, where grepping every revision costs
 // minutes. The path checks still cover it; only the content sweep narrows to HEAD, and says so.
@@ -58,7 +42,6 @@ const MAX_REVS = 200;
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 const lines = (out) => out.split("\n").filter(Boolean);
-const isPrivate = (path) => PRIVATE.some((re) => re.test(path));
 
 let failed = false;
 

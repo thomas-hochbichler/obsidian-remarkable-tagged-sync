@@ -14,6 +14,8 @@ registerOcrBackend({
 	id: "vision",
 	label: "Apple Vision (local, default)",
 	metered: false,
+	// Costs nothing and runs in a few hundred ms per page: nothing to ask the user about.
+	needsBackgroundConsent: false,
 	// Shown everywhere, disabled where it can't run, so the gap explains itself in place (spec §4.2).
 	unavailableLabel() {
 		const reason = visionUnavailableReason();
@@ -29,5 +31,6 @@ registerOcrBackend({
 	id: "off",
 	label: "Off — no transcription",
 	metered: false,
+	needsBackgroundConsent: false,
 	create: () => new OffOcrBackend(),
 });

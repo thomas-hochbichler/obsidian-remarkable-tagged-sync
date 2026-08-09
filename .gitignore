@@ -32,6 +32,9 @@ PRD.md
 skills-lock.json
 tools/
 
+# Local research notes, not part of the repo
+docs/research/reddit-research-access.md
+
 # The content patterns gate 0 matches against. They ARE the strings being protected -- an employer
 # name, a ticket prefix -- so committing them would publish exactly what they guard. CI reads them
 # from the PRIVATE_CONTENT_PATTERNS secret instead.

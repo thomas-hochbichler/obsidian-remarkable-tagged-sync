@@ -1,7 +1,10 @@
 import type { OcrBackend, OcrResult } from "./ocr-backend";
 import type { RmPage } from "./rm-parser";
 
-const SKIPPED: OcrResult = { status: "skipped", text: "", confidence: null };
+// `pages: null`, not one `skipped` entry per page: this backend never looked at a page, so per-page
+// entries would be fiction. No per-page information means the note renders exactly as it did before
+// transcripts were page-anchored.
+const SKIPPED: OcrResult = { status: "skipped", pages: null, text: "", confidence: null };
 
 /**
  * The explicit "don't transcribe" choice. Returns `skipped`, never `unavailable`: the user asked for

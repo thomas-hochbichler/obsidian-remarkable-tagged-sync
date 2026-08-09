@@ -1,6 +1,6 @@
 import { clusterStrokes } from "./margin-notes";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import type { OcrBackend, OcrResult } from "./ocr-backend";
+import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import { inkBounds, type InkBounds, rasterizePage } from "./page-rasterizer";
 import { isHighlighterOrShader } from "./pdf-renderer";
 import { encodeGrayscalePng } from "./png-encoder";
@@ -61,9 +61,12 @@ const COVERAGE_FRACTION = 0.3;
 /** How similar a rescued line may be to one already present before it counts as the same line. */
 const DUPLICATE_SIMILARITY = 0.6;
 
-const SKIPPED: OcrResult = { status: "skipped", text: "", confidence: null };
-const UNAVAILABLE: OcrResult = { status: "unavailable", text: "", confidence: null };
-const FAILED: OcrResult = { status: "failed", text: "", confidence: null };
+// `pages` is empty rather than null on these: they are returned for an empty page set, where one
+// entry per input page *is* zero entries, which is arity-correct. `UNAVAILABLE` is the exception --
+// it describes the backend, which never looked at a page, so it has nothing per-page to say.
+const SKIPPED: OcrResult = { status: "skipped", pages: [], text: "", confidence: null };
+const UNAVAILABLE: OcrResult = { status: "unavailable", pages: null, text: "", confidence: null };
+const FAILED: OcrResult = { status: "failed", pages: null, text: "", confidence: null };
 
 /** Splits `items` into contiguous chunks of at most `size`. */
 export function chunk<T>(items: T[], size: number): T[][] {
@@ -309,15 +312,20 @@ export class VisionOcrBackend implements OcrBackend {
 				if (read) insertTypedText(read, pages[index]);
 			});
 
-			const text = reads
-				.map((read) => (read?.lines ?? []).join("\n").trim())
-				.filter((page) => page.length > 0)
+			// One entry per input page, in input order. The per-page outcome was always computed here --
+			// `VisionBatchResult` is `{ lines } | { error }` -- and used to be thrown away by a `.filter()`
+			// that dropped the empty pages, losing the error flag and the index alignment together.
+			const pageResults = reads.map((read): OcrPageResult => {
+				if (read === null) return { status: "failed", text: "" };
+				const text = read.lines.join("\n").trim();
+				return text.length > 0 ? { status: "ok", text } : { status: "skipped", text: "" };
+			});
+			const text = pageResults
+				.filter((page) => page.status === "ok")
+				.map((page) => page.text)
 				.join("\n\n")
 				.trim();
-			if (text.length > 0) return { status: "ok", text, confidence: null };
-
-			// No text anywhere: a genuine blank page is `skipped`; a bad image (some page errored) is `failed`.
-			return reads.some((read) => read === null) ? FAILED : SKIPPED;
+			return { status: unitStatus(pageResults), pages: pageResults, text, confidence: null };
 		} catch (error) {
 			console.warn("Tagged Sync: Vision OCR failed, note will ship with render only", error);
 			return FAILED;

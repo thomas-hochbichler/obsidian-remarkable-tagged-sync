@@ -58,6 +58,27 @@ node scripts/release-checks.mjs lint
 node scripts/check-bundle.mjs                    # after npm run build
 ```
 
+### The local-model transcription gate
+
+**Not in CI, and deliberately manual: it downloads 5.5 GB and takes half an hour.** Run it when the
+pinned model or `llama.cpp` revision in `src/local-model-artefacts.ts` changes — that is the only
+thing that can move the numbers.
+
+```bash
+npx esbuild scripts/release-gate.ts --bundle --platform=node --format=cjs \
+  --external:iconv-lite --alias:obsidian=./test-stubs/obsidian.ts --outfile=/tmp/gate.cjs
+node /tmp/gate.cjs /tmp/gate-out
+npx esbuild .scratch/managed-local-llm-ocr/prototype/mdbench.ts --bundle --platform=node \
+  --format=cjs --external:iconv-lite --outfile=/tmp/mdbench.cjs
+node /tmp/mdbench.cjs .scratch/vision-ocr-quality/corpus --backend=dir --from=/tmp/gate-out
+```
+
+It fetches the model through the shipped downloader and transcribes the ten ground-truth pages
+through `createLocalOcrBackend`, so the shipped raster, prompt, flags and post-processing are all
+inside what is measured. **Expect 7.6 % CER and 78.9 % word recall on the eight linear pages**; the
+corpus has a ±0.8 noise band, and anything outside it is a defect in the shipped path rather than a
+new measurement. Background and the last result: `.scratch/managed-local-llm-ocr/spec.md` §15.
+
 ### The bundle scan
 
 Runs against the built `main.js`, not the source. It looks for two things the Obsidian store

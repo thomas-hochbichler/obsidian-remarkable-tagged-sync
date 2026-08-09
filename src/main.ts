@@ -22,7 +22,7 @@ import { buildDiagnostics } from "./diagnostics";
 import { explainError } from "./explain-error";
 import type { NoteStore, OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
-import { type BackendSettings, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { type BackendSettings, isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { EMPTY_SYNC_INDEX, invalidateRenders, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
@@ -308,7 +308,10 @@ export default class TaggedSyncPlugin extends Plugin {
 		// A backend that is selected but not in this build (settings carried over from another build)
 		// transcribes nothing rather than falling back to something the user did not choose.
 		if (!entry) return new UnavailableOcrBackend(id);
-		return entry.create(this.data.llmProviders[id] ?? {}) ?? this.notConfiguredFallback(entry.id, entry.label, silent);
+		// `??=` rather than `??`: a backend that writes through its blob during a run -- the local
+		// model records each page's duration there -- needs the live object, not a throwaway copy, or
+		// the measurement is lost the moment the sync ends.
+		return entry.create((this.data.llmProviders[id] ??= {}), { silent }) ?? this.notConfiguredFallback(entry.id, entry.label, silent);
 	}
 
 	/**
@@ -460,6 +463,12 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (!this.data.autoSync.enabled) return;
 		if (this.syncing) return;
 		if (!this.auth.isConnected()) return;
+		// Two separate consents, deliberately. The money gate is read off the *resolved* adapter, which
+		// is the honest answer once a keyless cloud provider has fallen back to a free backend. The
+		// background gate is a property of the backend the user chose: it costs no money and still
+		// costs battery, fans and several GB of RAM without anyone having asked.
+		const entry = ocrBackendEntry(this.data.ocrBackend);
+		if (entry?.needsBackgroundConsent && entry.backgroundConsent && !entry.backgroundConsent.get(this.data.llmProviders[entry.id] ?? {})) return;
 		const backend = this.resolveOcrBackend(true);
 		if (backend.metered && !this.data.autoSync.autoTranscribeMetered) return;
 		await this.runSyncNow(backend, true);
@@ -532,12 +541,17 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 		// Only a metered cloud adapter actually spends money; local/vision/unavailable backends do not.
 		const costCaveat = backend.metered ? " and re-sends every page to your OCR provider, using your API quota" : "";
+		// A backend whose per-page cost is time rather than money adds its own sentence. The core
+		// cannot compute it: the figure is a rolling mean over the user's own pages, inside the
+		// backend's opaque blob.
+		const entry = ocrBackendEntry(this.data.ocrBackend);
+		const timeCaveat = entry?.reTranscribeCaveat?.(this.data.llmProviders[entry.id] ?? {}, unitCount) ?? "";
 		const confirmed = await confirmDialog(
 			this.app,
 			"Re-transcribe synced notes",
 			// Transcription quality is stated here because it is the fact that decides the answer: notes
 			// synced before it keep the transcript they earned until this command is run.
-			`Re-transcribe ${unitCount} synced note(s) with the "${backend.id}" backend? Handwriting is read more accurately than it used to be, and typed text is transcribed too. This re-fetches each notebook from reMarkable${costCaveat}.`,
+			`Re-transcribe ${unitCount} synced note(s) with the "${backend.id}" backend? Transcripts are now split by page, so you can tell which page a line came from. Handwriting is also read more accurately than it used to be, and typed text is transcribed too. This re-fetches each notebook from reMarkable${costCaveat}${timeCaveat}.`,
 			"Re-transcribe",
 		);
 		if (!confirmed) return;
@@ -799,6 +813,10 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			)
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {
+					// A backend whose gap its own setup card is already explaining is hidden rather than
+					// shown disabled -- otherwise picking it would persist a setting that transcribes
+					// nothing, since Obsidian saves a dropdown change the moment it is made.
+					if (!isListedBackend(entry, this.plugin.data.ocrBackend)) continue;
 					dropdown.addOption(entry.id, entry.label);
 					// Show every backend; disable one that can't run here, so the gap explains itself in place (spec §4.2).
 					const unavailable = entry.unavailableLabel?.();
@@ -820,19 +838,42 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		// backend is where the Apple-Vision structure limit earns its place. Off macOS, Vision is not
 		// selectable at all, so its ceiling is noise -- say nothing rather than name a limit of a
 		// backend this system cannot run.
-		const hint = [
-			visionPlatformSupported() ? "Apple Vision: flat text only, no headings or tables." : "",
-			hasAlternativeBackends() ? "Choose an LLM backend for structured Markdown." : "",
-		]
-			.filter(Boolean)
-			.join(" ");
+		//
+		// The selected backend's own contract wins where it has one: with the local model chosen,
+		// Vision's flat-text ceiling is no longer what the user's notes will look like, and claiming
+		// parity with the cloud providers would be wrong in the other direction -- the single table in
+		// the corpus came back as 24 bullets.
+		const selectedContract = ocrBackendEntry(this.plugin.data.ocrBackend)?.noteContract;
+		const hint =
+			selectedContract ??
+			[
+				visionPlatformSupported() ? "Apple Vision: flat text only, no headings or tables." : "",
+				hasAlternativeBackends() ? "Choose an LLM backend for structured Markdown." : "",
+			]
+				.filter(Boolean)
+				.join(" ");
 		if (hint) containerEl.createDiv({ cls: "tagged-sync-note", text: hint });
 
-		const id = this.plugin.data.ocrBackend;
-		ocrBackendEntry(id)?.renderSettings?.(containerEl, {
-			settings: (this.plugin.data.llmProviders[id] ??= {}),
+		// One context shape for both hooks, so a backend's rows and its card get the same powers.
+		const contextFor = (backendId: string) => ({
+			settings: (this.plugin.data.llmProviders[backendId] ??= {}),
 			save: () => this.plugin.saveData(this.plugin.data),
+			selectDefaultBackend: async () => {
+				this.plugin.data.ocrBackend = defaultOcrBackend();
+				await this.plugin.saveData(this.plugin.data);
+				this.display();
+			},
 		});
+
+		const id = this.plugin.data.ocrBackend;
+		ocrBackendEntry(id)?.renderSettings?.(containerEl, contextFor(id));
+
+		// Setup cards, for *every* registered backend rather than the selected one. A backend that has
+		// to be downloaded before it can be chosen is not selectable yet, so `renderSettings` above
+		// would never fire for it and it would have no way to say what it needs.
+		for (const entry of ocrBackendEntries()) {
+			entry.renderSetup?.(containerEl, contextFor(entry.id));
+		}
 	}
 
 	/**
@@ -878,6 +919,24 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					await persist();
 				});
 			});
+
+		// The canonical control for a backend whose background cost is not money but battery, fans and
+		// several GB of RAM. It is asked a second time on that backend's own setup card, where the
+		// runtime estimate is already on the user's eye; both write this same value.
+		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
+		if (selected?.needsBackgroundConsent && selected.backgroundConsent) {
+			const consent = selected.backgroundConsent;
+			const blob = (this.plugin.data.llmProviders[selected.id] ??= {});
+			new Setting(containerEl)
+				.setName("Transcribe during background sync")
+				.setDesc(consent.description)
+				.addToggle((toggle) =>
+					toggle.setValue(consent.get(blob)).onChange(async (value) => {
+						consent.set(blob, value);
+						await persist();
+					}),
+				);
+		}
 
 		// Money-safety consent (spec §"Money-safety gate"): only meaningful for a metered cloud backend.
 		if (isMeteredProvider(this.plugin.data.ocrBackend)) {

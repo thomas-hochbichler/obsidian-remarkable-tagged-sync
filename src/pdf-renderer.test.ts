@@ -574,6 +574,42 @@ describe("renderAnnotatedPdf", () => {
 	});
 
 	/**
+	 * A page added on the device behind a PDF's last page has no `cPages.redir`, so it lands past the
+	 * source's last index -- and being a notebook page, it can be scrolled far taller than a screen.
+	 * Sized to the device canvas it lost 58 % of its height, silently, in every document with one.
+	 */
+	it("sizes a page with no source page to its own ink rather than to the device screen", async () => {
+		const tall = stroke({
+			points: [
+				{ x: -900, y: 100, speed: 0, width: 8, direction: 0, pressure: 1 },
+				{ x: 900, y: 5000, speed: 0, width: 8, direction: 0, pressure: 1 },
+			],
+		});
+
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [
+			{ sourceIndex: 0, annotations: null },
+			{ sourceIndex: 1, annotations: pageWithStrokes([tall], { width: 1404, height: 1872 }) },
+		]);
+
+		const doc = await PDFDocument.load(bytes);
+		const { width, height } = doc.getPage(1).getSize();
+		// 1872 px of screen is 596 pt at the device's 226 dpi; the ink reaches 5000 px, i.e. ~1593 pt.
+		expect(height).toBeGreaterThan(1590);
+		// And wide enough for ink 900 px either side of the midline, which a 1404 px screen is not.
+		expect(width).toBeGreaterThan(2 * 900 * (72 / 226));
+	});
+
+	it("keeps the device canvas for a page with no source page and no ink to measure", async () => {
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [
+			{ sourceIndex: 0, annotations: null },
+			{ sourceIndex: 1, annotations: null },
+		]);
+
+		const doc = await PDFDocument.load(bytes);
+		expect(doc.getPage(1).getSize().height).toBeCloseTo(1872 * (72 / 226), 1);
+	});
+
+	/**
 	 * The placement regression: a marker highlight from the book *Reading Comprehension - How to
 	 * Retain More of Every Book You Read*, drawn on a Paper Pure over the words "changes the past."
 	 * -- which sit at x 67.2-160.0, y 246.4-260.5 down from the top of that A4 page. The device
