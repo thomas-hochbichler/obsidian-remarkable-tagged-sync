@@ -189,6 +189,12 @@ export default class TaggedSyncPlugin extends Plugin {
 	private statusState: keyof typeof TaggedSyncPlugin.STATUS_ICONS | null = null;
 	private syncing = false;
 	/**
+	 * Set by `requestStop()`, polled by the engine at unit boundaries. Reset at the start of every run
+	 * as well as in its `finally`: a stop confirmed just as the run ends must not carry over and kill
+	 * the next one before it has done anything.
+	 */
+	private stopRequested = false;
+	/**
 	 * Raw text of the last failure, for "Copy diagnostics". Held in memory rather than persisted: it
 	 * is wanted right after something went wrong, and a reverse-engineered API's raw error is often
 	 * the whole diagnosis -- but it is not state the plugin should carry around in `data.json`.
@@ -375,7 +381,26 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * `isConnected` and (for auto) the money gate; `backend` is passed pre-resolved so it is resolved
 	 * exactly once per run.
 	 */
+	/**
+	 * Asks the run in flight to stop at its next unit boundary. A no-op when nothing is running, which
+	 * is the other half of the guard on `stopRequested`: the stop dialog can be confirmed after the run
+	 * it was opened for has already finished.
+	 *
+	 * The stop is not immediate — the unit currently being rendered and transcribed always finishes, so
+	 * on a slow backend the status bar can keep turning for a while after this returns.
+	 */
+	requestStop(): void {
+		if (!this.syncing) return;
+		this.stopRequested = true;
+	}
+
+	/** Whether a long-running job is in flight, and so whether there is anything to stop. */
+	isSyncing(): boolean {
+		return this.syncing;
+	}
+
 	private async runSyncNow(backend: OcrBackendAdapter, auto: boolean): Promise<void> {
+		this.stopRequested = false;
 		this.syncing = true;
 		if (!auto) new Notice("Syncing…");
 		this.setStatus("busy", "Tagged Sync: starting…");
@@ -393,6 +418,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					marginNotes: this.data.marginNotes,
 					now: () => new Date().toISOString(),
 					onProgress: (progress) => this.showProgress(progress),
+					shouldStop: () => this.stopRequested,
 					// Checkpoint after each document, so an interrupted sync can't strand written notes
 					// without index rows and duplicate them on the next run.
 					saveIndex: async (index) => {
@@ -425,6 +451,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			if (!auto) new Notice(explainError(error, "sync"));
 		} finally {
 			this.syncing = false;
+			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.
 			this.rearmAutoSyncInterval();
@@ -556,6 +583,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		);
 		if (!confirmed) return;
 
+		this.stopRequested = false;
 		this.syncing = true;
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		try {
@@ -567,6 +595,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					noteStore: createNoteStore(this.app),
 					ocrBackend: backend,
 					onProgress: (progress) => this.showProgress(progress),
+					shouldStop: () => this.stopRequested,
 				},
 				this.data.syncIndex,
 			);
@@ -582,6 +611,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			new Notice(explainError(error, "sync"));
 		} finally {
 			this.syncing = false;
+			this.stopRequested = false;
 		}
 	}
 }

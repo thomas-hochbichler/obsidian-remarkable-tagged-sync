@@ -1453,6 +1453,22 @@ describe("reTranscribeAll", () => {
 		});
 	}
 
+	// The dangerous half of a stopped re-transcribe: a note whose block was rewritten but whose
+	// blockHash was dropped reads as a hand edit to the next sync, which then never touches it again.
+	it("hands back the block hashes it already refreshed when stopped", async () => {
+		const api = notebookApi();
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
+
+		const newBackend: OcrBackend = { id: "vision", metered: false, recognize: vi.fn().mockResolvedValue({ status: "ok", text: "fresh", confidence: null }) };
+		const stopped = await reTranscribeAll({ api, noteStore, ocrBackend: newBackend, shouldStop: () => true }, first.index);
+
+		expect(stopped.stopped).toBe(true);
+		expect(stopped.updated).toBe(0);
+		expect(newBackend.recognize).not.toHaveBeenCalled();
+		expect(stopped.index.rows).toEqual(first.index.rows);
+	});
+
 	it("re-runs OCR over active notes and rewrites only the transcript region", async () => {
 		const api = notebookApi();
 		const noteStore = fakeNoteStore();
@@ -1615,6 +1631,66 @@ describe("index checkpointing", () => {
 		const paths = Object.values(result.index.rows).map((row) => row.notePath);
 		expect(paths).toEqual(["Target/First.md", "Target/Second.md"]);
 		expect(paths.some((path) => path.includes("(sync)"))).toBe(false);
+	});
+
+	// A user stop is an interruption the plugin causes on purpose, so it has to land on exactly the
+	// footing the checkpoint above establishes for the accidental kind: nothing half-written, and
+	// nothing that lets the next run believe the vault is up to date.
+	describe("stopping a run", () => {
+		it("does nothing at all when the signal is already set", async () => {
+			const deps = baseDeps(twoTaggedDocs(), { sync: "Target" });
+			const result = await runSync({ ...deps, shouldStop: () => true }, { rootHash: "root-1", rows: {} });
+
+			expect(result.stopped).toBe(true);
+			expect(result.notesWritten).toBe(0);
+			expect(result.index.rows).toEqual({});
+			expect(deps.noteStore.write).not.toHaveBeenCalled();
+		});
+
+		it("hands back the PREVIOUS root hash, so a caller that persists it regardless cannot mark the vault up to date", async () => {
+			const deps = baseDeps(twoTaggedDocs(), { sync: "Target" });
+			const result = await runSync({ ...deps, shouldStop: () => true }, { rootHash: "root-1", rows: {} });
+
+			expect(result.index.rootHash).toBe("root-1");
+		});
+
+		it("keeps the documents it finished and resumes them without duplicating", async () => {
+			const deps = baseDeps(twoTaggedDocs(), { sync: "Target" });
+			const saveIndex = vi.fn().mockResolvedValue(undefined);
+			// Stop once the first document has been checkpointed -- the boundary the user's click lands on.
+			let stop = false;
+			const stopped = await runSync(
+				{
+					...deps,
+					saveIndex: async (index) => {
+						await saveIndex(index);
+						stop = true;
+					},
+					shouldStop: () => stop,
+				},
+				{ rootHash: "root-1", rows: {} },
+			);
+
+			expect(stopped.stopped).toBe(true);
+			expect(Object.keys(stopped.index.rows)).toEqual([notebookSyncKey("doc-1", "sync")]);
+			// The stop path checkpoints again on its way out -- redundant when the stop is caught at a
+			// document boundary as here, load-bearing when it is caught between two units of one document.
+			expect(saveIndex.mock.lastCall![0]).toEqual(stopped.index);
+
+			// The next ordinary sync completes the job against the same vault, over the stopped index.
+			const resumed = await runSync({ ...baseDeps(twoTaggedDocs(), { sync: "Target" }), noteStore: deps.noteStore }, stopped.index);
+
+			const paths = Object.values(resumed.index.rows).map((row) => row.notePath);
+			expect(paths).toEqual(["Target/First.md", "Target/Second.md"]);
+			expect(paths.some((path) => path.includes("(sync)"))).toBe(false);
+			expect(resumed.index.rootHash).toBe("root-2");
+		});
+
+		it("reports a completed run as not stopped", async () => {
+			const result = await runSync(baseDeps(twoTaggedDocs(), { sync: "Target" }), { rootHash: "root-1", rows: {} });
+
+			expect(result.stopped).toBe(false);
+		});
 	});
 });
 

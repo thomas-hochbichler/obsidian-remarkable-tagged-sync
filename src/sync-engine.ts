@@ -143,10 +143,25 @@ export interface SyncDeps {
 	 * only by the final result, so an interrupted run never looks complete to the next one.
 	 */
 	saveIndex?: (index: SyncIndex) => Promise<void>;
+	/**
+	 * Polled at unit boundaries: `true` ends the run early, in a state the next sync resumes from.
+	 * Only ever read, never awaited -- nothing in this path can actually be aborted (the cloud API
+	 * goes through Obsidian's `requestUrl`, which takes no AbortSignal, and OCR runs in subprocesses
+	 * we deliberately do not kill), so a stop is a decision not to start the *next* unit rather than
+	 * an interruption of the current one. A unit already under way always finishes.
+	 */
+	shouldStop?: () => boolean;
 }
 
 export interface SyncResult {
 	index: SyncIndex;
+	/**
+	 * The run ended because `shouldStop` said so, not because it ran out of documents. Its `index`
+	 * deliberately carries the *previous* `rootHash`/`mappings` (as a checkpoint does), so a caller
+	 * that persists it regardless cannot mark the vault up to date -- the run looks interrupted,
+	 * which it is.
+	 */
+	stopped: boolean;
 	notesWritten: number;
 	/** Units written whose OCR came back `unavailable` -- drives the plugin's one-time platform notice (spec §6.2). */
 	unavailableOcrUnits: number;
@@ -635,6 +650,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
 	const writeDeps = { attachmentStore: deps.attachmentStore, now, attachmentsFolder, ocrBackend };
 	const report = deps.onProgress ?? (() => {});
+	const shouldStop = deps.shouldStop ?? (() => false);
 
 	report({ phase: "scanning" });
 	const [rootHash] = await api.raw.getRootHash();
@@ -646,7 +662,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, skipErrors: [] };
+		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, skipErrors: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -666,9 +682,34 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		? () => deps.saveIndex!({ rootHash: previousIndex.rootHash, mappings: previousIndex.mappings, rows: { ...rows } })
 		: async () => {};
 
+	/**
+	 * How a stopped run leaves: checkpoint whatever this document has produced so far, then hand back
+	 * the *checkpoint's* index rather than the final one. The new `rootHash`/`mappings` stay unwritten,
+	 * so a caller that persists this regardless still cannot mark the vault up to date -- the next sync
+	 * re-scans instead of short-circuiting at the level-1 gate above. The orphan sweep after the loop is
+	 * skipped by construction: a run that walked only part of the enumeration has no business deciding
+	 * which units have disappeared.
+	 */
+	const stopHere = async (): Promise<SyncResult> => {
+		await checkpoint();
+		return {
+			index: { rootHash: previousIndex.rootHash, mappings: previousIndex.mappings, rows },
+			stopped: true,
+			notesWritten,
+			unavailableOcrUnits,
+			failedOcrUnits,
+			editedNotesSkipped,
+			documentsSkipped: skippedDocIds.size,
+			skipErrors,
+		};
+	};
+
 	const entries = await api.listItems();
 	const documents = entries.filter((entry) => entry.type === "DocumentType");
 	for (const [position, entry] of documents.entries()) {
+		// Also here, not just at the unit loops below: most documents are skipped by the level-2 gate
+		// without producing a unit at all, and a stop must not have to walk hundreds of them first.
+		if (shouldStop()) return stopHere();
 		report({ phase: "document", index: position + 1, total: documents.length, name: entry.visibleName });
 
 		const unchanged = findEntryHash(rows, entry.id) === entry.hash;
@@ -793,6 +834,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// these carry no per-page hash (spec §7's row schema), so there's no cheaper way to know which
 		// of a reopened notebook's pages are safe to skip -- only page-tag rows track that.
 		for (const tag of mappedNotebookTags) {
+			if (shouldStop()) return stopHere();
 			const rename = notebookDiff.rename?.newTag === tag ? notebookDiff.rename : null;
 			const folder = tagRouter.resolveFolder(tag)!;
 			const existingRow = rows[notebookSyncKey(entry.id, tag)];
@@ -892,6 +934,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		}
 
 		for (const pageTag of mappedPageTags) {
+			if (shouldStop()) return stopHere();
 			if (!livePageIds.has(pageTag.pageId)) continue; // tagged page no longer exists on the device
 			const pageHash = pageContentHash(pageTag.pageId);
 
@@ -1015,7 +1058,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
 	}
 
-	return { index: { rootHash, mappings, rows }, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, skipErrors };
+	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, skipErrors };
 }
 
 export interface ReTranscribeDeps {
@@ -1023,6 +1066,8 @@ export interface ReTranscribeDeps {
 	noteStore: NoteStore;
 	ocrBackend: OcrBackend;
 	onProgress?: (progress: SyncProgress) => void;
+	/** Polled at note boundaries; see `SyncDeps.shouldStop`. A note already being re-transcribed finishes. */
+	shouldStop?: () => boolean;
 }
 
 /** The OCR input for one already-synced unit, labelled: annotation scenes for a PDF-backed doc, every live page's scene otherwise. */
@@ -1047,9 +1092,10 @@ async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, do
  * transcript is refreshed to match the backend now selected -- typically to replace a garbage
  * transcript from an earlier backend. The embed and the user's free area are never touched.
  */
-export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex): Promise<{ updated: number; index: SyncIndex }> {
+export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex): Promise<{ updated: number; index: SyncIndex; stopped: boolean }> {
 	const { api, noteStore, ocrBackend } = deps;
 	const report = deps.onProgress ?? (() => {});
+	const shouldStop = deps.shouldStop ?? (() => false);
 	// Re-transcribing rewrites the managed block, so every refreshed row needs its `blockHash` updated
 	// too -- otherwise the next sync would read its own work as a hand edit and refuse to touch the note.
 	const rows: Record<string, SyncIndexRow> = { ...index.rows };
@@ -1065,7 +1111,12 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 	let updated = 0;
 	const docIds = [...rowsByDoc.keys()];
+	// A stopped run still hands back every `blockHash` it refreshed: those notes were rewritten, and a
+	// caller that drops them would leave the next sync reading the plugin's own work as a hand edit.
+	const stopHere = (): { updated: number; index: SyncIndex; stopped: boolean } => ({ updated, index: { ...index, rows }, stopped: true });
+
 	for (const [position, docId] of docIds.entries()) {
+		if (shouldStop()) return stopHere();
 		const entry = entryById.get(docId);
 		report({ phase: "document", index: position + 1, total: docIds.length, name: entry?.visibleName ?? docId });
 		if (!entry) continue; // doc no longer on the device -- leave its notes untouched
@@ -1083,6 +1134,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 		const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
 
 		for (const row of rowsByDoc.get(docId)!) {
+			if (shouldStop()) return stopHere();
 			let ocrPages: OcrPage[] | null;
 			try {
 				ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, isPdf);
@@ -1106,5 +1158,5 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			if (block !== null) rows[row.syncKey] = { ...row, blockHash: blockHashOf(block) };
 		}
 	}
-	return { updated, index: { ...index, rows } };
+	return { updated, index: { ...index, rows }, stopped: false };
 }
