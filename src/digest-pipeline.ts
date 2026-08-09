@@ -12,6 +12,7 @@
 import { writeCropAttachment, type AttachmentStore } from "./attachment-writer";
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
 import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage } from "./digest-builder";
+import { findInkMarks } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
@@ -138,6 +139,8 @@ interface PageGeometry {
 interface PlacedHighlight {
 	highlight: DigestHighlight;
 	pdfRect: PdfRect | null;
+	/** True for a pen mark (F23) rather than a marker highlight the device recorded. See `mergeBySentence`. */
+	fromInk?: boolean;
 }
 
 /** A margin note plus the anchor that decides whether it stands on its own or nests inside a quote. */
@@ -201,6 +204,39 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
 }
 
 /**
+ * The pen marks on this page as highlights (F23), and the handwriting that is left to cluster.
+ *
+ * A mark renders exactly as a marker highlight does -- same `==...==`, no distinction. The reader
+ * wants the passage, not the tool it was marked with, and the alternative is a second markup nobody
+ * asked to learn.
+ *
+ * **Not gated by F20.** That setting governs transcribing the reader's handwriting, and this is not
+ * that: the text of a mark entry comes out of the PDF, exactly as a marker highlight's does. It also
+ * makes underlines work where no OCR backend exists at all.
+ */
+function buildInkMarks(page: DigestPageInput, geometry: PageGeometry, ink: RmStroke[]): { marks: PlacedHighlight[]; strokes: RmStroke[] } {
+	if (geometry.pageText === null) return { marks: [], strokes: ink };
+	const found = findInkMarks(ink, geometry.pageText, geometry.frame, geometry.lineHeightPt);
+	return {
+		strokes: found.strokes,
+		marks: found.marks.map((mark) => ({
+			pdfRect: mark.pdfRect,
+			fromInk: true,
+			highlight: {
+				id: digestId("hl", page.pageId, mark.strokeId),
+				sentence: mark.sentence,
+				marked: mark.marked,
+				// A pen has no marker colour, and F9 would not render one anyway.
+				color: null,
+				notes: [],
+				section: null,
+				top: mark.top,
+			},
+		})),
+	};
+}
+
+/**
  * True when both highlights cover the same passage. Containment, not equality: a highlight whose
  * rectangles hit fewer text lines gets a shorter context to expand its sentence in, so the same
  * passage comes back truncated for the smaller runs. On page 6 of the fixture document three of the
@@ -241,7 +277,13 @@ function mergeBySentence(placed: PlacedHighlight[]): { highlights: PlacedHighlig
 
 	const survivorOf = new Map<string, string>();
 	const highlights = groups.map((members) => {
-		const survivor = members.reduce((best, item) => (item.highlight.top < best.highlight.top ? item : best));
+		// The topmost contributing highlight survives -- but a marker highlight is preferred over a pen
+		// mark (F23) whatever their order, because the entry keeps the survivor's id and the marker's is
+		// the older one. A reader who underlines a sentence they had already highlighted would otherwise
+		// find every `^hl-` link into it broken on the next sync, which is exactly what F15 promises not
+		// to do. Their ink usually sits above the text too, so it would win the position test outright.
+		const recorded = members.filter((item) => !item.fromInk);
+		const survivor = (recorded.length > 0 ? recorded : members).reduce((best, item) => (item.highlight.top < best.highlight.top ? item : best));
 		// The longest sentence is the complete one; the others are its truncated context.
 		const longest = members.reduce((best, item) =>
 			item.highlight.sentence.length > best.highlight.sentence.length ? item : best,
@@ -465,11 +507,16 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		return { pageLabel: geometry.pageText?.label ?? String(page.sourceIndex + 1), embedPage: page.embedPage, highlights: [], notes: [transcript] };
 	}
 
+	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
+	// line heights, and an underline shares its line with whatever was written in the margin next to it.
+	const { marks, strokes: handwriting } = buildInkMarks(page, geometry, ink);
+	placed.push(...marks);
+
 	// F20 off stops here, before any cluster exists: no cluster, no OCR call, no crop, no callout.
-	const clusters = state.deps.marginNotes ? clusterStrokes(ink, geometry.lineHeightPt / geometry.frame.pxToPt) : [];
+	const clusters = state.deps.marginNotes ? clusterStrokes(handwriting, geometry.lineHeightPt / geometry.frame.pxToPt) : [];
 	if (placed.length === 0 && clusters.length === 0) return null;
 
-	// Anchored against every highlight the device recorded, merged only afterwards: the cascade
+	// Anchored against every highlight there is -- pen marks included -- and merged only afterwards: the cascade
 	// measures distances to rectangles, and a run that is about to be merged away is still ink on the
 	// page next to which the note was written.
 	const notes = await buildNotes({ ...state, page, geometry, highlights: placed }, clusters);

@@ -53,9 +53,12 @@ export type SyncRowStatus = "active" | "orphaned";
  * dark theme; version 11 measures a page's line spacing over its body text alone, without which a
  * page made mostly of figures took its tick labels for lines and reported a third of the real
  * spacing -- the handwriting beside one paper's last paragraph came through as five margin notes,
- * one per pen stroke, and the highlight above it quoted from the middle of its sentence.
+ * one per pen stroke, and the highlight above it quoted from the middle of its sentence; version 13
+ * reads a pen underline or a circle drawn around a passage as a mark on the printed text (F23) and
+ * quotes what it points at, instead of transcribing the line itself -- one underline came through as
+ * the margin note `176`.
  */
-export const RENDER_VERSION = 12;
+export const RENDER_VERSION = 13;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

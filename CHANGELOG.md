@@ -143,6 +143,20 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **Underlining or circling a sentence in a PDF produced a picture of the line, or invented text.**
+  A pen mark on printed text is not handwriting and has nothing to transcribe, but the digest sent
+  it through transcription anyway: one underline came back as the margin note `176` — text nobody
+  wrote — and the rest became callouts holding a picture of a line or an oval.
+
+  An underline or a circle now **quotes the words it points at**, exactly like a marker highlight,
+  and no longer goes through transcription at all. It works with no transcription backend, so
+  Windows and Linux get it too. Marks the plugin cannot place — anything on a page whose text it
+  cannot read — still come through as the picture they always were.
+
+  An underline used to be dragged into the note written beside it as well, stretching that note's
+  picture across the page; it no longer is. Because of that, a few entries on affected pages get a
+  **new block ID**, so a link you made to one of them by hand may need repointing once. Highlights
+  keep theirs.
 - **Handwriting on a page full of figures came through one image per pen stroke.** The digest
   measures a page's line spacing to tell handwriting on one line apart from the line below, and
   a page of charts made it read the axis labels as text lines — a third of the real spacing, so
