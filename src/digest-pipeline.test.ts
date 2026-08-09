@@ -615,6 +615,83 @@ describe("buildDigest resilience", () => {
 	});
 });
 
+describe("buildDigest on pen marks", () => {
+	/** The scene y whose ink top lands at `pdfTop` on the fixture page -- `sceneRectToPdf` inverted. */
+	const sceneYForPdfTop = (pdfTop: number) => (PAGE_HEIGHT_PT - pdfTop) / PX_TO_PT;
+	/** The scene x that lands at `pdfX`, with the page's midline at scene x 0. */
+	const sceneXForPdfX = (pdfX: number) => pdfX / PX_TO_PT - PAGE_WIDTH_PT / PX_TO_PT / 2;
+
+	/**
+	 * An underline under the left half of `Claude reagiert gut auf klare,`, the second quote's first
+	 * line. 4 pt of clearance under it, and 225 pt long -- well past the 2.5 line heights a mark needs.
+	 */
+	function underlinedScene(): RmPage {
+		const y = sceneYForPdfTop(626.1 - 4);
+		const x = sceneXForPdfX(80);
+		return scene([boxStroke("0a", x, y, 225 / PX_TO_PT, 1)]);
+	}
+
+	it("quotes the text an underline sits under instead of transcribing the line itself", async () => {
+		const result = await build([fixturePage(underlinedScene())], { loadText: async () => fixtureTextDocument() });
+
+		expect(result.markdown).toContain("==Claude reagiert==");
+		expect(result.markdown).toContain("^hl-");
+		// The failure this replaces: a callout holding a picture of a line, with whatever OCR made of it.
+		expect(result.markdown).not.toContain("[!note]");
+		expect(result.cropIds.size).toBe(0);
+	});
+
+	it("makes no OCR call for it -- a line has no transcription to get wrong", async () => {
+		const recognize = vi.fn().mockResolvedValue({ status: "ok", pages: null, text: "176", confidence: null });
+
+		await build([fixturePage(underlinedScene())], {
+			loadText: async () => fixtureTextDocument(),
+			ocrBackend: { id: "vision", metered: false, recognize },
+		});
+
+		expect(recognize).not.toHaveBeenCalled();
+	});
+
+	it("keeps the mark with handwritten notes off: its text comes from the PDF, not from the reader's hand", async () => {
+		const result = await build([fixturePage(underlinedScene())], {
+			loadText: async () => fixtureTextDocument(),
+			marginNotes: false,
+		});
+
+		expect(result.markdown).toContain("==Claude reagiert==");
+	});
+
+	it("leaves the mark a note when the page has no text layer, since nothing can be resolved there", async () => {
+		const result = await build([fixturePage(underlinedScene())], { ocrBackend: fakeOcr("176") });
+
+		expect(result.markdown).toContain("[!note] Handwritten");
+		expect(result.cropIds.size).toBe(1);
+	});
+
+	it("keeps the marker highlight's id when a mark lands on a sentence that already had one", async () => {
+		// The fixture page already highlights the sentence the underline sits under, so the two merge.
+		const underlined = fixtureScene();
+		underlined.layers[0].strokes.push(...(underlinedScene().layers[0].strokes ?? []));
+		const run = (page: RmPage) =>
+			build([fixturePage(page)], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		const plain = await run(fixtureScene());
+		const marked = await run(underlined);
+
+		const idOf = (markdown: string) => /Claude reagiert gut auf[^\n]*\n\^(hl-[0-9a-f]{6})/.exec(markdown)?.[1];
+		expect(idOf(plain.markdown)).toBeDefined();
+		expect(idOf(marked.markdown)).toBe(idOf(plain.markdown));
+	});
+
+	it("does not take the fixture page's own handwriting for marks", async () => {
+		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		// The five notes and nine highlights the page has always produced, and not one more of either.
+		expect(result.markdown.match(/\^nt-/g)).toHaveLength(5);
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
+	});
+});
+
 describe("buildDigest determinism", () => {
 	it("renders byte-identical markdown and the same crop ids twice", async () => {
 		const run = () => build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });

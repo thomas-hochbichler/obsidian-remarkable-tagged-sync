@@ -127,6 +127,25 @@ function hasAlternativeBackends(): boolean {
 	return ocrBackendEntries().some((entry) => !BUILT_IN_BACKENDS.has(entry.id));
 }
 
+/**
+ * The two halves of that answer, for the one string that must tell them apart: does a backend send
+ * pages to somebody else's server, and does one run on this machine?
+ *
+ * Split out because the OCR description used `hasAlternativeBackends()` to claim the network and an
+ * API key were involved, and that was **already wrong in 1.1.0** (free-localhost-ocr spec §4.1): on a
+ * supported Mac the managed local model registers, so a free user with nothing but Apple Vision and
+ * an offline model was told their pages go to a provider with their own key. `metered` is the honest
+ * predicate — it already means "costs money per page", which is only ever true of someone else's
+ * server.
+ */
+function hasCloudBackends(): boolean {
+	return ocrBackendEntries().some((entry) => entry.metered);
+}
+
+function hasOnDeviceBackends(): boolean {
+	return ocrBackendEntries().some((entry) => !entry.metered && !BUILT_IN_BACKENDS.has(entry.id));
+}
+
 /** The only way this plugin opens a cloud session -- see tolerateLegacyMetadata for what it fixes. */
 function openSession(sessionToken: string): RemarkableApi {
 	const api = remarkableSession(sessionToken);
@@ -775,12 +794,12 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const connected = this.plugin.auth.isConnected();
 
-		new Setting(containerEl)
+		const connectionSetting = new Setting(containerEl)
 			.setName("reMarkable connection")
 			.setDesc(connected ? "Connected." : "Not connected.");
 
 		if (connected) {
-			new Setting(containerEl).addButton((button) =>
+			connectionSetting.addButton((button) =>
 				button.setButtonText("Disconnect").onClick(async () => {
 					await this.plugin.auth.disconnect();
 					this.display();
@@ -821,6 +840,22 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 				);
 		}
 
+		// Order follows how often a row is touched, not how it was built: what to sync is the setting a
+		// user comes back to, transcription is chosen roughly once, and the links at the end are read
+		// when something has already gone wrong.
+		if (connected) {
+			this.renderTagRouting(containerEl);
+		}
+		this.renderVaultOutput(containerEl);
+		this.renderOcrSettings(containerEl);
+		this.renderAutoSyncSettings(containerEl);
+		this.renderActions(containerEl, connected);
+	}
+
+	/** Where a synced notebook lands and what it carries -- the two rows about the vault side. */
+	private renderVaultOutput(containerEl: HTMLElement): void {
+		new Setting(containerEl).setName("Vault output").setHeading();
+
 		// Existing notes keep embedding the old path until their notebook next changes; moving the
 		// files is the user's call, so the description says when the setting takes effect.
 		new Setting(containerEl)
@@ -856,14 +891,6 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					await this.plugin.saveData(this.plugin.data);
 				}),
 			);
-
-		this.renderOcrSettings(containerEl);
-		this.renderAutoSyncSettings(containerEl);
-
-		if (connected) {
-			this.renderTagRouting(containerEl);
-		}
-		this.renderActions(containerEl, connected);
 	}
 
 	/**
@@ -879,7 +906,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 				.setDesc("Fetch tagged notebooks and write them into your vault.")
 				.addButton((button) =>
 					button
-						.setButtonText("Sync now")
+						.setButtonText("Sync")
 						.setCta()
 						.onClick(() => this.plugin.syncNow()),
 				);
@@ -928,15 +955,24 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderOcrSettings(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("OCR").setHeading();
+		new Setting(containerEl).setName("Transcription").setHeading();
 
 		new Setting(containerEl)
 			.setName("Backend")
+			// Composed from what is actually registered, because the three cases are three different
+			// promises and one sentence cannot make all of them (free-localhost-ocr spec §4.1).
 			.setDesc(
-				"Apple Vision runs locally and privately on macOS 13 or later — no account, key, or network." +
-					(hasAlternativeBackends()
-						? " The LLM providers send each page's render over the network to that provider, using your own API key."
-						: ""),
+				[
+					"Apple Vision runs locally and privately on macOS 13 or later — no account, key, or network.",
+					// Covers both unmetered families in one clause, because both are true of both: the
+					// downloadable model and a server you run yourself. Not "sends nothing anywhere" --
+					// a `custom` endpoint may well be another box on your LAN, and the honest claim is
+					// about who owns it, not about whether a packet moves.
+					hasOnDeviceBackends() ? "A local model — downloaded, or a server you run yourself — needs no account and no key." : "",
+					hasCloudBackends() ? "The cloud providers send each page's render to that provider, using your own API key." : "",
+				]
+					.filter(Boolean)
+					.join(" "),
 			)
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {
@@ -985,6 +1021,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		const contextFor = (backendId: string) => ({
 			settings: (this.plugin.data.llmProviders[backendId] ??= {}),
 			save: () => this.plugin.saveData(this.plugin.data),
+			isSelected: backendId === this.plugin.data.ocrBackend,
 			selectDefaultBackend: async () => {
 				this.plugin.data.ocrBackend = defaultOcrBackend();
 				await this.plugin.saveData(this.plugin.data);
@@ -1086,7 +1123,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			.setName("Discover tags")
 			.setDesc("Scan your reMarkable notebooks and pages for tags.")
 			.addButton((button) =>
-				button.setButtonText("Discover tags").onClick(async () => {
+				button.setButtonText("Scan").onClick(async () => {
 					button.setDisabled(true);
 					try {
 						const sessionToken = await this.plugin.auth.session();
@@ -1121,8 +1158,10 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 
 		// A mapped tag used to render read-only, so a wrong first choice could only be undone by editing
 		// data.json by hand. Harmless before the cap; a trap with it, since the one slot would be stuck.
+		// Mapped and unmapped tags used to carry a heading each, which put three headings on one list and
+		// read as three sections. Each row already says which it is -- a folder and a Remove button, or
+		// "Not synced" -- so the grouping is carried by the rows themselves.
 		if (mappedTags.length > 0) {
-			new Setting(containerEl).setName("Mapped tags").setHeading();
 			for (const tag of mappedTags) {
 				new Setting(containerEl)
 					.setName(tag)
@@ -1138,15 +1177,15 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 							await persist();
 						});
 					})
-					.addButton((button) =>
-						button
-							.setButtonText("Remove")
-							.setWarning()
-							.onClick(async () => {
-								delete mapping[tag];
-								await persist();
-							}),
-					);
+					.addButton((button) => {
+						button.setButtonText("Remove").onClick(async () => {
+							delete mapping[tag];
+							await persist();
+						});
+						// `setWarning()` is deprecated and `setDestructive()` needs 1.13, while the manifest
+						// floor is 1.5.7 -- the class both of them set predates both.
+						button.buttonEl.addClass("mod-warning");
+					});
 			}
 			containerEl.createDiv({
 				cls: "tagged-sync-note",
@@ -1156,8 +1195,6 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const unmappedTags = this.discoveredTags.filter((tag) => !(tag in mapping));
 		if (unmappedTags.length === 0) return;
-
-		new Setting(containerEl).setName("Unmapped tags").setHeading();
 
 		// The cap only ever blocks *adding* a mapping. It must never unmap a tag that is already
 		// mapped: unmapping feeds diffUnitTags, which orphans the row, and orphaning is index-only by

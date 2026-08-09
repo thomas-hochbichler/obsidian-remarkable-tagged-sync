@@ -165,9 +165,16 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	if (!paths || !platform) return;
 
 	const state = currentCardState(paths);
+	// A ready model has nothing left to set up: the backend is selectable, so the dropdown is where it
+	// belongs now. Its speed, its misread caveat and its delete button are about a backend in use, and
+	// beside a different selected backend they only add a screenful. Every other state stays -- an
+	// absent, paused or broken model is exactly what the card exists to explain, and it cannot be
+	// selected to reach that explanation.
+	if (state.kind === "ready" && !ctx.isSelected) return;
+
 	const copy = cardCopy(state, platform, ctx.settings);
 
-	const card = containerEl.createDiv({ cls: "tagged-sync-note" });
+	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
 	card.createEl("h4", { text: copy.heading });
 	for (const paragraph of copy.paragraphs) card.createEl("p", { text: paragraph });
 
@@ -180,6 +187,10 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 
 	if (copy.actions.length > 0) {
 		const row = new Setting(card);
+		// A delete button on a nameless row asks the user to take on trust what it removes. Naming the
+		// directory beside it is the whole answer, and it is also where to look when the model is gone
+		// from outside the plugin.
+		if (copy.actions.some((action) => action.id === "delete")) row.setName("Model files").setDesc(paths.modelDir);
 		for (const action of copy.actions) {
 			row.addButton((button) => {
 				button.setButtonText(action.label);
@@ -222,9 +233,11 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 		}
 	}
 
-	if (copy.showsBackgroundConsent) {
-		// The same value the canonical row under *Automatic sync* writes -- this is the one screen
-		// where the runtime estimate is already on the user's eye, which is why it is asked twice.
+	// Asked twice, but never on one screen. The canonical row under *Automatic sync* only exists while
+	// this backend is the selected one, and a backend still downloading cannot be selected -- so the
+	// card carries the question exactly where the other row cannot reach: during setup, next to the
+	// runtime estimate that makes it answerable (§7.5). Once selected, the canonical row has it.
+	if (copy.showsBackgroundConsent && !ctx.isSelected) {
 		new Setting(card)
 			.setName("Transcribe during background sync")
 			.setDesc(BACKGROUND_CONSENT_DESC)

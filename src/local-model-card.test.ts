@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { BACKGROUND_CONSENT_DESC, type CardCopy, cardCopy, deleteConfirmation, type LocalCardState, QUALITY_LINE } from "./local-model-card";
+import {
+	BACKGROUND_CONSENT_DESC,
+	type CardCopy,
+	cardCopy,
+	deleteConfirmation,
+	type LocalCardState,
+	QUALITY_LINE,
+	QUALITY_LINE_SHORT,
+} from "./local-model-card";
 import { ENOUGH_PAGES_TO_MEASURE, recordPageDuration } from "./local-model-settings";
 
 const EVERY_STATE: LocalCardState[] = [
@@ -107,9 +115,18 @@ describe("the quality line (§7.4)", () => {
 		expect(QUALITY_LINE).toContain("Check anything that matters against the handwriting");
 	});
 
-	it("is on the consent card and on the ready card, which are the two places a choice is made", () => {
+	it("is in full on the consent card, where the comparison decides the answer", () => {
 		expect(copyFor({ kind: "absent" }).paragraphs).toContain(QUALITY_LINE);
-		expect(copyFor({ kind: "ready" }).paragraphs).toContain(QUALITY_LINE);
+	});
+
+	/**
+	 * A downloaded, selected model is not a choice any more, and the comparison it was written for has
+	 * nothing left to compare. What must survive is the part a user still acts on: the misreads are
+	 * fluent, so check them.
+	 */
+	it("keeps only the check-it sentence once the model is ready", () => {
+		expect(copyFor({ kind: "ready" }).paragraphs).toContain(QUALITY_LINE_SHORT);
+		expect(QUALITY_LINE_SHORT).toContain("check anything that matters against the handwriting");
 	});
 });
 

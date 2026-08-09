@@ -10,3 +10,14 @@ export const Platform = {
 	isDesktop: false,
 	isMacOS: false,
 };
+
+/**
+ * Present only so a module that builds settings rows can be imported at all — registering a backend
+ * and rendering its settings live in the same file. Constructing one is a test bug: settings UI is
+ * not covered here, and a silent fake would let a test claim it was.
+ */
+export class Setting {
+	constructor() {
+		throw new Error("test-stubs/obsidian: Setting is not implemented. A test tried to render real settings UI.");
+	}
+}
