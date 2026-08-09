@@ -334,8 +334,12 @@ export default class TaggedSyncPlugin extends Plugin {
 		return new UnavailableOcrBackend(id);
 	}
 
-	/** Lucide icon per sync state, rendered via setIcon() so it follows the theme (no raw glyphs). */
-	private static readonly STATUS_ICONS = { busy: "refresh-cw", ok: "check", failed: "x" } as const;
+	/**
+	 * Lucide icon per sync state, rendered via setIcon() so it follows the theme (no raw glyphs).
+	 * `stopped` earns its own state rather than borrowing one: a check would claim a run that finished
+	 * and an x would claim one that broke, and a user-stopped run is neither.
+	 */
+	private static readonly STATUS_ICONS = { busy: "refresh-cw", ok: "check", failed: "x", stopped: "square" } as const;
 
 	private setStatus(state: keyof typeof TaggedSyncPlugin.STATUS_ICONS, text: string): void {
 		// Only the text moves while a state lasts -- the icon is left alone so `is-busy` keeps spinning
@@ -429,22 +433,42 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.data.syncIndex,
 			);
 
+			// A background run the user stopped by hand is not a background run any more: they are at the
+			// keyboard, watching, and owed the same reporting a manual sync gets.
+			const speak = !auto || result.stopped;
+
 			this.data.syncIndex = result.index;
-			this.data.lastSyncAt = new Date().toISOString();
-			if (!auto) this.maybeShowUnavailableNotice(result.unavailableOcrUnits);
+			// Deliberately not stamped on a stopped run. `isIntervalSyncDue` counts from the last
+			// *completed* sync, so stamping here would push the next auto-sync out by a full interval as
+			// if the work had been done -- and leave "last synced" claiming a run that never finished.
+			if (!result.stopped) this.data.lastSyncAt = new Date().toISOString();
+			if (speak) this.maybeShowUnavailableNotice(result.unavailableOcrUnits);
+			// Saved either way: this is also the only call that persists what a backend wrote into its own
+			// settings blob during the run (the local model records each page's duration there).
 			await this.saveData(this.data);
 
 			// A run that skipped units "succeeded" overall, but its errors are exactly what "Copy
 			// diagnostics" is for -- they used to be console.warn only, leaving "Last error: none"
-			// there. A clean run clears any stale error, so diagnostics reflects the latest sync.
+			// there. A clean run clears any stale error, so diagnostics reflects the latest sync. A stop
+			// is not itself an error and contributes nothing here; only what the partial run hit does.
 			this.lastSyncError = result.skipErrors.length > 0 ? result.skipErrors.join("\n") : null;
 
-			const wrote = result.notesWritten > 0;
-			this.setStatus("ok", wrote ? `Tagged Sync: ${result.notesWritten} note(s)` : "Tagged Sync: up to date");
-			if (wrote) new Notice(`Synced ${result.notesWritten} note(s).`);
-			else if (!auto) new Notice("Already up to date.");
-			// Both of these used to be console-only while the notice still reported plain success.
-			if (!auto) this.reportPartialOutcomes(result);
+			if (result.stopped) {
+				this.setStatus("stopped", `Tagged Sync: stopped · ${result.notesWritten} note(s)`);
+				new Notice(
+					result.notesWritten > 0
+						? `Sync stopped. ${result.notesWritten} note(s) written; the rest will sync next time.`
+						: "Sync stopped before any note was written. Nothing was lost.",
+				);
+			} else {
+				const wrote = result.notesWritten > 0;
+				this.setStatus("ok", wrote ? `Tagged Sync: ${result.notesWritten} note(s)` : "Tagged Sync: up to date");
+				if (wrote) new Notice(`Synced ${result.notesWritten} note(s).`);
+				else if (!auto) new Notice("Already up to date.");
+			}
+			// Both of these used to be console-only while the notice still reported plain success. A
+			// stopped run's skips and failures are just as real as a completed one's.
+			if (speak) this.reportPartialOutcomes(result);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");
@@ -589,7 +613,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		try {
 			const sessionToken = await this.auth.session();
 			const api = remarkableSession(sessionToken);
-			const { updated, index } = await reTranscribeAll(
+			const { updated, index, stopped } = await reTranscribeAll(
 				{
 					api,
 					noteStore: createNoteStore(this.app),
@@ -610,8 +634,15 @@ export default class TaggedSyncPlugin extends Plugin {
 			// re-transcribe as a hand edit and refuse to update every note it touched.
 			this.data.syncIndex = index;
 			await this.saveData(this.data);
-			this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
-			new Notice(`Re-transcribed ${updated} note(s).`);
+			if (stopped) {
+				// The notes it did reach keep their fresh transcripts; the rest keep the old ones, and
+				// running the command again picks them up.
+				this.setStatus("stopped", `Tagged Sync: stopped · re-transcribed ${updated} note(s)`);
+				new Notice(`Re-transcribe stopped. ${updated} note(s) refreshed; the rest are unchanged.`);
+			} else {
+				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
+				new Notice(`Re-transcribed ${updated} note(s).`);
+			}
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: re-transcribe failed");
