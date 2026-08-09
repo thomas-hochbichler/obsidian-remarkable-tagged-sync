@@ -127,6 +127,25 @@ function hasAlternativeBackends(): boolean {
 	return ocrBackendEntries().some((entry) => !BUILT_IN_BACKENDS.has(entry.id));
 }
 
+/**
+ * The two halves of that answer, for the one string that must tell them apart: does a backend send
+ * pages to somebody else's server, and does one run on this machine?
+ *
+ * Split out because the OCR description used `hasAlternativeBackends()` to claim the network and an
+ * API key were involved, and that was **already wrong in 1.1.0** (free-localhost-ocr spec §4.1): on a
+ * supported Mac the managed local model registers, so a free user with nothing but Apple Vision and
+ * an offline model was told their pages go to a provider with their own key. `metered` is the honest
+ * predicate — it already means "costs money per page", which is only ever true of someone else's
+ * server.
+ */
+function hasCloudBackends(): boolean {
+	return ocrBackendEntries().some((entry) => entry.metered);
+}
+
+function hasOnDeviceBackends(): boolean {
+	return ocrBackendEntries().some((entry) => !entry.metered && !BUILT_IN_BACKENDS.has(entry.id));
+}
+
 /** The only way this plugin opens a cloud session -- see tolerateLegacyMetadata for what it fixes. */
 function openSession(sessionToken: string): RemarkableApi {
 	const api = remarkableSession(sessionToken);
@@ -932,11 +951,20 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Backend")
+			// Composed from what is actually registered, because the three cases are three different
+			// promises and one sentence cannot make all of them (free-localhost-ocr spec §4.1).
 			.setDesc(
-				"Apple Vision runs locally and privately on macOS 13 or later — no account, key, or network." +
-					(hasAlternativeBackends()
-						? " The LLM providers send each page's render over the network to that provider, using your own API key."
-						: ""),
+				[
+					"Apple Vision runs locally and privately on macOS 13 or later — no account, key, or network.",
+					// Covers both unmetered families in one clause, because both are true of both: the
+					// downloadable model and a server you run yourself. Not "sends nothing anywhere" --
+					// a `custom` endpoint may well be another box on your LAN, and the honest claim is
+					// about who owns it, not about whether a packet moves.
+					hasOnDeviceBackends() ? "A local model — downloaded, or a server you run yourself — needs no account and no key." : "",
+					hasCloudBackends() ? "The cloud providers send each page's render to that provider, using your own API key." : "",
+				]
+					.filter(Boolean)
+					.join(" "),
 			)
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {

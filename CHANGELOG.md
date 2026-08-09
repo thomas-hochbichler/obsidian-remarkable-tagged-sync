@@ -14,6 +14,27 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **Windows and Linux can transcribe handwriting now**, for the first time since the plugin
+  shipped. Point the plugin at a local AI server you run yourself — **Ollama**, **LM Studio**, or
+  any other server speaking the same API — and it sends each page there and gets the text back.
+  Nothing leaves your machine, there is no account and no key, and it works on **every** system,
+  including Windows on x64 where nothing else does.
+
+  Until now the backend list on those systems had nothing selectable in it: Apple Vision is macOS
+  only, and the downloadable local model needs Apple Silicon or Windows on ARM. Notes synced with
+  the handwriting picture and no text, and that was the end of it.
+
+  **You choose the model.** The plugin fills in the address for Ollama and LM Studio and asks you
+  which model you loaded; it checks that the model can actually read images and says so if it
+  cannot. As a starting point we measured **Qwen2.5-VL-7B at 7.6 % character error**, about three
+  times more accurate than Apple Vision — though we measured it running the model directly rather
+  than through one of these servers, so your result may differ.
+
+  Two honest limits: you have to install and start that server yourself, and it uses your machine's
+  memory and battery while a sync runs — so background syncing with it asks first. If the server
+  is not running, settings tells you, and a sync says so at the end instead of quietly producing
+  nothing.
+
 - **You can stop a sync that is running.** Click the turning icon in the status bar and confirm, or
   run **Stop sync** from the command palette. It works on every kind of run — a manual sync, an
   automatic one you never started, and **Re-transcribe all synced notes** — and there was no way to
@@ -137,6 +158,9 @@ workflow publishes the section as the GitHub release body. See
   record was only saved once the whole run finished. If it did not, every note already refreshed
   looked hand-edited on the next sync, and the plugin will not touch a note you have edited. They
   would have stopped updating for good, with nothing to say why. The record is now saved per note.
+- **The OCR settings claimed your pages go over the network when they did not.** On a Mac where the
+  local model can run, the backend description said that transcription providers send each page to
+  that provider using your own API key — true of neither backend that build could run.
 
 ## [1.0.9] - 2026-08-09
 

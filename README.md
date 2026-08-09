@@ -35,19 +35,47 @@ Two limits, so you know them up front:
   change or remove that mapping at any time. The one-tag limit is a limit of the free version: a
   paid version that lifts it is planned but not yet available. Everything described in this
   README works without payment.
-- **Text transcription needs macOS 13 or later**, or the optional
-  [local model](#local-model-optional-opt-in) on Apple Silicon or Windows on ARM. Everywhere else
-  your notes still sync, with the full handwriting render embedded — but there is no transcript.
+- **Text transcription is built in on macOS 13 or later.** Everywhere else — Windows, Linux, older
+  Macs — you can transcribe by pointing the plugin at a local AI server you run yourself
+  ([Ollama, LM Studio, or any OpenAI-compatible server](#a-local-server-you-run-yourself)), or by
+  using the optional [managed local model](#local-model-optional-opt-in) where your machine
+  qualifies. With none of those set up, your notes still sync with the full handwriting render
+  embedded — but there is no transcript.
 
 ## Handwriting transcription
 
 Transcription runs locally on **macOS 13 or later** using Apple's Vision framework — no account,
-no API key, no network. On **Windows and Linux** there is no transcription by default: notes sync
-with the handwriting render embedded, and no `## Transcript` text. Some machines can opt in to a
-[local model](#local-model-optional-opt-in) instead, including Windows on ARM.
+no API key, no network. On **Windows and Linux** nothing transcribes by default: notes sync with
+the handwriting render embedded, and no `## Transcript` text.
+
+Two ways to change that, both entirely on your own machine:
+
+- The [managed local model](#local-model-optional-opt-in), where your hardware qualifies — the
+  plugin downloads and runs it for you, including on Windows on ARM.
+- [A local server you run yourself](#a-local-server-you-run-yourself) — Ollama, LM Studio, or any
+  OpenAI-compatible server. **This one works everywhere**, including Windows on x64 and Linux.
 
 You can also set the backend to **Off** if you only want the render. That is the default where
 Apple Vision cannot run.
+
+### A local server you run yourself
+
+If you already run — or are willing to install — a local AI server, the plugin can send each page
+to it and get the text back. Nothing leaves your machine, and there is no account or key.
+
+1. Install and start **Ollama**, **LM Studio**, or any other server that speaks the OpenAI
+   `/chat/completions` API, and load a **vision** model into it.
+2. In the plugin settings, set **Backend** to that server and enter the model's name. The address
+   is pre-filled for Ollama and LM Studio; change it only if yours runs elsewhere.
+
+Which model you use is your choice. For what it is worth: **we measured Qwen2.5-VL-7B at 7.6 %
+character error** — about three times more accurate than Apple Vision on the same pages — but we
+measured it running the model directly, not through one of these servers, so treat it as a starting
+point rather than a promise. A text-only model cannot read a page image at all; settings checks the
+model you name and says so when it can.
+
+If the server is not running, settings says so, and a sync that hits it leaves the notes with their
+render and reports it at the end rather than failing quietly.
 
 How the local backend works, for transparency:
 
@@ -220,7 +248,8 @@ to include them. Two things to know before you do:
 - That image costs roughly 65 KB per note. A heavily annotated book can add tens of megabytes to
   your vault, which is why the setting starts off rather than on.
 
-On Windows and Linux there is no handwriting recognition, so margin notes appear as images only.
+With no transcription backend set up — the default on Windows and Linux — margin notes appear as
+images only.
 
 ### Writing your own notes
 
@@ -245,7 +274,9 @@ stays where it is and is still preserved on every sync — new notes just no lon
 - The optional [local model](#local-model-optional-opt-in) keeps headings and lists, but needs
   Apple Silicon with 18 GB of memory or Windows on ARM with 24 GB, and a 5.5 GB download. Tables
   come out as plain lines.
-- **Windows on x64 and Linux get the render and no text**, on either backend.
+- **Windows on x64 and Linux get the render and no text out of the box.** Neither Apple Vision nor
+  the managed local model reaches them; [a local server you run
+  yourself](#a-local-server-you-run-yourself) does, and is the only route there.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
   firmware changes on reMarkable's side can break sync. See below.
 

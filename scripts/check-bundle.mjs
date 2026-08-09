@@ -18,16 +18,32 @@
 //    at the root (the pro build writes `main.pro.js` now), but this stays as the second layer:
 //    it reads the actual bytes about to be published.
 //
-//    Measured against a real pro build, not just against `pro/` source: 5 of the 6 needles fire
-//    (1-7 hits each) and 0 fire on the free bundle. Re-measured 2026-08-09 after the retirement
-//    below, on both bundles built from this tree.
+//    Measured against a real pro build, not just against `pro/` source. Re-measured 2026-08-09
+//    after the swap below, on both bundles built from this tree: **5 of the 6 fire on the pro
+//    bundle** (api.anthropic.com 2, api.openai.com 1, generativelanguage.googleapis.com 1,
+//    openrouter 7, x-api-key 1) and **0 fire on the free bundle**.
 //
-//    One needle was retired on 2026-08-09: "Transcribe the handwritten", the opening of the shared
-//    transcription prompt, added in 1.0.6 when only pro could send it. The downloadable local model
-//    ships in the free build and sends the same prompt, so the string moved to
-//    `src/llm-transcript.ts` and `pro/llm-transcript.ts` now re-exports it. It stopped separating
-//    the two bundles and started firing on every correct free build -- a needle that cannot tell
-//    them apart is worse than one fewer, because a gate nobody can keep green gets waved past.
+//    THREE needles have been retired, all for the same reason and all on 2026-08-09, as free-build
+//    features arrived that legitimately carry the string. The rule they establish: a needle that
+//    cannot tell the two bundles apart is worse than one fewer, because a gate nobody can keep green
+//    gets waved past.
+//
+//      - "Transcribe the handwritten" -- the opening of the shared transcription prompt, added in
+//        1.0.6 when only pro could send it. The downloadable local model ships in the free build and
+//        sends the same prompt, so the string moved to `src/llm-transcript.ts`.
+//      - "lmstudio" and "chat/completions" -- the free build gained an OpenAI-compatible localhost
+//        backend (free-localhost-ocr spec §6), so a provider id and the adapter's own URL suffix are
+//        now correct free-bundle content. Replaced by `api.openai.com` and
+//        `generativelanguage.googleapis.com`, keeping the count at six.
+//
+//    WHAT THAT COSTS, stated rather than left for a reader to assume: this gate can no longer notice
+//    *any* HTTP-to-an-LLM path in the free bundle. That path is legitimate now. What it still proves
+//    is the thing it was built for -- a pro build that overwrites `main.js` trips four cloud
+//    hostnames plus `x-api-key`.
+//
+//    Do NOT replace them with a generic `https://api.` or "no remote base URL" pattern. The build
+//    does not minify, so first-party COMMENTS land in `main.js` verbatim; a broad pattern fires on
+//    prose, and a gate that cries wolf gets ignored.
 //
 //    The 7th, "premium", is live too, and it is worth knowing why: the build does not minify, so
 //    first-party COMMENTS are copied into `main.js` verbatim. This gate failed during the 1.0.6
@@ -46,10 +62,10 @@ const OBFUSCATION = [
 
 const PREMIUM = [
 	"api.anthropic.com",
+	"api.openai.com",
+	"generativelanguage.googleapis.com",
 	"openrouter",
-	"lmstudio",
 	"x-api-key",
-	"chat/completions",
 	"premium",
 ];
 
