@@ -163,6 +163,24 @@ function markRect(stroke: RmStroke, box: Box, page: PdfPageText, frame: DeviceCa
 }
 
 /**
+ * True when a stroke has the *shape* of a mark -- wide enough to speak, and either flat or closed --
+ * whatever it turned out to point at.
+ *
+ * {@link findInkMarks} hands such a stroke back as handwriting when it resolves to no text: too low
+ * to be an underline, struck through the line, or over a patch the text layer does not cover. With
+ * margin notes off that is the end of it -- no cluster, no crop, nothing in the note -- so the caller
+ * needs to be able to say so rather than drop it in silence. Ordinary handwriting fails the width
+ * test and is not reported: the setting being off is not news.
+ */
+export function readsAsMark(stroke: RmStroke, frame: DeviceCanvas, lineHeightPt: number): boolean {
+	const box = strokeBox(stroke);
+	if (box === null) return false;
+	const lineHeightPx = lineHeightPt / frame.pxToPt;
+	if (box.maxX - box.minX < MIN_MARK_WIDTH * lineHeightPx) return false;
+	return box.maxY - box.minY < MAX_UNDERLINE_HEIGHT * lineHeightPx || isLoop(stroke, box);
+}
+
+/**
  * Splits a page's ink into the pen marks on its printed text and the handwriting that is left.
  *
  * `strokes` comes back in input order and is what the caller clusters; a mark never reaches

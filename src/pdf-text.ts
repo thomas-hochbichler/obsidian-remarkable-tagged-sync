@@ -679,7 +679,12 @@ function quoteForPassage(page: PdfPageText, group: LineHit[], spacing: number | 
 	const lastSpan = spans[last.index - from];
 	const estimateStart = Math.min(firstSpan.start + first.range.start, firstSpan.end);
 	const estimateEnd = Math.max(Math.min(lastSpan.start + last.range.end, lastSpan.end), estimateStart);
-	const mark = (highlightText ? locateHighlight(text, highlightText, estimateStart) : null) ?? { start: estimateStart, end: estimateEnd };
+	// Widened again, now in the *joined* text. `markedRange` already widened per line, but a word the
+	// line break split is only whole once `joinLines` has dropped the hyphen -- and a mark under the
+	// second half then starts inside it. The device's own recorded text is left alone: it says what was
+	// marked, and there is no instance of it starting mid-word to fit a rule to.
+	const mark =
+		(highlightText ? locateHighlight(text, highlightText, estimateStart) : null) ?? expandToWords(text, estimateStart, estimateEnd);
 	const bounds = sentenceAround(text, mark.start, mark.end);
 
 	return { sentence: text.slice(bounds.start, bounds.end).trim(), marked: text.slice(mark.start, mark.end).trim() };

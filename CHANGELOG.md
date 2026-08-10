@@ -145,6 +145,18 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A mark could be quoted from the middle of a word.** Where a line break splits a word across two
+  lines — which is every second line of a two-column paper — a mark under the second half quoted
+  from where the break fell: `accumu==lates both environment observations.==` instead of
+  `==accumulates both environment observations.==`. Marks now widen to whole words after the line
+  break has been closed up, not only within each line. Text your tablet recorded itself is left as
+  it is; the change is to the marks the plugin works out from the shape of your ink.
+- **A pen mark the digest could not place now says so.** An underline drawn a little too low, one
+  struck through the line rather than under it, or a mark over a patch the PDF has no text for is not
+  recognised as a mark — and with margin notes off, it reached your vault nowhere at all and nothing
+  said why. The sync now reports it with the page number, so you can look. The mark was never lost
+  from the embedded render, and still is not.
+
 - **Highlights on a page full of figures could start quoting from the middle of a sentence.** The
   digest measures a page's line spacing to work out where a line of text begins and ends, and a page
   of charts made it read the axis labels as text lines — a third of the real spacing.

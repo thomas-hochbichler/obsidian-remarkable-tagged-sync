@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findInkMarks } from "./ink-marks";
+import { findInkMarks, readsAsMark } from "./ink-marks";
 import type { DeviceCanvas } from "./pdf-renderer";
 import type { PdfPageText } from "./pdf-text";
 import type { RmStroke } from "./rm-parser";
@@ -126,5 +126,33 @@ describe("findInkMarks", () => {
 		const empty = stroke("0a", []);
 
 		expect(findInkMarks([empty], PAGE, FRAME, LINE_HEIGHT_PT)).toEqual({ marks: [], strokes: [empty] });
+	});
+});
+
+/**
+ * The strokes `findInkMarks` hands back that the reader nevertheless drew *at* the text. With margin
+ * notes off they reach the vault nowhere, so the digest names them instead of losing them quietly.
+ */
+describe("readsAsMark", () => {
+	it("holds for a strikethrough, which is not a mark but was aimed at the line", () => {
+		expect(readsAsMark(underline("0a", 100, -6), FRAME, LINE_HEIGHT_PT)).toBe(true);
+	});
+
+	it("holds for an underline drawn too far below its line", () => {
+		expect(readsAsMark(underline("0a", 100, 40), FRAME, LINE_HEIGHT_PT)).toBe(true);
+	});
+
+	it("holds for a wide loop that encloses no text", () => {
+		expect(readsAsMark(loop("0a", 100, 400), FRAME, LINE_HEIGHT_PT)).toBe(true);
+	});
+
+	it("does not hold for a stroke too short to be a mark at all -- that is just handwriting", () => {
+		expect(readsAsMark(underline("0a", 20), FRAME, LINE_HEIGHT_PT)).toBe(false);
+	});
+
+	it("does not hold for a wide open stroke, which is a word rather than a mark", () => {
+		const open = stroke("0a", [{ x: 0, y: 105 }, { x: 50, y: 88 }, { x: 100, y: 105 }]);
+
+		expect(readsAsMark(open, FRAME, LINE_HEIGHT_PT)).toBe(false);
 	});
 });
