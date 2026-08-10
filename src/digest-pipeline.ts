@@ -12,7 +12,7 @@
 import { writeCropAttachment, type AttachmentStore } from "./attachment-writer";
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
 import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage } from "./digest-builder";
-import { findInkMarks } from "./ink-marks";
+import { findInkMarks, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
@@ -511,6 +511,22 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// line heights, and an underline shares its line with whatever was written in the margin next to it.
 	const { marks, strokes: handwriting } = buildInkMarks(page, geometry, ink);
 	placed.push(...marks);
+
+	// F18 reaches here too. With F20 off a leftover stroke goes nowhere at all -- no cluster, no crop,
+	// nothing in the note -- and for handwriting that is the setting working as asked. A stroke shaped
+	// like a mark is the exception worth a line: the reader drew it *at* the text and expects to find
+	// it quoted, and the reasons it missed (drawn too low, struck through, over a patch the text layer
+	// does not cover) are invisible from the note.
+	if (!state.deps.marginNotes && geometry.pageText !== null) {
+		const missed = handwriting.filter((stroke) => readsAsMark(stroke, geometry.frame, geometry.lineHeightPt)).length;
+		if (missed > 0) {
+			state.warnings.push(
+				missed === 1
+					? `Page ${page.embedPage}: a pen mark could not be matched to any text there, so it is not in the digest. The embedded render still shows it.`
+					: `Page ${page.embedPage}: ${missed} pen marks could not be matched to any text there, so they are not in the digest. The embedded render still shows them.`,
+			);
+		}
+	}
 
 	// F20 off stops here, before any cluster exists: no cluster, no OCR call, no crop, no callout.
 	const clusters = state.deps.marginNotes ? clusterStrokes(handwriting, geometry.lineHeightPt / geometry.frame.pxToPt) : [];

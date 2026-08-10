@@ -191,6 +191,32 @@ describe("buildDigest without a text layer", () => {
 		expect(result.markdown).not.toContain("==");
 	});
 
+	/**
+	 * F18's one gap, closed. With margin notes off a stroke that is not recognised as a mark reaches
+	 * the vault nowhere at all, and the reasons it missed -- drawn too low, struck through, over a
+	 * patch the text layer does not cover -- cannot be seen from the note.
+	 */
+	it("names a pen mark it could not match to any text, instead of dropping it in silence", async () => {
+		// Wide and flat, so it has the shape of an underline, but drawn across the bottom margin where
+		// the text layer has no line for it to point at.
+		const stray = boxStroke("0a", 100, 1850, 600, 1);
+
+		const result = await build([fixturePage(scene([stray]))], { loadText: async () => fixtureTextDocument(), marginNotes: false });
+
+		expect(result.warnings).toEqual([
+			"Page 2: a pen mark could not be matched to any text there, so it is not in the digest. The embedded render still shows it.",
+		]);
+	});
+
+	it("says nothing about ordinary handwriting, which is the setting working as asked", async () => {
+		// Too short to be a mark: this is a word, and margin notes being off is not news.
+		const word = boxStroke("0a", 100, 1850, 8, 1);
+
+		const result = await build([fixturePage(scene([word]))], { loadText: async () => fixtureTextDocument(), marginNotes: false });
+
+		expect(result.warnings).toEqual([]);
+	});
+
 	it("labels the page from its source index and says once that the text could not be read", async () => {
 		const result = await build([fixturePage()]);
 

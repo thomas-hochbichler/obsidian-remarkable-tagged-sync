@@ -303,6 +303,23 @@ describe("quoteForRects", () => {
 	});
 
 	/**
+	 * A pen underline under the *second* half of a hyphenated word. Widening to whole words runs per
+	 * line, where "lates" starts at offset 0 and has nothing to its left -- but de-hyphenation has
+	 * already joined it to "accumu" by the time the run is addressed, so the mark began mid-word and
+	 * printed `accumu==lates ...==`. Every two-column paper hyphenates, so this is not a corner.
+	 */
+	it("widens a run to the whole word when the line break split that word", () => {
+		const broken = page([
+			{ text: "The interaction history accumu-", y: 700 },
+			{ text: "lates both environment observations.", y: 686 },
+		]);
+
+		const quote = quoteForRects(broken, [rectOver(0, 36, 686)]);
+
+		expect(quote?.marked).toEqual(["accumulates both environment observations."]);
+	});
+
+	/**
 	 * The regression page 7 of the acceptance document exposed: one `glyph_def` run carried 20
 	 * rectangles over lines 2-8, 13-16 and 36-42, and quoting first-to-last reprinted the whole page --
 	 * its headings and its unmarked paragraphs included -- as a single 3000-character highlight.
