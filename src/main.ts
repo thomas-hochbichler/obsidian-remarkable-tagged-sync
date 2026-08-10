@@ -91,6 +91,13 @@ interface TaggedSyncData {
 	marginNotes: boolean;
 }
 
+/**
+ * F20 is held back from this release: the crop beside a margin note is not good enough yet. The
+ * setting is hidden and `marginNotes` is forced off on load, so no build can reach the feature --
+ * the pipeline behind it stays in the tree untouched. Flip this to bring the setting back.
+ */
+const MARGIN_NOTES_UI: boolean = false;
+
 const DEFAULT_DATA: TaggedSyncData = {
 	deviceToken: null,
 	tagFolderMap: {},
@@ -257,7 +264,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			autoSync: { ...DEFAULT_AUTO_SYNC, ...saved?.autoSync },
 			lastSyncAt: saved?.lastSyncAt ?? null,
 			attachmentsFolder: saved?.attachmentsFolder ?? DEFAULT_DATA.attachmentsFolder,
-			marginNotes: saved?.marginNotes ?? DEFAULT_DATA.marginNotes,
+			// Not read back while `MARGIN_NOTES_UI` is off: a beta tester who switched it on would
+			// otherwise keep the feature running with no setting left to switch it off again.
+			marginNotes: MARGIN_NOTES_UI ? (saved?.marginNotes ?? DEFAULT_DATA.marginNotes) : false,
 		};
 
 		const store: AuthStore = {
@@ -872,6 +881,9 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 						persist();
 					});
 			});
+
+		// Held back for this release -- see `MARGIN_NOTES_UI`. The row below is what it hides.
+		if (!MARGIN_NOTES_UI) return;
 
 		// Off by default (F20), and the description says what switching it on costs: the crop beside
 		// every transcription is what makes a misread checkable, and it is also what fills the vault.

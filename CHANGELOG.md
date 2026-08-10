@@ -68,11 +68,10 @@ workflow publishes the section as the GitHub release body. See
   handwriting around it. It is taken from the file exactly as you typed it — never read off an
   image — so it cannot come out misspelled. It was missing entirely before: transcription reads a
   picture of your ink, and typed text is not ink.
-- **Handwritten notes** setting, **off by default**: handwritten margin notes on annotated PDFs are
-  left out of the digest unless you turn it on. Highlights are unaffected.
-- Every margin note now keeps a small image of your handwriting beside its transcription. Apple
-  Vision misreads handwriting and gives no sign when it does, so the image is the only way to check
-  what you actually wrote. It costs about 65 KB a note — which is why the setting starts off.
+- **Underlining or circling a sentence in a PDF now quotes the words it points at**, exactly like a
+  marker highlight does. A passage you marked with the pen instead of the highlighter used to reach
+  your vault as nothing at all. It goes through no transcription, so Windows and Linux get it too —
+  and a mark on a page whose text the plugin cannot read is still left out, as before.
 
 ### Changed
 
@@ -143,25 +142,9 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
-- **Underlining or circling a sentence in a PDF produced a picture of the line, or invented text.**
-  A pen mark on printed text is not handwriting and has nothing to transcribe, but the digest sent
-  it through transcription anyway: one underline came back as the margin note `176` — text nobody
-  wrote — and the rest became callouts holding a picture of a line or an oval.
-
-  An underline or a circle now **quotes the words it points at**, exactly like a marker highlight,
-  and no longer goes through transcription at all. It works with no transcription backend, so
-  Windows and Linux get it too. Marks the plugin cannot place — anything on a page whose text it
-  cannot read — still come through as the picture they always were.
-
-  An underline used to be dragged into the note written beside it as well, stretching that note's
-  picture across the page; it no longer is. Because of that, a few entries on affected pages get a
-  **new block ID**, so a link you made to one of them by hand may need repointing once. Highlights
-  keep theirs.
-- **Handwriting on a page full of figures came through one image per pen stroke.** The digest
-  measures a page's line spacing to tell handwriting on one line apart from the line below, and
-  a page of charts made it read the axis labels as text lines — a third of the real spacing, so
-  no two strokes belonged together. A note written beside such a page's last paragraph became
-  five notes. Highlights on those pages could also start quoting from the middle of a sentence.
+- **Highlights on a page full of figures could start quoting from the middle of a sentence.** The
+  digest measures a page's line spacing to work out where a line of text begins and ends, and a page
+  of charts made it read the axis labels as text lines — a third of the real spacing.
 - **A sync interrupted partway through a notebook could duplicate its notes.** The plugin recorded
   what it had done once per notebook, but a notebook with several mapped tags — or many tagged pages
   — is several notes, and quitting Obsidian in the middle of one left the notes already written

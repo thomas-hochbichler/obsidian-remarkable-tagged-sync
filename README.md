@@ -239,17 +239,9 @@ annotated page, each highlight quoted with the sentence around it from the PDF a
 heading above it. Every entry ends with a block ID, so you can link a single annotation from
 elsewhere in your vault — `[[My Book^hl-d449a3]]` embeds that one quote.
 
-**Handwritten notes in the margin are off by default.** Turn on *Handwritten notes* in the settings
-to include them. Two things to know before you do:
-
-- Each note is transcribed (macOS only) **and** stored as a small image of your own handwriting. The
-  image is the point: handwriting recognition misreads, and nothing in the text tells you when it
-  did — with the image beside it you can see for yourself what you wrote.
-- That image costs roughly 65 KB per note. A heavily annotated book can add tens of megabytes to
-  your vault, which is why the setting starts off rather than on.
-
-With no transcription backend set up — the default on Windows and Linux — margin notes appear as
-images only.
+**Handwriting in the margin is not part of the digest.** A note you wrote by hand beside a passage
+stays in the PDF where you wrote it — the embedded render always has it — and nothing about it is
+written into the note itself.
 
 ### Writing your own notes
 
