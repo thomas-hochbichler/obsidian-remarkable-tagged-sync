@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-10
+
 ### Added
 
 - **Windows and Linux can transcribe handwriting now**, for the first time since the plugin
