@@ -4,28 +4,29 @@
 > affiliated with, endorsed by, or supported by reMarkable AS. "reMarkable" is a trademark of
 > reMarkable AS, used only to describe compatibility.
 
-Sync tagged reMarkable notebooks into Obsidian as searchable Markdown notes, routed to folders
-by tag.
+Tag a notebook or a PDF on your reMarkable, and it lands in the vault folder you mapped — your
+handwriting transcribed, your highlights quoted.
 
-Tag a notebook or a single page on your reMarkable tablet (e.g. `sync`), and this plugin pulls
-it from the reMarkable cloud, renders the handwriting to a PDF, transcribes it to searchable
-text, and writes a Markdown note into the vault folder mapped to that tag — with the render
-embedded as an attachment and the transcript underneath it.
+## A notebook you wrote in
 
-This is a **desktop-only**, **one-way** (reMarkable → Obsidian) sync. It never writes back to
-your reMarkable.
+The pages as you drew them, embedded in the note, plus a searchable transcript underneath — split
+by page, so a long notebook stays navigable.
 
-![A synced note: the handwriting render embedded on top, the searchable transcript below it](docs/screenshot-synced-note.png)
+![Writing a note on the reMarkable, tagging it sync, running Sync now in Obsidian, and the note arriving with the handwriting render and a searchable transcript split by page](docs/showcase-handwriting.gif)
 
-## How it works
+## A PDF you marked up
 
-1. Tag a notebook or page on your reMarkable — e.g. `sync`.
-2. The note syncs to the reMarkable cloud as usual.
-3. In Obsidian, map that tag to a vault folder in the plugin settings.
-4. Run **Sync now** (or let automatic sync do it).
-5. You get a Markdown note with the handwriting render embedded and a searchable transcript below.
+Every passage you highlighted or underlined, quoted with the sentence around it and filed under the
+section it came from. Each quote carries a block ID, so you can link a single passage from anywhere
+in your vault. None of it goes through transcription, so this works the same on Windows and Linux as
+it does on a Mac.
 
-![The whole flow in under 30 seconds: writing a note on the reMarkable, tagging it sync, running Sync now in Obsidian, and the resulting note with render and searchable transcript](docs/showcase.gif)
+![Highlighting and underlining passages in a PDF on the reMarkable, tagging it sync, and the digest arriving in Obsidian as quotes grouped by section, each linking back to its page](docs/showcase-annotations.gif)
+
+<sub>PDF shown: Kang et al., <a href="https://arxiv.org/abs/2510.00615">ACON: Optimizing Context
+Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
+
+**Desktop only** · **one-way** (reMarkable → Obsidian) · never writes back to your tablet.
 
 ## Before you install
 
@@ -40,9 +41,13 @@ Two limits, so you know them up front:
   ([Ollama, LM Studio, or any OpenAI-compatible server](#a-local-server-you-run-yourself)), or by
   using the optional [managed local model](#local-model-optional-opt-in) where your machine
   qualifies. With none of those set up, your notes still sync with the full handwriting render
-  embedded — but there is no transcript.
+  embedded — but there is no transcript. **Marked-up PDFs are unaffected:** their
+  [digest](#annotated-pdfs) is built from the PDF's own text and needs no transcription at all, so it
+  works everywhere.
 
 ## Handwriting transcription
+
+![A synced note in Obsidian: the two handwritten pages rendered on top, the searchable transcript below them](docs/screenshot-synced-note.png)
 
 Transcription runs locally on **macOS 13 or later** using Apple's Vision framework — no account,
 no API key, no network. On **Windows and Linux** nothing transcribes by default: notes sync with
@@ -119,6 +124,42 @@ Like any transcription it misreads sometimes, and it misreads *differently*: Vis
 usually look broken on the page, while this model writes its mistakes as fluent text. Check
 anything that matters against the handwriting.
 
+## Annotated PDFs
+
+A PDF you marked up gets a **`## Digest`** in place of the transcript: your marks, quoted with the
+sentence around them, grouped under the section of the document they came from.
+
+![A digest in Obsidian: the annotated PDF embedded on top, below it the quotes grouped under their section headings, each linking back to its page](docs/screenshot-digest.png)
+
+**Both the highlighter and the pen count.** A passage you marked with the highlighter and one you
+underlined or circled with the pen arrive the same way — a quote with its surrounding sentence, the
+section it sits under, and a link to the page. Marking with the pen used to reach your vault as
+nothing at all.
+
+**None of this goes through transcription.** The words come from the PDF's own text, not from a
+picture of it, so the digest works the same on Windows and Linux as it does on a Mac — and no marked
+word can come out misspelled.
+
+**Every quote is linkable on its own.** Each entry ends with a block ID, so a single annotation can
+be embedded anywhere in your vault: `![[My Book^hl-d449a3]]` pulls in that one quote. The IDs are
+stable across syncs.
+
+**The document's note is its digest.** There is no separate digest note collecting every document —
+the marks live in the note of the document they belong to, in the folder you mapped.
+
+Three things worth knowing before you rely on it:
+
+- **The digest is built from what you *marked*, not from what you *wrote*.** Handwriting on a PDF
+  stays in the render where you wrote it — no text is extracted from it. A PDF you only wrote on
+  syncs with the render and no text at all.
+- **It reads the PDF's own text layer.** A scanned page without one gives less: highlights arrive as
+  the words your tablet recorded, and pen marks are not recognised as marks at all.
+- **Marker colour is not carried over.** Every mark reads the same in the note; the colours stay in
+  the embedded render.
+
+Section headings come from the PDF's own outline where it has one, and from a font-size guess where
+it does not — so a document without bookmarks can file a quote under the wrong heading.
+
 ## Network use
 
 This plugin makes network requests to exactly one place by default:
@@ -170,6 +211,15 @@ Two behaviours show up in Obsidian's automated plugin review, so they are spelle
   the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
   scanned for this, and the list never leaves your machine.
 
+## How it works
+
+1. Tag a notebook, a PDF, or a single page on your reMarkable — e.g. `sync`.
+2. It syncs to the reMarkable cloud as usual.
+3. In Obsidian, map that tag to a vault folder in the plugin settings.
+4. Run **Sync now** (or let automatic sync do it).
+5. You get a Markdown note with the render embedded, and either a searchable transcript or a digest
+   of your marks below it.
+
 ## Setup
 
 1. Install and enable the plugin.
@@ -220,8 +270,8 @@ confirmation tells you how long it will take on your machine, measured from your
 - A handwritten notebook's note has the rendered PDF embedded, then a `## Highlights` section (one
   quote callout per page, if you highlighted anything on the tablet), then the `## Transcript`. If
   transcription is off, fails, or finds nothing, the note is still created with the render and no
-  `## Transcript` section — the render is never lost. An annotated PDF gets a `## Digest` instead,
-  described below.
+  `## Transcript` section — the render is never lost. An annotated PDF gets a
+  [`## Digest`](#annotated-pdfs) instead.
 - **The transcript is split by page.** Each page that produced text gets its own heading linking
   into that page of the embedded PDF, so a long notebook stays navigable. Pages with nothing to read
   are named once at the end instead of taking a heading each, and a page transcription could not
@@ -231,17 +281,6 @@ confirmation tells you how long it will take on your machine, measured from your
   plugin's own `data.json`, not in your notes.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
-
-### Annotated PDFs
-
-A PDF you highlighted or wrote on gets a `## Digest` in place of the transcript: one section per
-annotated page, each highlight quoted with the sentence around it from the PDF and the nearest
-heading above it. Every entry ends with a block ID, so you can link a single annotation from
-elsewhere in your vault — `[[My Book^hl-d449a3]]` embeds that one quote.
-
-**Handwriting in the margin is not part of the digest.** A note you wrote by hand beside a passage
-stays in the PDF where you wrote it — the embedded render always has it — and nothing about it is
-written into the note itself.
 
 ### Writing your own notes
 
@@ -266,9 +305,13 @@ stays where it is and is still preserved on every sync — new notes just no lon
 - The optional [local model](#local-model-optional-opt-in) keeps headings and lists, but needs
   Apple Silicon with 18 GB of memory or Windows on ARM with 24 GB, and a 5.5 GB download. Tables
   come out as plain lines.
-- **Windows on x64 and Linux get the render and no text out of the box.** Neither Apple Vision nor
-  the managed local model reaches them; [a local server you run
-  yourself](#a-local-server-you-run-yourself) does, and is the only route there.
+- **Windows on x64 and Linux get the render and no transcript out of the box.** Neither Apple Vision
+  nor the managed local model reaches them; [a local server you run
+  yourself](#a-local-server-you-run-yourself) does, and is the only route there. This is about
+  *handwriting* only — the [digest of a marked-up PDF](#annotated-pdfs) needs no transcription and
+  works everywhere.
+- **A PDF you only wrote on syncs with the render and no text.** The digest quotes what you marked;
+  handwriting on the page is not read.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
   firmware changes on reMarkable's side can break sync. See below.
 
