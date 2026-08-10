@@ -143,7 +143,8 @@ describe("OpenAiCompatOcrBackend", () => {
 		fetchMock.mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
 		const backend = new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", apiKey: "bad", model: "m", fetchFn: fetchMock });
 
-		expect(await backend.recognize([page()])).toEqual({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null });
+		// `toMatchObject`, because the refusal the server explained now rides along in `warnings`.
+		expect(await backend.recognize([page()])).toMatchObject({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null });
 	});
 
 	it("reports failed and never throws when the request itself fails", async () => {
@@ -247,7 +248,7 @@ describe("the not-running warning", () => {
 		expect(result.warnings).toHaveLength(1);
 	});
 
-	it("stays quiet when the server answered and simply refused", async () => {
+	it("does not invent it when the server answered and simply refused", async () => {
 		// A 401 or a 404 is a different sentence, and inventing "is it running?" for it would send the
 		// user to check something that is already fine.
 		fetchMock.mockResolvedValue(jsonResponse(401, { error: "no" }));
@@ -256,7 +257,7 @@ describe("the not-running warning", () => {
 		const result = await backend.recognize([page()]);
 
 		expect(result.status).toBe("failed");
-		expect(result.warnings).toBeUndefined();
+		expect(result.warnings?.[0]).not.toContain("Is it running?");
 	});
 
 	it("stays quiet when every page succeeded", async () => {
@@ -267,5 +268,85 @@ describe("the not-running warning", () => {
 
 		expect(result.status).toBe("ok");
 		expect(result.warnings).toBeUndefined();
+	});
+});
+
+/**
+ * The other half of that silence: a server that *did* answer, and said why it refused. LM Studio's
+ * "No models loaded" and Ollama's "model not found" are the two most likely failures after the
+ * server not running at all, and both used to reach a `console.warn` and nowhere else.
+ */
+describe("the server's own refusal", () => {
+	beforeEach(() => {
+		fetchMock.mockReset();
+	});
+
+	it("passes the server's message and status through to the report", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(400, { error: { message: "No models loaded. Please load a model in the developer page." } }));
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page(), page()]);
+
+		expect(result.status).toBe("failed");
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings?.[0]).toContain("400");
+		expect(result.warnings?.[0]).toContain("No models loaded");
+		expect(result.warnings?.[0]).toContain("2 pages were not transcribed");
+	});
+
+	it("reads the message out of a server that sends a bare string", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(404, { error: "model 'ghost' not found" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "ghost", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()])).warnings?.[0]).toContain("model 'ghost' not found");
+	});
+
+	it("says nothing beyond the status when the body carries no message", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(500, {}));
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "m", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()])).warnings?.[0]).toContain("500");
+	});
+
+	it("lets the not-running warning win, because that is the one the user acts on first", async () => {
+		fetchMock.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:1234"));
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "m", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()])).warnings?.[0]).toContain("Is it running?");
+	});
+});
+
+/**
+ * A provider whose model field is still empty. LM Studio answers such a request with whatever model
+ * happens to be loaded -- or with a 400 when none is -- so the run either fails per page with no
+ * explanation or transcribes with a model nobody chose.
+ */
+describe("a missing model", () => {
+	beforeEach(() => {
+		fetchMock.mockReset();
+	});
+
+	it("fails every page without sending a request, and says what to fill in", async () => {
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page(), page()]);
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(result.status).toBe("failed");
+		expect(result.warnings?.[0]).toContain("No model is set");
+		expect(result.warnings?.[0]).toContain("2 pages were not transcribed");
+	});
+
+	it("treats a whitespace-only model as missing", async () => {
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "   ", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()])).status).toBe("failed");
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("still skips an empty page list rather than complaining about the model", async () => {
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "", fetchFn: fetchMock });
+
+		expect((await backend.recognize([])).status).toBe("skipped");
 	});
 });

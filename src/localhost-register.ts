@@ -74,16 +74,27 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 }
 
 /**
+ * The one place the callout is written. Lifted out of `renderVisionVerdict` so the empty-model
+ * message can reuse it -- and so the colour is written through a variable, which is what keeps the
+ * store's `no-static-styles-assignment` rule (an error, undisableable here) off a second site.
+ */
+const ERROR_COLOR = "var(--text-error)";
+/** Back to the theme's own colour -- for the states that are not a warning at all. */
+const NO_COLOR = "";
+
+function paintCallout(el: HTMLElement, text: string, color: string): void {
+	el.setText(text);
+	el.style.color = color;
+}
+
+/**
  * Renders a verdict into the settings callout. Same tone scale as Pro's, with one string rewritten:
  * `unreachable` on a server the user runs is not a network mystery, it is almost always "the app is
  * not running" -- the most likely failure this backend has, and the one they can fix in seconds
  * (spec §5.1).
  */
 function renderVisionVerdict(el: HTMLElement, verdict: VisionVerdict, model: string, meta: ProviderMeta, baseURL: string): void {
-	const set = (text: string, color: string) => {
-		el.setText(text);
-		el.style.color = color;
-	};
+	const set = (text: string, color: string) => paintCallout(el, text, color);
 	switch (verdict) {
 		case "none":
 			set("", "");
@@ -116,6 +127,16 @@ export function unreachableMessage(meta: ProviderMeta, baseURL: string): string 
 	return `Nothing answered at ${baseURL}. Check the server is running and the address is right.`;
 }
 
+/**
+ * What the callout says while the model field is still empty.
+ *
+ * The check it replaces asked the server about a model named `""` and rendered the answer as
+ * `"" doesn't look like a vision model` -- a sentence about a model the user never typed. This one
+ * states the run-time behaviour instead: the adapter refuses an empty model rather than letting the
+ * server pick one for it, so nothing transcribes until this row is filled.
+ */
+export const NO_MODEL_MESSAGE = "No model set — nothing will transcribe until you name the model to use.";
+
 /** The live callout and its debounce timer, shared by whichever provider is shown. */
 let visionWarningEl: HTMLElement | null = null;
 let visionCheckTimer: number | null = null;
@@ -129,12 +150,18 @@ function scheduleVisionCheck(meta: ProviderMeta, cfg: LlmProviderConfig): void {
 	const el = visionWarningEl;
 	if (!el) return;
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
+	// Cleared before the early returns too, or a check still pending from the previous keystroke
+	// would land on top of whatever they render.
+	if (visionCheckTimer !== null) window.clearTimeout(visionCheckTimer);
 	if (!baseURL) {
-		el.setText("");
+		paintCallout(el, "", NO_COLOR);
 		return;
 	}
-	el.setText(`Checking "${model || "the model"}"…`);
-	if (visionCheckTimer !== null) window.clearTimeout(visionCheckTimer);
+	if (!model.trim()) {
+		paintCallout(el, NO_MODEL_MESSAGE, ERROR_COLOR);
+		return;
+	}
+	paintCallout(el, `Checking "${model}"…`, NO_COLOR);
 	visionCheckTimer = window.setTimeout(() => {
 		void (async () => {
 			const verdict = await detectLocalhostVisionCapability({ provider: meta.id as LocalhostProviderId, model, baseURL, apiKey });
