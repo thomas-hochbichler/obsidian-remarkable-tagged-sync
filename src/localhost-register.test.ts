@@ -63,6 +63,17 @@ describe("create()", () => {
 		expect(adapter?.id).toBe("custom");
 	});
 
+	it("transcribes nothing while the model field is empty, which is what a fresh install stores", async () => {
+		// The row ships empty, so `{}` is exactly what the vault holds until the user fills it in. LM
+		// Studio answers a request with no model by using whichever one happens to be loaded -- or with
+		// a 400 when none is -- and neither belongs in a note.
+		const adapter = ocrBackendEntry("lmstudio")?.create({});
+		const result = await adapter?.recognize([{ formatVersion: 6, layers: [] }]);
+
+		expect(result?.status).toBe("failed");
+		expect(result?.warnings?.[0]).toContain("No model is set");
+	});
+
 	it("uses the user's base URL over the preset when they set one", () => {
 		const adapter = ocrBackendEntry("ollama")?.create({ baseURL: "http://box.local:11434/v1" });
 		expect(adapter?.id).toBe("ollama");

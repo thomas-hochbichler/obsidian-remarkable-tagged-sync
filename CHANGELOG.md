@@ -33,7 +33,10 @@ workflow publishes the section as the GitHub release body. See
   Two honest limits: you have to install and start that server yourself, and it uses your machine's
   memory and battery while a sync runs — so background syncing with it asks first. If the server
   is not running, settings tells you, and a sync says so at the end instead of quietly producing
-  nothing.
+  nothing. The same goes for a server that answers and refuses: whatever it said — LM Studio's "no
+  models loaded", a model name it does not know — is repeated back to you at the end of the sync.
+  And until you name a model, settings says so plainly and a sync stops rather than letting the
+  server transcribe with whichever model it happens to have loaded.
 
 - **You can stop a sync that is running.** Click the turning icon in the status bar and confirm, or
   run **Stop sync** from the command palette. It works on every kind of run — a manual sync, an

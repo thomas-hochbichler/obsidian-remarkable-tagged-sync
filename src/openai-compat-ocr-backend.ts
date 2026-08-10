@@ -66,6 +66,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
 	private unreachable = false;
+	/** The first refusal the server explained, as `<status>: <message>` -- see `recognize`. */
+	private refusal: string | null = null;
 
 	constructor(options: OpenAiCompatOcrOptions) {
 		this.id = options.id;
@@ -86,16 +88,34 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	async recognize(pages: RmPage[]): Promise<OcrResult> {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
+		this.refusal = null;
+
+		// An empty model field is a misconfiguration, and sending it anyway is worse than refusing:
+		// LM Studio answers `"model": ""` with whatever happens to be loaded -- so the note would carry
+		// a transcript from a model nobody chose -- and with a bare 400 when nothing is, which reaches
+		// the note as "Could not read this page" and names nothing to fix. The one thing the user has
+		// to do is said here instead.
+		if (this.model.trim() === "") {
+			return transcribePages(
+				pages,
+				async () => ({ kind: "failed" }),
+				(failedPages) => `No model is set for this OCR backend — open the plugin settings and enter one. ${pageCount(failedPages)} not transcribed.`,
+			);
+		}
+
 		return transcribePages(
 			pages,
 			(page) => this.transcribePage(page),
 			// One warning per unit, not per page: forty identical lines in the end-of-sync report is the
-			// same silence in a different costume. Only for the case the user can act on -- a server that
-			// is not running. A 404 or a bad key is a different sentence and does not get invented here.
-			(failedPages) =>
-				this.unreachable
-					? `Could not reach the server at ${this.baseURL} — ${failedPages} ${failedPages === 1 ? "page was" : "pages were"} not transcribed. Is it running?`
-					: null,
+			// same silence in a different costume. A server that is not running comes first -- it is the
+			// most likely failure and the one the user fixes in seconds. Otherwise the server's own words
+			// go through unchanged: "No models loaded" is a sentence we could not have written for it,
+			// and inventing one for a 404 or a bad key is still not done here.
+			(failedPages) => {
+				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages)} not transcribed. Is it running?`;
+				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages)} not transcribed.`;
+				return null;
+			},
 		);
 	}
 
@@ -127,6 +147,9 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			);
 
 			if (!response.ok) {
+				// First refusal wins: with four pages in flight they are the same refusal anyway, and the
+				// first one is the one whose status the user saw the run stop on.
+				this.refusal ??= `${response.status}${await errorMessage(response)}`;
 				console.warn(`Tagged Sync: ${this.id} OCR request failed with status ${response.status}`);
 				return { kind: "failed" };
 			}
@@ -145,6 +168,28 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			console.warn(`Tagged Sync: ${this.id} OCR failed, note will ship with render only`, error);
 			return { kind: "failed" };
 		}
+	}
+}
+
+/** "1 page was" / "3 pages were", so the warnings above read as sentences. */
+function pageCount(pages: number): string {
+	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
+}
+
+/**
+ * The `: <message>` half of a refusal, or "" when the server sent none.
+ *
+ * Two shapes, because both are in the wild: OpenAI's `{error: {message}}`, which LM Studio and
+ * Ollama follow, and a bare `{error: "..."}` string. Anything else -- HTML, an empty body, a parse
+ * failure -- leaves the status to speak alone rather than putting a stringified object in a note.
+ */
+async function errorMessage(response: Response): Promise<string> {
+	try {
+		const body = (await response.json()) as { error?: string | { message?: string } };
+		const message = typeof body.error === "string" ? body.error : body.error?.message;
+		return message ? `: ${message}` : "";
+	} catch {
+		return "";
 	}
 }
 
