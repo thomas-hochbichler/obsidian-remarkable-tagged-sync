@@ -116,6 +116,40 @@ const FRAGMENT_SLIVER_MAX_HEIGHT = 0.7;
  */
 const FRAGMENT_MAX_GAP = 0.5;
 
+/**
+ * Where the printed text starts and ends across the page, in scene px.
+ *
+ * Handed in rather than derived, because only the caller can read the PDF -- and it is optional for
+ * the same reason: a document whose text layer will not open has no column, and then the line rules
+ * are all there is. See {@link MARGIN_BLOCK_GAP}.
+ */
+export interface TextColumn {
+	left: number;
+	right: number;
+}
+
+/**
+ * How far apart two lines of handwriting may sit and still be one note in the margin, as a fraction
+ * of the taller line's own height.
+ *
+ * Measured against the writing and not against the printed line height, which is the difference that
+ * decides the case this rule was reopened for: on a two-column paper the print sets ~11 pt lines while
+ * the hand beside it writes at twice that, so a bound in printed line heights refuses to stack a
+ * paragraph that is plainly one. A hand's own line height travels with the hand.
+ */
+const MARGIN_BLOCK_GAP = 0.8;
+
+/**
+ * How far two lines' left edges may sit apart and still be one note, in printed line heights.
+ *
+ * This is the bound that keeps the trap apart, and it is the one number here taken from somebody
+ * else's measurement: `pdf-annotation` ticket 15 read the fixture's two notes lying diagonally across
+ * each other and found them starting **9.4 line heights** apart, while the lines of one paragraph
+ * start under 4. The band is wide -- 4, 6 and 8 gave identical output over 51 clusters -- so the low
+ * end is taken.
+ */
+const MARGIN_BLOCK_LEFT = 4;
+
 /** One stroke's geometry: the box for the horizontal test, the vertical center for the vertical one. */
 interface StrokeGeometry {
 	/** Position in the input array, so a cluster can report its strokes in parse order. */
@@ -271,35 +305,114 @@ function compareCrdtIds(a: string, b: string): number {
 	return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
 }
 
+type Cluster = Omit<StrokeCluster, "rowTop">;
+
+/** Whether two lines of handwriting are two lines of one note written down the margin. */
+function stacksInMargin(a: Cluster, b: Cluster, lineHeightPx: number, column: TextColumn): boolean {
+	// Both must have ink outside the printed text. This is the whole safety of the rule: the pair that
+	// defeated every rule ticket 15 tried lies *across the text*, where two unrelated notes can overlap
+	// on both axes exactly as two lines of one paragraph do. Out here nothing is printed to write over.
+	const reaches = (bounds: Bounds) => bounds.maxX > column.right || bounds.minX < column.left;
+	if (!reaches(a.bounds) || !reaches(b.bounds)) return false;
+
+	// Not a line of writing at all: a bracket, a long arrow, a box drawn around a passage. Single
+	// linkage would otherwise pull every line such a mark spans into one note -- the fixture's 391 px
+	// margin bracket reaches 9.5 line heights.
+	const tallest = Math.max(a.bounds.maxY - a.bounds.minY, b.bounds.maxY - b.bounds.minY);
+	if (tallest > lineHeightPx * MAX_LINE_STROKE) return false;
+
+	const gapY = Math.max(0, a.bounds.minY - b.bounds.maxY, b.bounds.minY - a.bounds.maxY);
+	if (gapY > tallest * MARGIN_BLOCK_GAP) return false;
+	if (Math.abs(a.bounds.minX - b.bounds.minX) > lineHeightPx * MARGIN_BLOCK_LEFT) return false;
+	// One column of writing, not two notes side by side in the same margin.
+	return Math.min(a.bounds.maxX, b.bounds.maxX) > Math.max(a.bounds.minX, b.bounds.minX);
+}
+
 /**
- * Groups handwritten strokes into margin notes (F12), one cluster per line of handwriting, ordered
+ * Joins the lines of a margin block into the one note they are, leaving every other shape of ink as
+ * the line stage left it.
+ *
+ * `pdf-annotation` ticket 15 measured nine general merge rules and shipped none: over the fixture each
+ * one fused a pair of unrelated notes, and the pair is geometrically indistinguishable from a
+ * paragraph -- their boxes overlap on both axes. It left the door open for a signal beyond stroke
+ * geometry, and this is one: **the printed text's own column**. The trap lies over the text. A margin
+ * note, by definition, does not, and a reader who fills the margin writes down it in a column.
+ *
+ * Re-measured over the same 15 fixture pages before shipping: 47 line clusters become 39, and the only
+ * join anywhere is the nine-line summary down page 5's right margin, which is the shape this exists
+ * for. All three of ticket 15's named traps come through untouched -- the overlapping pair, the margin
+ * bracket, the two-column list -- because none of them passes both the column test and the left edge.
+ *
+ * Single linkage again, so the result is the connected components of the link graph: a pure function
+ * of the input, as F16 requires, and settled by construction rather than by repeated passes.
+ */
+function marginBlocks(clusters: Cluster[], lineHeightPx: number, column: TextColumn, order: Map<RmStroke, number>): Cluster[] {
+	const parent = clusters.map((_, index) => index);
+	const find = (start: number): number => {
+		let root = start;
+		while (parent[root] !== root) root = parent[root];
+		return root;
+	};
+	for (let a = 0; a < clusters.length; a++) {
+		for (let b = a + 1; b < clusters.length; b++) {
+			if (stacksInMargin(clusters[a], clusters[b], lineHeightPx, column)) parent[find(a)] = find(b);
+		}
+	}
+
+	const blocks = new Map<number, Cluster[]>();
+	clusters.forEach((cluster, index) => {
+		const root = find(index);
+		blocks.set(root, [...(blocks.get(root) ?? []), cluster]);
+	});
+
+	return [...blocks.values()].map((lines) => {
+		if (lines.length === 1) return lines[0];
+		return {
+			// Parse order across the whole block, so the strokes a merged note hands to OCR are in the
+			// order they were written rather than line-cluster by line-cluster.
+			strokes: lines.flatMap((line) => line.strokes).sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+			bounds: lines.map((line) => line.bounds).reduce((union, bounds) => ({
+				minX: Math.min(union.minX, bounds.minX),
+				minY: Math.min(union.minY, bounds.minY),
+				maxX: Math.max(union.maxX, bounds.maxX),
+				maxY: Math.max(union.maxY, bounds.maxY),
+			})),
+			// The block's identity is its own smallest id, exactly as a line's is: the note the reader
+			// links to is the block, and the lines it was assembled from are not notes any more.
+			anchorStrokeId: lines.map((line) => line.anchorStrokeId).reduce((smallest, id) => (compareCrdtIds(id, smallest) < 0 ? id : smallest)),
+		};
+	});
+}
+
+/**
+ * Groups handwritten strokes into margin notes (F12), one cluster per line of handwriting -- joined
+ * into one note where the lines stand in the margin as a block (see {@link marginBlocks}) -- ordered
  * top-down and then left-to-right. Pass ink strokes only -- highlighter/shader strokes are marker
  * bands, not notes, and the caller filters them out.
  *
- * Deliberately no line-merging stage: a note spanning two lines becomes two clusters, i.e. two
- * entries in the digest. The failure mode is visible in the note (one entry too many), never silent
- * loss.
+ * **Lines merge in the margin and nowhere else.** Over the text a note spanning two lines still
+ * becomes two clusters, i.e. two entries: nine general merge rules were measured against the fixture
+ * and every one fused a pair of unrelated notes, whose boxes overlap on both axes exactly as a
+ * paragraph's lines do. Both signals that could break that tie are dead -- all 2450 ink strokes of the
+ * fixture share one timestamp CRDT id, and the pair's stroke indices are adjacent. So the cost stands
+ * where it always did: one entry too many, visible in the note, never silent loss.
+ * See `.scratch/pdf-annotation/issues/15-paragraph-clusters.md`.
  *
- * That was first written because every note on the original 7 fixture pages was a single line. It no
- * longer is -- the refreshed fixture holds a 12-line summary and a 9-line list -- and the rule
- * survives on measurement instead. Nine merge rules were built and run over every page with real OCR
- * under each cluster, and each one broke a real case: the two overlapping notes named above have boxes
- * that overlap on *both* axes, exactly as two lines of one paragraph do, so no gap rule separates them;
- * a left-edge rule that does keep them apart splits an indented paragraph instead. Both features that
- * could break the tie are dead -- all 2450 ink strokes of the fixture share one timestamp CRDT id, and
- * the pair's stroke indices are adjacent. Merging also *grows* the rectangles by a third, since a block's
- * box takes its whitespace with it. See `.scratch/pdf-annotation/issues/15-paragraph-clusters.md`.
+ * What that measurement could not see, because it never left stroke geometry, is that the trap lies
+ * *over the printed text* -- and a margin note does not. Given the column (which needs the PDF, so the
+ * caller supplies it), lines standing in the margin as one block become one note. See
+ * {@link marginBlocks}; without a column nothing merges and every line is its own note, as before.
  *
- * Fragments are the one exception, and they are not notes at all -- see {@link FRAGMENT_MAX_HEIGHT}.
+ * Fragments are the other exception, and they are not notes at all -- see {@link FRAGMENT_MAX_HEIGHT}.
  */
-export function clusterStrokes(strokes: RmStroke[], lineHeightPx: number): StrokeCluster[] {
+export function clusterStrokes(strokes: RmStroke[], lineHeightPx: number, column?: TextColumn): StrokeCluster[] {
 	const inked: StrokeGeometry[] = [];
 	strokes.forEach((stroke, index) => {
 		const bounds = strokeBounds(stroke);
 		if (bounds) inked.push({ index, bounds, centerY: (bounds.minY + bounds.maxY) / 2 });
 	});
 
-	const clusters = absorbFragments(linkedComponents(inked, lineHeightPx), lineHeightPx)
+	const lines = absorbFragments(linkedComponents(inked, lineHeightPx), lineHeightPx)
 		.map(({ host, absorbed }) => {
 			const ordered = [...host, ...absorbed].sort((a, b) => a.index - b.index);
 			return {
@@ -310,8 +423,12 @@ export function clusterStrokes(strokes: RmStroke[], lineHeightPx: number): Strok
 					.map(({ index }) => strokes[index].id)
 					.reduce((smallest, id) => (compareCrdtIds(id, smallest) < 0 ? id : smallest)),
 			};
-		})
-		.sort((a, b) => a.bounds.minY - b.bounds.minY || a.bounds.minX - b.bounds.minX);
+		});
+
+	const order = new Map(strokes.map((stroke, index) => [stroke, index]));
+	const clusters = (column ? marginBlocks(lines, lineHeightPx, column, order) : lines).sort(
+		(a, b) => a.bounds.minY - b.bounds.minY || a.bounds.minX - b.bounds.minX,
+	);
 
 	return inReadingOrder(clusters, lineHeightPx);
 }

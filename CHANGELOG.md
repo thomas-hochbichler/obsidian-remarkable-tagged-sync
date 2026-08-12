@@ -35,6 +35,13 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A note written down the margin arrives as one note.** Several lines standing in the margin as a
+  block used to become one entry per line — each transcribed separately, each anchored somewhere of
+  its own, a single sentence torn into four. They are now read as the one note they are: one entry,
+  one transcription, one strip of page to look at. Only in the margin: over the printed text a note
+  spanning two lines still becomes two entries, because there two notes written across each other
+  look exactly like one paragraph, and joining those would silently glue two thoughts together.
+
 - **Handwriting written beside a page is no longer cut off at the paper's edge.** The reMarkable does
   not stop the pen where the paper stops: zoom a PDF out and you can write in the space next to it,
   and that ink was landing outside the page the plugin built, so it was drawn nowhere. A page now

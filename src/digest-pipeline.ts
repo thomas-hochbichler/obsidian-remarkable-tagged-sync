@@ -12,7 +12,7 @@
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
 import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
 import { findInkMarks, readsAsMark } from "./ink-marks";
-import { clusterStrokes, type StrokeCluster } from "./margin-notes";
+import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
 import {
@@ -101,6 +101,27 @@ function clusterRect(cluster: StrokeCluster, frame: DeviceCanvas): PdfRect {
 	return sceneRectToPdf({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, frame);
 }
 
+/**
+ * How far the printed text reaches across the page, in the scene's own frame.
+ *
+ * The outermost text there is, not the body column: a page number or a running head sits further out
+ * than the paragraphs, and taking the paragraphs alone would call the strip they stand in a margin.
+ * Null for a page whose text layer holds nothing -- there is no column to speak of, and the clustering
+ * falls back to leaving every line its own note.
+ */
+function textColumn(pageText: PdfPageText, frame: DeviceCanvas): TextColumn | null {
+	let left = Infinity;
+	let right = -Infinity;
+	for (const line of pageText.lines) {
+		if (line.text.trim() === "") continue;
+		left = Math.min(left, line.x);
+		right = Math.max(right, line.x + line.width);
+	}
+	if (left > right) return null;
+	const toScene = (pt: number) => pt / frame.pxToPt - frame.widthPx / 2;
+	return { left: toScene(left), right: toScene(right) };
+}
+
 /** A one-layer scene holding a single cluster's strokes: the unit the OCR backend is handed. */
 function clusterScene(strokes: RmStroke[], formatVersion: number): RmPage {
 	return { formatVersion, layers: [{ id: strokes[0].layerId, name: null, strokes }] };
@@ -116,6 +137,8 @@ interface PageGeometry {
 	 * a guess, which is the same condition that costs a note its region.
 	 */
 	box: PdfRect | null;
+	/** How far the printed text reaches across this page, in scene px, so the clustering can tell a margin from the text. Null without a text layer. */
+	column: TextColumn | null;
 	/** This page's own headings, for the anchor cascade -- a note can only be anchored to a heading it sits level with. */
 	headings: { title: string; y: number }[];
 	/** Every heading in the document, in document order, for the section lookup. */
@@ -526,7 +549,9 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	}
 
 	// F20 off stops here, before any cluster exists: no cluster, no OCR call, no callout.
-	const clusters = state.deps.marginNotes ? clusterStrokes(handwriting, geometry.lineHeightPt / geometry.frame.pxToPt) : [];
+	const clusters = state.deps.marginNotes
+		? clusterStrokes(handwriting, geometry.lineHeightPt / geometry.frame.pxToPt, geometry.column ?? undefined)
+		: [];
 	if (placed.length === 0 && clusters.length === 0) return null;
 
 	// Anchored against every highlight there is -- pen marks included -- and merged only afterwards: the cascade
@@ -631,6 +656,7 @@ export async function buildDigest(
 			// The same scene the renderer is handed, measured the same way, so a region names a place on
 			// the sheet the embed actually has rather than on the paper it started from.
 			box: pageText ? annotatedPageBox(page.scene, frame) : null,
+			column: pageText ? textColumn(pageText, frame) : null,
 			pageText,
 			headings: headings
 				.filter((heading): heading is PdfHeading & { y: number } => heading.pageIndex === page.sourceIndex && heading.y !== null)

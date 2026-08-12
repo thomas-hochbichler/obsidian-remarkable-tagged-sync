@@ -59,9 +59,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * carries the page and rectangle its handwriting sits at, and the vault keeps no crop files at all;
  * version 15 grows an annotated page past its paper wherever the ink runs off it, so a note written
  * beside the page is in the PDF at all -- until now every such document was rendered with its margin
- * notes cut off at the paper's edge, and the rectangles are measured from the grown sheet.
+ * notes cut off at the paper's edge, and the rectangles are measured from the grown sheet; version 16
+ * reads a block written down the margin as the one note it is instead of one note per line, which
+ * moves both the entries and their F15 ids.
  */
-export const RENDER_VERSION = 15;
+export const RENDER_VERSION = 16;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
