@@ -24,6 +24,7 @@ import { explainError } from "./explain-error";
 import type { NoteStore, OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { registerRegionProcessor } from "./region-view";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { tolerateLegacyMetadata } from "./remarkable-metadata";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
@@ -84,19 +85,12 @@ interface TaggedSyncData {
 	/** Vault folder for rendered PDFs (spec §8: configurable, default `tagged-sync/attachments`). Stored raw; normalized at use. */
 	attachmentsFolder: string;
 	/**
-	 * F20. Handwritten margin notes on annotated PDFs, off by default: each one keeps a crop of the
-	 * handwriting beside its transcription, which costs roughly 65 KB a note -- about 22 MB for an
-	 * annotated 200-page book -- and that is not something to write into someone's vault unasked.
+	 * F20. Handwritten margin notes on annotated PDFs, off by default: transcribing them spawns an OCR
+	 * process per note, and a transcription of someone's own handwriting is not something to write into
+	 * their vault unasked.
 	 */
 	marginNotes: boolean;
 }
-
-/**
- * F20 is held back from this release: the crop beside a margin note is not good enough yet. The
- * setting is hidden and `marginNotes` is forced off on load, so no build can reach the feature --
- * the pipeline behind it stays in the tree untouched. Flip this to bring the setting back.
- */
-const MARGIN_NOTES_UI: boolean = false;
 
 const DEFAULT_DATA: TaggedSyncData = {
 	deviceToken: null,
@@ -194,20 +188,6 @@ function createAttachmentStore(vault: Vault): AttachmentStore {
 			if (file) await vault.modifyBinary(file, data);
 			else await vault.createBinary(path, data);
 		},
-		list: async (path) => {
-			const folder = vault.getFolderByPath(path);
-			if (!folder) return [];
-			return folder.children.filter((child): child is TFile => child instanceof TFile).map((file) => file.name);
-		},
-		remove: async (path) => {
-			const file = vault.getFileByPath(path);
-			// Trash rather than delete: crop cleanup runs unattended on every sync, and a file the plugin
-			// removes by mistake is the user's, not ours -- it has to stay recoverable. `system: true` prefers
-			// the OS trash and falls back to the vault's local trash. `FileManager.trashFile`, which reads the
-			// user's own deletion preference, would be the better call but needs Obsidian 1.6.6; manifest.json
-			// declares 1.5.7.
-			if (file) await vault.trash(file, true);
-		},
 	};
 }
 
@@ -264,9 +244,11 @@ export default class TaggedSyncPlugin extends Plugin {
 			autoSync: { ...DEFAULT_AUTO_SYNC, ...saved?.autoSync },
 			lastSyncAt: saved?.lastSyncAt ?? null,
 			attachmentsFolder: saved?.attachmentsFolder ?? DEFAULT_DATA.attachmentsFolder,
-			// Not read back while `MARGIN_NOTES_UI` is off: a beta tester who switched it on would
-			// otherwise keep the feature running with no setting left to switch it off again.
-			marginNotes: MARGIN_NOTES_UI ? (saved?.marginNotes ?? DEFAULT_DATA.marginNotes) : false,
+			// A saved `true` is honoured. It can only have been written by someone who switched the
+			// setting on themselves, in a 1.1.0 beta; the feature they said yes to now draws the
+			// handwriting out of the embedded PDF instead of storing a picture of it, and the setting
+			// they used to say it with is on screen again to say no with.
+			marginNotes: saved?.marginNotes ?? DEFAULT_DATA.marginNotes,
 		};
 
 		const store: AuthStore = {
@@ -279,6 +261,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.auth = new RemarkableAuth(store);
 
 		this.addSettingTab(new TaggedSyncSettingTab(this.app, this));
+		// Registered whatever the setting says: it governs whether a sync *writes* margin notes, while a
+		// note that already carries one has to keep working after the setting is switched off again.
+		registerRegionProcessor(this);
 		this.addCommand({
 			id: "sync-now",
 			name: "Sync now",
@@ -882,17 +867,15 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					});
 			});
 
-		// Held back for this release -- see `MARGIN_NOTES_UI`. The row below is what it hides.
-		if (!MARGIN_NOTES_UI) return;
-
-		// Off by default (F20), and the description says what switching it on costs: the crop beside
-		// every transcription is what makes a misread checkable, and it is also what fills the vault.
+		// Off by default (F20). The description says what it does and what it costs -- a transcription
+		// per note -- and settles the question the old wording answered wrongly: nothing is written to
+		// the vault, because the handwriting is drawn out of the PDF that is already there.
 		new Setting(containerEl)
 			.setName("Handwritten notes")
 			.setDesc(
-				"Include handwritten margin notes in the digest of annotated PDFs. On macOS they are transcribed; " +
-					"on Windows and Linux they appear as small images. Each note also stores an image of your handwriting " +
-					"(about 65 KB), so a whole annotated book can add tens of megabytes to your vault.",
+				"Include handwritten margin notes in the digest of annotated PDFs. Each note is transcribed where a " +
+					"transcription backend can run, and every entry can show the handwriting itself, drawn from the " +
+					"embedded PDF when you ask for it. No images are added to your vault.",
 			)
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.data.marginNotes).onChange(async (value) => {

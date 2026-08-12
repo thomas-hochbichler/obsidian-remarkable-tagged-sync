@@ -9,14 +9,12 @@
 // every sync and must come out byte-identical for identical input. So no clock, no randomness, and
 // the clusters are transcribed one after another rather than in parallel.
 
-import { writeCropAttachment, type AttachmentStore } from "./attachment-writer";
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
-import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage } from "./digest-builder";
+import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
 import { findInkMarks, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
-import { rasterizePage, type RasterImage } from "./page-rasterizer";
 import {
 	isHighlighterOrShader,
 	pageFrame,
@@ -26,18 +24,14 @@ import {
 	type PdfRect,
 } from "./pdf-renderer";
 import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
-import { encodeInkPng } from "./png-encoder";
 import type { RmPage, RmStroke } from "./rm-parser";
 
 export interface DigestPipelineDeps {
 	ocrBackend: OcrBackend;
-	attachmentStore: AttachmentStore;
-	attachmentsFolder: string;
 	/**
-	 * F20. False drops margin notes whole -- no callout, no transcription, no crop -- and stops the
-	 * work rather than the rendering: the clusters are never formed, so no OCR process starts and no
-	 * PNG is written. Deliberately not optional: a default here would decide a shipped product
-	 * question in a place nobody looks.
+	 * F20. False drops margin notes whole -- no callout, no transcription -- and stops the work rather
+	 * than the rendering: the clusters are never formed, so no OCR process starts. Deliberately not
+	 * optional: a default here would decide a shipped product question in a place nobody looks.
 	 */
 	marginNotes: boolean;
 	/** Injected so tests can drive it without Obsidian; defaults to `loadPdfText`. */
@@ -65,8 +59,6 @@ export interface DigestPageInput {
 export interface DigestBuild {
 	/** The rendered `## Digest` body, "" when the document has no annotations at all. */
 	markdown: string;
-	/** Crop ids written this run, for `pruneCrops`. */
-	cropIds: Set<string>;
 	/** Non-fatal problems, surfaced in `SyncResult.skipErrors` -- never silent. */
 	warnings: string[];
 	/**
@@ -84,12 +76,6 @@ export interface DigestBuild {
  * measured on the fixture document and a typical value for 9-11 pt prose.
  */
 const FALLBACK_LINE_HEIGHT_PT = 13.5;
-
-/**
- * Quiet space around a crop's ink, in device px. OCR reads a few words far better with a margin than
- * with the ink touching the image edge; 12 px is what the Vision calibration below ran with.
- */
-const CROP_PADDING_PX = 12;
 
 function describeError(error: unknown): string {
 	return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -114,7 +100,7 @@ function clusterRect(cluster: StrokeCluster, frame: DeviceCanvas): PdfRect {
 	return sceneRectToPdf({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, frame);
 }
 
-/** A one-layer scene holding a single cluster's strokes: the unit both the OCR backend and the crop are made from. */
+/** A one-layer scene holding a single cluster's strokes: the unit the OCR backend is handed. */
 function clusterScene(strokes: RmStroke[], formatVersion: number): RmPage {
 	return { formatVersion, layers: [{ id: strokes[0].layerId, name: null, strokes }] };
 }
@@ -152,11 +138,9 @@ interface PlacedNote {
 	pdfTop: number;
 }
 
-/** Everything the per-document work shares; `warnings` and `cropIds` are collected across all pages. */
+/** Everything the per-document work shares; `warnings` is collected across all pages. */
 interface BuildState {
 	deps: DigestPipelineDeps;
-	docSlug: string;
-	cropIds: Set<string>;
 	warnings: string[];
 	/** One entry per transcribed cluster, collapsed into `DigestBuild.ocr` at the end. */
 	ocrStatuses: OcrStatus[];
@@ -317,17 +301,25 @@ function anchorFor(rect: PdfRect, { geometry, highlights }: PageContext): Digest
 	});
 }
 
-/** Null when the crop could not be written -- with a warning, because a note that loses its crop and has no text would otherwise vanish. */
-async function writeCrop(context: PageContext, id: string, image: RasterImage): Promise<string | null> {
-	const { deps, docSlug, page, cropIds, warnings } = context;
-	try {
-		const path = await writeCropAttachment(deps.attachmentStore, deps.attachmentsFolder, docSlug, id, encodeInkPng(image));
-		cropIds.add(id);
-		return path;
-	} catch (error) {
-		warnings.push(`Page ${page.embedPage}: the crop for margin note ${id} could not be saved (${describeError(error)}).`);
-		return null;
-	}
+/**
+ * Where the reader can be shown this note's handwriting: the embed's page and the ink's box, with y
+ * measured from the page top because that is the axis a pdf.js viewport uses. `clusterRect` hands
+ * back the PDF's own bottom-left y, which the anchor cascade needs and a viewport does not.
+ *
+ * Null without a text layer. The frame is then the *device screen* rather than the page (see
+ * `buildDigest`), so the rectangle would not name a place in the PDF at all -- while the embed's own
+ * strokes are drawn against the page. Better no button than one that opens the wrong strip of paper;
+ * such a document already warns that its text could not be read.
+ */
+function noteRegion(rect: PdfRect, { page, geometry }: PageContext): NoteRegion | null {
+	if (geometry.pageText === null) return null;
+	return {
+		page: page.embedPage,
+		x: rect.x,
+		y: geometry.frame.heightPt - (rect.y + rect.height),
+		width: rect.width,
+		height: rect.height,
+	};
 }
 
 /** Transcribes one cluster and turns it into a note. Called strictly one cluster at a time -- see `buildNotes`. */
@@ -343,23 +335,16 @@ async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<
 		context.ocrStatuses.push(result.status);
 	} catch (error) {
 		context.ocrStatuses.push("failed");
-		warnings.push(`Page ${page.embedPage}: a margin note could not be transcribed and is shown as a crop (${describeError(error)}).`);
+		warnings.push(`Page ${page.embedPage}: a margin note could not be transcribed (${describeError(error)}). Its entry says so and still shows the handwriting on request.`);
 	}
 
-	// Every note carries its crop (F6). Nothing decides this any more: the two triggers that used to
-	// -- a confidence threshold and an ink-per-character drawing guard -- were deleted with ticket 11,
-	// because a misread is invisible to both. The image is the only thing that lets a reader check
-	// what the transcription claims, so it is never the part that gets left out.
-	const image = rasterizePage(scene, { paddingPx: CROP_PADDING_PX });
-	const cropPath = await writeCrop(context, id, image);
-	// The raster's own size travels with the path: the renderer sizes the embed from it, and it is the
-	// only place that knows how much ink the crop actually holds.
-	const cropEmbed = cropPath === null ? null : { path: cropPath, width: image.width, height: image.height };
-
+	// No image is written, ever: the vault's PDF already has this ink drawn into it, so the entry
+	// carries the place instead of a copy. What a reader gets on request is that place, drawn out of
+	// the embed -- and a document with no crops in it is the point of the exercise.
 	const rect = clusterRect(cluster, geometry.frame);
 	const anchor = anchorFor(rect, context);
 	return {
-		note: { id, anchor, text, cropEmbed, top: cluster.rowTop },
+		note: { id, anchor, text, region: noteRegion(rect, context), top: cluster.rowTop },
 		anchor,
 		pdfLeft: rect.x,
 		pdfTop: rect.y + rect.height,
@@ -368,9 +353,9 @@ async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<
 
 /**
  * Sequential on purpose. Each `recognize` call spawns its own Vision process, so running the
- * clusters in parallel would multiply the process count by whatever a page happens to contain, and
- * the crops would be written in completion order rather than in reading order. Serializing costs one
- * OCR round-trip per margin note and buys a predictable machine load and a deterministic result.
+ * clusters in parallel would multiply the process count by whatever a page happens to contain.
+ * Serializing costs one OCR round-trip per margin note and buys a predictable machine load and a
+ * deterministic result.
  */
 async function buildNotes(context: PageContext, clusters: StrokeCluster[]): Promise<PlacedNote[]> {
 	const notes: PlacedNote[] = [];
@@ -463,10 +448,9 @@ function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings:
  * heading. And the page is not annotation of the document, so carrying the last section heading of the
  * PDF onto it would file the reader's own notes under someone else's chapter.
  *
- * **No crop.** Ticket 11's rule -- every note carries its image, so a misread can be checked -- is
- * about a margin note, and this is not one: the whole page rasterizes to nearly 10 MB, twice what the
- * per-line crops cost and more than the entire document does. What makes it checkable is the embed,
- * which now shows the page whole (`inkCanvas` in `pdf-renderer.ts`).
+ * **No region.** There is no source page under this ink, so there is no page region to draw it out
+ * of. What makes it checkable is the embed, which shows the page whole (`inkCanvas` in
+ * `pdf-renderer.ts`).
  */
 async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink: RmStroke[]): Promise<DigestNote & { section: string | null }> {
 	let text = "";
@@ -486,7 +470,7 @@ async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink
 		id: digestId("nt", page.pageId, "page"),
 		anchor: { kind: "page" },
 		text,
-		cropEmbed: null,
+		region: null,
 		top: 0,
 		wholePage: true,
 		section: null,
@@ -512,8 +496,8 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	const { marks, strokes: handwriting } = buildInkMarks(page, geometry, ink);
 	placed.push(...marks);
 
-	// F18 reaches here too. With F20 off a leftover stroke goes nowhere at all -- no cluster, no crop,
-	// nothing in the note -- and for handwriting that is the setting working as asked. A stroke shaped
+	// F18 reaches here too. With F20 off a leftover stroke goes nowhere at all -- no cluster, nothing
+	// in the note -- and for handwriting that is the setting working as asked. A stroke shaped
 	// like a mark is the exception worth a line: the reader drew it *at* the text and expects to find
 	// it quoted, and the reasons it missed (drawn too low, struck through, over a patch the text layer
 	// does not cover) are invisible from the note.
@@ -528,7 +512,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		}
 	}
 
-	// F20 off stops here, before any cluster exists: no cluster, no OCR call, no crop, no callout.
+	// F20 off stops here, before any cluster exists: no cluster, no OCR call, no callout.
 	const clusters = state.deps.marginNotes ? clusterStrokes(handwriting, geometry.lineHeightPt / geometry.frame.pxToPt) : [];
 	if (placed.length === 0 && clusters.length === 0) return null;
 
@@ -586,17 +570,17 @@ async function readPageText(document: PdfTextDocument | null, page: DigestPageIn
  * Builds the whole `## Digest` body for one PDF-backed document.
  *
  * Nothing fails silently (F18): a PDF whose text cannot be opened, a page without a text layer, a
- * cluster whose OCR threw, a crop that could not be written -- each degrades visibly *and* adds a
+ * cluster whose OCR threw -- each degrades visibly *and* adds a
  * plain-language line to `warnings`, which the sync engine passes on to `SyncResult.skipErrors`. The
  * build itself carries on; a digest missing one sentence beats a digest missing one annotation, and
  * both beat no digest at all.
  */
 export async function buildDigest(
 	deps: DigestPipelineDeps,
-	params: { sourcePdfBytes: Uint8Array; docSlug: string; embedPath: string; pages: DigestPageInput[] },
+	params: { sourcePdfBytes: Uint8Array; embedPath: string; pages: DigestPageInput[] },
 ): Promise<DigestBuild> {
-	const { sourcePdfBytes, docSlug, embedPath, pages } = params;
-	const state: BuildState = { deps, docSlug, cropIds: new Set<string>(), warnings: [], ocrStatuses: [] };
+	const { sourcePdfBytes, embedPath, pages } = params;
+	const state: BuildState = { deps, warnings: [], ocrStatuses: [] };
 
 	let document: PdfTextDocument | null = null;
 	try {
@@ -646,7 +630,6 @@ export async function buildDigest(
 
 	return {
 		markdown: renderDigest(embedPath, digestPages),
-		cropIds: state.cropIds,
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
 	};

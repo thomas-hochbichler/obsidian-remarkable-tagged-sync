@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { digestId, renderDigest, slugify } from "./digest-builder";
-import type { DigestHighlight, DigestNote, DigestPage } from "./digest-builder";
+import { digestId, renderDigest } from "./digest-builder";
+import type { DigestHighlight, DigestNote, DigestPage, NoteRegion } from "./digest-builder";
 
 const EMBED = "Best Practices für Prompting.pdf";
-const CROPS = "tagged-sync/attachments/best-practices-fuer-prompting";
 
 /** Page height of the fixture PDF; turns a measured PDF y (bottom-left origin) into a top-down `top`. */
 const PAGE_HEIGHT = 792;
@@ -17,11 +16,16 @@ function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
 }
 
 function note(overrides: Partial<DigestNote> = {}): DigestNote {
-	return { id: "nt-000000", anchor: { kind: "page" }, text: "", cropEmbed: null, top: 0, ...overrides };
+	return { id: "nt-000000", anchor: { kind: "page" }, text: "", region: null, top: 0, ...overrides };
 }
 
 function page(overrides: Partial<DigestPage> = {}): DigestPage {
 	return { pageLabel: "1", embedPage: 1, highlights: [], notes: [], ...overrides };
+}
+
+/** The fixture page's right margin, where every one of its notes was written. */
+function margin(y: number, height: number): NoteRegion {
+	return { page: 2, x: 384, y, width: 140, height };
 }
 
 // --- The fixture page ---------------------------------------------------------------------------
@@ -123,24 +127,24 @@ const FIXTURE_PAGE: DigestPage = {
 		}),
 	],
 	notes: [
-		// Strokes 0-9: Vision read the circled digit as an "O", and the ink-per-character ratio trips
-		// the drawing guard -- so this one carries text *and* a crop.
+		// Strokes 0-9: Vision read the circled digit as an "O" -- the entry carries that text, and the
+		// block under it says where the ink it came from sits.
 		{
 			...note({
 				id: "nt-4c8a17",
 				anchor: { kind: "heading", heading: SECTION_B },
 				text: "Basic Rule O",
-				cropEmbed: { path: `${CROPS}-nt-4c8a17.png`, width: 600, height: 200 },
+				region: margin(top(654.2), 26),
 				top: top(654.2),
 			}),
 			section: SECTION_B,
 		},
-		// Strokes 10-11 and 12-13: bare circled digits, Vision returns "" -- crop only.
+		// Strokes 10-11 and 12-13: bare circled digits, Vision returns "" -- the entry says so in words.
 		{
 			...note({
 				id: "nt-e5f203",
 				anchor: { kind: "heading", heading: SECTION_C },
-				cropEmbed: { path: `${CROPS}-nt-e5f203.png`, width: 600, height: 200 },
+				region: margin(top(448), 24),
 				top: top(448),
 			}),
 			section: SECTION_C,
@@ -149,7 +153,7 @@ const FIXTURE_PAGE: DigestPage = {
 			...note({
 				id: "nt-90cc41",
 				anchor: { kind: "heading", heading: SECTION_D },
-				cropEmbed: { path: `${CROPS}-nt-90cc41.png`, width: 600, height: 200 },
+				region: margin(top(350.1), 24),
 				top: top(350.1),
 			}),
 			section: SECTION_D,
@@ -159,6 +163,7 @@ const FIXTURE_PAGE: DigestPage = {
 				id: "nt-2b7c95",
 				anchor: { kind: "heading", heading: SECTION_E },
 				text: "- Widu spruch zum Artikel ally. Pe",
+				region: margin(top(148.5), 52),
 				top: top(148.5),
 			}),
 			section: SECTION_E,
@@ -178,8 +183,11 @@ Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für al
 ### Sei klar und direkt
 
 > [!note] Handwritten${P2}
-> Basic Rule O
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-4c8a17.png|600]] ^nt-4c8a17
+> Basic Rule O ^nt-4c8a17
+> \`\`\`remarkable-note
+> page: 2
+> rect: 384 138 140 26
+> \`\`\`
 
 Claude reagiert gut auf ==klare, explizite Anweisungen.==${P2}
 ^hl-b03e52
@@ -189,16 +197,24 @@ Gib ==Anweisungen als aufeinanderfolgende Schritte mit nummerierten Listen oder 
 
 ### Füge Kontext hinzu, um die Leistung zu verbessern
 
-> [!note] Handwritten${P2} — not transcribable, crop:
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-e5f203.png|600]] ^nt-e5f203
+> [!note] Handwritten${P2}
+> Handwriting that could not be transcribed. ^nt-e5f203
+> \`\`\`remarkable-note
+> page: 2
+> rect: 384 344 140 24
+> \`\`\`
 
 Das Bereitstellen von Kontext oder ==Motivation hinter deinen Anweisungen,== etwa indem du Claude erklärst, warum ein solches Verhalten wichtig ist, kann Claude helfen, deine Ziele besser zu verstehen und gezieltere Antworten zu liefern.${P2}
 ^hl-1a6b3d
 
 ### Verwende Beispiele effektiv
 
-> [!note] Handwritten${P2} — not transcribable, crop:
-> ![[tagged-sync/attachments/best-practices-fuer-prompting-nt-90cc41.png|600]] ^nt-90cc41
+> [!note] Handwritten${P2}
+> Handwriting that could not be transcribed. ^nt-90cc41
+> \`\`\`remarkable-note
+> page: 2
+> rect: 384 442 140 24
+> \`\`\`
 
 Beispiele sind eine der zuverlässigsten Methoden, ==um Claudes Ausgabeformat, Ton und Struktur zu steuern.==${P2}
 ^hl-c2447e
@@ -216,6 +232,10 @@ Du kannst Claude auch bitten, deine Beispiele auf Relevanz und Vielfalt zu bewer
 
 > [!note] Handwritten${P2}
 > - Widu spruch zum Artikel ally. Pe ^nt-2b7c95
+> \`\`\`remarkable-note
+> page: 2
+> rect: 384 644 140 52
+> \`\`\`
 
 XML-Tags helfen Claude, ==komplexe Prompts== eindeutig zu parsen, insbesondere wenn dein Prompt Anweisungen, Kontext, Beispiele und variable Eingaben mischt.${P2}
 ^hl-d94012
@@ -495,7 +515,7 @@ describe("renderDigest — highlight quotes", () => {
 	});
 });
 
-describe("renderDigest — note anchors and crops", () => {
+describe("renderDigest — note anchors and regions", () => {
 	function noteBlock(overrides: Partial<DigestNote>): string {
 		const rendered = renderDigest(EMBED, [
 			page({ notes: [{ ...note({ id: "nt-1", ...overrides }), section: null }] }),
@@ -524,40 +544,30 @@ describe("renderDigest — note anchors and crops", () => {
 		);
 	});
 
-	it("embeds the crop and says so when nothing was transcribed", () => {
-		expect(noteBlock({ cropEmbed: { path: "crops/nt-1.png", width: 600, height: 200 } })).toBe(
-			"> [!note] Handwritten — not transcribable, crop:\n> ![[crops/nt-1.png|600]] ^nt-1",
-		);
+	it("says so in words when nothing was transcribed, rather than standing empty", () => {
+		expect(noteBlock({})).toBe("> [!note] Handwritten\n> Handwriting that could not be transcribed. ^nt-1");
 	});
 
 	/**
-	 * `rasterizePage` draws a crop 1:1 in device pixels, so its size is how much was written. A fixed
-	 * embed width magnified the acceptance document's 116x417 margin bracket to 280x1007 and its 32x54
-	 * tick to 280x472 -- blurry upscales printed larger than the paragraphs they annotate.
+	 * The block is what the reader's click reads back, and it is the reason the id moved: appended to
+	 * the entry as a whole, `^nt-1` would land on the closing fence and take the block apart.
 	 */
-	it("never embeds a crop wider than it was rasterized", () => {
-		expect(noteBlock({ cropEmbed: { path: "crops/nt-1.png", width: 32, height: 54 } })).toContain(
-			"![[crops/nt-1.png|32]]",
+	it("puts the region block under the text, with the block id still on the last text line", () => {
+		expect(noteBlock({ text: "check table 2", region: { page: 3, x: 384, y: 246, width: 140, height: 24 } })).toBe(
+			["> [!note] Handwritten", "> check table 2 ^nt-1", "> ```remarkable-note", "> page: 3", "> rect: 384 246 140 24", "> ```"].join("\n"),
 		);
 	});
 
-	it("narrows a tall crop further, so it cannot grow past the height cap", () => {
-		// 116x417 held to its own width would render 417 px tall; 55 px wide keeps it under 200.
-		expect(noteBlock({ cropEmbed: { path: "crops/nt-1.png", width: 116, height: 417 } })).toContain(
-			"![[crops/nt-1.png|55]]",
+	/** The rectangle only has to find the ink again, and what is drawn from it is padded by whole points. */
+	it("rounds the rectangle to whole points", () => {
+		expect(noteBlock({ text: "x", region: { page: 3, x: 383.62, y: 245.5, width: 139.94, height: 24.4 } })).toContain(
+			"> rect: 384 246 140 24",
 		);
 	});
 
-	it("still scales a crop wider than the cap down to it", () => {
-		expect(noteBlock({ cropEmbed: { path: "crops/nt-1.png", width: 1616, height: 133 } })).toContain(
-			"![[crops/nt-1.png|600]]",
-		);
-	});
-
-	it("shows the crop below the text without the suffix when the drawing guard fired", () => {
-		expect(noteBlock({ text: "Basic Rule O", cropEmbed: { path: "crops/nt-1.png", width: 600, height: 200 } })).toBe(
-			"> [!note] Handwritten\n> Basic Rule O\n> ![[crops/nt-1.png|600]] ^nt-1",
-		);
+	/** A page added on the device has no source page under its ink, so there is nothing to draw out of. */
+	it("leaves the block off entirely when there is no region", () => {
+		expect(noteBlock({ text: "A margin note." })).toBe("> [!note] Handwritten\n> A margin note. ^nt-1");
 	});
 
 	/** There is no quote callout left to nest inside, and the note carries no locator: the highlight it belongs to already gave one. */
@@ -599,24 +609,5 @@ describe("digestId", () => {
 	it("differs per prefix and per annotation", () => {
 		expect(digestId("nt", "page-1", "0110")).not.toBe(digestId("hl", "page-1", "0110"));
 		expect(digestId("hl", "page-1", "0110")).not.toBe(digestId("hl", "page-1", "0111"));
-	});
-});
-
-describe("slugify", () => {
-	it("transliterates German umlauts instead of dropping them", () => {
-		expect(slugify("Best Practices für Prompting")).toBe("best-practices-fuer-prompting");
-		expect(slugify("Größe, Öl und Ähren")).toBe("groesse-oel-und-aehren");
-	});
-
-	it("transliterates a decomposed umlaut too — macOS hands names over in NFD", () => {
-		expect(slugify("f\u0075\u0308r")).toBe("fuer");
-	});
-
-	it("strips remaining diacritics rather than replacing them", () => {
-		expect(slugify("Café Crème")).toBe("cafe-creme");
-	});
-
-	it("collapses punctuation and whitespace into single dashes and trims them", () => {
-		expect(slugify("  Notes: Part 1 — (draft!)  ")).toBe("notes-part-1-draft");
 	});
 });

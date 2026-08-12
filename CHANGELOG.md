@@ -12,6 +12,27 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **The notes you write in the margin of a PDF now arrive in the digest**, switched on under
+  Settings → Handwritten notes. They are off until you say otherwise: transcribing handwriting is
+  work your machine does per note, and it is your own hand, so nobody's vault fills up with it
+  unasked.
+
+  Each note is transcribed where a transcription backend can run, and printed where it was written —
+  under the section heading it sits in, or beside the sentence it points at, with a link to its
+  page.
+
+  **And you can look at the handwriting itself.** Every entry carries a small button that draws the
+  strip of page the note sits on, out of the PDF the note already embeds. It appears when you press
+  it and not before, so a note with thirty margin notes costs nothing to open — and **no image is
+  ever written to your vault**. What you see is the page: the printed text the note was written
+  beside, with your own ink on it.
+
+  A note whose handwriting could not be transcribed says so in words rather than standing empty, and
+  keeps its anchor and its page link. If the PDF has moved out of the vault, or the page is gone, the
+  entry says that too — where you are reading, not only in the console.
+
 ## [1.1.0] - 2026-08-10
 
 ### Added

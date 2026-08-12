@@ -180,19 +180,10 @@ function fakeNoteStore(): NoteStore & { write: ReturnType<typeof vi.fn>; move: R
 	};
 }
 
-/** Stateful, because crop pruning reads back what earlier syncs left behind; `existing` seeds files no sync wrote. */
-function fakeAttachmentStore(existing: string[] = []): AttachmentStore {
-	const names = new Set(existing);
-	const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+function fakeAttachmentStore(): AttachmentStore {
 	return {
 		ensureFolder: vi.fn().mockResolvedValue(undefined),
-		writeBinary: vi.fn(async (path: string) => {
-			names.add(fileName(path));
-		}),
-		list: vi.fn(async () => [...names]),
-		remove: vi.fn(async (path: string) => {
-			names.delete(fileName(path));
-		}),
+		writeBinary: vi.fn().mockResolvedValue(undefined),
 	};
 }
 
@@ -1181,9 +1172,12 @@ describe("runSync", () => {
 			});
 		}
 
-		/** Crop attachments written so far, in write order -- the `.pdf` embed is the only other thing the store sees. */
-		function cropsWritten(store: AttachmentStore): string[] {
-			return (store.writeBinary as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string).filter((path) => path.endsWith(".png"));
+		/**
+		 * Everything written to the attachments folder that is not the embed. It has to stay empty: the
+		 * digest names where a note's handwriting sits and the vault keeps no image of it (ticket 04).
+		 */
+		function imagesWritten(store: AttachmentStore): string[] {
+			return (store.writeBinary as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string).filter((path) => !path.endsWith(".pdf"));
 		}
 
 		it("gives a PDF-backed note a digest instead of a transcript", async () => {
@@ -1229,8 +1223,11 @@ describe("runSync", () => {
 			const result = await runSync(deps, EMPTY_SYNC_INDEX);
 
 			expect(result.unavailableOcrUnits).toBe(1);
-			// F18: nothing is dropped -- every margin note still ships as a crop.
-			expect(cropsWritten(deps.attachmentStore).length).toBeGreaterThan(0);
+			// F18: nothing is dropped -- every margin note still gets an entry, which says in words that
+			// it could not be read and carries the place its handwriting sits.
+			const written = deps.noteStore.write.mock.calls[0][1] as string;
+			expect(written).toContain("Handwriting that could not be transcribed.");
+			expect(imagesWritten(deps.attachmentStore)).toEqual([]);
 		});
 
 		// F20's default, and the trap it has to avoid: with no margin notes the digest can come out
@@ -1248,7 +1245,6 @@ describe("runSync", () => {
 			const written = deps.noteStore.write.mock.calls[0][1] as string;
 			expect(written).not.toContain("[!note]");
 			expect(written).not.toContain("## Transcript");
-			expect(cropsWritten(deps.attachmentStore)).toHaveLength(0);
 			const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as unknown[]);
 			expect(scenes).toHaveLength(0);
 		});
@@ -1268,71 +1264,45 @@ describe("runSync", () => {
 			const written = deps.noteStore.write.mock.calls[0][1] as string;
 			expect(written).toContain("## Transcript\nmy note");
 			expect(written).not.toContain("## Digest");
-			// The digest path is not entered at all: no crop written, and no prune run against the folder.
-			expect(cropsWritten(deps.attachmentStore)).toEqual([]);
-			expect(deps.attachmentStore.remove).not.toHaveBeenCalled();
+			expect(imagesWritten(deps.attachmentStore)).toEqual([]);
 		});
 
 		// The switch's two directions, end to end. `invalidateRenders` is what the settings toggle calls;
 		// without it neither sync would run at all, because nothing changed on the device.
-		it("adds the notes and their crops when the setting is turned on, and takes both away again", async () => {
+		it("adds the notes when the setting is turned on, and takes them away again", async () => {
 			const api = await annotatedPdf("root-toggle");
 			const off = { ...baseDeps(api, { sync: "Target" }), marginNotes: false, ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
 
 			const first = await runSync(off, EMPTY_SYNC_INDEX);
-			expect(cropsWritten(off.attachmentStore)).toEqual([]);
+			expect(off.noteStore.write.mock.calls.at(-1)![1] as string).not.toContain("[!note]");
 
 			const on = { ...off, marginNotes: true };
 			const second = await runSync(on, invalidateRenders(first.index));
-			const crops = cropsWritten(on.attachmentStore);
-			expect(crops.length).toBeGreaterThan(0);
 			expect(on.noteStore.write.mock.calls.at(-1)![1] as string).toContain("[!note]");
 
-			const again = { ...off, noteStore: fakeNoteStore(), attachmentStore: fakeAttachmentStore(crops.map((path) => path.slice(path.lastIndexOf("/") + 1))) };
+			const again = { ...off, noteStore: fakeNoteStore(), attachmentStore: fakeAttachmentStore() };
 			await runSync(again, invalidateRenders(second.index));
 
+			// Nothing is left behind on the way out: the entries go with the setting, and there was never
+			// a file in the vault to clean up after them.
 			expect(again.noteStore.write.mock.calls.at(-1)![1] as string).not.toContain("[!note]");
-			// Nothing claims those ids any more, so the prune sweeps every crop the "on" run wrote.
-			expect((again.attachmentStore.remove as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0] as string)).toEqual(crops);
+			expect(imagesWritten(again.attachmentStore)).toEqual([]);
 		});
 
 		/** F15/F16, acceptance 3: the digest is regenerated wholesale every sync, so an unchanged document has to come out identical -- otherwise every sync would rewrite every note. */
-		it("re-syncing an unchanged document writes the same note and the same crops", async () => {
+		it("re-syncing an unchanged document writes the same note", async () => {
 			const api = await annotatedPdf("root-twice");
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
 
 			await runSync(deps, EMPTY_SYNC_INDEX);
-			const first = cropsWritten(deps.attachmentStore);
 			await runSync(deps, EMPTY_SYNC_INDEX);
 
-			expect(first.length).toBeGreaterThan(0);
-			expect(cropsWritten(deps.attachmentStore).slice(first.length)).toEqual(first);
 			const writes = deps.noteStore.write.mock.calls;
 			expect(writes[1][1]).toBe(writes[0][1]);
-			// Same ids, so the second run finds no orphan to delete.
-			expect(deps.attachmentStore.remove).not.toHaveBeenCalled();
+			expect(imagesWritten(deps.attachmentStore)).toEqual([]);
 		});
 
-		it("deletes the crop of a vanished annotation and nothing else", async () => {
-			const api = await annotatedPdf("root-prune");
-			const deps = {
-				...baseDeps(api, { sync: "Target" }),
-				// A crop left by an annotation that is gone, a crop of a different document, and a file the
-				// user put there -- only the first is this document's to delete.
-				attachmentStore: fakeAttachmentStore(["notebook-nt-000000.png", "other-doc-nt-000000.png", "notes.png"]),
-				ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }),
-			};
-
-			await runSync(deps, EMPTY_SYNC_INDEX);
-
-			expect((deps.attachmentStore.remove as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0])).toEqual([
-				"tagged-sync/attachments/notebook-nt-000000.png",
-			]);
-			expect(cropsWritten(deps.attachmentStore).length).toBeGreaterThan(0);
-		});
-
-		/** The failure mode pruning has to survive: a document nobody rebuilt contributes no crop ids, and a prune against that empty set would strip a note that is still perfectly valid. */
-		it("keeps the crops of a document the change-detection gate skipped", async () => {
+		it("writes nothing at all for a document the change-detection gate skipped", async () => {
 			const entry = documentEntry({ fileType: "pdf", hash: "hash-1", tags: [{ name: "sync", timestamp: 0 }] });
 			const api = fakeApi({ rootHash: "root-new", entries: [entry] });
 			const row = {
@@ -1347,19 +1317,19 @@ describe("runSync", () => {
 				syncedAt: "2025-12-01T00:00:00.000Z",
 				renderVersion: RENDER_VERSION,
 			};
-			const deps = { ...baseDeps(api, { sync: "Target" }), attachmentStore: fakeAttachmentStore(["notebook-nt-000000.png"]) };
+			const deps = baseDeps(api, { sync: "Target" });
 			await deps.noteStore.write("Target/Notebook.md", "stub");
 
 			// Past level 1 (the root hash moved), stopped by level 2 (this document's entry hash did not).
 			const result = await runSync(deps, { rootHash: "root-old", mappings: mappingFingerprint({ sync: "Target" }), rows: { [row.syncKey]: row } });
 
 			expect(result.notesWritten).toBe(0);
-			expect(deps.attachmentStore.remove).not.toHaveBeenCalled();
+			expect(imagesWritten(deps.attachmentStore)).toEqual([]);
 		});
 
 		it("still writes the note, and reports the reason, when the digest build throws", async () => {
 			const api = await annotatedPdf("root-digest-fails");
-			const deps = { ...baseDeps(api, { sync: "Target" }), attachmentStore: fakeAttachmentStore(["notebook-nt-000000.png"]) };
+			const deps = baseDeps(api, { sync: "Target" });
 			vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
 
 			const result = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -1369,8 +1339,6 @@ describe("runSync", () => {
 			expect(written).not.toContain("## Digest");
 			expect(written).toContain("![[tagged-sync/attachments/doc-1.pdf]]");
 			expect(result.skipErrors).toEqual(['failed to build the digest for "Notebook" for tag "sync": Error: digest blew up']);
-			// And the crops stay: a run that produced no ids knows nothing about what is still in use.
-			expect(deps.attachmentStore.remove).not.toHaveBeenCalled();
 		});
 	});
 
