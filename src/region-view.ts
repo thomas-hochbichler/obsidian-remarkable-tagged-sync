@@ -29,7 +29,7 @@ const HIDE_LABEL = "Hide handwriting";
 
 // pdf.js ships with Obsidian and carries no types with it; only the handful of members used here are
 // described, and the version is the app's rather than ours -- so every one of them is reached
-// defensively and a miss ends as `UNDRAWABLE` rather than as a thrown promise.
+// defensively and a miss ends as a sentence in the note rather than as a thrown promise.
 
 interface PdfJsRenderTask {
 	promise: Promise<void>;
@@ -106,6 +106,19 @@ class OpenPdf {
 	}
 }
 
+/**
+ * Stops a click on this element from moving the editor's caret.
+ *
+ * Live Preview puts the caret wherever a click lands, and a block the caret sits inside falls back to
+ * its own source -- so pressing the button showed the reader `page:` and `rect:` instead of the
+ * handwriting. It is the mousedown that moves the caret, and preventing its default does not stop the
+ * click that follows, so the button keeps working and the block stays rendered. Reading View is
+ * unaffected: there is no caret there to keep out.
+ */
+function keepCaretOut(el: HTMLElement): void {
+	el.addEventListener("mousedown", (event) => event.preventDefault());
+}
+
 /** One `remarkable-note` block, for as long as its note is on screen. */
 class RegionBlock extends MarkdownRenderChild {
 	private region: NoteRegion | null = null;
@@ -134,6 +147,7 @@ class RegionBlock extends MarkdownRenderChild {
 		}
 		this.button = this.containerEl.createEl("button", { cls: "tagged-sync-region-button" });
 		this.label(SHOW_LABEL);
+		keepCaretOut(this.button);
 		this.button.addEventListener("click", () => void this.toggle());
 	}
 
@@ -175,6 +189,8 @@ class RegionBlock extends MarkdownRenderChild {
 			// there is nothing left to put the canvas into.
 			if (!this.figure && this.button.isConnected) {
 				this.figure = this.containerEl.createDiv({ cls: "tagged-sync-region" });
+				// The image too: a reader looking at their own handwriting must not lose it by clicking on it.
+				keepCaretOut(this.figure);
 				this.figure.appendChild(canvas);
 				this.label(HIDE_LABEL);
 			}
