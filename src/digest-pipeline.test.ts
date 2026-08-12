@@ -566,6 +566,22 @@ describe("buildDigest note regions", () => {
 		expect(ys[0]).toBeLessThan(792 - 653 + 20);
 	});
 
+	/**
+	 * A note written off the paper grows the page the renderer draws (`annotatedPageBox`), and a pdf.js
+	 * viewport measures from the corner of what it renders. Measured from the paper's corner instead,
+	 * this rectangle would come out at x -44 -- a place no page has, and every band on the page would
+	 * open 44 pt to the left of the handwriting it was asked for.
+	 */
+	it("measures the rectangle from the sheet the embed has, not from the paper it started on", async () => {
+		// 1100 px left of the midline, on a 612 pt page whose own half-width is 960 px.
+		const marginNote = scene([boxStroke("0a", -1100, 800, 100, 20)]);
+
+		const result = await build([fixturePage(marginNote)], { ...withText, ocrBackend: fakeOcr("Am Rand.") });
+
+		expect(result.markdown).toContain("Am Rand.");
+		expect(result.markdown).toMatch(/^> rect: 0 \d+ 32 \d+$/m);
+	});
+
 	it("names the page of the embed, which is the page its link points at", async () => {
 		const result = await build([fixturePage()], { ...withText, ocrBackend: fakeOcr(...VISION_OUTPUT) });
 

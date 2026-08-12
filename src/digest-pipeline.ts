@@ -16,6 +16,7 @@ import { clusterStrokes, type StrokeCluster } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
 import {
+	annotatedPageBox,
 	isHighlighterOrShader,
 	pageFrame,
 	resolveDeviceCanvas,
@@ -109,6 +110,12 @@ function clusterScene(strokes: RmStroke[], formatVersion: number): RmPage {
 interface PageGeometry {
 	frame: DeviceCanvas;
 	pageText: PdfPageText | null;
+	/**
+	 * The embed's own sheet for this page, in the source page's coordinates: the paper, plus whatever
+	 * the renderer had to add for ink that runs off it (`annotatedPageBox`). Null wherever the frame is
+	 * a guess, which is the same condition that costs a note its region.
+	 */
+	box: PdfRect | null;
 	/** This page's own headings, for the anchor cascade -- a note can only be anchored to a heading it sits level with. */
 	headings: { title: string; y: number }[];
 	/** Every heading in the document, in document order, for the section lookup. */
@@ -306,17 +313,23 @@ function anchorFor(rect: PdfRect, { geometry, highlights }: PageContext): Digest
  * measured from the page top because that is the axis a pdf.js viewport uses. `clusterRect` hands
  * back the PDF's own bottom-left y, which the anchor cascade needs and a viewport does not.
  *
+ * Measured from the embed's sheet rather than from the paper. The two are the same page for most
+ * documents and are not for exactly the notes this feature is for: a margin note written off the edge
+ * grows the rendered page (`annotatedPageBox`), and a viewport measures from the corner of what it
+ * renders. Reading the paper's corner there would slide every band on such a page sideways.
+ *
  * Null without a text layer. The frame is then the *device screen* rather than the page (see
  * `buildDigest`), so the rectangle would not name a place in the PDF at all -- while the embed's own
  * strokes are drawn against the page. Better no button than one that opens the wrong strip of paper;
  * such a document already warns that its text could not be read.
  */
 function noteRegion(rect: PdfRect, { page, geometry }: PageContext): NoteRegion | null {
-	if (geometry.pageText === null) return null;
+	const { box } = geometry;
+	if (geometry.pageText === null || box === null) return null;
 	return {
 		page: page.embedPage,
-		x: rect.x,
-		y: geometry.frame.heightPt - (rect.y + rect.height),
+		x: rect.x - box.x,
+		y: box.y + box.height - (rect.y + rect.height),
 		width: rect.width,
 		height: rect.height,
 	};
@@ -612,8 +625,12 @@ export async function buildDigest(
 	const digestPages: DigestPage[] = [];
 	for (const page of pages) {
 		const pageText = await readPageText(document, page, state.warnings);
+		const frame = pageText ? pageFrame(pageText.width, pageText.height, device) : device;
 		const built = await buildPage(state, page, {
-			frame: pageText ? pageFrame(pageText.width, pageText.height, device) : device,
+			frame,
+			// The same scene the renderer is handed, measured the same way, so a region names a place on
+			// the sheet the embed actually has rather than on the paper it started from.
+			box: pageText ? annotatedPageBox(page.scene, frame) : null,
 			pageText,
 			headings: headings
 				.filter((heading): heading is PdfHeading & { y: number } => heading.pageIndex === page.sourceIndex && heading.y !== null)

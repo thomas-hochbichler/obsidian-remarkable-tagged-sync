@@ -744,6 +744,81 @@ describe("renderAnnotatedPdf", () => {
 		expect(ops.match(/^S$/gm)).toHaveLength(2); // both strokes stroked
 	});
 
+	/**
+	 * The reported loss, and the reason this feature exists at all. The device does not stop the pen at
+	 * the paper's edge: a reader who zooms the page out writes beside it, and a page sized to its source
+	 * page draws that ink nowhere. Both readers who hit it saw the same thing -- a margin note cut off
+	 * partway through its first word, at the edge of the page.
+	 */
+	it("grows the sheet past the paper for ink written off its right edge", async () => {
+		// An A4 page is 1868 px wide at 226 dpi, so its right edge is 934 px from the midline. This note
+		// runs to 1100, i.e. some 53 pt of handwriting in the air beside the page.
+		const margin = stroke({
+			points: [
+				{ x: 1000, y: 800, speed: 0, width: 8, direction: 0, pressure: 1 },
+				{ x: 1100, y: 800, speed: 0, width: 8, direction: 0, pressure: 1 },
+			],
+		});
+
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [
+			{ sourceIndex: 0, annotations: pageWithStrokes([margin], { width: 1404, height: 1872 }) },
+		]);
+
+		const box = (await PDFDocument.load(bytes)).getPage(0).getMediaBox();
+		expect(box.width).toBeCloseTo(648.1, 1);
+		// The paper stays at the origin: the window around it opens, so every stroke keeps the
+		// coordinates it was placed at and the source page needs no moving.
+		expect(box).toMatchObject({ x: 0, y: 0, height: A4.height });
+		const [start, end] = pathPoints((await decodePageContent(bytes)).ops);
+		expect(start.x).toBeCloseTo(616.2, 1);
+		expect(end.x).toBeCloseTo(648.1, 1); // the last point of the note, now the sheet's own right edge
+	});
+
+	/** Growing to the left or below moves the sheet's corner off the paper's, which is what a MediaBox origin is for. */
+	it("gives the sheet a negative origin when the ink runs off the left edge or the bottom", async () => {
+		const margin = stroke({
+			points: [
+				{ x: -1000, y: 2700, speed: 0, width: 8, direction: 0, pressure: 1 },
+				{ x: -980, y: 2700, speed: 0, width: 8, direction: 0, pressure: 1 },
+			],
+		});
+
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [
+			{ sourceIndex: 0, annotations: pageWithStrokes([margin], { width: 1404, height: 1872 }) },
+		]);
+
+		const box = (await PDFDocument.load(bytes)).getPage(0).getMediaBox();
+		expect(box.x).toBeCloseTo(-20.9, 1); // 1000 px out against a 934 px half-width
+		expect(box.y).toBeCloseTo(-18.3, 1); // 2700 px down a page 2642 px tall
+		expect(box.width).toBeCloseTo(A4.width + 20.9, 1);
+		expect(box.height).toBeCloseTo(A4.height + 18.3, 1);
+	});
+
+	/**
+	 * The bound every frame in this file has, for the same reason: scenes decode a few impossible
+	 * coordinates, and one of them would otherwise blow the sheet up to a metre of empty paper.
+	 */
+	it("will not grow a page by more than its own width, whatever a scene claims", async () => {
+		const noise = stroke({
+			points: [
+				{ x: 0, y: 100, speed: 0, width: 8, direction: 0, pressure: 1 },
+				{ x: 1e12, y: 100, speed: 0, width: 8, direction: 0, pressure: 1 },
+			],
+		});
+
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [
+			{ sourceIndex: 0, annotations: pageWithStrokes([noise], { width: 1404, height: 1872 }) },
+		]);
+
+		expect((await PDFDocument.load(bytes)).getPage(0).getMediaBox().width).toBeCloseTo(2 * A4.width, 1);
+	});
+
+	it("leaves a page whose ink stays on it exactly the size of its source page", async () => {
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: pageWithStrokes([stroke({})]) }]);
+
+		expect((await PDFDocument.load(bytes)).getPage(0).getMediaBox()).toMatchObject({ x: 0, y: 0, width: A4.width, height: A4.height });
+	});
+
 	it("degrades an out-of-range source index to an annotations-only page instead of failing", async () => {
 		const annotations = pageWithStrokes([stroke({})]);
 

@@ -56,9 +56,12 @@ export type SyncRowStatus = "active" | "orphaned";
  * reads a pen underline or a circle drawn around a passage as a mark on the printed text (F23) and
  * quotes what it points at, instead of transcribing the line itself -- one underline came through as
  * the margin note `176`; version 14 stopped writing a PNG per margin note altogether -- the entry now
- * carries the page and rectangle its handwriting sits at, and the vault keeps no crop files at all.
+ * carries the page and rectangle its handwriting sits at, and the vault keeps no crop files at all;
+ * version 15 grows an annotated page past its paper wherever the ink runs off it, so a note written
+ * beside the page is in the PDF at all -- until now every such document was rendered with its margin
+ * notes cut off at the paper's edge, and the rectangles are measured from the grown sheet.
  */
-export const RENDER_VERSION = 14;
+export const RENDER_VERSION = 15;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

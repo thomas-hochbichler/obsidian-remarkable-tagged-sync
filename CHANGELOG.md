@@ -33,6 +33,15 @@ workflow publishes the section as the GitHub release body. See
   keeps its anchor and its page link. If the PDF has moved out of the vault, or the page is gone, the
   entry says that too — where you are reading, not only in the console.
 
+### Fixed
+
+- **Handwriting written beside a page is no longer cut off at the paper's edge.** The reMarkable does
+  not stop the pen where the paper stops: zoom a PDF out and you can write in the space next to it,
+  and that ink was landing outside the page the plugin built, so it was drawn nowhere. A page now
+  grows on whichever sides you wrote past, and the margin note is in your vault whole. Every
+  PDF-backed document is re-synced once for this — measured on a real annotated paper, one page in
+  twelve was losing ink this way, one of them a whole sentence.
+
 ## [1.1.0] - 2026-08-10
 
 ### Added

@@ -553,11 +553,74 @@ function inkCanvas(scene: RmPage, device: DeviceCanvas): DeviceCanvas {
 }
 
 /**
+ * How far past the paper a page may grow on one side, as a multiple of that side's own length.
+ *
+ * A bound rather than a fit, for the reason every other frame in this file has one: scenes decode a
+ * few impossible coordinates, and one of them would otherwise blow the sheet up to a metre of empty
+ * paper around the page. Measured over the annotation corpus, the widest real margin note runs 224 pt
+ * past a 612 pt page -- comfortably inside one page width, while the noise sits orders of magnitude
+ * beyond it, so nothing a hand wrote comes near the line.
+ */
+const MAX_OVERHANG = 1;
+
+/**
+ * The sheet an annotated page needs: the paper, grown on whichever sides its ink runs off.
+ *
+ * The device does not stop the pen at the paper's edge. A reader who zooms the page out writes in the
+ * space beside it, and the scene stores that ink exactly like any other -- so a page sized to its
+ * source page maps a margin note to coordinates outside its own box and draws nothing at all. Two
+ * readers reported the same thing: handwriting cut off partway through a word, at the edge of the
+ * page. In the corpus one page in twelve loses ink this way, one of them a whole sentence 224 pt out.
+ *
+ * Returned in the *source page's* own coordinates, so a box wider than the paper has a negative x --
+ * which is precisely what a PDF MediaBox is allowed to say, and why nothing that draws on the page
+ * has to move: the paper stays at the origin and the window around it widens.
+ *
+ * Only strokes are measured, and only where their points are: half a nib past the last point is a
+ * third of a point of paper, and chasing it would grow every page whose ink touches an edge. A text
+ * highlight is not measured at all -- it marks words that are printed on the page, so it is on the
+ * page by construction, and a rectangle that says otherwise is a decode fault rather than ink.
+ */
+export function annotatedPageBox(scene: RmPage | null, frame: DeviceCanvas): PdfRect {
+	const paper = { x: 0, y: 0, width: frame.widthPt, height: frame.heightPt };
+	if (!scene) return paper;
+
+	const half = frame.widthPx / 2;
+	let left = 0;
+	let right = 0;
+	let above = 0;
+	let below = 0;
+	for (const layer of scene.layers) {
+		for (const stroke of layer.strokes) {
+			for (const { x, y } of stroke.points) {
+				if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+				left = Math.max(left, -x - half);
+				right = Math.max(right, x - half);
+				above = Math.max(above, -y);
+				below = Math.max(below, y - frame.heightPx);
+			}
+		}
+	}
+
+	const capX = frame.widthPx * MAX_OVERHANG;
+	const capY = frame.heightPx * MAX_OVERHANG;
+	const grow = (amount: number, cap: number): number => Math.min(amount, cap) * frame.pxToPt;
+	const [leftPt, rightPt, abovePt, belowPt] = [grow(left, capX), grow(right, capX), grow(above, capY), grow(below, capY)];
+	return {
+		x: -leftPt,
+		y: -belowPt,
+		width: frame.widthPt + leftPt + rightPt,
+		height: frame.heightPt + abovePt + belowPt,
+	};
+}
+
+/**
  * Composites a PDF-backed document (spec §5's PDF path): each output page is the source PDF page at
  * its own size with the handwritten annotation scene drawn on top, placed in the page's own frame
- * (see `pageFrame`) so every stroke lands on the words it marks. A page with no matching source page
- * -- one added on the device behind the PDF -- becomes an annotations-only page sized to its own ink
- * (see `inkCanvas`) rather than failing the whole document.
+ * (see `pageFrame`) so every stroke lands on the words it marks -- and grown past the paper wherever
+ * the ink runs off it (see `annotatedPageBox`). A page with no matching source page -- one added on
+ * the device behind the PDF -- becomes an annotations-only page sized to its own ink (see
+ * `inkCanvas`) rather than failing the whole document.
  */
 export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: AnnotatedPdfPage[]): Promise<Uint8Array> {
 	if (pages.length === 0) throw new Error("renderAnnotatedPdf: no pages to render");
@@ -583,7 +646,14 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 				console.warn(`Tagged Sync: couldn't embed source page ${sourceIndex}, keeping its annotations only`, error);
 			}
 		}
-		if (annotations) drawPageStrokes(outPage, annotations, srcPage ? pageFrame(width, height, device) : ownCanvas);
+		if (annotations) {
+			const frame = srcPage ? pageFrame(width, height, device) : ownCanvas;
+			drawPageStrokes(outPage, annotations, frame);
+			// The paper is drawn at the origin and stays there; only the window around it opens up, so
+			// every stroke above keeps the coordinates it was placed at (see `annotatedPageBox`).
+			const box = annotatedPageBox(annotations, frame);
+			if (box.width > width || box.height > height) outPage.setMediaBox(box.x, box.y, box.width, box.height);
+		}
 	}
 
 	return out.save();
