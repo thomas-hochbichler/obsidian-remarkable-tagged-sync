@@ -59,7 +59,19 @@ describe("drawnBand", () => {
 	 * page at its height, which brings the text it was written beside along with it.
 	 */
 	it("spans the page's width at the height of the ink", () => {
-		expect(drawnBand(region, A4)).toEqual({ x: 30, y: 238, width: 540, height: 40 });
+		expect(drawnBand(region, A4)).toEqual({ x: 0, y: 238, width: 600, height: 40 });
+	});
+
+	/**
+	 * Edge to edge, with nothing trimmed off the sides. A margin note stands in the margin and often
+	 * runs right up to the paper's edge, so a band that spared itself even a hand's breadth of white
+	 * would cut the handwriting it exists to show -- which is what a reader reported it doing.
+	 */
+	it("shows ink that runs to the edge of the paper", () => {
+		const edge = { ...region, x: 560, width: 40 };
+		const band = drawnBand(edge, A4);
+		expect(band.x).toBeLessThanOrEqual(edge.x);
+		expect(band.x + band.width).toBeGreaterThanOrEqual(edge.x + edge.width);
 	});
 
 	it("keeps the same air above and below however tall the note is", () => {

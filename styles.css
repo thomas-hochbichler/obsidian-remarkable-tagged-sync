@@ -106,7 +106,7 @@
 }
 
 /*
- * The band is the page's full width and the note's column is not, so it is scaled to fit rather than
+ * The band is the whole page's width and the note's column is not, so it is scaled to fit rather than
  * allowed to widen the note. The white paper it brings with it is given the same rounded frame the
  * embeds have, so it reads as a piece of document instead of a hole in a dark theme.
  */

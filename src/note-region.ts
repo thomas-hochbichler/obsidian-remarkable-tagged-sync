@@ -65,9 +65,6 @@ export function parseRegionBlock(source: string): NoteRegion | null {
 	return { page, x, y, width, height };
 }
 
-/** How much of the page's width the band leaves free on each side. */
-const BAND_SIDE_MARGIN = 0.05;
-
 /** Air above and below the ink, in PDF points, so the handwriting does not touch the image edge. */
 const BAND_PADDING_PT = 8;
 
@@ -79,10 +76,14 @@ const BAND_PADDING_PT = 8;
  * and says nothing about what the note is *about*. The band brings the printed text beside it along,
  * which is the whole reason the entry stores a place instead of a picture.
  *
- * Full width rather than "as far as the text column", which would be tighter and better-looking: the
- * column is page-layout knowledge, and nothing here has any. This function knows a rectangle and a
- * page width, and it works the same whether the note sits in the right margin, the left, or across
- * the text -- which is exactly why the rule can change later without touching a single stored note.
+ * The full width, edge to edge, rather than "as far as the text column": the column is page-layout
+ * knowledge, and nothing here has any. Not even a hand's breadth of paper is trimmed off the sides --
+ * a margin note stands *in* the margin, often hard against the edge, so trimming the sides is exactly
+ * how the ink the band exists to show ends up cut in half.
+ *
+ * So this function knows a rectangle and a page height, and it works the same whether the note sits
+ * in the right margin, the left, or across the text -- which is why the rule can change later without
+ * touching a single stored note.
  */
 export function drawnBand(region: NoteRegion, page: { width: number; height: number }): { x: number; y: number; width: number; height: number } {
 	// Held inside the sheet: ink that reaches the very top or bottom edge would otherwise pad the band
@@ -90,12 +91,7 @@ export function drawnBand(region: NoteRegion, page: { width: number; height: num
 	// handwriting, which reads as a rendering fault rather than as a page edge.
 	const top = Math.max(0, region.y - BAND_PADDING_PT);
 	const bottom = Math.min(page.height, region.y + region.height + BAND_PADDING_PT);
-	return {
-		x: page.width * BAND_SIDE_MARGIN,
-		y: top,
-		width: page.width * (1 - 2 * BAND_SIDE_MARGIN),
-		height: bottom - top,
-	};
+	return { x: 0, y: top, width: page.width, height: bottom - top };
 }
 
 /**
