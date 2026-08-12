@@ -111,12 +111,27 @@ class OpenPdf {
  *
  * Live Preview puts the caret wherever a click lands, and a block the caret sits inside falls back to
  * its own source -- so pressing the button showed the reader `page:` and `rect:` instead of the
- * handwriting. It is the mousedown that moves the caret, and preventing its default does not stop the
- * click that follows, so the button keeps working and the block stays rendered. Reading View is
- * unaffected: there is no caret there to keep out.
+ * handwriting. A rendered code block elsewhere in a note survives being clicked, because it is a
+ * widget the editor treats as one opaque thing; an entry's block sits inside a **callout**, which
+ * Live Preview keeps as editable text all the way down.
+ *
+ * **Stopping the event matters more than preventing its default.** The editor sets the caret in a
+ * handler of its own, on an ancestor of this element, rather than leaving it to the browser -- so the
+ * event has to not reach it at all. The default is prevented as well, which is what keeps focus from
+ * moving with the click.
+ *
+ * Listeners added to this same element afterwards still run: `stopPropagation` holds back the
+ * ancestors, not the siblings. Reading View is unaffected -- there is no caret there to keep out.
  */
 function keepCaretOut(el: HTMLElement): void {
-	el.addEventListener("mousedown", (event) => event.preventDefault());
+	for (const type of ["pointerdown", "mousedown", "click"] as const) {
+		el.addEventListener(type, (event) => {
+			event.stopPropagation();
+			// Not on the click: a button has no default action worth suppressing, and preventing it is
+			// how a control stops behaving like one.
+			if (type !== "click") event.preventDefault();
+		});
+	}
 }
 
 /** One `remarkable-note` block, for as long as its note is on screen. */
@@ -145,7 +160,7 @@ class RegionBlock extends MarkdownRenderChild {
 			this.containerEl.createDiv({ cls: "tagged-sync-region-message", text: UNREADABLE_BLOCK });
 			return;
 		}
-		this.button = this.containerEl.createEl("button", { cls: "tagged-sync-region-button" });
+		this.button = this.containerEl.createEl("button", { cls: "tagged-sync-region-button", attr: { type: "button" } });
 		this.label(SHOW_LABEL);
 		keepCaretOut(this.button);
 		this.button.addEventListener("click", () => void this.toggle());
