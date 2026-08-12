@@ -186,11 +186,11 @@ export function readsAsMark(stroke: RmStroke, frame: DeviceCanvas, lineHeightPt:
  * `strokes` comes back in input order and is what the caller clusters; a mark never reaches
  * `clusterStrokes`, which is the point of running before it. An underline shares its line with the
  * handwriting beside it, and `HORIZONTAL_TOLERANCE` is three line heights -- left in, it would join
- * that note's cluster and stretch its crop across the page.
+ * that note's cluster and stretch its rectangle across the page.
  *
  * A stroke whose shape reads as a mark but whose rectangle lands on no words comes back as
  * handwriting. That is the whole no-text-layer fallback: with no `PdfPageText` the caller never gets
- * here, and every mark stays the crop-bearing note it is today (F6).
+ * here, and every mark stays the note it is today.
  */
 export function findInkMarks(
 	strokes: RmStroke[],

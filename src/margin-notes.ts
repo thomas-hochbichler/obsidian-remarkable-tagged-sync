@@ -84,14 +84,14 @@ const HORIZONTAL_TOLERANCE = 3;
  * rather than as a note of its own.
  *
  * A dot on an `i`, a stray tick, the tail of a descender the line rules did not catch: on the fixture
- * document four of the 51 clusters are one of these, and each one costs a callout with no text, an OCR
- * process and a crop showing a speck. Measured, they sit at 0.10, 0.13, 0.32 and 0.67 line heights
+ * document four of the 51 clusters are one of these, and each one costs a callout with no text and an
+ * OCR process of its own. Measured, they sit at 0.10, 0.13, 0.32 and 0.67 line heights
  * tall, while the smallest *real* note -- a circled digit -- is 1.04 tall.
  *
  * This is emphatically **not** the paragraph merging that pdf-annotation ticket 15 measured and
  * rejected: a fragment carries no readable text (all four transcribe to "" or one character), so
  * absorbing one cannot fuse two notes. Nine rules that join *notes* were built and every one broke a
- * real case; the failure mode there is silent, and here the worst case is a crop box a few px larger.
+ * real case; the failure mode there is silent, and here the worst case is a rectangle a few px larger.
  */
 const FRAGMENT_MAX_HEIGHT = 0.4;
 
@@ -214,8 +214,8 @@ interface Component {
  *
  * The host keeps its own strokes for the purpose of identity: `anchorStrokeId` is computed over
  * `host` alone, so absorbing a fragment never changes the F15 block id of the note that takes it in.
- * Letting the fragment's CRDT id compete would rewrite the id of every note that has one -- and rename
- * its crop attachment -- for no gain the reader can see.
+ * Letting the fragment's CRDT id compete would rewrite the id of every note that has one, breaking the
+ * reader's links into it, for no gain they can see.
  *
  * A page whose clusters are *all* fragments keeps them: there is nothing to absorb into, and dropping
  * them would lose the page's only ink. Deterministic as F16 requires -- fragments are taken in cluster
@@ -287,7 +287,7 @@ function compareCrdtIds(a: string, b: string): number {
  * that overlap on *both* axes, exactly as two lines of one paragraph do, so no gap rule separates them;
  * a left-edge rule that does keep them apart splits an indented paragraph instead. Both features that
  * could break the tie are dead -- all 2450 ink strokes of the fixture share one timestamp CRDT id, and
- * the pair's stroke indices are adjacent. Merging also *grows* the crops by a third, since a block's
+ * the pair's stroke indices are adjacent. Merging also *grows* the rectangles by a third, since a block's
  * box takes its whitespace with it. See `.scratch/pdf-annotation/issues/15-paragraph-clusters.md`.
  *
  * Fragments are the one exception, and they are not notes at all -- see {@link FRAGMENT_MAX_HEIGHT}.

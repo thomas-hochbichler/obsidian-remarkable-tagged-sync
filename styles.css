@@ -88,3 +88,41 @@
 	background: transparent;
 	border: none;
 }
+
+/*
+ * A margin note's handwriting, drawn out of the embedded PDF on request (never on open). The button
+ * is the whole control: it shows the band and takes it away again.
+ */
+.tagged-sync-region-button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+}
+
+.tagged-sync-region-button .tagged-sync-region-icon {
+	display: inline-flex;
+	--icon-size: var(--font-ui-smaller);
+}
+
+/*
+ * The band is the page's full width and the note's column is not, so it is scaled to fit rather than
+ * allowed to widen the note. The white paper it brings with it is given the same rounded frame the
+ * embeds have, so it reads as a piece of document instead of a hole in a dark theme.
+ */
+.tagged-sync-region {
+	margin-top: var(--size-4-2);
+}
+
+.tagged-sync-region > canvas {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	border-radius: var(--radius-s);
+	border: 1px solid var(--background-modifier-border);
+}
+
+.tagged-sync-region-message {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}

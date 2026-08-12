@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import type { AttachmentStore } from "./attachment-writer";
 import { buildDigest, type DigestPageInput, type DigestPipelineDeps } from "./digest-pipeline";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
 import { parseRmV6, type RmPage, type RmStroke } from "./rm-parser";
@@ -15,15 +14,6 @@ const PX_TO_PT = 72 / 226;
 
 function fixtureScene(): RmPage {
 	return parseRmV6(new Uint8Array(readFileSync(PDF_PAGE_FIXTURE_PATH)));
-}
-
-function fakeStore(): AttachmentStore & { writeBinary: ReturnType<typeof vi.fn> } {
-	return {
-		ensureFolder: vi.fn().mockResolvedValue(undefined),
-		writeBinary: vi.fn().mockResolvedValue(undefined),
-		list: vi.fn().mockResolvedValue([]),
-		remove: vi.fn().mockResolvedValue(undefined),
-	};
 }
 
 /** Answers the clusters in call order, which the pipeline guarantees by transcribing them sequentially. */
@@ -56,8 +46,6 @@ function fakeTextDocument(pages: Record<number, PdfPageText>, headings: PdfHeadi
 function deps(overrides: Partial<DigestPipelineDeps> = {}): DigestPipelineDeps {
 	return {
 		ocrBackend: fakeOcr(),
-		attachmentStore: fakeStore(),
-		attachmentsFolder: "attachments",
 		// On, because these tests are about what the digest does with margin notes. The shipped
 		// default is off (F20); the tests that care about that say so.
 		marginNotes: true,
@@ -69,7 +57,6 @@ function deps(overrides: Partial<DigestPipelineDeps> = {}): DigestPipelineDeps {
 function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}) {
 	return buildDigest(deps(overrides), {
 		sourcePdfBytes: SOURCE_BYTES,
-		docSlug: "the-doc",
 		embedPath: "attachments/doc.pdf",
 		pages,
 	});
@@ -161,7 +148,7 @@ function fixtureTextDocument(): PdfTextDocument {
 /** The real Apple Vision output for the five clusters, top-down (acceptance-page2.md). */
 const VISION_OUTPUT = ["Basic Rule O", "", "", "→ Claude valisate Examphs", "- Widu spruch zum Artikel ally. Pe"];
 
-// --- synthetic scenes for the crop decision ----------------------------------------------------
+// --- synthetic scenes -------------------------------------------------------------------------
 
 function boxStroke(id: string, x: number, y: number, width: number, height: number): RmStroke {
 	const point = (px: number, py: number) => ({ x: px, y: py, speed: 0, width: 2, direction: 0, pressure: 1 });
@@ -172,7 +159,7 @@ function scene(strokes: RmStroke[]): RmPage {
 	return { formatVersion: 2, layers: [{ id: "0001", name: null, strokes }] };
 }
 
-/** A single long diagonal: one cluster's worth of ink, enough to rasterize into a crop. */
+/** A single long diagonal: one cluster's worth of ink. */
 function inkyScene(): RmPage {
 	return scene([boxStroke("0a", 0, 0, 200, 200)]);
 }
@@ -269,26 +256,28 @@ describe("buildDigest with the fixture page's text layer", () => {
 		expect(result.markdown.slice(last).match(/\^(hl|nt)-/g)).toHaveLength(1);
 	});
 
-	it("gives every note its crop, whatever the real Vision output was", async () => {
+	it("gives every note the place its handwriting sits, whatever the real Vision output was", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		// All five notes, including the two whose flawed-but-non-empty text used to render alone:
-		// `→ Claude valisate Examphs` is unreadable, and only the image says what was really written.
-		expect(result.cropIds.size).toBe(5);
+		// All five notes, including the two whose flawed-but-non-empty text stands alone in the entry:
+		// `→ Claude valisate Examphs` is unreadable, and only the handwriting says what was written.
+		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(5);
 		// Only the two bare circled digits, which come back empty, announce themselves as untranscribed.
-		expect(result.markdown.match(/not transcribable, crop:/g)).toHaveLength(2);
-		expect(result.markdown).toMatch(/\[!note\] Handwritten · \[\[attachments\/doc\.pdf#page=2\|p\. 2\]\]\n> Basic Rule O\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
-		expect(result.markdown).toMatch(/> → Claude valisate Examphs\n> !\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
+		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(2);
+		// No image file is named anywhere in the digest -- that is the whole point of the format.
+		expect(result.markdown).not.toContain("![[");
+		// The id terminates the last *text* line, above the block -- on the closing fence it would take
+		// the block apart instead of naming the entry.
+		expect(result.markdown).toMatch(/^> Basic Rule O \^nt-[0-9a-f]{6}$/m);
 	});
 
-	it("renders no note at all, and writes no crop, when margin notes are off", async () => {
+	it("renders no note at all when margin notes are off", async () => {
 		const result = await build([fixturePage()], {
 			loadText: async () => fixtureTextDocument(),
 			ocrBackend: fakeOcr(...VISION_OUTPUT),
 			marginNotes: false,
 		});
 
-		expect(result.cropIds.size).toBe(0);
 		expect(result.markdown).not.toContain("[!note]");
 		expect(result.markdown).not.toContain("Basic Rule O");
 		// The highlights are untouched -- the setting is about handwriting, not about the digest.
@@ -556,56 +545,79 @@ describe("buildDigest merges highlights that share a sentence", () => {
 	});
 });
 
-describe("buildDigest crop decision", () => {
-	const page = (): DigestPageInput => ({ pageId: "p", sourceIndex: 0, embedPage: 1, scene: inkyScene() });
+describe("buildDigest note regions", () => {
+	const withText = { loadText: async () => fixtureTextDocument() };
 
-	it("shows the crop instead of the text when nothing was transcribed", async () => {
-		const result = await build([page()], { ocrBackend: fakeOcr("") });
+	/**
+	 * The rectangle is the ink's own box, with y measured from the page top -- the axis a pdf.js
+	 * viewport uses. `clusterRect` works in the PDF's bottom-left frame, which the anchor cascade needs
+	 * and a viewport does not, so a note printed near the top of the page must come out with a *small*
+	 * y. Getting this backwards would draw every note from the mirror-image strip of paper.
+	 */
+	it("measures the rectangle from the page top", async () => {
+		const result = await build([fixturePage()], { ...withText, ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		expect(result.markdown).toContain("not transcribable, crop:");
-		expect(result.markdown).toMatch(/!\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
-		expect(result.cropIds.size).toBe(1);
+		const ys = [...result.markdown.matchAll(/^> rect: \d+ (\d+) \d+ \d+$/gm)].map((match) => Number(match[1]));
+		expect(ys).toHaveLength(5);
+		// Reading order runs down the page, and so does this axis: the five notes' y values only grow.
+		expect([...ys].sort((a, b) => a - b)).toEqual(ys);
+		// The topmost note sits beside the second heading, at 653 pt from the bottom of a 792 pt page.
+		expect(ys[0]).toBeGreaterThan(792 - 653 - 20);
+		expect(ys[0]).toBeLessThan(792 - 653 + 20);
 	});
 
-	// A low confidence used to replace the text with the crop. That rule is gone: no shipped backend
-	// reports a score, and the text now stands with its crop under it either way.
-	it("keeps the text, and its crop, when a backend reports a low confidence", async () => {
-		const result = await build([page()], { ocrBackend: fakeOcr({ status: "ok", text: "eine ganze Zeile Handschrift", confidence: 20 }) });
+	it("names the page of the embed, which is the page its link points at", async () => {
+		const result = await build([fixturePage()], { ...withText, ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		expect(result.markdown).toContain("eine ganze Zeile Handschrift");
-		expect(result.markdown).not.toContain("not transcribable, crop:");
-		expect(result.cropIds.size).toBe(1);
+		expect(result.markdown.match(/^> page: 2$/gm)).toHaveLength(5);
+	});
+
+	/**
+	 * Without a text layer the frame is the device screen rather than the page (see `buildDigest`), so
+	 * the rectangle would not name a place in the PDF at all. Better no button than one that opens the
+	 * wrong strip of paper -- and such a document already says its text could not be read.
+	 */
+	it("leaves the block off a page whose text could not be read", async () => {
+		const result = await build([fixturePage()], { ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		expect(result.markdown.match(/\^nt-/g)).toHaveLength(5);
+		expect(result.markdown).not.toContain("remarkable-note");
+	});
+
+	it("says in words that nothing was transcribed, instead of leaving the entry empty", async () => {
+		const result = await build([{ pageId: "p", sourceIndex: 0, embedPage: 1, scene: inkyScene() }], { ocrBackend: fakeOcr("") });
+
+		expect(result.markdown).toContain("Handwriting that could not be transcribed.");
 	});
 
 	// The one that matters: a transcription no heuristic can fault -- long, plausible, confident --
-	// still gets its image, because "plausible" is exactly what a misread looks like from here.
-	it("shows the crop under a healthy transcription too", async () => {
-		const result = await build([page()], { ocrBackend: fakeOcr("eine ganze Zeile Handschrift dazu") });
+	// still carries its region, because "plausible" is exactly what a misread looks like from here.
+	it("carries the region under a healthy transcription too", async () => {
+		const result = await build([fixturePage()], { ...withText, ocrBackend: fakeOcr("eine ganze Zeile Handschrift dazu") });
 
 		expect(result.markdown).toContain("eine ganze Zeile Handschrift dazu");
-		expect(result.markdown).toMatch(/!\[\[attachments\/the-doc-nt-[0-9a-f]{6}\.png\|\d+\]\]/);
-		expect(result.cropIds.size).toBe(1);
+		expect(result.markdown).toMatch(/^> ```remarkable-note$/m);
 	});
 });
 
 describe("buildDigest resilience", () => {
-	it("renders every margin note as a crop when OCR is off or unavailable, leaving the highlights alone", async () => {
+	it("keeps every margin note when OCR is off or unavailable, leaving the highlights alone", async () => {
 		const off: OcrBackend = { id: "off", metered: false, recognize: async () => ({ status: "unavailable", pages: null, text: "", confidence: null }) };
 
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: off });
 
-		expect(result.markdown.match(/not transcribable, crop:/g)).toHaveLength(5);
-		expect(result.cropIds.size).toBe(5);
+		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(5);
+		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(5);
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
 		expect(result.markdown).toContain("Claude reagiert gut auf ==klare, explizite Anweisungen.==");
 	});
 
-	it("turns a throwing OCR backend into warnings and crops rather than an exception", async () => {
+	it("turns a throwing OCR backend into warnings and entries rather than an exception", async () => {
 		const result = await build([fixturePage()], { ocrBackend: throwingOcr() });
 
 		expect(result.warnings.filter((warning) => warning.includes("could not be transcribed"))).toHaveLength(5);
 		expect(result.warnings[1]).toContain("vision is not installed");
-		expect(result.markdown.match(/not transcribable, crop:/g)).toHaveLength(5);
+		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(5);
 	});
 
 	it("warns when a page carries no text layer of its own", async () => {
@@ -614,20 +626,6 @@ describe("buildDigest resilience", () => {
 		expect(result.warnings).toEqual([
 			"Page 2: the PDF has no readable text there, so highlights quote the text recorded on the device.",
 		]);
-	});
-
-	it("keeps the note when its crop cannot be written, and says so", async () => {
-		const store = fakeStore();
-		store.writeBinary.mockRejectedValue(new Error("read-only vault"));
-
-		const result = await build([{ pageId: "p", sourceIndex: 0, embedPage: 1, scene: inkyScene() }], {
-			attachmentStore: store,
-			ocrBackend: fakeOcr(""),
-		});
-
-		expect(result.warnings[1]).toContain("read-only vault");
-		expect(result.markdown).toContain("[!note]");
-		expect(result.cropIds.size).toBe(0);
 	});
 
 	it("reports a text layer that could not be opened at all", async () => {
@@ -664,7 +662,6 @@ describe("buildDigest on pen marks", () => {
 		expect(result.markdown).toContain("^hl-");
 		// The failure this replaces: a callout holding a picture of a line, with whatever OCR made of it.
 		expect(result.markdown).not.toContain("[!note]");
-		expect(result.cropIds.size).toBe(0);
 	});
 
 	it("makes no OCR call for it -- a line has no transcription to get wrong", async () => {
@@ -691,7 +688,6 @@ describe("buildDigest on pen marks", () => {
 		const result = await build([fixturePage(underlinedScene())], { ocrBackend: fakeOcr("176") });
 
 		expect(result.markdown).toContain("[!note] Handwritten");
-		expect(result.cropIds.size).toBe(1);
 	});
 
 	it("keeps the marker highlight's id when a mark lands on a sentence that already had one", async () => {
@@ -719,14 +715,13 @@ describe("buildDigest on pen marks", () => {
 });
 
 describe("buildDigest determinism", () => {
-	it("renders byte-identical markdown and the same crop ids twice", async () => {
+	it("renders byte-identical markdown twice", async () => {
 		const run = () => build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
 		const first = await run();
 		const second = await run();
 
 		expect(second.markdown).toBe(first.markdown);
-		expect([...second.cropIds]).toEqual([...first.cropIds]);
 		expect(second.warnings).toEqual(first.warnings);
 	});
 });
@@ -747,7 +742,6 @@ describe("buildDigest page selection", () => {
 		const result = await build([{ pageId: "blank", sourceIndex: 0, embedPage: 1, scene: null }]);
 
 		expect(result.markdown).toBe("");
-		expect(result.cropIds.size).toBe(0);
 	});
 });
 
@@ -773,13 +767,10 @@ describe("buildDigest on a page added on the device", () => {
 		expect(result.markdown).toContain("> first line\n> second line");
 	});
 
-	it("writes no crop for it, so the page does not cost the vault its own image", async () => {
-		const store = fakeStore();
+	it("carries no region for it: there is no source page to draw its ink out of", async () => {
+		const result = await build([appendedPage()], { ocrBackend: fakeOcr("some text") });
 
-		const result = await build([appendedPage()], { attachmentStore: store, ocrBackend: fakeOcr("some text") });
-
-		expect(store.writeBinary).not.toHaveBeenCalled();
-		expect(result.cropIds.size).toBe(0);
+		expect(result.markdown).not.toContain("remarkable-note");
 		expect(result.markdown).not.toContain("![[");
 	});
 

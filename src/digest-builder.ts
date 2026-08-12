@@ -11,14 +11,30 @@
 import type { DigestAnchor } from "./digest-anchoring";
 import { hashString } from "./note-builder";
 
+/**
+ * Where a note's ink sits in the embedded PDF: its page, and the ink's bounding box in PDF points
+ * with **y measured from the page top**, which is the axis a pdf.js viewport uses.
+ *
+ * This is what replaced the crop attachment. The vault's PDF already has the handwriting drawn into
+ * it (`renderAnnotatedPdf`), so page plus rectangle is enough to show it on request -- and the vault
+ * keeps no image file at all.
+ */
+export interface NoteRegion {
+	page: number;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
 export interface DigestNote {
 	/** Block id without the caret, e.g. `nt-4c8a17`. */
 	id: string;
 	anchor: DigestAnchor;
-	/** "" when nothing was transcribed -- then the crop carries the entry (F6). */
+	/** "" when nothing was transcribed -- then the entry says so in words, see `NOT_TRANSCRIBED`. */
 	text: string;
-	/** The crop, at the size it was rasterized, or null. The embed's display width is derived from it -- see `cropDisplayWidth`. */
-	cropEmbed: { path: string; width: number; height: number } | null;
+	/** Where to draw the handwriting from, or null where there is nothing to draw it out of. */
+	region: NoteRegion | null;
 	/** Scene y, for reading order. */
 	top: number;
 	/**
@@ -65,42 +81,24 @@ export interface DigestPage {
 	notes: (DigestNote & { section: string | null })[];
 }
 
-/**
- * Crop width cap in px, about a note pane's readable column. Only the wide crops meet it -- a note
- * written across the page arrives ~1600 px wide -- and holding those to a narrow aside shrank the
- * handwriting to a couple of dozen pixels tall, legible only when clicked. Nothing is upscaled to
- * reach this, so a small mark is unaffected by the number.
- */
-const CROP_MAX_WIDTH = 600;
-
-/**
- * Crop height cap in px, so a tall narrow mark stays an aside too. A bracket down a margin is a few
- * millimetres wide and several centimetres long; held to the width cap alone it renders as a
- * thousand-pixel column that dwarfs the note it annotates.
- */
-const CROP_MAX_HEIGHT = 200;
-
-/**
- * The width to embed a crop at: never wider than it was rasterized, and never so wide that it grows
- * past the height cap.
- *
- * The no-upscaling half is the one that matters. `rasterizePage` draws a crop 1:1 in device pixels,
- * so its size *is* how much was written -- a 116x417 bracket, a 32x54 tick. Pinning every embed to a
- * fixed width magnified those to 280x1007 and 280x472: a blurry upscale of a small mark, printed
- * larger than the paragraphs around it. Scaling down stays allowed, because a note written right
- * across the page arrives 1600 px wide and has to fit the pane.
- */
-function cropDisplayWidth(crop: { width: number; height: number }): number {
-	if (crop.width <= 0 || crop.height <= 0) return CROP_MAX_WIDTH;
-	// Floored, not rounded: rounding a cap up puts the result back over it.
-	return Math.max(1, Math.floor(Math.min(crop.width, CROP_MAX_WIDTH, (CROP_MAX_HEIGHT * crop.width) / crop.height)));
-}
-
 /** How many words of the nearest line the `line` anchor quotes before trailing off. */
 const ANCHOR_LINE_WORDS = 4;
 
-/** All fixed labels are English, matching the plugin's other note surfaces (F8). */
-const CROP_TITLE_SUFFIX = " — not transcribable, crop:";
+/**
+ * The code block that carries a note's page and rectangle. The language is the plugin's own -- code
+ * block languages are one global namespace across every plugin, so it is spelled out rather than
+ * abbreviated -- and the two `key: value` lines stay readable where nothing renders them.
+ */
+export const REGION_LANGUAGE = "remarkable-note";
+
+/**
+ * What an entry says when OCR returned nothing. All fixed labels are English (F8).
+ *
+ * It is a body line rather than a title suffix because it also has to *be* the entry: with the crop
+ * attachment gone, a note whose transcription is empty would otherwise be a callout with a title and
+ * no content -- and the block id has to sit on a line of content.
+ */
+const NOT_TRANSCRIBED = "Handwriting that could not be transcribed.";
 
 /**
  * The title of a page added on the device (F21). It says what the entry is -- a page of the reader's
@@ -201,10 +199,19 @@ function markSentence(sentence: string, marked: string[]): string {
 	return quoted + sentence.slice(cut);
 }
 
-/** The block id (F7) terminates the entry's last body line -- it has to sit on content, not on a callout's title line. */
+/** The block id (F7) terminates the entry's last text line -- it has to sit on content, not on a callout's title line and not on a code fence. */
 function withBlockId(lines: string[], id: string): string[] {
 	const last = lines.length - 1;
 	return lines.map((line, index) => (index === last ? `${line} ^${id}` : line));
+}
+
+/**
+ * The two lines that say where the handwriting is. Whole points: the rectangle only has to find the
+ * ink again, and what is drawn from it is padded by whole points anyway.
+ */
+function regionBlock(region: NoteRegion): string[] {
+	const rect = [region.x, region.y, region.width, region.height].map((value) => Math.round(value)).join(" ");
+	return ["```" + REGION_LANGUAGE, `page: ${region.page}`, `rect: ${rect}`, "```"];
 }
 
 /**
@@ -214,23 +221,20 @@ function withBlockId(lines: string[], id: string): string[] {
  * `prefix` is `> ` for a note of its own and `> > ` for one printed under a highlight.
  *
  * The locator rides on the **title** line rather than at the end of the entry, which is where a
- * highlight carries it. A note's last line is usually its crop, and a crop is up to 600 px wide: the
- * link then wrapped underneath the image and stood there on its own, and beside a narrow crop it sat
- * flush against it -- the same link in a different place on every note. The title line is one place.
+ * highlight carries it. A note's last line is the region block, and a block id or a page link on a
+ * code fence is not markup any more -- it is text inside the block. The title line is one place, and
+ * it is the only line of the entry that is never part of the block.
  */
 function renderNote(note: DigestNote, prefix: string, locator: string): string {
-	const embed = note.cropEmbed === null ? [] : [`![[${note.cropEmbed.path}|${cropDisplayWidth(note.cropEmbed)}]]`];
 	// Split before escaping, not after: a page transcript is the one body that keeps its newlines, and
 	// every line of it needs the callout prefix of its own -- plus `escapeText`'s leading-`>` guard,
 	// which only ever looks at the start of the string it is given.
-	const textLines = note.text === "" ? [] : note.text.split("\n").map(escapeText);
-	const body = [...textLines, ...embed];
-	// Only a crop-*only* note announces itself as not transcribable. Every note carries a crop now
-	// (F6), so the crop's presence says nothing about the text; its absence in the body does. The
-	// suffix stays last: its colon points at the crop below it.
-	const suffix = note.text === "" && note.cropEmbed !== null ? CROP_TITLE_SUFFIX : "";
+	const textLines = note.text === "" ? [NOT_TRANSCRIBED] : note.text.split("\n").map(escapeText);
 	const title = note.wholePage ? WHOLE_PAGE_TITLE : anchorTitle(note.anchor);
-	const lines = withBlockId([`[!note] ${title}${locator}${suffix}`, ...body], note.id);
+	// The id goes on before the block, so it terminates the last *text* line: appended to the entry as
+	// a whole it would land on the closing fence and take the block apart.
+	const entry = withBlockId([`[!note] ${title}${locator}`, ...textLines], note.id);
+	const lines = note.region === null ? entry : [...entry, ...regionBlock(note.region)];
 	return lines.map((line) => `${prefix}${line}`).join("\n");
 }
 
@@ -345,25 +349,4 @@ export function renderDigest(embedPath: string, pages: DigestPage[]): string {
  */
 export function digestId(prefix: "hl" | "nt", pageId: string, crdtId: string): string {
 	return `${prefix}-${hashString(`${pageId}:${crdtId}`).slice(0, 6)}`;
-}
-
-/**
- * A file-name-safe slug for the document, used to name crop attachments (F17).
- *
- * German umlauts are transliterated before the diacritics are stripped, so "für" becomes "fuer" and
- * not "fur". The NFC pass in front of it is what makes that reliable: names read off a macOS volume
- * arrive decomposed, where "ä" is an "a" plus a combining mark and the transliteration would miss it.
- */
-export function slugify(name: string): string {
-	return name
-		.toLowerCase()
-		.normalize("NFC")
-		.replace(/ä/g, "ae")
-		.replace(/ö/g, "oe")
-		.replace(/ü/g, "ue")
-		.replace(/ß/g, "ss")
-		.normalize("NFD")
-		.replace(/[\u0300-\u036f]/g, "")
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
 }

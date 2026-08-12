@@ -1,6 +1,5 @@
 import type { DocumentContent, LegacyDocumentContent, RawRemarkableApi, RemarkableApi } from "rmapi-js";
-import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, pruneCrops, writeAttachment } from "./attachment-writer";
-import { slugify } from "./digest-builder";
+import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, writeAttachment } from "./attachment-writer";
 import { buildDigest, type DigestPageInput } from "./digest-pipeline";
 import {
 	blockHashOf,
@@ -56,9 +55,10 @@ export type SyncRowStatus = "active" | "orphaned";
  * one per pen stroke, and the highlight above it quoted from the middle of its sentence; version 13
  * reads a pen underline or a circle drawn around a passage as a mark on the printed text (F23) and
  * quotes what it points at, instead of transcribing the line itself -- one underline came through as
- * the margin note `176`.
+ * the margin note `176`; version 14 stopped writing a PNG per margin note altogether -- the entry now
+ * carries the page and rectangle its handwriting sits at, and the vault keeps no crop files at all.
  */
-export const RENDER_VERSION = 13;
+export const RENDER_VERSION = 14;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -773,12 +773,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		let sourcePdf: Promise<Uint8Array> | null = null;
 		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
 
-		// Crops are named per document, not per unit, so they are collected per document too -- see the
-		// prune below. `digestUnits` counts the units that actually produced a set of ids this round.
-		const docSlug = slugify(entry.visibleName);
-		const cropIds = new Set<string>();
-		let digestUnits = 0;
-
 		/**
 		 * The `## Digest` body for one PDF-backed unit, or "" when it could not be built. A failure here
 		 * costs the digest and never the note: the unit is still written with today's highlights, because
@@ -797,10 +791,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		): Promise<{ markdown: string; ocr: OcrStatus | null }> => {
 			try {
 				const build = await buildDigest(
-					{ ocrBackend, attachmentStore: deps.attachmentStore, attachmentsFolder, marginNotes: deps.marginNotes ?? false },
+					{ ocrBackend, marginNotes: deps.marginNotes ?? false },
 					{
 						sourcePdfBytes: await getSourcePdf(),
-						docSlug,
 						// The embed the note is about to carry. It is derived from the same two ids
 						// `writeAttachment` derives it from, so the digest can link into it before the
 						// attachment is written and `writeUnit` needs no reordering.
@@ -809,8 +802,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					},
 				);
 				skipErrors.push(...build.warnings);
-				for (const id of build.cropIds) cropIds.add(id);
-				digestUnits++;
 				return { markdown: build.markdown, ocr: build.ocr };
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to build the digest for ${unit}, the note keeps its highlights`, error);
@@ -1038,17 +1029,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			skipErrors.push(...ocrWarnings);
 			if (unitOcr === "unavailable") unavailableOcrUnits++;
 			if (unitOcr === "failed") failedOcrUnits++;
-		}
-
-		// One prune per document, over the union of every unit rebuilt this round (F17). Crops are
-		// namespaced per document (`<doc-slug>-<nt-id>.png`), so a notebook-tag note and a page-tag note
-		// of the same document share the namespace and a per-unit prune would delete the other unit's
-		// crops. And only when every mapped unit of the document did rebuild: a unit the change-detection
-		// gate skipped, or one left alone as hand-edited, contributes no ids while its note still embeds
-		// its crops, and pruning against the remainder would delete exactly those.
-		const mappedUnits = mappedNotebookTags.length + mappedPageTags.filter((pageTag) => livePageIds.has(pageTag.pageId)).length;
-		if (digestUnits > 0 && digestUnits === mappedUnits) {
-			await pruneCrops(deps.attachmentStore, attachmentsFolder, docSlug, cropIds);
 		}
 
 		// Bump entryHash on any of this doc's rows we didn't touch this round (e.g. a page-tag row
