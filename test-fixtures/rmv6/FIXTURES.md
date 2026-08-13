@@ -60,3 +60,14 @@ have. All 57 blocks on the real page are written that way. Used to prove
 `parseGlyphBody` reads them, which it did not until the two fields were made optional:
 the page's highlights were dropped whole. The third block is a tombstoned run, so the
 fixture covers the `deleted_length` path as well.
+
+`notebook-with-image.rm` is `normal-a-stroke-2-layers.rm` with an `image_table`
+(`0x0E`) and an `image_def` (`0x0F`) block appended, both **hand-built** — no device
+bytes, and no picture: the table names a file called `picture.png` that does not
+exist, which is all a scene ever holds. The quad matches the shape a real imported
+article uses (936 x 527 device px, uv laid over it in order), and the item hangs from
+the base fixture's anchored node `0114`, so the fixture also exercises the placement
+that moves a picture onto the line its anchor names.
+
+Both block types were read off a real page and are documented in
+`.scratch/notebook-images/spec.md`; nothing of that page is in the repo.

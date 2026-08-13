@@ -45,6 +45,64 @@ function fileWithBlock(blockType: number, body: Uint8Array): Uint8Array {
 	return data;
 }
 
+/** The `.rm` v6 file header's own length, which is what it takes to keep a block and drop the header. */
+const FILE_HEADER_LENGTH = 43;
+
+/** One block, headed but headerless, for appending to a file that already has a header of its own. */
+function blockOnly(blockType: number, body: Uint8Array): Uint8Array {
+	return fileWithBlock(blockType, body).slice(FILE_HEADER_LENGTH);
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+	const data = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+	let at = 0;
+	for (const part of parts) {
+		data.set(part, at);
+		at += part.length;
+	}
+	return data;
+}
+
+/** A `.rm` subblock: its tag, its u32 byte length, then its contents. */
+function subblock(tag: number, contents: number[]): number[] {
+	return [tag, ...u32le(contents.length), ...contents];
+}
+
+/** Builds an `image_table` body -- which file each of the page's pictures lives in, keyed by 16 bytes. */
+function imageTableBody(entries: { key: number[]; name: string }[]): Uint8Array {
+	const table = entries.flatMap(({ key, name }) => {
+		const nameBytes = [...new TextEncoder().encode(name)];
+		const named = subblock(0x2c, [nameBytes.length, 0x01, ...nameBytes]); // varuint length, is-ascii flag, name
+		return subblock(0x0c, [...key, ...subblock(0x1c, [0x1f, 0x00, 0x00, ...named])]);
+	});
+	return new Uint8Array(subblock(0x1c, [entries.length, ...table]));
+}
+
+/** Builds an `image_def` body -- one picture, hanging from node `parentId`, over the quad `rect` bounds. */
+function imageBody(parentId: number[], key: number[], rect: { x: number; y: number; width: number; height: number }): Uint8Array {
+	const corners = [
+		[rect.x, rect.y, 0, 0],
+		[rect.x + rect.width, rect.y, 1, 0],
+		[rect.x + rect.width, rect.y + rect.height, 1, 1],
+		[rect.x, rect.y + rect.height, 0, 1],
+	];
+	const value = [
+		7, // image item type
+		...subblock(0x1c, [0x1f, 0x00, 0x00, ...subblock(0x2c, key)]),
+		0x2f, 0x00, 0x00,
+		...subblock(0x3c, [0x10, ...corners.flatMap((corner) => corner.flatMap(f32le))]),
+		...subblock(0x4c, [...u32le(6), ...[0, 1, 2, 2, 3, 0].flatMap(u32le)]),
+	];
+	return new Uint8Array([
+		0x1f, ...parentId,
+		0x2f, 0x00, 0x20,
+		0x3f, 0x00, 0x00,
+		0x4f, 0x00, 0x00,
+		0x54, ...u32le(0),
+		...subblock(0x6c, value),
+	]);
+}
+
 /**
  * Builds a `glyph_def` body -- one highlighted run of `text` covered by a single rectangle.
  *
@@ -237,6 +295,53 @@ describe("parseRmV6", () => {
 		}
 		// A page with no anchors records no placement at all -- it is not a failure to have nothing to do.
 		expect(raw.layers.every((layer) => layer.placement === undefined)).toBe(true);
+	});
+
+	describe("pictures on the page", () => {
+		// The 16 bytes are the only thing joining the two blocks; the device's own are a hash, and
+		// nothing reads them as anything but a key.
+		const KEY = [...Array(16).keys()].map((index) => index * 16);
+		const OTHER_KEY = KEY.map((byte) => byte ^ 0xff);
+		// The node the shared fixture anchors to its typed "A": `{anchorId: "1:14", originX: -464}`,
+		// and that character's line sits at y 267.8. So a picture on it moves by exactly that.
+		const ANCHORED_NODE = [0x01, 0x14];
+		const RAW_RECT = { x: -4, y: -218.5, width: 936, height: 527 };
+
+		/** The shared fixture with an image table and one placed picture appended to it. */
+		function pageWithPicture(key: number[], tableKey = key): Uint8Array {
+			return concatBytes([
+				new Uint8Array(readFileSync(FIXTURE_PATH)),
+				blockOnly(14, imageTableBody([{ key: tableKey, name: "picture.png" }])),
+				blockOnly(15, imageBody(ANCHORED_NODE, key, RAW_RECT)),
+			]);
+		}
+
+		it("reads the file a picture lives in, and the box it fills, from the two blocks that hold them", () => {
+			const page = parseRmV6(pageWithPicture(KEY));
+
+			expect(page.images).toEqual([
+				{
+					layerId: "0114",
+					id: "0020",
+					fileName: "picture.png",
+					// Placed: the node's originX of -464, and the y of the line its anchor names.
+					rect: { x: -468, y: 267.8 - 218.5, width: 936, height: 527 },
+				},
+			]);
+		});
+
+		it("drops a picture whose file the page does not list, and keeps the rest of the page", () => {
+			// The two blocks are written together, so this is a corrupt page -- but its ink is fine and
+			// there is nothing to draw for the picture either way.
+			const page = parseRmV6(pageWithPicture(KEY, OTHER_KEY));
+
+			expect(page.images).toEqual([]);
+			expect(page.layers.flatMap((layer) => layer.strokes)).toHaveLength(2);
+		});
+
+		it("gives a page without either block an empty list rather than nothing to check", () => {
+			expect(parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH))).images).toEqual([]);
+		});
 	});
 
 	it("accepts an ArrayBuffer as well as a Uint8Array", () => {

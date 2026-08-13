@@ -6,6 +6,7 @@ import type { AttachmentStore } from "./attachment-writer";
 import { buildDigest } from "./digest-pipeline";
 import { blockHashOf, extractManagedBlock, type NoteStore } from "./note-builder";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
+import { encodeGrayscalePng } from "./png-encoder";
 import type { RmLayer, RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import {
@@ -45,6 +46,9 @@ const PAGE_BYTES = new Uint8Array(readFileSync(FIXTURE_PATH));
 // A page whose nodes carry no anchor, so nothing about it is placed -- unlike FIXTURE_PATH, whose two
 // group nodes are anchored to its typed text.
 const UNANCHORED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/color-and-tool-v3.14.4.rm"));
+/** A page that shows one picture, and the bytes of a picture -- neither is in the other, as on the device. */
+const PAGE_WITH_IMAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/notebook-with-image.rm"));
+const PICTURE_BYTES = encodeGrayscalePng({ width: 4, height: 2, pixels: new Uint8Array(8).fill(128) });
 const NOW = "2026-01-01T00:00:00.000Z";
 
 function documentEntry(overrides: Partial<Entry> = {}): Entry {
@@ -124,6 +128,8 @@ interface FakeApiOptions {
 	contentById?: Record<string, Content>;
 	metadataById?: Record<string, Metadata>;
 	pageHashesByDoc?: Record<string, Record<string, string>>;
+	/** Pictures in a page's own folder, `docId -> pageId -> fileName -> hash`, as the device's index lists them. */
+	pageImagesByDoc?: Record<string, Record<string, Record<string, string>>>;
 	/** Raw source-PDF bytes returned by `getPdf`, keyed by doc id -- for PDF-backed docs. */
 	sourcePdfByDoc?: Record<string, Uint8Array>;
 }
@@ -157,14 +163,14 @@ function fakeApi(opts: FakeApiOptions): SyncApi & {
 			getEntries: vi.fn(async (fileName: string) => {
 				const docId = fileName.replace(/\.docSchema$/, "");
 				const pageHashes = opts.pageHashesByDoc?.[docId] ?? {};
+				const images = Object.entries(opts.pageImagesByDoc?.[docId] ?? {}).flatMap(([pageId, files]) =>
+					Object.entries(files).map(([fileName, hash]) => ({ id: `${docId}/${pageId}/${fileName}`, hash })),
+				);
 				return {
-					entries: Object.entries(pageHashes).map(([pageId, hash]) => ({
-						id: `${docId}/${pageId}.rm`,
-						hash,
-						type: 0 as const,
-						subfiles: 0,
-						size: 0,
-					})),
+					entries: [
+						...Object.entries(pageHashes).map(([pageId, hash]) => ({ id: `${docId}/${pageId}.rm`, hash })),
+						...images,
+					].map((entry) => ({ ...entry, type: 0 as const, subfiles: 0, size: 0 })),
 				};
 			}),
 			getHash: vi.fn().mockResolvedValue(PAGE_BYTES),
@@ -370,6 +376,30 @@ describe("runSync", () => {
 		expect(result.notesWritten).toBe(0);
 		expect(result.index).toBe(previousIndex);
 		expect(api.listItems).not.toHaveBeenCalled();
+	});
+
+	it("fetches the picture a page shows and draws it into the attachment", async () => {
+		// The bytes of a picture are a file of their own in the page's folder, so a page that shows one
+		// takes a second fetch -- and without it the attachment keeps the gap and puts nothing in it.
+		const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+		const api = fakeApi({
+			rootHash: "root-2",
+			entries: [entry],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			pageImagesByDoc: { "doc-1": { "page-a": { "picture.png": "hash-picture" } } },
+		});
+		api.raw.getHash.mockImplementation(async (id: string) => (id.endsWith(".rm") ? PAGE_WITH_IMAGE_BYTES : PICTURE_BYTES));
+		const deps = baseDeps(api, { sync: "Target" });
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(api.raw.getHash).toHaveBeenCalledWith("doc-1/page-a/picture.png", "hash-picture");
+		const written = (deps.attachmentStore.writeBinary as ReturnType<typeof vi.fn>).mock.calls.find(
+			(call) => call[0] === "tagged-sync/attachments/doc-1.pdf",
+		);
+		// The XObject the picture became; its dictionary is written uncompressed.
+		expect(new TextDecoder().decode(written![1])).toContain("/Image");
 	});
 
 	it("creates one notebook-level note embedding all live pages in order", async () => {

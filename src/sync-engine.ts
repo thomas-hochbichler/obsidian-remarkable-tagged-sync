@@ -18,7 +18,7 @@ import {
 	writeNote,
 } from "./note-builder";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
-import { getPageHashes } from "./page-hash";
+import { getDocumentFiles, type DocumentFiles } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
 import { validateSourcePdf } from "./pdf-source";
 import { tagNames } from "./remarkable-tags";
@@ -75,9 +75,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * has no way to grow on its own, because nothing changes on the device when the plugin learns to read
  * a page; version 21 stops charging a width to the separator the "Read on reMarkable" extension opens
  * such a page with, which had been breaking a word off the paragraph's first line and sliding every
- * word after it out from under the highlight drawn over it.
+ * word after it out from under the highlight drawn over it; version 22 draws the pictures on a page
+ * -- an imported article's illustrations, which the parser skipped whole, so every one of them was a
+ * blank gap in the attachment.
  */
-export const RENDER_VERSION = 21;
+export const RENDER_VERSION = 22;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -315,6 +317,37 @@ async function renderPage(api: SyncApi, docId: string, pageId: string, pageHash:
 	if (pageHash === undefined) return { formatVersion: 6, layers: [] };
 	const bytes = await api.raw.getHash(`${docId}/${pageId}.rm`, pageHash);
 	return parseRmV6(bytes);
+}
+
+/**
+ * Fetches the bytes of every picture the given pages show, keyed by the name each page names it by.
+ *
+ * One fetch per picture and no cache: an image is only re-fetched when the page it is on is
+ * re-rendered, which change detection has already decided is worth a request.
+ *
+ * A picture that cannot be fetched is left out of the map, and the renderer then draws the page
+ * without it -- exactly what every such page looked like before this existed. It is not worth a
+ * `skipErrors` line: the note is complete and correct except for one illustration, and the reader
+ * can see the gap.
+ */
+async function fetchPageImages(api: SyncApi, scenes: RmPage[], files: DocumentFiles["images"]): Promise<Map<string, Uint8Array>> {
+	const wanted = new Set(scenes.flatMap((scene) => (scene.images ?? []).map((image) => image.fileName)));
+	const fetched = new Map<string, Uint8Array>();
+	await Promise.all(
+		[...wanted].map(async (fileName) => {
+			const file = files.get(fileName);
+			if (!file) {
+				console.warn(`Tagged Sync: a page shows ${fileName}, which the document does not list; it is not drawn`);
+				return;
+			}
+			try {
+				fetched.set(fileName, await api.raw.getHash(file.id, file.hash));
+			} catch (error) {
+				console.warn(`Tagged Sync: couldn't fetch ${fileName}, so the page is drawn without it`, error);
+			}
+		}),
+	);
+	return fetched;
 }
 
 /** Builds the composite input for a PDF-backed doc's pages: each page's source-PDF index plus its parsed annotation scene (null when the page has no `.rm` file -- i.e. was never drawn on). */
@@ -781,7 +814,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// annotation scene drawn over it (see renderAnnotatedPdf). Notebook tag -> every page; page
 		// tag -> just that page.
 		const isPdf = content.fileType === "pdf";
-		const pageHashes = await getPageHashes(api, entry.id, entry.hash);
+		const { pages: pageHashes, images: imageFiles } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
 		const docPages = orderedPages(content, liveIds, isPdf);
 		const pageOrder = docPages.map((page) => page.id);
@@ -880,7 +913,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				} else {
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					ocrPages = notebookOcrPages(scenes);
-					pdfBytes = await renderPagesToPdf(scenes); // throws on an empty notebook -- surfaced, not written as a blank note
+					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
 					digestPages = scenes.some(isDocumentText)
@@ -1009,7 +1042,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				} else {
 					const scenes = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
 					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
-					pdfBytes = await renderPagesToPdf(scenes);
+					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles));
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
 					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
 					// A single-page embed, so the `#page=` anchor is 1 -- as in the PDF branch above.
@@ -1156,7 +1189,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 		}
 
 		const isPdf = content.fileType === "pdf";
-		const pageHashes = await getPageHashes(api, entry.id, entry.hash);
+		const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
 		const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
 
 		for (const row of rowsByDoc.get(docId)!) {

@@ -21,6 +21,8 @@ var Rmv6 = (function() {
     LINE_DEF: 5,
     TEXT_DEF: 7,
     SCENE_INFO: 13,
+    IMAGE_TABLE: 14,
+    IMAGE_DEF: 15,
 
     1: "LAYER_DEF",
     2: "LAYER_NAMES",
@@ -29,6 +31,8 @@ var Rmv6 = (function() {
     5: "LINE_DEF",
     7: "TEXT_DEF",
     13: "SCENE_INFO",
+    14: "IMAGE_TABLE",
+    15: "IMAGE_DEF",
   });
 
   function Rmv6(_io, _parent, _root) {
@@ -71,6 +75,16 @@ var Rmv6 = (function() {
       var _io__raw_body;
       switch (this.blockType) {
       case Rmv6.BlockTypes.GLYPH_DEF:
+        this._raw_body = this._io.readBytes(this.lenBody);
+        _io__raw_body = new KaitaiStream(this._raw_body);
+        this.body = new RmRawBody(_io__raw_body, this, this._root);
+        break;
+      case Rmv6.BlockTypes.IMAGE_DEF:
+        this._raw_body = this._io.readBytes(this.lenBody);
+        _io__raw_body = new KaitaiStream(this._raw_body);
+        this.body = new RmRawBody(_io__raw_body, this, this._root);
+        break;
+      case Rmv6.BlockTypes.IMAGE_TABLE:
         this._raw_body = this._io.readBytes(this.lenBody);
         _io__raw_body = new KaitaiStream(this._raw_body);
         this.body = new RmRawBody(_io__raw_body, this, this._root);

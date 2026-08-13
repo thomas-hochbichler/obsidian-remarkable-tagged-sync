@@ -128,11 +128,34 @@ export interface RmHighlight {
 	rects: RmRect[];
 }
 
+/**
+ * A picture placed on the page: an illustration that came over with an imported article, or one
+ * inserted on the device. The bytes are not in the scene -- they are a file of their own in the
+ * page's folder -- so this is the name of that file and the box it fills.
+ *
+ * The device stores the box as a textured quad with triangle indices, which is more than a renderer
+ * needs and less than it looks: every image measured is an upright rectangle with the uv square laid
+ * over it in order, so the corners' bounding box is the whole of it. Should a rotated one ever turn
+ * up it will read as its bounding box, which is wrong in a way the reader can see.
+ */
+export interface RmImage {
+	/** The scene-tree node this image hangs from, same encoding as `RmStroke.layerId` -- it carries the anchor. */
+	layerId: string;
+	/** The image's own CRDT id (`item_id`), same hex encoding as `RmStroke.id`. */
+	id: string;
+	/** The file's name inside the page's own folder: `<docId>/<pageId>/<fileName>`. */
+	fileName: string;
+	/** Where it is drawn, in the same frame as stroke points -- placed by the node's anchor, as ink is. */
+	rect: RmRect;
+}
+
 export interface RmPage {
 	formatVersion: number;
 	layers: RmLayer[];
 	/** Text highlights on the page, absent on a scene built by hand (e.g. a blank page stand-in). */
 	highlights?: RmHighlight[];
+	/** Pictures on the page, absent on a scene built by hand. Empty for all but an imported article. */
+	images?: RmImage[];
 	/** The screen the page was drawn on, when the scene declares one (absent on pre-`scene_info` firmware). */
 	paperSize?: RmPaperSize;
 	/** The text the user typed on the page, when it has any (72 of the 80 corpus pages have none). */
@@ -632,6 +655,120 @@ function parseGlyphBody(raw: Uint8Array): RmHighlight | null {
 	return { id, color, text, colorRgba: readColorRgba(stream, HIGHLIGHT_COLOR_RGBA_TAG), rects };
 }
 
+const IMAGE_ITEM_TYPE = 7;
+/** How many bytes an image key is. It is the join between the two blocks and is never decoded further. */
+const IMAGE_KEY_BYTES = 16;
+/** One vertex of the image's quad: four little-endian f32s, `x y u v`. */
+const VERTEX_BYTES = 16;
+
+/**
+ * Hand-parses an `image_def` block body -- one picture placed on the page. Same scene-item shape as
+ * `line_def` and `glyph_def`: four CrdtIds, a `deleted_length`, then a value subblock whose first
+ * byte is the item type.
+ *
+ * Inside that subblock the image is named by a 16-byte key (`image_table` says which file it is) and
+ * shaped by a quad of vertices, of which only the corners are read -- see {@link RmImage}. Returns
+ * null for a tombstoned image and for a body that does not have that shape, which costs the page one
+ * picture rather than all of its ink.
+ */
+function parseImageBody(raw: Uint8Array): { layerId: string; id: string; key: string; rect: RmRect } | null {
+	const stream = new KaitaiStream(toArrayBuffer(raw));
+
+	expectTag(stream, 0x1f, "parent_id");
+	const layerId = readCrdtIdHex(stream, raw);
+	expectTag(stream, 0x2f, "item_id");
+	const id = readCrdtIdHex(stream, raw);
+	expectTag(stream, 0x3f, "left_id");
+	skipCrdtId(stream);
+	expectTag(stream, 0x4f, "right_id");
+	skipCrdtId(stream);
+	expectTag(stream, 0x54, "deleted_length");
+	if (stream.readU4le() !== 0) return null;
+
+	expectTag(stream, 0x6c, "value subblock");
+	stream.readU4le(); // subblock byte length; unused, we read fields directly
+	if (stream.readU1() !== IMAGE_ITEM_TYPE) return null;
+
+	expectTag(stream, 0x1c, "image reference");
+	stream.readU4le();
+	expectTag(stream, 0x1f, "image reference id");
+	skipCrdtId(stream);
+	expectTag(stream, 0x2c, "image key");
+	const keyLength = stream.readU4le();
+	if (keyLength !== IMAGE_KEY_BYTES) return null;
+	const key = hex(stream.readBytes(IMAGE_KEY_BYTES));
+
+	expectTag(stream, 0x2f, "mesh id");
+	skipCrdtId(stream);
+	expectTag(stream, 0x3c, "vertices");
+	const verticesLength = stream.readU4le();
+	// One byte ahead of the vertices, 0x10 on every image measured. Whatever it says about their
+	// layout, the layout it says it is is the only one this reads -- so an image whose vertices do
+	// not divide evenly into it is left undrawn rather than read as some other shape.
+	stream.readU1();
+	const vertexCount = (verticesLength - 1) / VERTEX_BYTES;
+	if (!Number.isInteger(vertexCount) || vertexCount < 3) return null;
+	const xs: number[] = [];
+	const ys: number[] = [];
+	for (let i = 0; i < vertexCount; i++) {
+		xs.push(stream.readF4le());
+		ys.push(stream.readF4le());
+		stream.readF4le(); // u
+		stream.readF4le(); // v
+	}
+
+	const x = Math.min(...xs);
+	const y = Math.min(...ys);
+	return { layerId, id, key, rect: { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y } };
+}
+
+/**
+ * Hand-parses an `image_table` block body -- which file each of the page's images lives in, keyed by
+ * the same 16 bytes its `image_def` carries.
+ *
+ * The body is one subblock holding a count and then one `0x0c` entry per image: the key, then a
+ * nested subblock holding the file name as a length-prefixed string. The count is read but not
+ * trusted as the loop's bound -- one byte read as a count on a page with two images is one byte that
+ * has never been seen holding anything else, so the entries are walked to the subblock's end and the
+ * count only has to not lie *low*.
+ *
+ * Returns an empty map rather than throwing: a page whose table is unreadable draws no pictures, and
+ * everything else about it is still right.
+ */
+function parseImageTableBody(raw: Uint8Array): Map<string, string> {
+	const names = new Map<string, string>();
+	const stream = new KaitaiStream(toArrayBuffer(raw));
+	try {
+		expectTag(stream, 0x1c, "image table subblock");
+		const tableLength = stream.readU4le();
+		const tableEnd = stream.pos + tableLength;
+		readVaruint(stream); // entry count
+
+		while (stream.pos < tableEnd && tryTag(stream, 0x0c)) {
+			const entryLength = stream.readU4le();
+			const entryEnd = stream.pos + entryLength;
+			const key = hex(stream.readBytes(IMAGE_KEY_BYTES));
+
+			expectTag(stream, 0x1c, "image entry subblock");
+			stream.readU4le();
+			expectTag(stream, 0x1f, "image entry id");
+			skipCrdtId(stream);
+			expectTag(stream, 0x2c, "file name");
+			const nameLength = stream.readU4le();
+			const nameStart = stream.pos;
+			const length = readVaruint(stream);
+			stream.readU1(); // is_ascii encoding flag; UTF-8 decodes regardless
+			names.set(key, new TextDecoder().decode(stream.readBytes(length)));
+			stream.seek(nameStart + nameLength);
+
+			stream.seek(entryEnd);
+		}
+	} catch (error) {
+		console.warn("Tagged Sync: failed to read the page's image table, its pictures are skipped", error);
+	}
+	return names;
+}
+
 /** Index 5 of the `scene_info` block: the paper size, a length-prefixed subblock (tag = index<<4 | type, type 0xc = length-prefixed). */
 const PAPER_SIZE_TAG = 0x5c;
 
@@ -661,9 +798,10 @@ function parseSceneInfoBody(raw: Uint8Array): RmPaperSize | null {
 }
 
 /**
- * Moves each anchored node's strokes to where the device draws them, in place.
+ * Moves each anchored node's contents -- its strokes, and any image hanging from it -- to where the
+ * device draws them, in place.
  *
- * A node's strokes are stored in an unplaced frame: `anchor_origin_x` is the x offset, and the y is
+ * A node's contents are stored in an unplaced frame: `anchor_origin_x` is the x offset, and the y is
  * the laid-out line position of the character `anchor_id` names. Doing this here rather than in each
  * renderer is what makes `RmPage` mean one thing -- ink where the device put it -- for every
  * consumer, including the digest's margin-note clustering, which groups strokes *by geometry* and so
@@ -673,7 +811,7 @@ function parseSceneInfoBody(raw: Uint8Array): RmPaperSize | null {
  * with anchors and no readable text, keeps its ink exactly where the file put it. That is wrong and
  * visible, which beats a page that renders nothing.
  */
-function placeAnchoredStrokes(layers: RmLayer[], text: RmText | undefined): void {
+function placeAnchoredNodes(layers: RmLayer[], images: RmImage[], text: RmText | undefined): void {
 	if (!layers.some((layer) => layer.anchor)) return;
 	const layout = text ? layoutText(text) : null;
 
@@ -703,6 +841,11 @@ function placeAnchoredStrokes(layers: RmLayer[], text: RmText | undefined): void
 				point.x += anchor.originX;
 				point.y += y;
 			}
+		for (const image of images) {
+			if (image.layerId !== layer.id) continue;
+			image.rect.x += anchor.originX;
+			image.rect.y += y;
+		}
 	}
 }
 
@@ -716,6 +859,8 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 	const layerAnchors = new Map<string, RmAnchor>();
 	const strokesByLayer = new Map<string, RmStroke[]>();
 	const highlights: RmHighlight[] = [];
+	const imageNames = new Map<string, string>();
+	const placedImages: { layerId: string; id: string; key: string; rect: RmRect }[] = [];
 	let paperSize: RmPaperSize | undefined;
 	let text: RmText | undefined;
 
@@ -772,6 +917,19 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 				}
 				break;
 			}
+			case Rmv6.BlockTypes.IMAGE_TABLE: {
+				for (const [key, name] of parseImageTableBody(block.body.raw)) imageNames.set(key, name);
+				break;
+			}
+			case Rmv6.BlockTypes.IMAGE_DEF: {
+				try {
+					const image = parseImageBody(block.body.raw);
+					if (image) placedImages.push(image);
+				} catch (error) {
+					console.warn("Tagged Sync: failed to parse an image on the page, skipping it", error);
+				}
+				break;
+			}
 			case Rmv6.BlockTypes.SCENE_INFO: {
 				try {
 					paperSize = parseSceneInfoBody(block.body.raw) ?? undefined;
@@ -792,7 +950,17 @@ export function parseRmV6(data: Uint8Array | ArrayBuffer): RmPage {
 		visible: layerVisible.get(id),
 		anchor: layerAnchors.get(id),
 	}));
-	placeAnchoredStrokes(layers, text);
+	// An image whose key is in no table entry is dropped: there is no file to draw and nothing else
+	// on the page depends on it. The two blocks are written together, so this is a corrupt page.
+	const images: RmImage[] = placedImages.flatMap(({ layerId, id, key, rect }) => {
+		const fileName = imageNames.get(key);
+		if (fileName === undefined) {
+			console.warn(`Tagged Sync: an image on the page names a file the page does not list (${key}), skipping it`);
+			return [];
+		}
+		return [{ layerId, id, fileName, rect }];
+	});
+	placeAnchoredNodes(layers, images, text);
 
-	return { formatVersion: doc.frontmatter.header.versionNumber, layers, highlights, paperSize, text };
+	return { formatVersion: doc.frontmatter.header.versionNumber, layers, highlights, images, paperSize, text };
 }

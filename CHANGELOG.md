@@ -58,6 +58,15 @@ workflow publishes the section as the GitHub release body. See
   form the plugin refused, and each one was quietly dropped. On the page that brought this to light,
   53 of them. They are drawn again, and every affected note is re-synced once.
 
+- **The pictures on a page are in your vault now.** An article you send over keeps its
+  illustrations, and the device shows them; the plugin left a blank gap where each one should be, on
+  every page it has ever rendered. It reads them now — and so does any notebook page you put an
+  image on yourself.
+
+  The pictures are files of their own on the device, so a page that has one takes them along: an
+  article with large diagrams makes a heavier attachment than it used to. A picture that cannot be
+  fetched leaves the gap it always left, and costs the note nothing else.
+
 - **The highlights on an article you sent over sit on the words you marked.** The Chrome extension
   opens such an article with one invisible character the device draws nothing for. The plugin was
   charging it the width of a letter, which pushed the last word of the paragraph's first line onto

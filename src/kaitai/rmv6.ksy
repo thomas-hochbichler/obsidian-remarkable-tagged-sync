@@ -95,6 +95,23 @@ enums:
         Line definition (a pen stroke). Left as `rm_raw_body` -- see the
         note on `rm_raw_body` for why this isn't decoded by the generated
         parser -- and hand-parsed by the TypeScript adapter instead.
+    0x0e:
+      id: image_table
+      doc: |
+        Which file each of the page's images lives in, keyed by the 16 bytes
+        the matching `image_def` carries. At most one block per page, and
+        only on a page that has a picture on it -- an article imported by the
+        "Read on reMarkable" Chrome extension is what puts one here. Another
+        CRDT tagged-value stream, so left as `rm_raw_body` and hand-parsed by
+        the TypeScript adapter -- same reasoning as `line_def`.
+    0x0f:
+      id: image_def
+      doc: |
+        One picture placed on the page: the key naming its file, and the quad
+        it is drawn over. One block per image. Not in the upstream spec at
+        all, and read off real files (see rm-parser.ts's `parseImageBody`).
+        Another CRDT tagged-value stream, so left as `rm_raw_body` and
+        hand-parsed by the TypeScript adapter -- same reasoning as `line_def`.
     0x0d:
       id: scene_info
       doc: |
@@ -152,6 +169,8 @@ types:
             'block_types::line_def': rm_raw_body
             'block_types::glyph_def': rm_raw_body
             'block_types::scene_info': rm_raw_body
+            'block_types::image_table': rm_raw_body
+            'block_types::image_def': rm_raw_body
             _: empty
         doc: Contains inner value of block.
 
