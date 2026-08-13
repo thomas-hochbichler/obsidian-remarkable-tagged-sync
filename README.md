@@ -147,11 +147,29 @@ stable across syncs.
 **The document's note is its digest.** There is no separate digest note collecting every document —
 the marks live in the note of the document they belong to, in the folder you mapped.
 
+### The notes you write in the margin
+
+**Switch them on under Settings → Handwritten notes, and what you wrote beside the text arrives with
+what you marked.** They are off until you say otherwise: transcribing handwriting is work your
+machine does per note, and it needs a transcription backend — the same one a handwritten notebook
+uses.
+
+Each note is printed where you wrote it: under the section heading it sits in, or beside the
+sentence it points at, with a link to its page. **And you can look at the handwriting itself.** The
+eye in the corner of an entry draws the strip of page the note sits on, cut out of the PDF the note
+already embeds — it appears when you press it and not before, and **no image is ever written to your
+vault**.
+
+![A margin note in Obsidian: the quoted sentence above, the transcribed note below it, and the clipping of the page showing the highlighted passage next to the handwriting it was written beside](docs/screenshot-margin-note.png)
+
+A note whose handwriting could not be transcribed says so rather than standing empty, and keeps its
+anchor and its page link.
+
 Three things worth knowing before you rely on it:
 
-- **The digest is built from what you *marked*, not from what you *wrote*.** Handwriting on a PDF
-  stays in the render where you wrote it — no text is extracted from it. A PDF you only wrote on
-  syncs with the render and no text at all.
+- **Without margin notes switched on, the digest is built from what you *marked*, not from what you
+  *wrote*.** Handwriting then stays in the render where you wrote it — no text is extracted from it,
+  and a PDF you only wrote on syncs with the render and no text at all.
 - **It reads the PDF's own text layer.** A scanned page without one gives less: highlights arrive as
   the words your tablet recorded, and pen marks are not recognised as marks at all.
 - **Marker colour is not carried over.** Every mark reads the same in the note; the colours stay in
