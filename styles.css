@@ -90,19 +90,60 @@
 }
 
 /*
- * A margin note's handwriting, drawn out of the embedded PDF on request (never on open). The button
- * is the whole control: it shows the band and takes it away again.
+ * A margin note: the reader's own hand, and the one entry the digest still puts a box around -- the box
+ * is what tells it apart from the document's text. `handwritten` is the plugin's own callout type, so
+ * everything here reaches these entries and no other callout in the reader's vault.
+ *
+ * A bar instead of a filled box. The fill said what the bar says and said it across the whole entry, so
+ * a digest page of thirty notes read as a column of slabs. `--callout-color` is deliberately left alone:
+ * Obsidian carried it from an RGB triple to a whole colour along the way, so a value written here would
+ * be read one way by the oldest app this plugin supports and another way by the newest. The border and
+ * the background are set outright instead, which every version understands the same.
  */
-.tagged-sync-region-button {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--size-2-2);
-	font-size: var(--font-ui-smaller);
+.callout[data-callout="handwritten"] {
+	--callout-icon: lucide-pen-line;
+	--callout-padding: 0 0 0 var(--size-4-3);
+	--callout-title-color: var(--text-muted);
+	/* The control for the handwriting hangs in this box's top corner rather than in its text; see below. */
+	position: relative;
+	background-color: transparent;
+	border-radius: 0;
+	border-inline-start: 2px solid var(--color-blue);
+	/*
+	 * Obsidian blends a callout into the page -- `darken` under a light theme, `lighten` under a dark one
+	 * -- which is meant for a translucent fill. This box has no fill, and what it holds is a picture of
+	 * white paper with the reader's ink on it: the one thing in the digest that must arrive untouched.
+	 */
+	mix-blend-mode: normal;
 }
 
-.tagged-sync-region-button .tagged-sync-region-icon {
-	display: inline-flex;
-	--icon-size: var(--font-ui-smaller);
+/* The title says where the note *sat*. That it is handwriting is what the pen in front of it says. */
+.callout[data-callout="handwritten"] .callout-title {
+	--callout-title-weight: var(--font-normal);
+	font-size: var(--font-smaller);
+	gap: var(--size-2-2);
+	/* Clear of the control in the corner, so a long anchor wraps instead of running underneath it. */
+	padding-inline-end: var(--size-4-6);
+}
+
+.callout[data-callout="handwritten"] .callout-icon {
+	--icon-size: var(--icon-s);
+}
+
+/*
+ * A margin note's handwriting, drawn out of the embedded PDF on request (never on open). The button is
+ * the whole control: it shows the band and takes it away again.
+ *
+ * One icon in the entry's corner. As a button with a written label it took a line of the entry to itself
+ * and spelled out what the icon already says; out of the flow it costs the entry no height at all. The
+ * label is not gone -- it is the `aria-label`, which a screen reader announces and Obsidian shows on
+ * hover, so the wording still reaches whoever needs it.
+ */
+.tagged-sync-region-button {
+	--icon-size: var(--icon-s);
+	position: absolute;
+	top: 0;
+	inset-inline-end: 0;
 }
 
 /*
@@ -122,7 +163,12 @@
 	border: 1px solid var(--background-modifier-border);
 }
 
+/*
+ * `--font-smaller` rather than `--font-ui-smaller`: the UI sizes are fixed pixels, and a vault reading at
+ * font size 12 draws them at the size of its own body text -- so the sentence that means to step back
+ * would stand exactly as tall as the note it apologises for.
+ */
 .tagged-sync-region-message {
-	font-size: var(--font-ui-smaller);
+	font-size: var(--font-smaller);
 	color: var(--text-muted);
 }
