@@ -18,11 +18,12 @@ import {
 	writeNote,
 } from "./note-builder";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
-import { getPageHashes } from "./page-hash";
+import { getDocumentFiles, type DocumentFiles } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
 import { validateSourcePdf } from "./pdf-source";
 import { tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
+import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
 
 export type SyncRowStatus = "active" | "orphaned";
@@ -67,9 +68,20 @@ export type SyncRowStatus = "active" | "orphaned";
  * off on screen at exactly the paper edge the file had just been fixed to reach past; version 18 gives
  * a margin note a callout type of its own (`[!handwritten]`) and stops titling it with the word, so the
  * entry can be styled without touching any other callout in the vault and its title line carries where
- * the note sat instead of what every note in the digest is.
+ * the note sat instead of what every note in the digest is; version 19 draws the text highlights of a
+ * page whose text was typed rather than carried by a source PDF, which the parser had been dropping
+ * whole -- every such page in a vault was rendered without a single one of them; version 20 gives such
+ * a page a digest instead of a transcript, which -- like version 4 for PDFs -- an already-synced note
+ * has no way to grow on its own, because nothing changes on the device when the plugin learns to read
+ * a page; version 21 stops charging a width to the separator the "Read on reMarkable" extension opens
+ * such a page with, which had been breaking a word off the paragraph's first line and sliding every
+ * word after it out from under the highlight drawn over it; version 22 draws the pictures on a page
+ * -- an imported article's illustrations, which the parser skipped whole, so every one of them was a
+ * blank gap in the attachment; version 23 quotes a passage the reader swiped the marker across
+ * freehand, which the device records as a stroke rather than as a highlight and the digest named
+ * nowhere, and stops a mark that ends in the space after a word from taking the next word with it.
  */
-export const RENDER_VERSION = 18;
+export const RENDER_VERSION = 23;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -307,6 +319,37 @@ async function renderPage(api: SyncApi, docId: string, pageId: string, pageHash:
 	if (pageHash === undefined) return { formatVersion: 6, layers: [] };
 	const bytes = await api.raw.getHash(`${docId}/${pageId}.rm`, pageHash);
 	return parseRmV6(bytes);
+}
+
+/**
+ * Fetches the bytes of every picture the given pages show, keyed by the name each page names it by.
+ *
+ * One fetch per picture and no cache: an image is only re-fetched when the page it is on is
+ * re-rendered, which change detection has already decided is worth a request.
+ *
+ * A picture that cannot be fetched is left out of the map, and the renderer then draws the page
+ * without it -- exactly what every such page looked like before this existed. It is not worth a
+ * `skipErrors` line: the note is complete and correct except for one illustration, and the reader
+ * can see the gap.
+ */
+async function fetchPageImages(api: SyncApi, scenes: RmPage[], files: DocumentFiles["images"]): Promise<Map<string, Uint8Array>> {
+	const wanted = new Set(scenes.flatMap((scene) => (scene.images ?? []).map((image) => image.fileName)));
+	const fetched = new Map<string, Uint8Array>();
+	await Promise.all(
+		[...wanted].map(async (fileName) => {
+			const file = files.get(fileName);
+			if (!file) {
+				console.warn(`Tagged Sync: a page shows ${fileName}, which the document does not list; it is not drawn`);
+				return;
+			}
+			try {
+				fetched.set(fileName, await api.raw.getHash(file.id, file.hash));
+			} catch (error) {
+				console.warn(`Tagged Sync: couldn't fetch ${fileName}, so the page is drawn without it`, error);
+			}
+		}),
+	);
+	return fetched;
 }
 
 /** Builds the composite input for a PDF-backed doc's pages: each page's source-PDF index plus its parsed annotation scene (null when the page has no `.rm` file -- i.e. was never drawn on). */
@@ -773,7 +816,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// annotation scene drawn over it (see renderAnnotatedPdf). Notebook tag -> every page; page
 		// tag -> just that page.
 		const isPdf = content.fileType === "pdf";
-		const pageHashes = await getPageHashes(api, entry.id, entry.hash);
+		const { pages: pageHashes, images: imageFiles } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
 		const docPages = orderedPages(content, liveIds, isPdf);
 		const pageOrder = docPages.map((page) => page.id);
@@ -785,13 +828,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
 
 		/**
-		 * The `## Digest` body for one PDF-backed unit, or "" when it could not be built. A failure here
-		 * costs the digest and never the note: the unit is still written with today's highlights, because
-		 * losing an annotation is worse than losing the section that explains it. Warnings from a build
-		 * that did succeed travel the same road -- a digest that degraded silently is what spec §6 forbids.
+		 * The `## Digest` body for one unit with document text, or "" when it could not be built. A
+		 * failure here costs the digest and never the note: the unit is still written with today's
+		 * highlights, because losing an annotation is worse than losing the section that explains it.
+		 * Warnings from a build that did succeed travel the same road -- a digest that degraded silently
+		 * is what spec §6 forbids.
 		 *
 		 * `ocr` is the outcome the digest's own per-cluster transcription came to, and `null` means there
-		 * is no digest and the unit still needs the whole-scene pass. It exists so a PDF unit is not
+		 * is no digest and the unit still needs the whole-scene pass. It exists so such a unit is not
 		 * transcribed twice: the clusters have already been through the backend, and running `writeUnit`'s
 		 * pass as well would spend a second round of Vision processes on a result that is then discarded.
 		 */
@@ -804,7 +848,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				const build = await buildDigest(
 					{ ocrBackend, marginNotes: deps.marginNotes ?? false },
 					{
-						sourcePdfBytes: await getSourcePdf(),
+						source: isPdf ? { kind: "pdf", bytes: await getSourcePdf() } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
 						// `writeAttachment` derives it from, so the digest can link into it before the
 						// attachment is written and `writeUnit` needs no reordering.
@@ -871,9 +915,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				} else {
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					ocrPages = notebookOcrPages(scenes);
-					pdfBytes = await renderPagesToPdf(scenes); // throws on an empty notebook -- surfaced, not written as a blank note
+					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
+					digestPages = scenes.some(isDocumentText)
+						? scenes.map((scene, i) => ({ pageId: pageOrder[i], sourceIndex: i, embedPage: i + 1, scene }))
+						: null;
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
@@ -997,9 +1044,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				} else {
 					const scenes = [await renderPage(api, entry.id, pageTag.pageId, pageHashes.get(pageTag.pageId))];
 					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
-					pdfBytes = await renderPagesToPdf(scenes);
+					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles));
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
 					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
+					// A single-page embed, so the `#page=` anchor is 1 -- as in the PDF branch above.
+					digestPages = isDocumentText(scenes[0]) ? [{ pageId: pageTag.pageId, sourceIndex: 0, embedPage: 1, scene: scenes[0] }] : null;
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}", skipping`, error);
@@ -1142,7 +1191,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 		}
 
 		const isPdf = content.fileType === "pdf";
-		const pageHashes = await getPageHashes(api, entry.id, entry.hash);
+		const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
 		const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
 
 		for (const row of rowsByDoc.get(docId)!) {

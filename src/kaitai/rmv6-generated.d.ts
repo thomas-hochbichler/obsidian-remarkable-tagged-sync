@@ -54,6 +54,8 @@ export class Rmv6 {
 		readonly LINE_DEF: 5;
 		readonly TEXT_DEF: 7;
 		readonly SCENE_INFO: 13;
+		readonly IMAGE_TABLE: 14;
+		readonly IMAGE_DEF: 15;
 	};
 }
 

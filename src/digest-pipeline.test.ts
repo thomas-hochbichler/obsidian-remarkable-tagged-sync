@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { buildDigest, type DigestPageInput, type DigestPipelineDeps } from "./digest-pipeline";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
-import { parseRmV6, type RmPage, type RmStroke } from "./rm-parser";
+import { notebookPageFrame, resolveDeviceCanvas } from "./pdf-renderer";
+import { parseRmV6, type RmHighlight, type RmPage, type RmStroke, type RmText } from "./rm-parser";
+import { PLAIN_TEXT_SIZE_PX } from "./device-font";
+import { layoutText } from "./text-layout";
 import type { PdfHeading, PdfPageText, PdfTextDocument, PdfTextLine } from "./pdf-text";
 
 const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
@@ -56,7 +59,7 @@ function deps(overrides: Partial<DigestPipelineDeps> = {}): DigestPipelineDeps {
 
 function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}) {
 	return buildDigest(deps(overrides), {
-		sourcePdfBytes: SOURCE_BYTES,
+		source: { kind: "pdf", bytes: SOURCE_BYTES },
 		embedPath: "attachments/doc.pdf",
 		pages,
 	});
@@ -858,5 +861,99 @@ describe("buildDigest on a page added on the device", () => {
 
 		expect(result.markdown).toBe("");
 		expect(ocr).not.toHaveBeenCalled();
+	});
+});
+
+// A page whose text was typed rather than carried by a source PDF: an article the "Read on
+// reMarkable" extension sent to the device as a notebook, a page written with the Type Folio. There
+// is no PDF to read the text out of and no source page to place it against -- the text, the
+// highlights over it and the ink beside it are one scene in one frame.
+describe("typed text as the document", () => {
+	const SCREEN = resolveDeviceCanvas([]);
+	const SENTENCE = "Context engineering is the art and science of curating what will go into the limited context window. ";
+
+	/** A text box of `SENTENCE` repeated, which wraps into a column of prose the way the device wraps it. */
+	function typedScene(overrides: Partial<RmPage> = {}, styles: RmText["styles"] = new Map()): RmPage {
+		return {
+			formatVersion: 2,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: SENTENCE.repeat(6), deleted: 0 }], styles },
+			...overrides,
+		};
+	}
+
+	/** A highlight covering the whole of one laid-out line, in the scene's own frame. */
+	function highlightOfLine(scene: RmPage, index: number): RmHighlight {
+		const line = layoutText(scene.text!).lines[index];
+		return {
+			id: "h0",
+			color: 3,
+			text: "",
+			// Scene y grows down and a line's y is its baseline, so the glyphs stand above it.
+			rects: [{ x: line.xPx, y: line.yPx - PLAIN_TEXT_SIZE_PX, width: 800, height: PLAIN_TEXT_SIZE_PX }],
+		};
+	}
+
+	function typedPage(scene: RmPage): DigestPageInput {
+		return { pageId: "page-a", sourceIndex: 0, embedPage: 1, scene };
+	}
+
+	function buildTyped(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}) {
+		return buildDigest(deps(overrides), { source: { kind: "typed-text" }, embedPath: "attachments/doc.pdf", pages });
+	}
+
+	it("quotes the typed text a highlight covers, out of the scene and not out of a PDF", async () => {
+		const scene = typedScene();
+		scene.highlights = [highlightOfLine(scene, 2)];
+
+		const result = await buildTyped([typedPage(scene)]);
+
+		// The whole sentence, with the covered run marked inside it -- and the sentence runs across the
+		// line the highlight sits on, so it was read out of the page's own typed text rather than out of
+		// anything the device recorded with the highlight (which is nothing: its `text` is empty).
+		const marked = /==([^=]+)==/.exec(result.markdown)?.[1] ?? "";
+		// What was marked came off the line the rectangle covers, rounded back to whole words...
+		expect(marked).not.toBe("");
+		expect(layoutText(scene.text!).lines[2].text.startsWith(marked)).toBe(true);
+		// ...and the quote around it is the whole sentence, which runs past that line in both
+		// directions -- so it was read from the page's typed text, not from the one line.
+		expect(result.markdown.replace(/==/g, "")).toContain(SENTENCE.trim());
+		expect(result.warnings).toEqual([]);
+	});
+
+	it("anchors a margin note under the typed heading it sits level with", async () => {
+		// The heading style is the only thing marking a section on such a page: there is no outline.
+		const scene = typedScene({}, new Map([["0:0", 3]]));
+		const heading = layoutText(scene.text!).lines[0];
+		scene.layers = [{ id: "0001", name: null, strokes: [boxStroke("s1", 620, heading.yPx, 40, 60)] }];
+
+		const result = await buildTyped([typedPage(scene)], { ocrBackend: fakeOcr("a note in the margin") });
+
+		expect(result.markdown).toContain(`### ${heading.text}`);
+		expect(result.markdown).toContain("a note in the margin");
+	});
+
+	it("places a note's region on the page the renderer actually writes, which grows with the text", async () => {
+		const scene = typedScene();
+		const frame = notebookPageFrame(scene, SCREEN);
+		scene.layers = [{ id: "0001", name: null, strokes: [boxStroke("s1", 620, 400, 40, 60)] }];
+
+		const result = await buildTyped([typedPage(scene)], { ocrBackend: fakeOcr("beside the text") });
+
+		const rect = /rect: (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)/.exec(result.markdown);
+		expect(rect).not.toBeNull();
+		const [x, y, width, height] = rect!.slice(1).map(Number);
+		// Inside the sheet, in the sheet's own points -- a page sized to its content is drawn 1:1, so
+		// there is no fit to undo and nothing may land off the paper.
+		expect(x).toBeGreaterThanOrEqual(0);
+		expect(y).toBeGreaterThanOrEqual(0);
+		expect(x + width).toBeLessThanOrEqual(frame.widthPt);
+		expect(y + height).toBeLessThanOrEqual(frame.heightPt);
+	});
+
+	it("says nothing about a PDF's text layer, because there is no PDF", async () => {
+		const result = await buildTyped([typedPage(typedScene())]);
+
+		expect(result.warnings).toEqual([]);
 	});
 });

@@ -33,7 +33,62 @@ workflow publishes the section as the GitHub release body. See
   keeps its anchor and its page link. If the PDF has moved out of the vault, or the page is gone, the
   entry says that too — where you are reading, not only in the console.
 
+- **An article you send to the device now arrives as a digest, not as a transcript of itself.** Send
+  a web page over with the "Read on reMarkable" Chrome extension in notebook mode, or write on a page
+  with the Type Folio, and the device stores that text inside the notebook. The plugin used to treat
+  the whole page as handwriting: it took a picture of the printed article, sent it to be read back
+  letter by letter, and wrote the result into your vault. Your own four words of ink sat somewhere in
+  21 000 characters of guessed-at text.
+
+  Such a page is now read as what it is — a document with your marks on it. You get the passages you
+  highlighted, quoted with the sentence around them, under the article's own section headings, and
+  your handwritten notes beside the lines they were written next to. On the page this was measured on:
+  10 KB of digest in place of 21 KB of transcript, and nothing of the article's text transcribed at
+  all, because it was already text.
+
+  A notebook you wrote by hand is untouched and still gets its transcript. So does a page carrying
+  only a typed line or two — the digest is for a page whose text is a document, and the difference is
+  measured from the text itself, not from what kind of file the device calls it.
+
 ### Fixed
+
+- **Text you highlight in a notebook is in your vault now.** A page whose text was typed rather than
+  carried by a PDF — an article sent over by the "Read on reMarkable" Chrome extension, or anything
+  written with the Type Folio — lost every one of its highlights: they were read from the file in a
+  form the plugin refused, and each one was quietly dropped. On the page that brought this to light,
+  53 of them. They are drawn again, and every affected note is re-synced once.
+
+- **A passage you swipe the marker across is quoted too.** The device stores two different things
+  under one gesture: tap a word and drag the selection, and it records *which words* you marked;
+  take the marker and drag it across the line freehand, and it records a stroke that knows nothing
+  but its own shape. The first has always been in the digest. The second was drawn on the page and
+  named nowhere — you marked a sentence and the note had no entry for it.
+
+  It is read now, as an underline already was: the words under the swipe, quoted with the sentence
+  around them. A dab of marker too short to be aimed at anything is left alone, and a swipe that
+  lands beside the text rather than on it stays what it always was — ink on the page.
+
+- **A mark that stops in the space after a word no longer takes the next word with it.** Widening a
+  mark out to whole words counted the space it ran into as a word begun, so `context engineering.`
+  came through as `context engineering. Building`.
+
+- **The pictures on a page are in your vault now.** An article you send over keeps its
+  illustrations, and the device shows them; the plugin left a blank gap where each one should be, on
+  every page it has ever rendered. It reads them now — and so does any notebook page you put an
+  image on yourself.
+
+  The pictures are files of their own on the device, so a page that has one takes them along: an
+  article with large diagrams makes a heavier attachment than it used to. A picture that cannot be
+  fetched leaves the gap it always left, and costs the note nothing else.
+
+- **The highlights on an article you sent over sit on the words you marked.** The Chrome extension
+  opens such an article with one invisible character the device draws nothing for. The plugin was
+  charging it the width of a letter, which pushed the last word of the paragraph's first line onto
+  the second line — and from there every word of the paragraph stood one word to the right of the
+  yellow drawn over it: you marked "context engineering" and the page showed the mark over
+  "minence: context engine". The character now costs what the device charges for it, nothing, and
+  the paragraph breaks line for line as it does on the device. What the digest quoted was right all
+  along; it is the page beside it that was out of step.
 
 - **A note written down the margin arrives as one note.** Several lines standing in the margin as a
   block used to become one entry per line — each transcribed separately, each anchored somewhere of

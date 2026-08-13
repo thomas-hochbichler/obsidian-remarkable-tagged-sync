@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { auth, session as remarkableSession } from "rmapi-js";
-import { getPageHashes } from "../src/page-hash";
+import { getDocumentFiles } from "../src/page-hash";
 
 const dataPath = process.argv[2];
 const docId = process.argv[3];
@@ -21,8 +21,8 @@ async function main() {
 	console.log(`fileType: ${JSON.stringify(content.fileType)}  formatVersion: ${JSON.stringify(content.formatVersion)}`);
 	console.log(`legacy pages[]: ${Array.isArray(content.pages) ? (content.pages as string[]).length : "absent"}`);
 
-	const pageHashes = await getPageHashes(api, entry.id, entry.hash);
-	console.log(`.rm files present: ${pageHashes.size}`);
+	const { pages: pageHashes, images } = await getDocumentFiles(api, entry.id, entry.hash);
+	console.log(`.rm files present: ${pageHashes.size}, images: ${images.size}`);
 
 	const cPages = (content.cPages as { pages?: Record<string, unknown>[] } | undefined)?.pages ?? [];
 	console.log(`cPages.pages: ${cPages.length}`);

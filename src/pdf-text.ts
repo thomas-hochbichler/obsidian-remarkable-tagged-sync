@@ -512,9 +512,24 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * Widens a covered range out to whole words, having first given back the whitespace at its ends.
+ *
+ * The trim is what keeps a mark that stops in the gap after a word from taking the next one. A
+ * marker swipe over `context engineering.` reaches 2pt into the space behind the full stop -- past
+ * the last letter, nowhere near the next word -- and the estimate that comes out of that lands on
+ * the `B` of `Building`, which the widening then swallowed whole. Measured against the real advance
+ * widths, that swipe covers 100% of `context` and 100% of `engineering.` and 0% of `Building`.
+ *
+ * A range that is nothing but whitespace comes back empty, which reads as a mark on no words at all
+ * -- correct, and what the caller is already prepared for.
+ */
 function expandToWords(text: string, start: number, end: number): { start: number; end: number } {
 	let from = start;
 	let to = end;
+	while (from < to && /\s/.test(text[from])) from++;
+	while (to > from && /\s/.test(text[to - 1])) to--;
+	if (from === to) return { start: from, end: to };
 	while (from > 0 && !/\s/.test(text[from - 1])) from--;
 	while (to < text.length && !/\s/.test(text[to])) to++;
 	return { start: from, end: to };

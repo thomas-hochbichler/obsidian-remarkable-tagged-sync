@@ -106,6 +106,8 @@
 	--callout-title-color: var(--text-muted);
 	/* The control for the handwriting hangs in this box's top corner rather than in its text; see below. */
 	position: relative;
+	/* Nothing else is in that corner while the note is only being read, so the eye sits right in it. */
+	--tagged-sync-region-inset: 0px;
 	background-color: transparent;
 	border-radius: 0;
 	border-inline-start: 2px solid var(--color-blue);
@@ -117,13 +119,23 @@
 	mix-blend-mode: normal;
 }
 
+/*
+ * In the editor the corner is taken: Obsidian hangs its own "Edit this block" control there, drawn over
+ * the entry and on top of ours, so a press meant for the eye opened the block for editing instead. The
+ * eye steps aside by the width of that control -- Obsidian's `.embed-actions`: 4 px clear of the edge and
+ * some 32 px wide -- and the two sit side by side.
+ */
+.markdown-source-view .callout[data-callout="handwritten"] {
+	--tagged-sync-region-inset: var(--size-4-10);
+}
+
 /* The title says where the note *sat*. That it is handwriting is what the pen in front of it says. */
 .callout[data-callout="handwritten"] .callout-title {
 	--callout-title-weight: var(--font-normal);
 	font-size: var(--font-smaller);
 	gap: var(--size-2-2);
 	/* Clear of the control in the corner, so a long anchor wraps instead of running underneath it. */
-	padding-inline-end: var(--size-4-6);
+	padding-inline-end: calc(var(--size-4-6) + var(--tagged-sync-region-inset, 0px));
 }
 
 .callout[data-callout="handwritten"] .callout-icon {
@@ -143,7 +155,7 @@
 	--icon-size: var(--icon-s);
 	position: absolute;
 	top: 0;
-	inset-inline-end: 0;
+	inset-inline-end: var(--tagged-sync-region-inset, 0px);
 }
 
 /*

@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { pageFrame, renderAnnotatedPdf, renderPagesToPdf, resolveDeviceCanvas, sceneRectToPdf, toPdfPoint } from "./pdf-renderer";
+import { notebookPageFrame, pageFrame, renderAnnotatedPdf, renderPagesToPdf, resolveDeviceCanvas, sceneRectToPdf, toPdfPoint } from "./pdf-renderer";
+import { encodeGrayscalePng } from "./png-encoder";
 import { parseRmV6, type RmPage, type RmStroke } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -162,6 +163,69 @@ describe("renderPagesToPdf", () => {
 
 	it("throws rather than producing an empty PDF when there are no pages", async () => {
 		await expect(renderPagesToPdf([])).rejects.toThrow(/no pages/);
+	});
+
+	describe("the pictures on a page", () => {
+		// The device keeps a picture in a file of its own, so the scene names it and the caller brings
+		// the bytes. Encoded with this repo's own encoder, so the test needs no binary fixture.
+		const PICTURE = encodeGrayscalePng({ width: 4, height: 2, pixels: new Uint8Array(8).fill(128) });
+		const RECT = { x: -100, y: 300, width: 200, height: 100 };
+
+		function pageShowing(fileName: string): RmPage {
+			return {
+				formatVersion: 6,
+				layers: [],
+				images: [{ layerId: "0114", id: "0020", fileName, rect: RECT }],
+				text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: "typed", deleted: 0 }], styles: new Map() },
+			};
+		}
+
+		it("draws a picture at the box the scene puts it in", async () => {
+			const page = pageShowing("picture.png");
+			const expected = sceneRectToPdf(RECT, notebookPageFrame(page, resolveDeviceCanvas([page])));
+
+			const { ops } = await decodePageContent(await renderPagesToPdf([page], new Map([["picture.png", PICTURE]])));
+
+			// pdf-lib draws an image as a translate to its lower-left corner, then a scale by its size,
+			// then a `Do` of its XObject -- so the box it fills is read back off two separate matrices.
+			const drawn =
+				/1 0 0 1 (-?[\d.]+) (-?[\d.]+) cm\n(?:1 0 0 1 0 0 cm\n)*(-?[\d.]+) 0 0 (-?[\d.]+) 0 0 cm\n(?:1 0 0 1 0 0 cm\n)*\/Image\S* Do/.exec(ops);
+			expect(drawn).not.toBeNull();
+			expect(Number(drawn![1])).toBeCloseTo(expected.x, 1);
+			expect(Number(drawn![2])).toBeCloseTo(expected.y, 1);
+			expect(Number(drawn![3])).toBeCloseTo(expected.width, 1);
+			expect(Number(drawn![4])).toBeCloseTo(expected.height, 1);
+		});
+
+		it("draws it under the page's own text, which is where the device has it", async () => {
+			const { ops } = await decodePageContent(await renderPagesToPdf([pageShowing("picture.png")], new Map([["picture.png", PICTURE]])));
+
+			expect(ops.indexOf("Do")).toBeLessThan(ops.indexOf(drawnText("typed")));
+		});
+
+		it("reads the file's own bytes rather than its name, so a PNG called .jpg is still drawn", async () => {
+			const { ops } = await decodePageContent(await renderPagesToPdf([pageShowing("photo.jpg")], new Map([["photo.jpg", PICTURE]])));
+
+			expect(ops).toMatch(/\/Image\S* Do/);
+		});
+
+		it("leaves the gap where a picture's bytes never arrived, and draws the rest of the page", async () => {
+			// A fetch that failed, or a file the document does not list. The page is complete but for
+			// the illustration -- which is exactly what every such page looked like until now.
+			const { ops } = await decodePageContent(await renderPagesToPdf([pageShowing("picture.png")], new Map()));
+
+			expect(ops).not.toMatch(/\/Image\S* Do/);
+			expect(ops).toContain(drawnText("typed"));
+		});
+
+		it("skips a file that is neither a PNG nor a JPEG instead of failing the whole render", async () => {
+			const notAnImage = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // "%PDF"
+
+			const { ops } = await decodePageContent(await renderPagesToPdf([pageShowing("picture.png")], new Map([["picture.png", notAnImage]])));
+
+			expect(ops).not.toMatch(/\/Image\S* Do/);
+			expect(ops).toContain(drawnText("typed"));
+		});
 	});
 
 	it("renders a blank page (no layers) as a real, empty PDF page", async () => {

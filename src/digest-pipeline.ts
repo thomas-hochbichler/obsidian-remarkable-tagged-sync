@@ -11,13 +11,14 @@
 
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
 import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
-import { findInkMarks, readsAsMark } from "./ink-marks";
+import { findInkMarks, findMarkerMarks, type InkMark, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
 import {
 	annotatedPageFit,
 	isHighlighterOrShader,
+	notebookPageFrame,
 	pageFrame,
 	resolveDeviceCanvas,
 	sceneRectToPdf,
@@ -25,6 +26,7 @@ import {
 	type PageFit,
 	type PdfRect,
 } from "./pdf-renderer";
+import { sceneHeadings, sceneTextPage } from "./scene-text";
 import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
 import type { RmPage, RmStroke } from "./rm-parser";
 
@@ -229,26 +231,39 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
  * that: the text of a mark entry comes out of the PDF, exactly as a marker highlight's does. It also
  * makes underlines work where no OCR backend exists at all.
  */
+function placeMark(page: DigestPageInput, mark: InkMark): PlacedHighlight {
+	return {
+		pdfRect: mark.pdfRect,
+		fromInk: true,
+		highlight: {
+			id: digestId("hl", page.pageId, mark.strokeId),
+			sentence: mark.sentence,
+			marked: mark.marked,
+			// A pen has no marker colour, and F9 would not render one anyway; a marker swipe has its own.
+			color: mark.color ?? null,
+			notes: [],
+			section: null,
+			top: mark.top,
+		},
+	};
+}
+
 function buildInkMarks(page: DigestPageInput, geometry: PageGeometry, ink: RmStroke[]): { marks: PlacedHighlight[]; strokes: RmStroke[] } {
 	if (geometry.pageText === null) return { marks: [], strokes: ink };
 	const found = findInkMarks(ink, geometry.pageText, geometry.frame, geometry.lineHeightPt);
-	return {
-		strokes: found.strokes,
-		marks: found.marks.map((mark) => ({
-			pdfRect: mark.pdfRect,
-			fromInk: true,
-			highlight: {
-				id: digestId("hl", page.pageId, mark.strokeId),
-				sentence: mark.sentence,
-				marked: mark.marked,
-				// A pen has no marker colour, and F9 would not render one anyway.
-				color: null,
-				notes: [],
-				section: null,
-				top: mark.top,
-			},
-		})),
-	};
+	return { strokes: found.strokes, marks: found.marks.map((mark) => placeMark(page, mark)) };
+}
+
+/**
+ * The passages the reader swiped the marker across, as highlights.
+ *
+ * Not part of {@link buildInkMarks}: a marker stroke is never handwriting, so there is nothing to
+ * hand back and nothing to cluster. It is told apart by the tool it was drawn with, not by its shape.
+ */
+function buildMarkerMarks(page: DigestPageInput, geometry: PageGeometry): PlacedHighlight[] {
+	if (geometry.pageText === null) return [];
+	const marker = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => isHighlighterOrShader(stroke.penType));
+	return findMarkerMarks(marker, geometry.pageText, geometry.frame, geometry.lineHeightPt).map((mark) => placeMark(page, mark));
 }
 
 /**
@@ -532,7 +547,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
 	// line heights, and an underline shares its line with whatever was written in the margin next to it.
 	const { marks, strokes: handwriting } = buildInkMarks(page, geometry, ink);
-	placed.push(...marks);
+	placed.push(...marks, ...buildMarkerMarks(page, geometry));
 
 	// F18 reaches here too. With F20 off a leftover stroke goes nowhere at all -- no cluster, nothing
 	// in the note -- and for handwriting that is the setting working as asked. A stroke shaped
@@ -607,24 +622,29 @@ async function readPageText(document: PdfTextDocument | null, page: DigestPageIn
 }
 
 /**
- * Builds the whole `## Digest` body for one PDF-backed document.
+ * Where a document's text comes from. Both kinds arrive as the same `PdfPageText` per page, so
+ * everything downstream -- quoting, anchoring, the section lookup -- reads one shape and does not
+ * know which it was handed.
  *
- * Nothing fails silently (F18): a PDF whose text cannot be opened, a page without a text layer, a
- * cluster whose OCR threw -- each degrades visibly *and* adds a
- * plain-language line to `warnings`, which the sync engine passes on to `SyncResult.skipErrors`. The
- * build itself carries on; a digest missing one sentence beats a digest missing one annotation, and
- * both beat no digest at all.
+ * `typed-text` is a page the reader did not write by hand but typed, or had typed for them: an
+ * article the "Read on reMarkable" extension sent to the device as a notebook, a page written with
+ * the Type Folio. The device stores that text in the scene (`root_text`) rather than in a PDF, and
+ * the difference ends there -- it is still a document with somebody's marks on it.
  */
-export async function buildDigest(
-	deps: DigestPipelineDeps,
-	params: { sourcePdfBytes: Uint8Array; embedPath: string; pages: DigestPageInput[] },
-): Promise<DigestBuild> {
-	const { sourcePdfBytes, embedPath, pages } = params;
-	const state: BuildState = { deps, warnings: [], ocrStatuses: [] };
+export type DigestSource = { kind: "pdf"; bytes: Uint8Array } | { kind: "typed-text" };
 
+/** What one page's annotations are placed against; the two sources differ in nothing else. */
+interface PageGeometrySource {
+	/** Every heading in the document, before ordering. */
+	headings: PdfHeading[];
+	read(page: DigestPageInput): Promise<{ frame: DeviceCanvas; pageText: PdfPageText | null; fit: PageFit | null }>;
+}
+
+/** The source PDF's text layer, read through pdf.js -- the original path, unchanged. */
+async function pdfTextSource(bytes: Uint8Array, device: DeviceCanvas, state: BuildState): Promise<PageGeometrySource> {
 	let document: PdfTextDocument | null = null;
 	try {
-		document = await (deps.loadText ?? loadPdfText)(sourcePdfBytes);
+		document = await (state.deps.loadText ?? loadPdfText)(bytes);
 	} catch (error) {
 		state.warnings.push(`The PDF's text layer could not be opened (${describeError(error)}).`);
 	}
@@ -643,21 +663,77 @@ export async function buildDigest(
 		}
 	}
 
-	const ordered = orderHeadings(headings);
+	return {
+		headings,
+		read: async (page) => {
+			const pageText = await readPageText(document, page, state.warnings);
+			const frame = pageText ? pageFrame(pageText.width, pageText.height, device) : device;
+			return {
+				frame,
+				pageText,
+				// The same scene the renderer is handed, measured the same way, so a region names the place
+				// on the page the embed actually drew rather than the one the source page had.
+				fit: pageText ? annotatedPageFit(page.scene, frame) : null,
+			};
+		},
+	};
+}
+
+/**
+ * The scene's own typed text.
+ *
+ * Read in the frame `renderPagesToPdf` draws each page in, which is the whole of what makes this
+ * work: the text, the highlights over it and the handwriting beside it are one scene in one frame,
+ * so there is no source page for them to disagree with. The fit is the identity for the same reason
+ * -- such a page is sized to its content and drawn 1:1, never shrunk onto a sheet it has to fit.
+ */
+function typedTextSource(pages: DigestPageInput[], device: DeviceCanvas): PageGeometrySource {
+	const frameOf = (page: DigestPageInput) => (page.scene ? notebookPageFrame(page.scene, device) : device);
+	return {
+		headings: pages.flatMap((page) => (page.scene ? sceneHeadings(page.scene, frameOf(page), page.sourceIndex) : [])),
+		read: async (page) => {
+			const frame = frameOf(page);
+			const pageText = page.scene ? sceneTextPage(page.scene, frame, String(page.embedPage)) : null;
+			return {
+				frame,
+				pageText,
+				fit: pageText ? { box: { x: 0, y: 0, width: frame.widthPt, height: frame.heightPt }, scale: 1, dx: 0, dy: 0 } : null,
+			};
+		},
+	};
+}
+
+/**
+ * Builds the whole `## Digest` body for one document -- a PDF the reader annotated, or a page whose
+ * text was typed rather than drawn (see `DigestSource`).
+ *
+ * Nothing fails silently (F18): a PDF whose text cannot be opened, a page without a text layer, a
+ * cluster whose OCR threw -- each degrades visibly *and* adds a
+ * plain-language line to `warnings`, which the sync engine passes on to `SyncResult.skipErrors`. The
+ * build itself carries on; a digest missing one sentence beats a digest missing one annotation, and
+ * both beat no digest at all.
+ */
+export async function buildDigest(
+	deps: DigestPipelineDeps,
+	params: { source: DigestSource; embedPath: string; pages: DigestPageInput[] },
+): Promise<DigestBuild> {
+	const { source, embedPath, pages } = params;
+	const state: BuildState = { deps, warnings: [], ocrStatuses: [] };
 
 	// One device for the whole document: a book is annotated on one reMarkable, and resolving this per
 	// page would let a page whose scene declares no screen disagree with its neighbours.
 	const device = resolveDeviceCanvas(pages.map((page) => page.scene).filter((scene): scene is RmPage => scene !== null));
 
+	const text = source.kind === "pdf" ? await pdfTextSource(source.bytes, device, state) : typedTextSource(pages, device);
+	const ordered = orderHeadings(text.headings);
+	const headings = text.headings;
+
 	const digestPages: DigestPage[] = [];
 	for (const page of pages) {
-		const pageText = await readPageText(document, page, state.warnings);
-		const frame = pageText ? pageFrame(pageText.width, pageText.height, device) : device;
+		const { frame, pageText, fit } = await text.read(page);
 		const built = await buildPage(state, page, {
 			frame,
-			// The same scene the renderer is handed, measured the same way, so a region names the place on
-			// the page the embed actually drew rather than the one the source page had.
-			fit: pageText ? annotatedPageFit(page.scene, frame) : null,
+			fit,
 			column: pageText ? textColumn(pageText, frame) : null,
 			pageText,
 			headings: headings

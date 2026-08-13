@@ -384,6 +384,51 @@ function drawPageText(page: PDFPage, rmPage: RmPage, canvas: DeviceCanvas, font:
 	}
 }
 
+/** PNG's and JPEG's own opening bytes, which say what a file is without trusting what it is called. */
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47];
+const JPEG_MAGIC = [0xff, 0xd8, 0xff];
+
+function startsWith(bytes: Uint8Array, magic: number[]): boolean {
+	return magic.every((byte, index) => bytes[index] === byte);
+}
+
+/**
+ * Draws the pictures on the page -- an imported article's illustrations, or an image inserted on the
+ * device -- underneath everything else, which is where the device has them.
+ *
+ * The bytes are not in the scene: each is a file of its own that the caller fetched, and one the
+ * caller could not is simply not drawn. That leaves the gap the page already had, which is what this
+ * plugin did with every image until now, so a fetch that fails costs no more than it used to.
+ */
+async function drawPageImages(
+	doc: PDFDocument,
+	page: PDFPage,
+	rmPage: RmPage,
+	canvas: DeviceCanvas,
+	images: ReadonlyMap<string, Uint8Array>,
+): Promise<void> {
+	for (const image of rmPage.images ?? []) {
+		const bytes = images.get(image.fileName);
+		if (!bytes) continue;
+		try {
+			// By the file's own bytes rather than its name: the name is the device's, and a PNG called
+			// `.jpg` would cost the page its picture for a reason nobody could see.
+			const embedded = startsWith(bytes, PNG_MAGIC)
+				? await doc.embedPng(bytes)
+				: startsWith(bytes, JPEG_MAGIC)
+					? await doc.embedJpg(bytes)
+					: null;
+			if (!embedded) {
+				console.warn(`Tagged Sync: ${image.fileName} is neither a PNG nor a JPEG, so it is not drawn`);
+				continue;
+			}
+			page.drawImage(embedded, sceneRectToPdf(image.rect, canvas));
+		} catch (error) {
+			console.warn(`Tagged Sync: couldn't draw ${image.fileName} on the page`, error);
+		}
+	}
+}
+
 /**
  * How tall a scrolled page is allowed to get, in screen-heights. Scenes decode a handful of garbage
  * coordinates -- this repo's own `normal-a-stroke-2-layers` fixture carries y values around 1e12,
@@ -469,7 +514,30 @@ function scrolledCanvas(rmPage: RmPage, canvas: DeviceCanvas): DeviceCanvas {
 	return { ...canvas, heightPx: bottom, heightPt: bottom * canvas.pxToPt };
 }
 
-export async function renderPagesToPdf(pages: RmPage[]): Promise<Uint8Array> {
+/**
+ * The frame one notebook page is drawn in: the device screen, widened where the writer panned
+ * sideways and grown downwards where the content runs past the bottom.
+ *
+ * This is `renderPagesToPdf`'s own measurement, named so that anything reading such a page can
+ * measure it the same way. The digest does: it places an annotation by the frame the page was drawn
+ * in, and a frame of its own that disagreed by a pixel would put every region and every anchor
+ * slightly beside the thing it names.
+ *
+ * There is no fit to go with it, the way `annotatedPageFit` accompanies `pageFrame`: this page is
+ * sized to its own content and drawn 1:1, so the fit is the identity.
+ */
+export function notebookPageFrame(rmPage: RmPage, device: DeviceCanvas): DeviceCanvas {
+	return scrolledCanvas(rmPage, expandedCanvas(rmPage, device));
+}
+
+/**
+ * Renders notebook pages to a PDF.
+ *
+ * `images` carries the bytes of the pictures the pages name (`RmImage.fileName`), which live in
+ * files of their own on the device and so cannot come out of the scene. A page whose picture is
+ * missing from it renders as it always has: with the gap and without the picture.
+ */
+export async function renderPagesToPdf(pages: RmPage[], images: ReadonlyMap<string, Uint8Array> = new Map()): Promise<Uint8Array> {
 	// A zero-page render is never a legitimate result -- it silently produced the empty PDFs that
 	// masked notebooks syncing nothing. Callers that can legitimately have no `.rm` pages (an
 	// uploaded PDF) go through `renderAnnotatedPdf` instead and never reach here.
@@ -482,9 +550,10 @@ export async function renderPagesToPdf(pages: RmPage[]): Promise<Uint8Array> {
 	for (const rmPage of pages) {
 		// Per page, not per document: each page scrolls and expands on its own, so they legitimately
 		// differ in both dimensions.
-		const pageCanvas = scrolledCanvas(rmPage, expandedCanvas(rmPage, canvas));
+		const pageCanvas = notebookPageFrame(rmPage, canvas);
 		const page = doc.addPage([pageCanvas.widthPt, pageCanvas.heightPt]);
-		// Typed text under the handwriting, as the device stacks them.
+		// Pictures under the text under the handwriting, as the device stacks them.
+		await drawPageImages(doc, page, rmPage, pageCanvas, images);
 		drawPageText(page, rmPage, pageCanvas, font, encodable);
 		drawPageStrokes(page, rmPage, pageCanvas);
 	}

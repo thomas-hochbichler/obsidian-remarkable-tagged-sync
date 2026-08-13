@@ -10,6 +10,7 @@ const RM_1_2_HALF_WIDTH_PX = 702;
 const RM_1_2_HEIGHT_PX = 1872;
 const COLOR_FIXTURE_PATH = "./test-fixtures/rmv6/color-and-tool-v3.14.4.rm";
 const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
+const NOTEBOOK_HIGHLIGHTS_FIXTURE_PATH = "./test-fixtures/rmv6/notebook-typed-text-highlights.rm";
 
 /** A little-endian uint32 as four bytes, for hand-building block bodies. */
 function u32le(value: number): number[] {
@@ -44,8 +45,71 @@ function fileWithBlock(blockType: number, body: Uint8Array): Uint8Array {
 	return data;
 }
 
-/** Builds a `glyph_def` body -- one highlighted run of `text` covered by a single rectangle. */
-function glyphBody(text: string, rect: { x: number; y: number; width: number; height: number }): Uint8Array {
+/** The `.rm` v6 file header's own length, which is what it takes to keep a block and drop the header. */
+const FILE_HEADER_LENGTH = 43;
+
+/** One block, headed but headerless, for appending to a file that already has a header of its own. */
+function blockOnly(blockType: number, body: Uint8Array): Uint8Array {
+	return fileWithBlock(blockType, body).slice(FILE_HEADER_LENGTH);
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+	const data = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+	let at = 0;
+	for (const part of parts) {
+		data.set(part, at);
+		at += part.length;
+	}
+	return data;
+}
+
+/** A `.rm` subblock: its tag, its u32 byte length, then its contents. */
+function subblock(tag: number, contents: number[]): number[] {
+	return [tag, ...u32le(contents.length), ...contents];
+}
+
+/** Builds an `image_table` body -- which file each of the page's pictures lives in, keyed by 16 bytes. */
+function imageTableBody(entries: { key: number[]; name: string }[]): Uint8Array {
+	const table = entries.flatMap(({ key, name }) => {
+		const nameBytes = [...new TextEncoder().encode(name)];
+		const named = subblock(0x2c, [nameBytes.length, 0x01, ...nameBytes]); // varuint length, is-ascii flag, name
+		return subblock(0x0c, [...key, ...subblock(0x1c, [0x1f, 0x00, 0x00, ...named])]);
+	});
+	return new Uint8Array(subblock(0x1c, [entries.length, ...table]));
+}
+
+/** Builds an `image_def` body -- one picture, hanging from node `parentId`, over the quad `rect` bounds. */
+function imageBody(parentId: number[], key: number[], rect: { x: number; y: number; width: number; height: number }): Uint8Array {
+	const corners = [
+		[rect.x, rect.y, 0, 0],
+		[rect.x + rect.width, rect.y, 1, 0],
+		[rect.x + rect.width, rect.y + rect.height, 1, 1],
+		[rect.x, rect.y + rect.height, 0, 1],
+	];
+	const value = [
+		7, // image item type
+		...subblock(0x1c, [0x1f, 0x00, 0x00, ...subblock(0x2c, key)]),
+		0x2f, 0x00, 0x00,
+		...subblock(0x3c, [0x10, ...corners.flatMap((corner) => corner.flatMap(f32le))]),
+		...subblock(0x4c, [...u32le(6), ...[0, 1, 2, 2, 3, 0].flatMap(u32le)]),
+	];
+	return new Uint8Array([
+		0x1f, ...parentId,
+		0x2f, 0x00, 0x20,
+		0x3f, 0x00, 0x00,
+		0x4f, 0x00, 0x00,
+		0x54, ...u32le(0),
+		...subblock(0x6c, value),
+	]);
+}
+
+/**
+ * Builds a `glyph_def` body -- one highlighted run of `text` covered by a single rectangle.
+ *
+ * `omitRange` leaves out the optional `start`/`length` fields, which is how the device writes a
+ * highlight over a notebook's own typed text (see the fixture below).
+ */
+function glyphBody(text: string, rect: { x: number; y: number; width: number; height: number }, omitRange = false): Uint8Array {
 	const bytes: number[] = [];
 	const u32 = (value: number) => {
 		const buffer = new DataView(new ArrayBuffer(4));
@@ -64,10 +128,12 @@ function glyphBody(text: string, rect: { x: number; y: number; width: number; he
 	bytes.push(0x6c);
 	u32(0); // value subblock length -- unread, the parser reads the fields directly
 	bytes.push(1); // glyph item type
-	bytes.push(0x24);
-	u32(0); // start
-	bytes.push(0x34);
-	u32(text.length);
+	if (!omitRange) {
+		bytes.push(0x24);
+		u32(0); // start
+		bytes.push(0x34);
+		u32(text.length);
+	}
 	bytes.push(0x44);
 	u32(9); // PenColor.HIGHLIGHT, the shared placeholder
 	const encoded = new TextEncoder().encode(text);
@@ -231,6 +297,53 @@ describe("parseRmV6", () => {
 		expect(raw.layers.every((layer) => layer.placement === undefined)).toBe(true);
 	});
 
+	describe("pictures on the page", () => {
+		// The 16 bytes are the only thing joining the two blocks; the device's own are a hash, and
+		// nothing reads them as anything but a key.
+		const KEY = [...Array(16).keys()].map((index) => index * 16);
+		const OTHER_KEY = KEY.map((byte) => byte ^ 0xff);
+		// The node the shared fixture anchors to its typed "A": `{anchorId: "1:14", originX: -464}`,
+		// and that character's line sits at y 267.8. So a picture on it moves by exactly that.
+		const ANCHORED_NODE = [0x01, 0x14];
+		const RAW_RECT = { x: -4, y: -218.5, width: 936, height: 527 };
+
+		/** The shared fixture with an image table and one placed picture appended to it. */
+		function pageWithPicture(key: number[], tableKey = key): Uint8Array {
+			return concatBytes([
+				new Uint8Array(readFileSync(FIXTURE_PATH)),
+				blockOnly(14, imageTableBody([{ key: tableKey, name: "picture.png" }])),
+				blockOnly(15, imageBody(ANCHORED_NODE, key, RAW_RECT)),
+			]);
+		}
+
+		it("reads the file a picture lives in, and the box it fills, from the two blocks that hold them", () => {
+			const page = parseRmV6(pageWithPicture(KEY));
+
+			expect(page.images).toEqual([
+				{
+					layerId: "0114",
+					id: "0020",
+					fileName: "picture.png",
+					// Placed: the node's originX of -464, and the y of the line its anchor names.
+					rect: { x: -468, y: 267.8 - 218.5, width: 936, height: 527 },
+				},
+			]);
+		});
+
+		it("drops a picture whose file the page does not list, and keeps the rest of the page", () => {
+			// The two blocks are written together, so this is a corrupt page -- but its ink is fine and
+			// there is nothing to draw for the picture either way.
+			const page = parseRmV6(pageWithPicture(KEY, OTHER_KEY));
+
+			expect(page.images).toEqual([]);
+			expect(page.layers.flatMap((layer) => layer.strokes)).toHaveLength(2);
+		});
+
+		it("gives a page without either block an empty list rather than nothing to check", () => {
+			expect(parseRmV6(new Uint8Array(readFileSync(FIXTURE_PATH))).images).toEqual([]);
+		});
+	});
+
 	it("accepts an ArrayBuffer as well as a Uint8Array", () => {
 		const data = readFileSync(FIXTURE_PATH);
 		const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
@@ -357,6 +470,27 @@ describe("parseRmV6", () => {
 		const page = parseRmV6(fileWithBlock(3, glyphBody(longText, { x: 0, y: 0, width: 1, height: 1 })));
 
 		expect(page.highlights?.[0]?.text).toBe(longText);
+	});
+
+	// `start` and `length` locate the run in a source PDF's text layer, and a notebook has no such
+	// layer to locate it in -- so the device omits both, and every highlight the reader makes over a
+	// notebook's typed text is written this way. Reading them as mandatory cost the page all of them.
+	it("reads a text highlight that carries no start/length, as a highlight over typed text does", () => {
+		const page = parseRmV6(fileWithBlock(3, glyphBody("past.", { x: -728, y: 810, width: 276, height: 42 }, true)));
+
+		expect(page.highlights).toEqual([{ id: "0000", color: 9, text: "past.", colorRgba: { r: 242, g: 158, b: 255 }, rects: [{ x: -728, y: 810, width: 276, height: 42 }] }]);
+	});
+
+	it("reads the typed-text highlights of a real notebook page, tombstones aside", () => {
+		const data = readFileSync(NOTEBOOK_HIGHLIGHTS_FIXTURE_PATH);
+
+		const page = parseRmV6(new Uint8Array(data));
+
+		expect(page.highlights?.map((highlight) => ({ text: highlight.text, color: highlight.color }))).toEqual([
+			{ text: "Why", color: 3 },
+			{ text: "is the art", color: 5 },
+		]);
+		expect(page.highlights?.every((highlight) => highlight.rects.length > 0)).toBe(true);
 	});
 
 	it("skips a malformed glyph_def block instead of failing the whole page", () => {

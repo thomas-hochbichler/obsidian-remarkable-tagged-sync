@@ -47,8 +47,25 @@ const SERIF_MEASURED: Record<string, number> = { " ": 235, "-": 338, ".": 218, "
 const SERIF_ESTIMATED: Record<string, number> = { "!": 283, "\"": 362, "#": 566, "$": 566, "%": 905, "&": 679, "'": 195, "(": 339, ")": 339, "*": 396, "+": 595, ",": 283, "/": 283, "0": 566, "1": 566, "3": 566, "4": 566, "5": 566, "6": 566, "7": 566, "8": 566, "9": 566, ":": 283, ";": 283, "<": 595, "=": 595, ">": 595, "?": 566, "@": 1034, "A": 679, "B": 679, "C": 735, "D": 735, "E": 679, "F": 622, "G": 792, "H": 735, "I": 283, "J": 509, "L": 566, "O": 792, "Q": 792, "R": 735, "T": 622, "U": 735, "V": 679, "W": 961, "X": 679, "Y": 679, "Z": 622, "[": 283, "\\": 283, "]": 283, "^": 478, "_": 566, "`": 339, "q": 566, "x": 509, "z": 509, "{": 340, "|": 265, "}": 340, "~": 595, "¡": 339, "¢": 566, "£": 566, "¤": 566, "¥": 566, "¦": 265, "§": 566, "¨": 339, "©": 751, "ª": 377, "«": 566, "¬": 595, "­": 339, "®": 751, "¯": 339, "°": 407, "±": 595, "²": 339, "³": 339, "´": 339, "µ": 566, "¶": 547, "·": 283, "¸": 339, "¹": 339, "º": 372, "»": 566, "¼": 849, "½": 849, "¾": 849, "¿": 622, "À": 679, "Á": 679, "Â": 679, "Ã": 679, "Ä": 679, "Å": 679, "Æ": 1018, "Ç": 735, "È": 679, "É": 679, "Ê": 679, "Ë": 679, "Ì": 283, "Í": 283, "Î": 283, "Ï": 283, "Ð": 735, "Ñ": 735, "Ò": 792, "Ó": 792, "Ô": 792, "Õ": 792, "Ö": 792, "×": 595, "Ø": 792, "Ù": 735, "Ú": 735, "Û": 735, "Ü": 735, "Ý": 679, "Þ": 679, "ß": 622, "à": 566, "á": 566, "â": 566, "ã": 566, "ä": 566, "å": 566, "æ": 905, "ç": 509, "è": 566, "é": 566, "ê": 566, "ë": 566, "ì": 283, "í": 283, "î": 283, "ï": 283, "ð": 566, "ñ": 566, "ò": 566, "ó": 566, "ô": 566, "õ": 566, "ö": 566, "÷": 595, "ø": 622, "ù": 566, "ú": 566, "û": 566, "ü": 566, "ý": 509, "þ": 566, "ÿ": 509, "–": 566, "—": 1018, "‘": 226, "’": 226, "“": 339, "”": 339, "•": 356, "…": 1018, "€": 566 };
 
 
-const SANS: Record<string, number> = { ...SANS_ESTIMATED, ...SANS_MEASURED };
-const SERIF: Record<string, number> = { ...SERIF_ESTIMATED, ...SERIF_MEASURED };
+/**
+ * Characters the device keeps in the text but neither draws nor advances for.
+ *
+ * `U+2028` (LINE SEPARATOR) is what the "Read on reMarkable" extension leaves at the head of a
+ * paragraph it lifted out of a web page. Measured against the 53 highlights of one such page:
+ * charging it the fallback width made that paragraph's first line 1152.1px wide against a 1152px
+ * box, which pushed its last word onto the next line -- and from there every word of the paragraph
+ * sat one word away from the highlight drawn over it. Stripped, all six of its lines break where
+ * the device broke them.
+ */
+const ZERO_WIDTH: Record<string, number> = { "\u2028": 0 };
+
+const SANS: Record<string, number> = { ...SANS_ESTIMATED, ...SANS_MEASURED, ...ZERO_WIDTH };
+const SERIF: Record<string, number> = { ...SERIF_ESTIMATED, ...SERIF_MEASURED, ...ZERO_WIDTH };
+
+/** The text as the device draws it: the characters it carries but never draws are not in it. */
+export function drawableText(text: string): string {
+	return [...text].filter((character) => !(character in ZERO_WIDTH)).join("");
+}
 
 /** Widths for the fallback faces the device reaches for; the same exports supplied these three. */
 const SYMBOLS: Record<string, number> = { "\u2192": 918, "\u21d2": 859, "\u2610": 865 };
