@@ -469,6 +469,22 @@ function scrolledCanvas(rmPage: RmPage, canvas: DeviceCanvas): DeviceCanvas {
 	return { ...canvas, heightPx: bottom, heightPt: bottom * canvas.pxToPt };
 }
 
+/**
+ * The frame one notebook page is drawn in: the device screen, widened where the writer panned
+ * sideways and grown downwards where the content runs past the bottom.
+ *
+ * This is `renderPagesToPdf`'s own measurement, named so that anything reading such a page can
+ * measure it the same way. The digest does: it places an annotation by the frame the page was drawn
+ * in, and a frame of its own that disagreed by a pixel would put every region and every anchor
+ * slightly beside the thing it names.
+ *
+ * There is no fit to go with it, the way `annotatedPageFit` accompanies `pageFrame`: this page is
+ * sized to its own content and drawn 1:1, so the fit is the identity.
+ */
+export function notebookPageFrame(rmPage: RmPage, device: DeviceCanvas): DeviceCanvas {
+	return scrolledCanvas(rmPage, expandedCanvas(rmPage, device));
+}
+
 export async function renderPagesToPdf(pages: RmPage[]): Promise<Uint8Array> {
 	// A zero-page render is never a legitimate result -- it silently produced the empty PDFs that
 	// masked notebooks syncing nothing. Callers that can legitimately have no `.rm` pages (an
@@ -482,7 +498,7 @@ export async function renderPagesToPdf(pages: RmPage[]): Promise<Uint8Array> {
 	for (const rmPage of pages) {
 		// Per page, not per document: each page scrolls and expands on its own, so they legitimately
 		// differ in both dimensions.
-		const pageCanvas = scrolledCanvas(rmPage, expandedCanvas(rmPage, canvas));
+		const pageCanvas = notebookPageFrame(rmPage, canvas);
 		const page = doc.addPage([pageCanvas.widthPt, pageCanvas.heightPt]);
 		// Typed text under the handwriting, as the device stacks them.
 		drawPageText(page, rmPage, pageCanvas, font, encodable);

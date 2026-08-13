@@ -33,6 +33,23 @@ workflow publishes the section as the GitHub release body. See
   keeps its anchor and its page link. If the PDF has moved out of the vault, or the page is gone, the
   entry says that too — where you are reading, not only in the console.
 
+- **An article you send to the device now arrives as a digest, not as a transcript of itself.** Send
+  a web page over with the "Read on reMarkable" Chrome extension in notebook mode, or write on a page
+  with the Type Folio, and the device stores that text inside the notebook. The plugin used to treat
+  the whole page as handwriting: it took a picture of the printed article, sent it to be read back
+  letter by letter, and wrote the result into your vault. Your own four words of ink sat somewhere in
+  21 000 characters of guessed-at text.
+
+  Such a page is now read as what it is — a document with your marks on it. You get the passages you
+  highlighted, quoted with the sentence around them, under the article's own section headings, and
+  your handwritten notes beside the lines they were written next to. On the page this was measured on:
+  10 KB of digest in place of 21 KB of transcript, and nothing of the article's text transcribed at
+  all, because it was already text.
+
+  A notebook you wrote by hand is untouched and still gets its transcript. So does a page carrying
+  only a typed line or two — the digest is for a page whose text is a document, and the difference is
+  measured from the text itself, not from what kind of file the device calls it.
+
 ### Fixed
 
 - **Text you highlight in a notebook is in your vault now.** A page whose text was typed rather than

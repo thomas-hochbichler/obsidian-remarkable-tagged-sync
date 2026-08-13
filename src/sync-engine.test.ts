@@ -7,6 +7,7 @@ import { buildDigest } from "./digest-pipeline";
 import { blockHashOf, extractManagedBlock, type NoteStore } from "./note-builder";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import type { RmLayer, RmPage } from "./rm-parser";
+import { isDocumentText } from "./scene-text";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
@@ -29,6 +30,14 @@ import { mappingFingerprint, TagRouter } from "./tag-router";
 vi.mock("./digest-pipeline", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./digest-pipeline")>();
 	return { ...actual, buildDigest: vi.fn(actual.buildDigest) };
+});
+
+// Which notebook pages count as a document is measured from the typed text itself and has its own
+// tests (`scene-text.test.ts`). Here it is a switch, so a notebook can be put on either path without
+// a fixture carrying a `root_text` block: what these tests are about is which path the engine takes.
+vi.mock("./scene-text", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./scene-text")>();
+	return { ...actual, isDocumentText: vi.fn(actual.isDocumentText) };
 });
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -1247,6 +1256,67 @@ describe("runSync", () => {
 			expect(written).not.toContain("## Transcript");
 			const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as unknown[]);
 			expect(scenes).toHaveLength(0);
+		});
+
+		// The reason the digest exists is a page carrying text somebody else wrote, and `fileType` is not
+		// what says so: the "Read on reMarkable" extension delivers a web article as a *notebook* whose
+		// text is typed into the scene. Such a page got the whole printed article read back to it by an
+		// OCR pass and written into the vault as a transcript.
+		it("gives a notebook whose text was typed a digest, not a transcript of its own text", async () => {
+			vi.mocked(isDocumentText).mockReturnValueOnce(true); // one page, one call -- and it cleans itself up
+			const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+			const api = fakeApi({
+				rootHash: "root-typed",
+				entries: [entry],
+				contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+
+			await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const written = deps.noteStore.write.mock.calls[0][1] as string;
+			expect(written).toContain("## Digest");
+			expect(written).not.toContain("## Transcript");
+		});
+
+		it("reads a typed page's own text rather than fetching a source PDF it does not have", async () => {
+			// `getPdf` is what a PDF-backed unit's digest reads its text from. A notebook has no such file,
+			// and asking for one would fail the whole unit.
+			vi.mocked(isDocumentText).mockReturnValueOnce(true); // one page, one call -- and it cleans itself up
+			const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+			const api = fakeApi({
+				rootHash: "root-typed-nopdf",
+				entries: [entry],
+				contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+
+			const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			expect(api.getPdf).not.toHaveBeenCalled();
+			expect(result.skipErrors).toEqual([]);
+		});
+
+		it("transcribes such a page per margin note, never a second time over the whole scene", async () => {
+			vi.mocked(isDocumentText).mockReturnValueOnce(true); // one page, one call -- and it cleans itself up
+			const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+			const api = fakeApi({
+				rootHash: "root-typed-once",
+				entries: [entry],
+				contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+
+			await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap(
+				(call) => call[0] as { layers: unknown[] }[],
+			);
+			expect(scenes.length).toBeGreaterThan(0);
+			for (const scene of scenes) expect(scene.layers).toHaveLength(1);
 		});
 
 		it("leaves a handwritten notebook on the transcript path, untouched", async () => {

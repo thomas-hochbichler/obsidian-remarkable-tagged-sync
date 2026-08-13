@@ -23,6 +23,7 @@ import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./p
 import { validateSourcePdf } from "./pdf-source";
 import { tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
+import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
 
 export type SyncRowStatus = "active" | "orphaned";
@@ -69,9 +70,12 @@ export type SyncRowStatus = "active" | "orphaned";
  * entry can be styled without touching any other callout in the vault and its title line carries where
  * the note sat instead of what every note in the digest is; version 19 draws the text highlights of a
  * page whose text was typed rather than carried by a source PDF, which the parser had been dropping
- * whole -- every such page in a vault was rendered without a single one of them.
+ * whole -- every such page in a vault was rendered without a single one of them; version 20 gives such
+ * a page a digest instead of a transcript, which -- like version 4 for PDFs -- an already-synced note
+ * has no way to grow on its own, because nothing changes on the device when the plugin learns to read
+ * a page.
  */
-export const RENDER_VERSION = 19;
+export const RENDER_VERSION = 20;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -787,13 +791,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
 
 		/**
-		 * The `## Digest` body for one PDF-backed unit, or "" when it could not be built. A failure here
-		 * costs the digest and never the note: the unit is still written with today's highlights, because
-		 * losing an annotation is worse than losing the section that explains it. Warnings from a build
-		 * that did succeed travel the same road -- a digest that degraded silently is what spec §6 forbids.
+		 * The `## Digest` body for one unit with document text, or "" when it could not be built. A
+		 * failure here costs the digest and never the note: the unit is still written with today's
+		 * highlights, because losing an annotation is worse than losing the section that explains it.
+		 * Warnings from a build that did succeed travel the same road -- a digest that degraded silently
+		 * is what spec §6 forbids.
 		 *
 		 * `ocr` is the outcome the digest's own per-cluster transcription came to, and `null` means there
-		 * is no digest and the unit still needs the whole-scene pass. It exists so a PDF unit is not
+		 * is no digest and the unit still needs the whole-scene pass. It exists so such a unit is not
 		 * transcribed twice: the clusters have already been through the backend, and running `writeUnit`'s
 		 * pass as well would spend a second round of Vision processes on a result that is then discarded.
 		 */
@@ -806,7 +811,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				const build = await buildDigest(
 					{ ocrBackend, marginNotes: deps.marginNotes ?? false },
 					{
-						sourcePdfBytes: await getSourcePdf(),
+						source: isPdf ? { kind: "pdf", bytes: await getSourcePdf() } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
 						// `writeAttachment` derives it from, so the digest can link into it before the
 						// attachment is written and `writeUnit` needs no reordering.
@@ -876,6 +881,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pdfBytes = await renderPagesToPdf(scenes); // throws on an empty notebook -- surfaced, not written as a blank note
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
+					digestPages = scenes.some(isDocumentText)
+						? scenes.map((scene, i) => ({ pageId: pageOrder[i], sourceIndex: i, embedPage: i + 1, scene }))
+						: null;
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
@@ -1002,6 +1010,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pdfBytes = await renderPagesToPdf(scenes);
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
 					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
+					// A single-page embed, so the `#page=` anchor is 1 -- as in the PDF branch above.
+					digestPages = isDocumentText(scenes[0]) ? [{ pageId: pageTag.pageId, sourceIndex: 0, embedPage: 1, scene: scenes[0] }] : null;
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${pageTag.name}", skipping`, error);
