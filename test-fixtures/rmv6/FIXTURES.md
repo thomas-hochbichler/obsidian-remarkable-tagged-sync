@@ -42,3 +42,21 @@ blocks and the first from a PDF-backed page — used by the pdf-annotation effor
 clustering, and anchoring against device-produced data. The full raw document
 (source PDF, all 7 annotated pages, content/meta JSON) stays private in
 `.scratch/pdf-annotation/fixture/`.
+
+`notebook-typed-text-highlights.rm` holds three `glyph_def` blocks lifted verbatim
+from a real firmware-v6 page and re-wrapped in a minimal v6 file (the header and
+those three blocks, nothing else):
+
+- Source: a notebook the "Read on reMarkable" Chrome extension created from
+  <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents>,
+  captured from the maintainer's own reMarkable
+- Rights: two highlight runs quoting four words of a public Anthropic post
+  ("Why", "is the art"); no handwriting, none of the page's other content
+- Retrieved: 2026-08-13
+
+That page is typed text rather than a source PDF, and its highlights carry **no**
+`start`/`length` fields — those index a PDF's text layer, which such a page does not
+have. All 57 blocks on the real page are written that way. Used to prove
+`parseGlyphBody` reads them, which it did not until the two fields were made optional:
+the page's highlights were dropped whole. The third block is a tombstoned run, so the
+fixture covers the `deleted_length` path as well.

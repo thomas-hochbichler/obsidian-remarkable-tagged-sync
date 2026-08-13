@@ -35,6 +35,12 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **Text you highlight in a notebook is in your vault now.** A page whose text was typed rather than
+  carried by a PDF — an article sent over by the "Read on reMarkable" Chrome extension, or anything
+  written with the Type Folio — lost every one of its highlights: they were read from the file in a
+  form the plugin refused, and each one was quietly dropped. On the page that brought this to light,
+  53 of them. They are drawn again, and every affected note is re-synced once.
+
 - **A note written down the margin arrives as one note.** Several lines standing in the margin as a
   block used to become one entry per line — each transcribed separately, each anchored somewhere of
   its own, a single sentence torn into four. They are now read as the one note they are: one entry,

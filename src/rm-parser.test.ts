@@ -10,6 +10,7 @@ const RM_1_2_HALF_WIDTH_PX = 702;
 const RM_1_2_HEIGHT_PX = 1872;
 const COLOR_FIXTURE_PATH = "./test-fixtures/rmv6/color-and-tool-v3.14.4.rm";
 const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
+const NOTEBOOK_HIGHLIGHTS_FIXTURE_PATH = "./test-fixtures/rmv6/notebook-typed-text-highlights.rm";
 
 /** A little-endian uint32 as four bytes, for hand-building block bodies. */
 function u32le(value: number): number[] {
@@ -44,8 +45,13 @@ function fileWithBlock(blockType: number, body: Uint8Array): Uint8Array {
 	return data;
 }
 
-/** Builds a `glyph_def` body -- one highlighted run of `text` covered by a single rectangle. */
-function glyphBody(text: string, rect: { x: number; y: number; width: number; height: number }): Uint8Array {
+/**
+ * Builds a `glyph_def` body -- one highlighted run of `text` covered by a single rectangle.
+ *
+ * `omitRange` leaves out the optional `start`/`length` fields, which is how the device writes a
+ * highlight over a notebook's own typed text (see the fixture below).
+ */
+function glyphBody(text: string, rect: { x: number; y: number; width: number; height: number }, omitRange = false): Uint8Array {
 	const bytes: number[] = [];
 	const u32 = (value: number) => {
 		const buffer = new DataView(new ArrayBuffer(4));
@@ -64,10 +70,12 @@ function glyphBody(text: string, rect: { x: number; y: number; width: number; he
 	bytes.push(0x6c);
 	u32(0); // value subblock length -- unread, the parser reads the fields directly
 	bytes.push(1); // glyph item type
-	bytes.push(0x24);
-	u32(0); // start
-	bytes.push(0x34);
-	u32(text.length);
+	if (!omitRange) {
+		bytes.push(0x24);
+		u32(0); // start
+		bytes.push(0x34);
+		u32(text.length);
+	}
 	bytes.push(0x44);
 	u32(9); // PenColor.HIGHLIGHT, the shared placeholder
 	const encoded = new TextEncoder().encode(text);
@@ -357,6 +365,27 @@ describe("parseRmV6", () => {
 		const page = parseRmV6(fileWithBlock(3, glyphBody(longText, { x: 0, y: 0, width: 1, height: 1 })));
 
 		expect(page.highlights?.[0]?.text).toBe(longText);
+	});
+
+	// `start` and `length` locate the run in a source PDF's text layer, and a notebook has no such
+	// layer to locate it in -- so the device omits both, and every highlight the reader makes over a
+	// notebook's typed text is written this way. Reading them as mandatory cost the page all of them.
+	it("reads a text highlight that carries no start/length, as a highlight over typed text does", () => {
+		const page = parseRmV6(fileWithBlock(3, glyphBody("past.", { x: -728, y: 810, width: 276, height: 42 }, true)));
+
+		expect(page.highlights).toEqual([{ id: "0000", color: 9, text: "past.", colorRgba: { r: 242, g: 158, b: 255 }, rects: [{ x: -728, y: 810, width: 276, height: 42 }] }]);
+	});
+
+	it("reads the typed-text highlights of a real notebook page, tombstones aside", () => {
+		const data = readFileSync(NOTEBOOK_HIGHLIGHTS_FIXTURE_PATH);
+
+		const page = parseRmV6(new Uint8Array(data));
+
+		expect(page.highlights?.map((highlight) => ({ text: highlight.text, color: highlight.color }))).toEqual([
+			{ text: "Why", color: 3 },
+			{ text: "is the art", color: 5 },
+		]);
+		expect(page.highlights?.every((highlight) => highlight.rects.length > 0)).toBe(true);
 	});
 
 	it("skips a malformed glyph_def block instead of failing the whole page", () => {

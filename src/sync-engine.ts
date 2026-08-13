@@ -67,9 +67,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * off on screen at exactly the paper edge the file had just been fixed to reach past; version 18 gives
  * a margin note a callout type of its own (`[!handwritten]`) and stops titling it with the word, so the
  * entry can be styled without touching any other callout in the vault and its title line carries where
- * the note sat instead of what every note in the digest is.
+ * the note sat instead of what every note in the digest is; version 19 draws the text highlights of a
+ * page whose text was typed rather than carried by a source PDF, which the parser had been dropping
+ * whole -- every such page in a vault was rendered without a single one of them.
  */
-export const RENDER_VERSION = 18;
+export const RENDER_VERSION = 19;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

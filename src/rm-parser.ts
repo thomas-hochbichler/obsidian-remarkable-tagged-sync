@@ -573,8 +573,8 @@ const RECT_BYTES = 32;
 
 /**
  * Hand-parses a `glyph_def` block body -- a run of highlighted document text. Same tagged-value
- * shape as a stroke body, with the run's `start`/`length` skipped, its highlighted text decoded
- * from the `0x5c` subblock, and its rectangles read in the scene's own coordinate frame.
+ * shape as a stroke body, with the run's optional `start`/`length` skipped, its highlighted text
+ * decoded from the `0x5c` subblock, and its rectangles read in the scene's own coordinate frame.
  * Returns null for tombstoned runs, and for anything whose rectangle block doesn't add up.
  */
 function parseGlyphBody(raw: Uint8Array): RmHighlight | null {
@@ -595,11 +595,19 @@ function parseGlyphBody(raw: Uint8Array): RmHighlight | null {
 	stream.readU4le(); // subblock byte length; unused, we read fields directly
 	if (stream.readU1() !== GLYPH_ITEM_TYPE) return null;
 
-	expectTag(stream, 0x24, "start");
-	stream.readU4le();
-	expectTag(stream, 0x34, "length");
-	stream.readU4le();
-	expectTag(stream, 0x44, "color");
+	// `start` and `length` are optional, and the device leaves both out for a highlight over a
+	// notebook's own typed text: they index a source PDF's text layer, which such a page does not
+	// have. Neither is read, but requiring the tags cost every one of those highlights its block.
+	let tag = readTag(stream);
+	if (tag === 0x24) {
+		stream.readU4le(); // start
+		tag = readTag(stream);
+	}
+	if (tag === 0x34) {
+		stream.readU4le(); // length
+		tag = readTag(stream);
+	}
+	if (tag !== 0x44) throw new Error(`rm-parser: expected color tag 0x44, got 0x${tag.toString(16)}`);
 	const color = stream.readU4le();
 	expectTag(stream, 0x5c, "text");
 	// The subblock is: u32 subLen, varuint strLen, u8 is_ascii, then strLen UTF-8 bytes. Decode the
