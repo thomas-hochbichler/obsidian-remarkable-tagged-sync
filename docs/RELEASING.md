@@ -1,24 +1,32 @@
 # Releasing
 
 How a release of this plugin is cut. Two GitHub Actions workflows do the work; a human bumps
-numbers, writes notes, and pushes a tag.
+numbers, writes notes, merges the bump through a pull request, and pushes a tag.
 
 **Nobody uploads a release asset by hand.** `main.js`, `manifest.json` and `styles.css` are built
 in CI, in a fresh checkout, and published from there. That is the rule the pipeline exists to
 enforce.
 
-## The six steps
+## The seven steps
 
 | # | Step | Command / file |
 |---|---|---|
-| 1 | Bump **four** files to the new version | `manifest.json`, `package.json`, `package-lock.json`, `versions.json` |
-| 2 | Rename the changelog heading | `## [Unreleased]` → `## [1.0.6] - 2026-08-01` |
-| 3 | Commit | `git commit -am "Release 1.0.6"` |
-| 4 | Push, and wait for CI to go green | `git push` |
-| 5 | Tag and push the tag | `git tag 1.0.6 && git push origin 1.0.6` |
-| 6 | Wait for the release workflow | it builds, attests, publishes and uploads |
+| 1 | Branch off `main` | `git switch -c release/1.0.6` |
+| 2 | Bump **four** files to the new version | `manifest.json`, `package.json`, `package-lock.json`, `versions.json` |
+| 3 | Rename the changelog heading | `## [Unreleased]` → `## [1.0.6] - 2026-08-01` |
+| 4 | Commit and push the branch | `git commit -am "Release 1.0.6" && git push -u origin release/1.0.6` |
+| 5 | Open the PR, wait for green, squash-merge | `gh pr create --title "Release 1.0.6"`, then `gh pr merge --squash --delete-branch` |
+| 6 | Tag the **merged** commit on `main` and push the tag | `git switch main && git pull --ff-only && git tag 1.0.6 && git push origin 1.0.6` |
+| 7 | Wait for the release workflow | it builds, attests, publishes and uploads |
 
 Details that matter:
+
+- **`main` takes no direct push.** A repository rule requires a pull request and the `verify`
+  check, so the release commit goes the same way every other change does. `git push origin main`
+  is rejected with `GH013`.
+- **The tag belongs on the squashed commit.** Squash-merging rewrites the commit, so tag only
+  after step 5 and after pulling `main` — a tag on the pre-merge commit points at something that
+  is not on `main`.
 
 - **Bump `package-lock.json` by running `npm install`** (or `npm i --package-lock-only`) after
   editing `package.json` — never by hand-editing it. Two version fields and the license must all
@@ -28,7 +36,7 @@ Details that matter:
   `manifest.json`'s `minAppVersion`.
 - **The tag has no `v` prefix.** `1.0.6`, never `v1.0.6`. The store resolves the tag from the
   manifest version, so a `v`-prefixed tag is simply not found.
-- **Step 4 is not optional.** The version gate runs in CI too, so a wrong number fails on `main`
+- **Step 5 is not optional.** The version gate runs in CI too, so a wrong number fails on the PR
   in seconds — before you spend a tag on it.
 
 ## What the pipeline does for you
