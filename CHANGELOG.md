@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-13
+
 ### Added
 
 - **The notes you write in the margin of a PDF now arrive in the digest**, switched on under
