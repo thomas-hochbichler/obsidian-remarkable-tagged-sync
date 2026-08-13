@@ -171,8 +171,8 @@ describe("buildDigest without a text layer", () => {
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
 		expect(result.markdown.match(/\^nt-/g)).toHaveLength(5);
 		// Nothing anchors without a text layer, and nothing needs to: each note is printed under the
-		// page's own heading, which is what an unanchored note has to say.
-		expect(result.markdown.match(/\[!note\] Handwritten/g)).toHaveLength(5);
+		// page's own heading, which is what an unanchored note has to say -- so each title is empty.
+		expect(result.markdown.match(/^> \[!handwritten\]$/gm)).toHaveLength(5);
 		expect(result.markdown).toContain("für alle aktuellen Claude-Modelle,");
 		// No text layer means no known run inside a sentence, so nothing is marked (F4's soft fail).
 		expect(result.markdown).not.toContain("==");
@@ -231,10 +231,10 @@ describe("buildDigest with the fixture page's text layer", () => {
 
 		// Four notes sit level with a heading and are printed under it; the fifth belongs to the
 		// highlight `generieren.` and is printed right below it. Either way the position says where the
-		// note sat, so every title is the bare `Handwritten` -- and none of the five falls through the
-		// cascade to a line or the bare page.
-		expect(result.markdown.match(/\[!note\] Handwritten/g)).toHaveLength(5);
-		expect(result.markdown).not.toContain("[!note] at »");
+		// note sat, so every title carries nothing but the page link -- and none of the five falls
+		// through the cascade to a line or the bare page.
+		expect(result.markdown.match(/^> \[!handwritten\] \[\[/gm)).toHaveLength(5);
+		expect(result.markdown).not.toContain("[!handwritten] at »");
 	});
 
 	it("orders the page's entries by section and then top-down", async () => {
@@ -278,7 +278,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 			marginNotes: false,
 		});
 
-		expect(result.markdown).not.toContain("[!note]");
+		expect(result.markdown).not.toContain("[!handwritten]");
 		expect(result.markdown).not.toContain("Basic Rule O");
 		// The highlights are untouched -- the setting is about handwriting, not about the digest.
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
@@ -314,8 +314,8 @@ describe("buildDigest with the fixture page's text layer", () => {
 
 		const result = await build([page], { loadText: async () => document, ocrBackend: fakeOcr("Notiz") });
 
-		expect(result.markdown).not.toContain("[!note] at the heading");
-		expect(result.markdown).toContain("[!note] at »");
+		expect(result.markdown).not.toContain("[!handwritten] at the heading");
+		expect(result.markdown).toContain("[!handwritten] at »");
 	});
 });
 
@@ -541,7 +541,7 @@ describe("buildDigest merges highlights that share a sentence", () => {
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(1);
 		// No heading on this page, so the page is the heading and carries the link -- the entries, this
 		// note included, carry none.
-		expect(result.markdown).toContain("> [!note] Handwritten\n> Dazu.");
+		expect(result.markdown).toContain("> [!handwritten]\n> Dazu.");
 	});
 });
 
@@ -719,7 +719,7 @@ describe("buildDigest on pen marks", () => {
 		expect(result.markdown).toContain("==Claude reagiert==");
 		expect(result.markdown).toContain("^hl-");
 		// The failure this replaces: a callout holding a picture of a line, with whatever OCR made of it.
-		expect(result.markdown).not.toContain("[!note]");
+		expect(result.markdown).not.toContain("[!handwritten]");
 	});
 
 	it("makes no OCR call for it -- a line has no transcription to get wrong", async () => {
@@ -745,7 +745,7 @@ describe("buildDigest on pen marks", () => {
 	it("leaves the mark a note when the page has no text layer, since nothing can be resolved there", async () => {
 		const result = await build([fixturePage(underlinedScene())], { ocrBackend: fakeOcr("176") });
 
-		expect(result.markdown).toContain("[!note] Handwritten");
+		expect(result.markdown).toContain("[!handwritten]\n");
 	});
 
 	it("keeps the marker highlight's id when a mark lands on a sentence that already had one", async () => {
@@ -820,8 +820,8 @@ describe("buildDigest on a page added on the device", () => {
 
 		// One OCR call for the page, where the margin-note path makes one per cluster.
 		expect(ocr).toHaveBeenCalledTimes(1);
-		expect(result.markdown.match(/^> \[!note\]/gm)).toHaveLength(1);
-		expect(result.markdown).toContain("[!note] Handwritten page");
+		expect(result.markdown.match(/^> \[!handwritten\]/gm)).toHaveLength(1);
+		expect(result.markdown).toContain("[!handwritten] Handwritten page");
 		expect(result.markdown).toContain("> first line\n> second line");
 	});
 

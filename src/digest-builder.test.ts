@@ -174,6 +174,9 @@ const FIXTURE_PAGE: DigestPage = {
 /** The locator every entry of this page ends with, since a section is what heads it. */
 const P2 = " · [[Best Practices für Prompting.pdf#page=2|p. 2]]";
 
+/** The same link on a note's title line, which has nothing else on it for the separator to part it from. */
+const NOTE_P2 = P2.replace(" · ", " ");
+
 const FIXTURE_MARKDOWN = `
 ### Allgemeine Prinzipien
 
@@ -182,7 +185,7 @@ Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für al
 
 ### Sei klar und direkt
 
-> [!note] Handwritten${P2}
+> [!handwritten]${NOTE_P2}
 > Basic Rule O ^nt-4c8a17
 > \`\`\`remarkable-note
 > page: 2
@@ -197,7 +200,7 @@ Gib ==Anweisungen als aufeinanderfolgende Schritte mit nummerierten Listen oder 
 
 ### Füge Kontext hinzu, um die Leistung zu verbessern
 
-> [!note] Handwritten${P2}
+> [!handwritten]${NOTE_P2}
 > Handwriting that could not be transcribed. ^nt-e5f203
 > \`\`\`remarkable-note
 > page: 2
@@ -209,7 +212,7 @@ Das Bereitstellen von Kontext oder ==Motivation hinter deinen Anweisungen,== etw
 
 ### Verwende Beispiele effektiv
 
-> [!note] Handwritten${P2}
+> [!handwritten]${NOTE_P2}
 > Handwriting that could not be transcribed. ^nt-90cc41
 > \`\`\`remarkable-note
 > page: 2
@@ -225,12 +228,12 @@ Vielfältig sind: Sie ==decken Randfälle ab== und variieren genug, damit Claude
 Du kannst Claude auch bitten, deine Beispiele auf Relevanz und Vielfalt zu bewerten oder zusätzliche auf Basis deines ursprünglichen Satzes zu ==generieren.==${P2}
 ^hl-8d5b26
 
-> [!note] Handwritten${P2}
+> [!handwritten]${NOTE_P2}
 > → Claude valisate Examphs ^nt-f13a88
 
 ### Strukturiere Prompts mit XML-Tags
 
-> [!note] Handwritten${P2}
+> [!handwritten]${NOTE_P2}
 > - Widu spruch zum Artikel ally. Pe ^nt-2b7c95
 > \`\`\`remarkable-note
 > page: 2
@@ -283,7 +286,7 @@ describe("renderDigest", () => {
 		expect(rendered).toBe(`
 ### First
 
-> [!note] Handwritten · [[${EMBED}#page=4|p. iv]]
+> [!handwritten] [[${EMBED}#page=4|p. iv]]
 > A margin note. ^nt-1`);
 	});
 
@@ -358,7 +361,7 @@ One. · [[${EMBED}#page=1|p. 1]]
 
 ### Second
 
-> [!note] Handwritten · [[${EMBED}#page=1|p. 1]]
+> [!handwritten] [[${EMBED}#page=1|p. 1]]
 > Note. ^nt-1
 
 Two. · [[${EMBED}#page=1|p. 1]]
@@ -526,26 +529,28 @@ describe("renderDigest — note anchors and regions", () => {
 	/**
 	 * The layout shows what these anchors say: a note under a section heading sat at that heading,
 	 * one under a quote sat next to it, and a page-anchored note sits under its page's own heading.
-	 * Naming them there only repeats the position, so the title says what the entry is.
+	 * Naming them there only repeats the position -- and so did the word "Handwritten", which the pen
+	 * on the callout says already. Obsidian prints the callout type where a title is empty, which puts
+	 * the word back in the one place it is the only thing there is to say.
 	 */
-	it("titles a note »Handwritten« wherever the layout already shows its anchor", () => {
-		expect(noteBlock({ anchor: { kind: "heading", heading: "Any" }, text: "x" })).toContain("> [!note] Handwritten");
-		expect(noteBlock({ anchor: { kind: "highlight", highlightId: "hl-9" }, text: "x" })).toContain("> [!note] Handwritten");
-		expect(noteBlock({ anchor: { kind: "page" }, text: "x" })).toContain("> [!note] Handwritten");
+	it("leaves a note's title empty wherever the layout already shows its anchor", () => {
+		expect(noteBlock({ anchor: { kind: "heading", heading: "Any" }, text: "x" })).toContain("> [!handwritten]\n");
+		expect(noteBlock({ anchor: { kind: "highlight", highlightId: "hl-9" }, text: "x" })).toContain("> [!handwritten]\n");
+		expect(noteBlock({ anchor: { kind: "page" }, text: "x" })).toContain("> [!handwritten]\n");
 	});
 
 	/** The one anchor the layout cannot show: which sentence the note stood beside. */
 	it("quotes the first words of the nearest line for a line anchor", () => {
 		expect(noteBlock({ anchor: { kind: "line", line: "Die Techniken in diesem Abschnitt gelten" }, text: "x" })).toContain(
-			"> [!note] at »Die Techniken in diesem…«",
+			"> [!handwritten] at »Die Techniken in diesem…«",
 		);
 		expect(noteBlock({ anchor: { kind: "line", line: "Kurze Zeile" }, text: "x" })).toContain(
-			"> [!note] at »Kurze Zeile«",
+			"> [!handwritten] at »Kurze Zeile«",
 		);
 	});
 
 	it("says so in words when nothing was transcribed, rather than standing empty", () => {
-		expect(noteBlock({})).toBe("> [!note] Handwritten\n> Handwriting that could not be transcribed. ^nt-1");
+		expect(noteBlock({})).toBe("> [!handwritten]\n> Handwriting that could not be transcribed. ^nt-1");
 	});
 
 	/**
@@ -554,7 +559,7 @@ describe("renderDigest — note anchors and regions", () => {
 	 */
 	it("puts the region block under the text, with the block id still on the last text line", () => {
 		expect(noteBlock({ text: "check table 2", region: { page: 3, x: 384, y: 246, width: 140, height: 24 } })).toBe(
-			["> [!note] Handwritten", "> check table 2 ^nt-1", "> ```remarkable-note", "> page: 3", "> rect: 384 246 140 24", "> ```"].join("\n"),
+			["> [!handwritten]", "> check table 2 ^nt-1", "> ```remarkable-note", "> page: 3", "> rect: 384 246 140 24", "> ```"].join("\n"),
 		);
 	});
 
@@ -567,7 +572,7 @@ describe("renderDigest — note anchors and regions", () => {
 
 	/** A page added on the device has no source page under its ink, so there is nothing to draw out of. */
 	it("leaves the block off entirely when there is no region", () => {
-		expect(noteBlock({ text: "A margin note." })).toBe("> [!note] Handwritten\n> A margin note. ^nt-1");
+		expect(noteBlock({ text: "A margin note." })).toBe("> [!handwritten]\n> A margin note. ^nt-1");
 	});
 
 	/** There is no quote callout left to nest inside, and the note carries no locator: the highlight it belongs to already gave one. */
@@ -587,7 +592,7 @@ describe("renderDigest — note anchors and regions", () => {
 		]);
 		expect(rendered).toContain(
 			`Ein ==Satz== mit Inhalt. · [[${EMBED}#page=1|p. 1]]
-^hl-1\n\n> [!note] Handwritten · [[${EMBED}#page=1|p. 1]]\n> Dazu. ^nt-1`,
+^hl-1\n\n> [!handwritten] [[${EMBED}#page=1|p. 1]]\n> Dazu. ^nt-1`,
 		);
 	});
 });

@@ -1243,7 +1243,7 @@ describe("runSync", () => {
 			await runSync(deps, EMPTY_SYNC_INDEX);
 
 			const written = deps.noteStore.write.mock.calls[0][1] as string;
-			expect(written).not.toContain("[!note]");
+			expect(written).not.toContain("[!handwritten]");
 			expect(written).not.toContain("## Transcript");
 			const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as unknown[]);
 			expect(scenes).toHaveLength(0);
@@ -1274,18 +1274,18 @@ describe("runSync", () => {
 			const off = { ...baseDeps(api, { sync: "Target" }), marginNotes: false, ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
 
 			const first = await runSync(off, EMPTY_SYNC_INDEX);
-			expect(off.noteStore.write.mock.calls.at(-1)![1] as string).not.toContain("[!note]");
+			expect(off.noteStore.write.mock.calls.at(-1)![1] as string).not.toContain("[!handwritten]");
 
 			const on = { ...off, marginNotes: true };
 			const second = await runSync(on, invalidateRenders(first.index));
-			expect(on.noteStore.write.mock.calls.at(-1)![1] as string).toContain("[!note]");
+			expect(on.noteStore.write.mock.calls.at(-1)![1] as string).toContain("[!handwritten]");
 
 			const again = { ...off, noteStore: fakeNoteStore(), attachmentStore: fakeAttachmentStore() };
 			await runSync(again, invalidateRenders(second.index));
 
 			// Nothing is left behind on the way out: the entries go with the setting, and there was never
 			// a file in the vault to clean up after them.
-			expect(again.noteStore.write.mock.calls.at(-1)![1] as string).not.toContain("[!note]");
+			expect(again.noteStore.write.mock.calls.at(-1)![1] as string).not.toContain("[!handwritten]");
 			expect(imagesWritten(again.attachmentStore)).toEqual([]);
 		});
 

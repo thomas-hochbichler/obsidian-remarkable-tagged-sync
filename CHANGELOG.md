@@ -23,8 +23,8 @@ workflow publishes the section as the GitHub release body. See
   under the section heading it sits in, or beside the sentence it points at, with a link to its
   page.
 
-  **And you can look at the handwriting itself.** Every entry carries a small button that draws the
-  strip of page the note sits on, out of the PDF the note already embeds. It appears when you press
+  **And you can look at the handwriting itself.** In the corner of every entry sits a small eye that
+  draws the strip of page the note sits on, out of the PDF the note already embeds. It appears when you press
   it and not before, so a note with thirty margin notes costs nothing to open — and **no image is
   ever written to your vault**. What you see is the page: the printed text the note was written
   beside, with your own ink on it.

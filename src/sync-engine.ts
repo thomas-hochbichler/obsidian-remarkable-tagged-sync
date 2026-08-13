@@ -64,9 +64,12 @@ export type SyncRowStatus = "active" | "orphaned";
  * moves both the entries and their F15 ids; version 17 fits such a page back onto the paper it
  * started with, shrinking page and ink together, because a document whose pages are not all the same
  * size is one a reader may scale by a single page's width -- Obsidian's does, and cut the margin note
- * off on screen at exactly the paper edge the file had just been fixed to reach past.
+ * off on screen at exactly the paper edge the file had just been fixed to reach past; version 18 gives
+ * a margin note a callout type of its own (`[!handwritten]`) and stops titling it with the word, so the
+ * entry can be styled without touching any other callout in the vault and its title line carries where
+ * the note sat instead of what every note in the digest is.
  */
-export const RENDER_VERSION = 17;
+export const RENDER_VERSION = 18;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

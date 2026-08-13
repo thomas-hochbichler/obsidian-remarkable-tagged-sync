@@ -136,9 +136,14 @@ function escapeText(text: string): string {
  * The line anchor is the exception, and the only one: nothing in the layout says which sentence the
  * note stood beside. It stays named. The cascade itself is untouched — it still decides where every
  * note is printed, which is the part the reader acts on.
+ *
+ * Every other anchor titles nothing at all. The word "Handwritten" said what the pen in the callout's
+ * corner already says, and it said it in the one line a reader scans for where the note belongs -- so
+ * an unanchored note leads with its page link instead. Obsidian prints the callout type as the title
+ * where there is nothing else, which puts the word back exactly where it is the only thing to say.
  */
 function anchorTitle(anchor: DigestAnchor): string {
-	if (anchor.kind !== "line") return "Handwritten";
+	if (anchor.kind !== "line") return "";
 	const words = anchor.line.split(/\s+/).filter((word) => word !== "");
 	const head = words.slice(0, ANCHOR_LINE_WORDS).join(" ");
 	return `at »${escapeText(head)}${words.length > ANCHOR_LINE_WORDS ? "…" : ""}«`;
@@ -218,6 +223,10 @@ function regionBlock(region: NoteRegion): string[] {
  * A margin note, the one entry that is still a callout: it is the reader's own hand, and the box is
  * what tells it apart from the document's text around it.
  *
+ * The type is the plugin's own. Obsidian renders an unknown callout type exactly like `[!note]`, so
+ * the entry looks the same in a vault without the plugin -- while `data-callout="handwritten"` gives
+ * the styling a selector that matches this entry and nothing else in the reader's vault.
+ *
  * `prefix` is `> ` for a note of its own and `> > ` for one printed under a highlight.
  *
  * The locator rides on the **title** line rather than at the end of the entry, which is where a
@@ -231,9 +240,12 @@ function renderNote(note: DigestNote, prefix: string, locator: string): string {
 	// which only ever looks at the start of the string it is given.
 	const textLines = note.text === "" ? [NOT_TRANSCRIBED] : note.text.split("\n").map(escapeText);
 	const title = note.wholePage ? WHOLE_PAGE_TITLE : anchorTitle(note.anchor);
+	// The separator only earns its place between two things: a note with no title of its own carries
+	// the bare page link, and one with neither carries an empty title line.
+	const heading = title === "" ? locator.replace(/^ · /, "") : `${title}${locator}`;
 	// The id goes on before the block, so it terminates the last *text* line: appended to the entry as
 	// a whole it would land on the closing fence and take the block apart.
-	const entry = withBlockId([`[!note] ${title}${locator}`, ...textLines], note.id);
+	const entry = withBlockId([`[!handwritten] ${heading}`.trimEnd(), ...textLines], note.id);
 	const lines = note.region === null ? entry : [...entry, ...regionBlock(note.region)];
 	return lines.map((line) => `${prefix}${line}`).join("\n");
 }

@@ -160,7 +160,13 @@ class RegionBlock extends MarkdownRenderChild {
 			this.containerEl.createDiv({ cls: "tagged-sync-region-message", text: UNREADABLE_BLOCK });
 			return;
 		}
-		this.button = this.containerEl.createEl("button", { cls: "tagged-sync-region-button", attr: { type: "button" } });
+		// `clickable-icon` is Obsidian's own icon-button class, and taking it is what lets this button be
+		// styled at all: `app.css` reaches every other button through `button:not(.clickable-icon)`, which
+		// outranks a plain class of ours and would keep its grey face and its border whatever we wrote.
+		this.button = this.containerEl.createEl("button", {
+			cls: "clickable-icon tagged-sync-region-button",
+			attr: { type: "button" },
+		});
 		this.label(SHOW_LABEL);
 		keepCaretOut(this.button);
 		this.button.addEventListener("click", () => void this.toggle());
@@ -173,12 +179,16 @@ class RegionBlock extends MarkdownRenderChild {
 		this.task = null;
 	}
 
+	/**
+	 * The control is the icon alone, in the entry's top corner: the label it used to print sat on a line
+	 * of its own, in the middle of the entry, and said what the icon says.
+	 *
+	 * The text is not lost -- it moves to `aria-label`, which is both what a screen reader announces and
+	 * what Obsidian shows as a tooltip on hover, so the wording still reaches anyone who needs it.
+	 */
 	private label(text: string): void {
 		if (!this.button) return;
-		this.button.empty();
-		const icon = this.button.createSpan({ cls: "tagged-sync-region-icon" });
-		setIcon(icon, "eye");
-		this.button.createSpan({ text });
+		setIcon(this.button, text === HIDE_LABEL ? "eye-off" : "eye");
 		this.button.setAttribute("aria-label", text);
 	}
 
