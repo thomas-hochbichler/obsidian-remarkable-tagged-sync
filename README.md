@@ -28,6 +28,19 @@ Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
 **Desktop only** · **one-way** (reMarkable → Obsidian) · never writes back to your tablet.
 
+## Contents
+
+- [Before you install](#before-you-install)
+- [How it works](#how-it-works)
+- [Install and set up](#install-and-set-up)
+- [Handwriting transcription](#handwriting-transcription)
+- [Annotated PDFs](#annotated-pdfs)
+- [What gets synced](#what-gets-synced)
+- [Limitations](#limitations)
+- [Privacy and permissions](#privacy-and-permissions)
+- [Reporting a problem](#reporting-a-problem)
+- [Requesting a feature](#requesting-a-feature)
+
 ## Before you install
 
 Two limits, so you know them up front:
@@ -45,55 +58,111 @@ Two limits, so you know them up front:
   [digest](#annotated-pdfs) is built from the PDF's own text and needs no transcription at all, so it
   works everywhere.
 
+## How it works
+
+1. Tag a notebook, a PDF, or a single page on your reMarkable — e.g. `sync`.
+2. It syncs to the reMarkable cloud as usual.
+3. In Obsidian, map that tag to a vault folder in the plugin settings.
+4. Run **Sync now** (or let automatic sync do it).
+5. You get a Markdown note with the render embedded, and either a searchable transcript or a digest
+   of your marks below it.
+
+## Install and set up
+
+You need Obsidian **1.5.7 or later** on **desktop** (Windows, macOS, or Linux — Obsidian on mobile
+is unsupported), and a reMarkable account with cloud sync switched on.
+
+1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Tagged Sync for
+   reMarkable**, and click **Install**, then **Enable**.
+2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
+   `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
+   **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
+3. Click **Discover tags** to scan your reMarkable notebooks and pages for tags, then map the
+   tag you want to sync to a vault folder. Only a mapped tag is synced — an unmapped tag is
+   simply not selected, not lost.
+4. Click **Sync now**.
+
+Sync is also available from Obsidian's command palette (`Ctrl`/`Cmd` + `P`) as **Tagged Sync for
+reMarkable: Sync now**.
+
+![The plugin settings: reMarkable connection, OCR backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
+
+### Stopping a sync
+
+While a sync is running, the status bar shows a turning icon. Click it and confirm, or run **Tagged
+Sync for reMarkable: Stop sync** from the command palette. This works for an automatic sync and for
+re-transcribing too.
+
+Stopping is safe rather than instant: the note being transcribed right now is finished first, so it
+can take a moment — the status bar says `stopping…` meanwhile. Everything already written is kept,
+and the next sync carries on from where it left off.
+
+### Automatic sync
+
+Off by default. Under **Automatic sync** you can turn on a sync when Obsidian launches, plus an
+interval backstop while it stays open. A manual sync pushes the next automatic one out rather
+than triggering a redundant run.
+
+### Re-transcribing
+
+To refresh transcripts on notes you already synced, run **Tagged Sync for reMarkable: Re-transcribe
+all synced notes**. It re-fetches each notebook and rewrites only the transcript region, leaving
+your own notes and the embedded render untouched. It asks for confirmation first.
+
+This is also the way to fill in a transcript that never arrived — a note synced while the local
+model was still downloading, or while its engine was missing, keeps its render and no text, and
+nothing refills it on its own. Re-transcribing does. With the local model selected the
+confirmation tells you how long it will take on your machine, measured from your own pages.
+
 ## Handwriting transcription
 
 ![A synced note in Obsidian: the two handwritten pages rendered on top, the searchable transcript below them](docs/screenshot-synced-note.png)
 
-Transcription runs locally on **macOS 13 or later** using Apple's Vision framework — no account,
-no API key, no network. On **Windows and Linux** nothing transcribes by default: notes sync with
-the handwriting render embedded, and no `## Transcript` text.
+Three backends can read your handwriting, and **all three run entirely on your own machine** — no
+account, no API key, no page image or text ever leaving the device. Whichever you pick, each page is
+rendered to a temporary PNG under your OS temp directory (`os.tmpdir()`) and deleted as soon as it
+has been read.
 
-Two ways to change that, both entirely on your own machine:
+| Backend | Where it runs | Set-up |
+|---|---|---|
+| [Apple Vision](#apple-vision-macos) | macOS 13 or later | none, it is the default there |
+| [A local server you run yourself](#a-local-server-you-run-yourself) | everywhere | install Ollama or LM Studio |
+| [Managed local model](#local-model-optional-opt-in) | Apple Silicon, Windows on ARM | one opt-in click, 5.5 GB download |
 
-- The [managed local model](#local-model-optional-opt-in), where your hardware qualifies — the
-  plugin downloads and runs it for you, including on Windows on ARM.
-- [A local server you run yourself](#a-local-server-you-run-yourself) — Ollama, LM Studio, or any
-  OpenAI-compatible server. **This one works everywhere**, including Windows on x64 and Linux.
+On **Windows and Linux** nothing transcribes by default: notes sync with the handwriting render
+embedded and no `## Transcript` text, until you set up one of the other two. You can also set the
+backend to **Off** on purpose if you only want the render.
 
-You can also set the backend to **Off** if you only want the render. That is the default where
-Apple Vision cannot run.
+### Apple Vision (macOS)
+
+The default on **macOS 13 or later**, and nothing to configure. It auto-detects language and reads
+cursive well, but produces **flat text** — no headings, lists, task lists, or tables. Its structured
+API is macOS Swift-only and unavailable here. It can also misread; see
+[Writing your own notes](#writing-your-own-notes).
+
+For transparency: the page PNGs are transcribed by invoking the built-in `/usr/bin/osascript`
+binary, which drives Apple's Vision framework. This runs on your machine with **no network
+egress**.
 
 ### A local server you run yourself
 
 If you already run — or are willing to install — a local AI server, the plugin can send each page
-to it and get the text back. Nothing leaves your machine, and there is no account or key.
+to it and get the text back. Nothing leaves your machine, and there is no account or key. **This is
+the one route that works everywhere**, including Windows on x64 and Linux.
 
 1. Install and start **Ollama**, **LM Studio**, or any other server that speaks the OpenAI
    `/chat/completions` API, and load a **vision** model into it.
 2. In the plugin settings, set **Backend** to that server and enter the model's name. The address
    is pre-filled for Ollama and LM Studio; change it only if yours runs elsewhere.
 
-Which model you use is your choice. For what it is worth: **we measured Qwen2.5-VL-7B at 7.6 %
-character error** — about three times more accurate than Apple Vision on the same pages — but we
+Which model you use is your choice. For what it is worth: **I measured Qwen2.5-VL-7B at 7.6 %
+character error** — about three times more accurate than Apple Vision on the same pages — but I
 measured it running the model directly, not through one of these servers, so treat it as a starting
 point rather than a promise. A text-only model cannot read a page image at all; settings checks the
 model you name and says so when it can.
 
 If the server is not running, settings says so, and a sync that hits it leaves the notes with their
 render and reports it at the end rather than failing quietly.
-
-How the local backend works, for transparency:
-
-- Each page is rendered to a temporary PNG under your OS temp directory (`os.tmpdir()`), never
-  under Documents/Desktop/Downloads/iCloud. The plugin deletes these images as soon as
-  transcription finishes.
-- The PNGs are transcribed by invoking the built-in `/usr/bin/osascript` binary, which drives
-  Apple's Vision framework. This runs entirely on your machine with **no network egress** — no
-  page image or text ever leaves the device.
-
-Apple Vision auto-detects language and reads cursive well, but produces **flat text** — no
-headings, lists, task lists, or tables. Its structured API is macOS Swift-only and unavailable
-here. It can also misread; see [Writing your own notes](#writing-your-own-notes).
 
 ### Local model (optional, opt-in)
 
@@ -140,9 +209,9 @@ nothing at all.
 picture of it, so the digest works the same on Windows and Linux as it does on a Mac — and no marked
 word can come out misspelled.
 
-**Every quote is linkable on its own.** Each entry ends with a block ID, so a single annotation can
-be embedded anywhere in your vault: `![[My Book^hl-d449a3]]` pulls in that one quote. The IDs are
-stable across syncs.
+**Every quote is linkable on its own.** Each entry ends with a **block ID** — Obsidian's anchor for
+one single block of text — so an annotation can be embedded anywhere in your vault:
+`![[My Book^hl-d449a3]]` pulls in that one quote and nothing else. The IDs are stable across syncs.
 
 **The document's note is its digest.** There is no separate digest note collecting every document —
 the marks live in the note of the document they belong to, in the folder you mapped.
@@ -178,108 +247,6 @@ Three things worth knowing before you rely on it:
 Section headings come from the PDF's own outline where it has one, and from a font-size guess where
 it does not — so a document without bookmarks can file a quote under the wrong heading.
 
-## Network use
-
-This plugin makes network requests to exactly one place by default:
-
-- **reMarkable cloud** (required) — the plugin authenticates to `my.remarkable.com` via a
-  one-time device code, then reads your notebook/page list, tags, and content over the
-  reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
-  your reMarkable account.
-
-Two more hosts are contacted **only if you opt in to the local model** (see above), once, to
-download it — never during a sync, and never again once the files are on disk:
-
-- **`huggingface.co`** — the two model files, from
-  `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`, pinned to one commit (4.68 GB + 853 MB).
-- **`github.com`** — the `llama.cpp` engine, from release `b10295` of `ggml-org/llama.cpp`
-  (11–12 MB depending on platform).
-
-Nothing is uploaded to either. Transcription itself is always local: no page image and no
-transcript ever leaves the device, whichever backend you use.
-
-No telemetry or analytics of any kind are collected or sent by this plugin.
-
-## Accessing files outside of Obsidian vaults
-
-Two things, both only on the paths your OS reserves for exactly this:
-
-- **Page images during transcription.** Each page is written as a temporary PNG under your OS
-  temp directory (`os.tmpdir()`) and deleted as soon as the page has been read.
-- **The local model, if you opt in to it.** The 5.5 GB of model files and the engine are written
-  to the standard per-application data directory — `~/Library/Application Support/remarkable-tagged-sync/`
-  on macOS, `%LOCALAPPDATA%\remarkable-tagged-sync\` on Windows — and read from there when you
-  transcribe.
-
-  They live **outside your vault on purpose**: inside it they would go through Obsidian Sync and
-  every vault backup, once per vault, and 5.5 GB is not something to put in someone's backup
-  without saying so. The price is that **uninstalling the plugin does not delete them.** The
-  *Delete the model* button in settings does, and settings names the exact size before you agree
-  to download anything.
-
-## Other permissions this plugin uses
-
-Two behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
-
-- **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
-  version, Obsidian version, platform, selected OCR backend, number of mapped tags, and last sync
-  time to the clipboard, so you can paste them into a bug report. The plugin **never reads** your
-  clipboard, and nothing is sent anywhere — you choose where to paste it.
-- **Vault folder list.** The tag-routing settings read the list of folders in your vault to fill
-  the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
-  scanned for this, and the list never leaves your machine.
-
-## How it works
-
-1. Tag a notebook, a PDF, or a single page on your reMarkable — e.g. `sync`.
-2. It syncs to the reMarkable cloud as usual.
-3. In Obsidian, map that tag to a vault folder in the plugin settings.
-4. Run **Sync now** (or let automatic sync do it).
-5. You get a Markdown note with the render embedded, and either a searchable transcript or a digest
-   of your marks below it.
-
-## Setup
-
-1. Install and enable the plugin.
-2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
-   `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
-   **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
-3. Click **Discover tags** to scan your reMarkable notebooks and pages for tags, then map the
-   tag you want to sync to a vault folder. Only a mapped tag is synced — an unmapped tag is
-   simply not selected, not lost.
-4. Click **Sync now**.
-
-Sync is also available from the command palette as **Tagged Sync for reMarkable: Sync now**.
-
-### Stopping a sync
-
-While a sync is running, the status bar shows a turning icon. Click it and confirm, or run **Tagged
-Sync for reMarkable: Stop sync** from the command palette. This works for an automatic sync and for
-re-transcribing too.
-
-Stopping is safe rather than instant: the note being transcribed right now is finished first, so it
-can take a moment — the status bar says `stopping…` meanwhile. Everything already written is kept,
-and the next sync carries on from where it left off.
-
-![The plugin settings: reMarkable connection, OCR backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
-
-### Automatic sync
-
-Off by default. Under **Automatic sync** you can turn on a sync when Obsidian launches, plus an
-interval backstop while it stays open. A manual sync pushes the next automatic one out rather
-than triggering a redundant run.
-
-### Re-transcribing
-
-To refresh transcripts on notes you already synced, run **Tagged Sync for reMarkable: Re-transcribe
-all synced notes**. It re-fetches each notebook and rewrites only the transcript region, leaving
-your own notes and the embedded render untouched. It asks for confirmation first.
-
-This is also the way to fill in a transcript that never arrived — a note synced while the local
-model was still downloading, or while its engine was missing, keeps its render and no text, and
-nothing refills it on its own. Re-transcribing does. With the local model selected the
-confirmation tells you how long it will take on your machine, measured from your own pages.
-
 ## What gets synced
 
 - A notebook tagged with a mapped tag syncs as one note for the whole notebook.
@@ -295,8 +262,8 @@ confirmation tells you how long it will take on your machine, measured from your
   are named once at the end instead of taking a heading each, and a page transcription could not
   read says so where it happened. Notes synced before this keep the transcript they have — run
   **Re-transcribe synced notes** to bring them over.
-- A synced note carries **no frontmatter**. Everything the sync needs to track lives in the
-  plugin's own `data.json`, not in your notes.
+- A synced note carries **no frontmatter** — no YAML block at the top. Everything the sync needs to
+  track lives in the plugin's own `data.json`, not in your notes.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
 
@@ -323,11 +290,9 @@ stays where it is and is still preserved on every sync — new notes just no lon
 - The optional [local model](#local-model-optional-opt-in) keeps headings and lists, but needs
   Apple Silicon with 18 GB of memory or Windows on ARM with 24 GB, and a 5.5 GB download. Tables
   come out as plain lines.
-- **Windows on x64 and Linux get the render and no transcript out of the box.** Neither Apple Vision
-  nor the managed local model reaches them; [a local server you run
-  yourself](#a-local-server-you-run-yourself) does, and is the only route there. This is about
-  *handwriting* only — the [digest of a marked-up PDF](#annotated-pdfs) needs no transcription and
-  works everywhere.
+- **Windows on x64 and Linux get the render and no handwriting transcript out of the box** —
+  [a local server you run yourself](#a-local-server-you-run-yourself) is the only route there. The
+  [digest of a marked-up PDF](#annotated-pdfs) is unaffected and works everywhere.
 - **A PDF you only wrote on syncs with the render and no text.** The digest quotes what you marked;
   handwriting on the page is not read.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
@@ -344,6 +309,61 @@ stays where it is and is still preserved on every sync — new notes just no lon
 > - I will work on a fix as fast as I can. **I cannot promise a date.**
 > - **Your notes are safe.** Everything already synced is plain Markdown and PDF in your own
 >   vault. It stays there. Nothing is deleted.
+
+## Privacy and permissions
+
+### Network use
+
+This plugin makes network requests to exactly one place by default:
+
+- **reMarkable cloud** (required) — the plugin authenticates to `my.remarkable.com` via a
+  one-time device code, then reads your notebook/page list, tags, and content over the
+  reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
+  your reMarkable account.
+
+Two more hosts are contacted **only if you opt in to the local model**
+([see above](#local-model-optional-opt-in)), once, to download it — never during a sync, and never
+again once the files are on disk:
+
+- **`huggingface.co`** — the two model files, from
+  `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`, pinned to one commit (4.68 GB + 853 MB).
+- **`github.com`** — the `llama.cpp` engine, from release `b10295` of `ggml-org/llama.cpp`
+  (11–12 MB depending on platform).
+
+Nothing is uploaded to either. Transcription itself is always local: no page image and no
+transcript ever leaves the device, whichever backend you use.
+
+No telemetry or analytics of any kind are collected or sent by this plugin.
+
+### Accessing files outside of Obsidian vaults
+
+Two things, both only on the paths your OS reserves for exactly this:
+
+- **Page images during transcription.** Each page is written as a temporary PNG under your OS
+  temp directory (`os.tmpdir()`) — never under Documents/Desktop/Downloads/iCloud — and deleted as
+  soon as the page has been read.
+- **The local model, if you opt in to it.** The 5.5 GB of model files and the engine are written
+  to the standard per-application data directory — `~/Library/Application Support/remarkable-tagged-sync/`
+  on macOS, `%LOCALAPPDATA%\remarkable-tagged-sync\` on Windows — and read from there when you
+  transcribe.
+
+  They live **outside your vault on purpose**: inside it they would go through Obsidian Sync and
+  every vault backup, once per vault, and 5.5 GB is not something to put in someone's backup
+  without saying so. The price is that **uninstalling the plugin does not delete them.** The
+  *Delete the model* button in settings does, and settings names the exact size before you agree
+  to download anything.
+
+### Other permissions this plugin uses
+
+Two behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
+
+- **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
+  version, Obsidian version, platform, selected OCR backend, number of mapped tags, and last sync
+  time to the clipboard, so you can paste them into a bug report. The plugin **never reads** your
+  clipboard, and nothing is sent anywhere — you choose where to paste it.
+- **Vault folder list.** The tag-routing settings read the list of folders in your vault to fill
+  the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
+  scanned for this, and the list never leaves your machine.
 
 ## Reporting a problem
 
