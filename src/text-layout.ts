@@ -1,4 +1,4 @@
-import { measureDeviceText } from "./device-font";
+import { drawableText, measureDeviceText } from "./device-font";
 import type { RmText } from "./rm-parser";
 
 /**
@@ -134,7 +134,8 @@ function breakChunks(paragraph: string): string[] {
  * Greedy wrap, as the device does it: a trailing space never counts against the width.
  *
  * A line carries both what is drawn and how many of the paragraph's characters it consumed -- they
- * differ by the trailing spaces, and the difference is what keeps `yOfChar` aligned with the text.
+ * differ by the trailing spaces and by the characters the device draws nothing for, and the
+ * difference is what keeps `yOfChar` aligned with the text.
  */
 function breakIntoLines(
 	paragraph: string,
@@ -152,13 +153,13 @@ function breakIntoLines(
 		}
 		const candidate = line + chunk;
 		if (line.trimEnd() !== "" && measure(candidate.trimEnd(), face) > widthPx) {
-			lines.push({ text: line.trimEnd(), length: line.length });
+			lines.push({ text: drawableText(line.trimEnd()), length: line.length });
 			line = chunk;
 		} else {
 			line = candidate;
 		}
 	}
-	lines.push({ text: line.trimEnd(), length: line.length });
+	lines.push({ text: drawableText(line.trimEnd()), length: line.length });
 	return lines;
 }
 

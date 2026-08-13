@@ -73,9 +73,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * whole -- every such page in a vault was rendered without a single one of them; version 20 gives such
  * a page a digest instead of a transcript, which -- like version 4 for PDFs -- an already-synced note
  * has no way to grow on its own, because nothing changes on the device when the plugin learns to read
- * a page.
+ * a page; version 21 stops charging a width to the separator the "Read on reMarkable" extension opens
+ * such a page with, which had been breaking a word off the paragraph's first line and sliding every
+ * word after it out from under the highlight drawn over it.
  */
-export const RENDER_VERSION = 20;
+export const RENDER_VERSION = 21;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

@@ -58,6 +58,15 @@ workflow publishes the section as the GitHub release body. See
   form the plugin refused, and each one was quietly dropped. On the page that brought this to light,
   53 of them. They are drawn again, and every affected note is re-synced once.
 
+- **The highlights on an article you sent over sit on the words you marked.** The Chrome extension
+  opens such an article with one invisible character the device draws nothing for. The plugin was
+  charging it the width of a letter, which pushed the last word of the paragraph's first line onto
+  the second line — and from there every word of the paragraph stood one word to the right of the
+  yellow drawn over it: you marked "context engineering" and the page showed the mark over
+  "minence: context engine". The character now costs what the device charges for it, nothing, and
+  the paragraph breaks line for line as it does on the device. What the digest quoted was right all
+  along; it is the page beside it that was out of step.
+
 - **A note written down the margin arrives as one note.** Several lines standing in the margin as a
   block used to become one entry per line — each transcribed separately, each anchored somewhere of
   its own, a single sentence torn into four. They are now read as the one note they are: one entry,

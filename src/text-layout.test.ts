@@ -135,4 +135,29 @@ describe("layoutText", () => {
 		expect(heading.yPx - first.yPx).toBeCloseTo(116.5, 1);
 		expect(after.yPx - heading.yPx).toBeCloseTo(69.5, 1);
 	});
+
+	describe("a character the device draws nothing for", () => {
+		// U+2028 opens the paragraphs the "Read on reMarkable" extension lifts out of a web page. These
+		// use the device's real widths rather than an injected measure, because the whole question is
+		// what the device charges for that character -- and the answer is nothing.
+		const SEPARATOR = "\u2028";
+		// 1151.0px against the box's 1152: it fits, and it fits by less than the 18.7px the separator
+		// would cost if it were charged the fallback width of a character with no advance of its own.
+		const FULL_LINE = "the quick brown fox jumps over the lazy dog and then the same dog runs back a";
+		const wide = (runs: RmText["runs"]) => text(runs, { posX: -576, width: 1152 });
+
+		it("costs the line no width, so the line breaks where the device broke it", () => {
+			const layout = layoutText(wide([{ id: "1:10", text: `${SEPARATOR}${FULL_LINE} bit`, deleted: 0 }]));
+
+			expect(layout.lines.map((line) => line.text)).toEqual([FULL_LINE, "bit"]);
+		});
+
+		it("is not drawn, and still counts as one of the paragraph's characters", () => {
+			const layout = layoutText(wide([{ id: "1:10", text: `${SEPARATOR}word`, deleted: 0 }]));
+
+			expect(layout.lines[0].text).toBe("word");
+			// The separator is 1:10, so `w` is 1:11 -- the ids are the device's and do not close up.
+			expect(layout.yOfChar.get("1:11")).toBe(FIRST_LINE_Y);
+		});
+	});
 });
