@@ -566,6 +566,23 @@ describe("buildDigest note regions", () => {
 		expect(ys[0]).toBeLessThan(792 - 653 + 20);
 	});
 
+	/**
+	 * A note written off the paper is drawn shrunk onto its page (`annotatedPageFit`), and a pdf.js
+	 * viewport measures what was drawn. Read off the source page's own coordinates instead, this
+	 * rectangle would come out at x -44 -- a place no page has, and every band on the page would open
+	 * 44 pt to the left of the handwriting it was asked for.
+	 */
+	it("measures the rectangle where the renderer drew the ink, not where the source page had it", async () => {
+		// 1100 px left of the midline, on a 612 pt page whose own half-width is 960 px.
+		const marginNote = scene([boxStroke("0a", -1100, 800, 100, 20)]);
+
+		const result = await build([fixturePage(marginNote)], { ...withText, ocrBackend: fakeOcr("Am Rand.") });
+
+		expect(result.markdown).toContain("Am Rand.");
+		// Hard against the page's left edge, and 32 pt of ink drawn at the 93 % the page had room for.
+		expect(result.markdown).toMatch(/^> rect: 0 \d+ 30 \d+$/m);
+	});
+
 	it("names the page of the embed, which is the page its link points at", async () => {
 		const result = await build([fixturePage()], { ...withText, ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
@@ -597,6 +614,47 @@ describe("buildDigest note regions", () => {
 
 		expect(result.markdown).toContain("eine ganze Zeile Handschrift dazu");
 		expect(result.markdown).toMatch(/^> ```remarkable-note$/m);
+	});
+});
+
+/**
+ * The reported case: one sentence written down the right margin of a paper arrived as four callouts,
+ * each transcribed on its own and one of them anchored somewhere else entirely. The fake page's text
+ * ends at 530 pt, so ink out at scene x 750 stands past it -- in the margin, where merging is safe.
+ */
+describe("buildDigest margin blocks", () => {
+	const marginBlock = scene([
+		boxStroke("0a", 750, 700, 250, 30),
+		boxStroke("0b", 750, 745, 230, 30),
+		boxStroke("0c", 750, 790, 240, 30),
+	]);
+
+	it("prints three lines written down the margin as one entry, transcribed once", async () => {
+		const ocr = fakeOcr("Das gehört zusammen.", "zweiter Aufruf", "dritter Aufruf");
+
+		const result = await build([fixturePage(marginBlock)], { loadText: async () => fixtureTextDocument(), ocrBackend: ocr });
+
+		expect(result.markdown.match(/\^nt-/g)).toHaveLength(1);
+		expect(result.markdown).toContain("Das gehört zusammen.");
+		// One cluster, so the backend was asked once: the second answer is never used.
+		expect(result.markdown).not.toContain("zweiter Aufruf");
+	});
+
+	/** The block is one rectangle, so its band shows all three lines at once rather than a third of the note. */
+	it("carries one region that covers the whole block", async () => {
+		const result = await build([fixturePage(marginBlock)], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr("Das gehört zusammen.") });
+
+		const rects = [...result.markdown.matchAll(/^> rect: \d+ \d+ \d+ (\d+)$/gm)].map((match) => Number(match[1]));
+		expect(rects).toHaveLength(1);
+		// 120 px of scene from the first line's top to the last line's bottom, at 72/226 pt per px.
+		expect(rects[0]).toBeGreaterThan(35);
+	});
+
+	/** Without a text layer there is no column, so there is no way to tell a margin from the text -- and nothing merges. */
+	it("leaves the lines apart on a page whose text could not be read", async () => {
+		const result = await build([fixturePage(marginBlock)], { ocrBackend: fakeOcr("eins", "zwei", "drei") });
+
+		expect(result.markdown.match(/\^nt-/g)).toHaveLength(3);
 	});
 });
 

@@ -12,15 +12,17 @@
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
 import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
 import { findInkMarks, readsAsMark } from "./ink-marks";
-import { clusterStrokes, type StrokeCluster } from "./margin-notes";
+import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
 import {
+	annotatedPageFit,
 	isHighlighterOrShader,
 	pageFrame,
 	resolveDeviceCanvas,
 	sceneRectToPdf,
 	type DeviceCanvas,
+	type PageFit,
 	type PdfRect,
 } from "./pdf-renderer";
 import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
@@ -100,6 +102,27 @@ function clusterRect(cluster: StrokeCluster, frame: DeviceCanvas): PdfRect {
 	return sceneRectToPdf({ x: minX, y: minY, width: maxX - minX, height: maxY - minY }, frame);
 }
 
+/**
+ * How far the printed text reaches across the page, in the scene's own frame.
+ *
+ * The outermost text there is, not the body column: a page number or a running head sits further out
+ * than the paragraphs, and taking the paragraphs alone would call the strip they stand in a margin.
+ * Null for a page whose text layer holds nothing -- there is no column to speak of, and the clustering
+ * falls back to leaving every line its own note.
+ */
+function textColumn(pageText: PdfPageText, frame: DeviceCanvas): TextColumn | null {
+	let left = Infinity;
+	let right = -Infinity;
+	for (const line of pageText.lines) {
+		if (line.text.trim() === "") continue;
+		left = Math.min(left, line.x);
+		right = Math.max(right, line.x + line.width);
+	}
+	if (left > right) return null;
+	const toScene = (pt: number) => pt / frame.pxToPt - frame.widthPx / 2;
+	return { left: toScene(left), right: toScene(right) };
+}
+
 /** A one-layer scene holding a single cluster's strokes: the unit the OCR backend is handed. */
 function clusterScene(strokes: RmStroke[], formatVersion: number): RmPage {
 	return { formatVersion, layers: [{ id: strokes[0].layerId, name: null, strokes }] };
@@ -109,6 +132,14 @@ function clusterScene(strokes: RmStroke[], formatVersion: number): RmPage {
 interface PageGeometry {
 	frame: DeviceCanvas;
 	pageText: PdfPageText | null;
+	/**
+	 * Where the renderer put this page's content on the sheet it wrote out (`annotatedPageFit`): the
+	 * identity for a page whose ink stays on the paper, and a shrink for one whose ink runs off it.
+	 * Null wherever the frame is a guess, which is the same condition that costs a note its region.
+	 */
+	fit: PageFit | null;
+	/** How far the printed text reaches across this page, in scene px, so the clustering can tell a margin from the text. Null without a text layer. */
+	column: TextColumn | null;
 	/** This page's own headings, for the anchor cascade -- a note can only be anchored to a heading it sits level with. */
 	headings: { title: string; y: number }[];
 	/** Every heading in the document, in document order, for the section lookup. */
@@ -306,19 +337,26 @@ function anchorFor(rect: PdfRect, { geometry, highlights }: PageContext): Digest
  * measured from the page top because that is the axis a pdf.js viewport uses. `clusterRect` hands
  * back the PDF's own bottom-left y, which the anchor cascade needs and a viewport does not.
  *
+ * Placed by the renderer's own transform rather than read straight off the source page. The two agree
+ * for most documents and do not for exactly the notes this feature is for: a page whose ink runs off
+ * the paper is drawn shrunk to fit its sheet (`annotatedPageFit`), and a viewport measures what was
+ * drawn. Reading the source page's coordinates there would slide every band on such a page sideways.
+ *
  * Null without a text layer. The frame is then the *device screen* rather than the page (see
  * `buildDigest`), so the rectangle would not name a place in the PDF at all -- while the embed's own
  * strokes are drawn against the page. Better no button than one that opens the wrong strip of paper;
  * such a document already warns that its text could not be read.
  */
 function noteRegion(rect: PdfRect, { page, geometry }: PageContext): NoteRegion | null {
-	if (geometry.pageText === null) return null;
+	const { fit } = geometry;
+	if (geometry.pageText === null || fit === null) return null;
+	const { scale, dx, dy } = fit;
 	return {
 		page: page.embedPage,
-		x: rect.x,
-		y: geometry.frame.heightPt - (rect.y + rect.height),
-		width: rect.width,
-		height: rect.height,
+		x: rect.x * scale + dx,
+		y: geometry.frame.heightPt - ((rect.y + rect.height) * scale + dy),
+		width: rect.width * scale,
+		height: rect.height * scale,
 	};
 }
 
@@ -513,7 +551,9 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	}
 
 	// F20 off stops here, before any cluster exists: no cluster, no OCR call, no callout.
-	const clusters = state.deps.marginNotes ? clusterStrokes(handwriting, geometry.lineHeightPt / geometry.frame.pxToPt) : [];
+	const clusters = state.deps.marginNotes
+		? clusterStrokes(handwriting, geometry.lineHeightPt / geometry.frame.pxToPt, geometry.column ?? undefined)
+		: [];
 	if (placed.length === 0 && clusters.length === 0) return null;
 
 	// Anchored against every highlight there is -- pen marks included -- and merged only afterwards: the cascade
@@ -612,8 +652,13 @@ export async function buildDigest(
 	const digestPages: DigestPage[] = [];
 	for (const page of pages) {
 		const pageText = await readPageText(document, page, state.warnings);
+		const frame = pageText ? pageFrame(pageText.width, pageText.height, device) : device;
 		const built = await buildPage(state, page, {
-			frame: pageText ? pageFrame(pageText.width, pageText.height, device) : device,
+			frame,
+			// The same scene the renderer is handed, measured the same way, so a region names the place on
+			// the page the embed actually drew rather than the one the source page had.
+			fit: pageText ? annotatedPageFit(page.scene, frame) : null,
+			column: pageText ? textColumn(pageText, frame) : null,
 			pageText,
 			headings: headings
 				.filter((heading): heading is PdfHeading & { y: number } => heading.pageIndex === page.sourceIndex && heading.y !== null)

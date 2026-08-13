@@ -1,6 +1,7 @@
 import {
 	BlendMode,
 	type Color,
+	concatTransformationMatrix,
 	LineCapStyle,
 	PDFDocument,
 	type PDFFont,
@@ -8,6 +9,8 @@ import {
 	PDFOperator,
 	PDFOperatorNames,
 	type PDFPage,
+	popGraphicsState,
+	pushGraphicsState,
 	rgb,
 	StandardFonts,
 } from "pdf-lib";
@@ -553,11 +556,105 @@ function inkCanvas(scene: RmPage, device: DeviceCanvas): DeviceCanvas {
 }
 
 /**
+ * How far past the paper a page may grow on one side, as a multiple of that side's own length.
+ *
+ * A bound rather than a fit, for the reason every other frame in this file has one: scenes decode a
+ * few impossible coordinates, and one of them would otherwise blow the sheet up to a metre of empty
+ * paper around the page. Measured over the annotation corpus, the widest real margin note runs 224 pt
+ * past a 612 pt page -- comfortably inside one page width, while the noise sits orders of magnitude
+ * beyond it, so nothing a hand wrote comes near the line.
+ */
+const MAX_OVERHANG = 1;
+
+/**
+ * The sheet an annotated page needs: the paper, grown on whichever sides its ink runs off.
+ *
+ * The device does not stop the pen at the paper's edge. A reader who zooms the page out writes in the
+ * space beside it, and the scene stores that ink exactly like any other -- so a page sized to its
+ * source page maps a margin note to coordinates outside its own box and draws nothing at all. Two
+ * readers reported the same thing: handwriting cut off partway through a word, at the edge of the
+ * page. In the corpus one page in twelve loses ink this way, one of them a whole sentence 224 pt out.
+ *
+ * Returned in the *source page's* own coordinates, so a box that reaches past the paper has a
+ * negative x or y, or a width past the page's. `annotatedPageFit` is what brings it back onto a sheet.
+ *
+ * Only strokes are measured, and only where their points are: half a nib past the last point is a
+ * third of a point of paper, and chasing it would grow every page whose ink touches an edge. A text
+ * highlight is not measured at all -- it marks words that are printed on the page, so it is on the
+ * page by construction, and a rectangle that says otherwise is a decode fault rather than ink.
+ */
+export function annotatedPageBox(scene: RmPage | null, frame: DeviceCanvas): PdfRect {
+	const paper = { x: 0, y: 0, width: frame.widthPt, height: frame.heightPt };
+	if (!scene) return paper;
+
+	const half = frame.widthPx / 2;
+	let left = 0;
+	let right = 0;
+	let above = 0;
+	let below = 0;
+	for (const layer of scene.layers) {
+		for (const stroke of layer.strokes) {
+			for (const { x, y } of stroke.points) {
+				if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+				left = Math.max(left, -x - half);
+				right = Math.max(right, x - half);
+				above = Math.max(above, -y);
+				below = Math.max(below, y - frame.heightPx);
+			}
+		}
+	}
+
+	const capX = frame.widthPx * MAX_OVERHANG;
+	const capY = frame.heightPx * MAX_OVERHANG;
+	const grow = (amount: number, cap: number): number => Math.min(amount, cap) * frame.pxToPt;
+	const [leftPt, rightPt, abovePt, belowPt] = [grow(left, capX), grow(right, capX), grow(above, capY), grow(below, capY)];
+	return {
+		x: -leftPt,
+		y: -belowPt,
+		width: frame.widthPt + leftPt + rightPt,
+		height: frame.heightPt + abovePt + belowPt,
+	};
+}
+
+/**
+ * Where an annotated page's content is placed on the sheet that is actually written out: a point
+ * `(x, y)` of the source page lands at `(x * scale + dx, y * scale + dy)`, in PDF points.
+ *
+ * **The sheet keeps the size of its source page and the content shrinks to fit it**, rather than the
+ * page growing to the ink. Growing is what the file wants -- it costs no type size and no page keeps
+ * a millimetre of paper it doesn't need -- but it makes a document whose pages are not all the same
+ * size, and a reader is free to disagree about that. Obsidian's embedded viewer scales a whole
+ * document by one factor taken from the page it opened on, so the one wide page overflows the frame
+ * and its margin note is cut off *on screen* at exactly the old page edge: right in the file, missing
+ * where it is read. A reader who never sees the note cannot tell that ours is the correct rendering.
+ *
+ * So the cost lands on the one page that earned it, as type a few percent smaller than its
+ * neighbours', and every page whose ink stays on the paper is written out untouched -- `scale` is 1
+ * there and the transform is the identity, which is nearly every page of nearly every document.
+ *
+ * Top-left aligned, because a page is read from its top: the spare paper the shrunk content leaves
+ * over collects at the bottom, where a page's own margin already is.
+ */
+export interface PageFit {
+	box: PdfRect;
+	scale: number;
+	dx: number;
+	dy: number;
+}
+
+export function annotatedPageFit(scene: RmPage | null, frame: DeviceCanvas): PageFit {
+	const box = annotatedPageBox(scene, frame);
+	const scale = Math.min(1, frame.widthPt / box.width, frame.heightPt / box.height);
+	return { box, scale, dx: -box.x * scale, dy: -box.y * scale + (frame.heightPt - box.height * scale) };
+}
+
+/**
  * Composites a PDF-backed document (spec §5's PDF path): each output page is the source PDF page at
  * its own size with the handwritten annotation scene drawn on top, placed in the page's own frame
- * (see `pageFrame`) so every stroke lands on the words it marks. A page with no matching source page
- * -- one added on the device behind the PDF -- becomes an annotations-only page sized to its own ink
- * (see `inkCanvas`) rather than failing the whole document.
+ * (see `pageFrame`) so every stroke lands on the words it marks -- shrunk to fit the sheet wherever
+ * the ink runs off the paper (see `annotatedPageFit`). A page with no matching source page -- one added on
+ * the device behind the PDF -- becomes an annotations-only page sized to its own ink (see
+ * `inkCanvas`) rather than failing the whole document.
  */
 export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: AnnotatedPdfPage[]): Promise<Uint8Array> {
 	if (pages.length === 0) throw new Error("renderAnnotatedPdf: no pages to render");
@@ -573,6 +670,11 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 		const ownCanvas = srcPage || !annotations ? device : inkCanvas(annotations, device);
 		const { width, height } = srcPage?.getSize() ?? { width: ownCanvas.widthPt, height: ownCanvas.heightPt };
 		const outPage = out.addPage([width, height]);
+		const frame = srcPage ? pageFrame(width, height, device) : ownCanvas;
+		// Page and ink are placed by one transform on the whole page, so they cannot come apart: the ink
+		// marks the words it was drawn on whatever the page had to give up to hold it (see `annotatedPageFit`).
+		const { scale, dx, dy } = annotatedPageFit(annotations, frame);
+		if (scale !== 1) outPage.pushOperators(pushGraphicsState(), concatTransformationMatrix(scale, 0, 0, scale, dx, dy));
 		if (srcPage) {
 			try {
 				const embedded = await out.embedPage(srcPage);
@@ -583,7 +685,8 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 				console.warn(`Tagged Sync: couldn't embed source page ${sourceIndex}, keeping its annotations only`, error);
 			}
 		}
-		if (annotations) drawPageStrokes(outPage, annotations, srcPage ? pageFrame(width, height, device) : ownCanvas);
+		if (annotations) drawPageStrokes(outPage, annotations, frame);
+		if (scale !== 1) outPage.pushOperators(popGraphicsState());
 	}
 
 	return out.save();

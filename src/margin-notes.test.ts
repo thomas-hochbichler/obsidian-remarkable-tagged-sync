@@ -182,6 +182,73 @@ describe("clusterStrokes", () => {
 		expect(clusterStrokes([empty], LINE_HEIGHT_PX)).toEqual([]);
 	});
 
+	/**
+	 * A note written down the margin is one note, not one per line -- what a reader reported after
+	 * seeing a single sentence arrive as four callouts, each transcribed and anchored on its own.
+	 *
+	 * The column is what makes this safe: merging anywhere fuses two unrelated notes lying across each
+	 * other over the text, which is why `pdf-annotation` ticket 15 shipped no merge at all. Out beyond
+	 * the printed text there is nothing to lie across.
+	 */
+	describe("a block written in the margin", () => {
+		/** The printed text of a page, in scene px: everything outside this is margin. */
+		const COLUMN = { left: -700, right: 700 };
+
+		/** Three lines of one note down the right margin, left edges level, an ordinary gap between them. */
+		const block = [boxStroke("0c", 750, 0, 250, 30), boxStroke("0b", 750, 45, 230, 30), boxStroke("0d", 750, 90, 240, 30)];
+
+		it("is one note", () => {
+			const clusters = clusterStrokes(block, LINE_HEIGHT_PX, COLUMN);
+
+			expect(clusters).toHaveLength(1);
+			expect(clusters[0].strokes).toHaveLength(3);
+			expect(clusters[0].bounds).toEqual({ minX: 750, minY: 0, maxX: 1000, maxY: 120 });
+		});
+
+		/** The id is the block's own smallest, so the entry a reader links to does not depend on which line came first. */
+		it("is anchored on the smallest id in the block", () => {
+			expect(clusterStrokes(block, LINE_HEIGHT_PX, COLUMN)[0].anchorStrokeId).toBe("0b");
+		});
+
+		it("stays one line per note without a column, which is what a document with no text layer gets", () => {
+			expect(clusterStrokes(block, LINE_HEIGHT_PX)).toHaveLength(3);
+		});
+
+		/**
+		 * The trap, in miniature. Two notes written across each other over the printed text overlap on
+		 * both axes exactly as a paragraph's lines do -- nine measured rules fused them, and none of them
+		 * could have known the difference, because the difference is not in the strokes.
+		 */
+		it("does not merge lines that stand over the printed text", () => {
+			const overText = block.map((stroke) => boxStroke(stroke.id, 0, stroke.points[0].y, 250, 30));
+
+			expect(clusterStrokes(overText, LINE_HEIGHT_PX, COLUMN)).toHaveLength(3);
+		});
+
+		/** A bracket down the margin spans every line it reaches; single linkage would pull them all into it. */
+		it("leaves a tall mark out of the block it spans", () => {
+			const bracket = boxStroke("0a", 720, 0, 10, 300);
+
+			const clusters = clusterStrokes([bracket, ...block], LINE_HEIGHT_PX, COLUMN);
+
+			expect(clusters).toHaveLength(2);
+			expect(clusters.map((cluster) => cluster.strokes.length).sort()).toEqual([1, 3]);
+		});
+
+		it("keeps two notes side by side in the margin apart", () => {
+			const beside = [boxStroke("0a", 750, 0, 50, 30), boxStroke("0b", 900, 45, 50, 30)];
+
+			expect(clusterStrokes(beside, LINE_HEIGHT_PX, COLUMN)).toHaveLength(2);
+		});
+
+		/** Far apart is not one note: the reported block's lines follow each other, a note two lines down does not. */
+		it("keeps a line that follows too far below out of the block", () => {
+			const late = [boxStroke("0a", 750, 0, 250, 30), boxStroke("0b", 750, 100, 250, 30)];
+
+			expect(clusterStrokes(late, LINE_HEIGHT_PX, COLUMN)).toHaveLength(2);
+		});
+	});
+
 	it("finds the fixture page's five margin notes, including the two that overlap in both axes", () => {
 		const page = parseRmV6(new Uint8Array(readFileSync(PDF_PAGE_FIXTURE_PATH)));
 		const ink = page.layers.flatMap((layer) => layer.strokes).filter((stroke) => !MARKER_PEN_TYPES.has(stroke.penType));
