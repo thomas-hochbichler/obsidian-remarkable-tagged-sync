@@ -44,8 +44,9 @@ workflow publishes the section as the GitHub release body. See
 
 - **Handwriting written beside a page is no longer cut off at the paper's edge.** The reMarkable does
   not stop the pen where the paper stops: zoom a PDF out and you can write in the space next to it,
-  and that ink was landing outside the page the plugin built, so it was drawn nowhere. A page now
-  grows on whichever sides you wrote past, and the margin note is in your vault whole. Every
+  and that ink was landing outside the page the plugin built, so it was drawn nowhere. Such a page is
+  now drawn a few percent smaller, so that everything you wrote fits on it and the margin note is in
+  your vault whole; every page you kept inside the paper is untouched, at its own size. Every
   PDF-backed document is re-synced once for this — measured on a real annotated paper, one page in
   twelve was losing ink this way, one of them a whole sentence.
 

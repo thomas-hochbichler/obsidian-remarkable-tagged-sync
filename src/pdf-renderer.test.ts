@@ -33,6 +33,27 @@ function pageWithStrokes(strokes: RmStroke[], paperSize?: RmPage["paperSize"]): 
 }
 
 /** The `x y m` / `x y l` path points in a decoded content stream, in the top-origin frame `drawSvgPath` emits. */
+/**
+ * The transform the renderer laid over the whole page (`annotatedPageFit`). The stream is full of
+ * `cm` operators -- every stroke translates to its own start, and the embedded source page to the
+ * corner -- but all of those scale by 1, so the one that does not is the page's own fit, and its
+ * absence is a page written out untouched.
+ */
+function pageFit(ops: string): { scale: number; dx: number; dy: number } {
+	const scaled = Array.from(ops.matchAll(/^(-?[\d.]+) 0 0 \1 (-?[\d.]+) (-?[\d.]+) cm$/gm), (match) => ({
+		scale: Number(match[1]),
+		dx: Number(match[2]),
+		dy: Number(match[3]),
+	})).filter(({ scale }) => scale !== 1);
+	return scaled[0] ?? { scale: 1, dx: 0, dy: 0 };
+}
+
+/** A point of a drawn path where the reader sees it: out of `drawSvgPath`'s top-down axis, then through the fit. */
+function placedBy(ops: string, pageHeight: number): (point: { x: number; y: number }) => { x: number; y: number } {
+	const { scale, dx, dy } = pageFit(ops);
+	return ({ x, y }) => ({ x: x * scale + dx, y: (pageHeight - y) * scale + dy });
+}
+
 function pathPoints(ops: string): { x: number; y: number }[] {
 	return Array.from(ops.matchAll(/^(-?[\d.]+) (-?[\d.]+) [ml]$/gm), (match) => ({ x: Number(match[1]), y: Number(match[2]) }));
 }
@@ -750,7 +771,7 @@ describe("renderAnnotatedPdf", () => {
 	 * page draws that ink nowhere. Both readers who hit it saw the same thing -- a margin note cut off
 	 * partway through its first word, at the edge of the page.
 	 */
-	it("grows the sheet past the paper for ink written off its right edge", async () => {
+	it("shrinks the page onto its own paper for ink written off its right edge", async () => {
 		// An A4 page is 1868 px wide at 226 dpi, so its right edge is 934 px from the midline. This note
 		// runs to 1100, i.e. some 53 pt of handwriting in the air beside the page.
 		const margin = stroke({
@@ -764,18 +785,18 @@ describe("renderAnnotatedPdf", () => {
 			{ sourceIndex: 0, annotations: pageWithStrokes([margin], { width: 1404, height: 1872 }) },
 		]);
 
+		// The sheet the ink needs is 648.1 pt wide, so the page it has to fit gives up 8 %.
 		const box = (await PDFDocument.load(bytes)).getPage(0).getMediaBox();
-		expect(box.width).toBeCloseTo(648.1, 1);
-		// The paper stays at the origin: the window around it opens, so every stroke keeps the
-		// coordinates it was placed at and the source page needs no moving.
-		expect(box).toMatchObject({ x: 0, y: 0, height: A4.height });
-		const [start, end] = pathPoints((await decodePageContent(bytes)).ops);
-		expect(start.x).toBeCloseTo(616.2, 1);
-		expect(end.x).toBeCloseTo(648.1, 1); // the last point of the note, now the sheet's own right edge
+		expect(box).toMatchObject({ x: 0, y: 0, width: A4.width, height: A4.height });
+		const { ops } = await decodePageContent(bytes);
+		expect(pageFit(ops).scale).toBeCloseTo(A4.width / 648.1, 3);
+		const [start, end] = pathPoints(ops).map(placedBy(ops, A4.height));
+		expect(start.x).toBeCloseTo(566.0, 0);
+		expect(end.x).toBeCloseTo(A4.width, 1); // the last point of the note, now hard against the page's own edge
 	});
 
-	/** Growing to the left or below moves the sheet's corner off the paper's, which is what a MediaBox origin is for. */
-	it("gives the sheet a negative origin when the ink runs off the left edge or the bottom", async () => {
+	/** Ink off the left edge or the bottom moves the whole composition, page and all, back onto the sheet. */
+	it("moves the page over for ink that runs off the left edge or the bottom", async () => {
 		const margin = stroke({
 			points: [
 				{ x: -1000, y: 2700, speed: 0, width: 8, direction: 0, pressure: 1 },
@@ -787,18 +808,22 @@ describe("renderAnnotatedPdf", () => {
 			{ sourceIndex: 0, annotations: pageWithStrokes([margin], { width: 1404, height: 1872 }) },
 		]);
 
+		// 20.9 pt of ink left of the paper (1000 px out against a 934 px half-width) and 18.3 pt below it
+		// (2700 px down a page 2642 px tall); the wider overhang decides the scale.
 		const box = (await PDFDocument.load(bytes)).getPage(0).getMediaBox();
-		expect(box.x).toBeCloseTo(-20.9, 1); // 1000 px out against a 934 px half-width
-		expect(box.y).toBeCloseTo(-18.3, 1); // 2700 px down a page 2642 px tall
-		expect(box.width).toBeCloseTo(A4.width + 20.9, 1);
-		expect(box.height).toBeCloseTo(A4.height + 18.3, 1);
+		expect(box).toMatchObject({ x: 0, y: 0, width: A4.width, height: A4.height });
+		const { ops } = await decodePageContent(bytes);
+		expect(pageFit(ops).scale).toBeCloseTo(A4.width / (A4.width + 20.97), 3);
+		const [start] = pathPoints(ops).map(placedBy(ops, A4.height));
+		expect(start.x).toBeCloseTo(0, 1); // the outermost ink, now the page's own left edge
+		expect(start.y).toBeCloseTo(10.95, 1); // and clear of the bottom, the sheet being shorter than the paper
 	});
 
 	/**
 	 * The bound every frame in this file has, for the same reason: scenes decode a few impossible
 	 * coordinates, and one of them would otherwise blow the sheet up to a metre of empty paper.
 	 */
-	it("will not grow a page by more than its own width, whatever a scene claims", async () => {
+	it("will not shrink a page by more than half, whatever a scene claims", async () => {
 		const noise = stroke({
 			points: [
 				{ x: 0, y: 100, speed: 0, width: 8, direction: 0, pressure: 1 },
@@ -810,13 +835,16 @@ describe("renderAnnotatedPdf", () => {
 			{ sourceIndex: 0, annotations: pageWithStrokes([noise], { width: 1404, height: 1872 }) },
 		]);
 
-		expect((await PDFDocument.load(bytes)).getPage(0).getMediaBox().width).toBeCloseTo(2 * A4.width, 1);
+		// Capped at one page width of overhang, so the sheet is twice the page and the fit exactly a half.
+		expect(pageFit((await decodePageContent(bytes)).ops).scale).toBeCloseTo(0.5, 3);
 	});
 
 	it("leaves a page whose ink stays on it exactly the size of its source page", async () => {
 		const bytes = await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: pageWithStrokes([stroke({})]) }]);
 
 		expect((await PDFDocument.load(bytes)).getPage(0).getMediaBox()).toMatchObject({ x: 0, y: 0, width: A4.width, height: A4.height });
+		// And is written out untouched: no transform at all, rather than one that multiplies by 1.
+		expect(pageFit((await decodePageContent(bytes)).ops)).toEqual({ scale: 1, dx: 0, dy: 0 });
 	});
 
 	it("degrades an out-of-range source index to an annotations-only page instead of failing", async () => {

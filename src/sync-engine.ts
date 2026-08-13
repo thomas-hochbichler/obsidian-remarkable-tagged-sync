@@ -61,9 +61,12 @@ export type SyncRowStatus = "active" | "orphaned";
  * beside the page is in the PDF at all -- until now every such document was rendered with its margin
  * notes cut off at the paper's edge, and the rectangles are measured from the grown sheet; version 16
  * reads a block written down the margin as the one note it is instead of one note per line, which
- * moves both the entries and their F15 ids.
+ * moves both the entries and their F15 ids; version 17 fits such a page back onto the paper it
+ * started with, shrinking page and ink together, because a document whose pages are not all the same
+ * size is one a reader may scale by a single page's width -- Obsidian's does, and cut the margin note
+ * off on screen at exactly the paper edge the file had just been fixed to reach past.
  */
-export const RENDER_VERSION = 16;
+export const RENDER_VERSION = 17;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

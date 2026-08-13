@@ -16,12 +16,13 @@ import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-no
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
 import {
-	annotatedPageBox,
+	annotatedPageFit,
 	isHighlighterOrShader,
 	pageFrame,
 	resolveDeviceCanvas,
 	sceneRectToPdf,
 	type DeviceCanvas,
+	type PageFit,
 	type PdfRect,
 } from "./pdf-renderer";
 import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
@@ -132,11 +133,11 @@ interface PageGeometry {
 	frame: DeviceCanvas;
 	pageText: PdfPageText | null;
 	/**
-	 * The embed's own sheet for this page, in the source page's coordinates: the paper, plus whatever
-	 * the renderer had to add for ink that runs off it (`annotatedPageBox`). Null wherever the frame is
-	 * a guess, which is the same condition that costs a note its region.
+	 * Where the renderer put this page's content on the sheet it wrote out (`annotatedPageFit`): the
+	 * identity for a page whose ink stays on the paper, and a shrink for one whose ink runs off it.
+	 * Null wherever the frame is a guess, which is the same condition that costs a note its region.
 	 */
-	box: PdfRect | null;
+	fit: PageFit | null;
 	/** How far the printed text reaches across this page, in scene px, so the clustering can tell a margin from the text. Null without a text layer. */
 	column: TextColumn | null;
 	/** This page's own headings, for the anchor cascade -- a note can only be anchored to a heading it sits level with. */
@@ -336,10 +337,10 @@ function anchorFor(rect: PdfRect, { geometry, highlights }: PageContext): Digest
  * measured from the page top because that is the axis a pdf.js viewport uses. `clusterRect` hands
  * back the PDF's own bottom-left y, which the anchor cascade needs and a viewport does not.
  *
- * Measured from the embed's sheet rather than from the paper. The two are the same page for most
- * documents and are not for exactly the notes this feature is for: a margin note written off the edge
- * grows the rendered page (`annotatedPageBox`), and a viewport measures from the corner of what it
- * renders. Reading the paper's corner there would slide every band on such a page sideways.
+ * Placed by the renderer's own transform rather than read straight off the source page. The two agree
+ * for most documents and do not for exactly the notes this feature is for: a page whose ink runs off
+ * the paper is drawn shrunk to fit its sheet (`annotatedPageFit`), and a viewport measures what was
+ * drawn. Reading the source page's coordinates there would slide every band on such a page sideways.
  *
  * Null without a text layer. The frame is then the *device screen* rather than the page (see
  * `buildDigest`), so the rectangle would not name a place in the PDF at all -- while the embed's own
@@ -347,14 +348,15 @@ function anchorFor(rect: PdfRect, { geometry, highlights }: PageContext): Digest
  * such a document already warns that its text could not be read.
  */
 function noteRegion(rect: PdfRect, { page, geometry }: PageContext): NoteRegion | null {
-	const { box } = geometry;
-	if (geometry.pageText === null || box === null) return null;
+	const { fit } = geometry;
+	if (geometry.pageText === null || fit === null) return null;
+	const { scale, dx, dy } = fit;
 	return {
 		page: page.embedPage,
-		x: rect.x - box.x,
-		y: box.y + box.height - (rect.y + rect.height),
-		width: rect.width,
-		height: rect.height,
+		x: rect.x * scale + dx,
+		y: geometry.frame.heightPt - ((rect.y + rect.height) * scale + dy),
+		width: rect.width * scale,
+		height: rect.height * scale,
 	};
 }
 
@@ -653,9 +655,9 @@ export async function buildDigest(
 		const frame = pageText ? pageFrame(pageText.width, pageText.height, device) : device;
 		const built = await buildPage(state, page, {
 			frame,
-			// The same scene the renderer is handed, measured the same way, so a region names a place on
-			// the sheet the embed actually has rather than on the paper it started from.
-			box: pageText ? annotatedPageBox(page.scene, frame) : null,
+			// The same scene the renderer is handed, measured the same way, so a region names the place on
+			// the page the embed actually drew rather than the one the source page had.
+			fit: pageText ? annotatedPageFit(page.scene, frame) : null,
 			column: pageText ? textColumn(pageText, frame) : null,
 			pageText,
 			headings: headings
