@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findInkMarks, readsAsMark } from "./ink-marks";
+import { findInkMarks, findMarkerMarks, readsAsMark } from "./ink-marks";
 import type { DeviceCanvas } from "./pdf-renderer";
 import type { PdfPageText } from "./pdf-text";
 import type { RmStroke } from "./rm-parser";
@@ -30,6 +30,15 @@ function stroke(id: string, points: { x: number; y: number }[]): RmStroke {
 function underline(id: string, width: number, gapPt = 4, x = 0): RmStroke {
 	const bottom = 1000 - (PAGE.lines[0].y - gapPt);
 	return stroke(id, [{ x, y: bottom - 1 }, { x: x + width, y: bottom }]);
+}
+
+/**
+ * A flat marker swipe of `width` scene px drawn *on* the first line -- inside its own band rather
+ * than in the whitespace under it, which is what separates it from an underline.
+ */
+function swipe(id: string, width: number, x = 0, colorRgba?: { r: number; g: number; b: number }): RmStroke {
+	const y = 1000 - (PAGE.lines[0].y + PAGE.lines[0].height / 2);
+	return { ...stroke(id, [{ x, y }, { x: x + width, y }]), penType: 18, colorRgba };
 }
 
 /** A closed loop of `width` scene px drawn over the first line. */
@@ -154,5 +163,45 @@ describe("readsAsMark", () => {
 		const open = stroke("0a", [{ x: 0, y: 105 }, { x: 50, y: 88 }, { x: 100, y: 105 }]);
 
 		expect(readsAsMark(open, FRAME, LINE_HEIGHT_PT)).toBe(false);
+	});
+});
+
+describe("findMarkerMarks", () => {
+	it("reads a swipe as the words it lies on", () => {
+		const marks = findMarkerMarks([swipe("0a", 100)], PAGE, FRAME, LINE_HEIGHT_PT);
+
+		expect(marks).toHaveLength(1);
+		expect(marks[0].strokeId).toBe("0a");
+		expect(marks[0].marked).toEqual(["Die kleinstmoegliche"]);
+		expect(marks[0].sentence).toContain("Die kleinstmoegliche");
+	});
+
+	it("carries the marker's own colour, which a pen mark has none of", () => {
+		const yellow = { r: 255, g: 237, b: 117 };
+
+		const [mark] = findMarkerMarks([swipe("0a", 100, 0, yellow)], PAGE, FRAME, LINE_HEIGHT_PT);
+
+		expect(mark.color).toEqual(yellow);
+	});
+
+	it("ignores the dot a gesture leaves behind, which is what the device writes beside a real highlight", () => {
+		// The page this came from carries five of these, all under 0.1 line heights wide, against the
+		// one real swipe at 6.75. Quoted, each would put a stray word in the digest.
+		expect(findMarkerMarks([swipe("0a", 1)], PAGE, FRAME, LINE_HEIGHT_PT)).toEqual([]);
+	});
+
+	it("ignores a swipe that lies on no line, which is already drawn on the page in its own colour", () => {
+		const beside = swipe("0a", 100, 400); // past the right edge of both lines
+
+		expect(findMarkerMarks([beside], PAGE, FRAME, LINE_HEIGHT_PT)).toEqual([]);
+	});
+
+	it("reads a swipe tall enough to cover two lines as both of them", () => {
+		const tall = { ...stroke("0a", [{ x: 0, y: 95 }, { x: 100, y: 95 }, { x: 100, y: 115 }, { x: 0, y: 115 }]), penType: 18 };
+
+		const [mark] = findMarkerMarks([tall], PAGE, FRAME, LINE_HEIGHT_PT);
+
+		expect(mark.marked.join(" ")).toContain("Die kleinstmoegliche");
+		expect(mark.marked.join(" ")).toContain("Ein zweiter");
 	});
 });

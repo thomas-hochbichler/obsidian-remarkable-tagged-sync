@@ -11,7 +11,7 @@
 
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
 import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
-import { findInkMarks, readsAsMark } from "./ink-marks";
+import { findInkMarks, findMarkerMarks, type InkMark, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
 import type { OcrBackend } from "./ocr-backend";
@@ -231,26 +231,39 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
  * that: the text of a mark entry comes out of the PDF, exactly as a marker highlight's does. It also
  * makes underlines work where no OCR backend exists at all.
  */
+function placeMark(page: DigestPageInput, mark: InkMark): PlacedHighlight {
+	return {
+		pdfRect: mark.pdfRect,
+		fromInk: true,
+		highlight: {
+			id: digestId("hl", page.pageId, mark.strokeId),
+			sentence: mark.sentence,
+			marked: mark.marked,
+			// A pen has no marker colour, and F9 would not render one anyway; a marker swipe has its own.
+			color: mark.color ?? null,
+			notes: [],
+			section: null,
+			top: mark.top,
+		},
+	};
+}
+
 function buildInkMarks(page: DigestPageInput, geometry: PageGeometry, ink: RmStroke[]): { marks: PlacedHighlight[]; strokes: RmStroke[] } {
 	if (geometry.pageText === null) return { marks: [], strokes: ink };
 	const found = findInkMarks(ink, geometry.pageText, geometry.frame, geometry.lineHeightPt);
-	return {
-		strokes: found.strokes,
-		marks: found.marks.map((mark) => ({
-			pdfRect: mark.pdfRect,
-			fromInk: true,
-			highlight: {
-				id: digestId("hl", page.pageId, mark.strokeId),
-				sentence: mark.sentence,
-				marked: mark.marked,
-				// A pen has no marker colour, and F9 would not render one anyway.
-				color: null,
-				notes: [],
-				section: null,
-				top: mark.top,
-			},
-		})),
-	};
+	return { strokes: found.strokes, marks: found.marks.map((mark) => placeMark(page, mark)) };
+}
+
+/**
+ * The passages the reader swiped the marker across, as highlights.
+ *
+ * Not part of {@link buildInkMarks}: a marker stroke is never handwriting, so there is nothing to
+ * hand back and nothing to cluster. It is told apart by the tool it was drawn with, not by its shape.
+ */
+function buildMarkerMarks(page: DigestPageInput, geometry: PageGeometry): PlacedHighlight[] {
+	if (geometry.pageText === null) return [];
+	const marker = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => isHighlighterOrShader(stroke.penType));
+	return findMarkerMarks(marker, geometry.pageText, geometry.frame, geometry.lineHeightPt).map((mark) => placeMark(page, mark));
 }
 
 /**
@@ -534,7 +547,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
 	// line heights, and an underline shares its line with whatever was written in the margin next to it.
 	const { marks, strokes: handwriting } = buildInkMarks(page, geometry, ink);
-	placed.push(...marks);
+	placed.push(...marks, ...buildMarkerMarks(page, geometry));
 
 	// F18 reaches here too. With F20 off a leftover stroke goes nowhere at all -- no cluster, nothing
 	// in the note -- and for handwriting that is the setting working as asked. A stroke shaped

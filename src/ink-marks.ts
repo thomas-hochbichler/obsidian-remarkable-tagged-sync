@@ -84,6 +84,8 @@ export interface InkMark {
 	 * highlight.
 	 */
 	pdfRect: PdfRect;
+	/** The marker's own colour, for a swipe drawn with one. A pen mark has none and renders without. */
+	color?: { r: number; g: number; b: number } | null;
 }
 
 interface Box {
@@ -129,6 +131,22 @@ function underlinedLine(rect: PdfRect, page: PdfPageText, lineHeightPt: number):
 		}
 	}
 	return best;
+}
+
+/**
+ * The text line a marker swipe lies *on*, or null.
+ *
+ * Not {@link underlinedLine}: a swipe is drawn across the words themselves, so the ink is inside the
+ * line's own band rather than in the whitespace below it. Measured on the one instance the corpus
+ * has -- a swipe over `context engineering.` sits 2.1pt above its baseline on a line 10.2pt tall --
+ * so the band is taken as it is, with no tolerance around it: ink outside the words is not on them.
+ */
+function markedLine(rect: PdfRect, page: PdfPageText): PdfTextLine | null {
+	for (const line of page.lines) {
+		if (xCoverage(rect, line) < UNDERLINE_COVERAGE) continue;
+		if (rect.y >= line.y && rect.y + rect.height <= line.y + line.height) return line;
+	}
+	return null;
 }
 
 /** True when the stroke's two ends meet, i.e. it was drawn around something rather than along it. */
@@ -178,6 +196,52 @@ export function readsAsMark(stroke: RmStroke, frame: DeviceCanvas, lineHeightPt:
 	const lineHeightPx = lineHeightPt / frame.pxToPt;
 	if (box.maxX - box.minX < MIN_MARK_WIDTH * lineHeightPx) return false;
 	return box.maxY - box.minY < MAX_UNDERLINE_HEIGHT * lineHeightPx || isLoop(stroke, box);
+}
+
+/**
+ * The passages a reader swiped the marker across.
+ *
+ * The device records selecting text and highlighting it as a `glyph_def`, which carries the words it
+ * covers; dragging the marker freehand records an ordinary stroke, which carries nothing but its
+ * shape. Both are the same gesture to the reader, so both belong in the digest -- and until this
+ * existed the freehand one was drawn on the page and named nowhere, because it is neither a
+ * highlight the scene lists nor ink the clustering ever sees.
+ *
+ * The width bound is {@link MIN_MARK_WIDTH}, the same one a pen mark passes, and it separates this
+ * page cleanly: the one real swipe is 6.75 line heights wide and the five leftovers of a gesture
+ * that did become a `glyph_def` are all under 0.1.
+ *
+ * Only the marks come back. A swipe that lands on no text is already drawn on the page in its own
+ * colour, so there is nothing to fall back to and nothing to report.
+ */
+export function findMarkerMarks(strokes: RmStroke[], page: PdfPageText, frame: DeviceCanvas, lineHeightPt: number): InkMark[] {
+	const marks: InkMark[] = [];
+	for (const stroke of strokes) {
+		const box = strokeBox(stroke);
+		if (box === null) continue;
+		const lineHeightPx = lineHeightPt / frame.pxToPt;
+		if (box.maxX - box.minX < MIN_MARK_WIDTH * lineHeightPx) continue;
+
+		const ink = sceneRectToPdf({ x: box.minX, y: box.minY, width: box.maxX - box.minX, height: box.maxY - box.minY }, frame);
+		// A swipe along one line has no height worth measuring, and a zero-height rectangle overlaps
+		// nothing -- so it takes the band of the line it lies on. A taller one covers what it covers.
+		const flat = box.maxY - box.minY < MAX_UNDERLINE_HEIGHT * lineHeightPx;
+		const line = flat ? markedLine(ink, page) : null;
+		if (flat && line === null) continue;
+		const rect = line === null ? ink : { x: ink.x, y: line.y, width: ink.width, height: line.height };
+
+		const quote = quoteForRects(page, [rect]);
+		if (!quote || quote.marked.length === 0) continue;
+		marks.push({
+			strokeId: stroke.id,
+			sentence: quote.sentence,
+			marked: quote.marked,
+			top: box.minY,
+			pdfRect: rect,
+			color: stroke.colorRgba ?? null,
+		});
+	}
+	return marks;
 }
 
 /**

@@ -284,6 +284,21 @@ describe("quoteForRects", () => {
 		expect(quote?.marked).toEqual(["continues"]);
 	});
 
+	it("does not take the next word when the mark stops in the space before it", () => {
+		// A marker swipe overshoots the last letter by a little; the space it runs into is not the
+		// word behind it. Measured on the real one: 100% of `context` and `engineering.`, 0% of
+		// `Building` -- and `Building` came out marked all the same until the range was trimmed.
+		const quote = quoteForRects(article, [rectOver(0, 19, 686)]); // "sentence continues" plus the space
+
+		expect(quote?.marked).toEqual(["sentence continues"]);
+	});
+
+	it("marks nothing for a rectangle that covers only the space between two words", () => {
+		const quote = quoteForRects(article, [rectOver(8, 9, 686)]);
+
+		expect(quote?.marked).toEqual([]);
+	});
+
 	it("marks a run spanning several lines and rectangles", () => {
 		const quote = quoteForRects(article, [rectOver(30, 40, 700), rectOver(0, 8, 686)]);
 

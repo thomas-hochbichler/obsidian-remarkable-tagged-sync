@@ -58,6 +58,20 @@ workflow publishes the section as the GitHub release body. See
   form the plugin refused, and each one was quietly dropped. On the page that brought this to light,
   53 of them. They are drawn again, and every affected note is re-synced once.
 
+- **A passage you swipe the marker across is quoted too.** The device stores two different things
+  under one gesture: tap a word and drag the selection, and it records *which words* you marked;
+  take the marker and drag it across the line freehand, and it records a stroke that knows nothing
+  but its own shape. The first has always been in the digest. The second was drawn on the page and
+  named nowhere — you marked a sentence and the note had no entry for it.
+
+  It is read now, as an underline already was: the words under the swipe, quoted with the sentence
+  around them. A dab of marker too short to be aimed at anything is left alone, and a swipe that
+  lands beside the text rather than on it stays what it always was — ink on the page.
+
+- **A mark that stops in the space after a word no longer takes the next word with it.** Widening a
+  mark out to whole words counted the space it ran into as a word begun, so `context engineering.`
+  came through as `context engineering. Building`.
+
 - **The pictures on a page are in your vault now.** An article you send over keeps its
   illustrations, and the device shows them; the plugin left a blank gap where each one should be, on
   every page it has ever rendered. It reads them now — and so does any notebook page you put an

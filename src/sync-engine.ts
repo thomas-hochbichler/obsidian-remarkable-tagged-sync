@@ -77,9 +77,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * such a page with, which had been breaking a word off the paragraph's first line and sliding every
  * word after it out from under the highlight drawn over it; version 22 draws the pictures on a page
  * -- an imported article's illustrations, which the parser skipped whole, so every one of them was a
- * blank gap in the attachment.
+ * blank gap in the attachment; version 23 quotes a passage the reader swiped the marker across
+ * freehand, which the device records as a stroke rather than as a highlight and the digest named
+ * nowhere, and stops a mark that ends in the space after a word from taking the next word with it.
  */
-export const RENDER_VERSION = 22;
+export const RENDER_VERSION = 23;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
