@@ -14,7 +14,6 @@ export default defineConfig(
 	globalIgnores([
 		"node_modules",
 		"main.js",
-		"main.pro.js",
 		"esbuild.config.mjs",
 		"vitest.config.ts",
 		"package-lock.json",
@@ -37,7 +36,10 @@ export default defineConfig(
 		// Without these entries `eslint .` counts them locally and not in CI, and the ratchet
 		// baseline would mean two different numbers on two machines. Same principle as the
 		// vitest `include`. (`.scratch/` alone contributed 3 parse errors that CI cannot see.)
-		"pro/**",
+		//
+		// `pro/**` was on this list until it was published, on the same reasoning. It is in the repo
+		// now, so CI does see it -- and leaving it here would mean the paid source is the one source
+		// nobody lints.
 		".scratch/**",
 		".scratch-inspect/**",
 		// NOTE: `package.json` is deliberately NOT ignored, even though the official template

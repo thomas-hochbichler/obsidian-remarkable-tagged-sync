@@ -83,11 +83,17 @@ function scheduleVisionCheck(meta: ProviderMeta, cfg: LlmProviderConfig): void {
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
 	el.setText(`Checking whether "${model}" supports images…`);
 	if (visionCheckTimer !== null) window.clearTimeout(visionCheckTimer);
-	visionCheckTimer = window.setTimeout(async () => {
+	visionCheckTimer = window.setTimeout(() => {
 		// `ProviderMeta.id` is the core's open backend id since the table split (free-localhost-ocr
 		// §2.2); the seven keys of PROVIDERS are still the closed union, so this narrowing is safe.
-		const verdict = await detectVisionCapability({ provider: meta.id as LlmProviderId, model, baseURL, apiKey });
-		if (visionWarningEl === el) renderVisionVerdict(el, verdict, model, meta.label);
+		void detectVisionCapability({ provider: meta.id as LlmProviderId, model, baseURL, apiKey })
+			// A probe that throws is precisely the "could not confirm" case, and `partial` already says
+			// that. Without this branch the rejection escapes into the console and the row sits at
+			// "Checking…" for good -- a wrong model would then look like a hung settings pane.
+			.catch((): VisionVerdict => "partial")
+			.then((verdict) => {
+				if (visionWarningEl === el) renderVisionVerdict(el, verdict, model, meta.label);
+			});
 	}, 500);
 }
 
@@ -143,9 +149,9 @@ function renderProviderSettings(meta: ProviderMeta, containerEl: HTMLElement, ct
 }
 
 // Registered in the dropdown order fixed by PROVIDERS (spec §2 / §5), after the free backends.
-for (const meta of Object.values(PROVIDERS) as ProviderMeta[]) {
+for (const meta of Object.values(PROVIDERS)) {
 	registerOcrBackend({
-		id: meta.id as LlmProviderId,
+		id: meta.id,
 		label: meta.label,
 		metered: meta.kind === "cloud",
 		// Deliberately the same predicate as `metered`, so nothing about these six changes. That Ollama
@@ -153,7 +159,7 @@ for (const meta of Object.values(PROVIDERS) as ProviderMeta[]) {
 		// correct, closing it would be a change to this build's behaviour that its own spec did not ask
 		// for.
 		needsBackgroundConsent: meta.kind === "cloud",
-		create: (settings: BackendSettings) => createAdapter(meta, settings as LlmProviderConfig),
+		create: (settings: BackendSettings) => createAdapter(meta, settings),
 		renderSettings: (containerEl, ctx) => renderProviderSettings(meta, containerEl, ctx),
 	});
 }
