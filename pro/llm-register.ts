@@ -154,6 +154,7 @@ for (const meta of Object.values(PROVIDERS)) {
 		id: meta.id,
 		label: meta.label,
 		metered: meta.kind === "cloud",
+		requiresLicence: meta.kind === "cloud",
 		// Deliberately the same predicate as `metered`, so nothing about these six changes. That Ollama
 		// and LM Studio run unconsented in the background is a pre-existing gap: naming it here is
 		// correct, closing it would be a change to this build's behaviour that its own spec did not ask

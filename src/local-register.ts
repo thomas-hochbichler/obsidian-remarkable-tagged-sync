@@ -268,6 +268,7 @@ if (offeredOnThisPlatform()) {
 		label: LOCAL_BACKEND_LABEL,
 		/** Never spends money: it never leaves the machine. */
 		metered: false,
+		requiresLicence: false,
 		/**
 		 * Costs no money and still costs battery, fans and 14 GB of RAM for minutes at a time without the
 		 * user having asked. That is what this field is for, and it is why it is not a rename of `metered`.

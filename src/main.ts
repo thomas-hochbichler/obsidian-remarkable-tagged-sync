@@ -25,6 +25,7 @@ import { activateKey, checkLicence, deactivateHere, type LicenceApi, type Licenc
 import { createPolarLicenceApi } from "./licence-client";
 import {
 	ACTIVATION_LIMIT_MESSAGE,
+	gatedBackendMessage,
 	licenceStatusText,
 	MONEY_BACK_MESSAGE,
 	OFFLINE_ACTIVATION_MESSAGE,
@@ -290,14 +291,28 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * Called on the path of a gated feature and nowhere else. `checkLicence` itself decides whether a
 	 * call is needed, so this is cheap to ask and silent for a free user.
 	 */
-	async refreshLicence(): Promise<Entitlement> {
+	async refreshLicence(silent = false): Promise<Entitlement> {
 		const result = await checkLicence(this.data.licence, this.licenceApi, this.licenceContext());
+		let state = result.state;
+		// A background run must never interrupt with a popup (auto-sync spec §Failure), and the
+		// ended-licence notice is shown once ever -- so spending it on a run nobody is watching would
+		// mean nobody ever sees it. Holding the flag back keeps the lock immediate and the sentence
+		// for the next time the user is actually there.
+		if (silent && result.notice !== null) state = { ...state, endedNoticeShown: false };
 		if (result.changed) {
-			this.data.licence = result.state;
+			this.data.licence = state;
 			await this.saveData(this.data);
 		}
-		if (result.notice !== null) new Notice(result.notice);
+		if (!silent && result.notice !== null) new Notice(result.notice);
 		return result.entitlement;
+	}
+
+	/**
+	 * Re-checks the licence before a run, but only when the selected backend is one that needs it.
+	 * A user on Apple Vision or a local server causes no call, whatever they own.
+	 */
+	private async refreshLicenceIfGated(silent: boolean): Promise<void> {
+		if (ocrBackendEntry(this.data.ocrBackend)?.requiresLicence) await this.refreshLicence(silent);
 	}
 
 	/** The vault's name labels the activation, so the buyer recognises the row in Polar's own list. */
@@ -449,10 +464,27 @@ export default class TaggedSyncPlugin extends Plugin {
 		// A backend that is selected but not in this build (settings carried over from another build)
 		// transcribes nothing rather than falling back to something the user did not choose.
 		if (!entry) return new UnavailableOcrBackend(id);
+		// Present in the bundle but not permitted. It falls back like an unconfigured backend rather
+		// than disappearing from the dropdown: a backend that vanishes teaches nobody that Pro exists,
+		// and a silent stop reads as a broken plugin instead of an ended licence.
+		if (entry.requiresLicence && this.entitlement().tier === "free") {
+			return this.gatedFallback(entry.id, entry.label, silent);
+		}
 		// `??=` rather than `??`: a backend that writes through its blob during a run -- the local
 		// model records each page's duration there -- needs the live object, not a throwaway copy, or
 		// the measurement is lost the moment the sync ends.
 		return entry.create((this.data.llmProviders[id] ??= {}), { silent }) ?? this.notConfiguredFallback(entry.id, entry.label, silent);
+	}
+
+	/**
+	 * A Pro backend without a licence. Same shape as {@link notConfiguredFallback} — free local Vision
+	 * where it runs, `unavailable` otherwise — but it says something different, because the reason is
+	 * different and only one of the two is fixable by typing a key.
+	 */
+	private gatedFallback(id: OcrBackendId, label: string, silent: boolean): OcrBackendAdapter {
+		const fallback = visionPlatformSupported();
+		if (!silent) new Notice(gatedBackendMessage(label, fallback ? "Apple Vision" : null));
+		return fallback ? visionBackend() : new UnavailableOcrBackend(id);
 	}
 
 	/**
@@ -539,6 +571,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			new Notice("A sync is already running.");
 			return;
 		}
+		await this.refreshLicenceIfGated(false);
 		await this.runSyncNow(this.resolveOcrBackend(), false);
 	}
 
@@ -689,6 +722,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// costs battery, fans and several GB of RAM without anyone having asked.
 		const entry = ocrBackendEntry(this.data.ocrBackend);
 		if (entry?.needsBackgroundConsent && entry.backgroundConsent && !entry.backgroundConsent.get(this.data.llmProviders[entry.id] ?? {})) return;
+		await this.refreshLicenceIfGated(true);
 		const backend = this.resolveOcrBackend(true);
 		if (backend.metered && !this.data.autoSync.autoTranscribeMetered) return;
 		await this.runSyncNow(backend, true);
@@ -753,6 +787,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			return;
 		}
 
+		await this.refreshLicenceIfGated(false);
 		const backend = this.resolveOcrBackend();
 		const unitCount = Object.values(this.data.syncIndex.rows).filter((row) => row.status === "active").length;
 		if (unitCount === 0) {
