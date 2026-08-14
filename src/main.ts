@@ -21,8 +21,26 @@ import { type AttachmentStore, DEFAULT_ATTACHMENTS_FOLDER, normalizeAttachmentsF
 import { isIntervalSyncDue, isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
 import { explainError } from "./explain-error";
-import { licenceStatusText, MONEY_BACK_MESSAGE, TAG_CAP_MESSAGE, trialDaysLeft } from "./licence-messages";
-import { type Entitlement, entitlementOf, type LicenceState, NO_LICENCE, startTrial } from "./licence-state";
+import { activateKey, checkLicence, deactivateHere, type LicenceApi, type LicenceContext } from "./licence-check";
+import { createPolarLicenceApi } from "./licence-client";
+import {
+	ACTIVATION_LIMIT_MESSAGE,
+	licenceStatusText,
+	MONEY_BACK_MESSAGE,
+	OFFLINE_ACTIVATION_MESSAGE,
+	TAG_CAP_MESSAGE,
+	trialDaysLeft,
+	WRONG_KEY_MESSAGE,
+} from "./licence-messages";
+import {
+	type Entitlement,
+	entitlementOf,
+	type LicenceState,
+	type LicenceOutcome,
+	NO_LICENCE,
+	startTrial,
+	withoutLicence,
+} from "./licence-state";
 import type { NoteStore, OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
@@ -64,6 +82,21 @@ function tagLimitFor(entitlement: Entitlement): number {
  * the product, so it survives price and description changes.
  */
 const PRO_BUY_URL = "https://polar.sh/checkout/polar_c_vP5U1oj0brsXAQfEp2glE9jMq1ALTPGsnGrpD3KFZ17";
+
+/** What to say when someone has just pressed Activate. */
+function activationMessage(outcome: LicenceOutcome): string {
+	switch (outcome) {
+		case "valid":
+			return "Tagged Sync Pro is active in this vault.";
+		case "activation-limit":
+			return ACTIVATION_LIMIT_MESSAGE;
+		case "unreachable":
+			return OFFLINE_ACTIVATION_MESSAGE;
+		// Nothing was ever active here, so an unrecognised key is a typo rather than a withdrawal.
+		default:
+			return WRONG_KEY_MESSAGE;
+	}
+}
 
 /** How long after `onload` to fire the on-launch auto-sync — a few seconds so auth/network are ready and startup isn't janked (auto-sync spec §Triggers). */
 const AUTO_SYNC_LAUNCH_DELAY_MS = 4_000;
@@ -218,6 +251,7 @@ function createAttachmentStore(vault: Vault): AttachmentStore {
 export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
+	readonly licenceApi: LicenceApi = createPolarLicenceApi();
 	private statusBar!: HTMLElement;
 	/**
 	 * The status bar's two parts are held, not rebuilt per update: recreating the icon on every
@@ -248,6 +282,34 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	entitlement(): Entitlement {
 		return entitlementOf(this.data.licence, new Date());
+	}
+
+	/**
+	 * Re-reads the licence from Polar if one is due, and returns what the answer entitles the user to.
+	 *
+	 * Called on the path of a gated feature and nowhere else. `checkLicence` itself decides whether a
+	 * call is needed, so this is cheap to ask and silent for a free user.
+	 */
+	async refreshLicence(): Promise<Entitlement> {
+		const result = await checkLicence(this.data.licence, this.licenceApi, this.licenceContext());
+		if (result.changed) {
+			this.data.licence = result.state;
+			await this.saveData(this.data);
+		}
+		if (result.notice !== null) new Notice(result.notice);
+		return result.entitlement;
+	}
+
+	/** The vault's name labels the activation, so the buyer recognises the row in Polar's own list. */
+	licenceContext(): LicenceContext {
+		// `off` is the platform default wherever Apple Vision cannot run, and it is not something to
+		// name as a fallback -- there, honestly, nothing transcribes.
+		const fallback = defaultOcrBackend();
+		return {
+			label: this.app.vault.getName(),
+			now: new Date(),
+			fallbackBackend: fallback === "off" ? null : (ocrBackendEntry(fallback)?.label ?? null),
+		};
 	}
 
 	async onload() {
@@ -919,8 +981,50 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 
 		if (entitlement.tier !== "pro") {
 			statusRow.addButton((button) => button.setButtonText("Buy").onClick(() => window.open(PRO_BUY_URL)));
+		}
+
+		if (entitlement.tier === "pro") {
+			statusRow.addButton((button) =>
+				button.setButtonText("Deactivate this vault").onClick(async () => {
+					await deactivateHere(this.plugin.data.licence, this.plugin.licenceApi);
+					this.plugin.data.licence = withoutLicence(this.plugin.data.licence);
+					await this.plugin.saveData(this.plugin.data);
+					this.display();
+				}),
+			);
+		} else {
+			this.renderLicenceKeyField(containerEl);
 			containerEl.createDiv({ cls: "tagged-sync-note", text: MONEY_BACK_MESSAGE });
 		}
+	}
+
+	/**
+	 * Where a bought key is pasted. Shown only while Pro is inactive, because a licensed vault has
+	 * nothing to type here -- and a key field standing under an active licence invites someone to
+	 * paste a second one over a working first.
+	 */
+	private renderLicenceKeyField(containerEl: HTMLElement): void {
+		let typed = "";
+		new Setting(containerEl)
+			.setName("Licence key")
+			.setDesc("Paste the key from your purchase page.")
+			.addText((text) => text.onChange((value) => (typed = value)))
+			.addButton((button) =>
+				button.setButtonText("Activate").onClick(async () => {
+					if (typed.trim() === "") return;
+					button.setDisabled(true);
+					const result = await activateKey(
+						this.plugin.data.licence,
+						typed,
+						this.plugin.licenceApi,
+						this.plugin.licenceContext(),
+					);
+					this.plugin.data.licence = result.state;
+					await this.plugin.saveData(this.plugin.data);
+					new Notice(activationMessage(result.outcome));
+					this.display();
+				}),
+			);
 	}
 
 	/** Where a synced notebook lands and what it carries -- the two rows about the vault side. */
@@ -1290,6 +1394,13 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					for (const path of folderPaths) dropdown.addOption(path, folderLabel(path));
 					dropdown.onChange(async (value) => {
 						if (!value) return;
+						// The one gated feature that exists today: a mapping past the free cap. This is the
+						// moment the licence is *used*, so it is the moment it is re-checked -- not on load,
+						// and never for a free user, who cannot reach this branch at all.
+						if (mappedTags.length >= FREE_TAG_LIMIT && (await this.plugin.refreshLicence()).tier === "free") {
+							this.display();
+							return;
+						}
 						mapping[tag] = value;
 						await persist();
 					});
