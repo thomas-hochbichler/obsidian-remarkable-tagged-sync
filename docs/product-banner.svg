@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <rect width="1600" height="900" fill="#15181D"/>
+  <g transform="translate(222 306) scale(0.56)">
+    <path d="M138 146 h180 a16 16 0 0 1 11.5 4.9 L455 250.5 a8 8 0 0 1 0 11 L329.5 361.1 A16 16 0 0 1 318 366 H138 a40 40 0 0 1-40-40 V186 a40 40 0 0 1 40-40 z"
+          fill="#E2A03F"/>
+    <circle cx="172" cy="256" r="27" fill="#15181D"/>
+  </g>
+  <text x="554" y="432" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700"
+        font-size="104" fill="#F5F3EE" letter-spacing="-2">Tagged Sync Pro</text>
+  <text x="558" y="512" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="400"
+        font-size="44" fill="#9AA1AC">Cloud transcription · unlimited tag mappings</text>
+</svg>
