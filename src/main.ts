@@ -85,6 +85,16 @@ function tagLimitFor(entitlement: Entitlement): number {
  */
 const PRO_BUY_URL = "https://polar.sh/checkout/polar_c_vP5U1oj0brsXAQfEp2glE9jMq1ALTPGsnGrpD3KFZ17";
 
+/**
+ * Polar's customer portal, where a buyer frees an activation slot themselves. The licence covers 50
+ * devices and each vault counts as one, so someone whose old laptop is gone cannot use "Deactivate
+ * this vault" -- that vault is unreachable. Without this they would have to write to support to get
+ * back into something they already paid for.
+ *
+ * Polar mails this link with every order too; the button is convenience, not the only route.
+ */
+const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
+
 /** What to say when someone has just pressed Activate. */
 function activationMessage(outcome: LicenceOutcome): string {
 	switch (outcome) {
@@ -1022,6 +1032,9 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		}
 
 		if (entitlement.tier === "pro") {
+			statusRow.addButton((button) =>
+				button.setButtonText("Manage devices").onClick(() => window.open(PRO_PORTAL_URL)),
+			);
 			statusRow.addButton((button) =>
 				button.setButtonText("Deactivate this vault").onClick(async () => {
 					await deactivateHere(this.plugin.data.licence, this.plugin.licenceApi);

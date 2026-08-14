@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-14
+
 ### Added
 
 - **Tagged Sync Pro — €24, once.** Two things are now paid: transcription by a cloud model
@@ -30,6 +32,10 @@ workflow publishes the section as the GitHub release body. See
 - **The four cloud backends now ship to everyone**, locked rather than absent. Choosing one without
   a licence falls back to the best free backend and says so, instead of failing silently or hiding
   the option — you can see what Pro is before deciding whether you want it.
+
+- **A licensed user can free a device slot themselves**, from a button in settings that opens their
+  own page at Polar. A licence covers 50 devices and each vault counts as one, so a laptop you no
+  longer have would otherwise hold its slot forever.
 
 ### Changed
 
