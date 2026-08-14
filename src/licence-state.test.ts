@@ -41,7 +41,7 @@ describe("entitlementOf", () => {
 	});
 
 	it("locks only on an explicit revocation", () => {
-		const revoked = applyOutcome(active, "revoked", NOW);
+		const revoked = applyOutcome(active, "unknown-key", NOW);
 		expect(entitlementOf(revoked, NOW)).toEqual({ tier: "free", reason: "revoked" });
 	});
 
@@ -78,7 +78,7 @@ describe("entitlementOf", () => {
 describe("nextLicenceCall", () => {
 	it("asks for nothing without a key, and nothing once revoked", () => {
 		expect(nextLicenceCall(NO_LICENCE, NOW)).toBe("none");
-		expect(nextLicenceCall(applyOutcome(active, "revoked", NOW), NOW)).toBe("none");
+		expect(nextLicenceCall(applyOutcome(active, "unknown-key", NOW), NOW)).toBe("none");
 	});
 
 	it("remembers a fresh verdict instead of calling again", () => {
@@ -101,7 +101,7 @@ describe("nextLicenceCall", () => {
 
 describe("applyOutcome", () => {
 	it("clocks a valid answer to zero and clears an earlier revocation", () => {
-		const revoked = applyOutcome(active, "revoked", NOW);
+		const revoked = applyOutcome(active, "unknown-key", NOW);
 		const back = applyOutcome(revoked, "valid", NOW);
 		expect(back.revokedAt).toBeNull();
 		expect(back.validatedAt).toBe(NOW.toISOString());

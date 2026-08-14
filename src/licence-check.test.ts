@@ -61,7 +61,7 @@ describe("checkLicence", () => {
 	});
 
 	it("locks on an explicit revocation and announces it once", async () => {
-		const polar = api({ validate: vi.fn(async () => "revoked" as const) });
+		const polar = api({ validate: vi.fn(async () => "unknown-key" as const) });
 		const first = await checkLicence(active, polar, ctx);
 		expect(first.entitlement).toEqual({ tier: "free", reason: "revoked" });
 		expect(first.notice).toContain("withdrawn after the refund");
@@ -72,7 +72,7 @@ describe("checkLicence", () => {
 	});
 
 	it("says what happens on a machine with nothing to fall back to", async () => {
-		const polar = api({ validate: vi.fn(async () => "revoked" as const) });
+		const polar = api({ validate: vi.fn(async () => "unknown-key" as const) });
 		const result = await checkLicence(active, polar, { ...ctx, fallbackBackend: null });
 		expect(result.notice).toContain("no transcription");
 	});
@@ -106,7 +106,7 @@ describe("checkLicence", () => {
 	});
 
 	it("arms the notice again for a licence that comes back", async () => {
-		const revoked = await checkLicence(active, api({ validate: vi.fn(async () => "revoked" as const) }), ctx);
+		const revoked = await checkLicence(active, api({ validate: vi.fn(async () => "unknown-key" as const) }), ctx);
 		const bought = await activateKey(revoked.state, "TSP-NEW1", api(), ctx);
 		expect(bought.state.endedNoticeShown).toBe(false);
 		expect(bought.entitlement.tier).toBe("pro");
