@@ -15,7 +15,7 @@
     "inspect:rm": "esbuild scripts/inspect-rm.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-rm.cjs && node /tmp/tagged-sync-inspect-rm.cjs",
     "inspect:doc": "esbuild scripts/inspect-doc.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-doc.cjs && node /tmp/tagged-sync-inspect-doc.cjs"
   },
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "kaitai-struct": "^0.11.0",
     "pdf-lib": "^1.17.1",
