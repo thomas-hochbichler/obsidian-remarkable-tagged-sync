@@ -95,9 +95,15 @@ Licence Key, and no right to redistribute a modified build.
 ## 7. Updates
 
 Updates to the plugin are delivered through the Obsidian community plugin store, to everyone, at no
-extra cost, for as long as the plugin is sold. What the Licensor promises is **effort, not dates**;
-see *What I do not control* in the [README](./README.md). If the plugin can no longer be made to
-work, the Licensor will say so in public and stop selling licences.
+extra cost, for as long as the plugin is sold.
+
+**Every feature added to Tagged Sync Pro is included in this licence**, at no further cost. There is
+no upgrade fee and no paid version to move to.
+
+What the Licensor promises is **effort, not dates** — the commitment above is that new Pro features
+are not charged for again, not that any particular feature will be built by any particular time; see
+*What I do not control* in the [README](./README.md). If the plugin can no longer be made to work,
+the Licensor will say so in public and stop selling licences.
 
 ## 8. Warranty and liability
 

@@ -210,6 +210,8 @@ Everything described above is free and stays free. Two things are paid:
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
 
+**Every future Tagged Sync Pro feature is included** — no upgrade fee, ever.
+
 **Try it for 14 days** — one click in the plugin settings, no key and no email needed. Nothing is
 sent anywhere to start a trial.
 
