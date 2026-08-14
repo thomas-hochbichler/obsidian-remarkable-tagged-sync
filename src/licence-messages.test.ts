@@ -53,6 +53,18 @@ describe("licenceStatusText", () => {
 		expect(textOf(ended).body).toContain("untouched");
 	});
 
+	// The one state where Pro works and the licence does not. Silence here reads as "the key took".
+	it("says which of the two is unlocking Pro when both are present", () => {
+		const trialing = startTrial(NO_LICENCE, NOW);
+		expect(textOf(trialing).body).not.toContain("licence key");
+
+		const withKey = { ...trialing, key: "TSP-9999" };
+		const { heading, body } = textOf(withKey);
+		expect(heading).toBe("Trial");
+		expect(body).toContain("saved but not confirmed");
+		expect(body).toContain("the trial is what is unlocking Pro");
+	});
+
 	it("names the price to someone who has never bought", () => {
 		expect(textOf(NO_LICENCE).body).toContain("€24");
 	});

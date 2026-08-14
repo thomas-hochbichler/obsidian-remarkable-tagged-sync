@@ -60,9 +60,15 @@ export function createPolarLicenceApi(
 		},
 
 		/**
-		 * 403 means the key is alive but cannot take this activation — the limit of 50 is full, or the
-		 * key is no longer active. Both are reported as a full licence: the caller only reaches this
-		 * after `validate` has already established which of the two it is.
+		 * ⚠️ 403 is two different answers, and they need different sentences.
+		 *
+		 * Polar refuses an activation with 403 both when all 50 slots are taken and when the key is no
+		 * longer active — `activate` checks `is_active()` and raises the same status either way. Read
+		 * as "the limit is full", someone whose licence was withdrawn after a refund is told their key
+		 * is on fifty devices, which is untrue and unactionable.
+		 *
+		 * So a 403 asks the same narrowing question the validate path asks: is the key itself alive?
+		 * If it validates on its own, the slots really are full. If it does not, the key is dead.
 		 */
 		async activate(key, label): Promise<ActivationResult> {
 			const response = await post("activate", { key, label });
@@ -72,7 +78,12 @@ export function createPolarLicenceApi(
 				return { outcome: "valid", activationId: body.id };
 			}
 			if (response.status === 404) return { outcome: "unknown-key" };
-			if (response.status === 403) return { outcome: "activation-limit" };
+			if (response.status === 403) {
+				const keyAlone = await post("validate", { key });
+				if (keyAlone.ok) return { outcome: "activation-limit" };
+				if (keyAlone.status === 404) return { outcome: "unknown-key" };
+				return { outcome: "unreachable" };
+			}
 			return { outcome: "unreachable" };
 		},
 

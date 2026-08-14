@@ -50,10 +50,14 @@ export function licenceStatusText(entitlement: Entitlement, state: LicenceState)
 			};
 
 		case "trial": {
-			return {
-				heading: "Trial",
-				body: `Everything in Pro is unlocked until ${onDay(entitlement.endsAt)}.`,
-			};
+			const until = `Everything in Pro is unlocked until ${onDay(entitlement.endsAt)}.`;
+			// A key saved during a running trial is the one state where Pro works and the licence does
+			// not. Without this line the row says "Trial" and nothing else, so someone who has just
+			// pasted a key that failed sees the paid features working and concludes it took.
+			if (state.key !== null) {
+				return { heading: "Trial", body: `${until} Your licence key is saved but not confirmed yet — the trial is what is unlocking Pro.` };
+			}
+			return { heading: "Trial", body: until };
 		}
 
 		case "free":

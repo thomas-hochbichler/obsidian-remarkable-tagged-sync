@@ -72,15 +72,35 @@ describe("activate", () => {
 		expect(await createPolarLicenceApi(ORG, impl).activate("TSPRO-1", "v")).toEqual({ outcome: "unreachable" });
 	});
 
-	it("maps 404 to an unknown key and 403 to a full licence", async () => {
+	it("maps 404 to an unknown key", async () => {
 		const gone = stubFetch(status(404));
 		expect(await createPolarLicenceApi(ORG, gone.impl).activate("TSPRO-1", "v")).toEqual({
 			outcome: "unknown-key",
 		});
+	});
 
-		const full = stubFetch(status(403));
-		expect(await createPolarLicenceApi(ORG, full.impl).activate("TSPRO-1", "v")).toEqual({
+	// Polar refuses with 403 both when the slots are full and when the key is no longer active. Told
+	// apart wrongly, someone whose licence was withdrawn reads that their key is on fifty devices.
+	it("asks what a 403 meant, and calls a full licence full", async () => {
+		const { impl, calls } = stubFetch(status(403), ok());
+		expect(await createPolarLicenceApi(ORG, impl).activate("TSPRO-1", "v")).toEqual({
 			outcome: "activation-limit",
+		});
+		expect(calls[1].url).toContain("/validate");
+		expect(calls[1].body).toEqual({ organization_id: ORG, key: "TSPRO-1" });
+	});
+
+	it("calls a withdrawn key withdrawn, not full", async () => {
+		const { impl } = stubFetch(status(403), status(404));
+		expect(await createPolarLicenceApi(ORG, impl).activate("TSPRO-1", "v")).toEqual({
+			outcome: "unknown-key",
+		});
+	});
+
+	it("treats a fault while asking as no answer", async () => {
+		const { impl } = stubFetch(status(403), status(500));
+		expect(await createPolarLicenceApi(ORG, impl).activate("TSPRO-1", "v")).toEqual({
+			outcome: "unreachable",
 		});
 	});
 });
