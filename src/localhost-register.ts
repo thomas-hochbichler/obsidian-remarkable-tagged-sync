@@ -237,6 +237,7 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 		label: meta.label,
 		/** Never spends money: the server is the user's own. */
 		metered: false,
+		requiresLicence: false,
 		needsBackgroundConsent: true,
 		create: (settings: BackendSettings) => createAdapter(meta, settings),
 		renderSettings: (containerEl, ctx) => renderLocalhostSettings(meta, containerEl, ctx),

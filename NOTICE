@@ -27,6 +27,65 @@ Copyright (c) Erik Brinkman
 Licensed under the MIT License.
 
 --------------------------------------------------------------------------------
+crc-32 (https://github.com/SheetJS/js-crc32)
+Copyright (C) 2014-present SheetJS
+Licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+jszip (https://github.com/Stuk/jszip)
+Copyright (c) 2009-2016 Stuart Knightley, David Duponchel, Franz Buchinger,
+António Afonso
+Dual-licensed under the MIT License or GPL-3.0-or-later; used here under the
+MIT License.
+
+--------------------------------------------------------------------------------
+uuid (https://github.com/uuidjs/uuid)
+Copyright (c) 2010-2020 Robert Kieffer and other contributors
+Licensed under the MIT License.
+
+--------------------------------------------------------------------------------
+zod (https://github.com/colinhacks/zod)
+Copyright (c) 2025 Colin McDonnell
+Licensed under the MIT License.
+
+--------------------------------------------------------------------------------
+@pdf-lib/standard-fonts (https://github.com/Hopding/standard-fonts)
+Copyright (c) 2018 Andrew Dillon
+Licensed under the MIT License.
+
+--------------------------------------------------------------------------------
+@pdf-lib/upng (https://github.com/Hopding/UPNG.js)
+Copyright (c) 2017 Photopea
+Licensed under the MIT License.
+
+--------------------------------------------------------------------------------
+pako (https://github.com/nodeca/pako)
+Copyright (C) 2014-2017 by Vitaly Puzrin and Andrei Tuputcyn
+Licensed under the MIT License. pako contains a port of zlib, which carries the
+zlib licence:
+
+    Copyright (C) 1995-2013 Jean-loup Gailly and Mark Adler
+
+    This software is provided 'as-is', without any express or implied warranty.
+    In no event will the authors be held liable for any damages arising from
+    the use of this software.
+
+    Permission is granted to anyone to use this software for any purpose,
+    including commercial applications, and to alter it and redistribute it
+    freely, subject to the following restrictions:
+
+    1. The origin of this software must not be misrepresented; you must not
+       claim that you wrote the original software. If you use this software in
+       a product, an acknowledgment in the product documentation would be
+       appreciated but is not required.
+    2. Altered source versions must be plainly marked as such, and must not be
+       misrepresented as being the original software.
+    3. This notice may not be removed or altered from any source distribution.
+
+--------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 the MIT-licensed software above and associated documentation files (the
 "Software"), to deal in the Software without restriction, including without

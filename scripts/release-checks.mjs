@@ -17,7 +17,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-const LICENSE = "Apache-2.0";
+// npm's own form for a tree that is not under one licence: `src/` is Apache-2.0, `pro/` is PolyForm
+// Strict 1.0.0, and paid commercial use is granted separately. PolyForm Strict has no settled SPDX
+// identifier, so there is no expression to write here instead. The gate still earns its place --
+// what it now catches is the two files drifting apart, which is how `package-lock.json` sat stale
+// for five releases.
+const LICENSE = "SEE LICENSE IN LICENSE";
 const CHANGELOG = "CHANGELOG.md";
 const BASELINE = ".eslint-baseline.json";
 

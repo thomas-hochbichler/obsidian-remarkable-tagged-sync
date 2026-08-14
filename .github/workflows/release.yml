@@ -1,9 +1,9 @@
 # Fires on a pushed SemVer tag and publishes the GitHub release.
 #
-# The human does not upload anything. That is the rule this workflow exists to enforce: a pro
-# build used to overwrite `main.js` -- the release asset -- in the folder releases are cut from,
-# so a hand-uploaded asset could publish premium code with nothing in git to show it. Here the
-# assets are built in a fresh checkout where `pro/` does not exist.
+# The human does not upload anything. That is the rule this workflow exists to enforce: a hand-
+# uploaded asset can hold anything at all, with nothing in git to show what. Here the assets are
+# built in a fresh checkout of the tag, so the bytes released are the bytes the tag describes.
+# `pro/` is part of that checkout now -- the gates below are what say the bundle is the right one.
 #
 # Gate order is cheap-first. Publishing is the last thing that happens, which is why nothing can
 # publish after a failure -- that property is free, not enforced by an `if`.
@@ -81,10 +81,10 @@ jobs:
       - name: Tests
         run: npx vitest run
 
-      # --- gate 6: build the free bundle -------------------------------------------------------
+      # --- gate 6: build -----------------------------------------------------------------------
       #
-      # TAGGED_SYNC_BUILD is not set, and `pro/` does not exist in this checkout, so this is
-      # structurally the free build.
+      # One entry point, one output. The paid backends are in this bundle by design; the bundle scan
+      # below is what proves the licence gate went out with them.
       - name: Build
         run: npm run build
 

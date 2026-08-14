@@ -11,7 +11,6 @@
 // file on disk is `CLAUDE.md` where the rule says `Claude.md`. A case-sensitive test would let that
 // one through while reporting ok.
 export const PRIVATE = [
-	/^pro\//i,
 	/^\.scratch\//i,
 	/^\.scratch-inspect\//i,
 	/^\.claude\//i,

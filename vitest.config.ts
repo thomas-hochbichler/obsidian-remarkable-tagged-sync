@@ -1,12 +1,11 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-	// Explicit, so a local run and a CI run cover the same files. Without it vitest also picks up
-	// `pro/`'s premium tests, which exist only in the maintainer's working copy -- local was 277
-	// tests and CI 211, and nobody chose that. `pro/` runs via `npm run test:pro`, an explicit
-	// opt-in in the same shape as esbuild's TAGGED_SYNC_BUILD=pro. CI never sets it.
+	// Explicit, so a local run and a CI run cover the same files. `pro/` used to be excluded because
+	// it existed only in the maintainer's working copy; it is published now, and leaving it out would
+	// mean CI stopped testing the paid half of the product on the day it started being sold.
 	test: {
-		include: process.env.TAGGED_SYNC_TEST === "pro" ? ["pro/**/*.test.ts"] : ["src/**/*.test.ts"],
+		include: ["src/**/*.test.ts", "pro/**/*.test.ts"],
 	},
 	resolve: {
 		// `obsidian` ships no resolvable entry point outside the app, so anything reachable from a test

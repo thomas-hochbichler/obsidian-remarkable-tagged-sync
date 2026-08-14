@@ -21,6 +21,28 @@ import { type AttachmentStore, DEFAULT_ATTACHMENTS_FOLDER, normalizeAttachmentsF
 import { isIntervalSyncDue, isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
 import { explainError } from "./explain-error";
+import { activateKey, checkLicence, deactivateHere, type LicenceApi, type LicenceContext } from "./licence-check";
+import { createPolarLicenceApi } from "./licence-client";
+import {
+	ACTIVATION_LIMIT_MESSAGE,
+	gatedBackendMessage,
+	licenceStatusText,
+	MONEY_BACK_MESSAGE,
+	OFFLINE_ACTIVATION_MESSAGE,
+	TAG_CAP_MESSAGE,
+	trialDaysLeft,
+	WITHDRAWN_KEY_MESSAGE,
+	WRONG_KEY_MESSAGE,
+} from "./licence-messages";
+import {
+	type Entitlement,
+	entitlementOf,
+	type LicenceState,
+	type LicenceOutcome,
+	NO_LICENCE,
+	startTrial,
+	withoutLicence,
+} from "./licence-state";
 import type { NoteStore, OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
@@ -47,6 +69,48 @@ const FEATURE_VOTING_URL = `${ISSUES_URL}?q=is%3Aopen+label%3Aenhancement+sort%3
  * about rather than something taken away later.
  */
 const FREE_TAG_LIMIT = 1;
+
+/**
+ * The cap is licence-driven rather than hard-coded: unlimited tag mappings are half of what Pro
+ * sells. A revoked licence falls back to the free cap, which is proportionate because the cap blocks
+ * *adding* only -- every folder already mapped keeps syncing.
+ */
+function tagLimitFor(entitlement: Entitlement): number {
+	return entitlement.tier === "free" ? FREE_TAG_LIMIT : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Where a licence is bought -- Polar's checkout, opened in the browser. A long-lived link tied to
+ * the product, so it survives price and description changes.
+ */
+const PRO_BUY_URL = "https://polar.sh/checkout/polar_c_vP5U1oj0brsXAQfEp2glE9jMq1ALTPGsnGrpD3KFZ17";
+
+/**
+ * Polar's customer portal, where a buyer frees an activation slot themselves. The licence covers 50
+ * devices and each vault counts as one, so someone whose old laptop is gone cannot use "Deactivate
+ * this vault" -- that vault is unreachable. Without this they would have to write to support to get
+ * back into something they already paid for.
+ *
+ * Polar mails this link with every order too; the button is convenience, not the only route.
+ */
+const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
+
+/** What to say when someone has just pressed Activate. */
+function activationMessage(outcome: LicenceOutcome): string {
+	switch (outcome) {
+		case "valid":
+			return "Tagged Sync Pro is active in this vault.";
+		case "activation-limit":
+			return ACTIVATION_LIMIT_MESSAGE;
+		case "unreachable":
+			return OFFLINE_ACTIVATION_MESSAGE;
+		case "withdrawn":
+			return WITHDRAWN_KEY_MESSAGE;
+		// Nothing was ever active here, so an unrecognised key is a typo rather than a withdrawal.
+		default:
+			return WRONG_KEY_MESSAGE;
+	}
+}
 
 /** How long after `onload` to fire the on-launch auto-sync — a few seconds so auth/network are ready and startup isn't janked (auto-sync spec §Triggers). */
 const AUTO_SYNC_LAUNCH_DELAY_MS = 4_000;
@@ -90,6 +154,12 @@ interface TaggedSyncData {
 	 * their vault unasked.
 	 */
 	marginNotes: boolean;
+	/**
+	 * The Pro licence, beside `deviceToken` because that is where this vault's other credential
+	 * already lives. In a synced vault these fields travel to the other machine, which is correct:
+	 * one vault is one activation, wherever it is opened.
+	 */
+	licence: LicenceState;
 }
 
 const DEFAULT_DATA: TaggedSyncData = {
@@ -104,6 +174,7 @@ const DEFAULT_DATA: TaggedSyncData = {
 	lastSyncAt: null,
 	attachmentsFolder: DEFAULT_ATTACHMENTS_FOLDER,
 	marginNotes: false,
+	licence: NO_LICENCE,
 };
 
 /**
@@ -194,6 +265,7 @@ function createAttachmentStore(vault: Vault): AttachmentStore {
 export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
+	readonly licenceApi: LicenceApi = createPolarLicenceApi();
 	private statusBar!: HTMLElement;
 	/**
 	 * The status bar's two parts are held, not rebuilt per update: recreating the icon on every
@@ -217,6 +289,56 @@ export default class TaggedSyncPlugin extends Plugin {
 	lastSyncError: string | null = null;
 	private autoSyncLaunchTimer: number | null = null;
 	private autoSyncIntervalTimer: number | null = null;
+
+	/**
+	 * What Pro is unlocked for right now. Read from the stored fields only -- asking this never
+	 * causes a network call, which is what keeps the promise that a free user never talks to Polar.
+	 */
+	entitlement(): Entitlement {
+		return entitlementOf(this.data.licence, new Date());
+	}
+
+	/**
+	 * Re-reads the licence from Polar if one is due, and returns what the answer entitles the user to.
+	 *
+	 * Called on the path of a gated feature and nowhere else. `checkLicence` itself decides whether a
+	 * call is needed, so this is cheap to ask and silent for a free user.
+	 */
+	async refreshLicence(silent = false): Promise<Entitlement> {
+		const result = await checkLicence(this.data.licence, this.licenceApi, this.licenceContext());
+		let state = result.state;
+		// A background run must never interrupt with a popup (auto-sync spec §Failure), and the
+		// ended-licence notice is shown once ever -- so spending it on a run nobody is watching would
+		// mean nobody ever sees it. Holding the flag back keeps the lock immediate and the sentence
+		// for the next time the user is actually there.
+		if (silent && result.notice !== null) state = { ...state, endedNoticeShown: false };
+		if (result.changed) {
+			this.data.licence = state;
+			await this.saveData(this.data);
+		}
+		if (!silent && result.notice !== null) new Notice(result.notice);
+		return result.entitlement;
+	}
+
+	/**
+	 * Re-checks the licence before a run, but only when the selected backend is one that needs it.
+	 * A user on Apple Vision or a local server causes no call, whatever they own.
+	 */
+	private async refreshLicenceIfGated(silent: boolean): Promise<void> {
+		if (ocrBackendEntry(this.data.ocrBackend)?.requiresLicence) await this.refreshLicence(silent);
+	}
+
+	/** The vault's name labels the activation, so the buyer recognises the row in Polar's own list. */
+	licenceContext(): LicenceContext {
+		// `off` is the platform default wherever Apple Vision cannot run, and it is not something to
+		// name as a fallback -- there, honestly, nothing transcribes.
+		const fallback = defaultOcrBackend();
+		return {
+			label: this.app.vault.getName(),
+			now: new Date(),
+			fallbackBackend: fallback === "off" ? null : (ocrBackendEntry(fallback)?.label ?? null),
+		};
+	}
 
 	async onload() {
 		this.statusBar = this.addStatusBarItem();
@@ -249,6 +371,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			// handwriting out of the embedded PDF instead of storing a picture of it, and the setting
 			// they used to say it with is on screen again to say no with.
 			marginNotes: saved?.marginNotes ?? DEFAULT_DATA.marginNotes,
+			// Spread over the default so a `data.json` written by an older version, or one a user has
+			// edited by hand, is missing fields rather than being rejected.
+			licence: { ...NO_LICENCE, ...saved?.licence },
 		};
 
 		const store: AuthStore = {
@@ -352,10 +477,27 @@ export default class TaggedSyncPlugin extends Plugin {
 		// A backend that is selected but not in this build (settings carried over from another build)
 		// transcribes nothing rather than falling back to something the user did not choose.
 		if (!entry) return new UnavailableOcrBackend(id);
+		// Present in the bundle but not permitted. It falls back like an unconfigured backend rather
+		// than disappearing from the dropdown: a backend that vanishes teaches nobody that Pro exists,
+		// and a silent stop reads as a broken plugin instead of an ended licence.
+		if (entry.requiresLicence && this.entitlement().tier === "free") {
+			return this.gatedFallback(entry.id, entry.label, silent);
+		}
 		// `??=` rather than `??`: a backend that writes through its blob during a run -- the local
 		// model records each page's duration there -- needs the live object, not a throwaway copy, or
 		// the measurement is lost the moment the sync ends.
 		return entry.create((this.data.llmProviders[id] ??= {}), { silent }) ?? this.notConfiguredFallback(entry.id, entry.label, silent);
+	}
+
+	/**
+	 * A Pro backend without a licence. Same shape as {@link notConfiguredFallback} — free local Vision
+	 * where it runs, `unavailable` otherwise — but it says something different, because the reason is
+	 * different and only one of the two is fixable by typing a key.
+	 */
+	private gatedFallback(id: OcrBackendId, label: string, silent: boolean): OcrBackendAdapter {
+		const fallback = visionPlatformSupported();
+		if (!silent) new Notice(gatedBackendMessage(label, fallback ? "Apple Vision" : null));
+		return fallback ? visionBackend() : new UnavailableOcrBackend(id);
 	}
 
 	/**
@@ -442,6 +584,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			new Notice("A sync is already running.");
 			return;
 		}
+		await this.refreshLicenceIfGated(false);
 		await this.runSyncNow(this.resolveOcrBackend(), false);
 	}
 
@@ -592,6 +735,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// costs battery, fans and several GB of RAM without anyone having asked.
 		const entry = ocrBackendEntry(this.data.ocrBackend);
 		if (entry?.needsBackgroundConsent && entry.backgroundConsent && !entry.backgroundConsent.get(this.data.llmProviders[entry.id] ?? {})) return;
+		await this.refreshLicenceIfGated(true);
 		const backend = this.resolveOcrBackend(true);
 		if (backend.metered && !this.data.autoSync.autoTranscribeMetered) return;
 		await this.runSyncNow(backend, true);
@@ -656,6 +800,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			return;
 		}
 
+		await this.refreshLicenceIfGated(false);
 		const backend = this.resolveOcrBackend();
 		const unitCount = Object.values(this.data.syncIndex.rows).filter((row) => row.status === "active").length;
 		if (unitCount === 0) {
@@ -843,7 +988,94 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		this.renderVaultOutput(containerEl);
 		this.renderOcrSettings(containerEl);
 		this.renderAutoSyncSettings(containerEl);
+		this.renderPro(containerEl);
 		this.renderActions(containerEl, connected);
+	}
+
+	/**
+	 * Pro in one place, low in the tab. The gated features carry a sentence and a pointer down here
+	 * rather than a buy button of their own: a row at the top would ask a free user to pay before
+	 * they have seen the plugin work, which is the one backlash trigger the research actually
+	 * measured. Actions stays last, because those links are read when something has gone wrong.
+	 */
+	private renderPro(containerEl: HTMLElement): void {
+		new Setting(containerEl).setName("Tagged Sync Pro").setHeading();
+
+		const entitlement = this.plugin.entitlement();
+		const status = licenceStatusText(entitlement, this.plugin.data.licence);
+		const statusRow = new Setting(containerEl).setName(status.heading).setDesc(status.body);
+
+		if (entitlement.tier === "trial") {
+			const left = trialDaysLeft(this.plugin.data.licence, new Date());
+			statusRow.setDesc(`${status.body} ${left} day(s) left.`);
+		}
+
+		// One click, no key, no email. The trial is the only way a Windows or Linux user can judge
+		// cloud transcription before paying, and it costs nothing to give: the tester pays their own
+		// API bill. There is deliberately no restart button -- one would turn the purchase into a
+		// donation.
+		if (this.plugin.data.licence.trialStartedAt === null) {
+			statusRow.addButton((button) =>
+				button
+					.setButtonText("Start free trial")
+					.setCta()
+					.onClick(async () => {
+						this.plugin.data.licence = startTrial(this.plugin.data.licence, new Date());
+						await this.plugin.saveData(this.plugin.data);
+						this.display();
+					}),
+			);
+		}
+
+		if (entitlement.tier !== "pro") {
+			statusRow.addButton((button) => button.setButtonText("Buy").onClick(() => window.open(PRO_BUY_URL)));
+		}
+
+		if (entitlement.tier === "pro") {
+			statusRow.addButton((button) =>
+				button.setButtonText("Manage devices").onClick(() => window.open(PRO_PORTAL_URL)),
+			);
+			statusRow.addButton((button) =>
+				button.setButtonText("Deactivate this vault").onClick(async () => {
+					await deactivateHere(this.plugin.data.licence, this.plugin.licenceApi);
+					this.plugin.data.licence = withoutLicence(this.plugin.data.licence);
+					await this.plugin.saveData(this.plugin.data);
+					this.display();
+				}),
+			);
+		} else {
+			this.renderLicenceKeyField(containerEl);
+			containerEl.createDiv({ cls: "tagged-sync-note", text: MONEY_BACK_MESSAGE });
+		}
+	}
+
+	/**
+	 * Where a bought key is pasted. Shown only while Pro is inactive, because a licensed vault has
+	 * nothing to type here -- and a key field standing under an active licence invites someone to
+	 * paste a second one over a working first.
+	 */
+	private renderLicenceKeyField(containerEl: HTMLElement): void {
+		let typed = "";
+		new Setting(containerEl)
+			.setName("Licence key")
+			.setDesc("Paste the key from your purchase page.")
+			.addText((text) => text.onChange((value) => (typed = value)))
+			.addButton((button) =>
+				button.setButtonText("Activate").onClick(async () => {
+					if (typed.trim() === "") return;
+					button.setDisabled(true);
+					const result = await activateKey(
+						this.plugin.data.licence,
+						typed,
+						this.plugin.licenceApi,
+						this.plugin.licenceContext(),
+					);
+					this.plugin.data.licence = result.state;
+					await this.plugin.saveData(this.plugin.data);
+					new Notice(activationMessage(result.outcome));
+					this.display();
+				}),
+			);
 	}
 
 	/** Where a synced notebook lands and what it carries -- the two rows about the vault side. */
@@ -1195,10 +1427,10 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 		// mapped: unmapping feeds diffUnitTags, which orphans the row, and orphaning is index-only by
 		// design -- the folder would just silently stop updating. A silent refusal reads as a bug, so
 		// the reason is stated in place rather than by disabling the dropdown.
-		if (mappedTags.length >= FREE_TAG_LIMIT) {
+		if (mappedTags.length >= tagLimitFor(this.plugin.entitlement())) {
 			containerEl.createDiv({
 				cls: "tagged-sync-note",
-				text: "The free version syncs one tag. Remove the current mapping to choose a different one.",
+				text: TAG_CAP_MESSAGE,
 			});
 			for (const tag of unmappedTags) new Setting(containerEl).setName(tag).setDesc("Not synced.");
 			return;
@@ -1213,6 +1445,13 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					for (const path of folderPaths) dropdown.addOption(path, folderLabel(path));
 					dropdown.onChange(async (value) => {
 						if (!value) return;
+						// The one gated feature that exists today: a mapping past the free cap. This is the
+						// moment the licence is *used*, so it is the moment it is re-checked -- not on load,
+						// and never for a free user, who cannot reach this branch at all.
+						if (mappedTags.length >= FREE_TAG_LIMIT && (await this.plugin.refreshLicence()).tier === "free") {
+							this.display();
+							return;
+						}
 						mapping[tag] = value;
 						await persist();
 					});

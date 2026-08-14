@@ -55,6 +55,7 @@ describe("isListedBackend", () => {
 			id: "candidate",
 			label: "Candidate",
 			metered: false,
+			requiresLicence: false,
 			needsBackgroundConsent: false,
 			create: () => null,
 			...overrides,

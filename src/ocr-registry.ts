@@ -50,6 +50,19 @@ export interface OcrBackendEntry {
 	/** True when a run costs the user money per page — drives the auto-sync money gate. */
 	readonly metered: boolean;
 	/**
+	 * True when this backend is part of Tagged Sync Pro and refuses to run without a valid licence.
+	 *
+	 * A third flag rather than a reading of `metered`, for the same reason `needsBackgroundConsent` is
+	 * a third flag: the two coincide today and mean different things. `metered` is about the user's
+	 * money and gates unattended runs; this is about ours and gates the feature itself. A free metered
+	 * backend, or a paid one that costs nothing per page, would break whichever of them was made to
+	 * stand in for the other -- and it would break silently, by either charging someone for a free
+	 * backend or giving a paid one away.
+	 *
+	 * The plugin core still names no provider: the entry declares this about itself.
+	 */
+	readonly requiresLicence: boolean;
+	/**
 	 * True when running this in the background needs the user's say-so, whether or not it costs money.
 	 *
 	 * Separate from `metered` rather than a rename of it, which is the shape a rename would have
