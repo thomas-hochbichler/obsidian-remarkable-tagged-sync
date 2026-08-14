@@ -9,9 +9,23 @@ function documentEntry(overrides: Partial<Entry> = {}): Entry {
 		visibleName: "Notebook",
 		lastModified: "0",
 		pinned: false,
+		parent: "",
 		type: "DocumentType",
 		fileType: "notebook",
 		lastOpened: "0",
+		...overrides,
+	} as Entry;
+}
+
+function collectionEntry(overrides: Partial<Entry> = {}): Entry {
+	return {
+		id: "folder-1",
+		hash: "hash-folder-1",
+		visibleName: "Folder",
+		lastModified: "0",
+		pinned: false,
+		parent: "",
+		type: "CollectionType",
 		...overrides,
 	} as Entry;
 }
@@ -113,6 +127,40 @@ describe("enumerateNotebookTags", () => {
 		const notebooks = await enumerateNotebookTags(api);
 
 		expect(notebooks[0].pageTags).toEqual([{ pageId: "page-a", tag: "todo" }]);
+	});
+
+	it("inherits tags from every ancestor folder", async () => {
+		const outer = collectionEntry({
+			id: "folder-outer",
+			tags: [{ name: "obsidian", timestamp: 0 }],
+		});
+		const inner = collectionEntry({
+			id: "folder-inner",
+			parent: "folder-outer",
+			tags: [{ name: "journal", timestamp: 0 }],
+		});
+		const entry = documentEntry({
+			parent: "folder-inner",
+			tags: [{ name: "direct", timestamp: 0 }],
+		});
+		const api = fakeApi([outer, inner, entry], {
+			"doc-1": documentContent({ tags: [{ name: "content", timestamp: 0 }] }),
+		});
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].tags).toEqual(["direct", "content", "journal", "obsidian"]);
+	});
+
+	it("stops safely when the folder parent chain contains a cycle", async () => {
+		const first = collectionEntry({ id: "folder-1", parent: "folder-2", tags: ["one"] });
+		const second = collectionEntry({ id: "folder-2", parent: "folder-1", tags: ["two"] });
+		const entry = documentEntry({ parent: "folder-1" });
+		const api = fakeApi([first, second, entry], { "doc-1": documentContent() });
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].tags).toEqual(["one", "two"]);
 	});
 
 	it("skips non-document entries", async () => {

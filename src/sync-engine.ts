@@ -21,7 +21,7 @@ import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { getDocumentFiles, type DocumentFiles } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
 import { validateSourcePdf } from "./pdf-source";
-import { tagNames } from "./remarkable-tags";
+import { inheritedFolderTagNames, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
@@ -591,16 +591,25 @@ async function isBlockEdited(noteStore: NoteStore, row: SyncIndexRow | undefined
 	return blockHashOf(block) !== row.blockHash;
 }
 
-/** True if this notebook must be opened even though its device-side hash is unchanged, because a tag freshly mapped in settings already sits on it and has no row yet -- entry.tags costs nothing extra (it comes free with listItems). */
-function hasUncoveredMappedNotebookTag(
+/**
+ * True if an unchanged notebook must still be opened because its currently mapped notebook tags do
+ * not match its active rows. This catches both direct tags and inherited folder tags. Folder tag
+ * changes only update the collection hash, not each descendant document hash, so the ordinary
+ * per-document change gate cannot see additions, removals, or renames on its own.
+ */
+function hasNotebookTagStateToReconcile(
 	rows: Record<string, SyncIndexRow>,
 	tagRouter: TagRouter,
 	docId: string,
-	entryTags: Parameters<typeof tagNames>[0],
+	notebookTags: string[],
 ): boolean {
-	return tagNames(entryTags).some(
-		(tag) => tagRouter.resolveFolder(tag) !== null && rows[notebookSyncKey(docId, tag)] === undefined,
+	const current = new Set(notebookTags.filter((tag) => tagRouter.resolveFolder(tag) !== null));
+	const active = new Set(
+		Object.values(rows)
+			.filter((row) => row.docId === docId && row.pageId === null && row.status === "active")
+			.map((row) => row.tag),
 	);
+	return current.size !== active.size || [...current].some((tag) => !active.has(tag));
 }
 
 function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, status: SyncRowStatus): boolean {
@@ -763,12 +772,16 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	};
 
 	const entries = await api.listItems();
+	const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
 	const documents = entries.filter((entry) => entry.type === "DocumentType");
 	for (const [position, entry] of documents.entries()) {
 		// Also here, not just at the unit loops below: most documents are skipped by the level-2 gate
 		// without producing a unit at all, and a stop must not have to walk hundreds of them first.
 		if (shouldStop()) return stopHere();
 		report({ phase: "document", index: position + 1, total: documents.length, name: entry.visibleName });
+		const entryAndInheritedTags = [
+			...new Set([...tagNames(entry.tags), ...inheritedFolderTagNames(entry, entriesById)]),
+		];
 
 		const unchanged = findEntryHash(rows, entry.id) === entry.hash;
 		// Also reopen a doc with any orphaned row even on an unchanged hash -- otherwise a doc that
@@ -779,7 +792,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// network calls, never incorrect data. Same idea for a note deleted out from under an active row.
 		if (
 			unchanged &&
-			!hasUncoveredMappedNotebookTag(rows, tagRouter, entry.id, entry.tags) &&
+			!hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) &&
 			!hasRowWithStatus(rows, entry.id, "orphaned") &&
 			!hasStaleRender(rows, entry.id) &&
 			!(await hasMissingActiveNote(deps.noteStore, rows, entry.id))
@@ -797,7 +810,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			continue;
 		}
 
-		const notebookTags = [...new Set([...tagNames(entry.tags), ...tagNames(content.tags)])];
+		const notebookTags = [...new Set([...entryAndInheritedTags, ...tagNames(content.tags)])];
 		const mappedNotebookTags = notebookTags.filter((tag) => tagRouter.resolveFolder(tag) !== null);
 
 		const pageTags = content.pageTags ?? [];
