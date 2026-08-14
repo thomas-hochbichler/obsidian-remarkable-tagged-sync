@@ -26,6 +26,7 @@ const active: LicenceState = {
 	validatedAt: daysBefore(1),
 	revokedAt: null,
 	trialStartedAt: null,
+	endedNoticeShown: false,
 };
 
 describe("entitlementOf", () => {

@@ -17,6 +17,7 @@ const active: LicenceState = {
 	validatedAt: "2026-08-13T09:00:00.000Z",
 	revokedAt: null,
 	trialStartedAt: null,
+	endedNoticeShown: false,
 };
 
 const textOf = (state: LicenceState, now = NOW) => licenceStatusText(entitlementOf(state, now), state);

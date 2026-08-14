@@ -53,6 +53,12 @@ export interface LicenceState {
 	revokedAt: string | null;
 	/** ISO timestamp the trial began. Never reset by the plugin — there is no restart button. */
 	trialStartedAt: string | null;
+	/**
+	 * Set once the "your licence ended" notice has been shown, so it never nags again. Same shape as
+	 * `ocrUnavailableNoticeShown`. A reminder on every sync was rejected: it would punish someone who
+	 * got their money back, on every single run.
+	 */
+	endedNoticeShown: boolean;
 }
 
 export const NO_LICENCE: LicenceState = {
@@ -61,6 +67,7 @@ export const NO_LICENCE: LicenceState = {
 	validatedAt: null,
 	revokedAt: null,
 	trialStartedAt: null,
+	endedNoticeShown: false,
 };
 
 /** What the user is entitled to right now. `stale` drives the permanent, non-blocking settings line. */
@@ -129,8 +136,9 @@ export function nextLicenceCall(state: LicenceState, now: Date): "none" | "activ
  */
 export function applyOutcome(state: LicenceState, outcome: LicenceOutcome, now: Date): LicenceState {
 	switch (outcome) {
+		// A licence that comes back arms the notice again, so a second revocation is announced too.
 		case "valid":
-			return { ...state, validatedAt: now.toISOString(), revokedAt: null };
+			return { ...state, validatedAt: now.toISOString(), revokedAt: null, endedNoticeShown: false };
 		// A key Polar no longer knows is a withdrawn key. The distinction between "refunded" and
 		// "never existed" only matters when someone has just pasted one, and that path reports the
 		// outcome itself rather than storing it.
@@ -147,12 +155,19 @@ export function applyOutcome(state: LicenceState, outcome: LicenceOutcome, now: 
 
 /** Records a successful activation. `label` is the vault name, so Polar's own device list is readable. */
 export function withActivation(state: LicenceState, activationId: string, now: Date): LicenceState {
-	return { ...state, activationId, validatedAt: now.toISOString(), revokedAt: null };
+	return { ...state, activationId, validatedAt: now.toISOString(), revokedAt: null, endedNoticeShown: false };
 }
 
 /** Saves a pasted key. Kept even if the activation call cannot go out yet — see `licence-messages`. */
 export function withKey(state: LicenceState, key: string): LicenceState {
-	return { ...state, key: key.trim(), activationId: null, validatedAt: null, revokedAt: null };
+	return {
+		...state,
+		key: key.trim(),
+		activationId: null,
+		validatedAt: null,
+		revokedAt: null,
+		endedNoticeShown: false,
+	};
 }
 
 /** Forgets the licence on this vault, freeing its slot at Polar. The trial is not restored. */
