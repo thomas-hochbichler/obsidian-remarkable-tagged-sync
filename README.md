@@ -34,10 +34,12 @@ Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 - [How it works](#how-it-works)
 - [Install and set up](#install-and-set-up)
 - [Handwriting transcription](#handwriting-transcription)
+- [Tagged Sync Pro](#tagged-sync-pro)
 - [Annotated PDFs](#annotated-pdfs)
 - [What gets synced](#what-gets-synced)
 - [Limitations](#limitations)
 - [Privacy and permissions](#privacy-and-permissions)
+- [Support](#support)
 - [Reporting a problem](#reporting-a-problem)
 - [Requesting a feature](#requesting-a-feature)
 
@@ -118,10 +120,10 @@ confirmation tells you how long it will take on your machine, measured from your
 
 ![A synced note in Obsidian: the two handwritten pages rendered on top, the searchable transcript below them](docs/screenshot-synced-note.png)
 
-Three backends can read your handwriting, and **all three run entirely on your own machine** — no
-account, no API key, no page image or text ever leaving the device. Whichever you pick, each page is
-rendered to a temporary PNG under your OS temp directory (`os.tmpdir()`) and deleted as soon as it
-has been read.
+Three backends can read your handwriting **entirely on your own machine** — no account, no API key,
+no page image or text ever leaving the device. They are free, and they are the default. Whichever
+you pick, each page is rendered to a temporary PNG under your OS temp directory (`os.tmpdir()`) and
+deleted as soon as it has been read.
 
 | Backend | Where it runs | Set-up |
 |---|---|---|
@@ -129,9 +131,13 @@ has been read.
 | [A local server you run yourself](#a-local-server-you-run-yourself) | everywhere | install Ollama or LM Studio |
 | [Managed local model](#local-model-optional-opt-in) | Apple Silicon, Windows on ARM | one opt-in click, 5.5 GB download |
 
+Four **cloud** backends are also available, with [Tagged Sync Pro](#tagged-sync-pro). Those are the
+one case where a page image leaves your device: you choose them, they use your own API key, and they
+are off unless you turn them on.
+
 On **Windows and Linux** nothing transcribes by default: notes sync with the handwriting render
-embedded and no `## Transcript` text, until you set up one of the other two. You can also set the
-backend to **Off** on purpose if you only want the render.
+embedded and no `## Transcript` text, until you set up one of the other two local backends. You can
+also set the backend to **Off** on purpose if you only want the render.
 
 ### Apple Vision (macOS)
 
@@ -192,6 +198,52 @@ decides about someone else's binary. Windows on ARM uses a different build, whic
 Like any transcription it misreads sometimes, and it misreads *differently*: Vision's mistakes
 usually look broken on the page, while this model writes its mistakes as fluent text. Check
 anything that matters against the handwriting.
+
+## Tagged Sync Pro
+
+Everything described above is free and stays free. Two things are paid:
+
+- **Cloud transcription** — Anthropic, OpenAI, Google and OpenRouter as transcription backends, with
+  your own API key.
+- **Unlimited tag mappings.** The free version syncs one tag; Pro syncs as many as you like.
+
+**€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
+devices, at home and at work.
+
+**Try it for 14 days** — one click in the plugin settings, no key and no email needed. Nothing is
+sent anywhere to start a trial.
+
+**[Buy a licence](«POLAR PRODUCT URL»)** — you get your key on the page straight after paying, and
+by email as a backup. Paste it into the plugin settings.
+
+*14 days, no questions asked — just write to me. One person, up to 50 devices.*
+
+The licence is granted by me; the sale itself is handled by Polar, who are the seller. See
+[LICENSE-COMMERCIAL.md](./LICENSE-COMMERCIAL.md), [PRIVACY.md](./PRIVACY.md) and
+[IMPRESSUM.md](./IMPRESSUM.md).
+
+### What I do not control
+
+This plugin talks to the reMarkable cloud. I do not work for reMarkable. I have no contract with
+them and no advance warning of their plans. They can change or switch off their cloud at any time.
+This already happened: in April 2026 a format change broke every tool in this space.
+
+If it happens again:
+
+- I will work on a fix as fast as I can. **I cannot promise a date.**
+- **Your notes are safe.** Everything already synced is plain Markdown and PDF in your own vault. It
+  stays there. Nothing is deleted.
+- **I do not refund for the days the sync is broken**, because the cause is not mine.
+- If reMarkable shuts the cloud down for good, or changes it so that no fix is possible, **I will say
+  so in public and stop selling licences.** I will not take money for something that cannot work.
+
+The same applies to the transcription providers (Anthropic, OpenAI, Google, OpenRouter, Ollama, LM
+Studio). They set their own models, prices and rules. I do not control those either.
+
+Updates come through the Obsidian plugin store, to everyone, for as long as the plugin is sold. What
+I promise is effort, not dates.
+
+None of this changes your rights as a consumer under EU law.
 
 ## Annotated PDFs
 
@@ -321,6 +373,15 @@ This plugin makes network requests to exactly one place by default:
   reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
   your reMarkable account.
 
+**A transcription backend you choose yourself.** Which of these is contacted, if any, depends
+entirely on the backend selected in settings:
+
+- **Apple Vision** and **a local server you run yourself** — nothing leaves your machine.
+- **A cloud backend** (Anthropic, OpenAI, Google, OpenRouter — [Tagged Sync Pro](#tagged-sync-pro))
+  — the page image is sent to that provider, using **your own API key**, and the transcript comes
+  back. This is the one case where a page image leaves your device. You choose it, you pay for it,
+  and it is off unless you turn it on. The provider's own terms apply.
+
 Two more hosts are contacted **only if you opt in to the local model**
 ([see above](#local-model-optional-opt-in)), once, to download it — never during a sync, and never
 again once the files are on disk:
@@ -330,8 +391,13 @@ again once the files are on disk:
 - **`github.com`** — the `llama.cpp` engine, from release `b10295` of `ggml-org/llama.cpp`
   (11–12 MB depending on platform).
 
-Nothing is uploaded to either. Transcription itself is always local: no page image and no
-transcript ever leaves the device, whichever backend you use.
+Nothing is uploaded to either.
+
+**The licence check** — `polar.sh`, and only if you own or are trialling
+[Tagged Sync Pro](#tagged-sync-pro). It is called **only** when you use a paid feature, and **at
+most once every 7 days**; a valid answer is remembered in between. It carries your licence key, the
+activation id of this vault and the plugin's public organization id — no email address, no vault
+name, no note content. **A free user never causes this call.** Details in [PRIVACY.md](./PRIVACY.md).
 
 No telemetry or analytics of any kind are collected or sent by this plugin.
 
@@ -365,6 +431,18 @@ Two behaviours show up in Obsidian's automated plugin review, so they are spelle
   the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
   scanned for this, and the list never leaves your machine.
 
+## Support
+
+- Found a bug or have a question? Open a
+  [GitHub issue](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues). I
+  read every issue.
+- This is a one-person project. I answer as time allows, and I promise effort, not dates.
+- Payment, invoices and refunds are handled by Polar.
+- If your licence key did not arrive, or your report contains private data, email me at
+  support@hochbichler.com.
+
+Support is the same whether you paid or not. The money buys the feature, nothing else.
+
 ## Reporting a problem
 
 Open an issue at
@@ -393,4 +471,7 @@ npm test         # vitest
 
 ## License
 
-Apache-2.0 — see [LICENSE](./LICENSE). Third-party notices are in [NOTICE](./NOTICE).
+Apache-2.0 for the plugin, **except `pro/`**, which is under the PolyForm Strict License 1.0.0
+(noncommercial purposes only) — see [LICENSE](./LICENSE) and [pro/LICENSE](./pro/LICENSE). Paid
+commercial use is granted by [LICENSE-COMMERCIAL.md](./LICENSE-COMMERCIAL.md). Third-party notices
+are in [NOTICE](./NOTICE).
