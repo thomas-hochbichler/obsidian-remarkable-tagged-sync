@@ -60,10 +60,10 @@ function tagLimitFor(entitlement: Entitlement): number {
 }
 
 /**
- * Where a licence is bought. Empty until the Polar product exists (pro-release spec §8, phase 5);
- * the settings tab shows no Buy button while it is, rather than a link that goes nowhere.
+ * Where a licence is bought -- Polar's checkout, opened in the browser. A long-lived link tied to
+ * the product, so it survives price and description changes.
  */
-const PRO_BUY_URL = "";
+const PRO_BUY_URL = "https://polar.sh/checkout/polar_c_vP5U1oj0brsXAQfEp2glE9jMq1ALTPGsnGrpD3KFZ17";
 
 /** How long after `onload` to fire the on-launch auto-sync — a few seconds so auth/network are ready and startup isn't janked (auto-sync spec §Triggers). */
 const AUTO_SYNC_LAUNCH_DELAY_MS = 4_000;
@@ -917,7 +917,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			);
 		}
 
-		if (PRO_BUY_URL !== "") {
+		if (entitlement.tier !== "pro") {
 			statusRow.addButton((button) => button.setButtonText("Buy").onClick(() => window.open(PRO_BUY_URL)));
 			containerEl.createDiv({ cls: "tagged-sync-note", text: MONEY_BACK_MESSAGE });
 		}

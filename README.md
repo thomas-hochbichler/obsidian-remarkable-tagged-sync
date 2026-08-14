@@ -215,7 +215,7 @@ devices, at home and at work.
 **Try it for 14 days** — one click in the plugin settings, no key and no email needed. Nothing is
 sent anywhere to start a trial.
 
-**[Buy a licence](«POLAR PRODUCT URL»)** — you get your key on the page straight after paying, and
+**[Buy a licence](https://polar.sh/checkout/polar_c_vP5U1oj0brsXAQfEp2glE9jMq1ALTPGsnGrpD3KFZ17)** — you get your key on the page straight after paying, and
 by email as a backup. Paste it into the plugin settings.
 
 *14 days, no questions asked — just write to me. One person, up to 50 devices.*
