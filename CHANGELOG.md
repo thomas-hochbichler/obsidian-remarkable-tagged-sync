@@ -12,6 +12,50 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Tagged Sync Pro — €24, once.** Two things are now paid: transcription by a cloud model
+  (Anthropic, OpenAI, Google, OpenRouter, with your own API key), and mapping more than one tag to a
+  folder. Everything else stays free and stays free permanently: Apple Vision, a local server you
+  run yourself, the downloadable local model, annotated PDFs, margin notes, and the one tag mapping
+  that has always been there. **Nothing that worked yesterday is behind the new gate.**
+
+  There is no subscription and no expiry — the licence is bought once and does not run out. It
+  covers one person on up to 50 devices, at home and at work, and every future Pro feature is
+  included at no further cost.
+
+  **Try it for 14 days** from the plugin settings: one click, no key, no email, and nothing sent
+  anywhere to start it.
+
+- **The four cloud backends now ship to everyone**, locked rather than absent. Choosing one without
+  a licence falls back to the best free backend and says so, instead of failing silently or hiding
+  the option — you can see what Pro is before deciding whether you want it.
+
+### Changed
+
+- **The plugin now contacts one more host, and only if you own or are trialling Pro:** `polar.sh`,
+  to check the licence. It is called only when a paid feature is used, at most once every 7 days,
+  and it carries the licence key, this vault's activation id and a public organization id — no email
+  address, no vault name, no note content. **A free user never causes this call.** If it cannot be
+  reached, nothing locks: the last answer carries, and after 30 days the settings tab says so while
+  Pro keeps working.
+
+- **The README no longer claims that transcription always happens on your own machine.** That was
+  true while the cloud backends were not in the download; it is not true now, and the
+  [Network use](README.md#network-use) section says exactly which backend sends what, and where.
+
+- **The premium source is published.** `pro/` is in this repository under the PolyForm Strict
+  licence — readable and auditable by anyone, with commercial use granted by
+  [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md). The plugin is one build and one `main.js` again,
+  so store updates reach paying users like everyone else.
+
+### Fixed
+
+- **Three free backends would have disappeared for everyone.** The premium entry point had stopped
+  registering the local-server backends (Ollama, LM Studio, custom) — the only transcription a free
+  Windows or Linux user has. It never reached anyone because no premium build was ever released;
+  the merged entry point registers all four.
+
 ## [1.2.0] - 2026-08-13
 
 ### Added
