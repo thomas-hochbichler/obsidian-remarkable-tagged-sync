@@ -31,6 +31,7 @@ import {
 	OFFLINE_ACTIVATION_MESSAGE,
 	TAG_CAP_MESSAGE,
 	trialDaysLeft,
+	WITHDRAWN_KEY_MESSAGE,
 	WRONG_KEY_MESSAGE,
 } from "./licence-messages";
 import {
@@ -93,6 +94,8 @@ function activationMessage(outcome: LicenceOutcome): string {
 			return ACTIVATION_LIMIT_MESSAGE;
 		case "unreachable":
 			return OFFLINE_ACTIVATION_MESSAGE;
+		case "withdrawn":
+			return WITHDRAWN_KEY_MESSAGE;
 		// Nothing was ever active here, so an unrecognised key is a typo rather than a withdrawal.
 		default:
 			return WRONG_KEY_MESSAGE;

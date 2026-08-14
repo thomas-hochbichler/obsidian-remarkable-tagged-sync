@@ -30,13 +30,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export type LicenceOutcome =
 	/** The key is live and this activation is known. */
 	| "valid"
-	/**
-	 * The key is dead: withdrawn after a refund, or never existed. Polar cannot tell those apart —
-	 * every failure on the validate endpoint is a 404 — and the distinction does not need to be made
-	 * here: a key that was working and goes dead is recorded as a revocation, while one that fails at
-	 * the moment it is pasted is reported as a typo. The state, not the outcome, carries that.
-	 */
+	/** Polar has never heard of this key. At the paste field that means a typo. */
 	| "unknown-key"
+	/**
+	 * The key exists and is no longer usable — withdrawn after a refund or a reversal.
+	 *
+	 * Identical to `unknown-key` for the stored state: both end the licence. It is a separate outcome
+	 * only so the sentence can differ, and that matters at the paste field, where "check for a typo"
+	 * sends a refunded buyer hunting for a mistake they did not make.
+	 */
+	| "withdrawn"
 	/** The key is fine but this activation is gone — someone freed the slot. */
 	| "unknown-activation"
 	/** All 50 activations are in use. */
@@ -146,6 +149,7 @@ export function applyOutcome(state: LicenceState, outcome: LicenceOutcome, now: 
 		// "never existed" only matters when someone has just pasted one, and that path reports the
 		// outcome itself rather than storing it.
 		case "unknown-key":
+		case "withdrawn":
 			return { ...state, revokedAt: now.toISOString() };
 		case "unknown-activation":
 			return { ...state, activationId: null };

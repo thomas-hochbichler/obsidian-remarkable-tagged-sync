@@ -18,6 +18,24 @@ function stubFetch(...responses: Response[]) {
 const ok = (body: unknown = {}) => new Response(JSON.stringify(body), { status: 200 });
 const status = (code: number) => new Response(null, { status: code });
 
+// Polar's real bodies, copied from live calls on 2026-08-14. The two 404s differ only in `detail`.
+const NEVER_EXISTED = new Response(JSON.stringify({ error: "ResourceNotFound", detail: "Not found" }), { status: 404 });
+const REVOKED_404 = new Response(
+	JSON.stringify({ error: "ResourceNotFound", detail: "License key is no longer active." }),
+	{ status: 404 },
+);
+const REVOKED_403 = new Response(
+	JSON.stringify({
+		error: "NotPermitted",
+		detail: "License key is no longer active. This license key can not be activated.",
+	}),
+	{ status: 403 },
+);
+const LIMIT_403 = new Response(
+	JSON.stringify({ error: "NotPermitted", detail: "License key activation limit already reached" }),
+	{ status: 403 },
+);
+
 describe("validate", () => {
 	it("sends the key, the activation and the public organization id", async () => {
 		const { impl, calls } = stubFetch(ok());
@@ -42,7 +60,19 @@ describe("validate", () => {
 	});
 
 	it("calls the key dead only when it fails on its own too", async () => {
-		const { impl } = stubFetch(status(404), status(404));
+		const { impl } = stubFetch(status(404), NEVER_EXISTED);
+		expect(await createPolarLicenceApi(ORG, impl).validate("TSPRO-1", "act_1")).toBe("unknown-key");
+	});
+
+	// Both 404s. The only thing separating a typo from a refund is the `detail` text.
+	it("tells a withdrawn key apart from one that never existed", async () => {
+		const { impl } = stubFetch(status(404), REVOKED_404);
+		expect(await createPolarLicenceApi(ORG, impl).validate("TSPRO-1", "act_1")).toBe("withdrawn");
+	});
+
+	// The fallback must be the blunter sentence, never a wrong claim that someone was refunded.
+	it("falls back to unknown-key when the body cannot be read", async () => {
+		const { impl } = stubFetch(status(404), new Response("<html>gateway</html>", { status: 404 }));
 		expect(await createPolarLicenceApi(ORG, impl).validate("TSPRO-1", "act_1")).toBe("unknown-key");
 	});
 
@@ -81,26 +111,23 @@ describe("activate", () => {
 
 	// Polar refuses with 403 both when the slots are full and when the key is no longer active. Told
 	// apart wrongly, someone whose licence was withdrawn reads that their key is on fifty devices.
-	it("asks what a 403 meant, and calls a full licence full", async () => {
-		const { impl, calls } = stubFetch(status(403), ok());
-		expect(await createPolarLicenceApi(ORG, impl).activate("TSPRO-1", "v")).toEqual({
+	it("calls a full licence full, and a withdrawn one withdrawn", async () => {
+		const full = stubFetch(LIMIT_403);
+		expect(await createPolarLicenceApi(ORG, full.impl).activate("TSPRO-1", "v")).toEqual({
 			outcome: "activation-limit",
 		});
-		expect(calls[1].url).toContain("/validate");
-		expect(calls[1].body).toEqual({ organization_id: ORG, key: "TSPRO-1" });
-	});
+		expect(full.calls).toHaveLength(1);
 
-	it("calls a withdrawn key withdrawn, not full", async () => {
-		const { impl } = stubFetch(status(403), status(404));
-		expect(await createPolarLicenceApi(ORG, impl).activate("TSPRO-1", "v")).toEqual({
-			outcome: "unknown-key",
+		const gone = stubFetch(REVOKED_403);
+		expect(await createPolarLicenceApi(ORG, gone.impl).activate("TSPRO-1", "v")).toEqual({
+			outcome: "withdrawn",
 		});
 	});
 
-	it("treats a fault while asking as no answer", async () => {
-		const { impl } = stubFetch(status(403), status(500));
+	it("falls back to the limit message when the body cannot be read", async () => {
+		const { impl } = stubFetch(status(403));
 		expect(await createPolarLicenceApi(ORG, impl).activate("TSPRO-1", "v")).toEqual({
-			outcome: "unreachable",
+			outcome: "activation-limit",
 		});
 	});
 });

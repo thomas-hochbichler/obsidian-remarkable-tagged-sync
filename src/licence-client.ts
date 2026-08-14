@@ -23,6 +23,32 @@ export const POLAR_ORGANIZATION_ID = "e1f4bd71-6fb3-4f0f-a602-f42985a89e15";
 
 type Fetch = typeof fetch;
 
+/** Polar's wording for a key that exists and cannot be used. Read, never relied on — see below. */
+const NOT_ACTIVE = "no longer active";
+
+/**
+ * Whether the error body says what we are asking about.
+ *
+ * ⚠️ This reads an undocumented `detail` string, which is normally the wrong thing to build on. It is
+ * acceptable in exactly this shape because of what it decides: **only which sentence a user reads.**
+ * Every path that calls it refuses either way, and the match is positive rather than negative, so if
+ * Polar rewords the message this falls back to the older, blunter wording rather than to a wrong
+ * claim. Nothing about locking, unlocking or storing state depends on it.
+ */
+async function detailSays(response: Response, phrase: string): Promise<boolean> {
+	try {
+		const body = (await response.json()) as { detail?: unknown };
+		return typeof body.detail === "string" && body.detail.includes(phrase);
+	} catch {
+		return false;
+	}
+}
+
+/** A 404 from validate: Polar answers the same for a key that never existed and one that is dead. */
+async function deadKeyReason(response: Response): Promise<LicenceOutcome> {
+	return (await detailSays(response, NOT_ACTIVE)) ? "withdrawn" : "unknown-key";
+}
+
 export function createPolarLicenceApi(
 	organizationId: string = POLAR_ORGANIZATION_ID,
 	fetchImpl: Fetch = fetch,
@@ -55,7 +81,7 @@ export function createPolarLicenceApi(
 
 			const keyAlone = await post("validate", { key });
 			if (keyAlone.ok) return "unknown-activation";
-			if (keyAlone.status === 404) return "unknown-key";
+			if (keyAlone.status === 404) return await deadKeyReason(keyAlone);
 			return "unreachable";
 		},
 
@@ -65,10 +91,9 @@ export function createPolarLicenceApi(
 		 * Polar refuses an activation with 403 both when all 50 slots are taken and when the key is no
 		 * longer active — `activate` checks `is_active()` and raises the same status either way. Read
 		 * as "the limit is full", someone whose licence was withdrawn after a refund is told their key
-		 * is on fifty devices, which is untrue and unactionable.
+		 * is on fifty devices, which is untrue and points at a fix that does not exist.
 		 *
-		 * So a 403 asks the same narrowing question the validate path asks: is the key itself alive?
-		 * If it validates on its own, the slots really are full. If it does not, the key is dead.
+		 * The body says which. See {@link detailSays} for why reading it is acceptable here.
 		 */
 		async activate(key, label): Promise<ActivationResult> {
 			const response = await post("activate", { key, label });
@@ -78,11 +103,10 @@ export function createPolarLicenceApi(
 				return { outcome: "valid", activationId: body.id };
 			}
 			if (response.status === 404) return { outcome: "unknown-key" };
+			// The remaining 403 causes are all about activations, so an unreadable body lands on the
+			// limit message -- which is what this said before the body was read at all.
 			if (response.status === 403) {
-				const keyAlone = await post("validate", { key });
-				if (keyAlone.ok) return { outcome: "activation-limit" };
-				if (keyAlone.status === 404) return { outcome: "unknown-key" };
-				return { outcome: "unreachable" };
+				return { outcome: (await detailSays(response, NOT_ACTIVE)) ? "withdrawn" : "activation-limit" };
 			}
 			return { outcome: "unreachable" };
 		},

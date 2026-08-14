@@ -111,6 +111,15 @@ export function licenceEndedNotice(reason: "revoked" | "trial-ended", fallbackBa
 export const WRONG_KEY_MESSAGE =
 	"That key was not recognised. Check for a typo, or paste it again from your purchase page.";
 
+/**
+ * A key that exists and has been withdrawn. Kept apart from {@link WRONG_KEY_MESSAGE} because
+ * telling a refunded buyer to look for a typo sends them hunting for a mistake they did not make,
+ * and then to the support address anyway — one round trip later and less kindly.
+ */
+export const WITHDRAWN_KEY_MESSAGE =
+	"This licence is no longer active. A licence is withdrawn when the purchase was refunded or " +
+	"reversed. If you think that is wrong, write to support@hochbichler.com.";
+
 export const ACTIVATION_LIMIT_MESSAGE =
 	`This licence is already active on ${ACTIVATION_LIMIT} devices. Free one in your account, then activate again.`;
 
