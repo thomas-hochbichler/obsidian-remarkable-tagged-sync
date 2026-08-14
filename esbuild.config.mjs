@@ -1,5 +1,4 @@
 import esbuild from "esbuild";
-import fs from "fs";
 import process from "process";
 // Node's own list, via `node:module`. The `builtin-modules` package did the same thing and is
 // flagged by the store's `depend/ban-dependencies` check as a needless dependency.
@@ -13,16 +12,10 @@ if you want to view the source, visit the plugin's github repository
 
 const prod = process.argv[2] === "production";
 
-// `src/entry.ts` registers the OCR backends that ship here, and it is what a plain build of this
-// repo produces -- what you see is what users get. An optional `pro/` folder, present only in the
-// maintainer's working copy, registers additional backends on top; building it is an explicit
-// opt-in via TAGGED_SYNC_BUILD=pro (which fails loudly if `pro/` is absent, rather than silently
-// producing the free build).
-const pro = process.env.TAGGED_SYNC_BUILD === "pro";
-if (pro && !fs.existsSync("pro/entry.ts")) {
-	throw new Error("TAGGED_SYNC_BUILD=pro but pro/entry.ts does not exist in this checkout");
-}
-const entryPoint = pro ? "pro/entry.ts" : "src/entry.ts";
+// One entry point and one output. `src/entry.ts` registers every backend, including the paid ones
+// in `pro/`, which are unlocked at runtime by the licence rather than by which file was built. What
+// you see here is what users get.
+const entryPoint = "src/entry.ts";
 console.log(`entry: ${entryPoint}`);
 
 const context = await esbuild.context({
@@ -70,11 +63,7 @@ const context = await esbuild.context({
 	target: "es2020",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
-	// The pro build gets its own output path. Both builds used to write `main.js`, which is the
-	// release asset -- so a pro build left premium code sitting in the folder a release is cut
-	// from. Git cannot leak it (`main.js` and `main.pro.js` are both ignored), but a hand-uploaded
-	// asset could. Separate paths remove the risk class instead of watching for it.
-	outfile: pro ? "main.pro.js" : "main.js",
+	outfile: "main.js",
 });
 
 if (prod) {

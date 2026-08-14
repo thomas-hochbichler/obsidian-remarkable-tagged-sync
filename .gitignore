@@ -1,7 +1,5 @@
 node_modules/
 main.js
-# The pro overlay's build output (esbuild.config.mjs). Premium code -- never commit it.
-main.pro.js
 *.js.map
 data.json
 test/
@@ -10,8 +8,8 @@ docs/_archive/
 
 # --- Private. Never commit anything below this line. ---
 #
-# This repo is public. `pro/` is the premium OCR block: published once under Apache-2.0, it is
-# free forever, so a single mistake here is not repairable.
+# This repo is public. `pro/` used to sit below this line; it is published now, under PolyForm
+# Strict 1.0.0 (see `pro/LICENSE`). What remains here is the measurement corpus and the working
 #
 # This file is no longer the only protection. Three checks read the same list, and none of them
 # reads it from HERE -- it lives in `scripts/private-paths.mjs`, on purpose, so that editing this
@@ -25,10 +23,9 @@ docs/_archive/
 # lines below are still what keeps the mistake from being made.
 #
 # `git add -A` and `git commit -a` respect these rules. `git add -f` does NOT -- except where the
-# folder is a nested git repo (`pro/`, `.scratch/`, `tools/`), which stages nothing at all. Do not
+# folder is a nested git repo (`.scratch/`, `tools/`), which stages nothing at all. Do not
 # force-add anything below, and do not delete a line to "just check something".
 
-pro/
 .scratch/
 .scratch-inspect/
 .claude/

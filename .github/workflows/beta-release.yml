@@ -77,10 +77,9 @@ jobs:
       - name: Tests
         run: npx vitest run
 
-      # --- gate: build the free bundle ---------------------------------------------------------
+      # --- gate: build -------------------------------------------------------------------------
       #
-      # TAGGED_SYNC_BUILD is not set, and `pro/` does not exist in this checkout, so this is
-      # structurally the free build -- same property as release.yml.
+      # One entry point, one output -- same property as release.yml, and the same bundle scan.
       - name: Build
         run: npm run build
 

@@ -132,8 +132,8 @@ jobs:
       - name: Typecheck
         run: npx tsc -noEmit -skipLibCheck
 
-      # 17 files, 211 tests. `pro/` is not in this repo and is not covered -- a known, accepted
-      # gap; those 66 tests run locally via `npm run test:pro`.
+      # `pro/` is in this repo and in this run. It used to be excluded as a known, accepted gap;
+      # leaving it out now would mean CI stopped covering the paid half on the day it went on sale.
       - name: Tests
         run: npx vitest run
 

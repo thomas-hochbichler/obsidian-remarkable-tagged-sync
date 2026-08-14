@@ -9,7 +9,6 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "test": "vitest run",
-    "test:pro": "TAGGED_SYNC_TEST=pro vitest run",
     "lint": "eslint .",
     "generate:kaitai": "node src/kaitai/generate.mjs",
     "inspect:rm": "esbuild scripts/inspect-rm.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-rm.cjs && node /tmp/tagged-sync-inspect-rm.cjs",
