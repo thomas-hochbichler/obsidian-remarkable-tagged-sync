@@ -10,6 +10,8 @@ docs/_archive/
 #
 # This repo is public. `pro/` used to sit below this line; it is published now, under PolyForm
 # Strict 1.0.0 (see `pro/LICENSE`). What remains here is the measurement corpus and the working
+# notes: real handwriting transcripts live under `.scratch/`, with employer ticket ids and
+# colleagues' names in them. Publishing one is not repairable.
 #
 # This file is no longer the only protection. Three checks read the same list, and none of them
 # reads it from HERE -- it lives in `scripts/private-paths.mjs`, on purpose, so that editing this
