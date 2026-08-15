@@ -73,7 +73,20 @@ jobs:
       #
       # This DETECTS, it does not prevent -- a wrong address is already pushed by the time this
       # runs. Accepted knowingly; the repo has no hook infrastructure.
+      #
+      # It guards MY address, so it has to stand down where the author is not me. Two such places,
+      # and every commit still passes through the gate at least once:
+      #   - a pull request from a fork. An outside contributor's address is theirs to choose, and
+      #     demanding mine means no outside contribution can ever go green. PR #40, the first one
+      #     this repo ever got, is what found that out.
+      #   - a push to `main`. `main` takes squash-merges only, so its new commit is either mine --
+      #     already checked on the branch push and again on the PR -- or a merged contributor's,
+      #     stood down from above. Checking again here only turns `main` red after the merge.
       - name: Git identity
+        if: >-
+          github.ref_name != 'main'
+          && (github.event_name != 'pull_request'
+              || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           EXPECTED: thomas@hochbichler.com
           BEFORE: ${{ github.event.before }}
