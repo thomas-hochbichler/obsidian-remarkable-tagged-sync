@@ -1,5 +1,7 @@
 # Tagged Sync for reMarkable
 
+**[taggedsync.com](https://taggedsync.com)** — the short version, in pictures.
+
 > **Disclaimer:** Tagged Sync for reMarkable is an unofficial, community-built plugin. It is not
 > affiliated with, endorsed by, or supported by reMarkable AS. "reMarkable" is a trademark of
 > reMarkable AS, used only to describe compatibility.
