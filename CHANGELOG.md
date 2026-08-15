@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-08-15
+
 ### Fixed
 
 - **The Buy button led nowhere.** The checkout address shipped in 1.3.0 and 1.4.0 was a Polar
