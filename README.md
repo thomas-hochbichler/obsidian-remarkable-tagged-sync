@@ -28,12 +28,67 @@ Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
 **Desktop only** · **one-way** (reMarkable → Obsidian) · never writes back to your tablet.
 
+## What makes it different
+
+Every feature at a glance, Free against Pro. Most rows link to the section that explains them.
+
+| Feature | Free | Pro |
+|---|:---:|:---:|
+| **Direction & safety** | | |
+| [reMarkable → Obsidian sync](#how-it-works) | ✓ | ✓ |
+| [One-way by design — never writes to your tablet](#what-gets-synced) | ✓ | ✓ |
+| [No reMarkable Connect subscription needed](#install-and-set-up) | ✓ | ✓ |
+| [Your edits are never silently overwritten](#writing-your-own-notes) | ✓ | ✓ |
+| [Never deletes a synced note](#what-gets-synced) | ✓ | ✓ |
+| [Stop a running sync](#stopping-a-sync) | ✓ | ✓ |
+| **What arrives in your vault** | | |
+| [Handwritten notebooks, page render embedded](#what-gets-synced) | ✓ | ✓ |
+| [Handwriting → searchable text](#handwriting-transcription) | ✓ | ✓ |
+| [PDF highlights extracted as quotes, with the sentence around them](#annotated-pdfs) | ✓ | ✓ |
+| [Pen marks — underline, circle — count as annotations](#annotated-pdfs) | ✓ | ✓ |
+| [Margin notes transcribed and placed at the passage they point at](#the-notes-you-write-in-the-margin) | ✓ | ✓ |
+| [Block IDs — every quote linkable on its own](#annotated-pdfs) | ✓ | ✓ |
+| [Typed text (Type Folio) kept exact, never transcribed](#typed-text-and-the-type-folio) | ✓ | ✓ |
+| [Notebook highlights from the tablet](#what-gets-synced) | ✓ | ✓ |
+| **Transcription backends** | | |
+| [Apple Vision — zero set-up on macOS](#apple-vision-macos) | ✓ | ✓ |
+| [A local server you run yourself (Ollama, LM Studio)](#a-local-server-you-run-yourself) | ✓ | ✓ |
+| [Managed local model — one click, checked hashes](#local-model-optional-opt-in) | ✓ | ✓ |
+| [Cloud transcription with your own API key](#tagged-sync-pro) | — | ✓ |
+| [Re-transcribe notes you already synced](#re-transcribing) | ✓ | ✓ |
+| **Organization** | | |
+| [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
+| [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
+| [A tagged folder hands its tag to everything inside](#what-gets-synced) | ✓ | ✓ |
+| **Sync behaviour** | | |
+| [Automatic sync — on launch, plus an interval](#automatic-sync) | ✓ | ✓ |
+| Incremental sync | ✓ | ✓ |
+| **Platforms** | | |
+| [Windows, macOS, Linux](#install-and-set-up) | ✓ | ✓ |
+| [reMarkable 1, 2, Paper Pro, Paper Pure](#works-with) | ✓ | ✓ |
+
+Pro is **€24, once** — no subscription. See [Tagged Sync Pro](#tagged-sync-pro).
+
+## Works with
+
+| Device / accessory | Status |
+|---|---|
+| reMarkable 2 | ✓ |
+| reMarkable 1 | ✓ |
+| reMarkable Paper Pro | ✓ — its larger canvas, its colour palette, and the shader highlighter are all handled; the fixes came from Paper Pro users' own files |
+| reMarkable Paper Pure | ✓ |
+| **Type Folio** (typed text) | ✓ — taken from the file exactly as you typed it, [never transcribed](#typed-text-and-the-type-folio) |
+| "Read on reMarkable" browser extension | ✓ — a sent article counts as [a document to mark up](#typed-text-and-the-type-folio) |
+
+Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
+
 ## Contents
 
 - [Before you install](#before-you-install)
 - [How it works](#how-it-works)
 - [Install and set up](#install-and-set-up)
 - [Handwriting transcription](#handwriting-transcription)
+- [Typed text and the Type Folio](#typed-text-and-the-type-folio)
 - [Tagged Sync Pro](#tagged-sync-pro)
 - [Annotated PDFs](#annotated-pdfs)
 - [What gets synced](#what-gets-synced)
@@ -47,18 +102,18 @@ Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
 Two limits, so you know them up front:
 
-- **This free version syncs one tag.** You map one reMarkable tag to one vault folder. You can
-  change or remove that mapping at any time. The one-tag limit is a limit of the free version: a
-  paid version that lifts it is planned but not yet available. Everything described in this
-  README works without payment.
+- **The free version syncs one tag.** You map one reMarkable tag to one vault folder. You can
+  change or remove that mapping at any time. Syncing more than one tag is what
+  [Tagged Sync Pro](#tagged-sync-pro) is for — €24 once, with a 14-day trial. Everything else in
+  this README works without payment, [cloud transcription](#tagged-sync-pro) aside.
 - **Text transcription is built in on macOS 13 or later.** Everywhere else — Windows, Linux, older
   Macs — you can transcribe by pointing the plugin at a local AI server you run yourself
   ([Ollama, LM Studio, or any OpenAI-compatible server](#a-local-server-you-run-yourself)), or by
   using the optional [managed local model](#local-model-optional-opt-in) where your machine
   qualifies. With none of those set up, your notes still sync with the full handwriting render
-  embedded — but there is no transcript. **Marked-up PDFs are unaffected:** their
-  [digest](#annotated-pdfs) is built from the PDF's own text and needs no transcription at all, so it
-  works everywhere.
+  embedded — but there is no transcript. **Marked-up PDFs and [typed
+  documents](#typed-text-and-the-type-folio) are unaffected:** both are read from the file itself
+  and need no transcription at all, so they work everywhere.
 
 ## How it works
 
@@ -199,6 +254,28 @@ Like any transcription it misreads sometimes, and it misreads *differently*: Vis
 usually look broken on the page, while this model writes its mistakes as fluent text. Check
 anything that matters against the handwriting.
 
+## Typed text and the Type Folio
+
+Not everything on a reMarkable is ink. Text you type with the **Type Folio** — or send over with
+the **"Read on reMarkable"** browser extension — is stored inside the notebook as text, not as
+strokes. The plugin treats it accordingly:
+
+- **Typed text is never transcribed.** It is taken from the file exactly as you typed it, so no
+  typed word can come out misspelled.
+- **Where it lands in a transcript depends on the backend.** [Apple Vision](#apple-vision-macos)
+  reads one page at a time and knows where each line sits, so your typed text stays where it is on
+  the page, between the handwriting around it — a typed heading over handwritten notes stays a
+  heading over those notes. The other backends transcribe without those positions, so typed text is
+  added at the end of its own page instead.
+- **A typed page you marked up is a document.** A page whose typed text reads like a document — an
+  article sent from the browser, prose you typed with the Type Folio — is treated like a PDF: what
+  you highlight or underline on it arrives as a [digest](#annotated-pdfs), quotes, sections, block
+  IDs and all. A typed line or two inside a handwritten page stays part of the transcript instead;
+  the plugin tells the two apart by how the text is set, not by guessing.
+- **Such a page needs no transcription at all.** Its digest is read from the file, exactly as a
+  marked-up PDF's is, so it arrives on Windows and Linux with no transcription backend set up.
+- **Highlights on typed text** reach your vault like any other highlight.
+
 ## Tagged Sync Pro
 
 Everything described above is free and stays free. Two things are paid:
@@ -254,10 +331,10 @@ sentence around them, grouped under the section of the document they came from.
 
 ![A digest in Obsidian: the annotated PDF embedded on top, below it the quotes grouped under their section headings, each linking back to its page](docs/screenshot-digest.png)
 
-**Both the highlighter and the pen count.** A passage you marked with the highlighter and one you
-underlined or circled with the pen arrive the same way — a quote with its surrounding sentence, the
-section it sits under, and a link to the page. Marking with the pen used to reach your vault as
-nothing at all.
+**Both the highlighter and the pen count.** A passage you marked with the highlighter — or with the
+Paper Pro's shader — and one you underlined or circled with the pen arrive the same way: a quote
+with its surrounding sentence, the section it sits under, and a link to the page. Marking with the
+pen used to reach your vault as nothing at all.
 
 **None of this goes through transcription.** The words come from the PDF's own text, not from a
 picture of it, so the digest works the same on Windows and Linux as it does on a Mac — and no marked
@@ -315,6 +392,10 @@ it does not — so a document without bookmarks can file a quote under the wrong
   transcription is off, fails, or finds nothing, the note is still created with the render and no
   `## Transcript` section — the render is never lost. An annotated PDF gets a
   [`## Digest`](#annotated-pdfs) instead.
+- **[Typed text](#typed-text-and-the-type-folio) is taken from the file, never transcribed**, and
+  joins the transcript of the page it is on — at the position it sits at with Apple Vision, at the
+  end of the page with the other backends. A typed page that reads like a document gets the digest
+  treatment instead, like a PDF.
 - **The transcript is split by page.** Each page that produced text gets its own heading linking
   into that page of the embedded PDF, so a long notebook stays navigable. Pages with nothing to read
   are named once at the end instead of taking a heading each, and a page transcription could not
@@ -350,7 +431,10 @@ stays where it is and is still preserved on every sync — new notes just no lon
   come out as plain lines.
 - **Windows on x64 and Linux get the render and no handwriting transcript out of the box** —
   [a local server you run yourself](#a-local-server-you-run-yourself) is the only route there. The
-  [digest of a marked-up PDF](#annotated-pdfs) is unaffected and works everywhere.
+  [digest of a marked-up PDF](#annotated-pdfs) and of a [typed
+  document](#typed-text-and-the-type-folio) are unaffected and work everywhere: both are read from
+  the file, not transcribed. Typed text on a handwritten page needs a backend like any other
+  transcript, since it is the transcript it joins.
 - **A PDF you only wrote on syncs with the render and no text.** The digest quotes what you marked;
   handwriting on the page is not read.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
