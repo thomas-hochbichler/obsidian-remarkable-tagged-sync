@@ -30,22 +30,44 @@ Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
 ## What makes it different
 
-- **A tag decides where things go.** Tag a notebook, a page, a PDF, or a whole folder on the
-  tablet, and it syncs into the vault folder you mapped — nothing untagged is touched. See
-  [How it works](#how-it-works).
-- **The pen counts as an annotation.** A passage you underlined or circled arrives as a quote with
-  the sentence around it, exactly like a highlight. See [Annotated PDFs](#annotated-pdfs).
-- **Every quote is linkable on its own.** Each annotation carries a stable block ID —
-  `![[My Book^hl-d449a3]]` embeds that one passage anywhere in your vault, and the ID survives
-  every sync. See [Annotated PDFs](#annotated-pdfs).
-- **Margin notes arrive where you wrote them.** What you wrote beside the text is transcribed and
-  placed under the section — or beside the sentence — it points at, with the handwriting itself one
-  press away. See [The notes you write in the margin](#the-notes-you-write-in-the-margin).
-- **Transcription that never leaves your machine.** Apple Vision with nothing to configure, a local
-  server you run yourself, or an optional managed local model. Cloud transcription exists, but only
-  as a paid opt-in with your own key. See [Handwriting transcription](#handwriting-transcription).
-- **Your notes are safe.** The plugin never writes to your tablet, never deletes a synced note, and
-  refuses to overwrite a note you edited. See [What gets synced](#what-gets-synced).
+Every feature at a glance, Free against Pro. Each row links to the section that explains it.
+
+| Feature | Free | Pro |
+|---|:---:|:---:|
+| **Direction & safety** | | |
+| [reMarkable → Obsidian sync](#how-it-works) | ✓ | ✓ |
+| [One-way by design — never writes to your tablet](#what-gets-synced) | ✓ | ✓ |
+| [No reMarkable Connect subscription needed](#install-and-set-up) | ✓ | ✓ |
+| [Your edits are never silently overwritten](#writing-your-own-notes) | ✓ | ✓ |
+| [Never deletes a synced note](#what-gets-synced) | ✓ | ✓ |
+| [Stop a running sync](#stopping-a-sync) | ✓ | ✓ |
+| **What arrives in your vault** | | |
+| [Handwritten notebooks, page render embedded](#what-gets-synced) | ✓ | ✓ |
+| [Handwriting → searchable text](#handwriting-transcription) | ✓ | ✓ |
+| [PDF highlights extracted as quotes, with the sentence around them](#annotated-pdfs) | ✓ | ✓ |
+| [Pen marks — underline, circle — count as annotations](#annotated-pdfs) | ✓ | ✓ |
+| [Margin notes transcribed and placed at the passage they point at](#the-notes-you-write-in-the-margin) | ✓ | ✓ |
+| [Block IDs — every quote linkable on its own](#annotated-pdfs) | ✓ | ✓ |
+| [Typed text (Type Folio) kept exact, never transcribed](#typed-text-and-the-type-folio) | ✓ | ✓ |
+| [Notebook highlights from the tablet](#what-gets-synced) | ✓ | ✓ |
+| **Transcription backends** | | |
+| [Apple Vision — zero set-up on macOS](#apple-vision-macos) | ✓ | ✓ |
+| [A local server you run yourself (Ollama, LM Studio)](#a-local-server-you-run-yourself) | ✓ | ✓ |
+| [Managed local model — one click, checked hashes](#local-model-optional-opt-in) | ✓ | ✓ |
+| [Cloud transcription with your own API key](#tagged-sync-pro) | — | ✓ |
+| [Re-transcribe notes you already synced](#re-transcribing) | ✓ | ✓ |
+| **Organization** | | |
+| [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
+| [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
+| [A tagged folder hands its tag to everything inside](#what-gets-synced) | ✓ | ✓ |
+| **Sync behaviour** | | |
+| [Automatic sync — on launch, plus an interval](#automatic-sync) | ✓ | ✓ |
+| Incremental sync | ✓ | ✓ |
+| **Platforms** | | |
+| [Windows, macOS, Linux](#install-and-set-up) | ✓ | ✓ |
+| [reMarkable 1, 2, Paper Pro, Paper Pure](#works-with) | ✓ | ✓ |
+
+Pro is **€24, once** — no subscription. See [Tagged Sync Pro](#tagged-sync-pro).
 
 ## Works with
 
