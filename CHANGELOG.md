@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-15
+
 ### Added
 
 - **A tag on a folder now syncs everything inside it.** reMarkable keeps a folder's tag on the
