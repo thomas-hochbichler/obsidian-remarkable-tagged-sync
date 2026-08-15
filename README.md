@@ -62,7 +62,7 @@ Two limits, so you know them up front:
 
 ## How it works
 
-1. Tag a notebook, a PDF, or a single page on your reMarkable — e.g. `sync`.
+1. Tag a notebook, a PDF, a single page, or a whole folder on your reMarkable — e.g. `sync`.
 2. It syncs to the reMarkable cloud as usual.
 3. In Obsidian, map that tag to a vault folder in the plugin settings.
 4. Run **Sync now** (or let automatic sync do it).
@@ -79,8 +79,8 @@ is unsupported), and a reMarkable account with cloud sync switched on.
 2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
    `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
    **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
-3. Click **Discover tags** to scan your reMarkable notebooks and pages for tags, then map the
-   tag you want to sync to a vault folder. Only a mapped tag is synced — an unmapped tag is
+3. Click **Discover tags** to scan your reMarkable notebooks, pages and folders for tags, then map
+   the tag you want to sync to a vault folder. Only a mapped tag is synced — an unmapped tag is
    simply not selected, not lost.
 4. Click **Sync now**.
 
@@ -306,6 +306,10 @@ it does not — so a document without bookmarks can file a quote under the wrong
 - A notebook tagged with a mapped tag syncs as one note for the whole notebook.
 - An individual page tagged with a mapped tag syncs as its own note, independent of any
   notebook-level tag.
+- A **folder** tagged with a mapped tag hands that tag to everything inside it — every notebook and
+  PDF, and the ones in folders nested below as well. Each of them then syncs exactly as if you had
+  tagged it yourself. One tag can therefore bring in a great deal at once, so look at how much sits
+  under a folder before you tag it — with a cloud backend, transcribing all of it costs money.
 - A handwritten notebook's note has the rendered PDF embedded, then a `## Highlights` section (one
   quote callout per page, if you highlighted anything on the tablet), then the `## Transcript`. If
   transcription is off, fails, or finds nothing, the note is still created with the render and no
