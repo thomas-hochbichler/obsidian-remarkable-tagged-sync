@@ -102,10 +102,10 @@ Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 
 Two limits, so you know them up front:
 
-- **This free version syncs one tag.** You map one reMarkable tag to one vault folder. You can
-  change or remove that mapping at any time. The one-tag limit is a limit of the free version: a
-  paid version that lifts it is planned but not yet available. Everything described in this
-  README works without payment.
+- **The free version syncs one tag.** You map one reMarkable tag to one vault folder. You can
+  change or remove that mapping at any time. Syncing more than one tag is what
+  [Tagged Sync Pro](#tagged-sync-pro) is for — €24 once, with a 14-day trial. Everything else in
+  this README works without payment, [cloud transcription](#tagged-sync-pro) aside.
 - **Text transcription is built in on macOS 13 or later.** Everywhere else — Windows, Linux, older
   Macs — you can transcribe by pointing the plugin at a local AI server you run yourself
   ([Ollama, LM Studio, or any OpenAI-compatible server](#a-local-server-you-run-yourself)), or by
