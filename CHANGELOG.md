@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-08-15
+
 ### Changed
 
 - **The author's name in the plugin browser now opens the plugin's own site**,
