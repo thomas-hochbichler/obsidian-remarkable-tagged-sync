@@ -12,6 +12,11 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- Tags on reMarkable folders now apply to the notebooks inside them, including notebooks in nested
+  folders.
+
 ## [1.3.0] - 2026-08-14
 
 ### Added

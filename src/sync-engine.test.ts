@@ -58,9 +58,23 @@ function documentEntry(overrides: Partial<Entry> = {}): Entry {
 		visibleName: "Notebook",
 		lastModified: "1000",
 		pinned: false,
+		parent: "",
 		type: "DocumentType",
 		fileType: "notebook",
 		lastOpened: "0",
+		...overrides,
+	} as Entry;
+}
+
+function collectionEntry(overrides: Partial<Entry> = {}): Entry {
+	return {
+		id: "folder-1",
+		hash: "hash-folder-1",
+		visibleName: "Folder",
+		lastModified: "1000",
+		pinned: false,
+		parent: "",
+		type: "CollectionType",
 		...overrides,
 	} as Entry;
 }
@@ -498,6 +512,82 @@ describe("runSync", () => {
 		expect(result.notesWritten).toBe(0);
 		expect(result.index.rows).toEqual({});
 		expect(api.getContent).toHaveBeenCalled(); // never-indexed docs are opened once regardless of mapping, per level 2
+	});
+
+	it("syncs a notebook that inherits a mapped tag from its parent folder", async () => {
+		const folder = collectionEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+		const entry = documentEntry({ parent: folder.id });
+		const api = fakeApi({
+			rootHash: "root-folder-tag",
+			entries: [folder, entry],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = baseDeps(api, { sync: "Target" });
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.index.rows[notebookSyncKey("doc-1", "sync")]).toMatchObject({
+			docId: "doc-1",
+			tag: "sync",
+			status: "active",
+		});
+		expect(deps.noteStore.write).toHaveBeenCalledWith("Target/Notebook.md", expect.any(String));
+	});
+
+	it("rescans once after upgrading from the unversioned routing fingerprint", async () => {
+		const folder = collectionEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+		const entry = documentEntry({ parent: folder.id });
+		const api = fakeApi({
+			rootHash: "root-already-seen",
+			entries: [folder, entry],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = baseDeps(api, { sync: "Target" });
+		const legacyFingerprint = JSON.stringify([["sync", "Target"]]);
+
+		const result = await runSync(deps, {
+			rootHash: "root-already-seen",
+			mappings: legacyFingerprint,
+			rows: {},
+		});
+
+		expect(api.listItems).toHaveBeenCalledOnce();
+		expect(result.notesWritten).toBe(1);
+		expect(result.index.mappings).toBe(mappingFingerprint({ sync: "Target" }));
+	});
+
+	it("reopens an unchanged notebook and orphans its note when an inherited folder tag is removed", async () => {
+		const taggedFolder = collectionEntry({ tags: [{ name: "sync", timestamp: 0 }] });
+		const entry = documentEntry({ parent: taggedFolder.id, hash: "hash-unchanged" });
+		const content = documentContent({ cPages: cPages(["page-a"]) });
+		const firstApi = fakeApi({
+			rootHash: "root-before-folder-tag-removal",
+			entries: [taggedFolder, entry],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const noteStore = fakeNoteStore();
+		const attachmentStore = fakeAttachmentStore();
+		const firstDeps = { ...baseDeps(firstApi, { sync: "Target" }), noteStore, attachmentStore };
+		const first = await runSync(firstDeps, EMPTY_SYNC_INDEX);
+
+		const untaggedFolder = collectionEntry({ hash: "hash-folder-2", tags: [] });
+		const secondApi = fakeApi({
+			rootHash: "root-after-folder-tag-removal",
+			entries: [untaggedFolder, entry],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const secondDeps = { ...baseDeps(secondApi, { sync: "Target" }), noteStore, attachmentStore };
+
+		const second = await runSync(secondDeps, first.index);
+
+		expect(secondApi.getContent).toHaveBeenCalledWith("doc-1", "hash-unchanged");
+		expect(second.notesWritten).toBe(0);
+		expect(second.index.rows[notebookSyncKey("doc-1", "sync")].status).toBe("orphaned");
 	});
 
 	/**

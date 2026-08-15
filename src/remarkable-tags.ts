@@ -1,4 +1,4 @@
-import type { DocumentContent, LegacyDocumentContent, RemarkableApi, Tag } from "rmapi-js";
+import type { DocumentContent, Entry, LegacyDocumentContent, RemarkableApi, Tag } from "rmapi-js";
 
 export interface PageTagOccurrence {
 	pageId: string;
@@ -19,8 +19,33 @@ export function tagNames(tags: Tag[] | string[] | undefined): string[] {
 	return tags.map((tag) => (typeof tag === "string" ? tag : tag.name));
 }
 
+/**
+ * Tags applied to every collection above an item, nearest collection first.
+ *
+ * reMarkable stores a folder tag on the CollectionType entry itself; it does not copy that tag to
+ * the documents inside it. Following the parent chain here lets a tagged folder act as a routing
+ * rule for every notebook below it, including notebooks in nested folders. A malformed parent cycle
+ * is stopped rather than hanging a sync.
+ */
+export function inheritedFolderTagNames(item: Entry, itemsById: ReadonlyMap<string, Entry>): string[] {
+	const names = new Set<string>();
+	const visited = new Set<string>();
+	let parentId = item.parent;
+
+	while (parentId && parentId !== "trash" && !visited.has(parentId)) {
+		visited.add(parentId);
+		const parent = itemsById.get(parentId);
+		if (!parent || parent.type !== "CollectionType") break;
+		for (const tag of tagNames(parent.tags)) names.add(tag);
+		parentId = parent.parent;
+	}
+
+	return [...names];
+}
+
 export async function enumerateNotebookTags(api: EnumerateApi): Promise<NotebookTags[]> {
 	const items = await api.listItems();
+	const itemsById = new Map(items.map((item) => [item.id, item]));
 	const notebooks: NotebookTags[] = [];
 
 	for (const item of items) {
@@ -35,7 +60,11 @@ export async function enumerateNotebookTags(api: EnumerateApi): Promise<Notebook
 			continue;
 		}
 
-		const tags = new Set([...tagNames(item.tags), ...tagNames(content.tags)]);
+		const tags = new Set([
+			...tagNames(item.tags),
+			...tagNames(content.tags),
+			...inheritedFolderTagNames(item, itemsById),
+		]);
 		const pageTags: PageTagOccurrence[] = (content.pageTags ?? []).map((pageTag) => ({
 			pageId: pageTag.pageId,
 			tag: pageTag.name,
