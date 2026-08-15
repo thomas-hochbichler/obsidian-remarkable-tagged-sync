@@ -30,7 +30,7 @@ Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
 ## What makes it different
 
-Every feature at a glance, Free against Pro. Each row links to the section that explains it.
+Every feature at a glance, Free against Pro. Most rows link to the section that explains them.
 
 | Feature | Free | Pro |
 |---|:---:|:---:|
@@ -112,8 +112,8 @@ Two limits, so you know them up front:
   using the optional [managed local model](#local-model-optional-opt-in) where your machine
   qualifies. With none of those set up, your notes still sync with the full handwriting render
   embedded — but there is no transcript. **Marked-up PDFs and [typed
-  text](#typed-text-and-the-type-folio) are unaffected:** both are read from the file itself and
-  need no transcription at all, so they work everywhere.
+  documents](#typed-text-and-the-type-folio) are unaffected:** both are read from the file itself
+  and need no transcription at all, so they work everywhere.
 
 ## How it works
 
@@ -261,16 +261,19 @@ the **"Read on reMarkable"** browser extension — is stored inside the notebook
 strokes. The plugin treats it accordingly:
 
 - **Typed text is never transcribed.** It is taken from the file exactly as you typed it, so no
-  typed word can come out misspelled — and it arrives on Windows and Linux just the same, with no
-  transcription backend set up at all.
-- **It appears in the right place.** In the transcript, typed text sits where it sits on the page,
-  between the handwriting around it — a typed heading over handwritten notes stays a heading over
-  those notes.
+  typed word can come out misspelled.
+- **Where it lands in a transcript depends on the backend.** [Apple Vision](#apple-vision-macos)
+  reads one page at a time and knows where each line sits, so your typed text stays where it is on
+  the page, between the handwriting around it — a typed heading over handwritten notes stays a
+  heading over those notes. The other backends transcribe without those positions, so typed text is
+  added at the end of its own page instead.
 - **A typed page you marked up is a document.** A page whose typed text reads like a document — an
   article sent from the browser, prose you typed with the Type Folio — is treated like a PDF: what
   you highlight or underline on it arrives as a [digest](#annotated-pdfs), quotes, sections, block
   IDs and all. A typed line or two inside a handwritten page stays part of the transcript instead;
   the plugin tells the two apart by how the text is set, not by guessing.
+- **Such a page needs no transcription at all.** Its digest is read from the file, exactly as a
+  marked-up PDF's is, so it arrives on Windows and Linux with no transcription backend set up.
 - **Highlights on typed text** reach your vault like any other highlight.
 
 ## Tagged Sync Pro
@@ -390,8 +393,9 @@ it does not — so a document without bookmarks can file a quote under the wrong
   `## Transcript` section — the render is never lost. An annotated PDF gets a
   [`## Digest`](#annotated-pdfs) instead.
 - **[Typed text](#typed-text-and-the-type-folio) is taken from the file, never transcribed**, and
-  appears in the transcript where it sits on the page. A typed page that reads like a document gets
-  the digest treatment instead, like a PDF.
+  joins the transcript of the page it is on — at the position it sits at with Apple Vision, at the
+  end of the page with the other backends. A typed page that reads like a document gets the digest
+  treatment instead, like a PDF.
 - **The transcript is split by page.** Each page that produced text gets its own heading linking
   into that page of the embedded PDF, so a long notebook stays navigable. Pages with nothing to read
   are named once at the end instead of taking a heading each, and a page transcription could not
@@ -427,8 +431,10 @@ stays where it is and is still preserved on every sync — new notes just no lon
   come out as plain lines.
 - **Windows on x64 and Linux get the render and no handwriting transcript out of the box** —
   [a local server you run yourself](#a-local-server-you-run-yourself) is the only route there. The
-  [digest of a marked-up PDF](#annotated-pdfs) and [typed text](#typed-text-and-the-type-folio) are
-  unaffected and work everywhere: both are read from the file, not transcribed.
+  [digest of a marked-up PDF](#annotated-pdfs) and of a [typed
+  document](#typed-text-and-the-type-folio) are unaffected and work everywhere: both are read from
+  the file, not transcribed. Typed text on a handwritten page needs a backend like any other
+  transcript, since it is the transcript it joins.
 - **A PDF you only wrote on syncs with the render and no text.** The digest quotes what you marked;
   handwriting on the page is not read.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
