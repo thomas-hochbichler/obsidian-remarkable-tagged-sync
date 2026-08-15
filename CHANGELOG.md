@@ -14,8 +14,12 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
-- Tags on reMarkable folders now apply to the notebooks inside them, including notebooks in nested
-  folders.
+- **A tag on a folder now syncs everything inside it.** reMarkable keeps a folder's tag on the
+  folder alone and copies it to nothing below, so a notebook sitting in a tagged folder used to be
+  skipped. It is now routed exactly as if you had tagged it yourself — every notebook and PDF in the
+  folder, and in the folders nested below it. Taking the tag off the folder, or moving it to another
+  mapped tag, is picked up as well. Contributed by
+  [@raghavpillai](https://github.com/raghavpillai).
 
 ## [1.3.0] - 2026-08-14
 
