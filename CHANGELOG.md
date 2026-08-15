@@ -12,6 +12,11 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **The author's name in the plugin browser now opens the plugin's own site**,
+  [taggedsync.com](https://taggedsync.com), instead of a GitHub profile. The README links it too.
+
 ## [1.4.1] - 2026-08-15
 
 ### Fixed
