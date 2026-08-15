@@ -80,10 +80,14 @@ function tagLimitFor(entitlement: Entitlement): number {
 }
 
 /**
- * Where a licence is bought -- Polar's checkout, opened in the browser. A long-lived link tied to
- * the product, so it survives price and description changes.
+ * Where a licence is bought -- Polar's checkout, opened in the browser.
+ *
+ * This must be a **checkout link** (`buy.polar.sh/polar_cl_...`), which mints a fresh checkout
+ * session per visitor. A session URL (`polar.sh/checkout/polar_c_...`) looks identical in a
+ * browser but expires, and an expired one answers 404 -- which is exactly what happened to the
+ * link shipped in 1.3.0 and 1.4.0.
  */
-const PRO_BUY_URL = "https://polar.sh/checkout/polar_c_vP5U1oj0brsXAQfEp2glE9jMq1ALTPGsnGrpD3KFZ17";
+const PRO_BUY_URL = "https://buy.polar.sh/polar_cl_ri72ZVng24KrtsNUNu8poN2J0rsvTSbkWwoZp2ZIQbP";
 
 /**
  * Polar's customer portal, where a buyer frees an activation slot themselves. The licence covers 50

@@ -12,6 +12,14 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Buy button led nowhere.** The checkout address shipped in 1.3.0 and 1.4.0 was a Polar
+  checkout *session*, not a checkout *link*. Sessions expire, and this one had: both the button in
+  the settings and the link in the README answered "Page not found", so nobody could buy Pro even
+  if they wanted to. Replaced with a checkout link, which mints a fresh session per visitor and
+  does not go stale.
+
 ## [1.4.0] - 2026-08-15
 
 ### Added
