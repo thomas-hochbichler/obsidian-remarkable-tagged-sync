@@ -23,9 +23,9 @@ workflow publishes the section as the GitHub release body. See
   A sync now counts the pages it is really going to work on before it starts, and fills a bar
   against that count, next to the name of the notebook it is on. The count is honest: a notebook
   filed under three tags is written three times, and the bar says so. While the work is being
-  measured the item reads `Checking 12 of 40`, so the wait before the bar appears is not silent
-  either. Hover it for the full name, the tag, the page within the notebook, and what is happening
-  to it right now.
+  measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
+  so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
+  the full name, the tag, the page within the notebook, and what is happening to it right now.
 
 ## [1.4.2] - 2026-08-15
 

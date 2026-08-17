@@ -156,7 +156,18 @@ export type WorkStep = "rendering" | "transcribing" | "writing";
  * for it, whether its pages were reported one by one or all at once at the end.
  */
 export type SyncProgress =
-	| { phase: "scanning"; checked: number; candidates: number }
+	| {
+			phase: "scanning";
+			checked: number;
+			candidates: number;
+			/**
+			 * The document the scan reached most recently. Absent before the first one, and deliberately
+			 * the one most recently *begun* rather than the one most recently finished: several are in
+			 * flight at once, so `checked` can stand still for a long time, and a name that keeps
+			 * changing is the only thing separating a slow scan from a stuck one.
+			 */
+			document?: string;
+	  }
 	| {
 			phase: "working";
 			done: number;
@@ -1008,6 +1019,9 @@ async function scanWorkload(
 
 	let checked = 0;
 	let stopped = false;
+	// Shared across the workers on purpose: it is "the document this scan reached last", which is what
+	// a display can honestly say while six of them are open at once.
+	let current = "";
 	report({ phase: "scanning", checked, candidates: candidates.length });
 
 	const steps = await mapWithConcurrency(candidates, SCAN_PARALLELISM, async ({ entry, tags }) => {
@@ -1015,6 +1029,8 @@ async function scanWorkload(
 			stopped = true;
 			return 0;
 		}
+		current = entry.visibleName;
+		report({ phase: "scanning", checked, candidates: candidates.length, document: current });
 		try {
 			let content: DocumentContent | LegacyDocumentContent;
 			try {
@@ -1044,7 +1060,7 @@ async function scanWorkload(
 			console.warn(`Tagged Sync: could not measure "${entry.visibleName}" up front`, error);
 			return 0;
 		} finally {
-			report({ phase: "scanning", checked: ++checked, candidates: candidates.length });
+			report({ phase: "scanning", checked: ++checked, candidates: candidates.length, document: current });
 		}
 	});
 
@@ -1472,6 +1488,7 @@ async function scanReTranscribe(
 	const candidates = [...rowsByDoc.keys()].filter((docId) => entryById.has(docId));
 	let checked = 0;
 	let stopped = false;
+	let current = ""; // see `scanWorkload`
 	report({ phase: "scanning", checked, candidates: candidates.length });
 
 	const steps = await mapWithConcurrency(candidates, SCAN_PARALLELISM, async (docId) => {
@@ -1480,6 +1497,8 @@ async function scanReTranscribe(
 			return 0;
 		}
 		const entry = entryById.get(docId)!;
+		current = entry.visibleName;
+		report({ phase: "scanning", checked, candidates: candidates.length, document: current });
 		try {
 			let content: DocumentContent | LegacyDocumentContent;
 			try {
@@ -1497,7 +1516,7 @@ async function scanReTranscribe(
 			console.warn(`Tagged Sync: could not measure "${entry.visibleName}" up front`, error);
 			return 0;
 		} finally {
-			report({ phase: "scanning", checked: ++checked, candidates: candidates.length });
+			report({ phase: "scanning", checked: ++checked, candidates: candidates.length, document: current });
 		}
 	});
 

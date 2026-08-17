@@ -277,7 +277,10 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * progress tick would restart the busy spin from zero, so it would jerk instead of turn.
 	 */
 	private statusIcon!: HTMLElement;
+	/** The sentence, never cut short. */
 	private statusText!: HTMLElement;
+	/** A document's name, capped in width -- the tooltip carries it in full. */
+	private statusName!: HTMLElement;
 	private statusBarWrapper!: HTMLElement;
 	private statusProgress!: ProgressBarComponent;
 	/** The last fraction shown, so a pending stop can freeze the bar where it stands. */
@@ -357,7 +360,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// system's* accent colour, which is the one colour on screen no theme can reach.
 		this.statusBarWrapper = this.statusBar.createSpan({ cls: "tagged-sync-status-bar" });
 		this.statusProgress = new ProgressBarComponent(this.statusBarWrapper);
-		this.statusText = this.statusBar.createSpan({ cls: "tagged-sync-status-name" });
+		this.statusText = this.statusBar.createSpan();
+		this.statusName = this.statusBar.createSpan({ cls: "tagged-sync-status-name" });
 		// The whole item, not just the icon: a status bar item is already a small target, and the text
 		// beside the spinner is the part that says a run is happening. Whether it does anything is
 		// decided at click time -- `mod-clickable` and the tooltip come and go with the busy state.
@@ -538,13 +542,16 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * `bar` is a percentage, or null for the states that must not show one at all: a bar left sitting
 	 * at 100% after a run ends claims that run is still happening. `detail` is the part that does not
 	 * fit beside it -- the item has only about 200px before it starts running off the left of the
-	 * status bar, silently. `documentName` says the text is a name of unbounded length rather than a
-	 * sentence, and so may be cut short.
+	 * status bar, silently.
+	 *
+	 * `document` is separate from `text` because the two need opposite treatment: a name is of
+	 * unbounded length and is cut short (the tooltip repeats it in full), while `text` is a sentence
+	 * that has nowhere else to be read and must survive whole.
 	 */
 	private setStatus(
 		state: keyof typeof TaggedSyncPlugin.STATUS_ICONS,
 		text: string,
-		options: { bar?: number | null; detail?: string; documentName?: boolean } = {},
+		options: { bar?: number | null; detail?: string; document?: string } = {},
 	): void {
 		// Only the text moves while a state lasts -- the icon is left alone so `is-busy` keeps spinning
 		// it across progress ticks, including the long silent ones (OCR, re-transcribe).
@@ -566,11 +573,13 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.statusProgress.setValue(this.lastBar);
 			this.statusBarWrapper.show();
 		}
-		// Only a document's name is cut short, and only because the tooltip repeats it in full. Every
-		// other state's text is a sentence with nothing behind it, and cutting that just loses words.
-		this.statusBar.toggleClass("has-document-name", options.documentName === true);
-
+		// Both parts are hidden when empty: the item is a flex row with a gap, so an empty span would
+		// still push its neighbours apart.
+		const document = options.document ?? "";
 		this.statusText.setText(text);
+		this.statusText.toggle(text !== "");
+		this.statusName.setText(document);
+		this.statusName.toggle(document !== "");
 		this.statusBar.show();
 	}
 
@@ -583,17 +592,25 @@ export default class TaggedSyncPlugin extends Plugin {
 			return;
 		}
 		if (progress.phase === "scanning") {
-			// No bar: how much there is to do is precisely what is not known yet.
-			const text = progress.candidates === 0 ? "Tagged Sync: scanning…" : `Tagged Sync: checking ${progress.checked} of ${progress.candidates}`;
-			this.setStatus("busy", text, { bar: null });
+			// No bar: how much there is to do is precisely what is not known yet. The name beside the
+			// counter is what separates a slow scan from a stuck one -- the counter itself can stand
+			// still for a long time while several documents are open at once. The prefix goes once
+			// there is something better to spend the width on, exactly as in the working state below.
+			// The separator belongs to whichever side is followed by the other, so it cannot dangle.
+			const counted = `checking ${progress.checked} of ${progress.candidates}${progress.document ? " ·" : ""}`;
+			this.setStatus("busy", progress.candidates === 0 ? "Tagged Sync: scanning…" : counted, {
+				bar: null,
+				document: progress.document,
+				detail: progress.document,
+			});
 			return;
 		}
 		// The document's name alone, without the usual "Tagged Sync:" -- the icon says whose item this
 		// is, and the prefix would cost the width the name needs. Everything else goes to the tooltip.
-		this.setStatus("busy", progress.document, {
+		this.setStatus("busy", "", {
 			bar: Math.min(100, (progress.done / progress.total) * 100),
+			document: progress.document,
 			detail: `${progress.document}\ntag: ${progress.tag} · page ${progress.unitDone} of ${progress.unitTotal} · ${progress.step}`,
-			documentName: true,
 		});
 	}
 

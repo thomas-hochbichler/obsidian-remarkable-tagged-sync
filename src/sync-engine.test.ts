@@ -331,8 +331,23 @@ describe("runSync progress", () => {
 
 		const scans = scanningMessages(onProgress);
 		expect(scans[0]).toEqual({ phase: "scanning", checked: 0, candidates: 0 }); // before the root-hash gate
-		expect(scans[1]).toEqual({ phase: "scanning", checked: 0, candidates: 2 });
-		expect(scans.at(-1)).toEqual({ phase: "scanning", checked: 2, candidates: 2 });
+		expect(scans[1]).toEqual({ phase: "scanning", checked: 0, candidates: 2 }); // no document reached yet
+		expect(scans.at(-1)).toEqual({ phase: "scanning", checked: 2, candidates: 2, document: expect.any(String) });
+	});
+
+	/**
+	 * Several documents are open at once, so `checked` can stand still for a long time while they are
+	 * fetched -- long enough to read as a hang. The name is reported when a document is *begun*,
+	 * which is the only part that keeps moving in the meantime.
+	 */
+	it("names the document it reached, before that document is finished", async () => {
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(twoDocs(), { sync: "Target" }), onProgress }, EMPTY_SYNC_INDEX);
+
+		const named = scanningMessages(onProgress).filter((progress) => progress.document !== undefined);
+		expect(named[0]).toMatchObject({ checked: 0 }); // reported before its own count advanced
+		expect(new Set(named.map((progress) => progress.document))).toEqual(new Set(["First", "Second"]));
 	});
 
 	it("reports scanning even when the root-hash gate returns early", async () => {
