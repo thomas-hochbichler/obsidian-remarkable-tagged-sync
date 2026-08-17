@@ -1,4 +1,4 @@
-/* Status bar item: icon (setIcon) + text side by side. */
+/* Status bar item: icon (setIcon) + progress bar + text side by side. */
 .tagged-sync-status {
 	display: inline-flex;
 	align-items: center;
@@ -8,6 +8,33 @@
 .tagged-sync-status .tagged-sync-status-icon {
 	display: inline-flex;
 	--icon-size: var(--font-ui-small);
+}
+
+/*
+ * Width is the one hard constraint on a status bar item: it grows leftwards, and an item that grows
+ * too far simply runs off the edge with nothing to say it did. 60px of bar and a 100px cap on the
+ * document's name keep the whole item under ~195px whatever the notebook is called -- a pixel cap
+ * rather than a character count, because the UI font is proportional.
+ */
+.tagged-sync-status .tagged-sync-status-bar {
+	display: inline-flex;
+}
+
+.tagged-sync-status .tagged-sync-status-bar .setting-progress-bar {
+	width: 60px;
+	margin: 0;
+}
+
+/*
+ * Only the name element, which holds a document's name -- any length, and repeated in full by the
+ * tooltip. The sentence beside it lives in its own span and is never cut: it has nowhere else to be
+ * read.
+ */
+.tagged-sync-status .tagged-sync-status-name {
+	max-width: 100px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 /* Busy: the icon turns, so a sync whose text sits still for minutes still reads as running. */

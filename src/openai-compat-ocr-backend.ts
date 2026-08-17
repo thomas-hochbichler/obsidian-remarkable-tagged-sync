@@ -85,7 +85,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.sleepFn = options.sleepFn;
 	}
 
-	async recognize(pages: RmPage[]): Promise<OcrResult> {
+	async recognize(pages: RmPage[], onPage?: () => void): Promise<OcrResult> {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
 		this.refusal = null;
@@ -100,6 +100,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				pages,
 				async () => ({ kind: "failed" }),
 				(failedPages) => `No model is set for this OCR backend — open the plugin settings and enter one. ${pageCount(failedPages)} not transcribed.`,
+				onPage,
 			);
 		}
 
@@ -116,6 +117,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages)} not transcribed.`;
 				return null;
 			},
+			onPage,
 		);
 	}
 

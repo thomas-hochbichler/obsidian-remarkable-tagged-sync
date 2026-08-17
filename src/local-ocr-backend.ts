@@ -111,7 +111,7 @@ export class LocalOcrBackend implements OcrBackend {
 		this.onRuntimeFailure = options.onRuntimeFailure ?? (() => undefined);
 	}
 
-	async recognize(pages: RmPage[]): Promise<OcrResult> {
+	async recognize(pages: RmPage[], onPage?: () => void): Promise<OcrResult> {
 		if (pages.length === 0) return SKIPPED;
 		// Case 1, remembered: without this it is 39 more pages of fans for 39 identical failures.
 		if (this.runtimeBroken) return { status: "unavailable", pages: null, text: "", confidence: null };
@@ -131,6 +131,9 @@ export class LocalOcrBackend implements OcrBackend {
 				// written now is half a transcript forever (§8.1).
 				return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`] };
 			}
+			// A page that failed is still a page that is over, so the bar moves on it too -- only the
+			// runtime-broken exit above skips the tick, and it abandons the whole unit anyway.
+			onPage?.();
 			if (outcome.kind === "page-failed") {
 				// Vision keeps the other pages and says nothing; this backend keeps them and says so,
 				// because under §8.1 a silently lost page is a permanently lost one. The warning stays

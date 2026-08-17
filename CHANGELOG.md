@@ -12,6 +12,21 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **The status bar now shows how much of the sync is left, not where it is in a list.** It used to
+  read something like `17/74`, which was the position in a walk through every document on your
+  reMarkable — and most of those are skipped without any work at all, so the number raced through
+  sixty in seconds and then sat still for minutes on the one page that was actually being
+  transcribed. Neither number said anything about how long anything would take.
+
+  A sync now counts the pages it is really going to work on before it starts, and fills a bar
+  against that count, next to the name of the notebook it is on. The count is honest: a notebook
+  filed under three tags is written three times, and the bar says so. While the work is being
+  measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
+  so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
+  the full name, the tag, the page within the notebook, and what is happening to it right now.
+
 ## [1.4.2] - 2026-08-15
 
 ### Changed

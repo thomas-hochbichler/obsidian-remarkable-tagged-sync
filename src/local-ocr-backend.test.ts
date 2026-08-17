@@ -125,6 +125,26 @@ describe("failure mapping (§8.2)", () => {
 		expect(result.warnings?.[0]).toContain("exit 1");
 	});
 
+	// The progress tick. This is the slowest backend, so it is the one whose bar would otherwise sit
+	// still for minutes -- and a page that failed is as finished as one that read.
+	it("reports every finished page, including one that failed", async () => {
+		const { backend } = backendOver([textOutcome("a"), { kind: "page-failed", message: "exit 1" }, textOutcome("c")]);
+		const onPage = vi.fn();
+
+		await backend.recognize([page(), page(), page()], onPage);
+		expect(onPage).toHaveBeenCalledTimes(3);
+	});
+
+	// The unit is abandoned, so the caller counts its remaining pages at the end rather than hearing
+	// about pages this backend never looked at.
+	it("stops reporting pages once the runtime dies", async () => {
+		const { backend } = backendOver([textOutcome("a"), { kind: "runtime-broken", message: "killed" }]);
+		const onPage = vi.fn();
+
+		await backend.recognize([page(), page(), page()], onPage);
+		expect(onPage).toHaveBeenCalledTimes(1);
+	});
+
 	/** Case 3: no page produced text and at least one errored -> `failed`. */
 	it("fails a unit where every page errored", async () => {
 		const { backend } = backendOver([{ kind: "page-failed", message: "exit 1" }]);

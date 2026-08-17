@@ -164,9 +164,13 @@ export async function transcribePages(
 	pages: RmPage[],
 	run: (page: RmPage, index: number) => Promise<LlmPageOutcome>,
 	warnings?: (failedPages: number) => string | null,
+	onPage?: () => void,
 ): Promise<OcrResult> {
 	const pageResults = await mapWithConcurrency(pages, LLM_MAX_PARALLELISM, async (page, index): Promise<OcrPageResult> => {
 		const outcome = await run(page, index);
+		// Before the outcome is inspected: a page that failed is as finished as one that read, and the
+		// progress bar counts pages that are over, not pages that succeeded.
+		onPage?.();
 		if (outcome.kind === "failed") return { status: "failed", text: "" };
 		const text = [outcome.text, typedText([page])].filter((part) => part !== "").join("\n\n");
 		return text.length > 0 ? { status: "ok", text } : { status: "skipped", text: "" };
