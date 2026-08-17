@@ -8,6 +8,7 @@ import {
 	Platform,
 	Plugin,
 	PluginSettingTab,
+	ProgressBarComponent,
 	setIcon,
 	Setting,
 	setTooltip,
@@ -272,11 +273,15 @@ export default class TaggedSyncPlugin extends Plugin {
 	readonly licenceApi: LicenceApi = createPolarLicenceApi();
 	private statusBar!: HTMLElement;
 	/**
-	 * The status bar's two parts are held, not rebuilt per update: recreating the icon on every
+	 * The status bar's parts are held, not rebuilt per update: recreating the icon on every
 	 * progress tick would restart the busy spin from zero, so it would jerk instead of turn.
 	 */
 	private statusIcon!: HTMLElement;
 	private statusText!: HTMLElement;
+	private statusBarWrapper!: HTMLElement;
+	private statusProgress!: ProgressBarComponent;
+	/** The last fraction shown, so a pending stop can freeze the bar where it stands. */
+	private lastBar: number | null = null;
 	private statusState: keyof typeof TaggedSyncPlugin.STATUS_ICONS | null = null;
 	private syncing = false;
 	/**
@@ -348,7 +353,11 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.statusBar = this.addStatusBarItem();
 		this.statusBar.addClass("tagged-sync-status");
 		this.statusIcon = this.statusBar.createSpan({ cls: "tagged-sync-status-icon" });
-		this.statusText = this.statusBar.createSpan();
+		// Obsidian's own component rather than a bare `<progress>`: that one paints in the *operating
+		// system's* accent colour, which is the one colour on screen no theme can reach.
+		this.statusBarWrapper = this.statusBar.createSpan({ cls: "tagged-sync-status-bar" });
+		this.statusProgress = new ProgressBarComponent(this.statusBarWrapper);
+		this.statusText = this.statusBar.createSpan({ cls: "tagged-sync-status-name" });
 		// The whole item, not just the icon: a status bar item is already a small target, and the text
 		// beside the spinner is the part that says a run is happening. Whether it does anything is
 		// decided at click time -- `mod-clickable` and the tooltip come and go with the busy state.
@@ -525,7 +534,13 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	private static readonly STATUS_ICONS = { busy: "refresh-cw", ok: "check", failed: "x", stopped: "square" } as const;
 
-	private setStatus(state: keyof typeof TaggedSyncPlugin.STATUS_ICONS, text: string): void {
+	/**
+	 * `bar` is a percentage, or null for the states that must not show one at all: a bar left sitting
+	 * at 100% after a run ends claims that run is still happening. `detail` is the part that does not
+	 * fit beside it -- the item has only about 200px before it starts running off the left of the
+	 * status bar, silently.
+	 */
+	private setStatus(state: keyof typeof TaggedSyncPlugin.STATUS_ICONS, text: string, options: { bar?: number | null; detail?: string } = {}): void {
 		// Only the text moves while a state lasts -- the icon is left alone so `is-busy` keeps spinning
 		// it across progress ticks, including the long silent ones (OCR, re-transcribe).
 		if (state !== this.statusState) {
@@ -538,24 +553,39 @@ export default class TaggedSyncPlugin extends Plugin {
 		// change. Cheap enough to redo every tick -- a class and an attribute, not a rebuilt icon.
 		const stoppable = state === "busy" && !this.stopRequested;
 		this.statusBar.toggleClass("mod-clickable", stoppable);
-		setTooltip(this.statusBar, stoppable ? "Click to stop the sync" : "");
+		setTooltip(this.statusBar, [options.detail, stoppable ? "Click to stop the sync" : ""].filter((part) => part).join("\n"));
+
+		this.lastBar = options.bar ?? null;
+		if (this.lastBar === null) this.statusBarWrapper.hide();
+		else {
+			this.statusProgress.setValue(this.lastBar);
+			this.statusBarWrapper.show();
+		}
+
 		this.statusText.setText(text);
 		this.statusBar.show();
 	}
 
 	private showProgress(progress: SyncProgress): void {
 		// A pending stop outranks the progress ticks: they would go on announcing work the user has
-		// already asked to end.
+		// already asked to end. The bar freezes where it stands rather than emptying -- the work
+		// already done is not undone by stopping.
 		if (this.stopRequested) {
-			this.setStatus("busy", "Tagged Sync: stopping…");
+			this.setStatus("busy", "Tagged Sync: stopping…", { bar: this.lastBar });
 			return;
 		}
-		this.setStatus(
-			"busy",
-			progress.phase === "scanning"
-				? "Tagged Sync: scanning…"
-				: `Tagged Sync: ${progress.done}/${progress.total} · ${progress.document}`,
-		);
+		if (progress.phase === "scanning") {
+			// No bar: how much there is to do is precisely what is not known yet.
+			const text = progress.candidates === 0 ? "Tagged Sync: scanning…" : `Tagged Sync: checking ${progress.checked} of ${progress.candidates}`;
+			this.setStatus("busy", text, { bar: null });
+			return;
+		}
+		// The document's name alone, without the usual "Tagged Sync:" -- the icon says whose item this
+		// is, and the prefix would cost the width the name needs. Everything else goes to the tooltip.
+		this.setStatus("busy", progress.document, {
+			bar: Math.min(100, (progress.done / progress.total) * 100),
+			detail: `${progress.document}\ntag: ${progress.tag} · page ${progress.unitDone} of ${progress.unitTotal} · ${progress.step}`,
+		});
 	}
 
 	/**
