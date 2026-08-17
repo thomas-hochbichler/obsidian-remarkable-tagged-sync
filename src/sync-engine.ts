@@ -87,9 +87,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * ink on blank pages, none of its text under it -- is re-rendered as the book itself; version 25
  * spells a book's quotes the way the book does, correcting the letters its conversion to a PDF lost;
  * version 26 reads a heading a renderer faked bold by drawing twice as the one heading it is, which
- * had been doubling every such title and halving the text a rectangle on that line addressed.
+ * had been doubling every such title and halving the text a rectangle on that line addressed;
+ * version 27 repairs the colourless paint operator a device leaves in a page it rendered from an
+ * EPUB, which had been arriving in the vault as a book printed white on white.
  */
-export const RENDER_VERSION = 26;
+export const RENDER_VERSION = 27;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
