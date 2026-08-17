@@ -5,6 +5,7 @@ import {
 	blockHashOf,
 	extractManagedBlock,
 	type HighlightGroup,
+	isInFolder,
 	managedBlockHash,
 	moveNote,
 	type NoteFields,
@@ -655,6 +656,24 @@ function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, sta
 	return Object.values(rows).some((row) => row.docId === docId && row.status === status);
 }
 
+/**
+ * True if this row's note no longer sits in the folder its tag maps to -- the user re-targeted the
+ * mapping in settings. Only the mapping fingerprint sees such a change at all (nothing moves on the
+ * reMarkable side), so without this the per-document gates would skip the note and it would stay in
+ * the old folder forever.
+ *
+ * A row whose tag is no longer mapped at all is not re-targeted, it is gone: that is the orphan path.
+ */
+function isRetargeted(row: SyncIndexRow, tagRouter: TagRouter): boolean {
+	if (row.status !== "active") return false;
+	const folder = tagRouter.resolveFolder(row.tag);
+	return folder !== null && !isInFolder(row.notePath, folder);
+}
+
+function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRouter, docId: string): boolean {
+	return Object.values(rows).some((row) => row.docId === docId && isRetargeted(row, tagRouter));
+}
+
 /** True if this note was rendered by an older renderer, and so needs re-rendering even though the device side hasn't changed. */
 function isStaleRender(row: SyncIndexRow): boolean {
 	return row.status === "active" && (row.renderVersion ?? 0) < RENDER_VERSION;
@@ -732,6 +751,11 @@ function orphanRow(rows: Record<string, SyncIndexRow>, row: SyncIndexRow): void 
  * Picks the writer for a unit. A rename moves the existing note into `folder`; otherwise write, with
  * `existingPath` (the row's `notePath`) making it an in-place overwrite when a row already exists,
  * and a fresh first-free-path write when it doesn't.
+ *
+ * A note that sits outside `folder` moves as well, even without a rename: the tag kept its name and
+ * the *mapping* was re-targeted in settings. Moving keeps the note's identity and its backlinks, and
+ * when the note is gone (deleted by hand) `move` is a no-op, so it is simply written where the
+ * mapping now says it belongs -- rather than back into the folder it was mapped to last time.
  */
 function resolveWriter(
 	noteStore: NoteStore,
@@ -739,7 +763,9 @@ function resolveWriter(
 	folder: string,
 	existingPath: string | null,
 ): (fields: NoteFields) => Promise<string> {
-	return (fields) => (rename ? moveNote(noteStore, rename.oldRow.notePath, folder, fields) : writeNote(noteStore, folder, fields, existingPath));
+	if (rename) return (fields) => moveNote(noteStore, rename.oldRow.notePath, folder, fields);
+	if (existingPath !== null && !isInFolder(existingPath, folder)) return (fields) => moveNote(noteStore, existingPath, folder, fields);
+	return (fields) => writeNote(noteStore, folder, fields, existingPath);
 }
 
 /** Retires the rename's source row once its note has landed at the new syncKey. */
@@ -772,6 +798,7 @@ async function needsDocumentOpen(
 	if (findEntryHash(rows, entry.id) !== entry.hash) return true;
 	return (
 		hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) ||
+		hasRetargetedRow(rows, tagRouter, entry.id) ||
 		hasRowWithStatus(rows, entry.id, "orphaned") ||
 		hasStaleRender(rows, entry.id) ||
 		(await hasMissingActiveNote(noteStore, rows, entry.id))
@@ -829,6 +856,7 @@ interface DocumentPlan {
 async function planUnits(
 	noteStore: NoteStore,
 	rows: Record<string, SyncIndexRow>,
+	tagRouter: TagRouter,
 	entry: Entry,
 	mapped: MappedTags,
 	docPages: DocPageRef[],
@@ -886,14 +914,15 @@ async function planUnits(
 		const rename = pageRenames.get(pageTag.pageId)?.newTag === pageTag.name ? pageRenames.get(pageTag.pageId)! : null;
 		const existingRow = rows[pageSyncKey(entry.id, pageTag.pageId, pageTag.name)];
 		// level 3: page unchanged, don't re-render it -- unless it's currently orphaned (revive), a
-		// rename target, its note went missing from the vault (deleted by hand), or it was rendered
-		// by an older renderer. That last one has to be here as well as at the document gate: nothing
-		// on the device changes when the renderer does, so a page-tag note whose page never changes
-		// again would keep an outdated render forever -- which is exactly what the digest's
-		// RENDER_VERSION bump would otherwise fail to reach.
+		// rename target, its tag was re-targeted to another folder, its note went missing from the
+		// vault (deleted by hand), or it was rendered by an older renderer. The last two have to be
+		// here as well as at the document gate: nothing on the device changes when the renderer or a
+		// mapping does, so a page-tag note whose page never changes again would keep an outdated
+		// render -- or the old folder -- forever.
 		if (
 			!rename &&
 			existingRow?.status === "active" &&
+			!isRetargeted(existingRow, tagRouter) &&
 			existingRow.pageHash === pageContentHash(pageTag.pageId) &&
 			!isStaleRender(existingRow) &&
 			(await noteStore.read(existingRow.notePath)) !== null
@@ -1049,7 +1078,7 @@ async function scanWorkload(
 			const isPdf = content.fileType === "pdf";
 			const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
 			const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
-			const plan = await planUnits(deps.noteStore, rows, entry, mapped, docPages, (pageId) =>
+			const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, (pageId) =>
 				isPdf ? entry.hash : (pageHashes.get(pageId) ?? entry.hash),
 			);
 			return [...plan.notebook, ...plan.pages].reduce((sum, unit) => sum + unit.steps, 0);
@@ -1231,7 +1260,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// exactly when the document does.
 		const pageContentHash = (pageId: string): string => (isPdf ? entry.hash : (pageHashes.get(pageId) ?? entry.hash));
 
-		const plan = await planUnits(deps.noteStore, rows, entry, mapped, docPages, pageContentHash);
+		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash);
 		for (const row of plan.orphan) orphanRow(rows, row);
 
 		for (const unit of plan.notebook) {
