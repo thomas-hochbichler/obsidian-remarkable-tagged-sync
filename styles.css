@@ -25,7 +25,12 @@
 	margin: 0;
 }
 
-.tagged-sync-status .tagged-sync-status-name {
+/*
+ * Only where the text is a document's name, which can be any length and is repeated in full by the
+ * tooltip. Every other state's text is a whole sentence that has nowhere else to be read, so
+ * capping it would just cut words off.
+ */
+.tagged-sync-status.has-document-name .tagged-sync-status-name {
 	max-width: 100px;
 	overflow: hidden;
 	text-overflow: ellipsis;

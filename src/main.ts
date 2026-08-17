@@ -538,9 +538,14 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * `bar` is a percentage, or null for the states that must not show one at all: a bar left sitting
 	 * at 100% after a run ends claims that run is still happening. `detail` is the part that does not
 	 * fit beside it -- the item has only about 200px before it starts running off the left of the
-	 * status bar, silently.
+	 * status bar, silently. `documentName` says the text is a name of unbounded length rather than a
+	 * sentence, and so may be cut short.
 	 */
-	private setStatus(state: keyof typeof TaggedSyncPlugin.STATUS_ICONS, text: string, options: { bar?: number | null; detail?: string } = {}): void {
+	private setStatus(
+		state: keyof typeof TaggedSyncPlugin.STATUS_ICONS,
+		text: string,
+		options: { bar?: number | null; detail?: string; documentName?: boolean } = {},
+	): void {
 		// Only the text moves while a state lasts -- the icon is left alone so `is-busy` keeps spinning
 		// it across progress ticks, including the long silent ones (OCR, re-transcribe).
 		if (state !== this.statusState) {
@@ -561,6 +566,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.statusProgress.setValue(this.lastBar);
 			this.statusBarWrapper.show();
 		}
+		// Only a document's name is cut short, and only because the tooltip repeats it in full. Every
+		// other state's text is a sentence with nothing behind it, and cutting that just loses words.
+		this.statusBar.toggleClass("has-document-name", options.documentName === true);
 
 		this.statusText.setText(text);
 		this.statusBar.show();
@@ -585,6 +593,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.setStatus("busy", progress.document, {
 			bar: Math.min(100, (progress.done / progress.total) * 100),
 			detail: `${progress.document}\ntag: ${progress.tag} · page ${progress.unitDone} of ${progress.unitTotal} · ${progress.step}`,
+			documentName: true,
 		});
 	}
 
