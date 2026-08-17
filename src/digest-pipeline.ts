@@ -28,6 +28,7 @@ import {
 } from "./pdf-renderer";
 import { sceneHeadings, sceneTextPage } from "./scene-text";
 import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
+import { correctQuote } from "./quote-correction";
 import type { RmPage, RmStroke } from "./rm-parser";
 
 export interface DigestPipelineDeps {
@@ -637,7 +638,19 @@ async function readPageText(document: PdfTextDocument | null, page: DigestPageIn
  * the Type Folio. The device stores that text in the scene (`root_text`) rather than in a PDF, and
  * the difference ends there -- it is still a document with somebody's marks on it.
  */
-export type DigestSource = { kind: "pdf"; bytes: Uint8Array } | { kind: "typed-text" };
+export type DigestSource =
+	| {
+			kind: "pdf";
+			bytes: Uint8Array;
+			/**
+			 * The original book's prose, for a document the device rendered from an `.epub`. That
+			 * conversion loses letters, so the text under a highlight is not always what the author
+			 * wrote (spec §2); this is the only copy that is. Called at most once, and only when there
+			 * is a quote to correct -- a book is a megabyte nobody should fetch for a page of ink.
+			 */
+			book?: () => Promise<string | null>;
+	  }
+	| { kind: "typed-text" };
 
 /** What one page's annotations are placed against; the two sources differ in nothing else. */
 interface PageGeometrySource {
@@ -758,9 +771,43 @@ export async function buildDigest(
 		deps.onPage?.();
 	}
 
+	if (source.kind === "pdf" && source.book) await correctQuotesAgainstBook(digestPages, source.book, state);
+
 	return {
 		markdown: renderDigest(embedPath, digestPages),
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
 	};
+}
+
+/**
+ * Re-spells every quote in the book's own words, where it can be found there.
+ *
+ * A quote that cannot be located is left exactly as the device recorded it, without a warning: the
+ * device's text is not known to be wrong, and a line per unmatched quote would report a problem the
+ * reader mostly does not have. A book that cannot be read at all is different -- that is a source
+ * failing, and it is said once.
+ */
+async function correctQuotesAgainstBook(pages: DigestPage[], book: () => Promise<string | null>, state: BuildState): Promise<void> {
+	const highlights = pages.flatMap((page) => page.highlights);
+	if (highlights.length === 0) return;
+
+	let text: string | null = null;
+	try {
+		text = await book();
+	} catch (error) {
+		state.warnings.push(`The book's own text could not be read (${describeError(error)}); quotes keep the spelling the device recorded.`);
+		return;
+	}
+	if (text === null) {
+		state.warnings.push("The book's own text could not be read; quotes keep the spelling the device recorded.");
+		return;
+	}
+
+	for (const highlight of highlights) {
+		const corrected = correctQuote(highlight.sentence, highlight.marked, text);
+		if (!corrected) continue;
+		highlight.sentence = corrected.sentence;
+		highlight.marked = corrected.marked;
+	}
 }

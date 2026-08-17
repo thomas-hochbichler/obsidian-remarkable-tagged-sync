@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest";
+import { readEpubText } from "./epub-text";
+
+/** CRC-32, the one field a ZIP reader may well check even though ours does not. */
+function crc32(bytes: Uint8Array): number {
+	let crc = ~0;
+	for (const byte of bytes) {
+		crc ^= byte;
+		for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+	}
+	return ~crc >>> 0;
+}
+
+async function deflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+	const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+	return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** A real ZIP: local headers, then the central directory, then the EOCD. `deflate` picks method 8. */
+async function makeZip(files: { name: string; content: string; deflate?: boolean }[]): Promise<Uint8Array> {
+	const encoder = new TextEncoder();
+	const locals: Uint8Array[] = [];
+	const centrals: Uint8Array[] = [];
+	let offset = 0;
+
+	for (const file of files) {
+		const raw = encoder.encode(file.content);
+		const data = file.deflate ? await deflateRaw(raw) : raw;
+		const name = encoder.encode(file.name);
+		const local = new Uint8Array(30 + name.length + data.length);
+		const localView = new DataView(local.buffer);
+		localView.setUint32(0, 0x04034b50, true);
+		localView.setUint16(8, file.deflate ? 8 : 0, true);
+		localView.setUint32(14, crc32(raw), true);
+		localView.setUint32(18, data.length, true);
+		localView.setUint32(22, raw.length, true);
+		localView.setUint16(26, name.length, true);
+		local.set(name, 30);
+		local.set(data, 30 + name.length);
+		locals.push(local);
+
+		const central = new Uint8Array(46 + name.length);
+		const centralView = new DataView(central.buffer);
+		centralView.setUint32(0, 0x02014b50, true);
+		centralView.setUint16(10, file.deflate ? 8 : 0, true);
+		centralView.setUint32(16, crc32(raw), true);
+		centralView.setUint32(20, data.length, true);
+		centralView.setUint32(24, raw.length, true);
+		centralView.setUint16(28, name.length, true);
+		centralView.setUint32(42, offset, true);
+		central.set(name, 46);
+		centrals.push(central);
+		offset += local.length;
+	}
+
+	const centralSize = centrals.reduce((sum, part) => sum + part.length, 0);
+	const eocd = new Uint8Array(22);
+	const eocdView = new DataView(eocd.buffer);
+	eocdView.setUint32(0, 0x06054b50, true);
+	eocdView.setUint16(8, files.length, true);
+	eocdView.setUint16(10, files.length, true);
+	eocdView.setUint32(12, centralSize, true);
+	eocdView.setUint32(16, offset, true);
+
+	const total = [...locals, ...centrals, eocd];
+	const out = new Uint8Array(total.reduce((sum, part) => sum + part.length, 0));
+	let at = 0;
+	for (const part of total) {
+		out.set(part, at);
+		at += part.length;
+	}
+	return out;
+}
+
+describe("readEpubText", () => {
+	it("reads the prose out of every XHTML document, stored or deflated", async () => {
+		const zip = await makeZip([
+			{ name: "mimetype", content: "application/epub+zip" },
+			{ name: "OEBPS/chapter1.xhtml", content: "<html><body><h1>CHAPTER I.</h1><p>Alice was beginning to get very tired.</p></body></html>" },
+			{ name: "OEBPS/chapter2.xhtml", content: "<html><body><p>Down, down, down.</p></body></html>", deflate: true },
+		]);
+
+		expect(await readEpubText(zip)).toBe("CHAPTER I. Alice was beginning to get very tired. Down, down, down.");
+	});
+
+	it("keeps the word boundary an inline tag stands for, and drops script and style whole", async () => {
+		const zip = await makeZip([
+			{
+				name: "a.xhtml",
+				// Without a space for the tag, "fell" and "off" would run together as one word and no
+				// quote spanning the emphasis could ever be found again.
+				content: "<html><head><style>p { color: red }</style></head><body><p>I fell<em>off</em>the top</p><script>x()</script></body></html>",
+			},
+		]);
+
+		expect(await readEpubText(zip)).toBe("I fell off the top");
+	});
+
+	it("decodes the entities a book's punctuation is written with", async () => {
+		const zip = await makeZip([{ name: "a.xhtml", content: "<p>&ldquo;Well!&rdquo; thought Alice &amp; her sister &#8212; then &#x2026;</p>" }]);
+
+		expect(await readEpubText(zip)).toBe("“Well!” thought Alice & her sister — then …");
+	});
+
+	// Every failure is a null, never a throw: the quote still gets written in the device's spelling.
+	it("returns null for bytes that are not a ZIP", async () => {
+		expect(await readEpubText(new TextEncoder().encode("not a zip at all"))).toBeNull();
+	});
+
+	it("returns null for an archive with no XHTML in it", async () => {
+		expect(await readEpubText(await makeZip([{ name: "mimetype", content: "application/epub+zip" }]))).toBeNull();
+	});
+});

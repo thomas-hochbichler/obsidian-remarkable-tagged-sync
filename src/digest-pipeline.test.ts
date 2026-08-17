@@ -57,9 +57,9 @@ function deps(overrides: Partial<DigestPipelineDeps> = {}): DigestPipelineDeps {
 	};
 }
 
-function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}) {
+function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}, book?: () => Promise<string | null>) {
 	return buildDigest(deps(overrides), {
-		source: { kind: "pdf", bytes: SOURCE_BYTES },
+		source: { kind: "pdf", bytes: SOURCE_BYTES, book },
 		embedPath: "attachments/doc.pdf",
 		pages,
 	});
@@ -240,6 +240,59 @@ describe("buildDigest with the fixture page's text layer", () => {
 		expect(result.markdown).toContain("Claude reagiert gut auf ==klare, explizite Anweisungen.==");
 		expect(result.markdown).toContain("Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.");
 		expect(result.warnings).toEqual([]);
+	});
+
+	// A book the device rendered from an `.epub`: the conversion loses letters, so the page's text
+	// layer is not the author's wording and the original book has to supply it (spec §7 step 2).
+	describe("against the original book", () => {
+		/**
+		 * The fixture's text layer with one word damaged the way the device damages one.
+		 *
+		 * The damage sits outside the highlighted run on purpose. Only the text layer is damaged here,
+		 * while the scene's own highlight text stays clean -- on a real book both come from the same
+		 * conversion and carry the same error, and a run that no longer matches the page moves the
+		 * markers for a reason that has nothing to do with this correction.
+		 */
+		function damagedTextDocument(): PdfTextDocument {
+			const page = fixturePageText();
+			return fakeTextDocument(
+				{ 1: { ...page, lines: page.lines.map((line) => ({ ...line, text: line.text.replace("Prompts.", "PromPts.") })) } },
+				FIXTURE_HEADINGS.map((heading) => ({ pageIndex: 1, x: null, y: heading.y, title: heading.title })),
+			);
+		}
+
+		const BOOK = "Kapitel 5. Verwende konsistente, beschreibende Tag-Namen in deinen Prompts. Das hilft beim Parsen.";
+
+		it("re-spells a damaged quote in the book's own words, and keeps the run marked", async () => {
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => BOOK);
+
+			expect(result.markdown).toContain("Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.");
+			expect(result.markdown).not.toContain("PromPts");
+		});
+
+		it("keeps the device's text, and says so once, when the book cannot be read", async () => {
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => null);
+
+			expect(result.markdown).toContain("PromPts");
+			expect(result.warnings).toEqual(["The book's own text could not be read; quotes keep the spelling the device recorded."]);
+		});
+
+		it("keeps a quote it cannot find in the book, and stays quiet about it", async () => {
+			// Not a failure worth a line: the device's text is not known to be wrong, and a book has
+			// pages this quote could legitimately not be on.
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => "Ein ganz anderes Buch über Segelschiffe.");
+
+			expect(result.markdown).toContain("PromPts");
+			expect(result.warnings).toEqual([]);
+		});
+
+		it("does not fetch the book for a page that has no quotes on it", async () => {
+			const book = vi.fn(async () => BOOK);
+
+			await build([fixturePage(inkyScene())], { loadText: async () => damagedTextDocument() }, book);
+
+			expect(book).not.toHaveBeenCalled();
+		});
 	});
 
 	it("resolves the five margin notes to the anchors measured on the real page", async () => {

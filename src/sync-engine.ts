@@ -21,6 +21,7 @@ import {
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { getDocumentFiles, type DocumentFiles } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
+import { readEpubText } from "./epub-text";
 import { validateSourcePdf } from "./pdf-source";
 import { inheritedFolderTagNames, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
@@ -83,9 +84,10 @@ export type SyncRowStatus = "active" | "orphaned";
  * freehand, which the device records as a stroke rather than as a highlight and the digest named
  * nowhere, and stops a mark that ends in the space after a word from taking the next word with it;
  * version 24 reads a tagged EPUB through the PDF path, so a book already synced as a notebook --
- * ink on blank pages, none of its text under it -- is re-rendered as the book itself.
+ * ink on blank pages, none of its text under it -- is re-rendered as the book itself; version 25
+ * spells a book's quotes the way the book does, correcting the letters its conversion to a PDF lost.
  */
-export const RENDER_VERSION = 24;
+export const RENDER_VERSION = 25;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -1217,7 +1219,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// drawn over it (see renderAnnotatedPdf). Notebook tag -> every page; page tag -> just that
 		// page.
 		const pdfBacked = isPdfBacked(content);
-		const { pages: pageHashes, images: imageFiles } = await getDocumentFiles(api, entry.id, entry.hash);
+		const { pages: pageHashes, images: imageFiles, epub: epubFile } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
 		const docPages = orderedPages(content, liveIds, pdfBacked);
 		const pageOrder = docPages.map((page) => page.id);
@@ -1226,6 +1228,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// Fetched once per doc, only if some unit actually needs it (a doc may open just to orphan rows).
 		let sourcePdf: Promise<Uint8Array> | null = null;
 		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
+
+		// The book behind a rendered EPUB, on the same terms: at most once per doc, and only when a
+		// digest has a quote whose spelling is worth correcting (see `DigestSource.book`).
+		let bookText: Promise<string | null> | null = null;
+		const getBookText = epubFile === null ? undefined : () => (bookText ??= api.raw.getHash(epubFile.id, epubFile.hash).then(readEpubText));
 
 		/**
 		 * The `## Digest` body for one unit with document text, or "" when it could not be built. A
@@ -1250,7 +1257,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					// transcribes per cluster, which is finer than the page the bar counts.
 					{ ocrBackend, marginNotes: deps.marginNotes ?? false, onPage: bar.page },
 					{
-						source: pdfBacked ? { kind: "pdf", bytes: await getSourcePdf() } : { kind: "typed-text" },
+						source: pdfBacked ? { kind: "pdf", bytes: await getSourcePdf(), book: getBookText } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
 						// `writeAttachment` derives it from, so the digest can link into it before the
 						// attachment is written and `writeUnit` needs no reordering.
