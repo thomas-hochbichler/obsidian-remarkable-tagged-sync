@@ -81,9 +81,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * -- an imported article's illustrations, which the parser skipped whole, so every one of them was a
  * blank gap in the attachment; version 23 quotes a passage the reader swiped the marker across
  * freehand, which the device records as a stroke rather than as a highlight and the digest named
- * nowhere, and stops a mark that ends in the space after a word from taking the next word with it.
+ * nowhere, and stops a mark that ends in the space after a word from taking the next word with it;
+ * version 24 reads a tagged EPUB through the PDF path, so a book already synced as a notebook --
+ * ink on blank pages, none of its text under it -- is re-rendered as the book itself.
  */
-export const RENDER_VERSION = 23;
+export const RENDER_VERSION = 24;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -328,6 +330,16 @@ interface DocPageRef {
 }
 
 /**
+ * True for a document whose pages are an uploaded or device-rendered PDF with `.rm` annotations
+ * layered on top -- an uploaded PDF, or an EPUB, which the device converts to a PDF on-device and
+ * keeps that render in the cloud next to the `.epub` (`epub-sync/spec.md` §2). Both reach us through
+ * `getPdf`, and everything downstream of this gate is format-agnostic.
+ */
+function isPdfBacked(doc: DocumentContent | LegacyDocumentContent): boolean {
+	return doc.fileType === "pdf" || doc.fileType === "epub";
+}
+
+/**
  * Live, in-document-order pages. `cPages` is authoritative when present: a page is live iff its
  * `deleted` marker is absent or zero -- the marker is a CRDT `{timestamp, value}` record, so a
  * restored page keeps it at `value: 0` and testing the object's truthiness drops live pages,
@@ -337,16 +349,16 @@ interface DocPageRef {
  * Legacy `pages[]` docs carry no `deleted` info: keep the old `.rm`-presence filter for handwritten
  * ones (best available signal), but a PDF-backed legacy doc keeps every page (annotations are moot).
  */
-function orderedPages(doc: DocumentContent | LegacyDocumentContent, liveIds: ReadonlySet<string>, isPdf: boolean): DocPageRef[] {
+function orderedPages(doc: DocumentContent | LegacyDocumentContent, liveIds: ReadonlySet<string>, pdfBacked: boolean): DocPageRef[] {
 	const cPages = doc.cPages?.pages ?? [];
 	if (cPages.length > 0) {
 		return cPages
 			.filter((page) => !page.deleted?.value)
 			.sort((a, b) => (a.idx.value < b.idx.value ? -1 : a.idx.value > b.idx.value ? 1 : 0))
-			.map((page, i) => ({ id: page.id, sourceIndex: page.redir?.value ?? i, appended: isPdf && page.redir === undefined }));
+			.map((page, i) => ({ id: page.id, sourceIndex: page.redir?.value ?? i, appended: pdfBacked && page.redir === undefined }));
 	}
 	const pages = Array.isArray(doc.pages) ? doc.pages : [];
-	const filtered = isPdf ? pages : pages.filter((id) => liveIds.has(id));
+	const filtered = pdfBacked ? pages : pages.filter((id) => liveIds.has(id));
 	// A legacy `pages[]` doc records no source mapping at all, so nothing here can be called added on
 	// the device -- the position *is* the mapping, for every page alike.
 	return filtered.map((id, i) => ({ id, sourceIndex: i, appended: false }));
@@ -1075,11 +1087,11 @@ async function scanWorkload(
 			// need its files fetched to say so.
 			if (mapped.notebook.length === 0 && mapped.page.length === 0) return 0;
 
-			const isPdf = content.fileType === "pdf";
+			const pdfBacked = isPdfBacked(content);
 			const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
-			const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
+			const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
 			const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, (pageId) =>
-				isPdf ? entry.hash : (pageHashes.get(pageId) ?? entry.hash),
+				pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash),
 			);
 			return [...plan.notebook, ...plan.pages].reduce((sum, unit) => sum + unit.steps, 0);
 		} catch (error) {
@@ -1200,14 +1212,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const hasPreviouslyActiveRow = hasRowWithStatus(rows, entry.id, "active");
 		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow) continue;
 
-		// A PDF-backed doc's pages are an uploaded source PDF with handwritten annotations layered on
-		// top. The render composites the two: each page shows the source page with its `.rm`
-		// annotation scene drawn over it (see renderAnnotatedPdf). Notebook tag -> every page; page
-		// tag -> just that page.
-		const isPdf = content.fileType === "pdf";
+		// A PDF-backed doc's pages are a source PDF with handwritten annotations layered on top. The
+		// render composites the two: each page shows the source page with its `.rm` annotation scene
+		// drawn over it (see renderAnnotatedPdf). Notebook tag -> every page; page tag -> just that
+		// page.
+		const pdfBacked = isPdfBacked(content);
 		const { pages: pageHashes, images: imageFiles } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
-		const docPages = orderedPages(content, liveIds, isPdf);
+		const docPages = orderedPages(content, liveIds, pdfBacked);
 		const pageOrder = docPages.map((page) => page.id);
 		const pageRefById = new Map(docPages.map((page) => [page.id, page]));
 
@@ -1238,7 +1250,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					// transcribes per cluster, which is finer than the page the bar counts.
 					{ ocrBackend, marginNotes: deps.marginNotes ?? false, onPage: bar.page },
 					{
-						source: isPdf ? { kind: "pdf", bytes: await getSourcePdf() } : { kind: "typed-text" },
+						source: pdfBacked ? { kind: "pdf", bytes: await getSourcePdf() } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
 						// `writeAttachment` derives it from, so the digest can link into it before the
 						// attachment is written and `writeUnit` needs no reordering.
@@ -1258,7 +1270,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// A tagged page's change-detection hash: its own `.rm` hash for handwritten pages, else the
 		// whole-doc hash -- for a PDF page (no `.rm`) or a blank page (never drawn), the page changes
 		// exactly when the document does.
-		const pageContentHash = (pageId: string): string => (isPdf ? entry.hash : (pageHashes.get(pageId) ?? entry.hash));
+		const pageContentHash = (pageId: string): string => (pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash));
 
 		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash);
 		for (const row of plan.orphan) orphanRow(rows, row);
@@ -1282,7 +1294,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// Non-null exactly for a PDF-backed unit, i.e. the units that get a digest instead of a transcript.
 			let digestPages: DigestPageInput[] | null = null;
 			try {
-				if (isPdf) {
+				if (pdfBacked) {
 					const composite = await annotatedPdfPages(api, entry.id, docPages, pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
 					ocrPages = annotationOcrPages(composite);
@@ -1375,7 +1387,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			let highlights: HighlightGroup[];
 			let digestPages: DigestPageInput[] | null = null;
 			try {
-				if (isPdf) {
+				if (pdfBacked) {
 					const pageRef = pageRefById.get(unit.pageId)!;
 					const composite = await annotatedPdfPages(api, entry.id, [pageRef], pageHashes);
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
@@ -1477,9 +1489,9 @@ export interface ReTranscribeDeps {
 }
 
 /** The OCR input for one already-synced unit, labelled: annotation scenes for a PDF-backed doc, every live page's scene otherwise. */
-async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, isPdf: boolean): Promise<OcrPage[] | null> {
+async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, pdfBacked: boolean): Promise<OcrPage[] | null> {
 	if (row.pageId === null) {
-		return isPdf
+		return pdfBacked
 			? annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes))
 			: notebookOcrPages(await Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id)))));
 	}
@@ -1487,7 +1499,7 @@ async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, do
 	if (pageIndex === -1) return null; // the tagged page no longer exists on the device
 	// A single-page embed, so the `#page=` anchor is 1 -- matching the page-tag branch of `runSync`.
 	const labels = { pageLabel: pageIndex + 1, embedPage: 1 };
-	return isPdf
+	return pdfBacked
 		? [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }]
 		: [{ scene: await renderPage(api, docId, row.pageId, pageHashes.get(row.pageId)), ...labels }];
 }
@@ -1538,7 +1550,7 @@ async function scanReTranscribe(
 				return 0;
 			}
 			const { pages: pageHashes } = await getDocumentFiles(deps.api, entry.id, entry.hash);
-			const docPages = orderedPages(content, new Set(pageHashes.keys()), content.fileType === "pdf");
+			const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdfBacked(content));
 			return (rowsByDoc.get(docId) ?? []).reduce((sum, row) => sum + reTranscribeSteps(row, docPages), 0);
 		} catch (error) {
 			// See `scanWorkload`: measuring must never be the thing that breaks a run.
@@ -1599,9 +1611,9 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			continue;
 		}
 
-		const isPdf = content.fileType === "pdf";
+		const pdfBacked = isPdfBacked(content);
 		const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
-		const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
+		const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
 
 		for (const row of rowsByDoc.get(docId)!) {
 			if (shouldStop()) return stopHere();
@@ -1610,7 +1622,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			bar.start(reTranscribeSteps(row, docPages), entry.visibleName, row.tag, "rendering");
 			let ocrPages: OcrPage[] | null;
 			try {
-				ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, isPdf);
+				ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to re-fetch "${entry.visibleName}" for re-transcribe, skipping`, error);
 				bar.finish(); // counted before it failed; the bar must still reach its total

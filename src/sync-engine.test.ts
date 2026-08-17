@@ -1571,6 +1571,36 @@ describe("runSync", () => {
 			expect(deps.noteStore.write.mock.calls[0][0]).toContain("Page 2");
 		});
 
+		it("treats a tagged EPUB as PDF-backed: the book the device rendered, with its annotations", async () => {
+			const entry = documentEntry({ fileType: "epub", tags: [{ name: "sync", timestamp: 0 }] });
+			// The device converts an EPUB to a PDF on-device and keeps that render in the cloud next to
+			// the `.epub`, so the document looks exactly like an uploaded PDF: cPages with redir, and
+			// `getPdf` returning the rendered book (spec §2).
+			const content = documentContent({
+				fileType: "epub",
+				pageCount: 2,
+				cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]),
+			});
+			const source = await makeSourcePdf([[100, 100], [200, 200]]);
+			const api = fakeApi({
+				rootHash: "root-epub",
+				entries: [entry],
+				contentById: { "doc-1": content },
+				sourcePdfByDoc: { "doc-1": source },
+				pageHashesByDoc: { "doc-1": { p1: "anno-hash" } }, // p1 carries handwriting
+			});
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+
+			const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			expect(result.notesWritten).toBe(1);
+			// Without the gate the doc falls into the notebook branch: no source fetch, and the ink
+			// rendered on a blank page with none of the book text under it.
+			expect(api.getPdf).toHaveBeenCalledWith("doc-1", "hash-1");
+			expect(await embeddedPageCount(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toBe(2);
+			expect(deps.noteStore.write.mock.calls[0][1]).toContain("## Digest");
+		});
+
 		it("skips OCR for a PDF whose pages carry no handwritten annotations", async () => {
 			const entry = documentEntry({ fileType: "pdf", tags: [{ name: "sync", timestamp: 0 }] });
 			const content = documentContent({
