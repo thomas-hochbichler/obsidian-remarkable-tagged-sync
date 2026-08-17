@@ -22,6 +22,7 @@ import {
 	type SyncApi,
 	type SyncIndex,
 	type SyncIndexRow,
+	type SyncProgress,
 } from "./sync-engine";
 import { mappingFingerprint, TagRouter } from "./tag-router";
 
@@ -256,28 +257,82 @@ function baseDeps(api: SyncApi, tagFolderMap: Record<string, string>) {
 	};
 }
 
-describe("runSync", () => {
-	it("reports progress before the root-hash check and once per document, including skipped ones", async () => {
-		const entries = [
-			documentEntry({ id: "doc-1", hash: "hash-1", visibleName: "First", tags: [{ name: "sync", timestamp: 0 }] }),
-			documentEntry({ id: "doc-2", hash: "hash-2", visibleName: "Second" }),
-		];
-		const api = fakeApi({
+type WorkingProgress = Extract<SyncProgress, { phase: "working" }>;
+type ScanningProgress = Extract<SyncProgress, { phase: "scanning" }>;
+
+/** Every `working` message a run emitted, in order. */
+function workingMessages(onProgress: ReturnType<typeof vi.fn>): WorkingProgress[] {
+	return (onProgress.mock.calls.map((call) => call[0]) as SyncProgress[]).filter(
+		(progress): progress is WorkingProgress => progress.phase === "working",
+	);
+}
+
+function scanningMessages(onProgress: ReturnType<typeof vi.fn>): ScanningProgress[] {
+	return (onProgress.mock.calls.map((call) => call[0]) as SyncProgress[]).filter(
+		(progress): progress is ScanningProgress => progress.phase === "scanning",
+	);
+}
+
+/** A backend that reports each page as it finishes -- what the local model and the LLM backends do. */
+function tickingOcrBackend(): OcrBackend {
+	return {
+		id: "vision",
+		metered: false,
+		recognize: vi.fn(async (pages: RmPage[], onPage?: () => void): Promise<OcrResult> => {
+			for (const _page of pages) onPage?.();
+			return { status: "ok", pages: pages.map(() => ({ status: "ok" as const, text: "x" })), text: "x", confidence: null };
+		}),
+	};
+}
+
+describe("runSync progress", () => {
+	/** One tagged three-page notebook, and one untagged document the sync walks past. */
+	function twoDocs() {
+		return fakeApi({
 			rootHash: "root-1",
-			entries,
-			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
-			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			entries: [
+				documentEntry({ id: "doc-1", hash: "hash-1", visibleName: "First", tags: [{ name: "sync", timestamp: 0 }] }),
+				documentEntry({ id: "doc-2", hash: "hash-2", visibleName: "Second" }),
+			],
+			contentById: {
+				"doc-1": documentContent({ cPages: cPages(["page-a", "page-b", "page-c"]) }),
+				"doc-2": documentContent({ cPages: cPages(["page-x"]) }),
+			},
+			pageHashesByDoc: { "doc-1": { "page-a": "ha", "page-b": "hb", "page-c": "hc" }, "doc-2": { "page-x": "hx" } },
 		});
+	}
+
+	// The whole point of the rebuild: the old counter was the walk position through every document on
+	// the device, so it raced through the ones nothing happens to and then sat still on the one that
+	// mattered.
+	it("counts the pages it will really work on, not the documents it walks past", async () => {
 		const onProgress = vi.fn();
-		const deps = { ...baseDeps(api, { sync: "Target" }), onProgress };
 
-		await runSync(deps, EMPTY_SYNC_INDEX);
+		await runSync({ ...baseDeps(twoDocs(), { sync: "Target" }), onProgress }, EMPTY_SYNC_INDEX);
 
-		expect(onProgress.mock.calls.map((call) => call[0])).toEqual([
-			{ phase: "scanning" },
-			{ phase: "document", index: 1, total: 2, name: "First" },
-			{ phase: "document", index: 2, total: 2, name: "Second" },
-		]);
+		expect(workingMessages(onProgress).at(-1)).toEqual({
+			phase: "working",
+			done: 3,
+			total: 3,
+			document: "First",
+			tag: "sync",
+			step: "writing",
+			unitDone: 3,
+			unitTotal: 3,
+		});
+	});
+
+	// Otherwise the user watches a spinner while the counting is counted, with nothing to say how long
+	// that will take either.
+	it("reports the scan's own counter before the bar can start", async () => {
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(twoDocs(), { sync: "Target" }), onProgress }, EMPTY_SYNC_INDEX);
+
+		const scans = scanningMessages(onProgress);
+		expect(scans[0]).toEqual({ phase: "scanning", checked: 0, candidates: 0 }); // before the root-hash gate
+		expect(scans[1]).toEqual({ phase: "scanning", checked: 0, candidates: 2 });
+		expect(scans.at(-1)).toEqual({ phase: "scanning", checked: 2, candidates: 2 });
 	});
 
 	it("reports scanning even when the root-hash gate returns early", async () => {
@@ -287,8 +342,163 @@ describe("runSync", () => {
 
 		await runSync(deps, { rootHash: "root-1", mappings: mappingFingerprint({ sync: "Target" }), rows: {} });
 
-		expect(onProgress.mock.calls.map((call) => call[0])).toEqual([{ phase: "scanning" }]);
+		expect(onProgress.mock.calls.map((call) => call[0])).toEqual([{ phase: "scanning", checked: 0, candidates: 0 }]);
 	});
+
+	// A notebook with two mapped tags is written twice over the same pages, and really does render and
+	// transcribe them twice -- there is no cache between the tags. The bar tracks time spent.
+	it("counts a notebook's pages once per mapped tag", async () => {
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [documentEntry({ hash: "hash-1", tags: [{ name: "sync", timestamp: 0 }, { name: "review", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a", "page-b", "page-c"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "ha", "page-b": "hb", "page-c": "hc" } },
+		});
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(api, { sync: "A", review: "B" }), onProgress }, EMPTY_SYNC_INDEX);
+
+		expect(workingMessages(onProgress).at(-1)).toMatchObject({ done: 6, total: 6 });
+	});
+
+	/**
+	 * The assertion that catches a scan which drifted from the run. Every unit kind in one fixture: a
+	 * notebook under two tags, a tagged page, and a document that produces nothing at all.
+	 */
+	it("never goes backwards, and ends exactly on the scanned total", async () => {
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [
+				documentEntry({ id: "doc-1", hash: "hash-1", visibleName: "First", tags: [{ name: "sync", timestamp: 0 }, { name: "review", timestamp: 0 }] }),
+				documentEntry({ id: "doc-2", hash: "hash-2", visibleName: "Second" }),
+			],
+			contentById: {
+				"doc-1": documentContent({
+					cPages: cPages(["page-a", "page-b", "page-c"]),
+					pageTags: [{ name: "todo", timestamp: 0, pageId: "page-b" }],
+				}),
+				"doc-2": documentContent({ cPages: cPages(["page-x"]) }),
+			},
+			pageHashesByDoc: { "doc-1": { "page-a": "ha", "page-b": "hb", "page-c": "hc" }, "doc-2": { "page-x": "hx" } },
+		});
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(api, { sync: "A", review: "B", todo: "T" }), onProgress, ocrBackend: tickingOcrBackend() }, EMPTY_SYNC_INDEX);
+
+		const done = workingMessages(onProgress).map((progress) => progress.done);
+		expect(done).toEqual([...done].sort((a, b) => a - b));
+		// 3 pages x 2 notebook tags, plus the one tagged page.
+		expect(workingMessages(onProgress).at(-1)).toMatchObject({ done: 7, total: 7 });
+	});
+
+	it("moves the bar page by page when the backend can say so", async () => {
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(twoDocs(), { sync: "Target" }), onProgress, ocrBackend: tickingOcrBackend() }, EMPTY_SYNC_INDEX);
+
+		// The first is the sub-phase changing before a page is transcribed; then one per page.
+		expect(workingMessages(onProgress).filter((progress) => progress.step === "transcribing").map((progress) => progress.done)).toEqual([0, 1, 2, 3]);
+	});
+
+	// Vision, `off`, and a reused transcript cannot report a page as it lands. The unit still has to
+	// count for exactly its pages, or the bar stops short.
+	it("counts a whole unit at once when the backend cannot report per page", async () => {
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(twoDocs(), { sync: "Target" }), onProgress }, EMPTY_SYNC_INDEX);
+
+		expect(workingMessages(onProgress).map((progress) => progress.done)).toEqual([0, 0, 3]);
+	});
+
+	// A page rendered during the scan is a page rendered twice: the fetch would be a cache hit, the
+	// parse would not.
+	it("renders nothing while it is only counting", async () => {
+		const api = twoDocs();
+		await runSync(baseDeps(api, { sync: "Target" }), EMPTY_SYNC_INDEX);
+
+		expect(api.raw.getHash).toHaveBeenCalledTimes(3); // the notebook's three pages, once each
+	});
+
+	it("skips a document the scan could not read, and reports it once", async () => {
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [
+				documentEntry({ id: "doc-1", hash: "hash-1", visibleName: "First", tags: [{ name: "sync", timestamp: 0 }] }),
+				documentEntry({ id: "doc-2", hash: "hash-2", visibleName: "Second", tags: [{ name: "sync", timestamp: 0 }] }),
+			],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) }, // doc-2 has none
+			pageHashesByDoc: { "doc-1": { "page-a": "ha" } },
+		});
+		const onProgress = vi.fn();
+
+		const result = await runSync({ ...baseDeps(api, { sync: "Target" }), onProgress }, EMPTY_SYNC_INDEX);
+
+		expect(result.documentsSkipped).toBe(1);
+		expect(result.skipErrors).toEqual([expect.stringContaining('failed to read "Second"')]);
+		expect(api.getContent.mock.calls.filter((call) => call[0] === "doc-2")).toHaveLength(1);
+		expect(workingMessages(onProgress).at(-1)).toMatchObject({ done: 1, total: 1 });
+	});
+
+	// The denominator is fixed when the scan ends, so anything that drops out afterwards counts as
+	// done. The failure is in the run's own report; the bar does not have to carry it as well.
+	it("fills the bar for a unit that failed to render", async () => {
+		const api = twoDocs();
+		api.raw.getHash.mockRejectedValue(new Error("page fetch failed"));
+		const onProgress = vi.fn();
+
+		const result = await runSync({ ...baseDeps(api, { sync: "Target" }), onProgress }, EMPTY_SYNC_INDEX);
+
+		expect(result.notesWritten).toBe(0);
+		expect(workingMessages(onProgress).at(-1)).toMatchObject({ done: 3, total: 3, step: "writing" });
+	});
+
+	it("leaves a note the user edited out of the denominator", async () => {
+		const first = { ...baseDeps(twoDocs(), { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "misread", confidence: null }) };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const path = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+		await first.noteStore.write(path, (await first.noteStore.read(path))!.replace("## Transcript", "## Transcript\nby hand"));
+
+		// A device-side change, so the document is reopened and the unit is reached at all.
+		const changed = twoDocs();
+		changed.listItems.mockResolvedValue([
+			documentEntry({ id: "doc-1", hash: "hash-9", visibleName: "First", tags: [{ name: "sync", timestamp: 0 }] }),
+		]);
+		changed.raw.getRootHash.mockResolvedValue(["root-9", 1, 4]);
+		const onProgress = vi.fn();
+
+		const result = await runSync({ ...baseDeps(changed, { sync: "Target" }), noteStore: first.noteStore, onProgress }, synced.index);
+
+		expect(result.editedNotesSkipped).toBe(1);
+		expect(workingMessages(onProgress)).toEqual([]); // nothing to write, so no bar at all
+	});
+
+	it("emits no working message when there is nothing to do", async () => {
+		const api = fakeApi({
+			rootHash: "root-1",
+			entries: [documentEntry({ id: "doc-1", hash: "hash-1" })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "ha" } },
+		});
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), onProgress }, EMPTY_SYNC_INDEX);
+
+		expect(workingMessages(onProgress)).toEqual([]);
+	});
+
+	// Nothing has been written when the scan is stopped, so there is nothing to checkpoint -- but the
+	// caller still has to hear that this run was stopped rather than finished.
+	it("returns stopped, having written nothing, when the stop lands during the scan", async () => {
+		const deps = { ...baseDeps(twoDocs(), { sync: "Target" }), shouldStop: () => true };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.stopped).toBe(true);
+		expect(deps.noteStore.write).not.toHaveBeenCalled();
+	});
+});
+
+describe("runSync", () => {
 
 	it("root-hash gate: unchanged root hash performs zero fetches beyond the root-hash check", async () => {
 		const api = fakeApi({ rootHash: "root-1", entries: [documentEntry()] });
@@ -1610,6 +1820,33 @@ describe("reTranscribeAll", () => {
 			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
 		});
 	}
+
+	/**
+	 * The denominator is the pages of every active row -- counted structurally, from the document's
+	 * live pages. Counting it with `ocrPagesForRow`, which is the function that answers this question
+	 * everywhere else, would render every page a second time.
+	 */
+	it("counts the pages of every row it will re-transcribe, without rendering them to find out", async () => {
+		const twoPages = () =>
+			fakeApi({
+				rootHash: "root-1",
+				entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+				contentById: { "doc-1": documentContent({ cPages: cPages(["page-a", "page-b"]) }) },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a", "page-b": "hash-b" } },
+			});
+		const first = baseDeps(twoPages(), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const api = twoPages();
+		const onProgress = vi.fn();
+
+		await reTranscribeAll(
+			{ api, noteStore: first.noteStore, ocrBackend: tickingOcrBackend(), onProgress },
+			synced.index,
+		);
+
+		expect(workingMessages(onProgress).at(-1)).toMatchObject({ done: 2, total: 2, document: "Notebook", tag: "sync" });
+		expect(api.raw.getHash).toHaveBeenCalledTimes(2); // the run's own render, and no other
+	});
 
 	// Worse than the sync's duplicate: a note whose block was rewritten while its stored blockHash was
 	// lost reads as a hand edit forever after, and nothing signals it. Without the per-note checkpoint

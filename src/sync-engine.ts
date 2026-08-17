@@ -25,6 +25,7 @@ import { inheritedFolderTagNames, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
+import { mapWithConcurrency } from "./vision-ocr-backend";
 
 export type SyncRowStatus = "active" | "orphaned";
 
@@ -134,14 +135,39 @@ export type SyncApi = Pick<RemarkableApi, "listItems" | "getContent" | "getPdf">
 };
 
 /**
+ * What the engine is doing to a unit right now. Named for what the code actually does: fetching a
+ * page and drawing it are one indivisible act (`renderPage`), not two.
+ */
+export type WorkStep = "rendering" | "transcribing" | "writing";
+
+/**
  * Progress of a running sync, for UI feedback only -- a sync can spend a long time fetching,
  * rendering and OCR-ing before it produces anything, and silence reads as "nothing happened".
- * `document` is emitted for every document the sync considers, including ones it then skips as
- * unchanged, so the count advances steadily rather than stalling on the changed ones.
+ *
+ * Two phases, because they measure different things. `scanning` counts documents being *looked at*,
+ * which is fast and says only that something is happening. `working` counts pages of real work
+ * against a total the scan established, which is the only count a user can read as "how much is
+ * left": the enumeration position this replaced spent most of its range on documents nothing
+ * happened to, then sat still for minutes on the one that mattered.
+ *
+ * The message deliberately carries more than a status bar can show -- the document, its tag, and the
+ * sub-phase -- so the display can choose what fits and put the rest in a tooltip. `done` never
+ * decreases and always reaches `total`: every unit contributes exactly the steps the scan counted
+ * for it, whether its pages were reported one by one or all at once at the end.
  */
 export type SyncProgress =
-	| { phase: "scanning" }
-	| { phase: "document"; index: number; total: number; name: string };
+	| { phase: "scanning"; checked: number; candidates: number }
+	| {
+			phase: "working";
+			done: number;
+			total: number;
+			document: string;
+			tag: string;
+			step: WorkStep;
+			/** Pages of *this* unit -- what explains a bar sitting still on a forty-page notebook. */
+			unitDone: number;
+			unitTotal: number;
+	  };
 
 export interface SyncDeps {
 	api: SyncApi;
@@ -874,6 +900,158 @@ async function planUnits(
 }
 
 /**
+ * How wide the pre-scan fans out. One round trip per candidate walked serially is seconds of dead air
+ * before the bar can appear, and a bound of 6 is strictly more conservative than what already ships:
+ * a notebook's pages are rendered with an unbounded `Promise.all`. The scan only reads, so a partial
+ * failure costs nothing written.
+ */
+const SCAN_PARALLELISM = 6;
+
+/** Drives the progress bar through one run. See `progressTicker`. */
+interface ProgressTicker {
+	/** A unit is starting: `steps` pages of work on `document`, for `tag`. */
+	start: (steps: number, document: string, tag: string, step: WorkStep) => void;
+	/** The sub-phase changed; the count did not. */
+	step: (step: WorkStep) => void;
+	/** One page finished transcribing. Handed straight to a backend, so it stands on its own. */
+	page: () => void;
+	/** The unit is over, one way or another. */
+	finish: () => void;
+}
+
+/**
+ * The progress arithmetic, shared by both engines so they cannot count differently.
+ *
+ * `done` only ever grows, and a unit contributes exactly the steps the scan counted for it: its pages
+ * as each finishes, then everything that never reported individually when the unit ends. That last
+ * part is what makes a backend which cannot report per page -- Vision, `off`, a reused transcript --
+ * indistinguishable from one that can, as far as the total is concerned.
+ *
+ * The clamp in `page()` is per unit, and there is deliberately none on `done` itself: a scan that
+ * disagreed with the run has to show up as a total that does not add up, rather than being quietly
+ * papered over.
+ */
+function progressTicker(report: (progress: SyncProgress) => void, total: number): ProgressTicker {
+	let done = 0;
+	let unitDone = 0;
+	let unitTotal = 0;
+	let document = "";
+	let tag = "";
+
+	// A run with nothing to do never enters the working phase at all, so `total: 0` is never sent.
+	const emit = (step: WorkStep): void => {
+		if (total > 0) report({ phase: "working", done, total, document, tag, step, unitDone, unitTotal });
+	};
+
+	return {
+		start: (steps, unitDocument, unitTag, step) => {
+			unitDone = 0;
+			unitTotal = steps;
+			document = unitDocument;
+			tag = unitTag;
+			emit(step);
+		},
+		step: emit,
+		page: () => {
+			if (unitDone >= unitTotal) return;
+			unitDone++;
+			done++;
+			emit("transcribing");
+		},
+		finish: () => {
+			done += unitTotal - unitDone;
+			unitDone = unitTotal;
+			emit("writing");
+		},
+	};
+}
+
+/** What the pre-scan learned before the first note is written. */
+interface Workload {
+	/** Pages of real work the run will report. 0 means there is nothing to write at all. */
+	total: number;
+	/** Documents whose content could not be read, by id, with the message the run reports. Binding: the run skips them too. */
+	unreadable: Map<string, string>;
+	stopped: boolean;
+}
+
+/**
+ * Counts the work before any of it is done, so the progress bar has an honest denominator.
+ *
+ * It costs nothing to hold: `rmapi-js` caches hash-addressed and the plugin opens one session per
+ * run, so every fetch here is a cache hit when the run repeats it. The scan therefore keeps nothing
+ * of its own -- it only fills the cache earlier.
+ *
+ * A document that cannot be read is **0 steps and skipped by the run as well**, so it is reported
+ * once and the denominator stays exact. Its `entryHash` is left alone either way, so the next sync
+ * picks it up again.
+ */
+async function scanWorkload(
+	deps: SyncDeps,
+	rows: Record<string, SyncIndexRow>,
+	documents: Entry[],
+	entriesById: ReadonlyMap<string, Entry>,
+	report: (progress: SyncProgress) => void,
+	shouldStop: () => boolean,
+): Promise<Workload> {
+	const { api, tagRouter } = deps;
+	const unreadable = new Map<string, string>();
+
+	// Local only -- a hash comparison and a few vault reads -- so the candidate count is known almost
+	// at once, and the user is not left watching a spinner while the counting itself is counted.
+	const candidates: { entry: Entry; tags: string[] }[] = [];
+	for (const entry of documents) {
+		if (shouldStop()) return { total: 0, unreadable, stopped: true };
+		const tags = entryAndInheritedTagNames(entry, entriesById);
+		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags)) candidates.push({ entry, tags });
+	}
+
+	let checked = 0;
+	let stopped = false;
+	report({ phase: "scanning", checked, candidates: candidates.length });
+
+	const steps = await mapWithConcurrency(candidates, SCAN_PARALLELISM, async ({ entry, tags }) => {
+		if (shouldStop()) {
+			stopped = true;
+			return 0;
+		}
+		try {
+			let content: DocumentContent | LegacyDocumentContent;
+			try {
+				content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+			} catch (error) {
+				console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during sync, skipping`, error);
+				unreadable.set(entry.id, `failed to read "${entry.visibleName}" during sync: ${errorText(error)}`);
+				return 0;
+			}
+
+			const mapped = mappedTags(tagRouter, tags, content);
+			// A document opened only to orphan rows writes no note, so it is no steps -- and it does not
+			// need its files fetched to say so.
+			if (mapped.notebook.length === 0 && mapped.page.length === 0) return 0;
+
+			const isPdf = content.fileType === "pdf";
+			const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
+			const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdf);
+			const plan = await planUnits(deps.noteStore, rows, entry, mapped, docPages, (pageId) =>
+				isPdf ? entry.hash : (pageHashes.get(pageId) ?? entry.hash),
+			);
+			return [...plan.notebook, ...plan.pages].reduce((sum, unit) => sum + unit.steps, 0);
+		} catch (error) {
+			// Anything else that goes wrong while merely counting is left to the run, which meets it
+			// exactly as it always has. The denominator is then short by this document -- a bar that
+			// jumps, against a sync that behaves as before.
+			console.warn(`Tagged Sync: could not measure "${entry.visibleName}" up front`, error);
+			return 0;
+		} finally {
+			report({ phase: "scanning", checked: ++checked, candidates: candidates.length });
+		}
+	});
+
+	return { total: steps.reduce((sum, count) => sum + count, 0), unreadable, stopped };
+}
+
+/**
  * Runs the full one-way sync pipeline: enumerate -> hash-diff -> download -> render -> OCR -> write note,
  * for every mapped tag at both granularities (spec §7).
  */
@@ -884,7 +1062,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 
-	report({ phase: "scanning" });
+	report({ phase: "scanning", checked: 0, candidates: 0 });
 	const [rootHash] = await api.raw.getRootHash();
 	const mappings = tagRouter.fingerprint();
 	// The stale-render check has to happen here too, not just per doc: nothing on the device changes
@@ -939,13 +1117,26 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const entries = await api.listItems();
 	const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
 	const documents = entries.filter((entry) => entry.type === "DocumentType");
-	for (const [position, entry] of documents.entries()) {
+
+	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop);
+	// Nothing has been written yet, so there is nothing to checkpoint -- but the caller still has to
+	// hear that this run was stopped rather than finished.
+	if (workload.stopped) return stopHere();
+	for (const [docId, message] of workload.unreadable) {
+		skipErrors.push(message);
+		skippedDocIds.add(docId);
+	}
+
+	const bar = progressTicker(report, workload.total);
+
+	for (const entry of documents) {
 		// Also here, not just at the unit loops below: most documents are skipped by the level-2 gate
 		// without producing a unit at all, and a stop must not have to walk hundreds of them first.
 		if (shouldStop()) return stopHere();
-		report({ phase: "document", index: position + 1, total: documents.length, name: entry.visibleName });
 		const entryAndInheritedTags = entryAndInheritedTagNames(entry, entriesById);
 
+		// The scan already failed to read this one, and said so. Trying again would report it twice.
+		if (workload.unreadable.has(entry.id)) continue;
 		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags))) continue; // level 2
 
 		let content: DocumentContent | LegacyDocumentContent;
@@ -998,7 +1189,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		): Promise<{ markdown: string; ocr: OcrStatus | null }> => {
 			try {
 				const build = await buildDigest(
-					{ ocrBackend, marginNotes: deps.marginNotes ?? false },
+					// The tick comes from the pipeline's page loop rather than from the backend: it
+					// transcribes per cluster, which is finer than the page the bar counts.
+					{ ocrBackend, marginNotes: deps.marginNotes ?? false, onPage: bar.page },
 					{
 						source: isPdf ? { kind: "pdf", bytes: await getSourcePdf() } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
@@ -1036,6 +1229,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				editedNotesSkipped++;
 				continue;
 			}
+			bar.start(unit.steps, entry.visibleName, tag, "rendering");
 
 			let pdfBytes: Uint8Array;
 			let ocrPages: OcrPage[];
@@ -1063,8 +1257,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
 				skipErrors.push(`failed to render "${entry.visibleName}" for tag "${tag}": ${errorText(error)}`);
 				skippedDocIds.add(entry.id);
+				// The bar counted these pages before anything went wrong, and the failure is already in
+				// the run's own report -- so they count as done rather than stranding the bar short.
+				bar.finish();
 				continue;
 			}
+			bar.step("transcribing");
 
 			const digest = digestPages
 				? await buildUnitDigest(null, digestPages, `"${entry.visibleName}" for tag "${tag}"`)
@@ -1087,12 +1285,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash: null,
+					onPage: bar.page,
 				},
 				resolveWriter(deps.noteStore, rename, folder, existingPath),
 			);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = row;
 			notesWritten++;
+			bar.finish();
 			// Per unit, not just per document: a document is one tagged notebook *plus* one unit for every
 			// tagged page in it, so a single document can be dozens of notes and many minutes of work. A
 			// note that reaches the vault without its row reaching `data.json` is the duplicate bug the
@@ -1120,6 +1320,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				editedNotesSkipped++;
 				continue;
 			}
+			bar.start(unit.steps, entry.visibleName, tag, "rendering");
 
 			const pageIndex = pageOrder.indexOf(unit.pageId) + 1;
 			const folder = tagRouter.resolveFolder(tag)!;
@@ -1150,8 +1351,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				console.warn(`Tagged Sync: failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${tag}", skipping`, error);
 				skipErrors.push(`failed to render page ${pageIndex} of "${entry.visibleName}" for tag "${tag}": ${errorText(error)}`);
 				skippedDocIds.add(entry.id);
+				bar.finish(); // see the notebook-tag branch
 				continue;
 			}
+			bar.step("transcribing");
 
 			const digest = digestPages
 				? await buildUnitDigest(unit.pageId, digestPages, `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`)
@@ -1173,12 +1376,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash,
+					onPage: bar.page,
 				},
 				resolveWriter(deps.noteStore, rename, folder, existingRow?.notePath ?? null),
 			);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = row;
 			notesWritten++;
+			bar.finish();
 			await checkpoint(); // see the notebook-tag branch
 			const unitOcr = digest.ocr ?? ocr;
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
@@ -1243,6 +1448,63 @@ async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, do
 }
 
 /**
+ * How many pages of work one already-synced row is, without doing any of it.
+ *
+ * Deliberately not `ocrPagesForRow`, which is the obvious-looking way to ask: that function *renders*
+ * every page it describes, so counting with it would double the whole run's rendering. A row's page
+ * count is structural -- the document's live pages for a notebook row, one for a page row, none for a
+ * page that has since disappeared.
+ */
+function reTranscribeSteps(row: SyncIndexRow, docPages: DocPageRef[]): number {
+	if (row.pageId === null) return docPages.length;
+	return docPages.some((page) => page.id === row.pageId) ? 1 : 0;
+}
+
+/** The pre-scan for `reTranscribeAll`: the same shape as `scanWorkload`, over index rows instead of device documents. */
+async function scanReTranscribe(
+	deps: ReTranscribeDeps,
+	rowsByDoc: Map<string, SyncIndexRow[]>,
+	entryById: Map<string, Entry>,
+	report: (progress: SyncProgress) => void,
+	shouldStop: () => boolean,
+): Promise<Workload> {
+	const unreadable = new Map<string, string>();
+	const candidates = [...rowsByDoc.keys()].filter((docId) => entryById.has(docId));
+	let checked = 0;
+	let stopped = false;
+	report({ phase: "scanning", checked, candidates: candidates.length });
+
+	const steps = await mapWithConcurrency(candidates, SCAN_PARALLELISM, async (docId) => {
+		if (shouldStop()) {
+			stopped = true;
+			return 0;
+		}
+		const entry = entryById.get(docId)!;
+		try {
+			let content: DocumentContent | LegacyDocumentContent;
+			try {
+				content = (await deps.api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+			} catch (error) {
+				console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during re-transcribe, skipping`, error);
+				unreadable.set(docId, "");
+				return 0;
+			}
+			const { pages: pageHashes } = await getDocumentFiles(deps.api, entry.id, entry.hash);
+			const docPages = orderedPages(content, new Set(pageHashes.keys()), content.fileType === "pdf");
+			return (rowsByDoc.get(docId) ?? []).reduce((sum, row) => sum + reTranscribeSteps(row, docPages), 0);
+		} catch (error) {
+			// See `scanWorkload`: measuring must never be the thing that breaks a run.
+			console.warn(`Tagged Sync: could not measure "${entry.visibleName}" up front`, error);
+			return 0;
+		} finally {
+			report({ phase: "scanning", checked: ++checked, candidates: candidates.length });
+		}
+	});
+
+	return { total: steps.reduce((sum, count) => sum + count, 0), unreadable, stopped };
+}
+
+/**
  * Re-runs OCR over every active note and rewrites just its transcript (spec §8.4). Re-fetches each
  * doc's current content once and re-derives the same OCR input the sync would produce, so a note's
  * transcript is refreshed to match the backend now selected -- typically to replace a garbage
@@ -1261,7 +1523,6 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 		if (row.status === "active") rowsByDoc.set(row.docId, [...(rowsByDoc.get(row.docId) ?? []), row]);
 	}
 
-	report({ phase: "scanning" });
 	const entries = await api.listItems();
 	const entryById = new Map(entries.filter((entry) => entry.type === "DocumentType").map((entry) => [entry.id, entry]));
 
@@ -1272,11 +1533,15 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 	// caller that drops them would leave the next sync reading the plugin's own work as a hand edit.
 	const stopHere = (): { updated: number; index: SyncIndex; stopped: boolean } => ({ updated, index: { ...index, rows }, stopped: true });
 
-	for (const [position, docId] of docIds.entries()) {
+	const workload = await scanReTranscribe(deps, rowsByDoc, entryById, report, shouldStop);
+	if (workload.stopped) return stopHere();
+	const bar = progressTicker(report, workload.total);
+
+	for (const docId of docIds) {
 		if (shouldStop()) return stopHere();
 		const entry = entryById.get(docId);
-		report({ phase: "document", index: position + 1, total: docIds.length, name: entry?.visibleName ?? docId });
 		if (!entry) continue; // doc no longer on the device -- leave its notes untouched
+		if (workload.unreadable.has(docId)) continue; // the scan already failed to read it
 
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
@@ -1292,24 +1557,36 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 		for (const row of rowsByDoc.get(docId)!) {
 			if (shouldStop()) return stopHere();
+			// `ocrPagesForRow` renders every page it returns, so this really is the rendering step and
+			// not, as it looks, a pure OCR path.
+			bar.start(reTranscribeSteps(row, docPages), entry.visibleName, row.tag, "rendering");
 			let ocrPages: OcrPage[] | null;
 			try {
 				ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, isPdf);
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to re-fetch "${entry.visibleName}" for re-transcribe, skipping`, error);
+				bar.finish(); // counted before it failed; the bar must still reach its total
 				continue;
 			}
-			if (ocrPages === null) continue;
+			if (ocrPages === null) {
+				bar.finish();
+				continue;
+			}
+			bar.step("transcribing");
 
-			const ocr = await runOcr(ocrBackend, ocrPages);
+			const ocr = await runOcr(ocrBackend, ocrPages, bar.page);
 			// The per-page headings link into the note's own embed, which this path knows only from the
 			// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
 			// written by a much older version) falls back to the unlabelled transcript rather than
 			// emitting links that go nowhere.
 			const embedPath = readEmbedPath((await noteStore.read(row.notePath)) ?? "");
 			const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, ocr.pages, ocr.text);
-			if (!(await updateTranscript(noteStore, row.notePath, transcript))) continue;
+			if (!(await updateTranscript(noteStore, row.notePath, transcript))) {
+				bar.finish();
+				continue;
+			}
 			updated++;
+			bar.finish();
 
 			const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
 			if (block !== null) rows[row.syncKey] = { ...row, blockHash: blockHashOf(block) };

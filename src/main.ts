@@ -554,7 +554,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			"busy",
 			progress.phase === "scanning"
 				? "Tagged Sync: scanning…"
-				: `Tagged Sync: ${progress.index}/${progress.total} · ${progress.name}`,
+				: `Tagged Sync: ${progress.done}/${progress.total} · ${progress.document}`,
 		);
 	}
 
