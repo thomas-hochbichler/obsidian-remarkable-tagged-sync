@@ -41,6 +41,20 @@ describe("groupTextLines", () => {
 		expect(spaced[0].text).toBe("two words");
 	});
 
+	// A reMarkable renders a heading bold by drawing it twice, one point apart -- measured on the
+	// device's own EPUB conversion, where it produced "Introducing Claude Sonnet 5" twice over.
+	it("reads a run drawn twice at the same place as the one word it looks like", () => {
+		const lines = groupTextLines([item("Introducing", 40, 530, 24), item("Introducing", 39, 530, 24)]);
+
+		expect(lines[0].text).toBe("Introducing");
+	});
+
+	it("still reads a word genuinely repeated further along the line", () => {
+		const lines = groupTextLines([item("the", 50, 700, 10), item("the", 70, 700, 10)]);
+
+		expect(lines[0].text).toBe("the the");
+	});
+
 	it("takes a whitespace-only item as the word boundary it stands for", () => {
 		const lines = groupTextLines([item("a", 50, 700, 10), item("   ", 56, 700, 10), item("b", 60, 700, 10)]);
 

@@ -85,9 +85,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * nowhere, and stops a mark that ends in the space after a word from taking the next word with it;
  * version 24 reads a tagged EPUB through the PDF path, so a book already synced as a notebook --
  * ink on blank pages, none of its text under it -- is re-rendered as the book itself; version 25
- * spells a book's quotes the way the book does, correcting the letters its conversion to a PDF lost.
+ * spells a book's quotes the way the book does, correcting the letters its conversion to a PDF lost;
+ * version 26 reads a heading a renderer faked bold by drawing twice as the one heading it is, which
+ * had been doubling every such title and halving the text a rectangle on that line addressed.
  */
-export const RENDER_VERSION = 25;
+export const RENDER_VERSION = 26;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
