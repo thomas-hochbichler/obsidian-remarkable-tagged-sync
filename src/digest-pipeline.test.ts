@@ -181,6 +181,19 @@ describe("buildDigest without a text layer", () => {
 		expect(result.markdown).not.toContain("==");
 	});
 
+	// The progress bar counts pages; this pipeline transcribes clusters, which are finer. The fixture
+	// page holds five of them and must still tick once.
+	it("reports one page at a time, however many clusters it transcribed", async () => {
+		const backend = fakeOcr();
+		const recognize = vi.spyOn(backend, "recognize");
+		const onPage = vi.fn();
+
+		await build([fixturePage(), fixturePage(inkyScene())], { ocrBackend: backend, onPage });
+
+		expect(recognize).toHaveBeenCalledTimes(6);
+		expect(onPage).toHaveBeenCalledTimes(2);
+	});
+
 	/**
 	 * F18's one gap, closed. With margin notes off a stroke that is not recognised as a mark reaches
 	 * the vault nowhere at all, and the reasons it missed -- drawn too low, struck through, over a

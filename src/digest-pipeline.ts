@@ -40,6 +40,12 @@ export interface DigestPipelineDeps {
 	marginNotes: boolean;
 	/** Injected so tests can drive it without Obsidian; defaults to `loadPdfText`. */
 	loadText?: (bytes: Uint8Array) => Promise<PdfTextDocument | null>;
+	/**
+	 * Called once per page of the digest, for the progress bar. It exists here rather than being
+	 * handed to `recognize` because this pipeline transcribes *per cluster* -- finer than a page --
+	 * and the bar counts pages: the ticks are aggregated by being emitted from the page loop instead.
+	 */
+	onPage?: () => void;
 }
 
 export interface DigestPageInput {
@@ -747,6 +753,9 @@ export async function buildDigest(
 			lineHeightPt: (pageText ? bodyLineSpacing(pageText.lines) : null) ?? FALLBACK_LINE_HEIGHT_PT,
 		});
 		if (built) digestPages.push(built);
+		// Every page, including one that produced no digest entry at all: the bar counts the pages the
+		// unit went through, and an unannotated page still cost a look.
+		deps.onPage?.();
 	}
 
 	return {

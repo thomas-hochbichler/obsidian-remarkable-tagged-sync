@@ -952,7 +952,7 @@ describe("runSync", () => {
 
 		const [, written] = deps.noteStore.write.mock.calls[0];
 		expect(written).toContain("## Transcript\nHello world");
-		expect(deps.ocrBackend.recognize).toHaveBeenCalledWith(expect.any(Array));
+		expect(vi.mocked(deps.ocrBackend.recognize).mock.calls[0][0]).toEqual(expect.any(Array));
 	});
 
 	it("degrades to an empty transcript, without failing the sync, when the OCR backend throws", async () => {

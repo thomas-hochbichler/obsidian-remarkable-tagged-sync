@@ -70,5 +70,12 @@ export interface OcrBackend {
 	 * provider that fell back to a free backend, or one that can't run here at all, reports honestly.
 	 */
 	readonly metered: boolean;
-	recognize(pages: RmPage[]): Promise<OcrResult>;
+	/**
+	 * `onPage` is called once per page whose transcription is finished, in *completion* order rather
+	 * than input order: a backend that runs pages concurrently reports them as they land. Driving the
+	 * progress bar is all it is for, so it carries no page identity -- and a backend that cannot say
+	 * when a single page is done simply never calls it, leaving the caller to count the whole unit at
+	 * its end.
+	 */
+	recognize(pages: RmPage[], onPage?: () => void): Promise<OcrResult>;
 }

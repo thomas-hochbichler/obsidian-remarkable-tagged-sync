@@ -139,6 +139,26 @@ describe("OpenAiCompatOcrBackend", () => {
 		}
 	});
 
+	// The progress tick. Pages run concurrently here, so the callback carries no page identity: the
+	// caller counts calls, and a page that failed still counts.
+	it("reports every finished page, including one that failed", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("one")).mockResolvedValueOnce(jsonResponse(500, {})).mockResolvedValueOnce(chatResponse("three"));
+		const backend = new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", apiKey: "k", model: "m", fetchFn: fetchMock });
+		const onPage = vi.fn();
+
+		await backend.recognize([page(), page(), page()], onPage);
+		expect(onPage).toHaveBeenCalledTimes(3);
+	});
+
+	// The misconfiguration path fails every page without a request, and must still let the bar finish.
+	it("reports every page even when no model is set", async () => {
+		const backend = new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", apiKey: "k", model: "  ", fetchFn: fetchMock });
+		const onPage = vi.fn();
+
+		await backend.recognize([page(), page()], onPage);
+		expect(onPage).toHaveBeenCalledTimes(2);
+	});
+
 	it("reports failed on a non-ok status", async () => {
 		fetchMock.mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
 		const backend = new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", apiKey: "bad", model: "m", fetchFn: fetchMock });

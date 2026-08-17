@@ -459,12 +459,12 @@ interface UnitOcr {
  * kept: attaching a transcript to the wrong page is worse than an honest unlabelled blob, and no text
  * is lost either way.
  */
-async function runOcr(backend: OcrBackend, pages: OcrPage[]): Promise<UnitOcr> {
+async function runOcr(backend: OcrBackend, pages: OcrPage[], onPage?: () => void): Promise<UnitOcr> {
 	const sent = pages.filter((page): page is OcrPage & { scene: RmPage } => page.scene !== null);
 
 	let result: OcrResult;
 	try {
-		result = await backend.recognize(sent.map((page) => page.scene));
+		result = await backend.recognize(sent.map((page) => page.scene), onPage);
 	} catch (error) {
 		console.warn(`Tagged Sync: OCR backend "${backend.id}" failed, note will ship with render only`, error);
 		return { status: "failed", warnings: [], pages: null, text: "" };
@@ -520,6 +520,8 @@ interface UnitParams {
 	source: string;
 	entryHash: string;
 	pageHash: string | null;
+	/** Progress tick, one per transcribed page. Per unit, which is why it travels with the params. */
+	onPage?: () => void;
 }
 
 /** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
@@ -532,7 +534,7 @@ async function writeUnit(
 	const ocr: UnitOcr =
 		params.keepTranscript !== undefined
 			? { status: "ok", warnings: [], pages: null, text: params.keepTranscript }
-			: await runOcr(deps.ocrBackend, params.ocrPages);
+			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage);
 
 	const synced = deps.now();
 	const fields: NoteFields = {
