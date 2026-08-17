@@ -12,6 +12,15 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pointing a tag at a different folder now moves its notes there.** Changing a mapping in the
+  settings — say `sync` from `Inbox` to `Reading` — left every note that tag had already written
+  sitting in the old folder, and the next sync kept writing them back into it. Even deleting a note
+  first did not help: it reappeared where it used to be. A sync now moves such a note into the
+  folder the tag currently points at, keeping the note itself and the links to it intact, and a note
+  you deleted is recreated in the new folder rather than the old one.
+
 ### Changed
 
 - **The status bar now shows how much of the sync is left, not where it is in a list.** It used to

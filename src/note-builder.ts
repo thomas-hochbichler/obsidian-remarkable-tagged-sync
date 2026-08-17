@@ -324,6 +324,12 @@ function joinFolder(trimmedFolder: string, name: string): string {
 	return trimmedFolder === "" ? name : `${trimmedFolder}/${name}`;
 }
 
+/** True when `path` already sits directly in `folder` -- i.e. where `writeNote` would have put it. */
+export function isInFolder(path: string, folder: string): boolean {
+	const cut = path.lastIndexOf("/");
+	return (cut === -1 ? "" : path.slice(0, cut)) === folder.replace(/\/+$/, "");
+}
+
 /** Writes fields at an already-resolved path -- no collision handling, the caller owns that. */
 async function writeNoteAt(store: NoteStore, path: string, fields: NoteFields): Promise<string> {
 	const existingContent = await store.read(path);
