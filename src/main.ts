@@ -807,7 +807,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * came back with fewer highlights than they had. Each was `console.warn` only, which nobody sees,
 	 * while the notice said the sync had worked.
 	 */
-	private reportPartialOutcomes(result: { editedNotesSkipped: number; documentsSkipped: number; failedOcrUnits: number; shrunkNotes: number }): void {
+	private reportPartialOutcomes(result: { editedNotesSkipped: number; documentsSkipped: number; failedOcrUnits: number; shrunkNotes: number; relaidDocuments: number }): void {
 		// A failed transcription used to leave an empty "## Transcript", a console.warn nobody reads,
 		// and a notice announcing plain success -- so the note looked synced and simply had no text.
 		if (result.failedOcrUnits > 0) {
@@ -830,6 +830,17 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (result.documentsSkipped > 0) {
 			const noun = result.documentsSkipped === 1 ? "notebook was" : "notebooks were";
 			new Notice(`${result.documentsSkipped} ${noun} skipped — see the developer console for details.`, 10_000);
+		}
+		// A book whose font changed keeps every mark and moves the text under them, so the quotes go on
+		// looking perfectly plausible while describing other sentences. Nothing else will ever flag it.
+		if (result.relaidDocuments > 0) {
+			const noun = result.relaidDocuments === 1 ? "book has" : "books have";
+			new Notice(
+				`${result.relaidDocuments} ${noun} been laid out again on the tablet since their notes were written — a font, size or margin change does that. ` +
+					"Marks made before it stay where they were while the text moves, so their quotes may no longer be the sentences you marked. " +
+					"Press Copy diagnostics in settings to see which.",
+				15_000,
+			);
 		}
 		// The device lost the highlights, not the sync — but the vault is where the user might still
 		// have a copy, and only for as long as they know to look. Said out loud for that reason alone.

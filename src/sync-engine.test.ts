@@ -2831,6 +2831,72 @@ describe("page-anchored transcripts", () => {
 	});
 });
 
+// A reMarkable redoes a book's whole PDF when its font, size or margins change. Measured on the
+// device: the marks all survive, byte for byte, and the text under them moves -- so they end up
+// describing sentences nobody marked. The page count is the only trace of it we can see.
+describe("a book laid out again under its marks", () => {
+	/** A PDF-backed document of `sources` source pages, plus `inserted` pages added on the device. */
+	async function book(sources: number, generation: 1 | 2 | 3, inserted = 0) {
+		const pages = [
+			...Array.from({ length: sources }, (_, i) => ({ id: `p${i}`, redir: i })),
+			...Array.from({ length: inserted }, (_, i) => ({ id: `added${i}` })),
+		];
+		const api = fakeApi({
+			rootHash: `root-${generation}`,
+			entries: [documentEntry({ hash: `hash-${generation}`, fileType: "epub", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ fileType: "epub", pageCount: pages.length, cPages: cPagesWith(pages) }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf(Array.from({ length: sources }, () => [100, 100] as [number, number])) },
+		});
+		return api;
+	}
+
+	it("says so, naming both page counts", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		expect(synced.index.rows[notebookSyncKey("doc-1", "sync")].sourcePageCount).toBe(2);
+
+		const result = await runSync({ ...baseDeps(await book(3, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toContainEqual(expect.stringContaining('"Notebook" now has 3 pages where it had 2'));
+		expect(result.relaidDocuments).toBe(1);
+	});
+
+	// Said once. The layout has already happened, the reader cannot undo it, and a line on every sync
+	// from here on is a line they learn to skip.
+	it("says it once, not on every sync afterwards", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const warned = await runSync({ ...baseDeps(await book(3, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		const again = await runSync({ ...baseDeps(await book(3, 3), { sync: "Target" }), noteStore: first.noteStore }, warned.index);
+
+		expect(again.skipErrors).not.toContainEqual(expect.stringContaining("pages where it had"));
+		expect(again.relaidDocuments).toBe(0);
+	});
+
+	// Test A on the real device: inserting a page changes the document's page count and nothing about
+	// the book, and the marks on every other page still describe what they always did.
+	it("does not mistake a page added on the device for a re-layout", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const result = await runSync({ ...baseDeps(await book(2, 2, 1), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).not.toContainEqual(expect.stringContaining("pages where it had"));
+		expect(result.relaidDocuments).toBe(0);
+	});
+
+	it("compares nothing against a row written before the count existed", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		delete synced.index.rows[notebookSyncKey("doc-1", "sync")].sourcePageCount;
+
+		const result = await runSync({ ...baseDeps(await book(3, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.relaidDocuments).toBe(0);
+	});
+});
+
 // A reMarkable redoes a book's whole PDF when its font or margins change, and the annotations made on
 // the old render do not always survive it (spec §4). The sync still mirrors -- but not in silence.
 describe("a re-sync that finds fewer highlights", () => {

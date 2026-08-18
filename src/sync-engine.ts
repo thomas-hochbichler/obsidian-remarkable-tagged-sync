@@ -125,6 +125,11 @@ export interface SyncIndexRow {
 	 * sync after that.
 	 */
 	highlightCount?: number;
+	/**
+	 * How many pages the source PDF had when this note was written -- for `relaidWarning`. Absent on a
+	 * notebook, which has no source PDF, and on rows written before this field existed.
+	 */
+	sourcePageCount?: number;
 }
 
 export interface SyncIndex {
@@ -266,6 +271,12 @@ export interface SyncResult {
 	 * backup, and only if they hear about it while it is fresh.
 	 */
 	shrunkNotes: number;
+	/**
+	 * Documents whose source PDF was laid out again under marks that were already there (see
+	 * `relaidWarning`). Counted for the same reason `shrunkNotes` is: the reader can only act on it
+	 * while they still remember changing the font.
+	 */
+	relaidDocuments: number;
 	/**
 	 * The raw error text behind each skip, one entry per skipped unit, for "Copy diagnostics" -- the
 	 * console.warn alone left diagnostics reporting "Last error: none" after a partially-failed sync.
@@ -608,6 +619,26 @@ interface UnitParams {
 	previous?: SyncIndexRow;
 	/** Progress tick, one per transcribed page. Per unit, which is why it travels with the params. */
 	onPage?: () => void;
+}
+
+/**
+ * The line a document gets when its source PDF has been laid out again since its notes were written.
+ *
+ * A reMarkable rebuilds a book's PDF when its font, size or margins change -- and leaves the
+ * annotations exactly where they were. Measured on the device: after one font change *Alice* went
+ * from 116 pages to 149, every highlight rectangle identical to the decimal, and a mark that had read
+ * "Why, I wouldn't say anything about it, even if I fell off the top of the house!" now covered "was
+ * coming to, but it was too". Nothing was destroyed, so `shrinkWarning` has nothing to report; the
+ * marks simply describe other sentences now.
+ *
+ * That is the worse half of it. A quote the reader never marked reads exactly like one they did, and
+ * the vault often only inherits it much later -- an unchanged page is not re-synced at all, so the
+ * damage surfaces on whatever re-render comes next, long after the font was changed. The page count
+ * is the last moment it is visible: it belongs to the device, unlike anything we could measure about
+ * the marks themselves, which our own renderer keeps improving.
+ */
+function relaidWarning(name: string, before: number, now: number): string {
+	return `"${name}" now has ${now} pages where it had ${before} when its notes were written. A book is laid out again when its font, size or margins change, and marks made before that keep their place while the text under them moves -- so a quote in these notes may no longer be the sentence that was marked.`;
 }
 
 /**
@@ -1185,7 +1216,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, skipErrors: [] };
+		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, skipErrors: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -1199,6 +1230,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const skippedDocIds = new Set<string>();
 	const skipErrors: string[] = [];
 	let shrunkNotes = 0;
+	let relaidDocuments = 0;
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -1225,6 +1257,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			editedNotesSkipped,
 			documentsSkipped: skippedDocIds.size,
 			shrunkNotes,
+			relaidDocuments,
 			skipErrors,
 		};
 	};
@@ -1278,6 +1311,20 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const { pages: pageHashes, images: imageFiles, epub: epubFile } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
 		const docPages = orderedPages(content, liveIds, pdfBacked);
+
+		// Counted from the pages that have a source page, so a page *added* on the device -- which
+		// changes the document's own page count and nothing about the book -- is not mistaken for a
+		// re-layout.
+		const sourcePageCount = pdfBacked ? docPages.filter((page) => !page.appended).length : null;
+		if (sourcePageCount !== null) {
+			const before = Object.values(rows).find(
+				(row) => row.docId === entry.id && row.status === "active" && row.sourcePageCount !== undefined && row.sourcePageCount !== sourcePageCount,
+			)?.sourcePageCount;
+			if (before !== undefined) {
+				skipErrors.push(relaidWarning(entry.visibleName ?? entry.id, before, sourcePageCount));
+				relaidDocuments++;
+			}
+		}
 		const pageOrder = docPages.map((page) => page.id);
 		const pageRefById = new Map(docPages.map((page) => [page.id, page]));
 
@@ -1530,6 +1577,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 		}
 
+		// Every row of this document, written this round or not: the warning above is about a layout
+		// that has already happened, and saying it on every sync from here on would make it noise.
+		if (sourcePageCount !== null) {
+			for (const row of Object.values(rows)) {
+				if (row.docId === entry.id && row.sourcePageCount !== sourcePageCount) rows[row.syncKey] = { ...rows[row.syncKey], sourcePageCount };
+			}
+		}
+
 		await checkpoint();
 	}
 
@@ -1541,7 +1596,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
 	}
 
-	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, skipErrors };
+	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, skipErrors };
 }
 
 export interface ReTranscribeDeps {

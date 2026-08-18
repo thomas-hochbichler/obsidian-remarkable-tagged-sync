@@ -360,10 +360,14 @@ chapter named the way the book's own table of contents names it.
 
 **One thing to know before you start, and it is the device's doing rather than the plugin's.**
 Changing a book's font, its size, or its margins makes the reMarkable lay the whole book out again
-and rebuild that PDF. Marks you already made can move to the wrong place or disappear entirely —
-this happens on the tablet, before any sync. Tagged Sync mirrors whatever the device holds
-afterwards, so a mark the device lost is a mark the note loses too. It says so when a sync finds
-fewer highlights than the last one wrote, but it cannot bring them back.
+and rebuild that PDF. Measured on a real tablet: every mark survived that — and every mark kept
+its exact position while the text moved out from under it. A highlight that had covered one sentence
+covered a different one after the change.
+
+Tagged Sync mirrors what the device holds, so it cannot put those marks back where they belong. What
+it does is **tell you it happened**: a book whose page count has changed since its notes were written
+is reported after the sync, and so is a note that comes back with fewer highlights than it had.
+Nothing else would ever flag it — a quote you never marked reads exactly like one you did.
 
 So: **settle the font before you start annotating**, which is the advice reMarkable readers give
 each other anyway.
@@ -432,6 +436,9 @@ it does not — so a document without bookmarks can file a quote under the wrong
   it address the page of the source PDF, which insertion does not renumber. Only the file name can go
   stale, and only until that page changes and the note is written again. A note that would land on a
   name already taken gets a suffix rather than overwriting anything.
+- **A book laid out again on the tablet is reported.** Its page count changes when its font, size or
+  margins do, and marks made before that keep their place while the text moves — so their quotes may
+  no longer be the sentences you marked. Said once per book, when the sync first sees the new count.
 - **A note that comes back with fewer highlights than it had is reported.** The sync mirrors the
   device, so a mark you removed on the tablet leaves the note too — but a mark that went missing
   without you removing it is worth hearing about while a backup of the note is still recent. The
