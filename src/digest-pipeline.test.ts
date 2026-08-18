@@ -775,6 +775,15 @@ describe("buildDigest resilience", () => {
 		]);
 	});
 
+	// A whole-document unit walks every page of a book or an article, and those end in pages that are
+	// one picture: measured on an extension-captured article, whose last two pages carry no text item
+	// at all. Nothing on such a page fell back to anything.
+	it("stays quiet about a page with no text layer and nothing marked on it", async () => {
+		const result = await build([fixturePage(scene([]))], { loadText: async () => fakeTextDocument({}) });
+
+		expect(result.warnings).toEqual([]);
+	});
+
 	it("reports a text layer that could not be opened at all", async () => {
 		const result = await build([fixturePage()], {
 			loadText: () => Promise.reject(new Error("pdf.js is missing")),

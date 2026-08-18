@@ -612,6 +612,11 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	};
 }
 
+/** Whether this page carries anything the text layer would have served: a highlight to quote in context, or ink to place beside a sentence. */
+function isAnnotated(scene: RmPage | null): boolean {
+	return (scene?.highlights?.length ?? 0) > 0 || (scene?.layers ?? []).some((layer) => layer.strokes.length > 0);
+}
+
 async function readPageText(document: PdfTextDocument | null, page: DigestPageInput, warnings: string[]): Promise<PdfPageText | null> {
 	if (!document) return null;
 	// A page added on the device has no source page, so `getPage` throws and the reader returns null --
@@ -620,7 +625,12 @@ async function readPageText(document: PdfTextDocument | null, page: DigestPageIn
 	if (page.appended) return null;
 	try {
 		const text = await document.page(page.sourceIndex);
-		if (text === null) {
+		// Only where the page had something to lose. A whole-document unit walks every page, and a book
+		// or an article ends in pages that are one picture and nothing else -- measured: the last two
+		// pages of an extension-captured article are charts with no text item on them at all. Reporting
+		// a degradation on a page the reader never marked trains them to ignore the line on the page
+		// where it is true.
+		if (text === null && isAnnotated(page.scene)) {
 			warnings.push(`Page ${page.embedPage}: the PDF has no readable text there, so highlights quote the text recorded on the device.`);
 		}
 		return text;
