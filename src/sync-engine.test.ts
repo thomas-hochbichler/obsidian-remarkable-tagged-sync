@@ -47,6 +47,8 @@ const PAGE_BYTES = new Uint8Array(readFileSync(FIXTURE_PATH));
 // A page whose nodes carry no anchor, so nothing about it is placed -- unlike FIXTURE_PATH, whose two
 // group nodes are anchored to its typed text.
 const UNANCHORED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/color-and-tool-v3.14.4.rm"));
+/** A page carrying two typed-text highlights, for the shrink warning. */
+const HIGHLIGHTED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/notebook-typed-text-highlights.rm"));
 /** A page that shows one picture, and the bytes of a picture -- neither is in the other, as on the device. */
 const PAGE_WITH_IMAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/notebook-with-image.rm"));
 const PICTURE_BYTES = encodeGrayscalePng({ width: 4, height: 2, pixels: new Uint8Array(8).fill(128) });
@@ -130,11 +132,15 @@ async function makeSourcePdf(sizes: [number, number][]): Promise<Uint8Array> {
 	return doc.save();
 }
 
-/** The bytes handed to the attachment store's `writeBinary` for a given attachment path, decoded back to a page count. */
-async function embeddedPageCount(store: AttachmentStore, path: string): Promise<number> {
+/** The bytes handed to the attachment store's `writeBinary` for a given attachment path, loaded back. */
+async function embeddedPdf(store: AttachmentStore, path: string): Promise<PDFDocument> {
 	const call = (store.writeBinary as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === path);
 	if (!call) throw new Error(`no attachment written at ${path}`);
-	return (await PDFDocument.load(call[1])).getPageCount();
+	return PDFDocument.load(call[1]);
+}
+
+async function embeddedPageCount(store: AttachmentStore, path: string): Promise<number> {
+	return (await embeddedPdf(store, path)).getPageCount();
 }
 
 interface FakeApiOptions {
@@ -1536,6 +1542,37 @@ describe("runSync", () => {
 			expect(await embeddedPageCount(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toBe(3);
 		});
 
+		// Measured on the device: a page inserted after page 8 of a book took source page 9 -- printing a
+		// page of the book, which the reader had never written on and which had a synced note of its
+		// own, underneath their handwriting.
+		it("draws a page inserted on the device on a blank sheet, not on the source page it displaced", async () => {
+			const entry = documentEntry({ fileType: "epub", tags: [] });
+			const content = documentContent({
+				fileType: "epub",
+				pageCount: 3,
+				// The inserted page carries no `redir`: there is no source page for it to point at.
+				cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "inserted" }, { id: "p1", redir: 1 }]),
+				pageTags: [{ name: "sync", timestamp: 0, pageId: "inserted" }],
+			});
+			const source = await makeSourcePdf([[100, 100], [200, 200]]);
+			const api = fakeApi({
+				rootHash: "root-inserted",
+				entries: [entry],
+				contentById: { "doc-1": content },
+				sourcePdfByDoc: { "doc-1": source },
+				pageHashesByDoc: { "doc-1": { inserted: "ink-hash" } },
+			});
+			const deps = baseDeps(api, { sync: "Target" });
+
+			await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const page = (await embeddedPdf(deps.attachmentStore, "tagged-sync/attachments/doc-1-inserted.pdf")).getPage(0);
+			// 200x200 is the source page sitting at the inserted page's position -- the page it used to
+			// borrow. A device-sized sheet is what a page with no source page of its own gets.
+			expect([page.getWidth(), page.getHeight()]).not.toEqual([200, 200]);
+			expect(page.getWidth()).toBeGreaterThan(300);
+		});
+
 		it("composites the source page with its annotation, and OCRs the handwriting, for a page-level tag", async () => {
 			const entry = documentEntry({ fileType: "pdf", tags: [{ name: "sync", timestamp: 0 }] });
 			const content = documentContent({
@@ -1569,6 +1606,36 @@ describe("runSync", () => {
 			expect(deps.noteStore.write.mock.calls[0][1]).toContain("my note");
 			// Page position (1-based document order) shows in the note's filename, not frontmatter.
 			expect(deps.noteStore.write.mock.calls[0][0]).toContain("Page 2");
+		});
+
+		it("treats a tagged EPUB as PDF-backed: the book the device rendered, with its annotations", async () => {
+			const entry = documentEntry({ fileType: "epub", tags: [{ name: "sync", timestamp: 0 }] });
+			// The device converts an EPUB to a PDF on-device and keeps that render in the cloud next to
+			// the `.epub`, so the document looks exactly like an uploaded PDF: cPages with redir, and
+			// `getPdf` returning the rendered book (spec §2).
+			const content = documentContent({
+				fileType: "epub",
+				pageCount: 2,
+				cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]),
+			});
+			const source = await makeSourcePdf([[100, 100], [200, 200]]);
+			const api = fakeApi({
+				rootHash: "root-epub",
+				entries: [entry],
+				contentById: { "doc-1": content },
+				sourcePdfByDoc: { "doc-1": source },
+				pageHashesByDoc: { "doc-1": { p1: "anno-hash" } }, // p1 carries handwriting
+			});
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+
+			const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			expect(result.notesWritten).toBe(1);
+			// Without the gate the doc falls into the notebook branch: no source fetch, and the ink
+			// rendered on a blank page with none of the book text under it.
+			expect(api.getPdf).toHaveBeenCalledWith("doc-1", "hash-1");
+			expect(await embeddedPageCount(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toBe(2);
+			expect(deps.noteStore.write.mock.calls[0][1]).toContain("## Digest");
 		});
 
 		it("skips OCR for a PDF whose pages carry no handwritten annotations", async () => {
@@ -2761,5 +2828,129 @@ describe("page-anchored transcripts", () => {
 		// annotated on five would cost eight times over for nothing.
 		const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[]);
 		expect(scenes.length).toBeLessThanOrEqual(drawnOn.length);
+	});
+});
+
+// A reMarkable redoes a book's whole PDF when its font, size or margins change. Measured on the
+// device: the marks all survive, byte for byte, and the text under them moves -- so they end up
+// describing sentences nobody marked. The page count is the only trace of it we can see.
+describe("a book laid out again under its marks", () => {
+	/** A PDF-backed document of `sources` source pages, plus `inserted` pages added on the device. */
+	async function book(sources: number, generation: 1 | 2 | 3, inserted = 0) {
+		const pages = [
+			...Array.from({ length: sources }, (_, i) => ({ id: `p${i}`, redir: i })),
+			...Array.from({ length: inserted }, (_, i) => ({ id: `added${i}` })),
+		];
+		const api = fakeApi({
+			rootHash: `root-${generation}`,
+			entries: [documentEntry({ hash: `hash-${generation}`, fileType: "epub", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ fileType: "epub", pageCount: pages.length, cPages: cPagesWith(pages) }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf(Array.from({ length: sources }, () => [100, 100] as [number, number])) },
+		});
+		return api;
+	}
+
+	it("says so, naming both page counts", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		expect(synced.index.rows[notebookSyncKey("doc-1", "sync")].sourcePageCount).toBe(2);
+
+		const result = await runSync({ ...baseDeps(await book(3, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toContainEqual(expect.stringContaining('"Notebook" now has 3 pages where it had 2'));
+		expect(result.relaidDocuments).toBe(1);
+	});
+
+	// Said once. The layout has already happened, the reader cannot undo it, and a line on every sync
+	// from here on is a line they learn to skip.
+	it("says it once, not on every sync afterwards", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const warned = await runSync({ ...baseDeps(await book(3, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		const again = await runSync({ ...baseDeps(await book(3, 3), { sync: "Target" }), noteStore: first.noteStore }, warned.index);
+
+		expect(again.skipErrors).not.toContainEqual(expect.stringContaining("pages where it had"));
+		expect(again.relaidDocuments).toBe(0);
+	});
+
+	// Test A on the real device: inserting a page changes the document's page count and nothing about
+	// the book, and the marks on every other page still describe what they always did.
+	it("does not mistake a page added on the device for a re-layout", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const result = await runSync({ ...baseDeps(await book(2, 2, 1), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).not.toContainEqual(expect.stringContaining("pages where it had"));
+		expect(result.relaidDocuments).toBe(0);
+	});
+
+	it("compares nothing against a row written before the count existed", async () => {
+		const first = baseDeps(await book(2, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		delete synced.index.rows[notebookSyncKey("doc-1", "sync")].sourcePageCount;
+
+		const result = await runSync({ ...baseDeps(await book(3, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.relaidDocuments).toBe(0);
+	});
+});
+
+// A reMarkable redoes a book's whole PDF when its font or margins change, and the annotations made on
+// the old render do not always survive it (spec §4). The sync still mirrors -- but not in silence.
+describe("a re-sync that finds fewer highlights", () => {
+	const KEY = notebookSyncKey("doc-1", "sync");
+
+	/** The tagged notebook at one point in its life, with `bytes` as its only page. */
+	function deviceWith(bytes: Uint8Array, generation: 1 | 2) {
+		const api = fakeApi({
+			rootHash: `root-${generation}`,
+			entries: [documentEntry({ hash: `hash-${generation}`, tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": `page-hash-${generation}` } },
+		});
+		api.raw.getHash.mockResolvedValue(bytes);
+		return api;
+	}
+
+	it("says how many were lost, and mirrors the device anyway", async () => {
+		const first = baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		expect(synced.index.rows[KEY].highlightCount).toBe(2);
+
+		// The same page as the device holds it after redoing its conversion: no highlights left.
+		const result = await runSync({ ...baseDeps(deviceWith(PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toContainEqual(expect.stringContaining('"Notebook" now has 0 highlights where the last sync found 2'));
+		// Counted as well as written down: the count is what the plugin turns into a notice, and a line
+		// only "Copy diagnostics" would show is one nobody reads in time to restore a backup.
+		expect(result.shrunkNotes).toBe(1);
+		expect(result.notesWritten).toBe(1);
+		expect(result.index.rows[KEY].highlightCount).toBe(0);
+	});
+
+	it("stays quiet when the count holds, or grows", async () => {
+		const first = baseDeps(deviceWith(PAGE_BYTES, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const result = await runSync({ ...baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toEqual([]);
+		expect(result.shrunkNotes).toBe(0);
+	});
+
+	// A row from before the count was recorded has nothing to compare against. It goes uncompared
+	// once and is protected from the sync after that -- the same one-round catch-up `renderVersion`
+	// and `blockHash` take.
+	it("compares nothing against a row written before the count existed", async () => {
+		const first = baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		delete synced.index.rows[KEY].highlightCount;
+
+		const result = await runSync({ ...baseDeps(deviceWith(PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toEqual([]);
+		expect(result.index.rows[KEY].highlightCount).toBe(0);
 	});
 });

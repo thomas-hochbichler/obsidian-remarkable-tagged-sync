@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { buildDigest, type DigestPageInput, type DigestPipelineDeps } from "./digest-pipeline";
+import type { EpubBook } from "./epub-text";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
 import { notebookPageFrame, resolveDeviceCanvas } from "./pdf-renderer";
 import { parseRmV6, type RmHighlight, type RmPage, type RmStroke, type RmText } from "./rm-parser";
@@ -57,9 +58,9 @@ function deps(overrides: Partial<DigestPipelineDeps> = {}): DigestPipelineDeps {
 	};
 }
 
-function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}) {
+function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}, book?: () => Promise<EpubBook | null>) {
 	return buildDigest(deps(overrides), {
-		source: { kind: "pdf", bytes: SOURCE_BYTES },
+		source: { kind: "pdf", bytes: SOURCE_BYTES, book },
 		embedPath: "attachments/doc.pdf",
 		pages,
 	});
@@ -240,6 +241,78 @@ describe("buildDigest with the fixture page's text layer", () => {
 		expect(result.markdown).toContain("Claude reagiert gut auf ==klare, explizite Anweisungen.==");
 		expect(result.markdown).toContain("Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.");
 		expect(result.warnings).toEqual([]);
+	});
+
+	// A book the device rendered from an `.epub`: the conversion loses letters, so the page's text
+	// layer is not the author's wording and the original book has to supply it (spec §7 step 2).
+	describe("against the original book", () => {
+		/**
+		 * The fixture's text layer with one word damaged the way the device damages one.
+		 *
+		 * The damage sits outside the highlighted run on purpose. Only the text layer is damaged here,
+		 * while the scene's own highlight text stays clean -- on a real book both come from the same
+		 * conversion and carry the same error, and a run that no longer matches the page moves the
+		 * markers for a reason that has nothing to do with this correction.
+		 */
+		function damagedTextDocument(): PdfTextDocument {
+			const page = fixturePageText();
+			return fakeTextDocument(
+				{ 1: { ...page, lines: page.lines.map((line) => ({ ...line, text: line.text.replace("Prompts.", "PromPts.") })) } },
+				FIXTURE_HEADINGS.map((heading) => ({ pageIndex: 1, x: null, y: heading.y, title: heading.title })),
+			);
+		}
+
+		const BOOK: EpubBook = { text: "Kapitel 5. Verwende konsistente, beschreibende Tag-Namen in deinen Prompts. Das hilft beim Parsen.", chapters: [] };
+
+		it("re-spells a damaged quote in the book's own words, and keeps the run marked", async () => {
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => BOOK);
+
+			expect(result.markdown).toContain("Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.");
+			expect(result.markdown).not.toContain("PromPts");
+		});
+
+		it("keeps the device's text, and says so once, when the book cannot be read", async () => {
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => null);
+
+			expect(result.markdown).toContain("PromPts");
+			expect(result.warnings).toEqual(["The book's own text could not be read; quotes and chapter names keep what the device recorded."]);
+		});
+
+		it("keeps a quote it cannot find in the book, and stays quiet about it", async () => {
+			// Not a failure worth a line: the device's text is not known to be wrong, and a book has
+			// pages this quote could legitimately not be on.
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ text: "Ein ganz anderes Buch über Segelschiffe.", chapters: [] }));
+
+			expect(result.markdown).toContain("PromPts");
+			expect(result.warnings).toEqual([]);
+		});
+
+		it("names a section the way the book's navigation names it", async () => {
+			// What the render found was "Sei klar und direkt"; the book calls that chapter by its full
+			// name, and the digest should say so.
+			const chapters = ["Kapitel 5. Sei klar und direkt in deinen Anweisungen"];
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ ...BOOK, chapters }));
+
+			expect(result.markdown).toContain("### Kapitel 5. Sei klar und direkt in deinen Anweisungen");
+			expect(result.markdown).not.toContain("### Sei klar und direkt\n");
+		});
+
+		it("reads the book once, for the headings and the quotes together", async () => {
+			const book = vi.fn(async () => BOOK);
+
+			await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, book);
+
+			expect(book).toHaveBeenCalledTimes(1);
+		});
+
+		it("does not fetch the book for a page with no heading and no quote on it", async () => {
+			// A megabyte nobody should download for a page of ink the book has nothing to say about.
+			const book = vi.fn(async () => BOOK);
+
+			await build([fixturePage(inkyScene())], { loadText: async () => fakeTextDocument({ 1: fixturePageText() }) }, book);
+
+			expect(book).not.toHaveBeenCalled();
+		});
 	});
 
 	it("resolves the five margin notes to the anchors measured on the real page", async () => {
@@ -702,6 +775,15 @@ describe("buildDigest resilience", () => {
 		]);
 	});
 
+	// A whole-document unit walks every page of a book or an article, and those end in pages that are
+	// one picture: measured on an extension-captured article, whose last two pages carry no text item
+	// at all. Nothing on such a page fell back to anything.
+	it("stays quiet about a page with no text layer and nothing marked on it", async () => {
+		const result = await build([fixturePage(scene([]))], { loadText: async () => fakeTextDocument({}) });
+
+		expect(result.warnings).toEqual([]);
+	});
+
 	it("reports a text layer that could not be opened at all", async () => {
 		const result = await build([fixturePage()], {
 			loadText: () => Promise.reject(new Error("pdf.js is missing")),
@@ -857,14 +939,22 @@ describe("buildDigest on a page added on the device", () => {
 		expect(result.warnings).toEqual([]);
 	});
 
-	it("gives it its own page heading rather than the last section of a document it is not part of", async () => {
+	it("gives it its own heading rather than the last section of a document it is not part of", async () => {
 		const headings: PdfHeading[] = [{ pageIndex: 0, x: null, y: 700, title: "A chapter of the PDF" }];
 		const text = fakeTextDocument({ 0: { label: "1", width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: [] } }, headings);
 
 		const result = await build([appendedPage()], { loadText: async () => text, ocrBackend: fakeOcr("text") });
 
-		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=16|Page 16]]");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=16|Added page]]");
 		expect(result.markdown).not.toContain("A chapter of the PDF");
+	});
+
+	// Measured on a real device: a page inserted after page 8 of *Alice* used to be headed "Page 9",
+	// which is a page of the book that exists, is elsewhere, and had a synced note of its own.
+	it("does not name itself after the source page whose number it happens to sit at", async () => {
+		const result = await build([appendedPage()], { ocrBackend: fakeOcr("text") });
+
+		expect(result.markdown).not.toContain("Page 16");
 	});
 
 	it("drops it entirely with handwritten notes off, like every other handwriting on the page", async () => {

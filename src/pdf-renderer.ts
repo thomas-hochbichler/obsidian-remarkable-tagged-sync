@@ -15,6 +15,7 @@ import {
 	StandardFonts,
 } from "pdf-lib";
 import { HEADING_TEXT_SIZE_PX, PLAIN_TEXT_SIZE_PX, TEXT_LEFT_PADDING_PX } from "./device-font";
+import { repairPagePaint } from "./pdf-paint-repair";
 import type { RmHighlight, RmPage, RmRect, RmStroke } from "./rm-parser";
 import { faceOf, layoutText, LIST_MARKER_OFFSET_PX } from "./text-layout";
 
@@ -731,6 +732,14 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 	const device = resolveDeviceCanvas(pages.map((page) => page.annotations).filter((scene): scene is RmPage => scene !== null));
 	const src = await PDFDocument.load(sourcePdfBytes);
 	const out = await PDFDocument.create();
+
+	// Before anything is copied out of it: a page the device rendered from an EPUB can carry a colour
+	// operator with no colour, which leaves its text white on white in the reader Obsidian embeds a
+	// PDF with (see `pdf-paint-repair.ts`). Only the pages actually used are looked at -- a tagged
+	// book is commonly one page out of several hundred.
+	for (const index of new Set(pages.map((page) => page.sourceIndex))) {
+		if (index >= 0 && index < src.getPageCount()) await repairPagePaint(src, src.getPage(index));
+	}
 
 	for (const { sourceIndex, annotations } of pages) {
 		const srcPage = sourceIndex >= 0 && sourceIndex < src.getPageCount() ? src.getPage(sourceIndex) : null;

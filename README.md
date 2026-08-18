@@ -52,6 +52,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Block IDs — every quote linkable on its own](#annotated-pdfs) | ✓ | ✓ |
 | [Typed text (Type Folio) kept exact, never transcribed](#typed-text-and-the-type-folio) | ✓ | ✓ |
 | [Notebook highlights from the tablet](#what-gets-synced) | ✓ | ✓ |
+| [EPUB books, with their own chapter names](#books-you-read-as-epub) | ✓ | ✓ |
 | **Transcription backends** | | |
 | [Apple Vision — zero set-up on macOS](#apple-vision-macos) | ✓ | ✓ |
 | [A local server you run yourself (Ollama, LM Studio)](#a-local-server-you-run-yourself) | ✓ | ✓ |
@@ -81,6 +82,7 @@ Pro is **€24, once** — no subscription. See [Tagged Sync Pro](#tagged-sync-p
 | reMarkable Paper Pure | ✓ |
 | **Type Folio** (typed text) | ✓ — taken from the file exactly as you typed it, [never transcribed](#typed-text-and-the-type-folio) |
 | "Read on reMarkable" browser extension | ✓ — a sent article counts as [a document to mark up](#typed-text-and-the-type-folio) |
+| **EPUB books** | ✓ — read as [the book the device made of them](#books-you-read-as-epub), not as ink on blank pages |
 
 Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 
@@ -349,6 +351,27 @@ one single block of text — so an annotation can be embedded anywhere in your v
 **The document's note is its digest.** There is no separate digest note collecting every document —
 the marks live in the note of the document they belong to, in the folder you mapped.
 
+### Books you read as EPUB
+
+**A book you tagged arrives as the book, with everything above true of it.** A reMarkable has no
+EPUB reader: it converts the book to a PDF on the tablet and reads that. Tagged Sync reads the same
+PDF, so a highlight in a book comes through as the quote it is, under the chapter it sits in — the
+chapter named the way the book's own table of contents names it.
+
+**One thing to know before you start, and it is the device's doing rather than the plugin's.**
+Changing a book's font, its size, or its margins makes the reMarkable lay the whole book out again
+and rebuild that PDF. Measured on a real tablet: every mark survived that — and every mark kept
+its exact position while the text moved out from under it. A highlight that had covered one sentence
+covered a different one after the change.
+
+Tagged Sync mirrors what the device holds, so it cannot put those marks back where they belong. What
+it does is **tell you it happened**: a book whose page count has changed since its notes were written
+is reported after the sync, and so is a note that comes back with fewer highlights than it had.
+Nothing else would ever flag it — a quote you never marked reads exactly like one you did.
+
+So: **settle the font before you start annotating**, which is the advice reMarkable readers give
+each other anyway.
+
 ### The notes you write in the margin
 
 **Switch them on under Settings → Handwritten notes, and what you wrote beside the text arrives with
@@ -407,6 +430,19 @@ it does not — so a document without bookmarks can file a quote under the wrong
   track lives in the plugin's own `data.json`, not in your notes.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
+- **A page note is named after the page's position in the document at the time it was written.**
+  Insert a page on the tablet and everything after it moves down one — but a note whose own page did
+  not change is not rewritten, so it keeps the name it had. Its contents stay right: the links inside
+  it address the page of the source PDF, which insertion does not renumber. Only the file name can go
+  stale, and only until that page changes and the note is written again. A note that would land on a
+  name already taken gets a suffix rather than overwriting anything.
+- **A book laid out again on the tablet is reported.** Its page count changes when its font, size or
+  margins do, and marks made before that keep their place while the text moves — so their quotes may
+  no longer be the sentences you marked. Said once per book, when the sync first sees the new count.
+- **A note that comes back with fewer highlights than it had is reported.** The sync mirrors the
+  device, so a mark you removed on the tablet leaves the note too — but a mark that went missing
+  without you removing it is worth hearing about while a backup of the note is still recent. The
+  notice says how many notes; **Copy diagnostics** in settings says which.
 
 ### Writing your own notes
 

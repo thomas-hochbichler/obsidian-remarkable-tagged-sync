@@ -9,8 +9,10 @@
 // every sync and must come out byte-identical for identical input. So no clock, no randomness, and
 // the clusters are transcribed one after another rather than in parallel.
 
+import { chapterName } from "./chapter-names";
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
 import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
+import type { EpubBook } from "./epub-text";
 import { findInkMarks, findMarkerMarks, type InkMark, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
@@ -28,6 +30,7 @@ import {
 } from "./pdf-renderer";
 import { sceneHeadings, sceneTextPage } from "./scene-text";
 import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
+import { correctQuote } from "./quote-correction";
 import type { RmPage, RmStroke } from "./rm-parser";
 
 export interface DigestPipelineDeps {
@@ -537,6 +540,20 @@ async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink
 }
 
 /** Null for a page with neither a highlight nor a margin note: an unannotated page is not part of the digest. */
+/**
+ * What to call this page in the digest: the source document's own label for it, its ordinal where the
+ * document has no labels -- or nothing at all for a page added on the device.
+ *
+ * That last case is the one worth stating. Such a page has no source page, so `sourceIndex` falls
+ * back to the position it sits at, and a page inserted after the book's page 8 would be labelled
+ * "Page 9" -- a page of the book that exists, is somewhere else entirely, and often carries a note of
+ * its own. Measured on a real device while verifying exactly this (spec §7).
+ */
+function pageLabelOf(page: DigestPageInput, geometry: PageGeometry): string | null {
+	if (page.appended) return null;
+	return geometry.pageText?.label ?? String(page.sourceIndex + 1);
+}
+
 async function buildPage(state: BuildState, page: DigestPageInput, geometry: PageGeometry): Promise<DigestPage | null> {
 	const placed = buildHighlights(page, geometry);
 	const ink = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => !isHighlighterOrShader(stroke.penType));
@@ -547,7 +564,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	if (page.appended) {
 		if (!state.deps.marginNotes || ink.length === 0) return null;
 		const transcript = await buildPageTranscript(state, page, ink);
-		return { pageLabel: geometry.pageText?.label ?? String(page.sourceIndex + 1), embedPage: page.embedPage, highlights: [], notes: [transcript] };
+		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, highlights: [], notes: [transcript] };
 	}
 
 	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
@@ -602,11 +619,16 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	}
 
 	return {
-		pageLabel: geometry.pageText?.label ?? String(page.sourceIndex + 1),
+		pageLabel: pageLabelOf(page, geometry),
 		embedPage: page.embedPage,
 		highlights: highlights.map((item) => item.highlight),
 		notes: standalone,
 	};
+}
+
+/** Whether this page carries anything the text layer would have served: a highlight to quote in context, or ink to place beside a sentence. */
+function isAnnotated(scene: RmPage | null): boolean {
+	return (scene?.highlights?.length ?? 0) > 0 || (scene?.layers ?? []).some((layer) => layer.strokes.length > 0);
 }
 
 async function readPageText(document: PdfTextDocument | null, page: DigestPageInput, warnings: string[]): Promise<PdfPageText | null> {
@@ -617,7 +639,12 @@ async function readPageText(document: PdfTextDocument | null, page: DigestPageIn
 	if (page.appended) return null;
 	try {
 		const text = await document.page(page.sourceIndex);
-		if (text === null) {
+		// Only where the page had something to lose. A whole-document unit walks every page, and a book
+		// or an article ends in pages that are one picture and nothing else -- measured: the last two
+		// pages of an extension-captured article are charts with no text item on them at all. Reporting
+		// a degradation on a page the reader never marked trains them to ignore the line on the page
+		// where it is true.
+		if (text === null && isAnnotated(page.scene)) {
 			warnings.push(`Page ${page.embedPage}: the PDF has no readable text there, so highlights quote the text recorded on the device.`);
 		}
 		return text;
@@ -637,7 +664,20 @@ async function readPageText(document: PdfTextDocument | null, page: DigestPageIn
  * the Type Folio. The device stores that text in the scene (`root_text`) rather than in a PDF, and
  * the difference ends there -- it is still a document with somebody's marks on it.
  */
-export type DigestSource = { kind: "pdf"; bytes: Uint8Array } | { kind: "typed-text" };
+export type DigestSource =
+	| {
+			kind: "pdf";
+			bytes: Uint8Array;
+			/**
+			 * The original `.epub`, for a document the device rendered from one. That conversion loses
+			 * letters, so neither the text under a highlight nor the name of a section is always what
+			 * the author wrote (spec §2); this is the only copy that is. Called at most once, and only
+			 * when there is something for it to fix -- a book is a megabyte nobody should fetch for a
+			 * page of ink with no heading and no quote on it.
+			 */
+			book?: () => Promise<EpubBook | null>;
+	  }
+	| { kind: "typed-text" };
 
 /** What one page's annotations are placed against; the two sources differ in nothing else. */
 interface PageGeometrySource {
@@ -731,8 +771,14 @@ export async function buildDigest(
 	const device = resolveDeviceCanvas(pages.map((page) => page.scene).filter((scene): scene is RmPage => scene !== null));
 
 	const text = source.kind === "pdf" ? await pdfTextSource(source.bytes, device, state) : typedTextSource(pages, device);
-	const ordered = orderHeadings(text.headings);
-	const headings = text.headings;
+
+	// The book behind the render, read at most once however many things ask for it: the headings here,
+	// and the quotes after the page loop. Headings are needed *during* the loop, so this cannot wait
+	// for the loop to say whether there is a quote as well.
+	const book = source.kind === "pdf" && source.book ? bookReader(source.book, state) : null;
+	const chapters = book && text.headings.length > 0 ? ((await book())?.chapters ?? null) : null;
+	const headings = chapters?.length ? text.headings.map((heading) => ({ ...heading, title: chapterName(heading.title, chapters) ?? heading.title })) : text.headings;
+	const ordered = orderHeadings(headings);
 
 	const digestPages: DigestPage[] = [];
 	for (const page of pages) {
@@ -758,9 +804,54 @@ export async function buildDigest(
 		deps.onPage?.();
 	}
 
+	if (book) await correctQuotesAgainstBook(digestPages, book);
+
 	return {
 		markdown: renderDigest(embedPath, digestPages),
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
 	};
+}
+
+/**
+ * Reads the book once, for everyone who asks, and says once when it cannot be read.
+ *
+ * A book that cannot be read is a source failing and is reported; both the quotes and the chapter
+ * names then stay as the device rendered them, which is the whole degradation (spec §3).
+ */
+function bookReader(load: () => Promise<EpubBook | null>, state: BuildState): () => Promise<EpubBook | null> {
+	let read: Promise<EpubBook | null> | null = null;
+	return () =>
+		(read ??= load().then(
+			(book) => {
+				if (book === null) state.warnings.push("The book's own text could not be read; quotes and chapter names keep what the device recorded.");
+				return book;
+			},
+			(error: unknown) => {
+				state.warnings.push(`The book's own text could not be read (${describeError(error)}); quotes and chapter names keep what the device recorded.`);
+				return null;
+			},
+		));
+}
+
+/**
+ * Re-spells every quote in the book's own words, where it can be found there.
+ *
+ * A quote that cannot be located is left exactly as the device recorded it, without a warning: the
+ * device's text is not known to be wrong, and a line per unmatched quote would report a problem the
+ * reader mostly does not have.
+ */
+async function correctQuotesAgainstBook(pages: DigestPage[], book: () => Promise<EpubBook | null>): Promise<void> {
+	const highlights = pages.flatMap((page) => page.highlights);
+	if (highlights.length === 0) return;
+
+	const text = (await book())?.text;
+	if (text === undefined) return;
+
+	for (const highlight of highlights) {
+		const corrected = correctQuote(highlight.sentence, highlight.marked, text);
+		if (!corrected) continue;
+		highlight.sentence = corrected.sentence;
+		highlight.marked = corrected.marked;
+	}
 }

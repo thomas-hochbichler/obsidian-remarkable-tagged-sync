@@ -24,6 +24,14 @@ describe("getDocumentFiles", () => {
 		expect(pages).toEqual(new Map([["page-a", "hash-a"], ["page-b", "hash-b"]]));
 	});
 
+	it("finds the original .epub a book was rendered from, and reports none for a document without one", async () => {
+		const book = fakeApi([rawEntry("doc-1.content", "content-hash"), rawEntry("doc-1.epub", "epub-hash"), rawEntry("doc-1.pdf", "pdf-hash")]);
+		const notABook = fakeApi([rawEntry("doc-1.content", "content-hash"), rawEntry("doc-1/page-a.rm", "hash-a")]);
+
+		expect((await getDocumentFiles(book, "doc-1", "doc-hash-1")).epub).toEqual({ id: "doc-1.epub", hash: "epub-hash" });
+		expect((await getDocumentFiles(notABook, "doc-1", "doc-hash-1")).epub).toBeNull();
+	});
+
 	it("requests the document's own entry list by id and hash", async () => {
 		const api = fakeApi([]);
 

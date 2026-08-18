@@ -109,6 +109,8 @@ export interface RawTextItem {
 const LINE_TOLERANCE = 0.5;
 /** The gap that earns a space between two items, as a fraction of their height: kerning stays well under it, a real word gap well over. */
 const SPACE_GAP = 0.2;
+/** How far a repeat of the same run may sit from the original and still be the same run drawn twice (see `withoutOverstrikes`), as a fraction of its height. */
+const OVERSTRIKE_SHIFT = 0.25;
 
 /** True for an item that carries no glyph of its own -- pdf.js emits these where the PDF draws a space. */
 function isBlank(item: RawTextItem): boolean {
@@ -376,7 +378,7 @@ function columnOrder(rows: RawTextItem[][], gutters: Gutter[]): RawTextItem[][] 
  * is supposed to measure, and `markedRange` maps rectangles onto characters by that ratio.
  */
 function buildLine(group: RawTextItem[]): PdfTextLine {
-	const items = [...group].sort((a, b) => a.x - b.x);
+	const items = withoutOverstrikes([...group].sort((a, b) => a.x - b.x));
 	let text = "";
 	let previous: RawTextItem | null = null;
 	for (const item of items) {
@@ -397,6 +399,28 @@ function buildLine(group: RawTextItem[]): PdfTextLine {
 	const y = Math.min(...glyphs.map((item) => item.y));
 	const top = Math.max(...glyphs.map((item) => item.y + item.height));
 	return { text: text.trim(), x, y, width: right - x, height: top - y };
+}
+
+/**
+ * The same run drawn twice at the same place, one copy dropped.
+ *
+ * A renderer with no bold cut of a font fakes one by drawing the text a second time a hair to the
+ * side -- which a reMarkable's EPUB conversion does for every heading, and which read as
+ * "Introducing Claude Sonnet 5Introducing Claude Sonnet 5" in the vault. The line's box is the same
+ * either way, so leaving it in also made the box describe twice the characters it covers, and every
+ * rectangle mapped onto that line addressed the wrong half of it.
+ *
+ * A word genuinely repeated is a whole word-width away, an order of magnitude past this threshold.
+ */
+function withoutOverstrikes(items: RawTextItem[]): RawTextItem[] {
+	const kept: RawTextItem[] = [];
+	let last: RawTextItem | null = null;
+	for (const item of items) {
+		if (last && item.text === last.text && Math.abs(item.x - last.x) <= OVERSTRIKE_SHIFT * Math.max(last.height, item.height)) continue;
+		kept.push(item);
+		if (!isBlank(item)) last = item;
+	}
+	return kept;
 }
 
 /** pdf.js splits inconsistently at spaces (issues 14497, 9998), so the gap decides -- unless one side already carries the space. */
