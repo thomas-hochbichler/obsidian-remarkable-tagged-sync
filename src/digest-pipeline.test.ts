@@ -939,14 +939,22 @@ describe("buildDigest on a page added on the device", () => {
 		expect(result.warnings).toEqual([]);
 	});
 
-	it("gives it its own page heading rather than the last section of a document it is not part of", async () => {
+	it("gives it its own heading rather than the last section of a document it is not part of", async () => {
 		const headings: PdfHeading[] = [{ pageIndex: 0, x: null, y: 700, title: "A chapter of the PDF" }];
 		const text = fakeTextDocument({ 0: { label: "1", width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: [] } }, headings);
 
 		const result = await build([appendedPage()], { loadText: async () => text, ocrBackend: fakeOcr("text") });
 
-		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=16|Page 16]]");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=16|Added page]]");
 		expect(result.markdown).not.toContain("A chapter of the PDF");
+	});
+
+	// Measured on a real device: a page inserted after page 8 of *Alice* used to be headed "Page 9",
+	// which is a page of the book that exists, is elsewhere, and had a synced note of its own.
+	it("does not name itself after the source page whose number it happens to sit at", async () => {
+		const result = await build([appendedPage()], { ocrBackend: fakeOcr("text") });
+
+		expect(result.markdown).not.toContain("Page 16");
 	});
 
 	it("drops it entirely with handwritten notes off, like every other handwriting on the page", async () => {

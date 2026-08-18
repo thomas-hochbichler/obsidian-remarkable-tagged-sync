@@ -74,7 +74,12 @@ export interface DigestHighlight {
 }
 
 export interface DigestPage {
-	pageLabel: string;
+	/**
+	 * The page's own label in the source document -- its printed number, which is not always its
+	 * ordinal. Null for a page added on the device: it has no page in the document at all, and the
+	 * number beside it would be some other page's.
+	 */
+	pageLabel: string | null;
 	embedPage: number;
 	highlights: DigestHighlight[];
 	/** Notes not nested under a highlight, each with its own `section`. */
@@ -341,12 +346,12 @@ export function renderDigest(embedPath: string, pages: DigestPage[]): string {
 			// Compared as the rendered line, which is what settles both cases at once: the same section
 			// twice running is one heading, while two pages without a section are two -- their headings
 			// differ, because each names its own page.
-			const line = entry.section === null ? `### ${pageLink(`Page ${page.pageLabel}`)}` : `### ${escapeText(entry.section)}`;
+			const line = entry.section === null ? `### ${pageLink(page.pageLabel === null ? "Added page" : `Page ${page.pageLabel}`)}` : `### ${escapeText(entry.section)}`;
 			if (line !== heading) {
 				heading = line;
 				blocks.push(line);
 			}
-			blocks.push(entry.render(entry.section === null ? "" : ` · ${pageLink(`p. ${page.pageLabel}`)}`));
+			blocks.push(entry.render(entry.section === null ? "" : ` · ${pageLink(page.pageLabel === null ? "added page" : `p. ${page.pageLabel}`)}`));
 		}
 	}
 

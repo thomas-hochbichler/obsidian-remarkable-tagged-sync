@@ -426,6 +426,12 @@ it does not — so a document without bookmarks can file a quote under the wrong
   track lives in the plugin's own `data.json`, not in your notes.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
+- **A page note is named after the page's position in the document at the time it was written.**
+  Insert a page on the tablet and everything after it moves down one — but a note whose own page did
+  not change is not rewritten, so it keeps the name it had. Its contents stay right: the links inside
+  it address the page of the source PDF, which insertion does not renumber. Only the file name can go
+  stale, and only until that page changes and the note is written again. A note that would land on a
+  name already taken gets a suffix rather than overwriting anything.
 - **A note that comes back with fewer highlights than it had is reported.** The sync mirrors the
   device, so a mark you removed on the tablet leaves the note too — but a mark that went missing
   without you removing it is worth hearing about while a backup of the note is still recent. The

@@ -540,6 +540,20 @@ async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink
 }
 
 /** Null for a page with neither a highlight nor a margin note: an unannotated page is not part of the digest. */
+/**
+ * What to call this page in the digest: the source document's own label for it, its ordinal where the
+ * document has no labels -- or nothing at all for a page added on the device.
+ *
+ * That last case is the one worth stating. Such a page has no source page, so `sourceIndex` falls
+ * back to the position it sits at, and a page inserted after the book's page 8 would be labelled
+ * "Page 9" -- a page of the book that exists, is somewhere else entirely, and often carries a note of
+ * its own. Measured on a real device while verifying exactly this (spec §7).
+ */
+function pageLabelOf(page: DigestPageInput, geometry: PageGeometry): string | null {
+	if (page.appended) return null;
+	return geometry.pageText?.label ?? String(page.sourceIndex + 1);
+}
+
 async function buildPage(state: BuildState, page: DigestPageInput, geometry: PageGeometry): Promise<DigestPage | null> {
 	const placed = buildHighlights(page, geometry);
 	const ink = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => !isHighlighterOrShader(stroke.penType));
@@ -550,7 +564,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	if (page.appended) {
 		if (!state.deps.marginNotes || ink.length === 0) return null;
 		const transcript = await buildPageTranscript(state, page, ink);
-		return { pageLabel: geometry.pageText?.label ?? String(page.sourceIndex + 1), embedPage: page.embedPage, highlights: [], notes: [transcript] };
+		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, highlights: [], notes: [transcript] };
 	}
 
 	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
@@ -605,7 +619,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	}
 
 	return {
-		pageLabel: geometry.pageText?.label ?? String(page.sourceIndex + 1),
+		pageLabel: pageLabelOf(page, geometry),
 		embedPage: page.embedPage,
 		highlights: highlights.map((item) => item.highlight),
 		notes: standalone,

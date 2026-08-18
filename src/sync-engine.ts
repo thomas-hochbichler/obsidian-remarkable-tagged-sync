@@ -91,9 +91,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * version 27 repairs the colourless paint operator a device leaves in a page it rendered from an
  * EPUB, which had been arriving in the vault as a book printed white on white; version 28 names a
  * book's sections the way its own navigation names them, so a digest says "CHAPTER I. Down the
- * Rabbit-Hole" where the render could only say "CHAPTER I.".
+ * Rabbit-Hole" where the render could only say "CHAPTER I."; version 29 stops heading a page added on
+ * the device with the number of the source page it happens to sit at -- inserted after page 8, it
+ * used to call itself page 9, which is a page of the book that exists somewhere else.
  */
-export const RENDER_VERSION = 28;
+export const RENDER_VERSION = 29;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
