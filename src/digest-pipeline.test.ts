@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { buildDigest, type DigestPageInput, type DigestPipelineDeps } from "./digest-pipeline";
+import type { EpubBook } from "./epub-text";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
 import { notebookPageFrame, resolveDeviceCanvas } from "./pdf-renderer";
 import { parseRmV6, type RmHighlight, type RmPage, type RmStroke, type RmText } from "./rm-parser";
@@ -57,7 +58,7 @@ function deps(overrides: Partial<DigestPipelineDeps> = {}): DigestPipelineDeps {
 	};
 }
 
-function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}, book?: () => Promise<string | null>) {
+function build(pages: DigestPageInput[], overrides: Partial<DigestPipelineDeps> = {}, book?: () => Promise<EpubBook | null>) {
 	return buildDigest(deps(overrides), {
 		source: { kind: "pdf", bytes: SOURCE_BYTES, book },
 		embedPath: "attachments/doc.pdf",
@@ -261,7 +262,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 			);
 		}
 
-		const BOOK = "Kapitel 5. Verwende konsistente, beschreibende Tag-Namen in deinen Prompts. Das hilft beim Parsen.";
+		const BOOK: EpubBook = { text: "Kapitel 5. Verwende konsistente, beschreibende Tag-Namen in deinen Prompts. Das hilft beim Parsen.", chapters: [] };
 
 		it("re-spells a damaged quote in the book's own words, and keeps the run marked", async () => {
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => BOOK);
@@ -274,22 +275,41 @@ describe("buildDigest with the fixture page's text layer", () => {
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => null);
 
 			expect(result.markdown).toContain("PromPts");
-			expect(result.warnings).toEqual(["The book's own text could not be read; quotes keep the spelling the device recorded."]);
+			expect(result.warnings).toEqual(["The book's own text could not be read; quotes and chapter names keep what the device recorded."]);
 		});
 
 		it("keeps a quote it cannot find in the book, and stays quiet about it", async () => {
 			// Not a failure worth a line: the device's text is not known to be wrong, and a book has
 			// pages this quote could legitimately not be on.
-			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => "Ein ganz anderes Buch über Segelschiffe.");
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ text: "Ein ganz anderes Buch über Segelschiffe.", chapters: [] }));
 
 			expect(result.markdown).toContain("PromPts");
 			expect(result.warnings).toEqual([]);
 		});
 
-		it("does not fetch the book for a page that has no quotes on it", async () => {
+		it("names a section the way the book's navigation names it", async () => {
+			// What the render found was "Sei klar und direkt"; the book calls that chapter by its full
+			// name, and the digest should say so.
+			const chapters = ["Kapitel 5. Sei klar und direkt in deinen Anweisungen"];
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ ...BOOK, chapters }));
+
+			expect(result.markdown).toContain("### Kapitel 5. Sei klar und direkt in deinen Anweisungen");
+			expect(result.markdown).not.toContain("### Sei klar und direkt\n");
+		});
+
+		it("reads the book once, for the headings and the quotes together", async () => {
 			const book = vi.fn(async () => BOOK);
 
-			await build([fixturePage(inkyScene())], { loadText: async () => damagedTextDocument() }, book);
+			await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, book);
+
+			expect(book).toHaveBeenCalledTimes(1);
+		});
+
+		it("does not fetch the book for a page with no heading and no quote on it", async () => {
+			// A megabyte nobody should download for a page of ink the book has nothing to say about.
+			const book = vi.fn(async () => BOOK);
+
+			await build([fixturePage(inkyScene())], { loadText: async () => fakeTextDocument({ 1: fixturePageText() }) }, book);
 
 			expect(book).not.toHaveBeenCalled();
 		});

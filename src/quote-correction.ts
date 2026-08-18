@@ -107,12 +107,31 @@ function alignInWindow(quote: string, source: string, from: number, to: number):
 	return { distance: distance[m * (n + 1) + best], start: from + j, end: from + best, map };
 }
 
+/** How many edits a text of this length may be wrong by and still be the same text. */
+export function errorBudget(length: number): number {
+	return Math.max(MIN_ERROR_BUDGET, Math.floor(length * MAX_ERROR_RATIO));
+}
+
+/**
+ * The edits between `text` and the closest stretch of `source`, or null when either side cannot be
+ * folded for comparison.
+ *
+ * The whole source is read, without anchors: this is for matching one short string against another --
+ * a heading against a chapter name (`chapter-names.ts`) -- and not for finding a quote in a book.
+ */
+export function matchDistance(text: string, source: string): number | null {
+	const foldedText = fold(text);
+	const foldedSource = fold(source);
+	if (foldedText === null || foldedSource === null) return null;
+	return alignInWindow(foldedText, foldedSource, 0, foldedSource.length).distance;
+}
+
 /** Where the quote sits in the source, or null when no stretch of it matches closely enough. */
 function locate(quote: string, source: string): Alignment | null {
 	const foldedQuote = fold(quote);
 	const foldedSource = fold(source);
 	if (foldedQuote === null || foldedSource === null) return null;
-	const budget = Math.max(MIN_ERROR_BUDGET, Math.floor(foldedQuote.length * MAX_ERROR_RATIO));
+	const budget = errorBudget(foldedQuote.length);
 
 	// Windows are collected from every anchor before any is aligned, so a common anchor cannot spend
 	// the whole budget on its own occurrences while a rarer one goes untried.

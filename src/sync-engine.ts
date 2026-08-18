@@ -21,7 +21,7 @@ import {
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { getDocumentFiles, type DocumentFiles } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
-import { readEpubText } from "./epub-text";
+import { readEpubBook, type EpubBook } from "./epub-text";
 import { validateSourcePdf } from "./pdf-source";
 import { inheritedFolderTagNames, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
@@ -89,9 +89,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * version 26 reads a heading a renderer faked bold by drawing twice as the one heading it is, which
  * had been doubling every such title and halving the text a rectangle on that line addressed;
  * version 27 repairs the colourless paint operator a device leaves in a page it rendered from an
- * EPUB, which had been arriving in the vault as a book printed white on white.
+ * EPUB, which had been arriving in the vault as a book printed white on white; version 28 names a
+ * book's sections the way its own navigation names them, so a digest says "CHAPTER I. Down the
+ * Rabbit-Hole" where the render could only say "CHAPTER I.".
  */
-export const RENDER_VERSION = 27;
+export const RENDER_VERSION = 28;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -1234,9 +1236,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
 
 		// The book behind a rendered EPUB, on the same terms: at most once per doc, and only when a
-		// digest has a quote whose spelling is worth correcting (see `DigestSource.book`).
-		let bookText: Promise<string | null> | null = null;
-		const getBookText = epubFile === null ? undefined : () => (bookText ??= api.raw.getHash(epubFile.id, epubFile.hash).then(readEpubText));
+		// digest has something whose wording is worth correcting (see `DigestSource.book`).
+		let book: Promise<EpubBook | null> | null = null;
+		const getBook = epubFile === null ? undefined : () => (book ??= api.raw.getHash(epubFile.id, epubFile.hash).then(readEpubBook));
 
 		/**
 		 * The `## Digest` body for one unit with document text, or "" when it could not be built. A
@@ -1261,7 +1263,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					// transcribes per cluster, which is finer than the page the bar counts.
 					{ ocrBackend, marginNotes: deps.marginNotes ?? false, onPage: bar.page },
 					{
-						source: pdfBacked ? { kind: "pdf", bytes: await getSourcePdf(), book: getBookText } : { kind: "typed-text" },
+						source: pdfBacked ? { kind: "pdf", bytes: await getSourcePdf(), book: getBook } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
 						// `writeAttachment` derives it from, so the digest can link into it before the
 						// attachment is written and `writeUnit` needs no reordering.

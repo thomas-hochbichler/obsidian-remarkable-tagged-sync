@@ -1,4 +1,5 @@
-// The original `.epub`'s prose, read for one purpose: correcting the quotes the device hands us.
+// The original `.epub`, read for two things the device's render gets wrong: the wording of a quote,
+// and the name of a chapter.
 //
 // A reMarkable has no EPUB reader. It converts the book to a PDF on-device, and that conversion is
 // where a quote loses letters -- `off` arrives as `oP`, a plain U+0050 with no ligature codepoint to
@@ -98,25 +99,73 @@ function textOfXhtml(xhtml: string): string {
 		.trim();
 }
 
+/** What the `.epub` is read for: the author's own wording, and the book's own names for its parts. */
+export interface EpubBook {
+	/** The book's prose, joined from every XHTML document in the archive. */
+	text: string;
+	/** The chapter names the navigation carries, in navigation order. Empty when the book has no readable navigation. */
+	chapters: string[];
+}
+
+/** Every `<navLabel>` of an EPUB 2 `.ncx`, in document order -- which is reading order, and is what `playOrder` says too. */
+function labelsOfNcx(ncx: string): string[] {
+	return [...ncx.matchAll(/<navLabel[^>]*>\s*<text[^>]*>([\s\S]*?)<\/text>/gi)].map((match) => textOfXhtml(match[1]));
+}
+
+/** Every link of an EPUB 3 navigation document's table of contents, in document order. */
+function labelsOfNav(xhtml: string): string[] {
+	const toc = /<nav\b[^>]*epub:type\s*=\s*["'][^"']*\btoc\b[^"']*["'][^>]*>([\s\S]*?)<\/nav>/i.exec(xhtml);
+	if (!toc) return [];
+	return [...toc[1].matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/gi)].map((match) => textOfXhtml(match[1]));
+}
+
 /**
- * The book's prose, joined from every XHTML document in the archive.
+ * The chapter names, from whichever of the two forms this book carries them in: EPUB 2's `.ncx` or
+ * EPUB 3's navigation document. Both are on the test device -- *Alice* has an `.ncx`, an article
+ * captured by the "Read on reMarkable" extension has only a `nav.xhtml` -- so both are read.
  *
- * The spine order is not read, and does not matter: the only consumer searches this text for a
- * quote it already knows the position of (`correctQuote`). Skipping the OPF keeps a book with a
- * broken or unusual manifest readable, which is the whole point of a fallback source.
+ * Where the chapters *sit* is deliberately not read. A name is only ever used to rename a heading the
+ * render already found (`chapter-names.ts`), and matching by name needs no positions.
  */
-export async function readEpubText(bytes: Uint8Array): Promise<string | null> {
+async function readNavigation(bytes: Uint8Array, entries: ZipEntry[], documents: string[]): Promise<string[]> {
+	const ncx = entries.find((entry) => /\.ncx$/i.test(entry.name));
+	if (ncx) {
+		const data = await readEntry(bytes, ncx).catch(() => null);
+		const labels = data ? labelsOfNcx(new TextDecoder().decode(data)).filter((label) => label.length > 0) : [];
+		if (labels.length > 0) return labels;
+	}
+	for (const document of documents) {
+		const labels = labelsOfNav(document).filter((label) => label.length > 0);
+		if (labels.length > 0) return labels;
+	}
+	return [];
+}
+
+/**
+ * The book, or null when this is not an archive we can read prose out of.
+ *
+ * The spine order is not read, and does not matter: the prose's only consumer searches it for a
+ * quote it already knows the position of (`correctQuote`). Skipping the OPF keeps a book with a
+ * broken or unusual manifest readable, which is the whole point of a fallback source -- and is why
+ * the navigation is looked for by file shape rather than through the manifest that names it.
+ */
+export async function readEpubBook(bytes: Uint8Array): Promise<EpubBook | null> {
 	const entries = readCentralDirectory(bytes);
 	if (!entries) return null;
 	const documents = entries.filter((entry) => /\.(x?html|htm)$/i.test(entry.name));
 	if (documents.length === 0) return null;
 
 	const parts: string[] = [];
+	const xhtml: string[] = [];
 	for (const entry of documents) {
 		const data = await readEntry(bytes, entry).catch(() => null);
 		if (!data) continue;
-		parts.push(textOfXhtml(new TextDecoder().decode(data)));
+		const document = new TextDecoder().decode(data);
+		xhtml.push(document);
+		parts.push(textOfXhtml(document));
 	}
 	const text = parts.filter((part) => part.length > 0).join(" ");
-	return text.length > 0 ? text : null;
+	if (text.length === 0) return null;
+
+	return { text, chapters: await readNavigation(bytes, entries, xhtml) };
 }

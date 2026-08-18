@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readEpubText } from "./epub-text";
+import { readEpubBook } from "./epub-text";
 
 /** CRC-32, the one field a ZIP reader may well check even though ours does not. */
 function crc32(bytes: Uint8Array): number {
@@ -72,7 +72,7 @@ async function makeZip(files: { name: string; content: string; deflate?: boolean
 	return out;
 }
 
-describe("readEpubText", () => {
+describe("readEpubBook", () => {
 	it("reads the prose out of every XHTML document, stored or deflated", async () => {
 		const zip = await makeZip([
 			{ name: "mimetype", content: "application/epub+zip" },
@@ -80,7 +80,7 @@ describe("readEpubText", () => {
 			{ name: "OEBPS/chapter2.xhtml", content: "<html><body><p>Down, down, down.</p></body></html>", deflate: true },
 		]);
 
-		expect(await readEpubText(zip)).toBe("CHAPTER I. Alice was beginning to get very tired. Down, down, down.");
+		expect((await readEpubBook(zip))?.text).toBe("CHAPTER I. Alice was beginning to get very tired. Down, down, down.");
 	});
 
 	it("keeps the word boundary an inline tag stands for, and drops script and style whole", async () => {
@@ -93,21 +93,66 @@ describe("readEpubText", () => {
 			},
 		]);
 
-		expect(await readEpubText(zip)).toBe("I fell off the top");
+		expect((await readEpubBook(zip))?.text).toBe("I fell off the top");
 	});
 
 	it("decodes the entities a book's punctuation is written with", async () => {
 		const zip = await makeZip([{ name: "a.xhtml", content: "<p>&ldquo;Well!&rdquo; thought Alice &amp; her sister &#8212; then &#x2026;</p>" }]);
 
-		expect(await readEpubText(zip)).toBe("“Well!” thought Alice & her sister — then …");
+		expect((await readEpubBook(zip))?.text).toBe("“Well!” thought Alice & her sister — then …");
 	});
 
 	// Every failure is a null, never a throw: the quote still gets written in the device's spelling.
 	it("returns null for bytes that are not a ZIP", async () => {
-		expect(await readEpubText(new TextEncoder().encode("not a zip at all"))).toBeNull();
+		expect(await readEpubBook(new TextEncoder().encode("not a zip at all"))).toBeNull();
 	});
 
 	it("returns null for an archive with no XHTML in it", async () => {
-		expect(await readEpubText(await makeZip([{ name: "mimetype", content: "application/epub+zip" }]))).toBeNull();
+		expect(await readEpubBook(await makeZip([{ name: "mimetype", content: "application/epub+zip" }]))).toBeNull();
+	});
+
+	// The two forms a book carries its chapter names in, both of them on the test device.
+	describe("the navigation", () => {
+		const NCX = `<ncx><navMap>
+			<navPoint><navLabel><text>CHAPTER I. Down the Rabbit-Hole</text></navLabel><content src="chapter1.xhtml"/></navPoint>
+			<navPoint><navLabel><text>CHAPTER II. The Pool of Tears</text></navLabel><content src="chapter2.xhtml"/></navPoint>
+		</navMap></ncx>`;
+
+		it("reads an EPUB 2 book's chapter names off its .ncx", async () => {
+			const zip = await makeZip([
+				{ name: "OEBPS/chapter1.xhtml", content: "<p>Alice was beginning to get very tired.</p>" },
+				{ name: "OEBPS/toc.ncx", content: NCX },
+			]);
+
+			expect((await readEpubBook(zip))?.chapters).toEqual(["CHAPTER I. Down the Rabbit-Hole", "CHAPTER II. The Pool of Tears"]);
+		});
+
+		it("reads an EPUB 3 book's chapter names off its navigation document", async () => {
+			const zip = await makeZip([
+				{ name: "OEBPS/article.xhtml", content: "<p>Sonnet 5 is our best model.</p>" },
+				{ name: "OEBPS/nav.xhtml", content: `<html><body><nav epub:type="toc" id="toc"><ol><li><a href='article.xhtml'>Introducing Claude Sonnet 5</a></li></ol></nav></body></html>` },
+			]);
+
+			expect((await readEpubBook(zip))?.chapters).toEqual(["Introducing Claude Sonnet 5"]);
+		});
+
+		it("takes only the table of contents, not every list of links in the book", async () => {
+			const zip = await makeZip([
+				{
+					name: "nav.xhtml",
+					content: `<html><body><nav epub:type="landmarks"><a href="cover.xhtml">Cover</a></nav><nav epub:type="toc"><a href="c1.xhtml">Chapter One</a></nav></body></html>`,
+				},
+			]);
+
+			expect((await readEpubBook(zip))?.chapters).toEqual(["Chapter One"]);
+		});
+
+		// No navigation is not a failure: the headings the render found are then all there is, and they
+		// stay exactly as they are.
+		it("reports no chapters for a book that carries no navigation", async () => {
+			const zip = await makeZip([{ name: "a.xhtml", content: "<p>Just prose.</p>" }]);
+
+			expect((await readEpubBook(zip))?.chapters).toEqual([]);
+		});
 	});
 });
