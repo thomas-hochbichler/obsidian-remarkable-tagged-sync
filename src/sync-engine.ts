@@ -93,9 +93,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * book's sections the way its own navigation names them, so a digest says "CHAPTER I. Down the
  * Rabbit-Hole" where the render could only say "CHAPTER I."; version 29 stops heading a page added on
  * the device with the number of the source page it happens to sit at -- inserted after page 8, it
- * used to call itself page 9, which is a page of the book that exists somewhere else.
+ * used to call itself page 9, which is a page of the book that exists somewhere else; version 30
+ * draws such a page on a blank sheet instead of on that source page, which had been printing a page
+ * of the book the reader never wrote on underneath their handwriting.
  */
-export const RENDER_VERSION = 29;
+export const RENDER_VERSION = 30;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -339,14 +341,17 @@ function findEntryHash(rows: Record<string, SyncIndexRow>, docId: string): strin
 	return undefined;
 }
 
+/** `sourceIndex` for a page that has no page in the source PDF at all; the renderer draws it on a blank sheet. */
+const NO_SOURCE_PAGE = -1;
+
 interface DocPageRef {
 	id: string;
-	/** 0-based index of the source-PDF page this maps to (`cPages.redir`, else document position). Meaningful only for PDF-backed docs. */
+	/** 0-based index of the source-PDF page this maps to (`cPages.redir`, else document position), or `NO_SOURCE_PAGE`. Meaningful only for PDF-backed docs. */
 	sourceIndex: number;
 	/**
-	 * True for a page added on the device behind the PDF's own pages: its `cPages` entry has no
-	 * `redir`, so `sourceIndex` above is the document position standing in for a source page that does
-	 * not exist. The digest transcribes such a page whole instead of hunting margin notes on it (F21).
+	 * True for a page added on the device, anywhere among the PDF's own pages: its `cPages` entry has
+	 * no `redir`, because there is no source page for it to point at. The digest transcribes such a
+	 * page whole instead of hunting margin notes on it (F21), and gives it no page number.
 	 */
 	appended: boolean;
 }
@@ -377,7 +382,14 @@ function orderedPages(doc: DocumentContent | LegacyDocumentContent, liveIds: Rea
 		return cPages
 			.filter((page) => !page.deleted?.value)
 			.sort((a, b) => (a.idx.value < b.idx.value ? -1 : a.idx.value > b.idx.value ? 1 : 0))
-			.map((page, i) => ({ id: page.id, sourceIndex: page.redir?.value ?? i, appended: pdfBacked && page.redir === undefined }));
+			.map((page, i) => {
+				// A page inserted on the device has no source page, and must not borrow the one whose
+				// position it took: inserted after page 8 of a book, its position is 9, and rendering it
+				// against source page 9 printed that page of the book under the reader's handwriting --
+				// a page they never wrote on, which sits in a note of its own. Measured on the device.
+				const appended = pdfBacked && page.redir === undefined;
+				return { id: page.id, sourceIndex: appended ? NO_SOURCE_PAGE : (page.redir?.value ?? i), appended };
+			});
 	}
 	const pages = Array.isArray(doc.pages) ? doc.pages : [];
 	const filtered = pdfBacked ? pages : pages.filter((id) => liveIds.has(id));

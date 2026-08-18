@@ -132,11 +132,15 @@ async function makeSourcePdf(sizes: [number, number][]): Promise<Uint8Array> {
 	return doc.save();
 }
 
-/** The bytes handed to the attachment store's `writeBinary` for a given attachment path, decoded back to a page count. */
-async function embeddedPageCount(store: AttachmentStore, path: string): Promise<number> {
+/** The bytes handed to the attachment store's `writeBinary` for a given attachment path, loaded back. */
+async function embeddedPdf(store: AttachmentStore, path: string): Promise<PDFDocument> {
 	const call = (store.writeBinary as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === path);
 	if (!call) throw new Error(`no attachment written at ${path}`);
-	return (await PDFDocument.load(call[1])).getPageCount();
+	return PDFDocument.load(call[1]);
+}
+
+async function embeddedPageCount(store: AttachmentStore, path: string): Promise<number> {
+	return (await embeddedPdf(store, path)).getPageCount();
 }
 
 interface FakeApiOptions {
@@ -1536,6 +1540,37 @@ describe("runSync", () => {
 			expect(api.getPdf).toHaveBeenCalledWith("doc-1", "hash-1");
 			// All 3 source pages present -- the reported bug produced a 0-page PDF here.
 			expect(await embeddedPageCount(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toBe(3);
+		});
+
+		// Measured on the device: a page inserted after page 8 of a book took source page 9 -- printing a
+		// page of the book, which the reader had never written on and which had a synced note of its
+		// own, underneath their handwriting.
+		it("draws a page inserted on the device on a blank sheet, not on the source page it displaced", async () => {
+			const entry = documentEntry({ fileType: "epub", tags: [] });
+			const content = documentContent({
+				fileType: "epub",
+				pageCount: 3,
+				// The inserted page carries no `redir`: there is no source page for it to point at.
+				cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "inserted" }, { id: "p1", redir: 1 }]),
+				pageTags: [{ name: "sync", timestamp: 0, pageId: "inserted" }],
+			});
+			const source = await makeSourcePdf([[100, 100], [200, 200]]);
+			const api = fakeApi({
+				rootHash: "root-inserted",
+				entries: [entry],
+				contentById: { "doc-1": content },
+				sourcePdfByDoc: { "doc-1": source },
+				pageHashesByDoc: { "doc-1": { inserted: "ink-hash" } },
+			});
+			const deps = baseDeps(api, { sync: "Target" });
+
+			await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const page = (await embeddedPdf(deps.attachmentStore, "tagged-sync/attachments/doc-1-inserted.pdf")).getPage(0);
+			// 200x200 is the source page sitting at the inserted page's position -- the page it used to
+			// borrow. A device-sized sheet is what a page with no source page of its own gets.
+			expect([page.getWidth(), page.getHeight()]).not.toEqual([200, 200]);
+			expect(page.getWidth()).toBeGreaterThan(300);
 		});
 
 		it("composites the source page with its annotation, and OCRs the handwriting, for a page-level tag", async () => {
