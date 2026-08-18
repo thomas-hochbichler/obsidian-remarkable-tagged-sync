@@ -115,6 +115,12 @@ export interface SyncIndexRow {
 	 * catch-up `renderVersion` already relies on.
 	 */
 	blockHash?: string;
+	/**
+	 * How many highlighted quotes this note was written with, for `shrinkWarning`. Absent on
+	 * rows written before this field existed -- those go uncompared once, and are protected from the
+	 * sync after that.
+	 */
+	highlightCount?: number;
 }
 
 export interface SyncIndex {
@@ -250,6 +256,12 @@ export interface SyncResult {
 	editedNotesSkipped: number;
 	/** Documents that produced no note because reading or rendering them failed -- reported, not just logged. */
 	documentsSkipped: number;
+	/**
+	 * Notes rewritten with fewer highlights than they had (see `shrinkWarning`). Counted rather than
+	 * only written into `skipErrors`, because this is the one loss a user can still undo -- from a
+	 * backup, and only if they hear about it while it is fresh.
+	 */
+	shrunkNotes: number;
 	/**
 	 * The raw error text behind each skip, one entry per skipped unit, for "Copy diagnostics" -- the
 	 * console.warn alone left diagnostics reporting "Last error: none" after a partially-failed sync.
@@ -578,8 +590,26 @@ interface UnitParams {
 	source: string;
 	entryHash: string;
 	pageHash: string | null;
+	/** The row this note was last written with, or undefined for a note that did not exist yet. Only the shrink warning reads it. */
+	previous?: SyncIndexRow;
 	/** Progress tick, one per transcribed page. Per unit, which is why it travels with the params. */
 	onPage?: () => void;
+}
+
+/**
+ * The line a unit gets when this sync found fewer highlights than the last one wrote, or null.
+ *
+ * A reMarkable regenerates a book's PDF when the reader changes its font or margins, and the
+ * annotations made on the old render do not always survive that (spec §4). The sync still mirrors --
+ * a vault holding notes no device state explains would be the worse failure -- but it must not
+ * mirror a loss in silence: this line is the reader's only chance to notice while a backup of the
+ * note is still worth looking for.
+ */
+function shrinkWarning(params: UnitParams, count: number): string | null {
+	const previous = params.previous?.highlightCount;
+	if (previous === undefined || count >= previous) return null;
+	const unit = params.pageIndex === null ? `"${params.source}"` : `page ${params.pageIndex} of "${params.source}"`;
+	return `${unit} now has ${count} highlight${count === 1 ? "" : "s"} where the last sync found ${previous}; the note mirrors the device, so the missing ones are gone from the vault too. On a book, changing the font or the margins makes the device redo its whole conversion, and annotations can be lost with it.`;
 }
 
 /** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
@@ -587,7 +617,7 @@ async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "now" | "ocrBackend"> & { attachmentsFolder: string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
-): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"]; ocrWarnings: string[] }> {
+): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"]; ocrWarnings: string[]; shrink: string | null }> {
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
 	const ocr: UnitOcr =
 		params.keepTranscript !== undefined
@@ -613,6 +643,8 @@ async function writeUnit(
 			? notebookSyncKey(params.docId, params.tag)
 			: pageSyncKey(params.docId, params.pageId, params.tag);
 
+	const highlightCount = params.highlights.reduce((count, group) => count + group.quotes.length, 0);
+
 	return {
 		row: {
 			syncKey,
@@ -626,9 +658,11 @@ async function writeUnit(
 			syncedAt: synced,
 			renderVersion: RENDER_VERSION,
 			blockHash: managedBlockHash(fields),
+			highlightCount,
 		},
 		ocr: ocr.status,
 		ocrWarnings: ocr.warnings,
+		shrink: shrinkWarning(params, highlightCount),
 	};
 }
 
@@ -1137,7 +1171,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, skipErrors: [] };
+		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, skipErrors: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -1150,6 +1184,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const editedKeys = new Set<string>();
 	const skippedDocIds = new Set<string>();
 	const skipErrors: string[] = [];
+	let shrunkNotes = 0;
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -1175,6 +1210,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			failedOcrUnits,
 			editedNotesSkipped,
 			documentsSkipped: skippedDocIds.size,
+			shrunkNotes,
 			skipErrors,
 		};
 	};
@@ -1338,7 +1374,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				? await buildUnitDigest(null, digestPages, `"${entry.visibleName}" for tag "${tag}"`)
 				: { markdown: "", ocr: null };
 
-			const { row, ocr, ocrWarnings } = await writeUnit(
+			const { row, ocr, ocrWarnings, shrink } = await writeUnit(
 				writeDeps,
 				{
 					// An empty page list makes `runOcr` return `skipped` without spawning anything -- the
@@ -1355,6 +1391,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash: null,
+					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
 				resolveWriter(deps.noteStore, rename, folder, existingPath),
@@ -1376,6 +1413,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// A page the backend lost while the rest of the unit read fine: the note is written and the
 			// unit counts as ok, so this line is the only trace the loss leaves anywhere.
 			skipErrors.push(...ocrWarnings);
+			if (shrink !== null) {
+				skipErrors.push(shrink);
+				shrunkNotes++;
+			}
 			if (unitOcr === "unavailable") unavailableOcrUnits++;
 			if (unitOcr === "failed") failedOcrUnits++;
 		}
@@ -1430,7 +1471,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				? await buildUnitDigest(unit.pageId, digestPages, `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`)
 				: { markdown: "", ocr: null };
 
-			const { row, ocr, ocrWarnings } = await writeUnit(
+			const { row, ocr, ocrWarnings, shrink } = await writeUnit(
 				writeDeps,
 				{
 					// See the notebook-tag branch: a built digest has already transcribed this unit.
@@ -1446,6 +1487,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash,
+					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
 				resolveWriter(deps.noteStore, rename, folder, existingRow?.notePath ?? null),
@@ -1458,6 +1500,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const unitOcr = digest.ocr ?? ocr;
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
 			skipErrors.push(...ocrWarnings);
+			if (shrink !== null) {
+				skipErrors.push(shrink);
+				shrunkNotes++;
+			}
 			if (unitOcr === "unavailable") unavailableOcrUnits++;
 			if (unitOcr === "failed") failedOcrUnits++;
 		}
@@ -1481,7 +1527,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
 	}
 
-	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, skipErrors };
+	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, skipErrors };
 }
 
 export interface ReTranscribeDeps {

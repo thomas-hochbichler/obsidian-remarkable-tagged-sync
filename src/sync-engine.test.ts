@@ -47,6 +47,8 @@ const PAGE_BYTES = new Uint8Array(readFileSync(FIXTURE_PATH));
 // A page whose nodes carry no anchor, so nothing about it is placed -- unlike FIXTURE_PATH, whose two
 // group nodes are anchored to its typed text.
 const UNANCHORED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/color-and-tool-v3.14.4.rm"));
+/** A page carrying two typed-text highlights, for the shrink warning. */
+const HIGHLIGHTED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/notebook-typed-text-highlights.rm"));
 /** A page that shows one picture, and the bytes of a picture -- neither is in the other, as on the device. */
 const PAGE_WITH_IMAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/notebook-with-image.rm"));
 const PICTURE_BYTES = encodeGrayscalePng({ width: 4, height: 2, pixels: new Uint8Array(8).fill(128) });
@@ -2791,5 +2793,63 @@ describe("page-anchored transcripts", () => {
 		// annotated on five would cost eight times over for nothing.
 		const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[]);
 		expect(scenes.length).toBeLessThanOrEqual(drawnOn.length);
+	});
+});
+
+// A reMarkable redoes a book's whole PDF when its font or margins change, and the annotations made on
+// the old render do not always survive it (spec §4). The sync still mirrors -- but not in silence.
+describe("a re-sync that finds fewer highlights", () => {
+	const KEY = notebookSyncKey("doc-1", "sync");
+
+	/** The tagged notebook at one point in its life, with `bytes` as its only page. */
+	function deviceWith(bytes: Uint8Array, generation: 1 | 2) {
+		const api = fakeApi({
+			rootHash: `root-${generation}`,
+			entries: [documentEntry({ hash: `hash-${generation}`, tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": `page-hash-${generation}` } },
+		});
+		api.raw.getHash.mockResolvedValue(bytes);
+		return api;
+	}
+
+	it("says how many were lost, and mirrors the device anyway", async () => {
+		const first = baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		expect(synced.index.rows[KEY].highlightCount).toBe(2);
+
+		// The same page as the device holds it after redoing its conversion: no highlights left.
+		const result = await runSync({ ...baseDeps(deviceWith(PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toContainEqual(expect.stringContaining('"Notebook" now has 0 highlights where the last sync found 2'));
+		// Counted as well as written down: the count is what the plugin turns into a notice, and a line
+		// only "Copy diagnostics" would show is one nobody reads in time to restore a backup.
+		expect(result.shrunkNotes).toBe(1);
+		expect(result.notesWritten).toBe(1);
+		expect(result.index.rows[KEY].highlightCount).toBe(0);
+	});
+
+	it("stays quiet when the count holds, or grows", async () => {
+		const first = baseDeps(deviceWith(PAGE_BYTES, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const result = await runSync({ ...baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toEqual([]);
+		expect(result.shrunkNotes).toBe(0);
+	});
+
+	// A row from before the count was recorded has nothing to compare against. It goes uncompared
+	// once and is protected from the sync after that -- the same one-round catch-up `renderVersion`
+	// and `blockHash` take.
+	it("compares nothing against a row written before the count existed", async () => {
+		const first = baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		delete synced.index.rows[KEY].highlightCount;
+
+		const result = await runSync({ ...baseDeps(deviceWith(PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
+
+		expect(result.skipErrors).toEqual([]);
+		expect(result.index.rows[KEY].highlightCount).toBe(0);
 	});
 });
