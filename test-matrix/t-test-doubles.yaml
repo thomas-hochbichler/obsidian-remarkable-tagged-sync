@@ -281,3 +281,21 @@
       layer: unit
       file: test-stubs/fake-obsidian.test.ts
       test: "the plugin host > hands loadData whatever the test says data.json holds, and records every save"
+
+- feature: T10
+  name: The settings controls the plugin reaches past
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T10.1
+      scenario: The plugin greys out the last option it added to a dropdown and rewrites its text
+      expect: Modelled as one option list, the way app.js builds it, so an option the plugin relabels reads back relabelled
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the settings controls the plugin reaches past > gives a dropdown real option elements, because src/main.ts mutates one"
+
+    - id: T10.2
+      scenario: A setting description is built with the createFragment global, which vitest does not have
+      expect: The callback fills the fragment and the fragment is what comes back -- its return value is discarded, and it is optional
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the settings controls the plugin reaches past > builds a fragment the way the global does: the callback fills it, the fragment comes back"

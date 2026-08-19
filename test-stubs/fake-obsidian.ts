@@ -280,6 +280,27 @@ export class FakeEl {
 	}
 }
 
+/**
+ * A global, not an import -- which is why `src/main.ts` calls it without importing anything, and why
+ * it does not exist under vitest at all. A test that renders a settings section reaches it and dies
+ * with `createFragment is not defined`, six sections away from what it was testing.
+ *
+ * Obsidian 1.13.7, `enhance.js`:
+ *
+ *     window.createFragment = function (t) {
+ *         var e = document.createDocumentFragment();
+ *         return t && t(e), e;
+ *     };
+ *
+ * Three facts, all modelled: the callback is optional, it is called with the fragment, and the
+ * fragment -- not the callback's return -- is what comes back.
+ */
+export function createFragment(build?: (fragment: FakeEl) => unknown): FakeEl {
+	const fragment = new FakeEl("#document-fragment");
+	build?.(fragment);
+	return fragment;
+}
+
 // --- the file tree -------------------------------------------------------------------------------
 
 export class TAbstractFile {
@@ -712,19 +733,52 @@ export class ToggleComponent {
 	}
 }
 
+/**
+ * An `<option>`, because `src/main.ts:1215` reaches past the component and mutates one:
+ * `dropdown.selectEl.options[last].disabled = true` and then rewrites its `text`. That is how a
+ * backend that cannot run here is shown greyed out with the reason in place of its name -- so the
+ * option elements, not just the value map, are what a test has to be able to read.
+ */
+export class FakeOptionEl extends FakeEl {
+	value = "";
+	constructor() {
+		super("option");
+	}
+}
+
+/** A `<select>`. `options` is the live collection the DOM gives it. */
+export class FakeSelectEl extends FakeEl {
+	readonly options: FakeOptionEl[] = [];
+	constructor() {
+		super("select");
+	}
+}
+
 export class DropdownComponent {
 	value = "";
 	disabled = false;
-	readonly options: Record<string, string> = {};
-	readonly selectEl = new FakeEl("select");
+	readonly selectEl = new FakeSelectEl();
 	private changed: ((value: string) => unknown) | null = null;
+	/**
+	 * app.js: `addOption(value, display)` is `this.selectEl.createEl("option", {value, text: display})`
+	 * and nothing else -- there is no separate list. Modelled that way rather than as a map, so an
+	 * option the plugin relabels afterwards reads back relabelled.
+	 */
 	addOption(value: string, display: string): this {
-		this.options[value] = display;
+		const option = new FakeOptionEl();
+		option.value = value;
+		option.text = display;
+		this.selectEl.options.push(option);
+		this.selectEl.appendChild(option);
 		return this;
 	}
 	addOptions(options: Record<string, string>): this {
-		Object.assign(this.options, options);
+		for (const [value, display] of Object.entries(options)) this.addOption(value, display);
 		return this;
+	}
+	/** Not an Obsidian member. The option list as a test wants to read it: value -> label, in order. */
+	get options(): Record<string, string> {
+		return Object.fromEntries(this.selectEl.options.map((option) => [option.value, option.text]));
 	}
 	setValue(value: string): this {
 		this.value = value;

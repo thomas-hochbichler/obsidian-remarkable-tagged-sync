@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	checkPath,
+	createFragment,
 	debounce,
+	DropdownComponent,
 	FakeApp,
 	FakeVault,
 	normalizePath,
@@ -268,5 +270,35 @@ describe("the plugin host", () => {
 		await plugin.saveData(data);
 		data.deviceToken = "changed-after-the-save";
 		expect(plugin.saves).toEqual([{ deviceToken: "abc" }]);
+	});
+});
+
+describe("the settings controls the plugin reaches past", () => {
+	it("gives a dropdown real option elements, because src/main.ts mutates one", () => {
+		// `addOption` is `selectEl.createEl("option", …)` and nothing else (app.js), which is why the
+		// plugin can grey out the last option it added and rewrite its text. Modelled as one list, so
+		// an option the plugin relabels reads back relabelled rather than keeping its first label.
+		const dropdown = new DropdownComponent();
+		dropdown.addOption("vision", "Apple Vision").addOption("local", "Local model");
+
+		const last = dropdown.selectEl.options[dropdown.selectEl.options.length - 1];
+		last.disabled = true;
+		last.text = "Local model (needs a download)";
+
+		expect(dropdown.options).toEqual({ vision: "Apple Vision", local: "Local model (needs a download)" });
+		expect(dropdown.selectEl.options.map((option) => option.value)).toEqual(["vision", "local"]);
+	});
+
+	it("builds a fragment the way the global does: the callback fills it, the fragment comes back", () => {
+		// enhance.js: `window.createFragment = function (t) { var e = document.createDocumentFragment();
+		// return t && t(e), e; }` -- the callback's return value is discarded, and it is optional.
+		const filled = createFragment((fragment) => {
+			fragment.appendText("Needs a licence. ");
+			fragment.createEl("a", { text: "Buy" });
+			return "discarded";
+		});
+
+		expect(filled.allText()).toEqual(["Needs a licence. ", "Buy"]);
+		expect(createFragment().allText()).toEqual([]);
 	});
 });

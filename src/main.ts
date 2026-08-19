@@ -28,7 +28,6 @@ import {
 	licenceStatusText,
 	MONEY_BACK_MESSAGE,
 	OFFLINE_ACTIVATION_MESSAGE,
-	TAG_CAP_MESSAGE,
 	trialDaysLeft,
 	WITHDRAWN_KEY_MESSAGE,
 	WRONG_KEY_MESSAGE,
@@ -61,6 +60,7 @@ import {
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
 import { TagRouter, type TagFolderMap } from "./tag-router";
+import { planTagRouting } from "./tag-routing-view";
 import { createAttachmentStore, createNoteStore } from "./vault-stores";
 import { UnavailableOcrBackend, visionRunStats } from "./vision-ocr-backend";
 import { visionBackend } from "./vision-register";
@@ -70,24 +70,6 @@ const DEVICE_CONNECT_URL = "https://my.remarkable.com/device/browser/connect";
 const ISSUES_URL = "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues";
 const FEATURE_REQUEST_URL = `${ISSUES_URL}/new?template=feature_request.md`;
 const FEATURE_VOTING_URL = `${ISSUES_URL}?q=is%3Aopen+label%3Aenhancement+sort%3Areactions-desc`;
-
-/**
- * How many tag → folder mappings the free version allows. It gates *adding* a mapping and nothing
- * else: an existing mapping is never revoked, because unmapping a tag feeds `diffUnitTags`, which
- * orphans the row, and orphaning is index-only by design -- the folder would simply stop updating
- * with nothing said. Shipped from day one and published in the README, so it is a limit people knew
- * about rather than something taken away later.
- */
-const FREE_TAG_LIMIT = 1;
-
-/**
- * The cap is licence-driven rather than hard-coded: unlimited tag mappings are half of what Pro
- * sells. A revoked licence falls back to the free cap, which is proportionate because the cap blocks
- * *adding* only -- every folder already mapped keeps syncing.
- */
-function tagLimitFor(entitlement: Entitlement): number {
-	return entitlement.tier === "free" ? FREE_TAG_LIMIT : Number.POSITIVE_INFINITY;
-}
 
 /**
  * Where a licence is bought -- Polar's checkout, opened in the browser.
@@ -1366,96 +1348,67 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			);
 
 		const mapping = this.plugin.data.tagFolderMap;
-		const mappedTags = Object.keys(mapping).sort();
-		// The root always exists, so even a brand-new empty vault has one valid target.
-		const folderPaths = [
-			"/",
-			...this.app.vault
-				.getAllLoadedFiles()
-				.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
-				.map((folder) => folder.path)
-				.sort(),
-		];
-		const folderLabel = (path: string) => (path === "/" ? "Vault root" : path);
+		const view = planTagRouting({
+			mapping,
+			discoveredTags: this.discoveredTags,
+			// The root always exists, so even a brand-new empty vault has one valid target.
+			folderPaths: [
+				"/",
+				...this.app.vault
+					.getAllLoadedFiles()
+					.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
+					.map((folder) => folder.path)
+					.sort(),
+			],
+			entitlement: this.plugin.entitlement(),
+		});
 
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
 			this.display();
 		};
 
-		// A mapped tag used to render read-only, so a wrong first choice could only be undone by editing
-		// data.json by hand. Harmless before the cap; a trap with it, since the one slot would be stuck.
-		// Mapped and unmapped tags used to carry a heading each, which put three headings on one list and
-		// read as three sections. Each row already says which it is -- a folder and a Remove button, or
-		// "Not synced" -- so the grouping is carried by the rows themselves.
-		if (mappedTags.length > 0) {
-			for (const tag of mappedTags) {
-				new Setting(containerEl)
-					.setName(tag)
-					.setDesc(folderLabel(mapping[tag]))
-					.addDropdown((dropdown) => {
-						for (const path of folderPaths) dropdown.addOption(path, folderLabel(path));
-						// The mapped folder may have been renamed or deleted since; keep it selectable either way.
-						if (!folderPaths.includes(mapping[tag])) dropdown.addOption(mapping[tag], `${mapping[tag]} (missing)`);
-						dropdown.setValue(mapping[tag]);
-						dropdown.onChange(async (value) => {
-							if (!value) return;
-							mapping[tag] = value;
-							await persist();
-						});
-					})
-					.addButton((button) => {
-						button.setButtonText("Remove").onClick(async () => {
-							delete mapping[tag];
-							await persist();
-						});
-						// `setWarning()` is deprecated and `setDestructive()` needs 1.13, while the manifest
-						// floor is 1.5.7 -- the class both of them set predates both.
-						button.buttonEl.addClass("mod-warning");
-					});
+		for (const item of view.items) {
+			if (item.kind === "notice") {
+				containerEl.createDiv({ cls: "tagged-sync-note", text: item.text });
+				continue;
 			}
-			containerEl.createDiv({
-				cls: "tagged-sync-note",
-				text: "Removing a tag stops syncing it. Notes already in your vault stay where they are.",
-			});
-		}
+			const row = new Setting(containerEl).setName(item.tag).setDesc(item.desc);
+			if (item.kind === "capped") continue;
 
-		const unmappedTags = this.discoveredTags.filter((tag) => !(tag in mapping));
-		if (unmappedTags.length === 0) return;
-
-		// The cap only ever blocks *adding* a mapping. It must never unmap a tag that is already
-		// mapped: unmapping feeds diffUnitTags, which orphans the row, and orphaning is index-only by
-		// design -- the folder would just silently stop updating. A silent refusal reads as a bug, so
-		// the reason is stated in place rather than by disabling the dropdown.
-		if (mappedTags.length >= tagLimitFor(this.plugin.entitlement())) {
-			containerEl.createDiv({
-				cls: "tagged-sync-note",
-				text: TAG_CAP_MESSAGE,
-			});
-			for (const tag of unmappedTags) new Setting(containerEl).setName(tag).setDesc("Not synced.");
-			return;
-		}
-
-		for (const tag of unmappedTags) {
-			new Setting(containerEl)
-				.setName(tag)
-				.setDesc("Not synced until mapped to a folder.")
-				.addDropdown((dropdown) => {
-					dropdown.addOption("", "Choose a folder…");
-					for (const path of folderPaths) dropdown.addOption(path, folderLabel(path));
-					dropdown.onChange(async (value) => {
-						if (!value) return;
-						// The one gated feature that exists today: a mapping past the free cap. This is the
-						// moment the licence is *used*, so it is the moment it is re-checked -- not on load,
-						// and never for a free user, who cannot reach this branch at all.
-						if (mappedTags.length >= FREE_TAG_LIMIT && (await this.plugin.refreshLicence()).tier === "free") {
-							this.display();
-							return;
-						}
-						mapping[tag] = value;
-						await persist();
-					});
+			// A mapped tag used to render read-only, so a wrong first choice could only be undone by
+			// editing data.json by hand. Harmless before the cap; a trap with it, since the one slot
+			// would be stuck.
+			row.addDropdown((dropdown) => {
+				for (const option of item.options) dropdown.addOption(option.value, option.label);
+				if (item.kind === "mapped") dropdown.setValue(item.folder);
+				dropdown.onChange(async (value) => {
+					if (!value) return;
+					// The one gated feature that exists today: a mapping past the free cap. This is the
+					// moment the licence is *used*, so it is the moment it is re-checked -- not on load,
+					// and never for a free user, who cannot reach this branch at all.
+					if (
+						item.kind === "mappable" &&
+						view.recheckLicenceBeforeAdd &&
+						(await this.plugin.refreshLicence()).tier === "free"
+					) {
+						this.display();
+						return;
+					}
+					mapping[item.tag] = value;
+					await persist();
 				});
+			});
+			if (item.kind !== "mapped") continue;
+			row.addButton((button) => {
+				button.setButtonText("Remove").onClick(async () => {
+					delete mapping[item.tag];
+					await persist();
+				});
+				// `setWarning()` is deprecated and `setDestructive()` needs 1.13, while the manifest
+				// floor is 1.5.7 -- the class both of them set predates both.
+				button.buttonEl.addClass("mod-warning");
+			});
 		}
 	}
 }
