@@ -1,0 +1,100 @@
+# Group R -- the release gates themselves.
+#
+# Not product features. They are here because the format's rule is that a test with no row is a
+# test somebody wrote without deciding what it promises, and that rule is worth more than the tidy
+# boundary it costs. `tier:` is omitted throughout: a gate has no free and no Pro side.
+
+- feature: R1
+  name: The release gate refuses to ship on an unmeasured night
+  code: scripts/nightly-verdict.mjs
+  scenarios:
+    - id: R1.1
+      scenario: Last night ran and both halves passed
+      expect: The release proceeds, and the gate prints how old each measurement is rather than only "pass"
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > lets a release through when both halves of last night measured and passed"
+
+    - id: R1.2
+      scenario: The contract half found a key gone or a type changed in a live API response
+      expect: The release is blocked -- the shipped code is already broken against the live API, so releasing ships a plugin that cannot list a notebook
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > blocks the release when the contract half found the live API broken"
+
+    - id: R1.3
+      scenario: A live response grew a key nobody has seen before
+      expect: Reported as degraded and never red. A new key breaks nothing, and a gate that fires on it teaches the author to ignore red
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > treats a new key in a live response as a report, not a blocker"
+
+    - id: R1.4
+      scenario: The verdict in the tree says pass, but it was written four nights ago
+      expect: Blocked. One missed night is an incident, three is a broken schedule, and a verdict nobody refreshed says nothing about today's code
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > refuses a verdict older than three nights, however green it says it is"
+
+    - id: R1.5
+      scenario: A release is cut on a Monday after a quiet weekend, on Saturday night's verdict
+      expect: It goes through. The window is 72 h precisely so a weekend of GitHub trouble does not need a manual touch
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > still accepts a verdict measured just inside the window, so a quiet weekend does not block a release"
+
+    - id: R1.6
+      scenario: A provider answered 429 or 503, or a key expired, on the night before a release
+      expect: Not blocked. A quota is not evidence that the plugin is broken, and a gate that fires on what the author did not cause gets overridden until it is ignored
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > does not block on a quota or a 503 that the plugin did not cause"
+
+    - id: R1.7
+      scenario: Three nights in a row could not measure, for any reason
+      expect: Blocked. However good the excuse, three nights without a measurement is indistinguishable from having no gate at all
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > blocks once nothing has really been measured for three nights, whatever the reason was"
+
+    - id: R1.8
+      scenario: A half could not be measured and has never produced a real measurement
+      expect: Blocked, and the previous night's number is never carried forward -- a part that could not be measured says so
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > does not let last night's number stand in for a half that could not be measured at all"
+
+    - id: R1.9
+      scenario: The nightly wrote the contract half and died before the OCR half
+      expect: Blocked. A verdict that measured half of the night is not a verdict, and a lenient parser would read it as a pass
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > blocks when a night measured only one of the two halves"
+
+    - id: R1.10
+      scenario: Somebody edited the verdict by hand, or a merge left a key behind
+      expect: Blocked on the unknown key. Accidental forgery is the one real weakness of a committed status file, and strict parsing is the answer to it
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > blocks on a hand-edited verdict rather than reading it as a pass"
+
+    - id: R1.11
+      scenario: A part carries a timestamp that will not parse
+      expect: Blocked. Without a readable measuredAt there is no way to tell a fresh verdict from a stale one, so freshness cannot be assumed
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > blocks on a part whose freshness cannot be established"
+
+    - id: R1.12
+      scenario: No nightly has ever run -- the state this repo is in today
+      expect: "Blocked. The default is fail: \"pass\" has to be written by a run that measured something, and nothing about an absent file can satisfy that"
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > blocks when no verdict file exists at all, which is the state every repo starts in"
+
+    - id: R1.13
+      scenario: A newer nightly writes a verdict in a shape this gate predates
+      expect: Blocked rather than read optimistically -- a gate that does not understand the file cannot vouch for it
+      layer: unit
+      file: scripts/nightly-verdict.test.mjs
+      test: "judgeVerdict > refuses a verdict written by a newer nightly than this gate understands"

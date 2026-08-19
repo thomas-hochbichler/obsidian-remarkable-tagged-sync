@@ -10,6 +10,7 @@
 //   node scripts/release-checks.mjs coverage [--write]      # needs a coverage run first
 //   node scripts/release-checks.mjs badges                  # same run, writes the shields files
 //   node scripts/release-checks.mjs disabled
+//   node scripts/release-checks.mjs nightly
 //
 // `.mjs`, not `.ts`, on purpose: `npm run build` runs `tsc` over `scripts/` too, so a broken
 // `.ts` gate script could block a release.
@@ -19,6 +20,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { judgeVerdict, STALE_HOURS } from "./nightly-verdict.mjs";
 
 // npm's own form for a tree that is not under one licence: `src/` is Apache-2.0, `pro/` is PolyForm
 // Strict 1.0.0, and paid commercial use is granted separately. PolyForm Strict has no settled SPDX
@@ -30,6 +32,7 @@ const CHANGELOG = "CHANGELOG.md";
 const BASELINE = ".eslint-baseline.json";
 const COVERAGE_BASELINE = ".coverage-baseline.json";
 const COVERAGE_SUMMARY = "coverage/coverage-summary.json";
+const NIGHTLY_VERDICT = ".nightly-verdict.json";
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
@@ -429,6 +432,38 @@ function disabledTests() {
 	finish("disabled tests");
 }
 
+// --- the nightly verdict ------------------------------------------------------------------------
+//
+// Reads .nightly-verdict.json and refuses a release that no recent night measured. The rules live
+// in nightly-verdict.mjs so they can be unit-tested: every one of them is about what happens when
+// the measurement did NOT arrive, and those paths never run on a good day.
+//
+// NOT wired into release.yml yet, deliberately. No nightly has ever run, so the file does not
+// exist, and a gate that blocks every release from the day it lands is the failure this rollout
+// is ordered to avoid. It gets wired in the commit where the first real verdict is committed.
+//
+// It also never runs in ci.yml -- a stale verdict would turn `main` red for a reason no commit
+// caused -- and never on a beta, because a beta is very often the fix for whatever made the
+// nightly red.
+
+function nightlyGate() {
+	let verdict = null;
+	try {
+		verdict = readJson(NIGHTLY_VERDICT);
+	} catch (e) {
+		if (e.code !== "ENOENT") {
+			console.error(`${NIGHTLY_VERDICT} will not parse: ${e.message}`);
+			process.exit(1);
+		}
+	}
+
+	const { problems: found, notes } = judgeVerdict(verdict, new Date());
+	console.log(`nightly verdict: ${NIGHTLY_VERDICT}, ${STALE_HOURS} h window\n`);
+	for (const n of notes) ok(n);
+	for (const f of found) fail(f);
+	finish("nightly verdict");
+}
+
 // --- dispatch ---------------------------------------------------------------------------------
 
 const [command, ...rest] = process.argv.slice(2);
@@ -461,7 +496,10 @@ switch (command) {
 	case "disabled":
 		disabledTests();
 		break;
+	case "nightly":
+		nightlyGate();
+		break;
 	default:
-		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled> [...]");
+		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly> [...]");
 		process.exit(2);
 }

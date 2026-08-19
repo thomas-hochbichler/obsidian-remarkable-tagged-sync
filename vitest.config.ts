@@ -5,7 +5,10 @@ export default defineConfig({
 	// it existed only in the maintainer's working copy; it is published now, and leaving it out would
 	// mean CI stopped testing the paid half of the product on the day it started being sold.
 	test: {
-		include: ["src/**/*.test.ts", "pro/**/*.test.ts"],
+		// `scripts/` is here for the release gates' own tests. They are not product code and are
+		// deliberately outside the coverage numbers below, but the rules they check -- what happens
+		// when a measurement did NOT arrive -- are exactly the paths that never run on a good day.
+		include: ["src/**/*.test.ts", "pro/**/*.test.ts", "scripts/**/*.test.mjs"],
 
 		coverage: {
 			provider: "v8",
