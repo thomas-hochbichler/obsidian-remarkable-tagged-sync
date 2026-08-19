@@ -10,7 +10,6 @@ pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > reports failed and ne
 pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > reports failed when the API responds with a non-ok status
 pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > retries a rate-limited page, honouring Retry-After, and gives up after three attempts
 pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > sends one page per HTTP call, one image block each
-pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > sends the supplied model, falling back to claude-sonnet-5
 pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > skips OCR for an empty page list without making a request
 pro/anthropic-ocr-backend.test.ts :: metered > always bills, so a background sync needs explicit consent
 pro/llm-register.test.ts :: the LLM providers' background-consent flags > gives none of them a setup card, so none of them can be hidden from the dropdown
@@ -33,7 +32,6 @@ pro/llm-transcript.test.ts :: sanitizeTranscript > returns empty string for empt
 pro/llm-transcript.test.ts :: sanitizeTranscript > strips a preamble line then an outer fence
 pro/llm-transcript.test.ts :: sanitizeTranscript > trims surrounding whitespace
 pro/ocr-providers.test.ts :: PROVIDERS metadata > keeps each entry's key matched to its own id
-pro/ocr-providers.test.ts :: PROVIDERS metadata > leaves custom's base URL and default model empty for the user to supply
 pro/ocr-providers.test.ts :: PROVIDERS metadata > lists every non-vision backend literal exactly once, in dropdown order
 pro/ocr-providers.test.ts :: PROVIDERS metadata > makes the base URL editable only for local + custom providers
 pro/ocr-providers.test.ts :: PROVIDERS metadata > uses the native adapter only for Anthropic; everyone else is OpenAI-compatible
@@ -42,7 +40,6 @@ pro/ocr-providers.test.ts :: looksLikeVisionModel > recognizes common vision mod
 pro/ocr-providers.test.ts :: resolveProviderEndpoint > honors a user base URL only for editable providers
 pro/ocr-providers.test.ts :: resolveProviderEndpoint > prefers the user's model and key over the defaults
 pro/ocr-providers.test.ts :: resolveProviderEndpoint > treats a whitespace-only model or base URL as unset
-pro/ocr-providers.test.ts :: resolveProviderEndpoint > uses preset base URL and default model when config is empty
 pro/ocr-vision-detect.test.ts :: detectVisionCapability > gemini (partial — reachability only) > is unreachable on a bad key / error status
 pro/ocr-vision-detect.test.ts :: detectVisionCapability > gemini (partial — reachability only) > returns partial when the endpoint is reachable
 pro/ocr-vision-detect.test.ts :: detectVisionCapability > heuristic providers (openai / custom) > confirms a vision-looking model by name, no network

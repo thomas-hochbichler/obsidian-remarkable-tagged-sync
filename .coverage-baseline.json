@@ -7,8 +7,8 @@
 			"branches": 1
 		},
 		"pro/llm-register.ts": {
-			"lines": 62,
-			"branches": 50
+			"lines": 65,
+			"branches": 52
 		},
 		"pro/llm-transcript.ts": {
 			"lines": 0,

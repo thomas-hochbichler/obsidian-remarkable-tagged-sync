@@ -1,0 +1,76 @@
+# Group E -- OCR backends and their settings surfaces.
+
+- feature: E8
+  name: The live vision-capability callout under the model field
+  code: pro/llm-register.ts
+  tier: pro
+  scenarios:
+    - id: E8.1
+      scenario: The model field is empty, which is the state of every fresh install since no provider seeds a model id
+      expect: The callout stays empty. Probing "" would render a red "has no image input" verdict about a field the user has not filled in yet
+      layer: vault
+      gap: G28
+
+    - id: E8.2
+      scenario: The user types a model name one character at a time
+      expect: One probe fires 500 ms after they stop, not one per keystroke
+      layer: vault
+      gap: G28
+
+    - id: E8.3
+      scenario: A probe returns after the settings pane has been re-rendered
+      expect: The stale result is dropped -- the el-identity guard exists for this and nothing tests it
+      layer: vault
+      gap: G28
+
+- feature: E15
+  name: The model id is the user's to supply, and no provider seeds one
+  code: pro/ocr-providers.ts
+  tier: pro
+  scenarios:
+    - id: E15.1
+      scenario: A fresh install opens the settings for any of the seven providers
+      expect: The Model field is empty. A shipped default ages into a dead model -- Google shut gemini-2.0-flash down on 2026-06-01 while the plugin was still seeding it
+      layer: unit
+      file: pro/ocr-providers.test.ts
+      test: "PROVIDERS metadata > seeds no model id for any provider, since a shipped one ages into a dead one"
+
+    - id: E15.2
+      scenario: A provider is resolved with nothing configured
+      expect: The preset base URL is used and the model comes back empty, so the emptiness reaches the request layer rather than being papered over here
+      layer: unit
+      file: pro/ocr-providers.test.ts
+      test: "resolveProviderEndpoint > uses the preset base URL and an empty model when config is empty"
+
+    - id: E15.3
+      scenario: The custom provider, which has no preset anything
+      expect: Its base URL is empty too -- both fields are the user's to supply
+      layer: unit
+      file: pro/ocr-providers.test.ts
+      test: "PROVIDERS metadata > leaves custom's base URL empty for the user to supply"
+
+- feature: E16
+  name: The Anthropic backend refuses rather than sending an empty model
+  code: pro/anthropic-ocr-backend.ts
+  tier: pro
+  scenarios:
+    - id: E16.1
+      scenario: A model is configured and pages are transcribed
+      expect: That model goes on the wire, with no fallback of the backend's own -- a second default behind a `??` is a second thing that ages
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > sends the supplied model"
+
+    - id: E16.2
+      scenario: The Model field was never filled in and a sync reaches the Anthropic backend
+      expect: It refuses locally and names what to do. Anthropic answers an empty model with a bare 400, which reaches the note as "Could not read this page" and names nothing the user could fix
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > refuses to transcribe when no model is set, and says so instead of asking Anthropic"
+
+    - id: E16.3
+      scenario: The field holds only spaces
+      expect: Treated as unset, for the same reason -- the wire would carry whitespace and the 400 would be identical
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > treats a whitespace-only model as unset"
