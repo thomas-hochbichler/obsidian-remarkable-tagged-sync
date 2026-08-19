@@ -87,6 +87,9 @@ jobs:
       - name: Disabled tests
         run: node scripts/release-checks.mjs disabled
 
+      - name: Matrix link
+        run: npm run matrix
+
       # --- gate 6: build -----------------------------------------------------------------------
       #
       # One entry point, one output. The paid backends are in this bundle by design; the bundle scan

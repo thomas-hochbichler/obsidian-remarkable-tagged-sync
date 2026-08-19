@@ -13,7 +13,8 @@
 		"generate:kaitai": "node src/kaitai/generate.mjs",
 		"inspect:rm": "esbuild scripts/inspect-rm.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-rm.cjs && node /tmp/tagged-sync-inspect-rm.cjs",
 		"inspect:doc": "esbuild scripts/inspect-doc.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-doc.cjs && node /tmp/tagged-sync-inspect-doc.cjs",
-		"test:coverage": "vitest run --coverage"
+		"test:coverage": "vitest run --coverage",
+		"matrix": "node scripts/matrix-link.mjs"
 	},
 	"license": "SEE LICENSE IN LICENSE",
 	"dependencies": {

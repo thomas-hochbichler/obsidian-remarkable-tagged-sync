@@ -184,6 +184,14 @@ jobs:
       - name: Disabled tests
         run: node scripts/release-checks.mjs disabled
 
+      # --- gate 10: matrix link ----------------------------------------------------------------
+      #
+      # The completeness gate. A row claiming a test that does not exist, or a test nobody wrote a
+      # row for, is what this catches -- neither is visible to a coverage number, which is why the
+      # matrix and not the percentage is the completeness truth here.
+      - name: Matrix link
+        run: npm run matrix
+
       # --- gate 6: build -----------------------------------------------------------------------
       - name: Build
         run: npm run build
