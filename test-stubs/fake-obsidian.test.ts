@@ -39,8 +39,8 @@ describe("normalizePath", () => {
 	// The reMarkable side of this: a notebook titled by hand carries whatever space the pen put
 	// there, and this is the rewrite that made such a note unfindable after it was written.
 	it("rewrites a non-breaking space and a narrow one to an ordinary space", () => {
-		expect(normalizePath("Meeting notes.md")).toBe("Meeting notes.md");
-		expect(normalizePath("Meeting notes.md")).toBe("Meeting notes.md");
+		expect(normalizePath("Meeting\u00A0notes.md")).toBe("Meeting notes.md");
+		expect(normalizePath("Meeting\u202Fnotes.md")).toBe("Meeting notes.md");
 	});
 
 	it("composes to NFC, so a decomposed umlaut is the same path as a composed one", () => {
@@ -51,7 +51,7 @@ describe("normalizePath", () => {
 	// swapping the last two steps changes no path at all, so a test claiming to pin their order
 	// would be a test that cannot fail. Measured, by making the swap.
 	it("applies all three rewrites to one path, with the slash collapse first", () => {
-		expect(normalizePath("//A /B̈//")).toBe("A /B̈".normalize("NFC"));
+		expect(normalizePath("//A\u00A0/B\u0308//")).toBe("A /B\u0308".normalize("NFC"));
 	});
 });
 
@@ -217,8 +217,8 @@ describe("what the vault refuses to write over", () => {
 	// in `note-builder.ts`, and the fake has to reproduce it or a test cannot see it.
 	it("normalises the path it writes to, while the lookup keeps whatever it was given", async () => {
 		const vault = new FakeVault();
-		await vault.create("Notes/Meeting notes.md", "x");
-		expect(vault.getFileByPath("Notes/Meeting notes.md")).toBeNull();
+		await vault.create("Notes/Meeting\u00A0notes.md", "x");
+		expect(vault.getFileByPath("Notes/Meeting\u00A0notes.md")).toBeNull();
 		expect(vault.getFileByPath("Notes/Meeting notes.md")?.path).toBe("Notes/Meeting notes.md");
 	});
 

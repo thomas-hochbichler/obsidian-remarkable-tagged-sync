@@ -22,6 +22,26 @@
 
 export const READ_FROM_VERSION = "1.13.7";
 
+// Type-only, so it is erased before anything runs and cannot alias back to this file. Under `tsc`
+// it resolves to the REAL `obsidian.d.ts`, which is the point: production code keeps Obsidian's own
+// types, and the two casts below are the single, named place where a fake is handed to it.
+//
+// What the casts give up is that the typechecker no longer proves the fake has the members the
+// production code calls. That is deliberate -- a fake shaped by `implements App` would have to carry
+// Obsidian's entire surface, which is the "asserts more than it can prove" failure this file exists
+// to avoid. What catches a missing member instead is the test itself, at run time, loudly.
+import type { App as ObsidianApp, Vault as ObsidianVault } from "obsidian";
+
+/** Hands a fake app to production code that asks for Obsidian's `App`. */
+export function asApp(app: FakeApp): ObsidianApp {
+	return app as unknown as ObsidianApp;
+}
+
+/** Hands a fake vault to production code that asks for Obsidian's `Vault`. */
+export function asVault(vault: FakeVault): ObsidianVault {
+	return vault as unknown as ObsidianVault;
+}
+
 // --- the pure helpers ----------------------------------------------------------------------------
 //
 // These have no Obsidian state; they are functions, so they are reimplemented for real rather than
