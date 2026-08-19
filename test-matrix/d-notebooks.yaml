@@ -40,3 +40,70 @@
       expect: An empty pdfBytes is refused before it reaches the vault, so no note embeds a 0-byte PDF
       layer: vault
       gap: G35
+
+- feature: D17
+  name: A notebook title becomes a filename Obsidian will not rewrite
+  code: src/note-builder.ts
+  tier: free
+  scenarios:
+    - id: D17.1
+      scenario: A title contains a character no filesystem accepts
+      expect: Each becomes a dash, so the note is written rather than the sync failing on it
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > replaces filesystem-illegal characters"
+
+    - id: D17.2
+      scenario: A title longer than any filesystem accepts
+      expect: Cut to exactly the cap, with room left for a page suffix and the extension
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > trims very long names to the cap, rather than to merely something shorter"
+
+    - id: D17.3
+      scenario: An ordinary title
+      expect: Untouched. The rules below must not cost a normal notebook its name
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > leaves ordinary names untouched"
+
+    - id: D17.4
+      scenario: A title carries a non-breaking or narrow no-break space, as EPUB metadata routinely does
+      expect: It becomes an ordinary space. Obsidian's create() rewrites it and getFileByPath() does not, so leaving it means a note written once and never found again
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > writes a non-breaking space as an ordinary one, so the note can be found again after it is written"
+
+    - id: D17.5
+      scenario: A title arrives decomposed -- "u" plus a combining diaeresis rather than "ü"
+      expect: Composed to NFC, which is the form Obsidian would have written anyway
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > settles a decomposed umlaut into the composed form Obsidian would have written anyway"
+
+    - id: D17.6
+      scenario: A title ends in a dot, as "To do..." does
+      expect: The dot is dropped. Windows refuses such a name outright and trim() does not remove it
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > drops a trailing dot, which Windows refuses outright and trim() does not remove"
+
+    - id: D17.7
+      scenario: A title that is nothing but dots
+      expect: Falls back to a dash rather than leaving an empty name, or one starting with a dot, which is hidden
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > keeps a title that is nothing but dots from becoming an empty or hidden filename"
+
+    - id: D17.8
+      scenario: A notebook called CON, NUL or COM3
+      expect: Renamed on every platform, not only on Windows -- a vault synced between a Mac and a PC has to produce the same filename on both, or it grows one note per machine
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > renames a notebook Windows reserves, on every platform, so one vault does not grow one note per machine"
+
+    - id: D17.9
+      scenario: An index row written before this repair still holds a path Obsidian rewrote
+      expect: The note resolves again, because every path crossing into the vault is normalized at the store boundary -- so the repair needs no migration
+      layer: vault
+      gap: G01

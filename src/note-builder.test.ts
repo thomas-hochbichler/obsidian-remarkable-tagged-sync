@@ -51,13 +51,48 @@ describe("sanitizeFilenamePart", () => {
 		expect(sanitizeFilenamePart('a/b\\c:d*e?f"g<h>i|j')).toBe("a-b-c-d-e-f-g-h-i-j");
 	});
 
-	it("trims very long names", () => {
+	it("trims very long names to the cap, rather than to merely something shorter", () => {
 		const long = "a".repeat(300);
-		expect(sanitizeFilenamePart(long).length).toBeLessThan(300);
+		expect(sanitizeFilenamePart(long)).toBe("a".repeat(200));
 	});
 
 	it("leaves ordinary names untouched", () => {
 		expect(sanitizeFilenamePart("My Notebook")).toBe("My Notebook");
+	});
+
+	// The four below are all one bug seen from four sides: Obsidian's `Vault.create` normalizes the
+	// path it writes, while `getFileByPath` compares the raw string. A name left in a form
+	// `normalizePath` would change is written once and never found again -- the next sync decides
+	// the note was deleted, writes it a second time, and `create` throws "File already exists." on a
+	// path that prints identically to the one it just asked for.
+
+	it("writes a non-breaking space as an ordinary one, so the note can be found again after it is written", () => {
+		// EPUB title metadata carries these routinely, French typography especially.
+		expect(sanitizeFilenamePart("Zu\u00A0tun")).toBe("Zu tun");
+		expect(sanitizeFilenamePart("12\u202F°C")).toBe("12 °C");
+	});
+
+	it("settles a decomposed umlaut into the composed form Obsidian would have written anyway", () => {
+		const decomposed = "Bu\u0308cher";
+		expect(decomposed).not.toBe("Bücher");
+		expect(sanitizeFilenamePart(decomposed)).toBe("Bücher");
+	});
+
+	it("drops a trailing dot, which Windows refuses outright and trim() does not remove", () => {
+		expect(sanitizeFilenamePart("To do...")).toBe("To do");
+		expect(sanitizeFilenamePart("Notes .")).toBe("Notes");
+	});
+
+	it("keeps a title that is nothing but dots from becoming an empty or hidden filename", () => {
+		expect(sanitizeFilenamePart("...")).toBe("-");
+	});
+
+	it("renames a notebook Windows reserves, on every platform, so one vault does not grow one note per machine", () => {
+		expect(sanitizeFilenamePart("CON")).toBe("CON-");
+		expect(sanitizeFilenamePart("nul")).toBe("nul-");
+		expect(sanitizeFilenamePart("COM3")).toBe("COM3-");
+		// Not reserved -- only the bare names are, and this one is a perfectly ordinary title.
+		expect(sanitizeFilenamePart("Concert")).toBe("Concert");
 	});
 });
 

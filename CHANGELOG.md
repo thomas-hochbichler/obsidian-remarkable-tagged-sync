@@ -30,6 +30,25 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A notebook whose title contains an invisible character no longer breaks its own sync, forever.**
+  Some titles carry a character that looks exactly like an ordinary space but is not one — a
+  non-breaking space, say, which the title metadata of EPUB books carries very often. Obsidian
+  quietly replaces such a character when it writes the file, but not when it looks the file up
+  again. The result was a note the plugin wrote once and could then never find: the next sync
+  concluded you had deleted it, wrote it a second time, and failed with "File already exists." on a
+  path that looks identical to the one it had just asked for. Every following sync of that notebook
+  failed the same way. The same held for a title in a different Unicode spelling of the same letters
+  — "Bücher" written as "u" plus a separate accent.
+
+  Titles are now put into the exact form Obsidian writes them in, and every path the plugin looks up
+  is put into that form too — so a note that already exists under a rewritten name is simply found
+  again. Nothing has to be repaired by hand, and no note is moved.
+
+  Two smaller ones of the same family, both invisible outside Windows until now: a notebook whose
+  title ends in a dot ("To do...") and a notebook called `CON`, `NUL`, `COM3` or one of their
+  siblings. Windows refuses both outright. They are renamed on every platform, not only on Windows,
+  so a vault shared between a Mac and a PC does not grow one note per machine.
+
 - **Pointing a tag at a different folder now moves its notes there.** Changing a mapping in the
   settings — say `sync` from `Inbox` to `Reading` — left every note that tag had already written
   sitting in the old folder, and the next sync kept writing them back into it. Even deleting a note

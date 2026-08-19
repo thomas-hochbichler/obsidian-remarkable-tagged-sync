@@ -56,6 +56,15 @@ export interface NoteStore {
 }
 
 const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|]/g;
+// Obsidian's own `normalizePath` rewrites both of these to an ordinary space before it writes, and
+// `getFileByPath` does NOT normalize -- it is a raw lookup. So a name that still carries one is a
+// name the plugin computed, Obsidian silently changed on the way to disk, and no later lookup of the
+// stored path can find again. An EPUB's title metadata carries these routinely.
+const NON_BREAKING_SPACES = /[\u00A0\u202F]/g;
+// Windows refuses these outright, and Obsidian enforces it on Windows only. Applied on every
+// platform on purpose: a vault synced between a Mac and a PC has to produce the same filename on
+// both, and the alternative is one note per machine.
+const WINDOWS_RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 // Leaves room for a " — Page 999" or " (abcdef)" suffix and the ".md" extension under typical filesystem limits.
 const MAX_BASENAME_LENGTH = 200;
 
@@ -87,10 +96,33 @@ const FAILED_PAGE_CALLOUT = "> [!warning] Could not read this page";
 // attachment path (see `reTranscribeAll`). Matches the `![[...]]` line `buildManagedBlock` writes.
 const EMBED_RE = /!\[\[([^\]\n]+)\]\]/;
 
-/** Replaces filesystem-illegal chars (`/ \ : * ? " < > |`) with `-` and trims to a safe length. */
+/**
+ * Makes a title safe to be part of a vault filename: filesystem-illegal chars (`/ \ : * ? " < > |`)
+ * become `-`, and the name is left in the exact form Obsidian would write it in.
+ *
+ * That last part is the whole reason the last three steps exist. `Vault.create` runs the path
+ * through `normalizePath` -- non-breaking spaces to ordinary ones, then NFC -- while every lookup
+ * (`getFileByPath`, `getFolderByPath`) compares the raw string. A name this function leaves in a
+ * form `normalizePath` would change is therefore a note the plugin writes once and can never find
+ * again: the next sync reads its own stored path, gets nothing, decides the note was deleted, writes
+ * it a second time, and `create` throws "File already exists." on a path that looks identical to the
+ * one it just asked for. Read out of obsidian-1.13.7's app.js, not assumed.
+ */
 export function sanitizeFilenamePart(name: string): string {
-	const sanitized = name.replace(ILLEGAL_FILENAME_CHARS, "-").trim();
-	return sanitized.length > MAX_BASENAME_LENGTH ? sanitized.slice(0, MAX_BASENAME_LENGTH).trim() : sanitized;
+	const sanitized = name
+		.replace(ILLEGAL_FILENAME_CHARS, "-")
+		.replace(NON_BREAKING_SPACES, " ")
+		.normalize("NFC")
+		.trim();
+	const capped = sanitized.length > MAX_BASENAME_LENGTH ? sanitized.slice(0, MAX_BASENAME_LENGTH).trim() : sanitized;
+
+	// Windows rejects a name ending in a dot, and `trim()` does not remove one. A title that is
+	// nothing but dots would leave an empty name -- and a filename starting with "." is hidden --
+	// so it falls back to the same `-` the illegal characters become.
+	const withoutTrailingDots = capped.replace(/\.+$/, "").trim();
+	const base = withoutTrailingDots === "" ? "-" : withoutTrailingDots;
+
+	return WINDOWS_RESERVED_NAMES.test(base) ? `${base}-` : base;
 }
 
 /** `<notebook>` for a notebook-level note, `<notebook> — Page N` for a page-level one. */
