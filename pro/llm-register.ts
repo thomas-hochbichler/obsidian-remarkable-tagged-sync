@@ -81,6 +81,13 @@ function scheduleVisionCheck(meta: ProviderMeta, cfg: LlmProviderConfig): void {
 		return;
 	}
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
+	// Nothing to check, and nothing to warn about: no provider seeds a model id any more, so an empty
+	// field is the state of a fresh install rather than a mistake. Probing it would render the
+	// verdict about `""` -- a red "has no image input" on a field the user has not filled in yet.
+	if (model.trim() === "") {
+		el.setText("");
+		return;
+	}
 	el.setText(`Checking whether "${model}" supports images…`);
 	if (visionCheckTimer !== null) window.clearTimeout(visionCheckTimer);
 	visionCheckTimer = window.setTimeout(() => {

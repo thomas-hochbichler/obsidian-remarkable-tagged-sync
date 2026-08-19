@@ -24,18 +24,25 @@ describe("PROVIDERS metadata", () => {
 		for (const id of ["anthropic", "openai", "gemini", "openrouter"] as const) expect(PROVIDERS[id].editableURL).toBe(false);
 	});
 
-	it("leaves custom's base URL and default model empty for the user to supply", () => {
+	it("leaves custom's base URL empty for the user to supply", () => {
 		expect(PROVIDERS.custom.baseURL).toBe("");
-		expect(PROVIDERS.custom.defaultModel).toBe("");
+	});
+
+	// The rule this walk defends: the table shipped `gemini-2.0-flash` for ten weeks after Google shut
+	// it down, and nothing here could see it. A model id has an expiry date this repo does not
+	// control, so no provider seeds one -- and a provider added later cannot quietly seed one either,
+	// because it fails this test on the day it is added.
+	it("seeds no model id for any provider, since a shipped one ages into a dead one", () => {
+		for (const [id, meta] of Object.entries(PROVIDERS)) expect(meta.defaultModel, id).toBe("");
 	});
 });
 
 
 describe("resolveProviderEndpoint", () => {
-	it("uses preset base URL and default model when config is empty", () => {
+	it("uses the preset base URL and an empty model when config is empty", () => {
 		expect(resolveProviderEndpoint(PROVIDERS.openai, {})).toEqual({
 			baseURL: "https://api.openai.com/v1",
-			model: "gpt-4o",
+			model: "",
 			apiKey: null,
 		});
 	});
@@ -56,7 +63,7 @@ describe("resolveProviderEndpoint", () => {
 
 	it("treats a whitespace-only model or base URL as unset", () => {
 		const resolved = resolveProviderEndpoint(PROVIDERS.ollama, { model: "   ", baseURL: "  " });
-		expect(resolved.model).toBe("llama3.2-vision");
+		expect(resolved.model).toBe("");
 		expect(resolved.baseURL).toBe("http://localhost:11434/v1");
 	});
 });

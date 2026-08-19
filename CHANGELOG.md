@@ -12,6 +12,22 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **You now enter the transcription model yourself; the plugin no longer suggests one.** Every
+  provider — Anthropic, OpenAI, Google Gemini, OpenRouter, Ollama — used to arrive with a model id
+  already filled in. Those suggestions go stale: Google shut down `gemini-2.0-flash` on 1 June 2026,
+  and until now the plugin kept sending it, so anyone who took the suggested value got a provider
+  error that read like a problem with their API key.
+
+  The plugin cannot know which models a provider still serves, so it no longer pretends to. The
+  Model field starts empty and is yours to fill in from your provider's own list of current models.
+
+  **If you never touched that field, you have to fill it in once** — transcription will otherwise
+  stop with *"No model is set for this OCR backend — open the plugin settings and enter one."* and
+  say so per sync rather than failing quietly. If you had already typed a model, nothing changes for
+  you.
+
 ### Fixed
 
 - **Pointing a tag at a different folder now moves its notes there.** Changing a mapping in the
