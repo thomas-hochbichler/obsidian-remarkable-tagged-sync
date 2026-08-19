@@ -37,6 +37,15 @@ export function createNoteStore(app: App): NoteStore {
 			const file = vault.getFileByPath(normalizePath(path));
 			return file ? vault.read(file) : null;
 		},
+		// The adapter, not the file index, and this is the one place in the plugin that reaches past
+		// the index on purpose. `Vault.create` decides whether to throw by calling this same method,
+		// so asking it here is the only way to ask a question that cannot disagree with the answer.
+		//
+		// It costs a real difference on macOS and Windows: the filesystem folds case, so a vault
+		// holding `Work/My Notebook.md` reports `Work/my notebook.md` as taken and the caller
+		// suffixes instead of throwing. On Linux nothing folds and nothing changes. Over-refusing
+		// costs one ` (tag)` in a filename; under-refusing costs a notebook its sync, permanently.
+		exists: (path) => vault.adapter.exists(normalizePath(path)),
 		write: async (path, content) => {
 			const p = normalizePath(path);
 			const file = vault.getFileByPath(p);

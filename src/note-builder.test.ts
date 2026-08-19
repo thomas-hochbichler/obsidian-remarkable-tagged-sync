@@ -18,6 +18,10 @@ function fakeStore(files: Record<string, string> = {}): NoteStore & {
 } {
 	return {
 		read: vi.fn(async (path: string) => files[path] ?? null),
+		// Exact-match on purpose. This double is a map, not a filesystem, so it has no case folding
+		// to model -- and keeping it exact is what shows that the switch from `read` to `exists`
+		// changed nothing anywhere the two agree. Where they disagree is `vault-stores.test.ts`.
+		exists: vi.fn(async (path: string) => path in files),
 		write: vi.fn(async (path: string, content: string) => {
 			files[path] = content;
 		}),
