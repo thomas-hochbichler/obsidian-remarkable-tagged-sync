@@ -40,14 +40,14 @@
 
     - id: G9.4
       scenario: The vault already holds Work/My Notebook.md and the sync decides Work/my notebook.md is free
-      expect: 'Today it throws "File already exists." and the sync of that notebook fails. resolveFreePath asks read(), which asks the exact-string file index; create asks the filesystem, which folds case on macOS and Windows. Pinned so the repair has a test to turn green'
+      expect: "The store throws \"File already exists.\" -- correctly, it is Obsidian's own rule. What changed is that the plugin no longer walks into it: resolveFreePath asks exists(), which asks the same filesystem create asks. See G9.10"
       layer: unit
       file: src/vault-stores.test.ts
       test: "the note store's write > throws Obsidian's own sentence on a path the plugin has just decided was free"
 
     - id: G9.5
       scenario: A folder sits at the path the note was going to take
-      expect: 'Today it throws. The lookup that chooses between rewrite and create asks for a *file*, so a folder reads as "nothing there" and the create runs into it. Pinned, not promised'
+      expect: "The store throws, because the lookup that chooses between rewrite and create asks for a file and a folder reads as nothing-there. The plugin no longer asks it to -- see G9.11"
       layer: unit
       file: src/vault-stores.test.ts
       test: "the note store's write > throws when a folder sits where the note should go"
@@ -79,6 +79,34 @@
       layer: unit
       file: src/vault-stores.test.ts
       test: "the note store's read > returns null when a folder, not a note, sits at the path"
+
+    - id: G9.10
+      scenario: A new note is written into a vault that already holds the same name differing only in case
+      expect: "The suffixed name is taken and the user's own note is untouched. Before this, the plugin proved the path free against the file index and then threw on it -- once, and on every sync of that notebook afterwards"
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "choosing a path for a new note, against a vault that folds case > suffixes rather than throwing when the only note in the way differs in case"
+
+    - id: G9.11
+      scenario: A folder happens to sit exactly where the new note would go
+      expect: The suffixed name is taken rather than the write failing
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "choosing a path for a new note, against a vault that folds case > suffixes rather than throwing when a folder sits where the note would go"
+
+    - id: G9.12
+      scenario: Every suffix in the escalation is taken too, some of them only case-insensitively
+      expect: It keeps escalating to the numeric tail rather than stopping at the first one the index cannot see
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "choosing a path for a new note, against a vault that folds case > keeps escalating through the suffixes when each one is taken too"
+
+    - id: G9.13
+      scenario: The same vault on Linux, where a differently-cased name is genuinely a different file
+      expect: The plain name is still taken. The fix must not cost a Linux user a suffix they never needed -- and this is the assertion that says the change is platform-shaped rather than blanket
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "choosing a path for a new note, against a vault that folds case > still takes the plain name on Linux, where nothing folds and nothing is in the way"
 
 - feature: G10
   name: Moves preserve backlinks
@@ -134,7 +162,7 @@
 
     - id: G15.4
       scenario: The vault already holds work/ and a tag routes to Work/
-      expect: 'Today it throws "Folder already exists." on the first sync after the mapping. getFolderByPath is an exact lookup into the index and createFolder asks the filesystem, which folds case. Pinned so the repair has a test to turn green'
+      expect: "Throws \"Folder already exists.\" on the first sync after the mapping, and deliberately still does. Swallowing it would write the note into the differently-cased folder the filesystem resolves to, leave data.json holding a path the index can never find, and duplicate the note on the next sync -- silent damage in place of a loud failure. The real repair resolves the mapped folder to the vault's actual casing where the path is built; see ticket 18"
       layer: unit
       file: src/vault-stores.test.ts
       test: "ensureFolder > throws where the vault already holds the same folder under a different case"

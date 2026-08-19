@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { asApp, asVault, FakeApp, FakeVault } from "../test-stubs/fake-obsidian";
+import { type NoteFields, writeNote } from "./note-builder";
 import { createAttachmentStore, createNoteStore, ensureFolder } from "./vault-stores";
 
 // Gap G01. Until this file existed, every test that wrote a note wrote it into an in-memory store
@@ -220,5 +221,65 @@ describe("the attachment store", () => {
 		await expect(
 			createAttachmentStore(asVault(vault)).writeBinary("Attachments/a.pdf", new ArrayBuffer(4)),
 		).rejects.toThrow("File already exists.");
+	});
+});
+
+// The seam end to end: the real path resolution, the real store adapter, and a vault that folds
+// case the way macOS and Windows do. Everything above tests one side of the boundary; this tests
+// that the two sides now ask the same question.
+//
+// Nothing else in the suite can see this. `note-builder.test.ts` drives resolution through an
+// in-memory map, which has no case folding to disagree about -- so the collision suite there stayed
+// green through the whole period in which this was broken.
+describe("choosing a path for a new note, against a vault that folds case", () => {
+	function fields(overrides: Partial<NoteFields> = {}): NoteFields {
+		return {
+			docId: "doc-1abcdef",
+			pageId: null,
+			pageIndex: null,
+			tag: "sync",
+			source: "My Notebook",
+			embedPath: "Attachments/doc-1abcdef.pdf",
+			highlights: [],
+			transcript: "",
+			digest: "",
+			...overrides,
+		};
+	}
+
+	it("suffixes rather than throwing when the only note in the way differs in case", async () => {
+		const vault = vaultWith({ "Work/my notebook.md": "the user's own note" });
+		const store = createNoteStore(asApp(new FakeApp(vault)));
+
+		const path = await writeNote(store, "Work", fields());
+
+		expect(path).toBe("Work/My Notebook (sync).md");
+		expect(vault.fileContents()["Work/my notebook.md"]).toBe("the user's own note");
+	});
+
+	it("suffixes rather than throwing when a folder sits where the note would go", async () => {
+		const vault = vaultWith();
+		await vault.createFolder("Work/My Notebook.md");
+		const store = createNoteStore(asApp(new FakeApp(vault)));
+
+		await expect(writeNote(store, "Work", fields())).resolves.toBe("Work/My Notebook (sync).md");
+	});
+
+	it("keeps escalating through the suffixes when each one is taken too", async () => {
+		const vault = vaultWith({
+			"Work/my notebook.md": "",
+			"Work/MY NOTEBOOK (sync).md": "",
+			"Work/My Notebook (doc-1a).md": "",
+		});
+		const store = createNoteStore(asApp(new FakeApp(vault)));
+
+		await expect(writeNote(store, "Work", fields())).resolves.toBe("Work/My Notebook (2).md");
+	});
+
+	it("still takes the plain name on Linux, where nothing folds and nothing is in the way", async () => {
+		const vault = vaultWith({ "Work/my notebook.md": "" }, "linux");
+		const store = createNoteStore(asApp(new FakeApp(vault)));
+
+		await expect(writeNote(store, "Work", fields())).resolves.toBe("Work/My Notebook.md");
 	});
 });

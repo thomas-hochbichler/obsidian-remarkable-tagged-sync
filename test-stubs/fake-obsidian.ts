@@ -386,6 +386,19 @@ export class FakeVault {
 		return this.name;
 	}
 
+	/**
+	 * The filesystem, not the index -- the only member of `vault.adapter` this plugin reaches, and
+	 * the one `Vault.create` itself calls before it throws.
+	 *
+	 * app.js: `fsPromises.access(fullPath)`, false on any error. So the *filesystem* decides, which
+	 * means it folds case wherever the platform does. The real signature takes a second `sensitive`
+	 * argument that adds an exact-case confirmation on top; nothing in this plugin passes it, so
+	 * nothing here models it.
+	 */
+	readonly adapter = {
+		exists: async (path: string): Promise<boolean> => this.existsOnDisk(path) !== null,
+	};
+
 	// app.js: `fileMap.hasOwnProperty(p)` and an instance check. Exact string, no folding. The
 	// insensitive lookup exists in Obsidian as a separate method and this plugin never calls it.
 	getAbstractFileByPath(path: string): TAbstractFile | null {

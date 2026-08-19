@@ -163,8 +163,8 @@
 			"branches": 5
 		},
 		"src/note-builder.ts": {
-			"lines": 3,
-			"branches": 6
+			"lines": 0,
+			"branches": 5
 		},
 		"src/note-region.ts": {
 			"lines": 0,

@@ -30,6 +30,23 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A notebook whose name matches a note you already have, except for capitalisation, now syncs.**
+  Before this, if your vault held `Work/my notebook.md` and a synced notebook was called *My
+  Notebook*, the sync stopped with *"File already exists."* — and it stopped again on every run
+  after that, because nothing about the situation changed by itself.
+
+  The plugin was asking the wrong thing. It asked Obsidian's file list whether the name was free,
+  and that list treats `My Notebook` and `my notebook` as two different names. Your disk does not:
+  on macOS and Windows they are one and the same file. So the plugin picked a name it had just
+  proved was free, and the write failed on it.
+
+  It now asks the same question Obsidian itself asks before writing, so a name that is really taken
+  is treated as taken and the note gets a distinguishing suffix — `My Notebook (sync).md` — exactly
+  as it already did for any other kind of clash. **Your own note is never touched.** On Linux, where
+  two names differing in capitalisation really are two files, nothing changes at all.
+
+  The same now holds when a *folder* happens to sit exactly where a note was going to go.
+
 - **A notebook whose title contains an invisible character no longer breaks its own sync, forever.**
   Some titles carry a character that looks exactly like an ordinary space but is not one — a
   non-breaking space, say, which the title metadata of EPUB books carries very often. Obsidian

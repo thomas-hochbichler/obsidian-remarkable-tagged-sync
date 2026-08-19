@@ -49,6 +49,17 @@ export interface NoteFields {
 
 export interface NoteStore {
 	read(path: string): Promise<string | null>;
+	/**
+	 * Whether anything at all occupies this path -- a note, a note whose name differs only in case,
+	 * or a folder.
+	 *
+	 * Deliberately not `read(path) !== null`. `read` asks Obsidian's file index, which is an
+	 * exact-string map; `Vault.create` asks the filesystem, which folds case on macOS and Windows.
+	 * Asking the first and writing through the second is how the plugin used to pick a name it had
+	 * just proved was free and then throw "File already exists." on it, once, and on every sync of
+	 * that notebook afterwards.
+	 */
+	exists(path: string): Promise<boolean>;
 	write(path: string, content: string): Promise<void>;
 	ensureFolder(path: string): Promise<void>;
 	/** Renames/moves an existing note, preserving vault backlinks. No-op if `fromPath` doesn't exist. */
@@ -337,17 +348,20 @@ export function buildNoteContent(fields: NoteFields, existingContent: string | n
  * to one folder; `(docId6)` backs it up for two different notebooks sharing a name; a numeric tail
  * guarantees termination when even those collide. Once chosen, the path is persisted in the index
  * and reused via `existingPath`.
+ *
+ * "Occupies" is `store.exists`, not `store.read`: see the interface. A path this returns is one the
+ * vault will actually accept, which is the whole difference.
  */
 async function resolveFreePath(store: NoteStore, folder: string, baseName: string, tag: string, docId: string): Promise<string> {
 	const suffixes = ["", ` (${sanitizeFilenamePart(tag)})`, ` (${docId.slice(0, 6)})`];
 
 	for (const suffix of suffixes) {
 		const path = joinFolder(folder, `${baseName}${suffix}.md`);
-		if ((await store.read(path)) === null) return path;
+		if (!(await store.exists(path))) return path;
 	}
 	for (let n = 2; ; n++) {
 		const path = joinFolder(folder, `${baseName} (${n}).md`);
-		if ((await store.read(path)) === null) return path;
+		if (!(await store.exists(path))) return path;
 	}
 }
 
