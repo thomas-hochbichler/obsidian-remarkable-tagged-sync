@@ -72,6 +72,13 @@
       test: "migrateSettings > keeps an attachments folder the user chose, and defaults the rest"
 
     - id: A8.9
+      scenario: A fresh install's sync index is written into by a vault rename
+      expect: The next fresh install still starts empty -- the module-level EMPTY_SYNC_INDEX is copied, not handed out, because onVaultRename writes into rows in place
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > does not hand two installs the same syncIndex object"
+
+    - id: A8.16
       scenario: A loaded install's autoSync block or licence is written into
       expect: The module-level defaults are not aliased, so writing one install's settings cannot change the next one's defaults
       layer: unit

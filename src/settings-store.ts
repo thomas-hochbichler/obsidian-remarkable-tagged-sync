@@ -71,6 +71,7 @@ export interface TaggedSyncData {
 	licence: LicenceState;
 }
 
+/** Read field by field, never handed out whole -- see the `syncIndex` note in `migrateSettings`. */
 export const DEFAULT_DATA: TaggedSyncData = {
 	deviceToken: null,
 	tagFolderMap: {},
@@ -122,7 +123,12 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 	return {
 		deviceToken: stored?.deviceToken ?? DEFAULT_DATA.deviceToken,
 		tagFolderMap: stored?.tagFolderMap ?? {},
-		syncIndex: stored?.syncIndex ?? EMPTY_SYNC_INDEX,
+		// A copy, not the constant. `onVaultRename` writes into `data.syncIndex.rows` in place, so
+		// handing a fresh install EMPTY_SYNC_INDEX itself means the next one starts with the last one's
+		// rows in it. Production gets away with it -- one plugin instance per Obsidian process, and a
+		// fresh install has no rows to remap -- but a shared mutable default is a hazard whether or not
+		// today's call sites happen to miss it, and under a test runner they do not.
+		syncIndex: stored?.syncIndex ?? { ...EMPTY_SYNC_INDEX, rows: {} },
 		ocrBackend: env.isKnownBackend(savedBackend) ? (savedBackend as OcrBackendId) : env.defaultBackend,
 		llmProviders: stored?.llmProviders ?? {},
 		ocrUnavailableNoticeShown: stored?.ocrUnavailableNoticeShown ?? false,

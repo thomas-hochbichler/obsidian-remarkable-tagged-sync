@@ -129,6 +129,18 @@ describe("migrateSettings", () => {
 		expect(migrateSettings({}, ENV).attachmentsFolder).toBe("tagged-sync/attachments");
 	});
 
+	it("does not hand two installs the same syncIndex object", () => {
+		// `onVaultRename` writes into `data.syncIndex.rows` in place. Handing a fresh install the
+		// module-level EMPTY_SYNC_INDEX itself means one install's rename can be seen by the next --
+		// in production a small blast radius, in a test run a shared-state hazard across whole files.
+		const first = migrateSettings(null, ENV);
+		const second = migrateSettings(null, ENV);
+
+		first.syncIndex.rows["doc/1"] = { note: "x" } as never;
+
+		expect(second.syncIndex.rows).toEqual({});
+	});
+
 	it("does not alias the defaults it spread from either", () => {
 		const data = migrateSettings(null, ENV);
 		data.autoSync.enabled = true;
