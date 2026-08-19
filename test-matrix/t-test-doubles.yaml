@@ -1,0 +1,283 @@
+# Group T -- the fake Obsidian.
+#
+# Not product features either, and here for the same reason group R is: a test double that throws,
+# folds case and normalises paths is code, and a rule the fake gets wrong is a rule every test above
+# it inherits. `tier:` is omitted throughout -- a test double has no free and no Pro side.
+#
+# Every row citing "app.js" means the behaviour was read out of Obsidian 1.13.7's shipped
+# implementation rather than guessed. The E2E layer still owes each of them a confirmation; what it
+# adds is not the rule but the day Obsidian changes it.
+
+- feature: T1
+  name: The plugin can be loaded at all under a test runner
+  code: test-stubs/obsidian.ts
+  scenarios:
+    - id: T1.1
+      scenario: A test imports src/main.ts, which reaches obsidian through eight files and rmapi-js through one
+      expect: The module graph resolves. Before the fake this failed twice -- rmapi-js cannot be resolved under vitest, and the old stub broke the graph at region-view.ts before a line of main.ts ran
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the plugin's module graph > loads against this fake, which is the whole reason the fake exists"
+
+- feature: T2
+  name: normalizePath decides what counts as the same path
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T2.1
+      scenario: A path carries repeated separators, or Windows backslashes
+      expect: They collapse to single forward slashes (app.js)
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "normalizePath > collapses repeated and backslash separators into single forward ones"
+
+    - id: T2.2
+      scenario: A path is written with a leading or trailing slash
+      expect: Both are stripped, so "/notes/x.md/" and "notes/x.md" are one path (app.js)
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "normalizePath > strips leading and trailing separators"
+
+    - id: T2.3
+      scenario: A path is nothing but separators
+      expect: It becomes the vault root, not the empty string (app.js)
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "normalizePath > turns a path that was nothing but separators into the vault root"
+
+    - id: T2.4
+      scenario: A reMarkable notebook was titled by hand with a non-breaking or narrow space
+      expect: It becomes an ordinary space. This rewrite is why such a note used to be written once and never found again
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "normalizePath > rewrites a non-breaking space and a narrow one to an ordinary space"
+
+    - id: T2.5
+      scenario: A title stands in NFD, as a title typed on macOS often does
+      expect: It composes to NFC, so the decomposed and the composed umlaut are one path (app.js)
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "normalizePath > composes to NFC, so a decomposed umlaut is the same path as a composed one"
+
+    - id: T2.6
+      scenario: A path needs all three rewrites at once
+      expect: All three apply, with the slash collapse first. Deliberately not an ordering assertion beyond that -- swapping the last two steps changes no path, measured by making the swap
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "normalizePath > applies all three rewrites to one path, with the slash collapse first"
+
+- feature: T3
+  name: parseLinktext splits an embed into a file and a heading
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T3.1
+      scenario: A margin-note embed points at a heading inside a note
+      expect: The path stops at the first hash and the subpath keeps it (app.js)
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "parseLinktext > splits a link at its first hash and keeps the hash on the subpath"
+
+    - id: T3.2
+      scenario: The embed is a plain file link
+      expect: An empty subpath, never null -- the caller indexes it without checking
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "parseLinktext > gives a link with no hash an empty subpath rather than a null one"
+
+    - id: T3.3
+      scenario: The embed points inside the note it is written in, so it begins with the hash
+      expect: The path is empty and the whole string is the subpath (app.js)
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "parseLinktext > leaves the path empty when the link is nothing but a subpath"
+
+- feature: T4
+  name: debounce is what a settings field persists through
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T4.1
+      scenario: The user types several characters into the attachments-folder field inside the wait
+      expect: One call after the wait, carrying the last value -- not one call per keystroke
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "debounce > calls through once after the wait, with the last arguments it was given"
+
+    - id: T4.2
+      scenario: The third argument is true, which the plugin passes and which reads like "leading"
+      expect: Nothing fires on the leading edge. The argument is resetTimer; a test asserting a leading call would be asserting something Obsidian does not do
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "debounce > does not fire on the leading edge, whatever the third argument says"
+
+    - id: T4.3
+      scenario: resetTimer is off and a second call arrives before the deadline
+      expect: The first call's deadline stands, so the wait is a ceiling rather than a sliding window
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "debounce > keeps the first call's deadline when resetTimer is off"
+
+    - id: T4.4
+      scenario: resetTimer is on and the user keeps typing
+      expect: Every call pushes the deadline out, so nothing is saved until they stop
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "debounce > pushes the deadline out on every further call when resetTimer is on"
+
+    - id: T4.5
+      scenario: The settings tab closes with a save still pending, or the value is discarded
+      expect: run() flushes it immediately and cancel() drops it, both without waiting
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "debounce > run() fires the pending call immediately and cancel() drops it"
+
+- feature: T5
+  name: The names Obsidian refuses to write
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T5.1
+      scenario: A notebook is titled "Meeting 14:30" by hand, which is a legal title and an illegal macOS filename
+      expect: Rejected before anything is written, with Obsidian's own sentence (app.js checkPath)
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "checkPath > refuses a colon on macOS, which is where a handwritten 'Meeting 14:30' lands"
+
+    - id: T5.2
+      scenario: A title carries a question mark or angle brackets, and the vault is on macOS
+      expect: Accepted there and refused on Windows -- the character set is platform-dependent, so the same title syncs on one machine and not the other
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "checkPath > allows on macOS the characters only Windows forbids"
+
+    - id: T5.3
+      scenario: The same title on Obsidian mobile
+      expect: Refused. Mobile forbids a wider set than the desktop it otherwise shares a rule with
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "checkPath > forbids on mobile a set wider than the desktop one it otherwise shares"
+
+    - id: T5.4
+      scenario: A title ends in a dot or a space, which trailing punctuation in handwriting easily produces
+      expect: Refused on Windows only, so this is a Windows-only sync failure with no macOS symptom
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "checkPath > refuses a trailing dot or space only on Windows"
+
+    - id: T5.5
+      scenario: A notebook is called CON, NUL or LPT1
+      expect: Refused on Windows, whatever extension follows, and accepted everywhere else
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "checkPath > refuses a reserved device name only on Windows, extension or not"
+
+    - id: T5.6
+      scenario: The illegal character is in a folder name rather than in the filename
+      expect: Still refused -- every segment is checked, so a tag mapped to a folder with a colon fails the same way
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "checkPath > checks every segment, not only the last one"
+
+- feature: T6
+  name: The file index the plugin looks paths up in
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T6.1
+      scenario: A note exists as Notes/X.md and something asks for notes/x.md
+      expect: Null. The index is an exact-string map and folds nothing (app.js fileMap); Obsidian has a case-insensitive lookup and this plugin never calls it
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the vault's file index > looks a path up exactly, without folding case"
+
+    - id: T6.2
+      scenario: A folder and a file are asked for through each other's accessor
+      expect: Null rather than the wrong kind, which is what stops a folder being read as a note
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the vault's file index > keeps files and folders apart, so a folder is not returned as a file"
+
+    - id: T6.3
+      scenario: A test needs the basename or the extension of an indexed note
+      expect: name, basename and extension are split the way a TFile carries them, so an assertion about a filename is about the same fields the plugin reads
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the vault's file index > splits a name into basename and extension the way a TFile carries them"
+
+- feature: T7
+  name: What the vault refuses to write over -- the mechanism behind G01
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T7.1
+      scenario: A sync writes a note at a path that already holds one
+      expect: 'Rejected with the exact sentence "File already exists." (app.js create)'
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "what the vault refuses to write over > throws Obsidian's own sentence when creating over a file that is there"
+
+    - id: T7.2
+      scenario: The same, for an attachment rather than a note
+      expect: The same sentence, from the same shape -- createBinary is not the lenient one
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "what the vault refuses to write over > throws it for a binary write too, from the same shape"
+
+    - id: T7.3
+      scenario: A tag's target folder is created twice
+      expect: 'Its own sentence, "Folder already exists." -- so a caller matching on the file one misses it'
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "what the vault refuses to write over > has its own sentence for a folder"
+
+    - id: T7.4
+      scenario: The vault holds Notes/X.md and the plugin decides Notes/x.md is a free path
+      expect: The write is refused anyway. create checks the filesystem, which folds case on macOS and Windows, while every lookup the plugin makes goes through the index, which does not
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "what the vault refuses to write over > refuses a path the index says is free, when only its case differs"
+
+    - id: T7.5
+      scenario: The same vault on Linux
+      expect: The write succeeds. The disagreement is a property of the filesystem, so this bug is invisible on the one platform a CI job runs on
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "what the vault refuses to write over > accepts that same path on Linux, where the filesystem does not fold case"
+
+    - id: T7.6
+      scenario: A path carrying a non-breaking space is written and then looked up
+      expect: The write normalises and the lookup does not, so the note is created and immediately unfindable. This asymmetry is the bug the note-builder fix repairs, and the fake has to reproduce it or no test can see it
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "what the vault refuses to write over > normalises the path it writes to, while the lookup keeps whatever it was given"
+
+    - id: T7.7
+      scenario: A write is attempted at a name checkPath forbids
+      expect: It is refused before the existence check, and nothing lands in the index
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "what the vault refuses to write over > applies checkPath before the existence check, so an illegal name never lands"
+
+- feature: T8
+  name: Writing and renaming through the vault
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T8.1
+      scenario: A re-transcribe rewrites a note whose text has not changed
+      expect: No write happens -- observably, through the vault's write log -- and the new text comes back either way (app.js process). The plugin uses process over modify because a sync writes notes the user may have open
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "writing through the vault > process() writes only when the callback changed something, and returns the new text"
+
+    - id: T8.2
+      scenario: The user renames a synced note in the file explorer
+      expect: The content follows the file, the old path stops resolving, and whoever subscribed to rename hears the new path and the old one -- which is how data.json keeps up
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "writing through the vault > a rename moves the content with the file and tells whoever subscribed"
+
+- feature: T9
+  name: The plugin host a test arrives at data.json through
+  code: test-stubs/fake-obsidian.ts
+  scenarios:
+    - id: T9.1
+      scenario: A test says what data.json holds, then asserts what the plugin saved
+      expect: loadData returns it, and every saveData argument is kept as a snapshot -- so a later in-place mutation cannot rewrite what a test already asserted was saved
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the plugin host > hands loadData whatever the test says data.json holds, and records every save"

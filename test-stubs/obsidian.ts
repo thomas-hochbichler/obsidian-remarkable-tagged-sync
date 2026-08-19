@@ -1,23 +1,33 @@
-// Minimal stand-in for the `obsidian` module, which only exists inside the Obsidian app and so
-// cannot be resolved under vitest. Aliased in vitest.config.ts.
+// The `obsidian` module, as vitest sees it. Aliased in vitest.config.ts.
 //
-// It reports the *least* capable environment on purpose: a test that reaches real Obsidian API
-// should fail loudly rather than quietly pass against a fake. Only add to this when a test genuinely
-// needs it -- the real behaviour of these APIs is not covered here.
+// This file is only the surface: it re-exports, under Obsidian's own names, exactly what a non-test
+// file in `src/` or `pro/` imports. The behaviour, the rules it models and the reasoning are in
+// `fake-obsidian.ts` beside it -- and tests import THAT, relatively, never this. The split is not
+// tidiness: `tsc` typechecks a test's `import ... from "obsidian"` against the real `obsidian.d.ts`,
+// so a test reaching for `FakeVault` through this path would fail the typecheck while passing the
+// run. Going through the file directly keeps both honest.
+//
+// Adding a name here means a non-test file now imports it. Anything absent stays absent.
 
-/** `isDesktop: false` keeps the Vision backend's platform gate closed, so no test spawns a subprocess. */
-export const Platform = {
-	isDesktop: false,
-	isMacOS: false,
-};
-
-/**
- * Present only so a module that builds settings rows can be imported at all — registering a backend
- * and rendering its settings live in the same file. Constructing one is a test bug: settings UI is
- * not covered here, and a silent fake would let a test claim it was.
- */
-export class Setting {
-	constructor() {
-		throw new Error("test-stubs/obsidian: Setting is not implemented. A test tried to render real settings UI.");
-	}
-}
+export {
+	apiVersion,
+	debounce,
+	MarkdownRenderChild,
+	Modal,
+	normalizePath,
+	Notice,
+	parseLinktext,
+	Platform,
+	Plugin,
+	PluginSettingTab,
+	ProgressBarComponent,
+	requestUrl,
+	Setting,
+	setIcon,
+	setTooltip,
+	TAbstractFile,
+	TFile,
+	TFolder,
+	FakeApp as App,
+	FakeVault as Vault,
+} from "./fake-obsidian";

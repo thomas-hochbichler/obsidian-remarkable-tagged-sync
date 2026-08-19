@@ -155,7 +155,7 @@
 			"branches": 6
 		},
 		"src/main.ts": {
-			"lines": 508,
+			"lines": 496,
 			"branches": 307
 		},
 		"src/margin-notes.ts": {
@@ -223,7 +223,7 @@
 			"branches": 8
 		},
 		"src/region-view.ts": {
-			"lines": 100,
+			"lines": 96,
 			"branches": 41
 		},
 		"src/remarkable-auth.ts": {
