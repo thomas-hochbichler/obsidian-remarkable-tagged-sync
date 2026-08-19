@@ -147,8 +147,42 @@ jobs:
 
       # `pro/` is in this repo and in this run. It used to be excluded as a known, accepted gap;
       # leaving it out now would mean CI stopped covering the paid half on the day it went on sale.
+      #
+      # `--coverage` rather than a bare run, because ONE measurement feeds all three readers: the
+      # ratchet below, the pull-request comment, and the two badges on `main`. A second run could
+      # disagree with the first, and a badge saying 78 % next to a gate that just failed is worse
+      # than no badge at all.
       - name: Tests
-        run: npx vitest run
+        run: npm run test:coverage
+
+      # The two jobs below read THIS run's numbers instead of measuring again. Both files are
+      # needed: the summary is the totals per file, the final report is what says which lines a
+      # pull request left uncovered.
+      #
+      # `always()` and placed before the gates on purpose: the run where the ratchet just failed is
+      # exactly the run whose pull-request comment says which lines are missing.
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: |
+            coverage/coverage-summary.json
+            coverage/coverage-final.json
+          retention-days: 7
+
+      # --- gate 8: coverage ratchet ------------------------------------------------------------
+      #
+      # Absolute uncovered lines and branches, per file, against .coverage-baseline.json. No
+      # percentage threshold: at 71.2 % line coverage roughly 41 of 70 deliberate mutations of this
+      # code survived all 996 tests, so a percentage here would be a number that stays true while
+      # the product breaks.
+      - name: Coverage ratchet
+        run: node scripts/release-checks.mjs coverage
+
+      # --- gate 9: disabled tests --------------------------------------------------------------
+      - name: Disabled tests
+        run: node scripts/release-checks.mjs disabled
 
       # --- gate 6: build -----------------------------------------------------------------------
       - name: Build
@@ -161,3 +195,74 @@ jobs:
       # our own source could ever see it.
       - name: Bundle scan
         run: node scripts/check-bundle.mjs
+
+  # --- the coverage pull-request comment --------------------------------------------------------
+  #
+  # A separate job only because of permissions: `verify` runs on every branch push and stays
+  # read-only. This one may write a comment and nothing else.
+  #
+  # It is the half of a coverage service people actually use -- "this change adds 40 lines, 12 of
+  # them uncovered", said while the code is still being written. It reports; it never blocks.
+  #
+  # Skipped for pull requests from forks, where the token is read-only by design and the step would
+  # fail on an outside contribution. PR #40, the first this repo ever got, is what teaches that.
+  coverage-comment:
+    needs: verify
+    if: >-
+      always()
+      && github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage
+          path: coverage
+
+      # Both paths and `file-coverage-mode: changes` are this action's defaults; the checkout is
+      # here only so it can read vitest.config.ts.
+      - uses: davelosert/vitest-coverage-report-action@8b157684c6a6b259b97d45e72b44242865c0f6a5 # v2.12.2
+
+  # --- the two badges ---------------------------------------------------------------------------
+  #
+  # Writes .coverage-badge-lines.json and .coverage-badge-branches.json on `main` only, and commits
+  # only when a rounded number actually moved -- otherwise every push would produce a badge commit
+  # saying what the last one said. `[skip ci]` keeps that commit from starting another run.
+  #
+  # `continue-on-error`, deliberately: the badge is a status and may not gate anything, including
+  # its own failure. If branch protection ever refuses this push, `main` must not go red over a
+  # cosmetic number.
+  coverage-badges:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage
+          path: coverage
+
+      - name: Write badges
+        run: node scripts/release-checks.mjs badges
+
+      - name: Commit if a number moved
+        run: |
+          if git diff --quiet -- .coverage-badge-lines.json .coverage-badge-branches.json; then
+            echo "no badge changed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .coverage-badge-lines.json .coverage-badge-branches.json
+          git commit -m "Update coverage badges [skip ci]"
+          git push

@@ -79,7 +79,13 @@ jobs:
         run: npx tsc -noEmit -skipLibCheck
 
       - name: Tests
-        run: npx vitest run
+        run: npm run test:coverage
+
+      - name: Coverage ratchet
+        run: node scripts/release-checks.mjs coverage
+
+      - name: Disabled tests
+        run: node scripts/release-checks.mjs disabled
 
       # --- gate 6: build -----------------------------------------------------------------------
       #

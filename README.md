@@ -2,6 +2,9 @@
 
 **[taggedsync.com](https://taggedsync.com)** — the short version, in pictures.
 
+[![lines](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/main/.coverage-badge-lines.json)](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/blob/main/.coverage-baseline.json)
+[![branches](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/main/.coverage-badge-branches.json)](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/blob/main/.coverage-baseline.json)
+
 > **Disclaimer:** Tagged Sync for reMarkable is an unofficial, community-built plugin. It is not
 > affiliated with, endorsed by, or supported by reMarkable AS. "reMarkable" is a trademark of
 > reMarkable AS, used only to describe compatibility.
