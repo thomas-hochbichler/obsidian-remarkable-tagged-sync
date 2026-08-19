@@ -30,6 +30,13 @@ import { judgeVerdict, STALE_HOURS } from "./nightly-verdict.mjs";
 const LICENSE = "SEE LICENSE IN LICENSE";
 const CHANGELOG = "CHANGELOG.md";
 const BASELINE = ".eslint-baseline.json";
+// The numbers in the baseline are PLATFORM-DEPENDENT, and this gate runs on Linux. A macOS run
+// covers more of the platform-branching files -- local-register, local-model-runtime,
+// vision-ocr-runtime -- than ubuntu-latest does, so a baseline written with `--write` on a Mac can
+// fail CI on files the commit never touched. That first happened on 2026-08-19, when entry.ts
+// entered the measurement and brought those files with it. The floor has to be the platform that
+// enforces it: when CI reports a file as less covered and a local run does not, raise that entry by
+// the delta CI printed.
 const COVERAGE_BASELINE = ".coverage-baseline.json";
 const COVERAGE_SUMMARY = "coverage/coverage-summary.json";
 const NIGHTLY_VERDICT = ".nightly-verdict.json";
