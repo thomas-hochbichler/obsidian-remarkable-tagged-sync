@@ -1,41 +1,244 @@
 # Group B -- Tag discovery & routing.
+#
+# B13 is the free tag cap, and I12 -- "Pro lifts it" -- is the same rule seen from the licence screen,
+# so its rows live here with `tier:` on them rather than being counted twice.
+#
+# The decision half of this group is `src/tag-routing-view.ts` (unit rows); the drawing half is the
+# settings tab in `src/main.ts` (vault rows). Both are asserted, because between them sits the slip
+# this seam was cut for: a plan can be right and still be drawn in the wrong order.
 
-- feature: B13
-  name: Free tag cap (1 mapped tag) / Pro lifts it
+- feature: B2
+  name: Map a tag to a vault folder
+  code: src/tag-routing-view.ts
+  tier: free
+  scenarios:
+    - id: B2.1
+      scenario: The settings tab is opened before any scan has run
+      expect: The section draws nothing at all -- no headings, no notices, no empty-state row
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > draws nothing at all before a scan has found anything"
+
+    - id: B2.2
+      scenario: A scan found one tag and the vault has folders
+      expect: One mappable row offering a placeholder, the vault root and every folder -- in that order
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > offers the first tag a free user has found, with the whole vault to choose from"
+
+    - id: B2.3
+      scenario: A tag is mapped to the vault root
+      expect: The root reads as "Vault root" in the row as well as in the dropdown, never as "/"
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > calls the vault root by a name, in the row as well as the dropdown"
+
+    - id: B2.4
+      scenario: The vault has no folders at all
+      expect: The root is still offered, so a brand-new vault has one valid target instead of an empty dropdown
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > offers only the root in an empty vault"
+
+    - id: B2.5
+      scenario: Several tags are mapped and several more were discovered
+      expect: Mapped tags are sorted; unmapped ones stay in discovery order, which is the only order the user saw
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > sorts the mapped tags and leaves the unmapped ones in the order they were discovered"
+
+    - id: B2.6
+      scenario: Every tag the scan found is already mapped
+      expect: No unmapped section is drawn, and nothing can ask the licence server because nothing can be added
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > draws no unmapped section when everything discovered is already mapped"
+
+    - id: B2.7
+      scenario: The shipped settings tab draws that first mappable row
+      expect: A real dropdown carrying the placeholder, the root and the vault's folders
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > offers a folder dropdown for the first tag a free user maps"
+
+- feature: B3
+  name: Re-target a mapped tag
   code: src/main.ts
   tier: free
   scenarios:
+    - id: B3.1
+      scenario: A Pro user with the licence re-check armed changes an existing tag's folder
+      expect: The new folder is saved and Polar is never called -- changing where a tag writes is not buying anything
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > re-points a mapping the user already has without asking Polar -- that is not an add"
+
+- feature: B4
+  name: Remove a mapping
+  code: src/tag-routing-view.ts
+  tier: free
+  scenarios:
+    - id: B4.1
+      scenario: Nothing is mapped yet
+      expect: The sentence about what removal does is not shown -- there is nothing to remove
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > says nothing about removal when there is nothing to remove"
+
+    - id: B4.2
+      scenario: One tag is mapped and another was discovered
+      expect: Only the mapped row carries Remove; an unmapped row has no button at all
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > offers Remove on a mapped tag only -- there is nothing to remove from an unmapped one"
+
+- feature: B5
+  name: Missing folder stays selectable
+  code: src/tag-routing-view.ts
+  tier: free
+  scenarios:
+    - id: B5.1
+      scenario: The folder a tag is mapped to was renamed or deleted in the vault
+      expect: It is still an option, labelled "(missing)", and the row still reads as that folder
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > keeps a mapped folder selectable after it is renamed away, and labels it"
+
+    - id: B5.2
+      scenario: The folder a tag is mapped to is still there
+      expect: No extra option and no "(missing)" label -- the marker means something because it is not always on
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > does not label a folder that is still there"
+
+    - id: B5.3
+      scenario: The shipped settings tab draws that row
+      expect: The dropdown shows the missing folder as its value rather than silently selecting something else
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > keeps a mapped-but-missing folder selectable, labelled (missing)"
+
+- feature: B13
+  name: Free tag cap (1 mapped tag) / Pro lifts it
+  code: src/tag-routing-view.ts
+  tier: free
+  scenarios:
     - id: B13.1
-      scenario: A free user has one mapped tag and maps a second
-      expect: The second row renders as "Not synced." with the reason in place -- a readable explanation, not a disabled control
+      scenario: A free user has one mapped tag and the scan found a second
+      expect: The second row renders as "Not synced." with the reason above it -- a readable explanation, not a disabled control
       layer: vault
       tier: free
-      gap: G04
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > refuses the second tag: no dropdown, a read-only row, and the cap sentence above it"
 
     - id: B13.2
-      scenario: A free user's second and third mapped tags are reached by a sync
-      expect: They are not synced. FREE_TAG_LIMIT is the enforcement point, and setting it to Infinity today passes all 996 tests
-      layer: engine
+      scenario: A user whose licence ended still has three tags mapped. The sync engine is never told the entitlement, so what is mapped is what syncs
+      expect: All three rows are drawn mapped, each keeping its dropdown and its Remove button -- the cap never unmaps, because unmapping would orphan the row and the folder would stop updating with nothing said
+      layer: unit
       tier: free
-      gap: G04
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > never revokes a mapping the user already has, however far past the cap"
 
     - id: B13.3
-      scenario: A user with a valid licence maps a fifth tag
-      expect: All five sync. The cap is lifted, not raised
+      scenario: A user with a valid licence maps a second tag
+      expect: It is offered and mapped. The cap is lifted, not raised
       layer: vault
       tier: pro
-      gap: G04
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > lets a Pro user map the second tag"
 
     - id: B13.4
-      scenario: A licence ends while five tags are mapped
-      expect: The mappings are never revoked or deleted; the rows beyond the first stop syncing and say why
+      scenario: A licence has ended while three tags are mapped, and the tab is drawn again
+      expect: The mappings are never revoked or deleted; every one of them keeps its dropdown and Remove button
       layer: vault
       tier: pro
-      gap: G04
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > never revokes a mapping the user already has, even past the cap"
 
     - id: B13.5
       scenario: The licence server is unreachable when the tag dropdown changes
-      expect: The cap is not applied on silence -- an unreachable Polar is not a verdict
+      expect: Pro is kept and nothing is said -- an unreachable Polar is not a verdict
+      layer: unit
+      tier: pro
+      file: src/licence-check.test.ts
+      test: "checkLicence > keeps Pro when the call fails, and says nothing"
+
+    - id: B13.6
+      scenario: The plan is asked for that same refused second tag
+      expect: A capped row with no options, and the cap sentence placed above the rows it explains
+      layer: unit
+      tier: free
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > refuses the second tag, and says why above the rows it refuses"
+
+    - id: B13.7
+      scenario: The limit is read for a free user
+      expect: Exactly one. Setting it to Infinity used to pass all 996 tests in this repo
+      layer: unit
+      tier: free
+      file: src/tag-routing-view.test.ts
+      test: "tagLimitFor > gives the free tier exactly one mapping"
+
+    - id: B13.8
+      scenario: The limit is read for a paying or trialling user
+      expect: No limit at all -- a trial has to be able to judge the thing it is a trial of
+      layer: unit
+      tier: pro
+      file: src/tag-routing-view.test.ts
+      test: "tagLimitFor > gives a paid or trialling user no limit"
+
+    - id: B13.9
+      scenario: The limit is read after a licence is revoked
+      expect: Back to the free limit. Proportionate, because it blocks adding only
+      layer: unit
+      tier: pro
+      file: src/tag-routing-view.test.ts
+      test: "tagLimitFor > falls back to the free limit when a licence is revoked"
+
+    - id: B13.10
+      scenario: The plan is asked for a second tag with a valid licence
+      expect: A mappable row with the full folder list
+      layer: unit
+      tier: pro
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > lets a paid user map the second tag"
+
+    - id: B13.11
+      scenario: The same, during a trial
+      expect: A mappable row. A trial is Pro until it ends
+      layer: unit
+      tier: pro
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > lets a trialling user map the second tag too"
+
+    - id: B13.12
+      scenario: The plan says whether picking a folder must re-check the licence first
+      expect: Only past the free limit, never at it -- so the first mapping never reaches the network
+      layer: unit
+      tier: free
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > asks for a re-check only past the free limit, never at it"
+
+    - id: B13.13
+      scenario: A free user picks a folder for their first and only tag
+      expect: It is saved, and Polar is never called. A free user never talks to the licence server
+      layer: vault
+      tier: free
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > makes no licence call for the very first mapping -- a free user never talks to Polar"
+
+    - id: B13.14
+      scenario: A licence ends between the settings tab being drawn and a further tag's folder being picked
+      expect: The licence is re-checked at the moment it is used, the mapping is refused, and nothing is saved
       layer: vault
       tier: pro
-      gap: G04
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > re-checks the licence when a Pro render maps a further tag, and refuses if it has ended"
+
+    - id: B13.15
+      scenario: That live re-check still says Pro
+      expect: The mapping is written and saved -- the re-check is a gate, not a second cap
+      layer: vault
+      tier: pro
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > writes the mapping when that live re-check still says Pro"

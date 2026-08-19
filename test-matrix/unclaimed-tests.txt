@@ -244,7 +244,6 @@ src/licence-check.test.ts :: checkLicence > announces an ended trial once, witho
 src/licence-check.test.ts :: checkLicence > arms the notice again for a licence that comes back
 src/licence-check.test.ts :: checkLicence > asks nothing of someone who never bought
 src/licence-check.test.ts :: checkLicence > asks nothing while the last verdict is still fresh
-src/licence-check.test.ts :: checkLicence > keeps Pro when the call fails, and says nothing
 src/licence-check.test.ts :: checkLicence > locks on an explicit revocation and announces it once
 src/licence-check.test.ts :: checkLicence > re-activates once when the activation is gone, without locking
 src/licence-check.test.ts :: checkLicence > re-checks a due licence and clocks it to zero
