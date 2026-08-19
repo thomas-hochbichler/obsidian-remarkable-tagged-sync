@@ -231,26 +231,42 @@ function openSession(sessionToken: string): RemarkableApi {
 }
 
 async function ensureFolder(vault: Vault, path: string): Promise<void> {
-	if (vault.getFolderByPath(path)) return;
-	await vault.createFolder(path);
+	const p = normalizePath(path);
+	if (vault.getFolderByPath(p)) return;
+	await vault.createFolder(p);
 }
 
+/**
+ * Every path crossing into the vault goes through `normalizePath` first, and this is not tidiness.
+ *
+ * `Vault.create`, `createBinary` and `createFolder` normalize the path they are given; every lookup
+ * -- `getFileByPath`, `getFolderByPath` -- does not, and compares the raw string against the file
+ * index. So a path carrying a non-breaking space, or standing in NFD, is written under one name and
+ * looked up under another. The note is created, the next sync cannot find it, decides the user
+ * deleted it, writes it again, and `create` throws "File already exists." on a path that prints
+ * identically to the one it just asked for. Every sync of that notebook fails from then on.
+ *
+ * `sanitizeFilenamePart` stops new names from being built that way. This stops the ones already
+ * stored in `data.json` from staying unfindable -- so the repair needs no migration: the same row
+ * simply resolves again.
+ */
 function createNoteStore(app: App): NoteStore {
 	const { vault } = app;
 	return {
 		read: async (path) => {
-			const file = vault.getFileByPath(path);
+			const file = vault.getFileByPath(normalizePath(path));
 			return file ? vault.read(file) : null;
 		},
 		write: async (path, content) => {
-			const file = vault.getFileByPath(path);
+			const p = normalizePath(path);
+			const file = vault.getFileByPath(p);
 			// process() over modify(): a sync writes notes the user may have open in an editor.
 			if (file) await vault.process(file, () => content);
-			else await vault.create(path, content);
+			else await vault.create(p, content);
 		},
 		move: async (fromPath, toPath) => {
-			const file = vault.getFileByPath(fromPath);
-			if (file) await app.fileManager.renameFile(file, toPath);
+			const file = vault.getFileByPath(normalizePath(fromPath));
+			if (file) await app.fileManager.renameFile(file, normalizePath(toPath));
 		},
 		ensureFolder: (path) => ensureFolder(vault, path),
 	};
@@ -259,10 +275,13 @@ function createNoteStore(app: App): NoteStore {
 function createAttachmentStore(vault: Vault): AttachmentStore {
 	return {
 		ensureFolder: (path) => ensureFolder(vault, path),
+		// Normalized for the same reason as the note store above: createBinary normalizes, the lookup
+		// that decides between overwrite and create does not.
 		writeBinary: async (path, data) => {
-			const file = vault.getFileByPath(path);
+			const p = normalizePath(path);
+			const file = vault.getFileByPath(p);
 			if (file) await vault.modifyBinary(file, data);
-			else await vault.createBinary(path, data);
+			else await vault.createBinary(p, data);
 		},
 	};
 }
