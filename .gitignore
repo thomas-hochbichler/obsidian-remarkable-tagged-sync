@@ -1,5 +1,6 @@
 node_modules/
 main.js
+coverage/
 *.js.map
 data.json
 test/

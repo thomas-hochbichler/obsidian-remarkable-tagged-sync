@@ -1,0 +1,278 @@
+{
+	"comment": "Never-worse ratchet over ABSOLUTE uncovered lines and branches, per file. It fails when a file's uncovered count rises above the number here; it never asserts a percentage, because no percentage in this repo means what it looks like -- at 71.2 % line coverage, roughly 41 of 70 deliberate mutations of production code survived all 996 tests, both Pro gates among them. A file that is not listed counts as 0 uncovered, so a new file arrives with its tests or it arrives red. Moving tested code between files can raise one entry while lowering another: that is the case to re-baseline for. Re-measure with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`, in the SAME commit as the change that needs it, so review sees both.",
+	"measured": "2026-08-19",
+	"files": {
+		"pro/anthropic-ocr-backend.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"pro/llm-register.ts": {
+			"lines": 65,
+			"branches": 52
+		},
+		"pro/llm-transcript.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"pro/ocr-providers.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"pro/ocr-vision-detect.ts": {
+			"lines": 1,
+			"branches": 8
+		},
+		"src/attachment-writer.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/auto-sync.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/bytes.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/chapter-names.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/device-font.ts": {
+			"lines": 0,
+			"branches": 2
+		},
+		"src/diagnostics.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/digest-anchoring.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/digest-builder.ts": {
+			"lines": 0,
+			"branches": 4
+		},
+		"src/digest-pipeline.ts": {
+			"lines": 7,
+			"branches": 20
+		},
+		"src/entry.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/epub-text.ts": {
+			"lines": 0,
+			"branches": 9
+		},
+		"src/explain-error.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/fetch-shim.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/ink-marks.ts": {
+			"lines": 0,
+			"branches": 8
+		},
+		"src/licence-check.ts": {
+			"lines": 1,
+			"branches": 2
+		},
+		"src/licence-client.ts": {
+			"lines": 1,
+			"branches": 1
+		},
+		"src/licence-messages.ts": {
+			"lines": 0,
+			"branches": 2
+		},
+		"src/licence-state.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/llm-transcript.ts": {
+			"lines": 2,
+			"branches": 3
+		},
+		"src/local-model-artefacts.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/local-model-card.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/local-model-download.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/local-model-fetch.ts": {
+			"lines": 200,
+			"branches": 67
+		},
+		"src/local-model-gate.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/local-model-runtime.ts": {
+			"lines": 51,
+			"branches": 20
+		},
+		"src/local-model-settings.ts": {
+			"lines": 0,
+			"branches": 2
+		},
+		"src/local-model-store.ts": {
+			"lines": 1,
+			"branches": 0
+		},
+		"src/local-ocr-backend.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/local-ocr-runtime.ts": {
+			"lines": 58,
+			"branches": 25
+		},
+		"src/local-register.ts": {
+			"lines": 112,
+			"branches": 91
+		},
+		"src/localhost-providers.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/localhost-register.ts": {
+			"lines": 59,
+			"branches": 38
+		},
+		"src/localhost-vision-detect.ts": {
+			"lines": 1,
+			"branches": 6
+		},
+		"src/main.ts": {
+			"lines": 505,
+			"branches": 307
+		},
+		"src/margin-notes.ts": {
+			"lines": 0,
+			"branches": 5
+		},
+		"src/note-builder.ts": {
+			"lines": 3,
+			"branches": 6
+		},
+		"src/note-region.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/obsidian-fetch.ts": {
+			"lines": 14,
+			"branches": 18
+		},
+		"src/ocr-backend.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/ocr-registry.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/off-ocr-backend.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/openai-compat-ocr-backend.ts": {
+			"lines": 1,
+			"branches": 2
+		},
+		"src/page-hash.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/page-rasterizer.ts": {
+			"lines": 0,
+			"branches": 6
+		},
+		"src/pdf-paint-repair.ts": {
+			"lines": 3,
+			"branches": 4
+		},
+		"src/pdf-renderer.ts": {
+			"lines": 2,
+			"branches": 11
+		},
+		"src/pdf-source.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/pdf-text.ts": {
+			"lines": 6,
+			"branches": 42
+		},
+		"src/png-encoder.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/quote-correction.ts": {
+			"lines": 0,
+			"branches": 8
+		},
+		"src/region-view.ts": {
+			"lines": 100,
+			"branches": 41
+		},
+		"src/remarkable-auth.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/remarkable-metadata.ts": {
+			"lines": 1,
+			"branches": 1
+		},
+		"src/remarkable-tags.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/rm-parser.ts": {
+			"lines": 22,
+			"branches": 31
+		},
+		"src/scene-text.ts": {
+			"lines": 0,
+			"branches": 3
+		},
+		"src/shims/setimmediate.ts": {
+			"lines": 27,
+			"branches": 8
+		},
+		"src/sync-engine.ts": {
+			"lines": 40,
+			"branches": 59
+		},
+		"src/tag-router.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/text-layout.ts": {
+			"lines": 0,
+			"branches": 1
+		},
+		"src/vision-ocr-backend.ts": {
+			"lines": 0,
+			"branches": 7
+		},
+		"src/vision-ocr-runtime.ts": {
+			"lines": 39,
+			"branches": 23
+		},
+		"src/vision-register.ts": {
+			"lines": 2,
+			"branches": 2
+		}
+	}
+}

@@ -1,0 +1,42 @@
+# Group D -- Note content: handwritten notebooks.
+#
+# One file per feature group. A feature is a container; the rows underneath it are its scenarios.
+# Exactly one of `test:`, `gap:` or `waived:` per scenario. See README.md for the field contract.
+
+- feature: D16
+  name: Deterministic attachment paths
+  code: src/attachment-writer.ts
+  tier: free
+  scenarios:
+    - id: D16.1
+      scenario: A notebook-level page is rendered and its PDF written
+      expect: The path is <folder>/<docId>.pdf -- identity, never the title, so renaming the notebook does not strand the old file
+      layer: unit
+      file: src/attachment-writer.test.ts
+      test: "attachmentPath > names a notebook-level attachment by docId only"
+
+    - id: D16.2
+      scenario: A page-level unit (a page tag) is rendered
+      expect: The path carries both ids, <folder>/<docId>-<pageId>.pdf, so a page note and its notebook note never share a file
+      layer: unit
+      file: src/attachment-writer.test.ts
+      test: "attachmentPath > names a page-level attachment by docId and pageId"
+
+    - id: D16.3
+      scenario: The same unit is synced a second time
+      expect: The bytes are written unconditionally to the same path, with no existence check -- re-syncing overwrites in place and never accumulates copies
+      layer: unit
+      file: src/attachment-writer.test.ts
+      test: "writeAttachment > overwrites in place -- writes unconditionally, with no existence check"
+
+    - id: D16.4
+      scenario: The vault rejects the write (read-only folder, disk full, illegal path)
+      expect: writeBinary rejecting surfaces as a skipped document with the reason, not as a half-written note claiming an attachment that is not there
+      layer: vault
+      gap: G35
+
+    - id: D16.5
+      scenario: The renderer hands back zero bytes
+      expect: An empty pdfBytes is refused before it reaches the vault, so no note embeds a 0-byte PDF
+      layer: vault
+      gap: G35

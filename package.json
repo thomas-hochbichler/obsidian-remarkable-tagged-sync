@@ -12,7 +12,9 @@
     "lint": "eslint .",
     "generate:kaitai": "node src/kaitai/generate.mjs",
     "inspect:rm": "esbuild scripts/inspect-rm.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-rm.cjs && node /tmp/tagged-sync-inspect-rm.cjs",
-    "inspect:doc": "esbuild scripts/inspect-doc.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-doc.cjs && node /tmp/tagged-sync-inspect-doc.cjs"
+    "inspect:doc": "esbuild scripts/inspect-doc.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-doc.cjs && node /tmp/tagged-sync-inspect-doc.cjs",
+    "test:coverage": "vitest run --coverage",
+    "matrix": "node scripts/matrix-link.mjs"
   },
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
@@ -23,6 +25,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.10.5",
+    "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.5",
     "eslint-plugin-obsidianmd": "^0.4.1",

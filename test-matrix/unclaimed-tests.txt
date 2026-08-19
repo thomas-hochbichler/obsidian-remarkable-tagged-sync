@@ -1,0 +1,993 @@
+# Tests that predate the matrix and have no row yet.
+# This list may only ever shrink. A new test may not be added to it -- it needs a row.
+# Regenerate deliberately with --write-allowlist; the diff must be reviewed as a ratchet reset.
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > identifies as the anthropic backend
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > joins one response's text blocks with a blank line
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > recognizes a single page in one HTTP call and reports ok status
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > reports a page with no usable text as skipped, not failed
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > reports a truncated response as failed
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > reports failed and never throws when the request itself fails
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > reports failed when the API responds with a non-ok status
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > retries a rate-limited page, honouring Retry-After, and gives up after three attempts
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > sends one page per HTTP call, one image block each
+pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > skips OCR for an empty page list without making a request
+pro/anthropic-ocr-backend.test.ts :: metered > always bills, so a background sync needs explicit consent
+pro/llm-register.test.ts :: the LLM providers' background-consent flags > gives none of them a setup card, so none of them can be hidden from the dropdown
+pro/llm-register.test.ts :: the LLM providers' background-consent flags > keeps the cloud providers metered and gated
+pro/llm-register.test.ts :: the LLM providers' background-consent flags > leaves the local providers unmetered and unconsented, exactly as before
+pro/llm-register.test.ts :: the LLM providers' background-consent flags > says the same thing with both fields for every provider, so nothing about these six changes
+pro/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > carries an anti-invention rule
+pro/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > names GFM task lists and tables
+pro/llm-transcript.test.ts :: sanitizeTranscript > does not strip a fence that does not reach both edges
+pro/llm-transcript.test.ts :: sanitizeTranscript > does not strip a whole-response ```python fence (non-md info string)
+pro/llm-transcript.test.ts :: sanitizeTranscript > does not treat an ordinary first sentence as preamble
+pro/llm-transcript.test.ts :: sanitizeTranscript > keeps an inner ```python block intact
+pro/llm-transcript.test.ts :: sanitizeTranscript > leaves a normal transcript unchanged
+pro/llm-transcript.test.ts :: sanitizeTranscript > removes a 'Here are the transcription.' preamble line
+pro/llm-transcript.test.ts :: sanitizeTranscript > removes a 'Here is the transcript:' preamble line and the blank line after it
+pro/llm-transcript.test.ts :: sanitizeTranscript > removes a ```md fence wrapping the whole response
+pro/llm-transcript.test.ts :: sanitizeTranscript > removes a bare ``` fence wrapping the whole response
+pro/llm-transcript.test.ts :: sanitizeTranscript > removes a whole-response ```markdown fence and its closer
+pro/llm-transcript.test.ts :: sanitizeTranscript > returns empty string for empty input
+pro/llm-transcript.test.ts :: sanitizeTranscript > strips a preamble line then an outer fence
+pro/llm-transcript.test.ts :: sanitizeTranscript > trims surrounding whitespace
+pro/ocr-providers.test.ts :: PROVIDERS metadata > keeps each entry's key matched to its own id
+pro/ocr-providers.test.ts :: PROVIDERS metadata > lists every non-vision backend literal exactly once, in dropdown order
+pro/ocr-providers.test.ts :: PROVIDERS metadata > makes the base URL editable only for local + custom providers
+pro/ocr-providers.test.ts :: PROVIDERS metadata > uses the native adapter only for Anthropic; everyone else is OpenAI-compatible
+pro/ocr-providers.test.ts :: looksLikeVisionModel > does not flag plainly text-only models
+pro/ocr-providers.test.ts :: looksLikeVisionModel > recognizes common vision model names
+pro/ocr-providers.test.ts :: resolveProviderEndpoint > honors a user base URL only for editable providers
+pro/ocr-providers.test.ts :: resolveProviderEndpoint > prefers the user's model and key over the defaults
+pro/ocr-providers.test.ts :: resolveProviderEndpoint > treats a whitespace-only model or base URL as unset
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > gemini (partial — reachability only) > is unreachable on a bad key / error status
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > gemini (partial — reachability only) > returns partial when the endpoint is reachable
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > heuristic providers (openai / custom) > confirms a vision-looking model by name, no network
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > heuristic providers (openai / custom) > flags a name that does not look vision-capable
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > heuristic providers (openai / custom) > treats an empty model name as unconfirmed
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > lmstudio (reported via native /api/v0/models) > falls back to the name heuristic for a model that isn't loaded
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > lmstudio (reported via native /api/v0/models) > hits the native /api/v0/models endpoint, not the /v1 path, and confirms a vlm
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > lmstudio (reported via native /api/v0/models) > is unreachable when LM Studio isn't running
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > lmstudio (reported via native /api/v0/models) > reports unsupported for a text-only (llm) model
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > lmstudio (reported via native /api/v0/models) > sends the bearer token when the user enabled an LM Studio API key
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > ollama (reported via native /api/show) > hits the native /api/show endpoint, not the /v1 path, and confirms vision
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > ollama (reported via native /api/show) > is unreachable when Ollama isn't running
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > ollama (reported via native /api/show) > reports unsupported for a text-only local model
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > openrouter (reported via /models) > falls back to the name heuristic for a model missing from the catalog
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > openrouter (reported via /models) > is unreachable when the request throws
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > openrouter (reported via /models) > reports supported when the catalog lists image input
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > openrouter (reported via /models) > reports unsupported when the model has no image modality
+pro/ocr-vision-detect.test.ts :: detectVisionCapability > returns none for Anthropic without any network call
+src/attachment-writer.test.ts :: attachmentPath > normalizes a trailing slash on the folder
+src/attachment-writer.test.ts :: normalizeAttachmentsFolder > falls back to the default for empty or slash-only input
+src/attachment-writer.test.ts :: normalizeAttachmentsFolder > falls back to the default when a segment could escape the vault
+src/attachment-writer.test.ts :: normalizeAttachmentsFolder > keeps a nested folder path intact
+src/attachment-writer.test.ts :: normalizeAttachmentsFolder > trims whitespace and surrounding slashes
+src/attachment-writer.test.ts :: writeAttachment > ensures the folder exists, then writes the PDF bytes to the computed path
+src/auto-sync.test.ts :: isIntervalSyncDue > is due at exactly the interval boundary
+src/auto-sync.test.ts :: isIntervalSyncDue > is due when at least the interval has elapsed
+src/auto-sync.test.ts :: isIntervalSyncDue > is due when the stored timestamp is unparseable
+src/auto-sync.test.ts :: isIntervalSyncDue > is due when there is no recorded last sync
+src/auto-sync.test.ts :: isIntervalSyncDue > is not due when less than the interval has elapsed
+src/auto-sync.test.ts :: isMeteredProvider > is false for Apple Vision
+src/auto-sync.test.ts :: isMeteredProvider > is false for a backend this build does not have
+src/chapter-names.test.ts :: chapterName > completes the heading the render cut short
+src/chapter-names.test.ts :: chapterName > has nothing to say about a heading that is empty
+src/chapter-names.test.ts :: chapterName > keeps a heading that names no chapter in particular
+src/chapter-names.test.ts :: chapterName > keeps a heading the navigation does not name at all
+src/chapter-names.test.ts :: chapterName > keeps every heading when the book has no navigation
+src/chapter-names.test.ts :: chapterName > reads the same heading through the punctuation a layout engine changed
+src/chapter-names.test.ts :: chapterName > recognises a heading the conversion to a PDF damaged
+src/chapter-names.test.ts :: chapterName > still reads a damaged numeral as the chapter it fits best
+src/chapter-names.test.ts :: chapterName > tells the chapter apart from the one whose number merely starts the same
+src/diagnostics.test.ts :: buildDiagnostics > carries every fact a bug report otherwise has to be asked for
+src/diagnostics.test.ts :: buildDiagnostics > includes the raw last error, which is often the whole diagnosis
+src/diagnostics.test.ts :: buildDiagnostics > says Vision has not run here rather than printing a null revision
+src/diagnostics.test.ts :: buildDiagnostics > says so plainly when there is nothing to report, rather than printing null
+src/digest-anchoring.test.ts :: resolveAnchor cascade > drops a highlight just past the distance threshold
+src/digest-anchoring.test.ts :: resolveAnchor cascade > falls back to the page when there is nothing to anchor to
+src/digest-anchoring.test.ts :: resolveAnchor cascade > ignores the horizontal distance of a heading: only its y decides
+src/digest-anchoring.test.ts :: resolveAnchor cascade > prefers a heading over a line that sits closer
+src/digest-anchoring.test.ts :: resolveAnchor cascade > prefers a highlight over a line that sits closer
+src/digest-anchoring.test.ts :: resolveAnchor cascade > scores a highlight the cluster overlaps as zero distance on that axis
+src/digest-anchoring.test.ts :: resolveAnchor cascade > takes a highlight exactly at the distance threshold
+src/digest-anchoring.test.ts :: resolveAnchor cascade > takes the nearest line when neither a heading nor a highlight qualifies
+src/digest-anchoring.test.ts :: resolveAnchor on the calibration page > anchors 'Basic Rule ①'
+src/digest-anchoring.test.ts :: resolveAnchor on the calibration page > anchors '→ Claude validate Examples'
+src/digest-anchoring.test.ts :: resolveAnchor on the calibration page > anchors '②'
+src/digest-anchoring.test.ts :: resolveAnchor on the calibration page > anchors '③'
+src/digest-anchoring.test.ts :: resolveAnchor on the calibration page > anchors '④ →Widerspruch zum Artikel allg. PE'
+src/digest-anchoring.test.ts :: resolveAnchor on the calibration page > keeps the heading tolerance at exactly one line height: at 1.5 the fourth note would grab the heading
+src/digest-anchoring.test.ts :: resolveAnchor tie-breaking > gives two equally distant headings to the earlier one
+src/digest-anchoring.test.ts :: resolveAnchor tie-breaking > gives two equally distant highlights to the earlier one
+src/digest-anchoring.test.ts :: resolveAnchor tie-breaking > gives two equally distant lines to the earlier one
+src/digest-builder.test.ts :: digestId > differs per prefix and per annotation
+src/digest-builder.test.ts :: digestId > is `<prefix>-` plus six hex chars
+src/digest-builder.test.ts :: digestId > is stable for the same page and CRDT id — the whole point of F15
+src/digest-builder.test.ts :: digestId > separates page and CRDT id, so two pages' annotations cannot collide by concatenation
+src/digest-builder.test.ts :: renderDigest > carries a section across pages rather than heading it again
+src/digest-builder.test.ts :: renderDigest > emits a section heading once, where the section changes
+src/digest-builder.test.ts :: renderDigest > groups entries by section rather than by position, so a heading-anchored note lands under its section heading
+src/digest-builder.test.ts :: renderDigest > heads an entry with a section with that section, and ends the entry with its page link
+src/digest-builder.test.ts :: renderDigest > heads an entry without a section with its page, and leaves that entry without a locator
+src/digest-builder.test.ts :: renderDigest > heads every page of a document without sections, since each heading names its own page
+src/digest-builder.test.ts :: renderDigest > is a pure function of its input — two runs are byte-identical (F16)
+src/digest-builder.test.ts :: renderDigest > renders the fixture page exactly as the signed-off format prescribes
+src/digest-builder.test.ts :: renderDigest > returns nothing when there is nothing to show
+src/digest-builder.test.ts :: renderDigest — highlight quotes > bridges two runs parted by nothing but whitespace
+src/digest-builder.test.ts :: renderDigest — highlight quotes > counts the coverage over the resolved ranges, so an adjusted selection cannot over-count
+src/digest-builder.test.ts :: renderDigest — highlight quotes > does not render the marker color (F9)
+src/digest-builder.test.ts :: renderDigest — highlight quotes > drops the marks from a quote that is almost entirely marked
+src/digest-builder.test.ts :: renderDigest — highlight quotes > escapes a leading `>`, which would open a blockquote instead of printing the character
+src/digest-builder.test.ts :: renderDigest — highlight quotes > escapes an ampersand, which would otherwise reach the reader as a decoded entity
+src/digest-builder.test.ts :: renderDigest — highlight quotes > escapes the angle brackets a quoted passage carries, so an XML tag cannot open raw HTML
+src/digest-builder.test.ts :: renderDigest — highlight quotes > falls back to the plain sentence when the run is not in the sentence at all
+src/digest-builder.test.ts :: renderDigest — highlight quotes > joins two runs that merely touch, so no empty `==...==` pair is emitted
+src/digest-builder.test.ts :: renderDigest — highlight quotes > keeps real unmarked words outside the marks
+src/digest-builder.test.ts :: renderDigest — highlight quotes > keeps the marks where a quarter of the quote stays unmarked
+src/digest-builder.test.ts :: renderDigest — highlight quotes > leaves the digest's own `==` markers alone while escaping the text around them
+src/digest-builder.test.ts :: renderDigest — highlight quotes > marks a repeated run once
+src/digest-builder.test.ts :: renderDigest — highlight quotes > marks each of several disjoint runs
+src/digest-builder.test.ts :: renderDigest — highlight quotes > marks the first occurrence of the highlighted run
+src/digest-builder.test.ts :: renderDigest — highlight quotes > marks the union of two overlapping runs once rather than twice
+src/digest-builder.test.ts :: renderDigest — highlight quotes > prints a quote of any length whole
+src/digest-builder.test.ts :: renderDigest — highlight quotes > puts a highlight's block id on a line of its own, directly under the quote
+src/digest-builder.test.ts :: renderDigest — highlight quotes > quotes the sentence plain when no highlighted run is known
+src/digest-builder.test.ts :: renderDigest — highlight quotes > skips a run the sentence does not contain without losing the others
+src/digest-builder.test.ts :: renderDigest — note anchors and regions > leaves a note's title empty wherever the layout already shows its anchor
+src/digest-builder.test.ts :: renderDigest — note anchors and regions > leaves the block off entirely when there is no region
+src/digest-builder.test.ts :: renderDigest — note anchors and regions > prints a highlight-anchored note right below that highlight
+src/digest-builder.test.ts :: renderDigest — note anchors and regions > puts the region block under the text, with the block id still on the last text line
+src/digest-builder.test.ts :: renderDigest — note anchors and regions > quotes the first words of the nearest line for a line anchor
+src/digest-builder.test.ts :: renderDigest — note anchors and regions > rounds the rectangle to whole points
+src/digest-builder.test.ts :: renderDigest — note anchors and regions > says so in words when nothing was transcribed, rather than standing empty
+src/digest-pipeline.test.ts :: buildDigest determinism > renders byte-identical markdown twice
+src/digest-pipeline.test.ts :: buildDigest margin blocks > carries one region that covers the whole block
+src/digest-pipeline.test.ts :: buildDigest margin blocks > leaves the lines apart on a page whose text could not be read
+src/digest-pipeline.test.ts :: buildDigest margin blocks > prints three lines written down the margin as one entry, transcribed once
+src/digest-pipeline.test.ts :: buildDigest merges highlights that share a sentence > keeps the id of the topmost contributing highlight and its position
+src/digest-pipeline.test.ts :: buildDigest merges highlights that share a sentence > leaves highlights on different sentences alone
+src/digest-pipeline.test.ts :: buildDigest merges highlights that share a sentence > prints one quote carrying every run when two highlights cover the same sentence
+src/digest-pipeline.test.ts :: buildDigest merges highlights that share a sentence > re-points a note anchored to a merged-away highlight at the surviving quote
+src/digest-pipeline.test.ts :: buildDigest note regions > carries the region under a healthy transcription too
+src/digest-pipeline.test.ts :: buildDigest note regions > leaves the block off a page whose text could not be read
+src/digest-pipeline.test.ts :: buildDigest note regions > measures the rectangle from the page top
+src/digest-pipeline.test.ts :: buildDigest note regions > measures the rectangle where the renderer drew the ink, not where the source page had it
+src/digest-pipeline.test.ts :: buildDigest note regions > names the page of the embed, which is the page its link points at
+src/digest-pipeline.test.ts :: buildDigest note regions > says in words that nothing was transcribed, instead of leaving the entry empty
+src/digest-pipeline.test.ts :: buildDigest on a page added on the device > carries no region for it: there is no source page to draw its ink out of
+src/digest-pipeline.test.ts :: buildDigest on a page added on the device > does not name itself after the source page whose number it happens to sit at
+src/digest-pipeline.test.ts :: buildDigest on a page added on the device > does not report the PDF's missing text for it, which is neither missing nor a failure
+src/digest-pipeline.test.ts :: buildDigest on a page added on the device > drops it entirely with handwritten notes off, like every other handwriting on the page
+src/digest-pipeline.test.ts :: buildDigest on a page added on the device > gives it its own heading rather than the last section of a document it is not part of
+src/digest-pipeline.test.ts :: buildDigest on a page added on the device > transcribes the whole page as one entry instead of one note per line
+src/digest-pipeline.test.ts :: buildDigest on pen marks > does not take the fixture page's own handwriting for marks
+src/digest-pipeline.test.ts :: buildDigest on pen marks > keeps the mark with handwritten notes off: its text comes from the PDF, not from the reader's hand
+src/digest-pipeline.test.ts :: buildDigest on pen marks > keeps the marker highlight's id when a mark lands on a sentence that already had one
+src/digest-pipeline.test.ts :: buildDigest on pen marks > leaves the mark a note when the page has no text layer, since nothing can be resolved there
+src/digest-pipeline.test.ts :: buildDigest on pen marks > makes no OCR call for it -- a line has no transcription to get wrong
+src/digest-pipeline.test.ts :: buildDigest on pen marks > quotes the text an underline sits under instead of transcribing the line itself
+src/digest-pipeline.test.ts :: buildDigest page selection > returns an empty digest for a document with no annotations at all
+src/digest-pipeline.test.ts :: buildDigest page selection > skips a page with neither a highlight nor a margin note
+src/digest-pipeline.test.ts :: buildDigest resilience > keeps every margin note when OCR is off or unavailable, leaving the highlights alone
+src/digest-pipeline.test.ts :: buildDigest resilience > reports a text layer that could not be opened at all
+src/digest-pipeline.test.ts :: buildDigest resilience > stays quiet about a page with no text layer and nothing marked on it
+src/digest-pipeline.test.ts :: buildDigest resilience > turns a throwing OCR backend into warnings and entries rather than an exception
+src/digest-pipeline.test.ts :: buildDigest resilience > warns when a page carries no text layer of its own
+src/digest-pipeline.test.ts :: buildDigest sections across pages > carries the section still open from the page before to a page whose annotation sits above its own first heading
+src/digest-pipeline.test.ts :: buildDigest sections across pages > orders a heading without a y at the top of its page
+src/digest-pipeline.test.ts :: buildDigest sections across pages > renders no section at all for a document without headings
+src/digest-pipeline.test.ts :: buildDigest sections across pages > takes a heading on the entry's own page when the entry sits below it
+src/digest-pipeline.test.ts :: buildDigest sections across pages > takes the section from reading order, not from what sits higher on a two-column page
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > does not fetch the book for a page with no heading and no quote on it
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > keeps a quote it cannot find in the book, and stays quiet about it
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > keeps the device's text, and says so once, when the book cannot be read
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > names a section the way the book's navigation names it
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > re-spells a damaged quote in the book's own words, and keeps the run marked
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > reads the book once, for the headings and the quotes together
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > derives the line height from the lower quartile of the baseline gaps, not from their mode
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > gives every note the place its handwriting sits, whatever the real Vision output was
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > makes no OCR call at all when margin notes are off
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > orders the page's entries by section and then top-down
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > quotes the surrounding sentence and marks the highlighted run
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > renders no note at all when margin notes are off
+src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > resolves the five margin notes to the anchors measured on the real page
+src/digest-pipeline.test.ts :: buildDigest without a text layer > labels the page from its source index and says once that the text could not be read
+src/digest-pipeline.test.ts :: buildDigest without a text layer > names a pen mark it could not match to any text, instead of dropping it in silence
+src/digest-pipeline.test.ts :: buildDigest without a text layer > quotes every highlight from the .rm text and renders every note as an entry of its own
+src/digest-pipeline.test.ts :: buildDigest without a text layer > reports one page at a time, however many clusters it transcribed
+src/digest-pipeline.test.ts :: buildDigest without a text layer > says nothing about ordinary handwriting, which is the setting working as asked
+src/digest-pipeline.test.ts :: typed text as the document > anchors a margin note under the typed heading it sits level with
+src/digest-pipeline.test.ts :: typed text as the document > places a note's region on the page the renderer actually writes, which grows with the text
+src/digest-pipeline.test.ts :: typed text as the document > quotes the typed text a highlight covers, out of the scene and not out of a PDF
+src/digest-pipeline.test.ts :: typed text as the document > says nothing about a PDF's text layer, because there is no PDF
+src/epub-text.test.ts :: readEpubBook > decodes the entities a book's punctuation is written with
+src/epub-text.test.ts :: readEpubBook > keeps the word boundary an inline tag stands for, and drops script and style whole
+src/epub-text.test.ts :: readEpubBook > reads the prose out of every XHTML document, stored or deflated
+src/epub-text.test.ts :: readEpubBook > returns null for an archive with no XHTML in it
+src/epub-text.test.ts :: readEpubBook > returns null for bytes that are not a ZIP
+src/epub-text.test.ts :: readEpubBook > the navigation > reads an EPUB 2 book's chapter names off its .ncx
+src/epub-text.test.ts :: readEpubBook > the navigation > reads an EPUB 3 book's chapter names off its navigation document
+src/epub-text.test.ts :: readEpubBook > the navigation > reports no chapters for a book that carries no navigation
+src/epub-text.test.ts :: readEpubBook > the navigation > takes only the table of contents, not every list of links in the book
+src/explain-error.test.ts :: explainError > blames the one-time code when connecting, whatever the cloud said
+src/explain-error.test.ts :: explainError > explains an unexpected answer as a possible service change
+src/explain-error.test.ts :: explainError > names a network failure first, in either context
+src/explain-error.test.ts :: explainError > never leaks the raw error, including from a non-Error throw
+src/explain-error.test.ts :: explainError > points a rejected token at reconnecting
+src/ink-marks.test.ts :: findInkMarks > anchors the mark to the text's box, not to the ink's
+src/ink-marks.test.ts :: findInkMarks > ignores a stroke with no points at all
+src/ink-marks.test.ts :: findInkMarks > keeps the handwriting in input order, so the clustering sees what it always did
+src/ink-marks.test.ts :: findInkMarks > leaves a flat stroke too short to be an underline as handwriting
+src/ink-marks.test.ts :: findInkMarks > leaves a long flat stroke with no text line above it as handwriting
+src/ink-marks.test.ts :: findInkMarks > leaves a small closed loop -- an o, a circled digit -- as handwriting
+src/ink-marks.test.ts :: findInkMarks > leaves a strikethrough as handwriting -- no fixture has one, so no rule claims it
+src/ink-marks.test.ts :: findInkMarks > leaves a wide loop that encloses no text as handwriting
+src/ink-marks.test.ts :: findInkMarks > leaves a wide open stroke over the text as handwriting
+src/ink-marks.test.ts :: findInkMarks > reads a circle as the words inside it
+src/ink-marks.test.ts :: findInkMarks > reads an underline as the words above it
+src/ink-marks.test.ts :: findMarkerMarks > carries the marker's own colour, which a pen mark has none of
+src/ink-marks.test.ts :: findMarkerMarks > ignores a swipe that lies on no line, which is already drawn on the page in its own colour
+src/ink-marks.test.ts :: findMarkerMarks > ignores the dot a gesture leaves behind, which is what the device writes beside a real highlight
+src/ink-marks.test.ts :: findMarkerMarks > reads a swipe as the words it lies on
+src/ink-marks.test.ts :: findMarkerMarks > reads a swipe tall enough to cover two lines as both of them
+src/ink-marks.test.ts :: readsAsMark > does not hold for a stroke too short to be a mark at all -- that is just handwriting
+src/ink-marks.test.ts :: readsAsMark > does not hold for a wide open stroke, which is a word rather than a mark
+src/ink-marks.test.ts :: readsAsMark > holds for a strikethrough, which is not a mark but was aimed at the line
+src/ink-marks.test.ts :: readsAsMark > holds for a wide loop that encloses no text
+src/ink-marks.test.ts :: readsAsMark > holds for an underline drawn too far below its line
+src/licence-check.test.ts :: activateKey > never loses a key pasted with no connection
+src/licence-check.test.ts :: activateKey > reports a full licence as full
+src/licence-check.test.ts :: activateKey > reports an unknown key without recording a revocation
+src/licence-check.test.ts :: checkLicence > activates a key that was saved while offline
+src/licence-check.test.ts :: checkLicence > announces an ended trial once, without any call at all
+src/licence-check.test.ts :: checkLicence > arms the notice again for a licence that comes back
+src/licence-check.test.ts :: checkLicence > asks nothing of someone who never bought
+src/licence-check.test.ts :: checkLicence > asks nothing while the last verdict is still fresh
+src/licence-check.test.ts :: checkLicence > keeps Pro when the call fails, and says nothing
+src/licence-check.test.ts :: checkLicence > locks on an explicit revocation and announces it once
+src/licence-check.test.ts :: checkLicence > re-activates once when the activation is gone, without locking
+src/licence-check.test.ts :: checkLicence > re-checks a due licence and clocks it to zero
+src/licence-check.test.ts :: checkLicence > says what happens on a machine with nothing to fall back to
+src/licence-check.test.ts :: deactivateHere > calls nothing when there is nothing to free
+src/licence-check.test.ts :: deactivateHere > does not throw when the slot cannot be freed
+src/licence-check.test.ts :: deactivateHere > frees the slot at Polar
+src/licence-client.test.ts :: activate > calls a full licence full, and a withdrawn one withdrawn
+src/licence-client.test.ts :: activate > falls back to the limit message when the body cannot be read
+src/licence-client.test.ts :: activate > maps 404 to an unknown key
+src/licence-client.test.ts :: activate > refuses an answer that carries no id
+src/licence-client.test.ts :: activate > returns the activation id Polar issued
+src/licence-client.test.ts :: deactivate > names the activation to free
+src/licence-client.test.ts :: validate > asks nothing further when the answer is yes
+src/licence-client.test.ts :: validate > calls the key dead only when it fails on its own too
+src/licence-client.test.ts :: validate > falls back to unknown-key when the body cannot be read
+src/licence-client.test.ts :: validate > re-asks without the activation, and treats an answer as a freed slot
+src/licence-client.test.ts :: validate > sends the key, the activation and the public organization id
+src/licence-client.test.ts :: validate > tells a withdrawn key apart from one that never existed
+src/licence-client.test.ts :: validate > treats a server fault as no answer, not as a verdict
+src/licence-messages.test.ts :: dates and counting > counts trial days down to zero and no further
+src/licence-messages.test.ts :: dates and counting > writes a date that means the same day on every continent
+src/licence-messages.test.ts :: licenceStatusText > identifies an active licence by its key suffix, never by an email address
+src/licence-messages.test.ts :: licenceStatusText > names the price to someone who has never bought
+src/licence-messages.test.ts :: licenceStatusText > promises a saved-but-unconfirmed key that it will go out
+src/licence-messages.test.ts :: licenceStatusText > says an unconfirmed licence still works
+src/licence-messages.test.ts :: licenceStatusText > says which of the two is unlocking Pro when both are present
+src/licence-messages.test.ts :: licenceStatusText > tells a refunded user what still works, in the same breath
+src/licence-messages.test.ts :: licenceStatusText > tells an ended trial that nothing was touched
+src/licence-messages.test.ts :: the messages that appear once > is honest when there is nothing to fall back to
+src/licence-messages.test.ts :: the messages that appear once > names the backend transcription fell back to
+src/licence-messages.test.ts :: the shipped text this edits > keeps the tag cap's promise that an existing mapping stays
+src/licence-messages.test.ts :: the shipped text this edits > states the money-back promise and the device count together
+src/licence-state.test.ts :: applyOutcome > changes nothing at all when there was no answer
+src/licence-state.test.ts :: applyOutcome > clocks a valid answer to zero and clears an earlier revocation
+src/licence-state.test.ts :: applyOutcome > re-activates silently when the activation is gone, without locking
+src/licence-state.test.ts :: applyOutcome > treats a key Polar no longer knows as withdrawn
+src/licence-state.test.ts :: entitlementOf > does not unlock Pro on a key that has never been confirmed
+src/licence-state.test.ts :: entitlementOf > gives a confirmed key Pro
+src/licence-state.test.ts :: entitlementOf > keeps Pro after the carry window, marking it stale rather than locking
+src/licence-state.test.ts :: entitlementOf > locks only on an explicit revocation
+src/licence-state.test.ts :: entitlementOf > prefers a bought licence over an expired trial
+src/licence-state.test.ts :: entitlementOf > runs the trial for its days and then ends it
+src/licence-state.test.ts :: entitlementOf > treats an unparsable timestamp as absent instead of throwing
+src/licence-state.test.ts :: nextLicenceCall > activates a saved key that never got out
+src/licence-state.test.ts :: nextLicenceCall > asks for nothing without a key, and nothing once revoked
+src/licence-state.test.ts :: nextLicenceCall > re-checks once the interval has passed since the last verdict
+src/licence-state.test.ts :: nextLicenceCall > remembers a fresh verdict instead of calling again
+src/licence-state.test.ts :: the stored fields > does not hand back the trial when a licence is removed
+src/licence-state.test.ts :: the stored fields > keeps a pasted key even before it can be activated
+src/licence-state.test.ts :: the stored fields > records an activation as a confirmation too
+src/licence-state.test.ts :: the stored fields > starts the trial once and never again
+src/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > addresses a single page image
+src/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > is one string, not a template
+src/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > keeps the clauses the measurement showed were doing the work
+src/llm-transcript.test.ts :: sanitizeTranscript > is tight enough to miss a near-match
+src/llm-transcript.test.ts :: sanitizeTranscript > leaves a descriptive preamble alone
+src/llm-transcript.test.ts :: sanitizeTranscript > never touches a real code block the user wrote on the page
+src/llm-transcript.test.ts :: sanitizeTranscript > strips a tight preamble line
+src/llm-transcript.test.ts :: sanitizeTranscript > survives an empty response
+src/llm-transcript.test.ts :: sanitizeTranscript > unwraps an outer markdown fence
+src/llm-transcript.test.ts :: typedText > returns the typed text of each page
+src/llm-transcript.test.ts :: typedText > skips pages with no typed text
+src/local-model-card.test.ts :: consent (§7.2) > asks for background consent here, where the estimate is already on screen
+src/local-model-card.test.ts :: consent (§7.2) > names both downloads, the engine as its own cost
+src/local-model-card.test.ts :: consent (§7.2) > says the download is checked before anything runs
+src/local-model-card.test.ts :: consent (§7.2) > says the model outlives the plugin, and how to remove it
+src/local-model-card.test.ts :: consent (§7.2) > states privacy, licence and memory
+src/local-model-card.test.ts :: deleteConfirmation > names the bytes freed, the fallback and what survives
+src/local-model-card.test.ts :: every state > draws a bar exactly where there is progress to draw
+src/local-model-card.test.ts :: every state > never mentions an antivirus exclusion anywhere
+src/local-model-card.test.ts :: every state > offers at most one call to action
+src/local-model-card.test.ts :: every state > says something, and never leaves a dead end with no explanation
+src/local-model-card.test.ts :: the quality line (§7.4) > compares the two backends rather than warning about one
+src/local-model-card.test.ts :: the quality line (§7.4) > is in full on the consent card, where the comparison decides the answer
+src/local-model-card.test.ts :: the quality line (§7.4) > keeps only the check-it sentence once the model is ready
+src/local-model-card.test.ts :: the speed line (§7.3) > never claims a Windows figure was measured
+src/local-model-card.test.ts :: the speed line (§7.3) > quotes the derived figure before this machine has run a page
+src/local-model-card.test.ts :: the speed line (§7.3) > quotes this machine's own once it has
+src/local-model-card.test.ts :: the states that carry a decided sentence > names the shortfall when the disk is full
+src/local-model-card.test.ts :: the states that carry a decided sentence > names what discarding a paused download throws away, on the button
+src/local-model-card.test.ts :: the states that carry a decided sentence > says nothing was run when verification failed
+src/local-model-card.test.ts :: the states that carry a decided sentence > says syncing keeps working during the download
+src/local-model-card.test.ts :: the states that carry a decided sentence > shows the other vault's progress rather than a spinner
+src/local-model-card.test.ts :: the states that carry a decided sentence > tells a user whose engine was deleted that the model survived
+src/local-model-card.test.ts :: the states that carry a decided sentence > warns that an update does not redo existing transcripts
+src/local-model-download.test.ts :: formatBytes > keeps one decimal for gigabytes and none for megabytes
+src/local-model-download.test.ts :: formatBytes > reads the way the consent copy quotes it
+src/local-model-download.test.ts :: free space > asks for every pinned byte plus room to unpack the runtime
+src/local-model-download.test.ts :: free space > names the shortfall in the message
+src/local-model-download.test.ts :: free space > never discounts an already-installed model
+src/local-model-download.test.ts :: free space > reports exactly how much is missing
+src/local-model-download.test.ts :: free space > reports no shortfall when there is room
+src/local-model-download.test.ts :: planCleanup > leaves a superseded directory that is neither alone
+src/local-model-download.test.ts :: planCleanup > leaves the pinned directory alone whatever state it is in
+src/local-model-download.test.ts :: planCleanup > never silently deletes a complete model of a superseded version
+src/local-model-download.test.ts :: planCleanup > offers rather than deletes when a superseded directory is both complete and resuming
+src/local-model-download.test.ts :: planCleanup > silently deletes a partial of a version that is no longer pinned
+src/local-model-download.test.ts :: planNetworkRetry > backs off further each time, so five attempts are not five hammer blows
+src/local-model-download.test.ts :: planNetworkRetry > gives up only after a run of attempts that gained nothing
+src/local-model-download.test.ts :: planNetworkRetry > spends its whole budget in well under a minute
+src/local-model-download.test.ts :: planNetworkRetry > tries again after a drop, rather than making the user press Resume
+src/local-model-download.test.ts :: planRangeResponse > appends when the server honoured the range
+src/local-model-download.test.ts :: planRangeResponse > refuses any other status
+src/local-model-download.test.ts :: planRangeResponse > restarts at zero when the server ignored the range
+src/local-model-download.test.ts :: planRangeResponse > treats a plain 200 on a fresh download as the normal case
+src/local-model-download.test.ts :: planResume > reports a part that already holds the whole file as complete
+src/local-model-download.test.ts :: planResume > resumes from the byte after the last one written
+src/local-model-download.test.ts :: planResume > starts from zero when nothing is on disk
+src/local-model-download.test.ts :: planResume > throws away a part that is longer than the pinned size
+src/local-model-download.test.ts :: the pinned table > pins a full-length SHA-256 and an absolute URL for every artefact
+src/local-model-download.test.ts :: the pinned table > resolves the model at a commit revision rather than a branch
+src/local-model-download.test.ts :: the pinned table > ships one Windows artefact, arm64 and CPU
+src/local-model-download.test.ts :: the pinned table > totals the 5.5 GB the consent copy quotes
+src/local-model-download.test.ts :: verificationOutcome > accepts a file whose hash matches
+src/local-model-download.test.ts :: verificationOutcome > gives up permanently after the second
+src/local-model-download.test.ts :: verificationOutcome > re-downloads once after the first mismatch
+src/local-model-download.test.ts :: verificationOutcome > still accepts a match after a previous mismatch
+src/local-model-download.test.ts :: withNetworkRetry > carries a download through a drop instead of surfacing it
+src/local-model-download.test.ts :: withNetworkRetry > counts a run of fruitless attempts even when earlier ones made progress
+src/local-model-download.test.ts :: withNetworkRetry > does not start another attempt when the cancel lands during the backoff
+src/local-model-download.test.ts :: withNetworkRetry > gives up after a run of attempts that moved nothing
+src/local-model-download.test.ts :: withNetworkRetry > never runs out of budget while ground is being gained
+src/local-model-download.test.ts :: withNetworkRetry > returns without sleeping when the first attempt works
+src/local-model-download.test.ts :: withNetworkRetry > rewinds the caller's byte count once per failed attempt
+src/local-model-download.test.ts :: withNetworkRetry > stops the moment the user cancels, without waiting out a backoff
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > excludes Intel Macs
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > excludes Windows x64 however much memory it has
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > excludes a 16 GB Mac
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > excludes a 16 GB Windows ARM PC, which needs more rather than less
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > excludes every other platform
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > offers it on Windows on ARM at or above 24 GB
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > offers the backend on Apple Silicon at or above 18 GB
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > passes a machine that reports slightly under its advertised size
+src/local-model-gate.test.ts :: the registration predicate (§4.1) > reports architecture rather than memory when both would fail
+src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > is three strings and no more
+src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > keeps the lifecycle line to a pointer
+src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > names the machine's own figure beside the requirement
+src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > uses one architecture line for Intel Macs and Windows x64 alike
+src/local-model-settings.test.ts :: estimateLine > drops the caveat once this machine's own figure stands
+src/local-model-settings.test.ts :: estimateLine > marks the Windows figure as never measured on Windows hardware
+src/local-model-settings.test.ts :: estimateLine > quotes the derived macOS figure before any page has run
+src/local-model-settings.test.ts :: estimateLine > replaces the derived figure with this machine's own once it has one
+src/local-model-settings.test.ts :: estimateLine > warns that the pages right after a download are far slower
+src/local-model-settings.test.ts :: humanDuration > rounds to a unit somebody can act on
+src/local-model-settings.test.ts :: reTranscribeCaveat > names the total time for the notes actually being re-transcribed
+src/local-model-settings.test.ts :: reTranscribeCaveat > says nothing for no notes at all
+src/local-model-settings.test.ts :: reTranscribeCaveat > says nothing until this machine has been measured
+src/local-model-settings.test.ts :: readLocalModelSettings > defaults an empty blob to no consent and no measurements
+src/local-model-settings.test.ts :: readLocalModelSettings > survives a blob holding the wrong shapes
+src/local-model-settings.test.ts :: recordPageDuration > ignores a nonsense duration rather than poisoning the window
+src/local-model-settings.test.ts :: recordPageDuration > keeps only the most recent window
+src/local-model-settings.test.ts :: recordPageDuration > writes through to the live blob so the next save persists it
+src/local-model-settings.test.ts :: setBackgroundConsent > writes through to the live blob
+src/local-model-settings.test.ts :: typicalPageSeconds > is not moved by the slow pages of the first pass after a download
+src/local-model-settings.test.ts :: typicalPageSeconds > quotes this machine's figure once there are
+src/local-model-settings.test.ts :: typicalPageSeconds > says nothing until there are enough pages
+src/local-model-store.test.ts :: deriveLocalModelState > is absent with nothing on disk
+src/local-model-store.test.ts :: deriveLocalModelState > is corrupt once two verification passes have failed, whatever else is on disk
+src/local-model-store.test.ts :: deriveLocalModelState > is downloading while a part file and a fresh lock are both there
+src/local-model-store.test.ts :: deriveLocalModelState > is partial when the part file outlived its lock
+src/local-model-store.test.ts :: deriveLocalModelState > is ready with the marker, the right sizes and the engine present
+src/local-model-store.test.ts :: deriveLocalModelState > is removed when the model survived but the engine was taken
+src/local-model-store.test.ts :: deriveLocalModelState > is verifying once the files are complete but nothing has confirmed them
+src/local-model-store.test.ts :: deriveLocalModelState > refuses a verified model whose file has been truncated
+src/local-model-store.test.ts :: deriveLocalModelState > reports an incomplete pair as absent rather than half-ready
+src/local-model-store.test.ts :: deriveLocalModelState > stays corrupt after a restart, with no lock and no part file left
+src/local-model-store.test.ts :: isLockFresh > abandons one older than the stale bound, so a crashed download does not block the card forever
+src/local-model-store.test.ts :: isLockFresh > holds a lock stamped in the future rather than stealing the directory
+src/local-model-store.test.ts :: isLockFresh > holds a lock that was stamped a heartbeat ago
+src/local-model-store.test.ts :: isLockFresh > treats no lock as free
+src/local-model-store.test.ts :: isTranscriptionInProgress > blocks a second run while a transcription holds the lock
+src/local-model-store.test.ts :: isTranscriptionInProgress > ignores a lock nobody is renewing any more
+src/local-model-store.test.ts :: isTranscriptionInProgress > is not busy when there is no lock at all
+src/local-model-store.test.ts :: isTranscriptionInProgress > lets a sync run while a download holds it
+src/local-model-store.test.ts :: localModelPaths > carries the version in both artefact directory names
+src/local-model-store.test.ts :: localModelPaths > falls back to the standard location when LOCALAPPDATA is missing or empty
+src/local-model-store.test.ts :: localModelPaths > keeps every file it names inside the model directory
+src/local-model-store.test.ts :: localModelPaths > names the platform's own executable
+src/local-model-store.test.ts :: localModelPaths > puts the model under Application Support on macOS, never under Caches
+src/local-model-store.test.ts :: localModelPaths > uses LOCALAPPDATA on Windows
+src/local-model-store.test.ts :: the lock file's body > carries a timestamp and nothing else, deliberately no PID
+src/local-model-store.test.ts :: the lock file's body > reads anything else as no lock at all
+src/local-model-store.test.ts :: the lock file's body > round-trips a timestamp
+src/local-ocr-backend.test.ts :: LocalOcrBackend > joins each page's transcript with a blank line
+src/local-ocr-backend.test.ts :: LocalOcrBackend > never reports a confidence
+src/local-ocr-backend.test.ts :: LocalOcrBackend > runs one page at a time
+src/local-ocr-backend.test.ts :: LocalOcrBackend > skips an empty page set without spawning anything
+src/local-ocr-backend.test.ts :: classifyRun > keeps a non-zero exit that still wrote something to case 2
+src/local-ocr-backend.test.ts :: classifyRun > reads a clean exit as the page's text
+src/local-ocr-backend.test.ts :: classifyRun > reads a timeout as one slow page, never as a broken runtime
+src/local-ocr-backend.test.ts :: classifyRun > reads a vanished executable as the removed engine, whatever the exit looked like
+src/local-ocr-backend.test.ts :: classifyRun > reads an immediate exit with nothing on stdout as a runtime that cannot run here
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > fails a unit where every page errored
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > keeps no text from a unit whose runtime died midway
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > keeps the good pages and reports the bad one
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > probes again on the next sync, because the adapter is built per run
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > reports every finished page, including one that failed
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > returns unavailable and stops spawning once the runtime is broken
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > skips a unit whose pages were simply blank
+src/local-ocr-backend.test.ts :: failure mapping (§8.2) > stops reporting pages once the runtime dies
+src/local-ocr-backend.test.ts :: timing > keeps the window bounded across many pages
+src/local-ocr-backend.test.ts :: timing > records each page's duration into the live settings blob
+src/local-ocr-backend.test.ts :: timing > times only the pages that produced something
+src/local-ocr-backend.test.ts :: typed text > appends the page's typed text to that page's transcript
+src/local-ocr-backend.test.ts :: typed text > keeps a page that holds only typed text
+src/localhost-register.test.ts :: create() > builds an adapter for a preset even with no settings stored
+src/localhost-register.test.ts :: create() > reports unavailable for a custom endpoint with no base URL, rather than falling back
+src/localhost-register.test.ts :: create() > transcribes nothing while the model field is empty, which is what a fresh install stores
+src/localhost-register.test.ts :: create() > uses the user's base URL over the preset when they set one
+src/localhost-register.test.ts :: the localhost backends' registration > costs no money and still asks before running in the background
+src/localhost-register.test.ts :: the localhost backends' registration > gives none of them a setup card, so none can be hidden from the dropdown
+src/localhost-register.test.ts :: the localhost backends' registration > registers all three, on every platform
+src/localhost-register.test.ts :: the localhost backends' registration > seeds no model, because none of these servers has been measured
+src/localhost-register.test.ts :: the localhost backends' registration > stores its background consent in its own settings blob, defaulting to off
+src/localhost-register.test.ts :: unreachableMessage > names the app for the two presets
+src/localhost-register.test.ts :: unreachableMessage > stays generic for a custom endpoint, and always names the address
+src/localhost-vision-detect.test.ts :: detectLocalhostVisionCapability > does not query for an empty model name
+src/localhost-vision-detect.test.ts :: detectLocalhostVisionCapability > falls back to the name heuristic when LM Studio is reachable but doesn't list the model
+src/localhost-vision-detect.test.ts :: detectLocalhostVisionCapability > reads LM Studio's model type off /api/v0/models
+src/localhost-vision-detect.test.ts :: detectLocalhostVisionCapability > reads Ollama's capabilities off the native /api/show surface
+src/localhost-vision-detect.test.ts :: detectLocalhostVisionCapability > says unreachable when nothing answers
+src/localhost-vision-detect.test.ts :: detectLocalhostVisionCapability > says unsupported when Ollama reports a text-only model
+src/localhost-vision-detect.test.ts :: detectLocalhostVisionCapability > uses the name heuristic for a custom endpoint, which has no flag to query
+src/margin-notes.test.ts :: clusterStrokes > a block written in the margin > does not merge lines that stand over the printed text
+src/margin-notes.test.ts :: clusterStrokes > a block written in the margin > is anchored on the smallest id in the block
+src/margin-notes.test.ts :: clusterStrokes > a block written in the margin > is one note
+src/margin-notes.test.ts :: clusterStrokes > a block written in the margin > keeps a line that follows too far below out of the block
+src/margin-notes.test.ts :: clusterStrokes > a block written in the margin > keeps two notes side by side in the margin apart
+src/margin-notes.test.ts :: clusterStrokes > a block written in the margin > leaves a tall mark out of the block it spans
+src/margin-notes.test.ts :: clusterStrokes > a block written in the margin > stays one line per note without a column, which is what a document with no text layer gets
+src/margin-notes.test.ts :: clusterStrokes > absorbs a speck into the line beside it instead of making it an entry
+src/margin-notes.test.ts :: clusterStrokes > anchors a cluster on its smallest stroke CRDT id, independent of parse order
+src/margin-notes.test.ts :: clusterStrokes > does not let a bracket taller than a line claim a note by overlap alone
+src/margin-notes.test.ts :: clusterStrokes > does not let a stroke overlapping only a fraction of a line height join across rows
+src/margin-notes.test.ts :: clusterStrokes > finds the fixture page's five margin notes, including the two that overlap in both axes
+src/margin-notes.test.ts :: clusterStrokes > ignores strokes that carry no points
+src/margin-notes.test.ts :: clusterStrokes > keeps a descender with the word beside it, which the center test alone misses
+src/margin-notes.test.ts :: clusterStrokes > keeps a tall stroke with the line it belongs to, since the vertical test reads centers not boxes
+src/margin-notes.test.ts :: clusterStrokes > keeps the host's own id when it absorbs a speck, so the note's block id does not move
+src/margin-notes.test.ts :: clusterStrokes > keeps two blocks a line apart separate
+src/margin-notes.test.ts :: clusterStrokes > leaves a speck with nothing near it as its own entry rather than sending it across the page
+src/margin-notes.test.ts :: clusterStrokes > merges two words that share a line
+src/margin-notes.test.ts :: clusterStrokes > orders clusters top-down, then left-to-right
+src/margin-notes.test.ts :: clusterStrokes > reads a row left-to-right even when its right-hand note starts slightly higher
+src/margin-notes.test.ts :: clusterStrokes > returns no clusters for no strokes
+src/margin-notes.test.ts :: clusterStrokes > settles chained merges: A links B, B links C, A alone is too far from C
+src/margin-notes.test.ts :: clusterStrokes > splits two notes that share a line band but sit far apart horizontally
+src/margin-notes.test.ts :: clusterStrokes > starts a new row once a note begins more than a line below the row's top
+src/note-builder.test.ts :: buildNoteContent > closes the managed region after the embed and transcript
+src/note-builder.test.ts :: buildNoteContent > does not put reMarkable tags under an Obsidian-native tags: key
+src/note-builder.test.ts :: buildNoteContent > ends a brand-new note at the fence, with nothing inviting the user to write below it
+src/note-builder.test.ts :: buildNoteContent > gives a brand-new note zero frontmatter — it starts straight at the ownership callout
+src/note-builder.test.ts :: buildNoteContent > heads the managed block with the ownership callout, above the embed
+src/note-builder.test.ts :: buildNoteContent > keeps a highlights section even when the transcript is empty (independent sections)
+src/note-builder.test.ts :: buildNoteContent > keeps the blank line between the fence and an existing free area stable across repeated re-syncs
+src/note-builder.test.ts :: buildNoteContent > leaves an already-synced note's old frontmatter untouched (migration: no strip, no rewrite)
+src/note-builder.test.ts :: buildNoteContent > omits the Highlights section entirely when there are no highlights
+src/note-builder.test.ts :: buildNoteContent > omits the Transcript section entirely when there is no transcript (backend off or nothing found)
+src/note-builder.test.ts :: buildNoteContent > points a page-level note's heading at the sole embedded page while labelling it with the notebook position
+src/note-builder.test.ts :: buildNoteContent > preserves the user's free area and an old note's frontmatter when a digest replaces the transcript
+src/note-builder.test.ts :: buildNoteContent > preserves the user's free-area content below the fence on re-write
+src/note-builder.test.ts :: buildNoteContent > puts the same callout on a digest note
+src/note-builder.test.ts :: buildNoteContent > renders a per-page heading above the transcript, linking into the embedded page
+src/note-builder.test.ts :: buildNoteContent > renders the digest below the embed, replacing both the Highlights and the Transcript section
+src/note-builder.test.ts :: buildNoteContent > replaces the managed block's OCR text on re-write, not append
+src/note-builder.test.ts :: deriveBaseName > appends the page index for a page-level note
+src/note-builder.test.ts :: deriveBaseName > sanitizes illegal characters in the notebook name
+src/note-builder.test.ts :: deriveBaseName > uses the notebook name alone for a notebook-level note
+src/note-builder.test.ts :: moveNote > doesn't treat the source file's own pre-move content as a collision when two tags share a folder
+src/note-builder.test.ts :: moveNote > moves a note to the vault root without a leading slash when the folder is '/'
+src/note-builder.test.ts :: moveNote > moves the file to the new folder via the store's move, then rewrites it with fresh fields
+src/note-builder.test.ts :: moveNote > preserves the free area across a move
+src/note-builder.test.ts :: moveNote > suffixes the target path instead of clobbering an unrelated note already there
+src/note-builder.test.ts :: renderTranscript > collapses a run of three or more blank pages, and keeps a pair spelled out
+src/note-builder.test.ts :: renderTranscript > falls back to the unlabelled text when there is no per-page information
+src/note-builder.test.ts :: renderTranscript > heads each page that produced text with a link into the embedded page
+src/note-builder.test.ts :: renderTranscript > is just the summary line when no page produced text
+src/note-builder.test.ts :: renderTranscript > keeps a failed page's heading and says so, and leaves it out of the summary line
+src/note-builder.test.ts :: renderTranscript > renders a single-page unit bare, with no heading
+src/note-builder.test.ts :: renderTranscript > says page, singular, for a single blank page
+src/note-builder.test.ts :: renderTranscript > skips pages with no text and lets the numbering jump
+src/note-builder.test.ts :: renderTranscript > survives the managed-block swap with every page form in it
+src/note-builder.test.ts :: sanitizeFilenamePart > leaves ordinary names untouched
+src/note-builder.test.ts :: sanitizeFilenamePart > replaces filesystem-illegal characters
+src/note-builder.test.ts :: sanitizeFilenamePart > trims very long names
+src/note-builder.test.ts :: updateTranscript > grows the Transcript section into a note written while transcription was off
+src/note-builder.test.ts :: updateTranscript > leaves a digest note alone — a digest is regenerated by a full sync, not by re-transcribe
+src/note-builder.test.ts :: updateTranscript > removes the whole Transcript section for an unavailable/blank result
+src/note-builder.test.ts :: updateTranscript > returns false and writes nothing when the note is gone
+src/note-builder.test.ts :: updateTranscript > returns false when the note has no managed transcript block
+src/note-builder.test.ts :: updateTranscript > rewrites only the transcript region, leaving the embed and the user's free area
+src/note-builder.test.ts :: updateTranscript > treats a `$` in the transcript literally, not as a replacement pattern
+src/note-builder.test.ts :: writeNote > escalates to a docId suffix when the tag suffix is also taken
+src/note-builder.test.ts :: writeNote > folds the tag into the filename on a same-page collision (different tag on the same page)
+src/note-builder.test.ts :: writeNote > overwrites in place at the given existingPath (re-sync), ignoring the derived name
+src/note-builder.test.ts :: writeNote > suffixes collisions at the vault root like any other folder
+src/note-builder.test.ts :: writeNote > suffixes rather than clobbering a file already at the derived path (new unit, no index row)
+src/note-builder.test.ts :: writeNote > writes a notebook-level note to <notebook>.md
+src/note-builder.test.ts :: writeNote > writes a page-level note to <notebook> — Page N.md
+src/note-builder.test.ts :: writeNote > writes to the vault root without a leading slash when the folder is '/'
+src/note-region.test.ts :: drawnBand > does not depend on where the ink sits across the page
+src/note-region.test.ts :: drawnBand > keeps the same air above and below however tall the note is
+src/note-region.test.ts :: drawnBand > shows ink that runs to the edge of the paper
+src/note-region.test.ts :: drawnBand > spans the page's width at the height of the ink
+src/note-region.test.ts :: drawnBand > stays inside the sheet
+src/note-region.test.ts :: liesOnPage > accepts ink on the page, and ink that hangs over its edge
+src/note-region.test.ts :: liesOnPage > refuses a rectangle that misses the page altogether
+src/note-region.test.ts :: parseRegionBlock > does not care about the order of the fields, or about blank lines around them
+src/note-region.test.ts :: parseRegionBlock > ignores a field it does not know
+src/note-region.test.ts :: parseRegionBlock > reads a rectangle that is not whole points
+src/note-region.test.ts :: parseRegionBlock > reads the two fields the digest writes
+src/note-region.test.ts :: parseRegionBlock > refuses a block that does not say what it must
+src/note-region.test.ts :: parseRegionBlock > refuses a page that is not a page, and a rectangle with no area
+src/note-region.test.ts :: regionFailureMessage > passes a known reason through untouched
+src/note-region.test.ts :: regionFailureMessage > says what it can about a failure nobody anticipated
+src/note-region.test.ts :: the block a digest entry carries > parses back to exactly what the digest was given
+src/ocr-registry.test.ts :: isListedBackend > hides an unavailable backend whose card is already explaining the gap
+src/ocr-registry.test.ts :: isListedBackend > keeps a card-carrying backend listed while it is the selected one, so the dropdown is never empty
+src/ocr-registry.test.ts :: isListedBackend > lists a backend that can run here
+src/ocr-registry.test.ts :: isListedBackend > lists a card-carrying backend that can run, since the card is not what hides it
+src/ocr-registry.test.ts :: isListedBackend > lists an unavailable backend that has no card, so a permanent gap explains itself in place
+src/ocr-registry.test.ts :: isRegisteredOcrBackend > accepts a registered backend
+src/ocr-registry.test.ts :: isRegisteredOcrBackend > rejects a backend this build does not include
+src/ocr-registry.test.ts :: isRegisteredOcrBackend > rejects non-strings
+src/ocr-registry.test.ts :: isRegisteredOcrBackend > rejects retired literals
+src/ocr-registry.test.ts :: the free registry > Off transcribes nothing without claiming to be unavailable
+src/ocr-registry.test.ts :: the free registry > always leaves at least one selectable backend, even where Vision cannot run
+src/ocr-registry.test.ts :: the free registry > asks for no background consent, on either backend
+src/ocr-registry.test.ts :: the free registry > has no backend that sends anything over a network
+src/ocr-registry.test.ts :: the free registry > has no settings rows of its own
+src/ocr-registry.test.ts :: the free registry > offers Apple Vision and Off, and nothing metered
+src/ocr-registry.test.ts :: the free registry > reports Vision as unavailable off macOS, rather than offering a backend that cannot run
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > carries the provider id through as its backend id
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > does not retry anything but a 429
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > merges provider extra headers (OpenRouter attribution)
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > omits the Authorization header when no key is set (local servers)
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > posts to {baseURL}/chat/completions with a Bearer key and reads choices[0].message.content
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > reports a page with no usable text as skipped, not failed
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > reports a truncated response as failed
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > reports every finished page, including one that failed
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > reports every page even when no model is set
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > reports failed and never throws when the request itself fails
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > reports failed on a non-ok status
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > retries a rate-limited page and gives up after three attempts
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > sends one page per call, as a single image_url part
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > skips OCR for an empty page list without making a request
+src/openai-compat-ocr-backend.test.ts :: OpenAiCompatOcrBackend > tolerates a trailing slash on the base URL (Gemini compat endpoint)
+src/openai-compat-ocr-backend.test.ts :: a missing model > fails every page without sending a request, and says what to fill in
+src/openai-compat-ocr-backend.test.ts :: a missing model > still skips an empty page list rather than complaining about the model
+src/openai-compat-ocr-backend.test.ts :: a missing model > treats a whitespace-only model as missing
+src/openai-compat-ocr-backend.test.ts :: metered > is false for local providers and a self-hosted custom endpoint
+src/openai-compat-ocr-backend.test.ts :: metered > is true for the cloud providers
+src/openai-compat-ocr-backend.test.ts :: metered > treats an id nobody listed as metered, which is the safe direction for a money gate
+src/openai-compat-ocr-backend.test.ts :: the not-running warning > does not invent it when the server answered and simply refused
+src/openai-compat-ocr-backend.test.ts :: the not-running warning > names the address and the page count when nothing answers
+src/openai-compat-ocr-backend.test.ts :: the not-running warning > says it once per unit, not once per page
+src/openai-compat-ocr-backend.test.ts :: the not-running warning > stays quiet when every page succeeded
+src/openai-compat-ocr-backend.test.ts :: the server's own refusal > lets the not-running warning win, because that is the one the user acts on first
+src/openai-compat-ocr-backend.test.ts :: the server's own refusal > passes the server's message and status through to the report
+src/openai-compat-ocr-backend.test.ts :: the server's own refusal > reads the message out of a server that sends a bare string
+src/openai-compat-ocr-backend.test.ts :: the server's own refusal > says nothing beyond the status when the body carries no message
+src/page-hash.test.ts :: getDocumentFiles > finds the original .epub a book was rendered from, and reports none for a document without one
+src/page-hash.test.ts :: getDocumentFiles > ignores non-.rm subfiles (content/metadata)
+src/page-hash.test.ts :: getDocumentFiles > keys a page's pictures by file name, and keeps the entry id it takes to fetch one
+src/page-hash.test.ts :: getDocumentFiles > maps each page's .rm entry to its content-addressed hash
+src/page-hash.test.ts :: getDocumentFiles > requests the document's own entry list by id and hash
+src/page-hash.test.ts :: getDocumentFiles > returns empty maps for a document with no pages
+src/page-rasterizer.test.ts :: rasterizePage > clips strokes that fall outside the page bounds instead of throwing
+src/page-rasterizer.test.ts :: rasterizePage > darkens pixels along a real stroke fixture
+src/page-rasterizer.test.ts :: rasterizePage > draws a pen stroke at the width the device recorded per point, not at its size setting
+src/page-rasterizer.test.ts :: rasterizePage > draws a single-point stroke (a tap) as a filled dot without throwing
+src/page-rasterizer.test.ts :: rasterizePage > falls back to the reMarkable device resolution for a page with no ink to size it by
+src/page-rasterizer.test.ts :: rasterizePage > grows the bitmap by the padding on all four sides, carrying the ink along with it
+src/page-rasterizer.test.ts :: rasterizePage > keeps a highlighter stroke at its size setting, where its true width would black out the line
+src/page-rasterizer.test.ts :: rasterizePage > keeps ink left of the page midline, where scene x is negative
+src/pdf-paint-repair.test.ts :: repairBareColourOps > does not mistake a word that merely ends in the operator's letters
+src/pdf-paint-repair.test.ts :: repairBareColourOps > gives black to a colour operator the device left empty
+src/pdf-paint-repair.test.ts :: repairBareColourOps > leaves a pattern colour alone, whose operand is a name and not a number
+src/pdf-paint-repair.test.ts :: repairBareColourOps > leaves the page's real colours alone
+src/pdf-paint-repair.test.ts :: repairBareColourOps > repairs the stroking form too
+src/pdf-paint-repair.test.ts :: repairBareColourOps > reports nothing to do for a stream that sets its colours properly
+src/pdf-paint-repair.test.ts :: repairPagePaint > leaves a healthy page byte for byte alone
+src/pdf-paint-repair.test.ts :: repairPagePaint > leaves a stream compressed by something it does not know
+src/pdf-paint-repair.test.ts :: repairPagePaint > repairs the page a device wrote, and says it did
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > degrades an out-of-range source index to an annotations-only page instead of failing
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > draws text highlights under the ink that annotates them
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > draws the annotation strokes over the page
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > embeds the source page as an XObject when the page is in range
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > exposes that same rectangle placement through sceneRectToPdf
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > keeps the device canvas for a page with no source page and no ink to measure
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > leaves a page whose ink stays on it exactly the size of its source page
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > moves the page over for ink that runs off the left edge or the bottom
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > places annotations on the source page they were drawn on, in the page's own frame
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > produces one output page per input page, each at its own source page's size
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > renders a text highlight in its palette color when color_rgba is only a black placeholder
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > renders a text highlight's rectangles onto the page it marks
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > scales annotations by the DPI of the screen the scene declares
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > shrinks the page onto its own paper for ink written off its right edge
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > sizes a page with no source page to its own ink rather than to the device screen
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > throws rather than producing an empty PDF when there are no pages
+src/pdf-renderer.test.ts :: renderAnnotatedPdf > will not shrink a page by more than half, whatever a scene claims
+src/pdf-renderer.test.ts :: renderPagesToPdf > assembles multiple pages into one PDF, in order
+src/pdf-renderer.test.ts :: renderPagesToPdf > counts a text highlight's rectangles as ink when sizing a grown page
+src/pdf-renderer.test.ts :: renderPagesToPdf > does not widen the page for a non-physical outlier, the same guard detectCanvas applies
+src/pdf-renderer.test.ts :: renderPagesToPdf > doesn't grow a page for a non-physical outlier y (decode noise), which would stretch it to hundreds of inches
+src/pdf-renderer.test.ts :: renderPagesToPdf > draws a list item's bullet, which is the style's doing and not a character of the text
+src/pdf-renderer.test.ts :: renderPagesToPdf > draws each stroke as a single path, so overlapping segments of a translucent marker don't composite twice
+src/pdf-renderer.test.ts :: renderPagesToPdf > draws highlighter/shader strokes before every other stroke on the page, regardless of original order
+src/pdf-renderer.test.ts :: renderPagesToPdf > draws the page's typed text, so a page with text and no strokes is not a blank PDF
+src/pdf-renderer.test.ts :: renderPagesToPdf > falls back to thickness_scale for a pen whose points record no width, so pre-width files still render
+src/pdf-renderer.test.ts :: renderPagesToPdf > grows a page to fit ink written past the screen height, instead of clipping the scrolled part off
+src/pdf-renderer.test.ts :: renderPagesToPdf > grows a page to fit typed text that runs past the screen, which ink alone would not size
+src/pdf-renderer.test.ts :: renderPagesToPdf > keeps y=0 at the page top when a page grows, so ink above the fold doesn't move
+src/pdf-renderer.test.ts :: renderPagesToPdf > leaves the page at screen width when its ink fits, so an unexpanded page is sized exactly as before
+src/pdf-renderer.test.ts :: renderPagesToPdf > maps reMarkable's horizontally-centered x origin to the PDF's left-origin x
+src/pdf-renderer.test.ts :: renderPagesToPdf > prefers a known palette id over color_rgba, which only resolves the HIGHLIGHT placeholder
+src/pdf-renderer.test.ts :: renderPagesToPdf > renders a blank page (no layers) as a real, empty PDF page
+src/pdf-renderer.test.ts :: renderPagesToPdf > renders a highlighter stroke at full strength with a Multiply blend, using its true color from color_rgba
+src/pdf-renderer.test.ts :: renderPagesToPdf > renders a real page fixture into a one-page PDF
+src/pdf-renderer.test.ts :: renderPagesToPdf > renders a single-point stroke (a tap) without throwing
+src/pdf-renderer.test.ts :: renderPagesToPdf > renders an empty scene (no strokes) without throwing
+src/pdf-renderer.test.ts :: renderPagesToPdf > renders every known colorId in its correct color, and falls back to black for an unmapped one
+src/pdf-renderer.test.ts :: renderPagesToPdf > renders on the larger Paper Pro canvas when a stroke's x falls outside the reMarkable 1/2 frame
+src/pdf-renderer.test.ts :: renderPagesToPdf > stays on the reMarkable 1/2 canvas when only a non-physical outlier exceeds the frame (decode noise)
+src/pdf-renderer.test.ts :: renderPagesToPdf > takes a highlighter's width from the recorded point width, not from the near-1 thickness_scale that would render a hairline
+src/pdf-renderer.test.ts :: renderPagesToPdf > takes a pen's width from the mean recorded point width, not from the thickness_scale that draws it 2x too thin
+src/pdf-renderer.test.ts :: renderPagesToPdf > takes the Paper Pro's own expansion step, not the reMarkable 1/2's
+src/pdf-renderer.test.ts :: renderPagesToPdf > the pictures on a page > draws a picture at the box the scene puts it in
+src/pdf-renderer.test.ts :: renderPagesToPdf > the pictures on a page > draws it under the page's own text, which is where the device has it
+src/pdf-renderer.test.ts :: renderPagesToPdf > the pictures on a page > leaves the gap where a picture's bytes never arrived, and draws the rest of the page
+src/pdf-renderer.test.ts :: renderPagesToPdf > the pictures on a page > reads the file's own bytes rather than its name, so a PNG called .jpg is still drawn
+src/pdf-renderer.test.ts :: renderPagesToPdf > the pictures on a page > skips a file that is neither a PNG nor a JPEG instead of failing the whole render
+src/pdf-renderer.test.ts :: renderPagesToPdf > throws rather than producing an empty PDF when there are no pages
+src/pdf-renderer.test.ts :: renderPagesToPdf > treats SHADER (23) the same as a highlighter
+src/pdf-renderer.test.ts :: renderPagesToPdf > uses the reMarkable device page size for every page
+src/pdf-renderer.test.ts :: renderPagesToPdf > varies a calligraphy stroke's width per segment from the recorded point widths, instead of flattening it to thickness_scale
+src/pdf-renderer.test.ts :: renderPagesToPdf > widens the page to the device's expanded canvas when ink runs past the screen edge
+src/pdf-source.test.ts :: validateSourcePdf > returns the bytes unchanged for a valid PDF
+src/pdf-source.test.ts :: validateSourcePdf > throws on empty bytes
+src/pdf-text.test.ts :: bodyLineSpacing > ignores the gaps a figure's smaller labels leave between them
+src/pdf-text.test.ts :: bodyLineSpacing > is null for a page whose lines never share a type size in sequence
+src/pdf-text.test.ts :: bodyLineSpacing > takes the lower quartile of the gaps between body lines
+src/pdf-text.test.ts :: cleanHeadingTitle > collapses whitespace and trims
+src/pdf-text.test.ts :: cleanHeadingTitle > keeps ZWJ, which carries meaning rather than decorating
+src/pdf-text.test.ts :: cleanHeadingTitle > keeps numbering and punctuation, which locate the section
+src/pdf-text.test.ts :: cleanHeadingTitle > removes invisibles wherever they sit
+src/pdf-text.test.ts :: cleanHeadingTitle > returns nothing for a title that holds nothing but junk
+src/pdf-text.test.ts :: cleanHeadingTitle > strips leading ornaments, however many
+src/pdf-text.test.ts :: dehyphenate > drops the hyphen at a hyphenated line break
+src/pdf-text.test.ts :: dehyphenate > joins lines with a space
+src/pdf-text.test.ts :: dehyphenate > keeps a trailing hyphen that is not a broken word
+src/pdf-text.test.ts :: dehyphenate > skips empty lines
+src/pdf-text.test.ts :: groupTextLines > adds a space only where the gap between items warrants one
+src/pdf-text.test.ts :: groupTextLines > drops a line that holds nothing but whitespace
+src/pdf-text.test.ts :: groupTextLines > groups items by baseline and orders lines top-down, items left-to-right
+src/pdf-text.test.ts :: groupTextLines > measures the line box over its glyphs, so a trailing space does not stretch it
+src/pdf-text.test.ts :: groupTextLines > reads a run drawn twice at the same place as the one word it looks like
+src/pdf-text.test.ts :: groupTextLines > spaces words whose gap is too small for the heuristic when the PDF draws the space
+src/pdf-text.test.ts :: groupTextLines > still reads a word genuinely repeated further along the line
+src/pdf-text.test.ts :: groupTextLines > takes a whitespace-only item as the word boundary it stands for
+src/pdf-text.test.ts :: groupTextLines > tolerates a baseline that wobbles by less than half a line
+src/pdf-text.test.ts :: groupTextLines on a multi-column page > does not take a bullet's indent for a gutter
+src/pdf-text.test.ts :: groupTextLines on a multi-column page > does not take a table of contents' page numbers for a gutter
+src/pdf-text.test.ts :: groupTextLines on a multi-column page > keeps a full-width line whole and in its place between the blocks it separates
+src/pdf-text.test.ts :: groupTextLines on a multi-column page > leaves a single-column page exactly as it was
+src/pdf-text.test.ts :: groupTextLines on a multi-column page > reads each column top to bottom instead of across the gutter
+src/pdf-text.test.ts :: groupTextLines on a multi-column page > splits three columns as readily as two
+src/pdf-text.test.ts :: loadPdfText > cleans a title the font-size heuristic reads off the page too
+src/pdf-text.test.ts :: loadPdfText > cleans an outline title, and drops a heading whose title is nothing but an ornament
+src/pdf-text.test.ts :: loadPdfText > falls back to the font-size heuristic when the PDF has no outline
+src/pdf-text.test.ts :: loadPdfText > hands pdf.js a copy of the bytes, which it may transfer away
+src/pdf-text.test.ts :: loadPdfText > keeps only the first line of a multi-line heading
+src/pdf-text.test.ts :: loadPdfText > keeps the outline's own title where the page does not say exactly that, numbered
+src/pdf-text.test.ts :: loadPdfText > labels a page by its 1-based index when the PDF names none
+src/pdf-text.test.ts :: loadPdfText > leaves y null for a destination that carries no coordinate
+src/pdf-text.test.ts :: loadPdfText > offers includeChars and falls back to plain getTextContent when it is rejected
+src/pdf-text.test.ts :: loadPdfText > reads a page only once, however often it is asked for
+src/pdf-text.test.ts :: loadPdfText > reads a page's lines, size and label
+src/pdf-text.test.ts :: loadPdfText > returns no headings when there is neither an outline nor a larger line
+src/pdf-text.test.ts :: loadPdfText > returns null for a page with no text layer and for a page that does not exist
+src/pdf-text.test.ts :: loadPdfText > returns null when Obsidian does not expose pdf.js
+src/pdf-text.test.ts :: loadPdfText > returns null when the document cannot be opened
+src/pdf-text.test.ts :: loadPdfText > takes headings from the outline, resolving named destinations
+src/pdf-text.test.ts :: loadPdfText > takes the section number an unnumbered outline title has on its page
+src/pdf-text.test.ts :: quoteForRects > de-hyphenates a run broken across a line break
+src/pdf-text.test.ts :: quoteForRects > does not reach across a heading set too tight for the gap to show
+src/pdf-text.test.ts :: quoteForRects > does not reach across a paragraph break either
+src/pdf-text.test.ts :: quoteForRects > does not reach across the gap that separates a heading from its text
+src/pdf-text.test.ts :: quoteForRects > does not take the next word when the mark stops in the space before it
+src/pdf-text.test.ts :: quoteForRects > falls back to the x estimate when the highlight text is not in the context
+src/pdf-text.test.ts :: quoteForRects > finds a highlight text that carries the document's line wrap
+src/pdf-text.test.ts :: quoteForRects > finds a highlight text that lost the space between two runs
+src/pdf-text.test.ts :: quoteForRects > ignores a rectangle that only grazes the line below
+src/pdf-text.test.ts :: quoteForRects > keeps a run that spans consecutive lines in one passage
+src/pdf-text.test.ts :: quoteForRects > keeps the marked run a verbatim substring of the sentence
+src/pdf-text.test.ts :: quoteForRects > marks a run spanning several lines and rectangles
+src/pdf-text.test.ts :: quoteForRects > marks nothing for a rectangle that covers only the space between two words
+src/pdf-text.test.ts :: quoteForRects > picks the occurrence nearest the rectangles when the text repeats
+src/pdf-text.test.ts :: quoteForRects > quotes each contiguous run of a highlight that skips over text, not the span between them
+src/pdf-text.test.ts :: quoteForRects > returns null when no line is hit
+src/pdf-text.test.ts :: quoteForRects > returns the full sentence around the marked run
+src/pdf-text.test.ts :: quoteForRects > still takes in the next line of the same paragraph
+src/pdf-text.test.ts :: quoteForRects > takes the marked run from the highlight's own text rather than from the x estimate
+src/pdf-text.test.ts :: quoteForRects > widens a partial hit to whole words
+src/pdf-text.test.ts :: quoteForRects > widens a run to the whole word when the line break split that word
+src/pdf-text.test.ts :: sentenceAround > does not split at an abbreviating period followed by a digit
+src/pdf-text.test.ts :: sentenceAround > expands a range to the sentence containing it
+src/pdf-text.test.ts :: sentenceAround > stops at the text bounds when there is no boundary
+src/pdf-text.test.ts :: sentenceAround > takes the last sentence up to the end of the text
+src/png-encoder.test.ts :: encodeGrayscalePng > produces chunks with valid CRC-32s (per the PNG spec's reference algorithm)
+src/png-encoder.test.ts :: encodeGrayscalePng > round-trips a full reMarkable-page-sized image
+src/png-encoder.test.ts :: encodeGrayscalePng > round-trips pixel data through a real zlib inflate
+src/png-encoder.test.ts :: encodeGrayscalePng > writes a valid PNG signature and IHDR for a small image
+src/png-encoder.test.ts :: encodeInkPng > writes an indexed image whose palette is one grey and whose alpha is the inverted pixel value
+src/png-encoder.test.ts :: encodeInkPng > writes the same pixel bytes as the grayscale form, so a crop costs no more than it did
+src/quote-correction.test.ts :: correctQuote > carries several runs of one sentence across
+src/quote-correction.test.ts :: correctQuote > finds a quote that appears late in a long book, and only the right one
+src/quote-correction.test.ts :: correctQuote > leaves everything alone when a marked run is not inside the sentence
+src/quote-correction.test.ts :: correctQuote > matches across the typographic punctuation a device and a book disagree on
+src/quote-correction.test.ts :: correctQuote > moves the highlighted run onto the corrected wording
+src/quote-correction.test.ts :: correctQuote > restores the letters the device's conversion lost
+src/quote-correction.test.ts :: correctQuote > returns null for an empty quote rather than matching the start of the book
+src/quote-correction.test.ts :: correctQuote > returns null when the quote is not in this book
+src/quote-correction.test.ts :: correctQuote > returns null when too much of the quote is damaged to trust a match
+src/remarkable-auth.test.ts :: RemarkableAuth > connects by registering the code and persisting the device token
+src/remarkable-auth.test.ts :: RemarkableAuth > disconnects by clearing the stored device token
+src/remarkable-auth.test.ts :: RemarkableAuth > is connected once a device token is stored
+src/remarkable-auth.test.ts :: RemarkableAuth > is not connected without a device token
+src/remarkable-auth.test.ts :: RemarkableAuth > obtains a fresh session token from the persisted device token
+src/remarkable-auth.test.ts :: RemarkableAuth > re-calls auth on every session request instead of caching
+src/remarkable-auth.test.ts :: RemarkableAuth > throws when requesting a session without connecting first
+src/remarkable-metadata.test.ts :: parseMetadataText > keeps a legacy field that carries a real value
+src/remarkable-metadata.test.ts :: parseMetadataText > names the field when a required one is missing
+src/remarkable-metadata.test.ts :: parseMetadataText > reads metadata whose legacy fields are null
+src/remarkable-metadata.test.ts :: parseMetadataText > rejects a required field that is null, rather than reading it as absent
+src/remarkable-metadata.test.ts :: parseMetadataText > rejects metadata that is not an object
+src/remarkable-metadata.test.ts :: tolerateLegacyMetadata > routes getMetadata through the lenient parse
+src/remarkable-tags.test.ts :: collectTagNames > dedupes and sorts tags across notebooks, docs, and pages
+src/remarkable-tags.test.ts :: enumerateNotebookTags > handles legacy string[] tags
+src/remarkable-tags.test.ts :: enumerateNotebookTags > handles pages: null without crashing
+src/remarkable-tags.test.ts :: enumerateNotebookTags > inherits tags from every ancestor folder
+src/remarkable-tags.test.ts :: enumerateNotebookTags > merges and dedupes entry tags with content tags
+src/remarkable-tags.test.ts :: enumerateNotebookTags > reads document-level tags from content.tags
+src/remarkable-tags.test.ts :: enumerateNotebookTags > reads document-level tags from the entry
+src/remarkable-tags.test.ts :: enumerateNotebookTags > reads page-level tags pinned to a pageId
+src/remarkable-tags.test.ts :: enumerateNotebookTags > skips a document whose content fails to load, and keeps the rest
+src/remarkable-tags.test.ts :: enumerateNotebookTags > skips non-document entries
+src/remarkable-tags.test.ts :: enumerateNotebookTags > stops safely when the folder parent chain contains a cycle
+src/rm-parser.test.ts :: parseRmV6 > accepts an ArrayBuffer as well as a Uint8Array
+src/rm-parser.test.ts :: parseRmV6 > decodes a highlighted run longer than a single varuint byte
+src/rm-parser.test.ts :: parseRmV6 > does not fail the page on a layer_info block whose ids are longer than one varuint byte
+src/rm-parser.test.ts :: parseRmV6 > gives every stroke and every highlight of a real PDF page its own CRDT id
+src/rm-parser.test.ts :: parseRmV6 > keeps a node whose tail stops after the label, instead of losing it to a missing anchor
+src/rm-parser.test.ts :: parseRmV6 > leaves colorRgba undefined for strokes that don't carry one, including the extended palette
+src/rm-parser.test.ts :: parseRmV6 > leaves text absent on a page that has none, rather than inventing an empty box
+src/rm-parser.test.ts :: parseRmV6 > parses a real v6 page fixture into a scene model
+src/rm-parser.test.ts :: parseRmV6 > pictures on the page > drops a picture whose file the page does not list, and keeps the rest of the page
+src/rm-parser.test.ts :: parseRmV6 > pictures on the page > gives a page without either block an empty list rather than nothing to check
+src/rm-parser.test.ts :: parseRmV6 > pictures on the page > reads the file a picture lives in, and the box it fills, from the two blocks that hold them
+src/rm-parser.test.ts :: parseRmV6 > places an anchored node's strokes where the device draws them
+src/rm-parser.test.ts :: parseRmV6 > reads a layer name whose LWW timestamp id is longer than two bytes
+src/rm-parser.test.ts :: parseRmV6 > reads a layer_def whose ids contain bytes the old terminator scan tripped on
+src/rm-parser.test.ts :: parseRmV6 > reads a scene-tree node's visibility and its placement out of the layer_names tail
+src/rm-parser.test.ts :: parseRmV6 > reads a stroke's timestamp id, which margin-note clustering uses to tell writing phases apart
+src/rm-parser.test.ts :: parseRmV6 > reads a text highlight that carries no start/length, as a highlight over typed text does
+src/rm-parser.test.ts :: parseRmV6 > reads a text highlight's rectangles and true color from a glyph_def block
+src/rm-parser.test.ts :: parseRmV6 > reads every style-map entry, including one that follows an entry with a longer value
+src/rm-parser.test.ts :: parseRmV6 > reads the page's typed text, its box and its runs
+src/rm-parser.test.ts :: parseRmV6 > reads the true color of a SHADER/HIGHLIGHT stroke from its optional color_rgba field
+src/rm-parser.test.ts :: parseRmV6 > reads the typed-text highlights of a real notebook page, tombstones aside
+src/rm-parser.test.ts :: parseRmV6 > skips a malformed glyph_def block instead of failing the whole page
+src/rm-parser.test.ts :: parseRmV6 > skips a malformed stroke block instead of failing the whole page
+src/scene-text.test.ts :: a page that scrolls far past one screen > keeps every line inside the page, as the imported article's 333 lines have to be
+src/scene-text.test.ts :: hasTypedText > is false for a page with no text at all, which is most notebook pages
+src/scene-text.test.ts :: hasTypedText > is false for a text box holding nothing, and for one holding only deleted runs
+src/scene-text.test.ts :: hasTypedText > is true once a run carries text
+src/scene-text.test.ts :: isDocumentText > is false for a couple of lines of prose
+src/scene-text.test.ts :: isDocumentText > is false for a page nobody typed on
+src/scene-text.test.ts :: isDocumentText > is false for many short typed lines, however many there are
+src/scene-text.test.ts :: isDocumentText > is false for the page this repo's own fixture is: two strokes and one typed letter
+src/scene-text.test.ts :: isDocumentText > is true once there is prose enough to mark up
+src/scene-text.test.ts :: sceneHeadings > finds nothing on a page whose paragraphs are all plain
+src/scene-text.test.ts :: sceneHeadings > joins a heading that wraps into the one heading it is
+src/scene-text.test.ts :: sceneHeadings > keeps two heading paragraphs apart
+src/scene-text.test.ts :: sceneHeadings > reads a heading paragraph, at the top of its own first line
+src/scene-text.test.ts :: sceneTextPage > drops the empty lines a paragraph break leaves, which carry no text to quote
+src/scene-text.test.ts :: sceneTextPage > has no text layer for a page nobody typed on
+src/scene-text.test.ts :: sceneTextPage > measures against the grown frame, so a scrolled page's lines are not folded off the bottom
+src/scene-text.test.ts :: sceneTextPage > puts a line's box where the renderer draws that line
+src/sync-engine.test.ts :: a book laid out again under its marks > compares nothing against a row written before the count existed
+src/sync-engine.test.ts :: a book laid out again under its marks > does not mistake a page added on the device for a re-layout
+src/sync-engine.test.ts :: a book laid out again under its marks > says it once, not on every sync afterwards
+src/sync-engine.test.ts :: a book laid out again under its marks > says so, naming both page counts
+src/sync-engine.test.ts :: a re-sync that finds fewer highlights > compares nothing against a row written before the count existed
+src/sync-engine.test.ts :: a re-sync that finds fewer highlights > says how many were lost, and mirrors the device anyway
+src/sync-engine.test.ts :: a re-sync that finds fewer highlights > stays quiet when the count holds, or grows
+src/sync-engine.test.ts :: collectHighlights > collapses internal newlines and whitespace runs so a wrapped run is one flowing bullet
+src/sync-engine.test.ts :: collectHighlights > drops empty and whitespace-only runs, and omits a page left with no quotes
+src/sync-engine.test.ts :: collectHighlights > orders a page's quotes top-to-bottom then left-to-right by rect anchor
+src/sync-engine.test.ts :: collectHighlights > passes through the page label and embed anchor a page-level note supplies (label = notebook position, anchor = 1)
+src/sync-engine.test.ts :: collectHighlights > returns an empty list when nothing has highlights
+src/sync-engine.test.ts :: edited sync blocks > keeps re-checking an edited note instead of bumping its entryHash and going quiet
+src/sync-engine.test.ts :: edited sync blocks > leaves rows written before blockHash existed unprotected, so they catch up on one write
+src/sync-engine.test.ts :: edited sync blocks > protects an edited note through a tag rename, where the row it is written from is the OLD tag's
+src/sync-engine.test.ts :: edited sync blocks > re-transcribe refreshes the block hash, so the next sync does not read its own work as an edit
+src/sync-engine.test.ts :: edited sync blocks > records a block hash on every row it writes
+src/sync-engine.test.ts :: edited sync blocks > refuses to overwrite a note edited inside the block, and reports it
+src/sync-engine.test.ts :: edited sync blocks > regenerates a note written before the ownership callout, keeping what the user wrote below it
+src/sync-engine.test.ts :: edited sync blocks > still writes when the user edited only below the block
+src/sync-engine.test.ts :: edited sync blocks > treats text typed above the callout as an edit rather than overwriting it
+src/sync-engine.test.ts :: failed transcription > counts a unit whose backend threw, and still writes the note
+src/sync-engine.test.ts :: failed transcription > does not count a blank page, which is skipped rather than failed
+src/sync-engine.test.ts :: failed transcription > does not count an unavailable backend, which has its own one-time notice
+src/sync-engine.test.ts :: index checkpointing > checkpoints the PREVIOUS root hash, so an interrupted run is re-scanned rather than looking complete
+src/sync-engine.test.ts :: index checkpointing > saves the index as soon as each note is written, then again at the end of its document
+src/sync-engine.test.ts :: index checkpointing > stopping a run > does nothing at all when the signal is already set
+src/sync-engine.test.ts :: index checkpointing > stopping a run > hands back the PREVIOUS root hash, so a caller that persists it regardless cannot mark the vault up to date
+src/sync-engine.test.ts :: index checkpointing > stopping a run > keeps the documents it finished and resumes them without duplicating
+src/sync-engine.test.ts :: index checkpointing > stopping a run > makes no orphaning judgements it was cut short of finishing
+src/sync-engine.test.ts :: index checkpointing > stopping a run > reports a completed run as not stopped
+src/sync-engine.test.ts :: index checkpointing > survives an interruption BETWEEN two units of one document without duplicating
+src/sync-engine.test.ts :: index checkpointing > survives an interruption without duplicating: the checkpointed row is reused as the note's path
+src/sync-engine.test.ts :: invalidateRenders > keeps every other field, so nothing but the render gate moves
+src/sync-engine.test.ts :: invalidateRenders > leaves an orphaned row alone -- it has no note the plugin still writes
+src/sync-engine.test.ts :: invalidateRenders > makes an up-to-date row stale, so a setting change reaches notes the device never touched
+src/sync-engine.test.ts :: page-anchored transcripts > drops the page structure, keeping the text, when a backend returns the wrong number of results
+src/sync-engine.test.ts :: page-anchored transcripts > heads each page of a notebook and names the blank ones once
+src/sync-engine.test.ts :: page-anchored transcripts > leaves a backend with no per-page information rendering flat
+src/sync-engine.test.ts :: page-anchored transcripts > marks a page the backend could not read, on the page it happened to
+src/sync-engine.test.ts :: page-anchored transcripts > sends only the annotated pages of a PDF to the backend
+src/sync-engine.test.ts :: reTranscribeAll > checkpoints each refreshed block hash, so an interruption cannot freeze the notes it already rewrote
+src/sync-engine.test.ts :: reTranscribeAll > counts the pages of every row it will re-transcribe, without rendering them to find out
+src/sync-engine.test.ts :: reTranscribeAll > hands back the block hashes it already refreshed when stopped
+src/sync-engine.test.ts :: reTranscribeAll > leaves a note untouched when its document is gone from the device
+src/sync-engine.test.ts :: reTranscribeAll > re-runs OCR over active notes and rewrites only the transcript region
+src/sync-engine.test.ts :: reTranscribeAll > skips orphaned rows
+src/sync-engine.test.ts :: renderNotes > numbers each page of a notebook separately
+src/sync-engine.test.ts :: renderNotes > reports a layer the device hides, since the render shows it anyway
+src/sync-engine.test.ts :: renderNotes > reports a page once, however many of its nodes could not be placed
+src/sync-engine.test.ts :: renderNotes > says nothing when every node placed and every layer is visible
+src/sync-engine.test.ts :: renderNotes > tells the reader what to do about a page it could not place, without naming the format
+src/sync-engine.test.ts :: runSync > PDF-backed documents > composites every page for a notebook-level tag, instead of an empty render
+src/sync-engine.test.ts :: runSync > PDF-backed documents > composites the source page with its annotation, and OCRs the handwriting, for a page-level tag
+src/sync-engine.test.ts :: runSync > PDF-backed documents > draws a page inserted on the device on a blank sheet, not on the source page it displaced
+src/sync-engine.test.ts :: runSync > PDF-backed documents > skips OCR for a PDF whose pages carry no handwritten annotations
+src/sync-engine.test.ts :: runSync > PDF-backed documents > treats a tagged EPUB as PDF-backed: the book the device rendered, with its annotations
+src/sync-engine.test.ts :: runSync > annotation digest > adds the notes when the setting is turned on, and takes them away again
+src/sync-engine.test.ts :: runSync > annotation digest > gives a PDF-backed note a digest instead of a transcript
+src/sync-engine.test.ts :: runSync > annotation digest > gives a notebook whose text was typed a digest, not a transcript of its own text
+src/sync-engine.test.ts :: runSync > annotation digest > leaves a handwritten notebook on the transcript path, untouched
+src/sync-engine.test.ts :: runSync > annotation digest > re-syncing an unchanged document writes the same note
+src/sync-engine.test.ts :: runSync > annotation digest > reads a typed page's own text rather than fetching a source PDF it does not have
+src/sync-engine.test.ts :: runSync > annotation digest > still reports an unavailable backend, so the platform notice keeps firing
+src/sync-engine.test.ts :: runSync > annotation digest > still writes the note, and reports the reason, when the digest build throws
+src/sync-engine.test.ts :: runSync > annotation digest > switches margin notes off by default, and runs no OCR at all for a PDF unit
+src/sync-engine.test.ts :: runSync > annotation digest > transcribes a PDF-backed unit once, per margin note, never a second time over the whole scene
+src/sync-engine.test.ts :: runSync > annotation digest > transcribes such a page per margin note, never a second time over the whole scene
+src/sync-engine.test.ts :: runSync > annotation digest > writes nothing at all for a document the change-detection gate skipped
+src/sync-engine.test.ts :: runSync > blank and empty pages > keeps a blank page (no .rm file) in the notebook render, preserving later page indices
+src/sync-engine.test.ts :: runSync > blank and empty pages > keeps a page whose `deleted` marker is 0, preserving later page indices
+src/sync-engine.test.ts :: runSync > blank and empty pages > skips a notebook whose only pages are deleted, without writing an empty note
+src/sync-engine.test.ts :: runSync > creates one note per tagged page, independent of any notebook-level tag
+src/sync-engine.test.ts :: runSync > creates one notebook-level note embedding all live pages in order
+src/sync-engine.test.ts :: runSync > degrades to an empty transcript, without failing the sync, when the OCR backend throws
+src/sync-engine.test.ts :: runSync > does not touch an orphaned row's note just because it's missing -- only active rows self-heal
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > cold index: duplicates rather than clobbers (the accepted Approach A trade -- no in-note identity to re-find by)
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > disambiguates two tags on the same page routed to the same folder, instead of one overwriting the other
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > flips an orphaned note back to active when its document reappears, even with an unchanged entry hash
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > moves a page-level note to the new folder when its page tag changes to a different mapped tag
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > moves a page-level note when its page tag is re-targeted, even though the page itself is unchanged
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > moves the note to the new folder when a tag changes to a different mapped tag, instead of orphaning + duplicating
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > moves the note when the tag keeps its name but the settings re-target it to another folder
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > orphans a note whose document disappears from the enumeration, without deleting it
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > orphans a note whose tag is removed from the notebook, without touching the doc's other synced tags
+src/sync-engine.test.ts :: runSync > edge cases (ticket 11) > writes into the new folder when the note was deleted before the mapping was re-targeted
+src/sync-engine.test.ts :: runSync > fetches the picture a page shows and draws it into the attachment
+src/sync-engine.test.ts :: runSync > fires notebook and page tags independently for the same document
+src/sync-engine.test.ts :: runSync > ignores tags with no folder mapping
+src/sync-engine.test.ts :: runSync > keeps the transcript a stale-render rebuild already has, instead of re-running a metered backend
+src/sync-engine.test.ts :: runSync > level 2: opens a hash-unchanged notebook anyway when a newly-mapped tag on it has no row yet
+src/sync-engine.test.ts :: runSync > level 2: skips opening a notebook whose entry hash matches the stored row
+src/sync-engine.test.ts :: runSync > level 3: re-renders a page-tag note rendered by an older renderer, unchanged page hash and all
+src/sync-engine.test.ts :: runSync > level 3: re-renders only the page whose hash changed, and bumps entryHash on the untouched row
+src/sync-engine.test.ts :: runSync > level 3: self-heals a page-tag note deleted by hand even though its page hash didn't change
+src/sync-engine.test.ts :: runSync > re-renders a note left by an older renderer, even though neither hash changed
+src/sync-engine.test.ts :: runSync > re-transcribes a stale-render rebuild whose ink the parser has now placed
+src/sync-engine.test.ts :: runSync > reopens an unchanged notebook and orphans its note when an inherited folder tag is removed
+src/sync-engine.test.ts :: runSync > rescans once after upgrading from the unversioned routing fingerprint
+src/sync-engine.test.ts :: runSync > root-hash gate: a mapping change re-scans even though the root hash is unchanged
+src/sync-engine.test.ts :: runSync > root-hash gate: unchanged root hash performs zero fetches beyond the root-hash check
+src/sync-engine.test.ts :: runSync > self-heals: recreates a note the user deleted by hand, even though the root hash is unchanged
+src/sync-engine.test.ts :: runSync > skips a document whose content fails to load, and continues syncing the rest
+src/sync-engine.test.ts :: runSync > skips a page tag whose page no longer exists on the device
+src/sync-engine.test.ts :: runSync > syncs a notebook that inherits a mapped tag from its parent folder
+src/sync-engine.test.ts :: runSync > writes the OCR backend's transcript into the note's managed transcript region
+src/sync-engine.test.ts :: runSync progress > counts a notebook's pages once per mapped tag
+src/sync-engine.test.ts :: runSync progress > counts a whole unit at once when the backend cannot report per page
+src/sync-engine.test.ts :: runSync progress > counts the pages it will really work on, not the documents it walks past
+src/sync-engine.test.ts :: runSync progress > emits no working message when there is nothing to do
+src/sync-engine.test.ts :: runSync progress > fills the bar for a unit that failed to render
+src/sync-engine.test.ts :: runSync progress > leaves a note the user edited out of the denominator
+src/sync-engine.test.ts :: runSync progress > moves the bar page by page when the backend can say so
+src/sync-engine.test.ts :: runSync progress > names the document it reached, before that document is finished
+src/sync-engine.test.ts :: runSync progress > never goes backwards, and ends exactly on the scanned total
+src/sync-engine.test.ts :: runSync progress > renders nothing while it is only counting
+src/sync-engine.test.ts :: runSync progress > reports scanning even when the root-hash gate returns early
+src/sync-engine.test.ts :: runSync progress > reports the scan's own counter before the bar can start
+src/sync-engine.test.ts :: runSync progress > returns stopped, having written nothing, when the stop lands during the scan
+src/sync-engine.test.ts :: runSync progress > skips a document the scan could not read, and reports it once
+src/sync-engine.test.ts :: skipped documents > carries each skip's raw error text, for Copy diagnostics
+src/sync-engine.test.ts :: skipped documents > counts a document whose content cannot be read
+src/sync-engine.test.ts :: skipped documents > is zero on a clean sync
+src/tag-router.test.ts :: TagRouter > resolves a mapped tag to its folder
+src/tag-router.test.ts :: TagRouter > returns null for an unmapped tag instead of a catch-all folder
+src/tag-router.test.ts :: TagRouter > returns null when nothing is mapped
+src/text-layout.test.ts :: layoutText > a character the device draws nothing for > costs the line no width, so the line breaks where the device broke it
+src/text-layout.test.ts :: layoutText > a character the device draws nothing for > is not drawn, and still counts as one of the paragraph's characters
+src/text-layout.test.ts :: layoutText > advances a paragraph gap between single-line paragraphs, reproducing the verified model
+src/text-layout.test.ts :: layoutText > advances a wrapped line by the leading, not by the paragraph gap
+src/text-layout.test.ts :: layoutText > anchors a page whose runs are all tombstoned where its first line would have been
+src/text-layout.test.ts :: layoutText > breaks a long token after a slash, which is the only way the device's URL page can break
+src/text-layout.test.ts :: layoutText > does not carry a style forward, because the device gives every styled paragraph its own entry
+src/text-layout.test.ts :: layoutText > gives a tombstoned run no line, so deleted text does not push the rest down
+src/text-layout.test.ts :: layoutText > indents a list item, and wraps it against the narrower width that leaves
+src/text-layout.test.ts :: layoutText > keys a style by the newline above the paragraph it styles, not by that paragraph's own first character
+src/text-layout.test.ts :: layoutText > opens the space a code-2 first paragraph asks for, which is what 62 always was
+src/text-layout.test.ts :: layoutText > opens the space a heading needs above it, and puts the paragraph after it back on the plain rhythm
+src/text-layout.test.ts :: layoutText > puts a paragraph's newline on that paragraph's own line, which is what anchors name
+src/vision-ocr-backend.test.ts :: UnavailableOcrBackend > skips an empty page list and reports unavailable otherwise, carrying the chosen id
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > adds the page's typed text at the height the device lays it out at
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > batches pages per process and caps parallelism
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > counts ink that stays wordless at its own framing, for the diagnostics block
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > drops a rescued line the page pass already returned, rather than printing it twice
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > keeps good text even when a sibling image errored
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > probes only once across many recognize calls
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > re-reads ink no observation covers and splices the line in where its writing sits
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > recognizes pages and joins per-page text with a blank line, confidence null
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > reports failed and never throws when the runner throws (Vision cannot run)
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > reports failed when an image errored and no text came back
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > reports skipped (blank), not failed, when Vision runs but finds no text
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > returns unavailable, without spawning, when the probe fails
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > skips an empty page list without probing or spawning
+src/vision-ocr-backend.test.ts :: VisionOcrBackend > transcribes a page that is nothing but typed text, which Vision reads as blank
+src/vision-ocr-backend.test.ts :: chunk > splits into contiguous chunks of at most size, order preserved
+src/vision-ocr-backend.test.ts :: mapWithConcurrency > preserves order and never exceeds the concurrency limit

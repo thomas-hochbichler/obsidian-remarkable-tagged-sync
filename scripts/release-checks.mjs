@@ -7,6 +7,10 @@
 //   node scripts/release-checks.mjs changelog --ci
 //   node scripts/release-checks.mjs changelog --release <version>   # also prints the section
 //   node scripts/release-checks.mjs lint [--write]
+//   node scripts/release-checks.mjs coverage [--write]      # needs a coverage run first
+//   node scripts/release-checks.mjs badges                  # same run, writes the shields files
+//   node scripts/release-checks.mjs disabled
+//   node scripts/release-checks.mjs nightly
 //
 // `.mjs`, not `.ts`, on purpose: `npm run build` runs `tsc` over `scripts/` too, so a broken
 // `.ts` gate script could block a release.
@@ -16,6 +20,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { judgeVerdict, STALE_HOURS } from "./nightly-verdict.mjs";
 
 // npm's own form for a tree that is not under one licence: `src/` is Apache-2.0, `pro/` is PolyForm
 // Strict 1.0.0, and paid commercial use is granted separately. PolyForm Strict has no settled SPDX
@@ -25,6 +30,9 @@ import { execFileSync } from "node:child_process";
 const LICENSE = "SEE LICENSE IN LICENSE";
 const CHANGELOG = "CHANGELOG.md";
 const BASELINE = ".eslint-baseline.json";
+const COVERAGE_BASELINE = ".coverage-baseline.json";
+const COVERAGE_SUMMARY = "coverage/coverage-summary.json";
+const NIGHTLY_VERDICT = ".nightly-verdict.json";
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
@@ -234,6 +242,228 @@ function lintRatchet(write) {
 	finish("lint ratchet");
 }
 
+// --- coverage ratchet -------------------------------------------------------------------------
+//
+// Fails when a file's count of UNCOVERED lines or branches is HIGHER than the committed baseline.
+// Absolute counts, per file, deliberately -- not percentages, and not one repo-wide number.
+//
+// Absolute, because a percentage moves when nothing about the tests changed: deleting untested
+// code raises it, adding tested code lowers a file's ratio against itself. Counting uncovered
+// lines makes all three of the cheap-and-good moves free -- adding tested code, deleting code,
+// moving tested code -- and charges only for adding code nothing runs.
+//
+// Per file, because a repo-wide number lets one file rot while another improves, and the file that
+// rots is always the one nobody wanted to test.
+//
+// No percentage threshold anywhere. A round number invites tests written to reach it, and this
+// repo has the measurement that makes that concrete: at 71.2 % line coverage, roughly 41 of 70
+// deliberate mutations of production code survived all 996 tests -- including both Pro gates. A
+// number that can be true while the product is broken may report; it may not block.
+//
+// A file missing from the baseline counts as 0 uncovered, so a new file arrives with its tests or
+// it arrives red. That is the same rule as "a new feature without its tests is unfinished", said
+// mechanically. Re-baselining in the same commit is the escape hatch, and it is visible in review.
+
+function coverageFacts() {
+	let summary;
+	try {
+		summary = readJson(COVERAGE_SUMMARY);
+	} catch {
+		console.error(`${COVERAGE_SUMMARY} is missing -- run \`npm run test:coverage\` first.`);
+		process.exit(1);
+	}
+	const files = {};
+	for (const [abs, m] of Object.entries(summary)) {
+		if (abs === "total") continue;
+		files[abs.replace(`${process.cwd()}/`, "")] = {
+			lines: m.lines.total - m.lines.covered,
+			branches: m.branches.total - m.branches.covered,
+		};
+	}
+	return { total: summary.total, files };
+}
+
+function coverageRatchet(write) {
+	const { total, files } = coverageFacts();
+	const pct = (m) => `${m.pct.toFixed(1)} % (${m.total - m.covered} of ${m.total} uncovered)`;
+
+	if (write) {
+		const baseline = readJson(COVERAGE_BASELINE);
+		baseline.measured = new Date().toISOString().slice(0, 10);
+		baseline.files = Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)));
+		writeFileSync(COVERAGE_BASELINE, `${JSON.stringify(baseline, null, "\t")}\n`);
+		console.log(`coverage ratchet: baseline rewritten over ${Object.keys(files).length} files`);
+		console.log(`  lines    ${pct(total.lines)}`);
+		console.log(`  branches ${pct(total.branches)}`);
+		return;
+	}
+
+	const baseline = readJson(COVERAGE_BASELINE);
+	console.log(`coverage ratchet: lines ${pct(total.lines)}, branches ${pct(total.branches)}\n`);
+
+	const worse = [];
+	let better = 0;
+	for (const [file, now] of Object.entries(files)) {
+		const was = baseline.files[file] ?? { lines: 0, branches: 0 };
+		const dl = now.lines - was.lines;
+		const db = now.branches - was.branches;
+		if (dl > 0 || db > 0) worse.push({ file, dl, db, now, was, isNew: !(file in baseline.files) });
+		else if (dl < 0 || db < 0) better += 1;
+	}
+
+	const gone = Object.keys(baseline.files).filter((f) => !(f in files));
+
+	if (worse.length > 0) {
+		fail(
+			`${worse.length} file(s) got less covered. Test the new code, or re-baseline in the same ` +
+				"commit with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`.",
+		);
+		for (const w of worse) {
+			const what = [w.dl > 0 ? `+${w.dl} uncovered lines` : null, w.db > 0 ? `+${w.db} uncovered branches` : null]
+				.filter(Boolean)
+				.join(", ");
+			console.error(`        ${w.file}${w.isNew ? " (new file)" : ""}: ${what}`);
+		}
+	} else {
+		ok(`no file got less covered${better > 0 ? `; ${better} improved` : ""}`);
+	}
+
+	if (better > 0 && worse.length === 0) {
+		ok(`${better} file(s) improved -- lower the baseline in this commit with \`node scripts/release-checks.mjs coverage --write\``);
+	}
+	if (gone.length > 0) {
+		ok(`${gone.length} baseline file(s) no longer exist; --write drops them`);
+	}
+
+	finish("coverage ratchet");
+}
+
+// --- coverage badges --------------------------------------------------------------------------
+//
+// Writes the two shields.io endpoint files from the SAME coverage run the ratchet just read. Two
+// badges, not one: this codebase is full of `fetchFn ?? fetch` defaults that add a branch to an
+// already-covered line, so lines alone would be the flattering half of the truth.
+//
+// The colours are cosmetic and are deliberately NOT the numbers of any gate, because no gate has a
+// number -- see the ratchet above. The badge reports; it never blocks. Nothing in this repo may
+// read it back.
+
+const BADGE_COLOURS = [
+	[90, "brightgreen"],
+	[80, "green"],
+	[70, "yellowgreen"],
+	[60, "yellow"],
+	[50, "orange"],
+];
+
+function coverageBadges() {
+	const { total } = coverageFacts();
+	let changed = false;
+
+	for (const metric of ["lines", "branches"]) {
+		const pct = total[metric].pct;
+		const badge = {
+			schemaVersion: 1,
+			label: metric,
+			message: `${pct.toFixed(1)}%`,
+			color: BADGE_COLOURS.find(([min]) => pct >= min)?.[1] ?? "red",
+		};
+		const path = `.coverage-badge-${metric}.json`;
+		const next = `${JSON.stringify(badge, null, "\t")}\n`;
+		let prev = "";
+		try {
+			prev = readFileSync(path, "utf8");
+		} catch {
+			// First run. Falls through to a write, which is what should happen.
+		}
+		if (prev !== next) {
+			writeFileSync(path, next);
+			changed = true;
+		}
+		console.log(`  ${path}: ${badge.message} ${badge.color}${prev === next ? " (unchanged)" : ""}`);
+	}
+
+	// Read by the workflow, which commits only when this says something moved -- otherwise every
+	// push to `main` would produce a badge commit saying the same number.
+	console.log(`badges-changed=${changed}`);
+	if (process.env.GITHUB_OUTPUT) writeFileSync(process.env.GITHUB_OUTPUT, `changed=${changed}\n`, { flag: "a" });
+}
+
+// --- disabled tests ---------------------------------------------------------------------------
+//
+// `skip`, `only` and `todo` are banned outright. There is no baseline and no allow-list, because
+// there are none today and this is the one gate that can start strict.
+//
+// A skipped test is a deleted test wearing a disguise: the file still lists it, the count still
+// includes the file, and nothing runs. `only` is worse -- it silently deletes every OTHER test in
+// the file, so a suite can go green having run four assertions out of 996.
+//
+// The way out of a failing test is to fix it, delete it, or write it down as a `gap:` row in the
+// matrix, where the backlog is tracked in the open.
+
+const DISABLED = [
+	/\b(?:describe|it|test|bench|suite)\s*\.\s*(?:skip|only|todo)\b/,
+	/\b(?:xit|xdescribe|xtest|fit|fdescribe)\s*\(/,
+];
+
+function disabledTests() {
+	// `git ls-files src pro test-stubs` and filter here, rather than passing a glob to git: a
+	// pathspec that matches nothing is not an error, so a mistyped glob makes this gate print
+	// "no skip, only or todo" over zero files. It did, on the first run.
+	const files = execFileSync("git", ["ls-files", "src", "pro", "test-stubs"], { encoding: "utf8" })
+		.split("\n")
+		.filter((f) => f.endsWith(".test.ts"));
+
+	let found = 0;
+	for (const file of files) {
+		const lines = readFileSync(file, "utf8").split("\n");
+		lines.forEach((line, i) => {
+			if (DISABLED.some((re) => re.test(line))) {
+				found += 1;
+				console.error(`        ${file}:${i + 1}  ${line.trim()}`);
+			}
+		});
+	}
+
+	console.log(`disabled tests: scanned ${files.length} files\n`);
+	if (found > 0) fail(`${found} disabled test(s). Fix it, delete it, or record it as a \`gap:\` row in the matrix.`);
+	else ok("no skip, only or todo");
+
+	finish("disabled tests");
+}
+
+// --- the nightly verdict ------------------------------------------------------------------------
+//
+// Reads .nightly-verdict.json and refuses a release that no recent night measured. The rules live
+// in nightly-verdict.mjs so they can be unit-tested: every one of them is about what happens when
+// the measurement did NOT arrive, and those paths never run on a good day.
+//
+// NOT wired into release.yml yet, deliberately. No nightly has ever run, so the file does not
+// exist, and a gate that blocks every release from the day it lands is the failure this rollout
+// is ordered to avoid. It gets wired in the commit where the first real verdict is committed.
+//
+// It also never runs in ci.yml -- a stale verdict would turn `main` red for a reason no commit
+// caused -- and never on a beta, because a beta is very often the fix for whatever made the
+// nightly red.
+
+function nightlyGate() {
+	let verdict = null;
+	try {
+		verdict = readJson(NIGHTLY_VERDICT);
+	} catch (e) {
+		if (e.code !== "ENOENT") {
+			console.error(`${NIGHTLY_VERDICT} will not parse: ${e.message}`);
+			process.exit(1);
+		}
+	}
+
+	const { problems: found, notes } = judgeVerdict(verdict, new Date());
+	console.log(`nightly verdict: ${NIGHTLY_VERDICT}, ${STALE_HOURS} h window\n`);
+	for (const n of notes) ok(n);
+	for (const f of found) fail(f);
+	finish("nightly verdict");
+}
+
 // --- dispatch ---------------------------------------------------------------------------------
 
 const [command, ...rest] = process.argv.slice(2);
@@ -257,7 +487,19 @@ switch (command) {
 	case "lint":
 		lintRatchet(rest.includes("--write"));
 		break;
+	case "coverage":
+		coverageRatchet(rest.includes("--write"));
+		break;
+	case "badges":
+		coverageBadges();
+		break;
+	case "disabled":
+		disabledTests();
+		break;
+	case "nightly":
+		nightlyGate();
+		break;
 	default:
-		console.error("usage: release-checks.mjs <version|changelog|lint> [...]");
+		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly> [...]");
 		process.exit(2);
 }

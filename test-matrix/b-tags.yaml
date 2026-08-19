@@ -1,0 +1,41 @@
+# Group B -- Tag discovery & routing.
+
+- feature: B13
+  name: Free tag cap (1 mapped tag) / Pro lifts it
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: B13.1
+      scenario: A free user has one mapped tag and maps a second
+      expect: The second row renders as "Not synced." with the reason in place -- a readable explanation, not a disabled control
+      layer: vault
+      tier: free
+      gap: G04
+
+    - id: B13.2
+      scenario: A free user's second and third mapped tags are reached by a sync
+      expect: They are not synced. FREE_TAG_LIMIT is the enforcement point, and setting it to Infinity today passes all 996 tests
+      layer: engine
+      tier: free
+      gap: G04
+
+    - id: B13.3
+      scenario: A user with a valid licence maps a fifth tag
+      expect: All five sync. The cap is lifted, not raised
+      layer: vault
+      tier: pro
+      gap: G04
+
+    - id: B13.4
+      scenario: A licence ends while five tags are mapped
+      expect: The mappings are never revoked or deleted; the rows beyond the first stop syncing and say why
+      layer: vault
+      tier: pro
+      gap: G04
+
+    - id: B13.5
+      scenario: The licence server is unreachable when the tag dropdown changes
+      expect: The cap is not applied on silence -- an unreachable Polar is not a verdict
+      layer: vault
+      tier: pro
+      gap: G04
