@@ -8,7 +8,10 @@ export default defineConfig({
 		// `scripts/` is here for the release gates' own tests. They are not product code and are
 		// deliberately outside the coverage numbers below, but the rules they check -- what happens
 		// when a measurement did NOT arrive -- are exactly the paths that never run on a good day.
-		include: ["src/**/*.test.ts", "pro/**/*.test.ts", "scripts/**/*.test.mjs"],
+		// `test-stubs/` is here for the fake Obsidian's own tests. A test double with behaviour --
+		// this one throws, folds case and normalises paths -- is code, and untested code in a test
+		// double is the failure mode a fake exists to prevent.
+		include: ["src/**/*.test.ts", "pro/**/*.test.ts", "scripts/**/*.test.mjs", "test-stubs/**/*.test.ts"],
 
 		coverage: {
 			provider: "v8",
