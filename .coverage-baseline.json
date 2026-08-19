@@ -155,8 +155,8 @@
 			"branches": 6
 		},
 		"src/main.ts": {
-			"lines": 291,
-			"branches": 211
+			"lines": 290,
+			"branches": 207
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,
@@ -249,6 +249,10 @@
 		"src/scene-text.ts": {
 			"lines": 0,
 			"branches": 3
+		},
+		"src/settings-store.ts": {
+			"lines": 0,
+			"branches": 0
 		},
 		"src/shims/setimmediate.ts": {
 			"lines": 27,

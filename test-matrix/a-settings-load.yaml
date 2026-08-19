@@ -1,0 +1,283 @@
+# Group A -- what the plugin arrives with. Also E12 (backend id migration) and C15's defaults, which
+# are the same read seen from two other features.
+#
+# There is no schema version in `data.json` and that is a decision: `onload` never writes, so a stamp
+# would be absent for an unbounded time, and the file is explicitly synced between machines that may
+# be on different plugin versions. The two properties that stand in for a version -- **total** and
+# **idempotent** -- are asserted instead, in A8.2 and A8.3.
+#
+# The unit rows are `migrateSettings` with its environment injected; the vault rows are the shipped
+# `onload()` against the real registry and the real platform. Both, because the injection is exactly
+# what a unit test cannot check.
+
+- feature: A8
+  name: An upgrade keeps what the user had
+  code: src/settings-store.ts
+  tier: free
+  scenarios:
+    - id: A8.1
+      scenario: A first install has no data.json at all
+      expect: Every field gets its default; nothing is undefined and nothing throws
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > gives a first install every default"
+
+    - id: A8.2
+      scenario: data.json holds something no version of this plugin ever wrote -- a string, a number, an array, a bare true
+      expect: A complete object every time. The file is user-editable and a sync conflict can leave anything in it
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > is total: nothing a data.json could hold makes it throw or return a hole"
+
+    - id: A8.3
+      scenario: A data.json this build already migrated is read again
+      expect: It reads to itself. Idempotence is what replaces a version stamp -- a second read must not migrate a second time
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > is idempotent: reading its own output changes nothing"
+
+    - id: A8.4
+      scenario: A pre-multi-provider data.json still holds the single llmVisionApiKey
+      expect: It is dropped rather than guessed at -- a key from a version that had one provider cannot be assigned to one of five
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > drops the single API key the pre-multi-provider version stored"
+
+    - id: A8.5
+      scenario: Several backends have their own settings blob stored
+      expect: Each is carried across untouched. They are opaque here; only the backend that owns one reads inside it
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > keeps each backend's own settings blob untouched"
+
+    - id: A8.6
+      scenario: A whole working install's data.json is read
+      expect: Every field comes back exactly as it was found -- device token, tag map, sync index, licence and all
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > keeps a whole working install exactly as it found it"
+
+    - id: A8.7
+      scenario: data.json carries marginNotes true, written by a 1.1.0 beta
+      expect: Honoured. Someone switched it on themselves, and the setting is on screen again to say no with
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > honours a marginNotes: true written by a 1.1.0 beta"
+
+    - id: A8.8
+      scenario: The user chose their own attachments folder
+      expect: It is kept, and an absent one still becomes tagged-sync/attachments
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > keeps an attachments folder the user chose, and defaults the rest"
+
+    - id: A8.9
+      scenario: A loaded install's autoSync block or licence is written into
+      expect: The module-level defaults are not aliased, so writing one install's settings cannot change the next one's defaults
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > does not alias the defaults it spread from either"
+
+    - id: A8.10
+      scenario: The shipped plugin loads a first install
+      expect: The same defaults, through the real registry and the real platform read
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > gives a first install every default"
+
+    - id: A8.11
+      scenario: Someone upgrades and then syncs nothing
+      expect: onload writes nothing at all. It migrates in memory, which is why a version stamp could never be relied on
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > writes nothing while loading -- an upgrade that syncs nothing must leave data.json alone"
+
+    - id: A8.12
+      scenario: The shipped plugin is handed a data.json that is not an object
+      expect: It still loads, with an empty tag map and no licence
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > survives a data.json that is not an object at all"
+
+    - id: A8.13
+      scenario: The shipped plugin loads a whole working install
+      expect: Every stored field survives the real load path, not just the unit's
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > keeps what a working install has stored"
+
+    - id: A8.14
+      scenario: The shipped plugin loads a beta's marginNotes true
+      expect: Honoured through the real load path
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > honours a marginNotes: true written by a 1.1.0 beta"
+
+    - id: A8.15
+      scenario: The shipped plugin loads a data.json with only the legacy API key in it
+      expect: Dropped through the real load path too
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > drops the single API key the pre-multi-provider version stored"
+
+- feature: E12
+  name: Unknown or retired backend id migrates
+  code: src/settings-store.ts
+  tier: free
+  scenarios:
+    - id: E12.1
+      scenario: data.json names the backend under both the current key and the one it replaced
+      expect: The current key wins. ocrBackendChoice is never deleted from the file, only stopped being written
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > takes the current key name over the one it replaced"
+
+    - id: E12.2
+      scenario: A pre-1.1 data.json names it under the old key only
+      expect: It is still found, so a choice made before 1.1 survives the upgrade
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > still reads the pre-1.1 key name when it is the only one there"
+
+    - id: E12.3
+      scenario: data.json names a backend that shipped and was retired
+      expect: Coerced to the platform default. Left alone it would select a backend that cannot be built, failing at transcription time instead of here
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > resets a retired backend to the platform default"
+
+    - id: E12.4
+      scenario: The other retired id
+      expect: The same
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > resets the other retired backend to the platform default"
+
+    - id: E12.5
+      scenario: A real backend id that this particular build does not ship
+      expect: Coerced. The id being real is not the question -- whether this build can construct it is
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > resets a real id this particular build does not ship to the platform default"
+
+    - id: E12.6
+      scenario: The field is an empty string
+      expect: Coerced rather than selecting nothing
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > resets an empty string to the platform default"
+
+    - id: E12.7
+      scenario: The field is not a string at all
+      expect: Coerced. A hand-edited file can hold anything
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > resets something that is not a string at all to the platform default"
+
+    - id: E12.8
+      scenario: data.json names a backend this build does have
+      expect: Kept. The coercion must not be a reset in disguise
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > keeps a backend this build does know"
+
+    - id: E12.9
+      scenario: The platform default differs between two machines
+      expect: The migration takes it as an argument instead of reading the platform itself, so both branches are one call away
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > asks the environment rather than deciding the platform itself"
+
+    - id: E12.10
+      scenario: The shipped plugin loads a retired id, against the real registry
+      expect: Coerced to what this platform actually defaults to
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > resets a backend this build no longer has to the platform default"
+
+    - id: E12.11
+      scenario: The shipped plugin loads a backend the real registry has
+      expect: Kept -- the registry is filled by side-effect imports, and this is the row that proves it was filled
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > keeps a backend this build does have"
+
+    - id: E12.12
+      scenario: The shipped plugin loads the pre-1.1 key name
+      expect: Still honoured through the real load path
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > still honours the pre-1.1 key name for the backend choice"
+
+    - id: E12.13
+      scenario: The shipped plugin loads a data.json carrying both key names
+      expect: The current one wins through the real load path
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > prefers the current key name when a data.json carries both"
+
+    - id: E12.14
+      scenario: A first install on a machine where Apple Vision cannot run
+      expect: off, not vision. Vision is offered there but disabled, so defaulting to it would select an option the user cannot use and cannot understand
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > defaults to off where Apple Vision cannot run"
+
+- feature: C15
+  name: Auto-sync settings survive a partial or older data.json
+  code: src/settings-store.ts
+  tier: free
+  scenarios:
+    - id: C15.1
+      scenario: data.json holds an autoSync block with only the master toggle in it
+      expect: The interval and the metered consent come from the defaults; the toggle is kept
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > fills an autoSync block holding the master toggle alone from the defaults"
+
+    - id: C15.2
+      scenario: The block says launch-only
+      expect: A null interval is a value, not an absence -- it must not be defaulted back to 6 hours
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > fills an autoSync block holding launch-only from the defaults"
+
+    - id: C15.3
+      scenario: The block holds the metered consent alone
+      expect: The consent is kept and auto-sync still ships off. Consent to spend is not consent to run
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > fills an autoSync block holding the metered consent alone from the defaults"
+
+    - id: C15.4
+      scenario: The block is present but empty
+      expect: Every default, and the defaults themselves are off / 6 hours / no metered consent
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > fills an autoSync block holding an empty block from the defaults"
+
+    - id: C15.5
+      scenario: The shipped plugin loads a half-written autoSync block
+      expect: Filled from the defaults through the real load path
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > fills a half-written autoSync block from the defaults rather than rejecting it"
+
+- feature: I6
+  name: A licence block written by an older version still loads
+  code: src/settings-store.ts
+  tier: free
+  scenarios:
+    - id: I6.1
+      scenario: data.json carries a licence block missing fields this version has
+      expect: Spread over NO_LICENCE, so it is missing fields rather than rejected. The file travels between machines on different plugin versions through Obsidian Sync
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > fills a half-written licence block the same way"
+
+    - id: I6.2
+      scenario: The shipped plugin loads that same block
+      expect: The same, through the real load path
+      layer: vault
+      file: src/settings-on-load.test.ts
+      test: "what the plugin arrives with > fills a half-written licence block the same way"
