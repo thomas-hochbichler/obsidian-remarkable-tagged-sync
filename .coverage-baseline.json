@@ -1,5 +1,5 @@
 {
-	"comment": "Never-worse ratchet over ABSOLUTE uncovered lines and branches, per file. It fails when a file's uncovered count rises above the number here; it never asserts a percentage, because no percentage in this repo means what it looks like -- at 71.2 % line coverage, roughly 41 of 70 deliberate mutations of production code survived all 996 tests, both Pro gates among them. A file that is not listed counts as 0 uncovered, so a new file arrives with its tests or it arrives red. Moving tested code between files can raise one entry while lowering another: that is the case to re-baseline for. Re-measure with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`, in the SAME commit as the change that needs it, so review sees both.",
+	"comment": "Never-worse ratchet over ABSOLUTE uncovered lines and branches, per file. It fails when a file's uncovered count rises above the number here; it never asserts a percentage, because no percentage in this repo means what it looks like -- at 71.2 % line coverage, roughly 41 of 70 deliberate mutations of production code survived all 996 tests, both Pro gates among them. A file that is not listed counts as 0 uncovered, so a new file arrives with its tests or it arrives red. Moving tested code between files can raise one entry while lowering another: that is the case to re-baseline for. Re-measure with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`, in the SAME commit as the change that needs it, so review sees both. THE NUMBERS ARE PLATFORM-DEPENDENT AND THE GATE RUNS ON LINUX. `--write` records what the machine it ran on measured, and a Mac covers more of the platform-branching files (src/local-register.ts, src/local-model-runtime.ts, src/vision-ocr-runtime.ts) than ubuntu-latest does -- so a baseline written on a Mac can fail CI on files nobody touched. It first did on 2026-08-19, the day src/entry.ts entered the measurement and brought those files with it. When CI reports a file as less covered and a local run does not, raise that entry by the delta CI printed: the floor has to be the platform that enforces it.",
 	"measured": "2026-08-19",
 	"files": {
 		"pro/anthropic-ocr-backend.ts": {
@@ -7,8 +7,8 @@
 			"branches": 1
 		},
 		"pro/llm-register.ts": {
-			"lines": 65,
-			"branches": 52
+			"lines": 60,
+			"branches": 46
 		},
 		"pro/llm-transcript.ts": {
 			"lines": 0,
@@ -111,7 +111,7 @@
 			"branches": 0
 		},
 		"src/local-model-fetch.ts": {
-			"lines": 200,
+			"lines": 197,
 			"branches": 67
 		},
 		"src/local-model-gate.ts": {
@@ -119,8 +119,8 @@
 			"branches": 0
 		},
 		"src/local-model-runtime.ts": {
-			"lines": 51,
-			"branches": 20
+			"lines": 45,
+			"branches": 15
 		},
 		"src/local-model-settings.ts": {
 			"lines": 0,
@@ -135,12 +135,12 @@
 			"branches": 1
 		},
 		"src/local-ocr-runtime.ts": {
-			"lines": 58,
+			"lines": 52,
 			"branches": 25
 		},
 		"src/local-register.ts": {
-			"lines": 112,
-			"branches": 91
+			"lines": 104,
+			"branches": 90
 		},
 		"src/localhost-providers.ts": {
 			"lines": 0,
@@ -155,8 +155,8 @@
 			"branches": 6
 		},
 		"src/main.ts": {
-			"lines": 476,
-			"branches": 297
+			"lines": 449,
+			"branches": 274
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,
@@ -179,6 +179,10 @@
 			"branches": 0
 		},
 		"src/ocr-registry.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/ocr-resolution.ts": {
 			"lines": 0,
 			"branches": 0
 		},
@@ -271,11 +275,11 @@
 			"branches": 7
 		},
 		"src/vision-ocr-runtime.ts": {
-			"lines": 39,
-			"branches": 23
+			"lines": 33,
+			"branches": 21
 		},
 		"src/vision-register.ts": {
-			"lines": 2,
+			"lines": 1,
 			"branches": 2
 		}
 	}

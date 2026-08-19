@@ -25,7 +25,6 @@ import { activateKey, checkLicence, deactivateHere, type LicenceApi, type Licenc
 import { createPolarLicenceApi } from "./licence-client";
 import {
 	ACTIVATION_LIMIT_MESSAGE,
-	gatedBackendMessage,
 	licenceStatusText,
 	MONEY_BACK_MESSAGE,
 	OFFLINE_ACTIVATION_MESSAGE,
@@ -51,6 +50,16 @@ import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { tolerateLegacyMetadata } from "./remarkable-metadata";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { EMPTY_SYNC_INDEX, invalidateRenders, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
+import {
+	defaultOcrBackend,
+	hasAlternativeBackends,
+	hasCloudBackends,
+	hasOnDeviceBackends,
+	isGated,
+	type OcrFallback,
+	planGatedFallback,
+	planUnconfiguredFallback,
+} from "./ocr-resolution";
 import { TagRouter, type TagFolderMap } from "./tag-router";
 import { createAttachmentStore, createNoteStore } from "./vault-stores";
 import { UnavailableOcrBackend, visionRunStats } from "./vision-ocr-backend";
@@ -182,47 +191,6 @@ const DEFAULT_DATA: TaggedSyncData = {
 	licence: NO_LICENCE,
 };
 
-/**
- * Platform default backend (multi-provider spec §7): Apple Vision where it runs. Elsewhere Vision is
- * still offered but disabled, so defaulting to it would select an option the user cannot use and
- * cannot change away from without first understanding why. `off` is the honest default there: notes
- * still sync with the render, and nothing pretends text is coming.
- */
-function defaultOcrBackend(): OcrBackendId {
-	return visionPlatformSupported() ? "vision" : "off";
-}
-
-/** The backends every build has. Neither transcribes over a network, and neither has settings. */
-const BUILT_IN_BACKENDS: ReadonlySet<string> = new Set(["vision", "off"]);
-
-/**
- * Whether this build has a backend beyond the built-in ones. Every string that offers the user a
- * different backend has to ask first: pointing someone at an API key on a screen that has no such
- * setting is worse than saying nothing. Counting entries would not do — `off` is an entry too.
- */
-function hasAlternativeBackends(): boolean {
-	return ocrBackendEntries().some((entry) => !BUILT_IN_BACKENDS.has(entry.id));
-}
-
-/**
- * The two halves of that answer, for the one string that must tell them apart: does a backend send
- * pages to somebody else's server, and does one run on this machine?
- *
- * Split out because the OCR description used `hasAlternativeBackends()` to claim the network and an
- * API key were involved, and that was **already wrong in 1.1.0** (free-localhost-ocr spec §4.1): on a
- * supported Mac the managed local model registers, so a free user with nothing but Apple Vision and
- * an offline model was told their pages go to a provider with their own key. `metered` is the honest
- * predicate — it already means "costs money per page", which is only ever true of someone else's
- * server.
- */
-function hasCloudBackends(): boolean {
-	return ocrBackendEntries().some((entry) => entry.metered);
-}
-
-function hasOnDeviceBackends(): boolean {
-	return ocrBackendEntries().some((entry) => !entry.metered && !BUILT_IN_BACKENDS.has(entry.id));
-}
-
 /** The only way this plugin opens a cloud session -- see tolerateLegacyMetadata for what it fixes. */
 function openSession(sessionToken: string): RemarkableApi {
 	const api = remarkableSession(sessionToken);
@@ -308,7 +276,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	licenceContext(): LicenceContext {
 		// `off` is the platform default wherever Apple Vision cannot run, and it is not something to
 		// name as a fallback -- there, honestly, nothing transcribes.
-		const fallback = defaultOcrBackend();
+		const fallback = defaultOcrBackend(visionPlatformSupported());
 		return {
 			label: this.app.vault.getName(),
 			now: new Date(),
@@ -341,7 +309,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			deviceToken: saved?.deviceToken ?? DEFAULT_DATA.deviceToken,
 			tagFolderMap: saved?.tagFolderMap ?? {},
 			syncIndex: saved?.syncIndex ?? EMPTY_SYNC_INDEX,
-			ocrBackend: isRegisteredOcrBackend(savedBackend) ? savedBackend : defaultOcrBackend(),
+			ocrBackend: isRegisteredOcrBackend(savedBackend) ? savedBackend : defaultOcrBackend(visionPlatformSupported()),
 			llmProviders: saved?.llmProviders ?? {},
 			ocrUnavailableNoticeShown: saved?.ocrUnavailableNoticeShown ?? false,
 			autoSync: { ...DEFAULT_AUTO_SYNC, ...saved?.autoSync },
@@ -461,38 +429,23 @@ export default class TaggedSyncPlugin extends Plugin {
 		// Present in the bundle but not permitted. It falls back like an unconfigured backend rather
 		// than disappearing from the dropdown: a backend that vanishes teaches nobody that Pro exists,
 		// and a silent stop reads as a broken plugin instead of an ended licence.
-		if (entry.requiresLicence && this.entitlement().tier === "free") {
-			return this.gatedFallback(entry.id, entry.label, silent);
+		if (isGated(entry, this.entitlement().tier)) {
+			const label = entry.label;
+			return this.applyOcrFallback(planGatedFallback({ label, visionAvailable: visionPlatformSupported(), silent }), id);
 		}
 		// `??=` rather than `??`: a backend that writes through its blob during a run -- the local
 		// model records each page's duration there -- needs the live object, not a throwaway copy, or
 		// the measurement is lost the moment the sync ends.
-		return entry.create((this.data.llmProviders[id] ??= {}), { silent }) ?? this.notConfiguredFallback(entry.id, entry.label, silent);
+		const adapter = entry.create((this.data.llmProviders[id] ??= {}), { silent });
+		if (adapter) return adapter;
+		const label = entry.label;
+		return this.applyOcrFallback(planUnconfiguredFallback({ label, visionAvailable: visionPlatformSupported(), silent }), id);
 	}
 
-	/**
-	 * A Pro backend without a licence. Same shape as {@link notConfiguredFallback} — free local Vision
-	 * where it runs, `unavailable` otherwise — but it says something different, because the reason is
-	 * different and only one of the two is fixable by typing a key.
-	 */
-	private gatedFallback(id: OcrBackendId, label: string, silent: boolean): OcrBackendAdapter {
-		const fallback = visionPlatformSupported();
-		if (!silent) new Notice(gatedBackendMessage(label, fallback ? "Apple Vision" : null));
-		return fallback ? visionBackend() : new UnavailableOcrBackend(id);
-	}
-
-	/**
-	 * A backend that needs configuration it hasn't got: fall back to free local Vision on macOS, else
-	 * `unavailable` — never an auto-spend (spec §6). The notice is suppressed when `silent` (a
-	 * background auto-sync run), which must never interrupt with a popup (auto-sync spec §Failure);
-	 * the fallback itself still happens.
-	 */
-	private notConfiguredFallback(id: OcrBackendId, label: string, silent: boolean): OcrBackendAdapter {
-		if (visionPlatformSupported()) {
-			if (!silent) new Notice(`No API key set for ${label} — using Apple Vision (local) for this sync.`);
-			return visionBackend();
-		}
-		return new UnavailableOcrBackend(id);
+	/** Wiring only: raise what the plan says to say, build what it says to use. */
+	private applyOcrFallback(plan: OcrFallback, id: OcrBackendId): OcrBackendAdapter {
+		if (plan.notice !== null) new Notice(plan.notice);
+		return plan.use === "vision" ? visionBackend() : new UnavailableOcrBackend(id);
 	}
 
 	/**
@@ -827,7 +780,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// worse than silence, and a promise of a future fix would be a debt.
 		new Notice(
 			"Text transcription needs macOS 13 or later. On this system, notes sync with the handwriting render only." +
-				(hasAlternativeBackends() ? " Choose another OCR backend in settings to transcribe here." : ""),
+				(hasAlternativeBackends(ocrBackendEntries()) ? " Choose another OCR backend in settings to transcribe here." : ""),
 			15_000,
 		);
 	}
@@ -1242,8 +1195,8 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 					// downloadable model and a server you run yourself. Not "sends nothing anywhere" --
 					// a `custom` endpoint may well be another box on your LAN, and the honest claim is
 					// about who owns it, not about whether a packet moves.
-					hasOnDeviceBackends() ? "A local model — downloaded, or a server you run yourself — needs no account and no key." : "",
-					hasCloudBackends() ? "The cloud providers send each page's render to that provider, using your own API key." : "",
+					hasOnDeviceBackends(ocrBackendEntries()) ? "A local model — downloaded, or a server you run yourself — needs no account and no key." : "",
+					hasCloudBackends(ocrBackendEntries()) ? "The cloud providers send each page's render to that provider, using your own API key." : "",
 				]
 					.filter(Boolean)
 					.join(" "),
@@ -1285,7 +1238,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			selectedContract ??
 			[
 				visionPlatformSupported() ? "Apple Vision: flat text only, no headings or tables." : "",
-				hasAlternativeBackends() ? "Choose an LLM backend for structured Markdown." : "",
+				hasAlternativeBackends(ocrBackendEntries()) ? "Choose an LLM backend for structured Markdown." : "",
 			]
 				.filter(Boolean)
 				.join(" ");
@@ -1297,7 +1250,7 @@ class TaggedSyncSettingTab extends PluginSettingTab {
 			save: () => this.plugin.saveData(this.plugin.data),
 			isSelected: backendId === this.plugin.data.ocrBackend,
 			selectDefaultBackend: async () => {
-				this.plugin.data.ocrBackend = defaultOcrBackend();
+				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
 				await this.plugin.saveData(this.plugin.data);
 				this.display();
 			},

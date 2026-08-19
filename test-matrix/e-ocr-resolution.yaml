@@ -1,0 +1,265 @@
+# Group E, continued -- which backend a run gets, and what it says when it is not the one asked for.
+#
+# Two money-safety rules pointing in opposite directions. E11 protects the seller: a paid backend
+# must not run without a licence. E10 protects the buyer: a backend that cannot run must never be
+# replaced by one that charges per page.
+#
+# Both lived inside a `Plugin` subclass, which cannot be constructed without Obsidian, and the
+# consequence was measured rather than feared: deleting the licence gate outright, and flipping
+# `requiresLicence` to false in the registry, each passed all 996 tests this repo had. Gaps G03
+# and G14.
+#
+# The rows naming `src/ocr-backend-choice.test.ts` drive the real plugin through `src/entry.ts` --
+# the file Obsidian loads, which registers every backend. The rows naming
+# `src/ocr-resolution.test.ts` drive the decision alone.
+
+- feature: E17
+  name: The backend a run actually gets
+  code: src/ocr-resolution.ts
+  tier: free
+  scenarios:
+    - id: E17.1
+      scenario: "The user selects a backend and it is present and permitted"
+      expect: "That backend runs"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "the backend a run gets > is the one the user selected, when this build has it and the licence permits it"
+
+    - id: E17.2
+      scenario: "data.json names a backend this build no longer has, carried over from another build or an older version"
+      expect: "Nothing is transcribed and nothing is said. It does not fall back to something the user did not choose"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "the backend a run gets > transcribes nothing, and says nothing, for an id this build no longer has"
+
+    - id: E17.3
+      scenario: "A fresh install on a Mac"
+      expect: "Apple Vision is the default"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "defaultOcrBackend > is Apple Vision where Apple Vision runs"
+
+    - id: E17.4
+      scenario: "A fresh install where Apple Vision cannot run"
+      expect: "Off, not a disabled Vision. Defaulting to an option the user cannot use and cannot change away from without first understanding why is worse than defaulting to nothing"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "defaultOcrBackend > is off where it does not, rather than a backend that is there but cannot run"
+
+- feature: E11
+  name: A Pro backend without a licence falls back, and says why
+  code: src/ocr-resolution.ts
+  tier: pro
+  scenarios:
+    - id: E11.1
+      scenario: "A licensed cloud backend is selected and configured"
+      expect: "It runs. The gate is not a blanket refusal of the paid backends -- it is a refusal for someone who has not bought"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > lets it run once the licence is there"
+
+    - id: E11.2
+      scenario: "A free user selects a cloud backend and has entered no API key"
+      expect: "Free local Apple Vision runs instead"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > does not run, and falls back to free local Apple Vision"
+
+    - id: E11.3
+      scenario: "A free user selects a cloud backend and HAS entered a valid API key"
+      expect: "It still does not run. This is the only state in which the gate is observable at all -- without a key the unlicensed and the unconfigured run both end at Apple Vision, so deleting the gate changes nothing visible. Deleting it passed all 996 tests this repo had"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > does not run even when its API key is set -- which is the only way the gate is visible at all"
+
+    - id: E11.4
+      scenario: "That same refusal has to be explained"
+      expect: "It says the backend needs Tagged Sync Pro, and does not say a key is missing. The two fallbacks land on the same backend, so the sentence is the only thing that tells the user which happened -- and only one of them is fixable by typing a key"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > says it needs Pro, in those words, and not that a key is missing"
+
+    - id: E11.5
+      scenario: "The same, on a machine where Apple Vision cannot run"
+      expect: "It says nothing will be transcribed, rather than naming a fallback there is none of"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > says so honestly where there is no local transcription to fall back to"
+
+    - id: E11.6
+      scenario: "The refusal happens during a background auto-sync"
+      expect: "No popup, and the refusal stands. An unattended run must not interrupt"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > says nothing on a background run, and still refuses"
+
+    - id: E11.7
+      scenario: "A free user on Windows or Linux selects a cloud backend"
+      expect: "Nothing is transcribed. It never reaches for a different paid backend to stand in"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > transcribes nothing where Apple Vision cannot run -- it never reaches for another paid one"
+
+    - id: E11.8
+      scenario: "The trial has ended"
+      expect: "Treated exactly as never having bought. A trial that expires and a licence that was never there are one state to the gate"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a paid backend chosen without a licence > treats an ended trial exactly as never having bought"
+
+    - id: E11.9
+      scenario: "The gate is asked about a backend that does not require a licence"
+      expect: "Never stopped, at any tier"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "isGated > never stops a backend that does not ask for a licence"
+
+    - id: E11.10
+      scenario: "A licence, or a running trial, is asked about"
+      expect: "Both let it through"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "isGated > lets it through for a licence and for a trial alike"
+
+    - id: E11.11
+      scenario: "Someone who has not bought is asked about"
+      expect: "Stopped. One boolean, and the whole paid tier rests on it"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "isGated > stops a paid backend for someone who has not bought"
+
+    - id: E11.12
+      scenario: "The refusal is planned rather than performed"
+      expect: "Free local Vision plus the sentence naming the backend that needed Pro"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "the fallback for a backend that needs a licence > uses free local Apple Vision and says which backend needed Pro"
+
+    - id: E11.13
+      scenario: "The same plan where Vision cannot run"
+      expect: "Nothing runs, and the sentence says so instead of naming a fallback"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "the fallback for a backend that needs a licence > is honest where there is no local transcription at all, instead of naming a fallback there is none of"
+
+    - id: E11.14
+      scenario: "The same plan on a silent run"
+      expect: "The sentence is dropped and the refusal is not"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "the fallback for a backend that needs a licence > says nothing on a background run, and refuses just the same"
+
+- feature: E10
+  name: Never an auto-spend fallback
+  code: src/ocr-resolution.ts
+  tier: free
+  scenarios:
+    - id: E10.1
+      scenario: "A permitted cloud backend is selected with no API key entered"
+      expect: "Free local Apple Vision runs. Never another metered provider -- that would start spending the user's money on a backend they did not choose"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a backend that is permitted but not configured > falls back to free local Apple Vision, never to another metered provider"
+
+    - id: E10.2
+      scenario: "That substitution has to be explained"
+      expect: "It names the backend whose key is missing and says the fallback is local, and does not ask the user to buy anything"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a backend that is permitted but not configured > says which backend has no key, and not that the user needs to buy anything"
+
+    - id: E10.3
+      scenario: "It happens during a background auto-sync"
+      expect: "No popup. The fallback still happens"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a backend that is permitted but not configured > says nothing on a background run, because an unattended sync must not raise a popup"
+
+    - id: E10.4
+      scenario: "The same on a machine where Apple Vision cannot run"
+      expect: "Nothing is transcribed, rather than money being spent elsewhere"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a backend that is permitted but not configured > transcribes nothing where Apple Vision cannot run, rather than spending money elsewhere"
+
+    - id: E10.5
+      scenario: "The rule stated over whatever the registry holds, rather than over a list written here"
+      expect: "No run ever receives a metered backend the user did not select. A provider registered later is covered the day it registers, not the day somebody remembers to add a case"
+      layer: unit
+      file: src/ocr-backend-choice.test.ts
+      test: "a backend that is permitted but not configured > never hands a run a metered backend the user did not select"
+
+    - id: E10.6
+      scenario: "The fallback is planned rather than performed"
+      expect: "Free local Vision plus the sentence naming the missing key"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "the fallback for a backend that has no key > uses free local Apple Vision and says which key is missing"
+
+    - id: E10.7
+      scenario: "The same plan on a silent run"
+      expect: "The sentence is dropped and the fallback is not"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "the fallback for a backend that has no key > says nothing on a background run, and falls back just the same"
+
+    - id: E10.8
+      scenario: "The same plan where Vision cannot run"
+      expect: "Nothing runs, and nothing is said -- unlike the licence fallback, which speaks there. The asymmetry is the shipped behaviour and is pinned rather than smoothed over; the run's own summary is what reports an unavailable backend"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "the fallback for a backend that has no key > says nothing where Apple Vision cannot run, unlike the licence fallback"
+
+    - id: E10.9
+      scenario: "Every combination of platform and silence is asked for"
+      expect: "Only ever Vision or nothing. There is no third option for a future edit to point at"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "the fallback for a backend that has no key > never has a third option to fall back to"
+
+- feature: E18
+  name: What this build has to offer, as the settings strings ask it
+  code: src/ocr-resolution.ts
+  tier: free
+  scenarios:
+    - id: E18.1
+      scenario: "A build has nothing but the two backends every build has"
+      expect: "No alternatives. Counting entries would not do -- off is an entry too"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "what a build has to offer > counts no alternative when all it has is the two every build has"
+
+    - id: E18.2
+      scenario: "Anything else registers"
+      expect: "There are alternatives, and the strings that offer one may say so"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "what a build has to offer > counts one as soon as anything else registers"
+
+    - id: E18.3
+      scenario: "A build is asked whether pages would leave the machine"
+      expect: "Yes only when something actually costs money per page. metered is the honest predicate: it already means somebody else's server"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "what a build has to offer > says there are cloud backends only when something actually costs money per page"
+
+    - id: E18.4
+      scenario: "A free user on a supported Mac has Apple Vision and an offline model and nothing else"
+      expect: "The description must say on-device and not cloud. This was wrong in 1.1.0 -- the string asked whether alternatives existed and used the answer to claim the network and an API key were involved"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "what a build has to offer > tells an on-device alternative apart from a cloud one, which is what the wrong string could not"
+
+    - id: E18.5
+      scenario: "The two built-in backends are asked about"
+      expect: "Neither counts as an on-device alternative, though neither is metered"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "what a build has to offer > does not count the two built-in ones as on-device alternatives, though neither is metered"
+
+    - id: E18.6
+      scenario: "A build registered nothing at all"
+      expect: "All four questions answer no rather than throwing"
+      layer: unit
+      file: src/ocr-resolution.test.ts
+      test: "what a build has to offer > answers all four questions with no for a build that registered nothing at all"
