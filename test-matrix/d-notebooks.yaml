@@ -41,6 +41,41 @@
       layer: vault
       gap: G35
 
+    - id: D16.6
+      scenario: The rendered PDF is written for the first time
+      expect: It is created at the path the arithmetic above produced
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the attachment store > creates the PDF when nothing is at the path"
+
+    - id: D16.7
+      scenario: The same unit is synced again and its PDF is already there
+      expect: The bytes are replaced in place rather than the write being refused -- an attachment, unlike a note, is the sync's to overwrite
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the attachment store > overwrites the PDF that is already there rather than refusing it"
+
+    - id: D16.8
+      scenario: The attachments folder is stored with stray slashes
+      expect: 'Normalized once, so the lookup that chooses between overwrite and create sees the same path the write uses -- otherwise every sync creates the attachment again under a second name'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the attachment store > normalizes, so the lookup that chooses between overwrite and create sees the written path"
+
+    - id: D16.9
+      scenario: The user typed an attachments folder containing a character the platform forbids
+      expect: 'Today the write throws. The attachment filename is built from ids and cannot be illegal; its folder is whatever the user typed. Pinned so the repair has a test to turn green'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the attachment store > throws when the attachments folder the user typed carries a forbidden character"
+
+    - id: D16.10
+      scenario: An attachment of the same name differing only in case is already in the vault
+      expect: 'Today the write throws, for the same reason a note does: the lookup asks the index and the create asks the filesystem'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the attachment store > throws where an attachment of the same name differs only in case"
+
 - feature: D17
   name: A notebook title becomes a filename Obsidian will not rewrite
   code: src/note-builder.ts
@@ -105,5 +140,6 @@
     - id: D17.9
       scenario: An index row written before this repair still holds a path Obsidian rewrote
       expect: The note resolves again, because every path crossing into the vault is normalized at the store boundary -- so the repair needs no migration
-      layer: vault
-      gap: G01
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's read > normalizes the path it is given, so a stored path with an odd space still finds its note"

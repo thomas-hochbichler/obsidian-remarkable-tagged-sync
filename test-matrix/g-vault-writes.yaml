@@ -1,0 +1,161 @@
+# Group G -- what happens where a computed path meets the real vault.
+#
+# This is gap G01, the highest-ranked gap on the list, and the reason it ranked there is that it is
+# the only one where what gets destroyed is content the *user* wrote. Everything a sync writes is
+# regenerable; a clobbered open note is not.
+#
+# Until these rows existed, every test that wrote a note wrote it into an in-memory store that could
+# not fail. The collision suite in note-builder.test.ts proves the naming logic and says nothing
+# about the write.
+#
+# Four rows below pin a throw the plugin does NOT survive today. They are characterisations, not
+# promises: they say what happens, so the repair has a test to turn green. Each says so in its own
+# words rather than being marked as a gap, because a gap is something nobody has looked at.
+
+- feature: G9
+  name: Safe writes to open notes
+  code: src/vault-stores.ts
+  tier: free
+  scenarios:
+    - id: G9.1
+      scenario: A sync writes a note at a path that holds nothing yet
+      expect: The note is created with exactly the content it was given
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's write > creates the note when nothing is at the path"
+
+    - id: G9.2
+      scenario: A sync rewrites a note the user has open in an editor
+      expect: 'It goes through vault.process(), never through a fresh create. This is the single most user-visible data-loss surface in the plugin, and the in-memory fake store had no concept of an open file'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's write > rewrites an existing note through process(), never through a fresh create"
+
+    - id: G9.3
+      scenario: The path handed to the store is not in normal form
+      expect: It is normalized once, so the note the store looks for and the note it writes are the same one -- the asymmetry that used to write a note and then never find it again
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's write > normalizes once, so the note it looks for and the note it writes are the same one"
+
+    - id: G9.4
+      scenario: The vault already holds Work/My Notebook.md and the sync decides Work/my notebook.md is free
+      expect: 'Today it throws "File already exists." and the sync of that notebook fails. resolveFreePath asks read(), which asks the exact-string file index; create asks the filesystem, which folds case on macOS and Windows. Pinned so the repair has a test to turn green'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's write > throws Obsidian's own sentence on a path the plugin has just decided was free"
+
+    - id: G9.5
+      scenario: A folder sits at the path the note was going to take
+      expect: 'Today it throws. The lookup that chooses between rewrite and create asks for a *file*, so a folder reads as "nothing there" and the create runs into it. Pinned, not promised'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's write > throws when a folder sits where the note should go"
+
+    - id: G9.6
+      scenario: A path reaches the store carrying a character the platform forbids
+      expect: 'Today it throws, and nothing lands. The sanitizer runs when a name is built; a path arriving by another route -- a stored one, a folder the user typed into tag routing -- is refused here instead. Pinned, not promised'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's write > throws when the path carries a character the platform forbids"
+
+    - id: G9.7
+      scenario: The sync asks whether a path is already taken
+      expect: Null rather than a throw when nothing is there, and the note's text when there is
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's read > returns null rather than throwing when nothing is at the path"
+
+    - id: G9.8
+      scenario: The path holds a note
+      expect: Its text comes back, which is what the edit check and the transcript reuse both read
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's read > returns the note's text when it is there"
+
+    - id: G9.9
+      scenario: A folder, not a note, sits at the path being checked
+      expect: Null, so the caller treats it as free -- which is exactly how the write above ends up running into it
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's read > returns null when a folder, not a note, sits at the path"
+
+- feature: G10
+  name: Moves preserve backlinks
+  code: src/vault-stores.ts
+  tier: free
+  scenarios:
+    - id: G10.1
+      scenario: A tag's folder mapping is re-targeted and a synced note has to move
+      expect: 'The move goes through fileManager.renameFile, not vault.rename -- the difference *is* the backlinks: every link elsewhere in the vault follows the note'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's move > renames through the file manager, which is what keeps the vault's backlinks pointing at it"
+
+    - id: G10.2
+      scenario: The index names a note the user has already deleted
+      expect: Nothing happens and nothing throws, so one stale index row does not fail the whole sync
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's move > does nothing when the note it was asked to move is not there"
+
+    - id: G10.3
+      scenario: Either end of the move is not in normal form
+      expect: Both are normalized, so a path stored before the repair still resolves and the destination is not written under a second name
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "the note store's move > normalizes both ends, so a stored source path resolves and the destination is not written twice"
+
+- feature: G15
+  name: Target folders are created
+  code: src/vault-stores.ts
+  tier: free
+  scenarios:
+    - id: G15.1
+      scenario: A tag is mapped to a folder that does not exist yet
+      expect: The folder is created rather than the write failing
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "ensureFolder > creates a folder that is not there yet"
+
+    - id: G15.2
+      scenario: The same sync runs a second time
+      expect: Nothing happens. The in-memory fake store's ensureFolder could never fail, so this had never been asserted against something that can
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "ensureFolder > does nothing when the folder is already there, so a second sync is not an error"
+
+    - id: G15.3
+      scenario: The mapped folder is stored with stray or leading slashes
+      expect: One folder, not two -- the check and the create normalize the same way
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "ensureFolder > normalizes before it looks and before it creates, so one folder is not created twice"
+
+    - id: G15.4
+      scenario: The vault already holds work/ and a tag routes to Work/
+      expect: 'Today it throws "Folder already exists." on the first sync after the mapping. getFolderByPath is an exact lookup into the index and createFolder asks the filesystem, which folds case. Pinned so the repair has a test to turn green'
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "ensureFolder > throws where the vault already holds the same folder under a different case"
+
+    - id: G15.5
+      scenario: The same vault on Linux
+      expect: No throw. The disagreement is a property of the filesystem, so this failure is invisible on the one platform CI runs on -- which is why it needs a test that says which platform it is on
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "ensureFolder > does not throw for that same pair on Linux, where the filesystem does not fold case"
+
+    - id: G15.6
+      scenario: The note store is asked to make sure a note's target folder exists
+      expect: It is created in the vault that store was built on. Asserted through the store, not only on the function, because what a delegation gets wrong is which vault it was handed
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "each store's own ensureFolder > creates the note's target folder in the vault the note store was built on"
+
+    - id: G15.7
+      scenario: The attachment store is asked the same about the attachments folder
+      expect: The same, through the other store -- the two are built from different arguments and only a test through each can tell them apart
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "each store's own ensureFolder > creates the attachments folder in the vault the attachment store was built on"
