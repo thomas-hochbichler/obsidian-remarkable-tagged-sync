@@ -44,7 +44,7 @@ describe("AnthropicOcrBackend", () => {
 	});
 
 	it("skips OCR for an empty page list without making a request", async () => {
-		const backend = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([]);
 
@@ -54,7 +54,7 @@ describe("AnthropicOcrBackend", () => {
 
 	it("recognizes a single page in one HTTP call and reports ok status", async () => {
 		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "Hello world" }] }));
-		const backend = new AnthropicOcrBackend({ apiKey: "sk-test", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "sk-test", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()]);
 
@@ -80,7 +80,7 @@ describe("AnthropicOcrBackend", () => {
 	// something we control -- rather than from the model agreeing to mark it.
 	it("sends one page per HTTP call, one image block each", async () => {
 		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "text" }] }));
-		const backend = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page(), page(), page()]);
 
@@ -102,7 +102,7 @@ describe("AnthropicOcrBackend", () => {
 				],
 			}),
 		);
-		const backend = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()]);
 
@@ -112,7 +112,7 @@ describe("AnthropicOcrBackend", () => {
 
 	it("reports failed when the API responds with a non-ok status", async () => {
 		fetchMock.mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
-		const backend = new AnthropicOcrBackend({ apiKey: "bad-key", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "bad-key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()]);
 
@@ -121,7 +121,7 @@ describe("AnthropicOcrBackend", () => {
 
 	it("reports failed and never throws when the request itself fails", async () => {
 		fetchMock.mockRejectedValue(new Error("network down"));
-		const backend = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()]);
 
@@ -132,7 +132,7 @@ describe("AnthropicOcrBackend", () => {
 	// response is that page reporting itself blank -- not a failure. It used to be reported as one.
 	it("reports a page with no usable text as skipped, not failed", async () => {
 		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "   " }] }));
-		const backend = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()]);
 
@@ -143,7 +143,7 @@ describe("AnthropicOcrBackend", () => {
 	// sync would never revisit it: the device hash is unchanged, so the loss was permanent.
 	it("reports a truncated response as failed", async () => {
 		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "half a page" }], stop_reason: "max_tokens" }));
-		const backend = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock });
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		expect((await backend.recognize([page()])).pages).toEqual([{ status: "failed", text: "" }]);
 	});
@@ -152,14 +152,14 @@ describe("AnthropicOcrBackend", () => {
 		const slept: number[] = [];
 		const rateLimited = { ...jsonResponse(429, {}), headers: { get: (name: string) => (name === "retry-after" ? "2" : null) } } as unknown as Response;
 		fetchMock.mockResolvedValueOnce(rateLimited).mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "second try" }] }));
-		const backend = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock, sleepFn: async (ms) => void slept.push(ms) });
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock, sleepFn: async (ms) => void slept.push(ms) });
 
 		expect((await backend.recognize([page()])).text).toBe("second try");
 		expect(slept).toEqual([2000]);
 
 		fetchMock.mockReset();
 		fetchMock.mockResolvedValue(rateLimited);
-		const stubborn = new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock, sleepFn: async () => {} });
+		const stubborn = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock, sleepFn: async () => {} });
 
 		expect((await stubborn.recognize([page()])).pages).toEqual([{ status: "failed", text: "" }]);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -169,15 +169,27 @@ describe("AnthropicOcrBackend", () => {
 		expect(new AnthropicOcrBackend({ apiKey: "key" }).id).toBe("anthropic");
 	});
 
-	it("sends the supplied model, falling back to claude-sonnet-5", async () => {
+	it("sends the supplied model", async () => {
 		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "x" }] }));
 
 		await new AnthropicOcrBackend({ apiKey: "key", model: "claude-opus-4-8", fetchFn: fetchMock }).recognize([page()]);
 		expect(requestBody().model).toBe("claude-opus-4-8");
+	});
 
-		fetchMock.mockClear();
-		await new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock }).recognize([page()]);
-		expect(requestBody().model).toBe("claude-sonnet-5");
+	// No model id is seeded anywhere any more, so "unset" is a state a real user reaches. Anthropic
+	// answers an empty `model` with a bare 400, which would reach the note as "Could not read this
+	// page" and name nothing to fix -- so nothing is sent and the warning says what to do instead.
+	it("refuses to transcribe when no model is set, and says so instead of asking Anthropic", async () => {
+		const result = await new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock }).recognize([page(), page()]);
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(result.status).toBe("failed");
+		expect(result.warnings?.[0]).toBe("No model is set for this OCR backend — open the plugin settings and enter one. 2 pages were not transcribed.");
+	});
+
+	it("treats a whitespace-only model as unset", async () => {
+		await new AnthropicOcrBackend({ apiKey: "key", model: "   ", fetchFn: fetchMock }).recognize([page()]);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });
 

@@ -29,7 +29,17 @@ export {
  */
 export type LlmProviderId = "anthropic" | "openai" | "gemini" | "openrouter" | "ollama" | "lmstudio" | "custom";
 
-/** The cloud half. Order here leads the dropdown, ahead of the three local ones. */
+/**
+ * The cloud half. Order here leads the dropdown, ahead of the three local ones.
+ *
+ * **No cloud provider seeds a `defaultModel`.** A shipped model id is a promise with an expiry date
+ * nobody here controls: this table carried `gemini-2.0-flash` for ten weeks after Google shut it
+ * down on 2026-06-01, and every user who took the prefilled value got a provider error that looked
+ * like their own key being wrong. The plugin cannot know which models a provider still serves, so it
+ * does not pretend to -- the model id is the user's to enter, and an empty one is refused with a
+ * sentence naming what to do (`OpenAiCompatOcrBackend.recognize`, `AnthropicOcrBackend.recognize`)
+ * rather than sent. This is the rule the free build already applied to the localhost providers.
+ */
 const CLOUD_PROVIDERS = {
 	anthropic: {
 		id: "anthropic",
@@ -38,7 +48,7 @@ const CLOUD_PROVIDERS = {
 		adapter: "anthropic",
 		baseURL: "https://api.anthropic.com",
 		editableURL: false,
-		defaultModel: "claude-sonnet-5",
+		defaultModel: "",
 		key: "required",
 		visionReach: "none",
 	},
@@ -49,7 +59,7 @@ const CLOUD_PROVIDERS = {
 		adapter: "openai-compat",
 		baseURL: "https://api.openai.com/v1",
 		editableURL: false,
-		defaultModel: "gpt-4o",
+		defaultModel: "",
 		key: "required",
 		visionReach: "heuristic",
 	},
@@ -60,7 +70,7 @@ const CLOUD_PROVIDERS = {
 		adapter: "openai-compat",
 		baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 		editableURL: false,
-		defaultModel: "gemini-2.0-flash",
+		defaultModel: "",
 		key: "required",
 		visionReach: "partial",
 	},
@@ -71,7 +81,7 @@ const CLOUD_PROVIDERS = {
 		adapter: "openai-compat",
 		baseURL: "https://openrouter.ai/api/v1",
 		editableURL: false,
-		defaultModel: "openai/gpt-4o",
+		defaultModel: "",
 		key: "required",
 		visionReach: "reported",
 	},
@@ -80,15 +90,16 @@ const CLOUD_PROVIDERS = {
 /**
  * Order here is the settings-dropdown order (spec §2 / §5), unchanged by the split.
  *
- * The Ollama override restores the `defaultModel` this build has always shipped. The shared meta
- * carries an empty one because the free build refuses to seed a model it has never measured; Pro
- * keeps `llama3.2-vision` because §6.4 says Pro's providers do not change. It is no better measured
- * than the value the free build declined to ship -- noted rather than fixed, since changing it is a
- * change to Pro's behaviour and belongs to whoever measures the hosts.
+ * Pro's Ollama override is gone: it used to restore the `defaultModel` this build had always
+ * shipped, `llama3.2-vision`, while the shared meta carried an empty one because the free build
+ * refuses to seed a model it has never measured. That value was, in the old comment's own words, no
+ * better measured than the one the free build declined to ship -- and a user who never pulled it hit
+ * a failure naming a model they had not chosen. Every provider now seeds nothing, cloud and local
+ * alike, so there is no exception for a later one to be filed under.
  */
 export const PROVIDERS: Record<LlmProviderId, ProviderMeta> = {
 	...CLOUD_PROVIDERS,
-	ollama: { ...LOCALHOST_PROVIDERS.ollama, defaultModel: "llama3.2-vision" },
+	ollama: LOCALHOST_PROVIDERS.ollama,
 	lmstudio: LOCALHOST_PROVIDERS.lmstudio,
 	custom: LOCALHOST_PROVIDERS.custom,
 };
