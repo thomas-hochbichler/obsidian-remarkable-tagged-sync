@@ -49,7 +49,16 @@ vi.mock("rmapi-js", () => ({
 const machine = vi.hoisted(() => ({ visionAvailable: false }));
 vi.mock("./vision-ocr-runtime", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./vision-ocr-runtime")>();
-	return { ...actual, visionPlatformSupported: () => machine.visionAvailable };
+	// Both, and not only the boolean: `visionPlatformSupported()` is defined as
+	// `visionUnavailableReason() === null`, so mocking one and leaving the other real lets them
+	// disagree -- and the one left real reads `os.platform()`, which is the machine the test happens
+	// to run on. That is how a test passes on a Mac and fails on CI, or worse, passes on both for
+	// opposite reasons.
+	return {
+		...actual,
+		visionPlatformSupported: () => machine.visionAvailable,
+		visionUnavailableReason: () => (machine.visionAvailable ? null : "macos-only"),
+	};
 });
 
 // Two globals Obsidian supplies and vitest does not, both reached before this file gets anywhere near

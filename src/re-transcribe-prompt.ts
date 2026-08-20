@@ -1,4 +1,5 @@
 import type { OcrBackend } from "./ocr-backend";
+import type { OcrBackendEntry } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 /**
@@ -13,17 +14,27 @@ import { UnavailableOcrBackend } from "./vision-ocr-backend";
 /**
  * Whether "Re-transcribe all synced notes" belongs in the command palette.
  *
- * **Known hole, characterised in `re-transcribe.test.ts` and filed as ticket 19.** Feature C20 says
- * the command is hidden for a backend that produces no text, and names "Off, or Vision on
- * Windows/Linux". Only the first is true here: `vision.create()` hands back a real `VisionOcrBackend`
- * on every desktop and only its `recognize()` answers `unavailable`, mid-run, long after this check.
- * Asking the *entry* whether it has an `unavailableLabel()` -- which is what the settings dropdown
- * already asks -- would close it, and that is a product decision rather than a move.
+ * Two questions, because one of them cannot be answered by the object `create()` returned.
  *
- * Moved unchanged so the characterisation still describes it. C20.4 is the row that says so.
+ * The adapter says whether transcription is switched off, and whether this build has the selected
+ * backend at all. It cannot say whether the backend can run *here*: Apple Vision builds a real
+ * `VisionOcrBackend` on every desktop and only reports the gap from inside `recognize()`, one page at
+ * a time and long after this check. So the entry is asked as well, through the same
+ * `unavailableLabel()` the settings dropdown uses before it greys an option out.
+ *
+ * The `entry` is the resolved backend's, not the selected one's -- what matters is whether the run
+ * that is about to start produces text, and a Pro backend that fell back to free local Vision runs as
+ * Vision.
+ *
+ * **Why this is worth two questions rather than one.** The run re-fetches every notebook and rewrites
+ * every synced note, and `updateTranscript` removes the whole Transcript section for a blank result.
+ * A backend that cannot run here returns blanks for every page, so the command that promised to hide
+ * itself would instead delete every transcript in the vault and report success. That was ticket 19,
+ * reachable through a synced `data.json` on a Mac-plus-Windows vault.
  */
-export function reTranscribeIsUseful(backend: OcrBackend): boolean {
-	return !(backend.id === "off" || backend instanceof UnavailableOcrBackend);
+export function reTranscribeIsUseful(backend: OcrBackend, entry: OcrBackendEntry | null): boolean {
+	if (backend.id === "off" || backend instanceof UnavailableOcrBackend) return false;
+	return !entry?.unavailableLabel?.();
 }
 
 export interface ReTranscribeCost {

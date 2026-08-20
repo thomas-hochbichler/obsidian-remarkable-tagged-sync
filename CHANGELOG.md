@@ -30,6 +30,20 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **"Re-transcribe all synced notes" no longer offers to run where it would erase your transcripts.**
+  On Windows and Linux the command was in the command palette even with *Apple Vision* selected —
+  and Apple Vision only runs on macOS. Running it there re-fetched every notebook from reMarkable,
+  got nothing back for each page, and **removed the Transcript section from every synced note**,
+  then reported success.
+
+  You could reach this without ever choosing Apple Vision on that machine: the plugin's settings
+  travel with your vault through Obsidian Sync, so a Mac in the same vault selects the backend for
+  all of them.
+
+  The command now asks whether the transcription backend can actually run on this machine before
+  offering itself, the same question the settings dropdown asks before greying an option out. If
+  this already happened to you, running the command once on a Mac writes the transcripts back.
+
 - **Two syncs can no longer start at once and write over each other's bookkeeping.** Pressing *Sync
   now* twice in quick succession — or confirming a *Re-transcribe synced notes* dialog that had been
   left open while a sync started in the meantime — could start a second run on top of the first.
