@@ -720,9 +720,16 @@ async function writeUnit(
  * Deliberately false when there is nothing to compare -- an unprotected old row, a note that is gone,
  * or a note whose fence the user removed outright. Each of those is already handled elsewhere, and
  * guessing "edited" here would strand a note no sync could ever repair.
+ *
+ * Asked of orphaned rows too, and that is not incidental. An orphaned row still names a file, and
+ * reviving it writes to that name -- while the note behind it spent the whole orphaned period as an
+ * ordinary file the user could edit, delete, or replace. Two ways it stops belonging to this row:
+ * the user corrected it by hand, or a rename put a *different* synced note there (possible once this
+ * row's own note was deleted, so the name looked free). Skipping the active check would overwrite
+ * both, silently, and the second one loses a note nobody was warned about.
  */
 async function isBlockEdited(noteStore: NoteStore, row: SyncIndexRow | undefined): Promise<boolean> {
-	if (row === undefined || row.status !== "active" || row.blockHash === undefined) return false;
+	if (row === undefined || row.blockHash === undefined) return false;
 	const content = await noteStore.read(row.notePath);
 	if (content === null) return false;
 	const block = extractManagedBlock(content);

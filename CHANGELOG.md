@@ -30,6 +30,16 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A note is no longer overwritten when a document you had removed comes back.** When a notebook
+  loses its tag or leaves your reMarkable, the plugin stops tracking its note but leaves the note
+  itself in your vault. From that moment it is an ordinary file: you can correct it, rename another
+  note over it, or delete it. If the document later came back, the plugin wrote over whatever was at
+  that path — without the usual check that the note is still the one it wrote.
+
+  That check now runs for these notes too. A note you changed by hand is left alone and counted in
+  the *"N notes were not updated because they were edited"* notice, exactly as it is during a normal
+  sync. A note that is untouched is still refreshed, and one you deleted is still written again.
+
 - **Two syncs can no longer start at once and write over each other's bookkeeping.** Pressing *Sync
   now* twice in quick succession — or confirming a *Re-transcribe synced notes* dialog that had been
   left open while a sync started in the meantime — could start a second run on top of the first.
