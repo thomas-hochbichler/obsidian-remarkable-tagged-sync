@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { RawRemarkableApi } from "rmapi-js";
 import { describe, expect, it, vi } from "vitest";
 import { parseMetadataText, tolerateLegacyMetadata } from "./remarkable-metadata";
@@ -80,5 +81,39 @@ describe("tolerateLegacyMetadata", () => {
 			visibleName: "Meeting notes",
 		});
 		expect(raw.getText).toHaveBeenCalledWith("doc-1.metadata", "hash-1");
+	});
+});
+
+// Gap G40, and the one on that list with real teeth. The patch above only helps if rmapi-js's own
+// `listItems()` actually goes through `raw.getMetadata` -- and nothing verified that. If upstream
+// renames it, inlines it, or fetches metadata another way, the patch becomes a no-op, issue #10
+// returns for every account with one legacy document, and every test in this repo stays green.
+//
+// A recorded contract, in ticket 06's sense: it reads the shipped library rather than mocking it, so
+// the day the assumption stops holding is the day `npm update` turns this red.
+describe("the assumption the patch rests on", () => {
+	const rmapiSource = (): string =>
+		readFileSync(new URL("../node_modules/rmapi-js/dist/index.js", import.meta.url), "utf8");
+
+	it("still finds a `raw.getMetadata` for the patch to replace", () => {
+		expect(rmapiSource()).toMatch(/this\.raw\.getMetadata\(/);
+	});
+
+	it("still has `listItems` reach metadata through the raw API, not around it", () => {
+		// `listItems` -> `listIds` + `#convertEntry`, and the conversion is what asks for metadata.
+		// Asserted as "some path from listItems reaches raw.getMetadata", because pinning the private
+		// method name would go red on a refactor that changed nothing that matters here.
+		const source = rmapiSource();
+
+		expect(source).toMatch(/async listItems\(/);
+		expect(source.match(/this\.raw\.getMetadata\(/g)?.length ?? 0).toBeGreaterThan(0);
+	});
+
+	it("is pinned to the version this assumption was checked against", () => {
+		// rmapi-js 11.1.2 was read by hand: `listItems` -> `#convertEntry` -> `this.raw.getMetadata`.
+		// A major bump is where a rename would arrive, so it has to be looked at rather than absorbed.
+		const version = (JSON.parse(readFileSync(new URL("../node_modules/rmapi-js/package.json", import.meta.url), "utf8")) as { version: string }).version;
+
+		expect(version.split(".")[0]).toBe("11");
 	});
 });

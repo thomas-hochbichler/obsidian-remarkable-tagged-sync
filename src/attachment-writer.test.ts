@@ -76,5 +76,52 @@ describe("writeAttachment", () => {
 		await writeAttachment(store, DEFAULT_ATTACHMENTS_FOLDER, "doc-1", null, new Uint8Array([9]));
 
 		expect(store.writeBinary).toHaveBeenCalledTimes(1);
+		// One call and one only -- an "overwrite" that deleted first would be two, and the gap between
+		// them is where a crash leaves the note embedding a file that is no longer there.
+		expect(store.writeBinary.mock.calls[0][0]).toBe("tagged-sync/attachments/doc-1.pdf");
+	});
+
+	// Gap G35. This is the only function in the file that touches the outside world, and both of its
+	// outward calls can fail: a full disk, a read-only vault, a folder the user turned into a file, a
+	// sync client holding the path. Neither failure had a test.
+	describe("when the vault refuses", () => {
+		it("passes a failed folder creation up, without writing bytes into a folder that is not there", async () => {
+			const store = {
+				ensureFolder: vi.fn().mockRejectedValue(new Error("EACCES: permission denied")),
+				writeBinary: vi.fn(),
+			};
+
+			await expect(writeAttachment(store, DEFAULT_ATTACHMENTS_FOLDER, "doc-1", null, new Uint8Array([1]))).rejects.toThrow(
+				"EACCES",
+			);
+			// The order is the point: no write is attempted against a path whose folder does not exist,
+			// so the failure the user sees names the folder rather than the file.
+			expect(store.writeBinary).not.toHaveBeenCalled();
+		});
+
+		it("passes a failed write up rather than returning a path to a file that was never written", async () => {
+			// The caller embeds the returned path in a note. Swallowing this would put an embed in
+			// somebody's vault pointing at nothing, and the sync would report success.
+			const store = {
+				ensureFolder: vi.fn().mockResolvedValue(undefined),
+				writeBinary: vi.fn().mockRejectedValue(new Error("ENOSPC: no space left on device")),
+			};
+
+			await expect(writeAttachment(store, DEFAULT_ATTACHMENTS_FOLDER, "doc-1", null, new Uint8Array([1]))).rejects.toThrow(
+				"ENOSPC",
+			);
+		});
+	});
+
+	it("writes an empty render as the empty file it is, rather than skipping it", async () => {
+		// A page with nothing on it still renders to a valid, tiny PDF; a zero-length body would be a
+		// renderer failure, and silently not writing would leave the note embedding the *previous*
+		// render -- which is worse than an obviously empty one.
+		const store = fakeStore();
+
+		await writeAttachment(store, DEFAULT_ATTACHMENTS_FOLDER, "doc-1", null, new Uint8Array([]));
+
+		expect(store.writeBinary).toHaveBeenCalledTimes(1);
+		expect(new Uint8Array(store.writeBinary.mock.calls[0][1])).toEqual(new Uint8Array([]));
 	});
 });

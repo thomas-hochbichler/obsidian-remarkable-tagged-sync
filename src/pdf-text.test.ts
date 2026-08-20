@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	bodyLineSpacing,
 	cleanHeadingTitle,
@@ -567,6 +567,24 @@ describe("loadPdfText", () => {
 		const loader = () => Promise.resolve({ getDocument: () => ({ promise: Promise.reject(new Error("broken PDF")) }) });
 
 		expect(await loadPdfText(BYTES, loader)).toBeNull();
+	});
+
+	// Gap G40. Returning null is half of it: this is the *only* record that a book's digest fell back
+	// to highlight text alone. The user sees a thinner digest and nothing saying why, so the console
+	// line is what turns "the plugin got worse" into something answerable -- and it carries the
+	// underlying error, which "couldn't read the text layer" on its own does not.
+	it("says why in the console, with the error, rather than degrading in silence", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		const cause = new Error("XRef table is corrupt");
+		const loader = () => Promise.resolve({ getDocument: () => ({ promise: Promise.reject(cause) }) });
+
+		await loadPdfText(BYTES, loader);
+
+		expect(warn).toHaveBeenCalledTimes(1);
+		expect(warn.mock.calls[0][0]).toContain("text layer");
+		expect(warn.mock.calls[0][0]).toContain("falls back");
+		expect(warn.mock.calls[0][1]).toBe(cause);
+		warn.mockRestore();
 	});
 
 	it("hands pdf.js a copy of the bytes, which it may transfer away", async () => {

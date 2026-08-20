@@ -31,15 +31,17 @@
 
     - id: D16.4
       scenario: The vault rejects the write (read-only folder, disk full, illegal path)
-      expect: writeBinary rejecting surfaces as a skipped document with the reason, not as a half-written note claiming an attachment that is not there
-      layer: vault
-      gap: G35
+      expect: '**Not** a skipped document -- it fails the whole sync, carrying the reason. This row used to claim a per-document skip; measured, there is none. Defensible for the case that produces it, since a full disk is a whole-vault problem and `main.ts` shows a failed status with the reason, but a single unwritable path takes down documents that would have synced. Characterised, not fixed'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "skipped documents > fails the whole sync when the vault refuses an attachment, rather than skipping that document"
 
     - id: D16.5
-      scenario: The renderer hands back zero bytes
-      expect: An empty pdfBytes is refused before it reaches the vault, so no note embeds a 0-byte PDF
-      layer: vault
-      gap: G35
+      scenario: A notebook with no pages at all, so the renderer would hand back nothing
+      expect: Refused before anything reaches the vault, so no note embeds an empty PDF -- which is why `writeAttachment` itself is free to write exactly the bytes it is given
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "skipped documents > refuses a notebook with no pages rather than embedding an empty PDF"
 
     - id: D16.6
       scenario: The rendered PDF is written for the first time

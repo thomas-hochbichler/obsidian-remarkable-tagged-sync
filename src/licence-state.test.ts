@@ -81,6 +81,18 @@ describe("nextLicenceCall", () => {
 		expect(nextLicenceCall(applyOutcome(active, "unknown-key", NOW), NOW)).toBe("none");
 	});
 
+	// Gap G38. The line above passes without the revocation guard at all: `active.validatedAt` is a
+	// day old, so the freshness check answers "none" first and the guard is never reached. On a
+	// **stale** verdict it is the only thing standing between a refunded buyer and a call to Polar on
+	// every gated feature, forever -- which is a licence server asked about a key it has already
+	// withdrawn, on every sync, for as long as the vault exists.
+	it("asks for nothing about a revoked key whose verdict has gone stale", () => {
+		const revokedLongAgo = applyOutcome({ ...active, validatedAt: daysBefore(CHECK_INTERVAL_DAYS + 1) }, "withdrawn", NOW);
+
+		expect(revokedLongAgo.revokedAt).not.toBeNull();
+		expect(nextLicenceCall(revokedLongAgo, NOW)).toBe("none");
+	});
+
 	it("remembers a fresh verdict instead of calling again", () => {
 		const justChecked = { ...active, validatedAt: NOW.toISOString() };
 		expect(nextLicenceCall(justChecked, NOW)).toBe("none");

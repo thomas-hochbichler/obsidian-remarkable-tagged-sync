@@ -291,6 +291,18 @@ function scanningMessages(onProgress: ReturnType<typeof vi.fn>): ScanningProgres
 	);
 }
 
+/** A backend that ticks more often than it was handed pages -- a rate-limit retry, or a rescue pass. */
+function overTickingOcrBackend(ticksPerPage: number): OcrBackend {
+	return {
+		id: "vision",
+		metered: false,
+		recognize: vi.fn(async (pages: RmPage[], onPage?: () => void): Promise<OcrResult> => {
+			for (const _page of pages) for (let i = 0; i < ticksPerPage; i++) onPage?.();
+			return { status: "ok", pages: pages.map(() => ({ status: "ok" as const, text: "x" })), text: "x", confidence: null };
+		}),
+	};
+}
+
 /** A backend that reports each page as it finishes -- what the local model and the LLM backends do. */
 function tickingOcrBackend(): OcrBackend {
 	return {
@@ -422,6 +434,23 @@ describe("runSync progress", () => {
 		expect(done).toEqual([...done].sort((a, b) => a - b));
 		// 3 pages x 2 notebook tags, plus the one tagged page.
 		expect(workingMessages(onProgress).at(-1)).toMatchObject({ done: 7, total: 7 });
+	});
+
+	// Gap G39. Every progress test met `tickingOcrBackend`, which ticks exactly once per page it is
+	// handed, so a bar that counts past its own total was unconstructible -- and removing the guard
+	// passed all 996 tests. A backend that ticks more often is not exotic: a retry after a rate limit
+	// and Vision's own rescue pass both read a page more than once.
+	it("never counts past the total, however often a backend says a page is done", async () => {
+		const onProgress = vi.fn();
+
+		await runSync({ ...baseDeps(twoDocs(), { sync: "Target" }), onProgress, ocrBackend: overTickingOcrBackend(3) }, EMPTY_SYNC_INDEX);
+
+		const working = workingMessages(onProgress);
+		// A percentage past 100 makes the plugin look broken at exactly the moment it is nearly done,
+		// and the status bar clamps its own bar -- so an over-count here would go unnoticed until the
+		// number beside it read "4 of 3".
+		expect(working.every((progress) => progress.done <= progress.total)).toBe(true);
+		expect(working.at(-1)).toMatchObject({ done: 3, total: 3 });
 	});
 
 	it("moves the bar page by page when the backend can say so", async () => {
@@ -2866,6 +2895,46 @@ describe("skipped documents", () => {
 		const result = await runSync(baseDeps(api, { sync: "Target" }), { rootHash: "root-1", rows: {} });
 
 		expect(result.skipErrors).toEqual(['failed to read "Broken" during sync: Error: no content for doc-1']);
+	});
+
+	// Gap G35's engine half, and the row it was written against (D16.4) turned out to be wrong: an
+	// attachment the vault refuses does **not** become a counted skip. It fails the whole sync.
+	//
+	// Defensible for the case that produces it -- a full disk is a whole-vault problem, and `main.ts`
+	// catches this and shows a failed status carrying the reason -- but it is not per-document, and a
+	// single unwritable path would take down documents that would have synced. Characterised as it is;
+	// whether the blast radius should shrink is a product question.
+	it("fails the whole sync when the vault refuses an attachment, rather than skipping that document", async () => {
+		const api = fakeApi({
+			rootHash: "root-refused",
+			entries: [documentEntry({ visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const attachmentStore = fakeAttachmentStore();
+		(attachmentStore.writeBinary as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("ENOSPC: no space left on device"));
+
+		await expect(runSync({ ...baseDeps(api, { sync: "Target" }), attachmentStore }, EMPTY_SYNC_INDEX)).rejects.toThrow(
+			"ENOSPC",
+		);
+	});
+
+	// The other half of the same promise: nothing empty ever reaches the vault. The engine refuses a
+	// notebook with no pages before it renders anything, so `writeAttachment` is never handed zero
+	// bytes -- which is why the writer itself is free to write exactly what it is given.
+	it("refuses a notebook with no pages rather than embedding an empty PDF", async () => {
+		const api = fakeApi({
+			rootHash: "root-empty",
+			entries: [documentEntry({ visibleName: "Empty", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages([]) }) },
+			pageHashesByDoc: { "doc-1": {} },
+		});
+		const attachmentStore = fakeAttachmentStore();
+
+		const result = await runSync({ ...baseDeps(api, { sync: "Target" }), attachmentStore }, EMPTY_SYNC_INDEX);
+
+		expect(result.notesWritten).toBe(0);
+		expect(attachmentStore.writeBinary).not.toHaveBeenCalled();
 	});
 
 	it("is zero on a clean sync", async () => {

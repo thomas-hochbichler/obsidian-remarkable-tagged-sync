@@ -41,7 +41,10 @@ describe("licenceStatusText", () => {
 	it("says an unconfirmed licence still works", () => {
 		const stale = { ...active, validatedAt: "2026-06-01T00:00:00.000Z" };
 		const { heading, body } = textOf(stale);
+		// Gap G38: `toContain` is satisfied by the raw ISO string, which carries a clock time onto a
+		// sentence about a licence -- and a time that is somebody else's, since it is UTC.
 		expect(heading).toContain("not confirmed since 2026-06-01");
+		expect(heading).not.toContain("T");
 		expect(body).toContain("Pro keeps working");
 	});
 
@@ -51,6 +54,7 @@ describe("licenceStatusText", () => {
 		const { heading, body } = textOf(revoked);
 		expect(heading).toContain("refunded");
 		expect(body).toContain("Refunded on 2026-08-14");
+		expect(body).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
 		expect(body).toContain("keeps syncing");
 	});
 
@@ -111,6 +115,9 @@ describe("the shipped text this edits", () => {
 describe("dates and counting", () => {
 	it("writes a date that means the same day on every continent", () => {
 		expect(onDay("2026-03-04T23:30:00.000Z")).toBe("2026-03-04");
+		// A locale-formatted date reads as `03/04/2026`, which means two different days on two
+		// continents -- and these dates sit next to money.
+		expect(onDay("2026-03-04T23:30:00.000Z")).not.toContain("/");
 	});
 
 	it("counts trial days down to zero and no further", () => {
@@ -119,6 +126,22 @@ describe("dates and counting", () => {
 		expect(trialDaysLeft(trialing, new Date("2026-08-27T10:00:00.000Z"))).toBe(1);
 		expect(trialDaysLeft(trialing, new Date("2026-09-30T10:00:00.000Z"))).toBe(0);
 		expect(trialDaysLeft(NO_LICENCE, NOW)).toBe(0);
+	});
+
+	// Gap G38. Every fixture above lands on a whole-day boundary, where `ceil` and `floor` agree --
+	// so `Math.ceil` -> `Math.floor` passed all 996 tests. Part of a day left has to read as a day:
+	// with `floor`, somebody with eighteen hours of trial remaining is told "0 day(s) left" while Pro
+	// is still working, which reads as a plugin that has lost track of its own state.
+	it("rounds a part-day up, because part of a day left is a day the trial still works", () => {
+		const trialing = startTrial(NO_LICENCE, NOW);
+		const endsAt = new Date(NOW.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+		// Eighteen hours to go.
+		expect(trialDaysLeft(trialing, new Date(endsAt.getTime() - 18 * 60 * 60 * 1000))).toBe(1);
+		// One minute to go, and Pro still unlocked.
+		expect(trialDaysLeft(trialing, new Date(endsAt.getTime() - 60 * 1000))).toBe(1);
+		// A minute past the end: zero, and never negative.
+		expect(trialDaysLeft(trialing, new Date(endsAt.getTime() + 60 * 1000))).toBe(0);
 	});
 });
 
