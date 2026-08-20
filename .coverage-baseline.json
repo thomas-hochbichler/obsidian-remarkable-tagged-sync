@@ -159,8 +159,8 @@
 			"branches": 6
 		},
 		"src/main.ts": {
-			"lines": 180,
-			"branches": 134
+			"lines": 166,
+			"branches": 122
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,
@@ -171,6 +171,10 @@
 			"branches": 5
 		},
 		"src/note-region.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/note-rename.ts": {
 			"lines": 0,
 			"branches": 0
 		},

@@ -41,6 +41,7 @@ import {
 	withoutLicence,
 } from "./licence-state";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
+import { remapRows } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { registerRegionProcessor } from "./region-view";
@@ -320,24 +321,12 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	private async onVaultRename(file: TAbstractFile, oldPath: string): Promise<void> {
 		if (this.syncing) return;
-
-		const remap = (notePath: string): string | null => {
-			if (file instanceof TFile && notePath === oldPath) return file.path;
-			const prefix = `${oldPath}/`;
-			if (file instanceof TFolder && notePath.startsWith(prefix)) return `${file.path}/${notePath.slice(prefix.length)}`;
-			return null;
-		};
-
-		const rows = this.data.syncIndex.rows;
-		let changed = false;
-		for (const [key, row] of Object.entries(rows)) {
-			const newPath = remap(row.notePath);
-			if (newPath !== null) {
-				rows[key] = { ...row, notePath: newPath };
-				changed = true;
-			}
-		}
-		if (changed) await this.saveData(this.data);
+		const kind = file instanceof TFolder ? "folder" : file instanceof TFile ? "file" : null;
+		if (kind === null) return;
+		const rows = remapRows(this.data.syncIndex.rows, { kind, from: oldPath, to: file.path });
+		if (rows === null) return;
+		this.data.syncIndex.rows = rows;
+		await this.saveData(this.data);
 	}
 
 	/**
