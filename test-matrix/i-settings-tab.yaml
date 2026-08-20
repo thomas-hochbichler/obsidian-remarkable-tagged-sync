@@ -8,7 +8,7 @@
 
 - feature: A1
   name: Connect with one-time code
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: A1.1
@@ -27,7 +27,7 @@
 
 - feature: A2
   name: Connection status shown
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: A2.1
@@ -39,7 +39,7 @@
 
 - feature: A3
   name: Disconnect
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: A3.1
@@ -51,7 +51,7 @@
 
 - feature: A7
   name: Tag routing hidden until connected
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: A7.1
@@ -70,7 +70,7 @@
 
 - feature: D15
   name: Attachments folder is configurable
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: D15.1
@@ -96,7 +96,7 @@
 
 - feature: D17
   name: Handwritten margin notes switch
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: D17.10
@@ -108,7 +108,7 @@
 
 - feature: E1
   name: Backend dropdown
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: E1.1
@@ -148,7 +148,7 @@
 
 - feature: E13
   name: Note-contract hint
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: E13.1
@@ -174,7 +174,7 @@
 
 - feature: E14
   name: Per-backend settings and setup cards
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: E14.1
@@ -200,7 +200,7 @@
 
 - feature: C15
   name: Interval backstop -- the settings side
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: C15.15
@@ -233,7 +233,7 @@
 
 - feature: C17
   name: Money-safety gate -- the settings side
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: C17.8
@@ -245,7 +245,7 @@
 
 - feature: C18
   name: Battery/RAM consent gate -- the settings side
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: C18.12
@@ -264,7 +264,7 @@
 
 - feature: I1
   name: Pro section in settings
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free surface
   scenarios:
     - id: I1.1
@@ -283,7 +283,7 @@
 
 - feature: I2
   name: 14-day trial, one click
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: Pro trial
   scenarios:
     - id: I2.1
@@ -323,7 +323,7 @@
 
 - feature: I3
   name: Paste and activate a key
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: pro
   scenarios:
     - id: I3.1
@@ -342,7 +342,7 @@
 
 - feature: I4
   name: Buy / manage devices / deactivate this vault
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: pro
   scenarios:
     - id: I4.1
@@ -354,7 +354,7 @@
 
 - feature: I6
   name: Licence status sentence -- on the row the user reads
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free surface
   scenarios:
     - id: I6.3
@@ -366,7 +366,7 @@
 
 - feature: H1
   name: Copy diagnostics
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: H1.1
@@ -378,7 +378,7 @@
 
 - feature: H2
   name: Report a problem / request a feature
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: H2.1
@@ -390,7 +390,7 @@
 
 - feature: C2
   name: Sync from the settings screen
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: C2.10

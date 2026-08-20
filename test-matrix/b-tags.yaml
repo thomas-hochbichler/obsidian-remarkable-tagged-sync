@@ -63,7 +63,7 @@
 
 - feature: B3
   name: Re-target a mapped tag
-  code: src/main.ts
+  code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: B3.1
