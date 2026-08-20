@@ -578,10 +578,21 @@ export class FakeVault {
 export class FakeApp {
 	readonly vault: FakeVault;
 	readonly workspace = {
+		/**
+		 * False until a test says otherwise, which is what a plugin loaded during Obsidian's own
+		 * startup sees. `onLayoutReady` runs its callback at once only once this is true.
+		 */
 		layoutReady: false,
+		/** Callbacks handed over before the workspace was ready, still waiting. */
+		pending: [] as (() => void)[],
 		onLayoutReady: (cb: () => void): void => {
+			if (this.workspace.layoutReady) cb();
+			else this.workspace.pending.push(cb);
+		},
+		/** Not an Obsidian member. What Obsidian does when the workspace has finished loading. */
+		markLayoutReady: (): void => {
 			this.workspace.layoutReady = true;
-			cb();
+			for (const cb of this.workspace.pending.splice(0, this.workspace.pending.length)) cb();
 		},
 	};
 	readonly fileManager = {

@@ -272,6 +272,23 @@ describe("the plugin host", () => {
 		data.deviceToken = "changed-after-the-save";
 		expect(plugin.saves).toEqual([{ deviceToken: "abc" }]);
 	});
+
+	it("holds an onLayoutReady callback until the workspace is ready, then runs it", async () => {
+		// A plugin loaded during Obsidian's own startup sees a workspace that is not ready yet. Running
+		// the callback at once would make "waits for the workspace" untestable and always true.
+		const app = new FakeApp();
+		const ran: string[] = [];
+
+		app.workspace.onLayoutReady(() => ran.push("early"));
+		expect(ran).toEqual([]);
+
+		app.workspace.markLayoutReady();
+		expect(ran).toEqual(["early"]);
+
+		// Enabled by hand, long after startup: Obsidian runs it straight away.
+		app.workspace.onLayoutReady(() => ran.push("late"));
+		expect(ran).toEqual(["early", "late"]);
+	});
 });
 
 describe("the settings controls the plugin reaches past", () => {

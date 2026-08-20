@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeClock } from "../test-stubs/fake-clock";
 import { FakeApp } from "../test-stubs/fake-obsidian";
 import { NO_LICENCE } from "./licence-state";
 
@@ -15,16 +16,6 @@ import { NO_LICENCE } from "./licence-state";
 // Obsidian loads, and it is what fills the backend registry the coercion below consults.
 
 vi.mock("rmapi-js", () => ({ session: () => ({}) }));
-
-// Obsidian's timers. `onload()` schedules the on-launch auto-sync through them, so without this it
-// throws in `onLayoutReady` before returning. Step 6 of the cut replaces them with an injected
-// scheduler and this goes away with it.
-vi.stubGlobal("window", {
-	setTimeout: () => 0,
-	clearTimeout: () => undefined,
-	setInterval: () => 0,
-	clearInterval: () => undefined,
-});
 
 // Whether Apple Vision can run is a property of the machine, and the default backend turns on it.
 // Left real, this file would pass on a Mac and fail on CI -- which is exactly what happened to
@@ -48,6 +39,8 @@ async function loadWith(saved: unknown): Promise<Loaded> {
 		{ id: "tagged-sync", name: "Tagged Sync", version: "0.0.0" },
 	);
 	plugin.saved = saved;
+	// `onload()` arms the interval backstop. Handed a clock nobody moves, it arms and never fires.
+	(plugin as unknown as { scheduler: FakeClock }).scheduler = new FakeClock();
 	await (plugin as unknown as { onload(): Promise<void> }).onload();
 	return plugin;
 }

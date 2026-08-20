@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeClock } from "../test-stubs/fake-clock";
 import {
 	type ButtonComponent,
 	createFragment,
@@ -28,17 +29,11 @@ vi.mock("rmapi-js", () => ({ session: () => ({}) }));
 // re-render every persist path ends in -- so without them this file dies before reaching anything it
 // is about, six sections away in the connection block.
 //
-// `createFragment` is modelled in the fake, read out of Obsidian's own `enhance.js`. The timers are
-// the platform's and there is nothing to model; step 6 of the cut replaces them with an injected
-// scheduler and this shim goes away with them.
+// `createFragment` is modelled in the fake, read out of Obsidian's own `enhance.js`. `window.open` is
+// the platform's and there is nothing to model.
 vi.stubGlobal("createFragment", createFragment);
-vi.stubGlobal("window", {
-	setTimeout: () => 0,
-	clearTimeout: () => undefined,
-	setInterval: () => 0,
-	clearInterval: () => undefined,
-	open: () => undefined,
-});
+// Only `open`, for the settings tab's Buy/Manage buttons. The timers moved to `plugin.scheduler`.
+vi.stubGlobal("window", { open: () => undefined });
 
 const PRO = { key: "test-key", activationId: "act-1", validatedAt: new Date().toISOString() };
 const PRO_ENTITLEMENT: Entitlement = { tier: "pro", since: PRO.validatedAt, stale: false };
@@ -88,6 +83,8 @@ async function tabWith(setup: {
 		version: "0.0.0",
 	});
 	plugin.saved = { tagFolderMap: setup.mapping ?? {}, licence: { ...NO_LICENCE, ...setup.licence } };
+	// A clock nobody moves: the interval backstop arms and never fires.
+	(plugin as unknown as { scheduler: FakeClock }).scheduler = new FakeClock();
 	await (plugin as unknown as { onload(): Promise<void> }).onload();
 
 	const refreshLicence = vi.fn(async (): Promise<Entitlement> => {

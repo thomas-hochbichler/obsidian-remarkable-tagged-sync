@@ -1,0 +1,354 @@
+# Group C -- the unattended half. When a background sync happens (C14, C15), how loud it is (C16),
+# and the two separate consents that stop one (C17, C18).
+#
+# Every one of these gates fails silently by design: no notice, no error, nothing in the console. A
+# gate that stopped working looks exactly like a gate that was never reached, and two of them are the
+# only thing between an overnight Obsidian and a bill the user did not agree to.
+#
+# All rows drive the shipped `onload()` and its timers with a `FakeClock`, so "four seconds after
+# launch" and "six hours later" are one call. The battery-consent rows use a backend registered by
+# the test rather than the shipped local model, which registers on macOS and Windows only -- see the
+# note in the test file.
+
+- feature: C14
+  name: Automatic sync on launch
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C14.1
+      scenario: The plugin is loaded while Obsidian is still assembling its workspace
+      expect: Nothing is armed yet. A sync into a half-built workspace is what the wait is for
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > waits for the workspace before arming the launch sync"
+
+    - id: C14.2
+      scenario: The workspace becomes ready and a moment passes
+      expect: Still nothing. The few seconds are for auth and network to come up, not decoration
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > does not sync in the first seconds after the workspace is ready"
+
+    - id: C14.3
+      scenario: The launch delay passes with auto-sync enabled
+      expect: One sync runs
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > syncs once the launch delay has passed"
+
+- feature: C15
+  name: Interval backstop
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C15.6
+      scenario: The plugin loads with auto-sync enabled and an interval chosen
+      expect: Exactly one timer armed
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > arms the interval backstop on load"
+
+    - id: C15.7
+      scenario: The plugin loads with auto-sync switched off
+      expect: No timer at all -- an interval that fires and then decides not to sync is a timer nobody asked for
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > arms no interval when auto-sync is off"
+
+    - id: C15.8
+      scenario: The interval is set to "on launch only"
+      expect: No timer. Null is a choice in that dropdown, not a missing value
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > arms no interval on launch-only"
+
+    - id: C15.9
+      scenario: A full interval passes after the launch sync
+      expect: A second sync runs
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > syncs again once the interval has elapsed"
+
+    - id: C15.10
+      scenario: The timer fires before a full interval has passed since the last completed sync
+      expect: Nothing runs. The period is the tick; the last completed sync is what decides
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > lets a tick pass without syncing when the interval has not elapsed"
+
+    - id: C15.11
+      scenario: The user syncs by hand an hour before the interval would fire
+      expect: The next auto run is pushed out rather than happening anyway on top of a fresh sync
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > pushes the next auto run out when the user syncs by hand"
+
+    - id: C15.12
+      scenario: A run finishes and re-arms the interval
+      expect: Still one timer. registerInterval() would leave the old one behind on every re-arm, and every run re-arms
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > replaces the interval timer rather than stacking another one"
+
+    - id: C15.13
+      scenario: The plugin is unloaded with both timers armed
+      expect: Nothing left running. A disabled plugin that still syncs is the shape this prevents
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > leaves nothing running after unload"
+
+    - id: C15.14
+      scenario: A sync finishes and stamps when it happened
+      expect: The moment is read from the same clock the interval is measured on -- two clocks here would have the backstop answering about a moment that never happened
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > stamps the run's own moment, which is what the backstop counts from"
+
+- feature: C16
+  name: Background sync is quiet
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C16.1
+      scenario: A background run starts
+      expect: No "Syncing…" popup. Nobody asked for this run
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "how loud a background sync is > says nothing when it starts"
+
+    - id: C16.2
+      scenario: A background run finds nothing to do
+      expect: Silence. "Already up to date." every six hours is a notification about nothing
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "how loud a background sync is > says nothing when it finds nothing to do"
+
+    - id: C16.3
+      scenario: A background run fails
+      expect: Silence, and the status bar carries it. An error popup interrupts someone who never started the run
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "how loud a background sync is > stays silent when it fails"
+
+    - id: C16.4
+      scenario: The same sync, started by the user
+      expect: It speaks -- start and outcome both. The quiet is a property of the run being unattended, not of the sync
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "how loud a background sync is > still speaks up when the user asks for the sync"
+
+- feature: C17
+  name: Money-safety gate
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C17.1
+      scenario: A paid cloud backend is selected and auto-sync fires, with no consent to spend
+      expect: Nothing runs. This gate is the whole of what stands between an overnight Obsidian and a bill
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > does not run a paid backend unattended without consent"
+
+    - id: C17.2
+      scenario: The same, with the consent given
+      expect: It runs. The gate asks once and then gets out of the way
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > runs a paid backend unattended once the user has consented"
+
+    - id: C17.3
+      scenario: The user presses Sync now on a paid backend with no auto-spend consent
+      expect: It runs. Pressing the button is the consent; the gate is about unattended runs only
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > leaves a sync the user asked for alone, consent or no consent"
+
+    - id: C17.4
+      scenario: A cloud backend is selected with no API key, so the run falls back to a free local one
+      expect: It runs. The gate reads `metered` off the resolved adapter, so it cannot refuse a run that costs nothing
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > reads the money gate off the backend that will actually run, not the one that was chosen"
+
+    - id: C17.5
+      scenario: The money gate is asked about a paid backend with no consent
+      expect: Blocked
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "autoSpendBlocked > blocks a paid backend the user has not consented to run unattended"
+
+    - id: C17.6
+      scenario: The money gate is asked about a paid backend with consent given
+      expect: Clear. The gate asks once and gets out of the way
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "autoSpendBlocked > lets a paid backend through once the consent is given"
+
+    - id: C17.7
+      scenario: The money gate is asked about a backend that spends nothing, with and without the consent
+      expect: Clear either way. On a free backend the consent authorises nothing, so it cannot be what decides
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "autoSpendBlocked > lets a free backend through whether or not the consent was ever given"
+
+- feature: C18
+  name: Battery and RAM consent gate
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C18.1
+      scenario: A backend that asks for background consent is selected and has not been given it
+      expect: Nothing runs. It costs no money and still costs battery, fans and several GB of RAM
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > does not run a battery-hungry backend unattended without its own consent"
+
+    - id: C18.2
+      scenario: The same backend, with the auto-spend consent given but not its own
+      expect: Still nothing. Agreeing to be billed by a cloud provider is not agreeing to run a local model unattended
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > does not let consent to spend stand in for consent to run in the background"
+
+    - id: C18.3
+      scenario: The backend's own consent is given
+      expect: It runs
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > runs it unattended once it has been consented to"
+
+- feature: C22
+  name: The clock the plugin schedules on
+  code: src/scheduler.ts
+  tier: free
+  scenarios:
+    - id: C22.1
+      scenario: The shipped plugin arms the launch delay
+      expect: It reaches the platform with the delay it was given, and the id comes back so it can be cancelled
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > arms a one-shot through the platform and hands its id back"
+
+    - id: C22.2
+      scenario: The shipped plugin arms the interval backstop
+      expect: The same, with the period it was given
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > arms a repeat through the platform and hands its id back"
+
+    - id: C22.3
+      scenario: Each kind of timer is cancelled
+      expect: Each through its own canceller. clearTimeout on an interval leaves it running, and the plugin re-arms after every run -- one leaked timer per sync, in the released build only
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > cancels each kind with its own canceller"
+
+    - id: C22.4
+      scenario: The plugin asks what time it is
+      expect: The wall clock. It is the same reading lastSyncAt is written from, so the backstop and the stamp cannot drift apart
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > reads the wall clock, which is the one lastSyncAt is written on"
+
+    - id: C18.6
+      scenario: A backend that never asks for background consent is judged
+      expect: It has it. Most cost nothing but network, and asking about all of them would make the one that matters unremarkable
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > treats a backend that does not ask as having consented"
+
+    - id: C18.7
+      scenario: A backend that asks is judged against its own settings blob
+      expect: The blob decides, and the plugin never learns which key inside it holds the answer
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > reads the answer out of the backend's own settings blob"
+
+    - id: C18.8
+      scenario: A backend that asks has never been answered
+      expect: Not consented. A consent that defaults to yes is not a consent
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > treats a backend that has never been asked as not consented"
+
+    - id: C18.9
+      scenario: The selected backend is not in this build at all
+      expect: Not blocked here. It cannot run anyway, and refusing it as unconsented would name the wrong reason for the same silence
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > does not block a backend this build does not have"
+
+    - id: C18.10
+      scenario: A backend declares it needs consent but registers no accessor to read one
+      expect: Treated as consented. Blocking would take it off the background air over a registration mistake, silently
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > treats a backend that asks but offers no accessor as having consented"
+
+    - id: C18.11
+      scenario: A backend registers an accessor without declaring it needs consent
+      expect: Its accessor is not consulted. The settings tab draws the consent row off the same two fields, so a backend gated on a flag it never declared would have no control to turn the gate off with
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > ignores an accessor from a backend that never declared it needs one"
+
+- feature: C23
+  name: The shared gate every unattended run passes
+  code: src/auto-sync-gates.ts
+  tier: free
+  scenarios:
+    - id: C23.1
+      scenario: Both triggers -- launch and interval -- reach the gate with nothing wrong
+      expect: Nothing blocks. The gate is the same one for both, so a rule added for one cannot miss the other
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > lets a run through when every condition is clear"
+
+    - id: C23.2
+      scenario: Auto-sync is switched off entirely
+      expect: Blocked, and named as the master switch
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when the master switch is off"
+
+    - id: C23.3
+      scenario: The same, driven through the shipped plugin
+      expect: Nothing runs, whatever the backend and whatever the consents
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > does not sync when auto-sync is switched off"
+
+    - id: C23.4
+      scenario: A sync or a re-transcribe is already in flight when a tick fires
+      expect: Blocked. Two runs would interleave rows in the one sync index -- the same lock a manual sync respects
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when something is already running"
+
+    - id: C23.5
+      scenario: No device token is stored
+      expect: Blocked
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when no device token is stored"
+
+    - id: C23.6
+      scenario: The same, driven through the shipped plugin
+      expect: Nothing runs, and nothing is said -- unlike a manual sync, which names the missing connection
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > does not sync when the device is not connected"
+
+    - id: C23.7
+      scenario: The chosen backend may not run unattended
+      expect: Blocked, and named as the background consent rather than as the money one
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when the backend may not run unattended"
+
+    - id: C23.8
+      scenario: Every condition is wrong at once
+      expect: The master switch is named. Each refusal is silent, so the order changes nothing a user sees -- it is pinned so a test meaning to exercise one gate cannot pass because another fired
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > names the master switch first when everything is wrong at once"
