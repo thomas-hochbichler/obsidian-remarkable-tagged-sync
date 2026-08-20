@@ -271,6 +271,20 @@
       file: test-stubs/fake-obsidian.test.ts
       test: "writing through the vault > a rename moves the content with the file and tells whoever subscribed"
 
+    - id: T8.3
+      scenario: The user drags a folder of synced notes somewhere else
+      expect: "One rename event for the folder, then one per descendant -- app.js walks the index after moving the folder because TFolder never overrides setPath, so the children are still under the old prefix. A fake that fired once would let a listener that handles only one of the two halves look correct"
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "writing through the vault > fans a folder rename out into one event for the folder and one per descendant"
+
+    - id: T8.4
+      scenario: A folder is renamed while a sibling folder's name starts with the same letters
+      expect: "Notes2 is untouched by a rename of Notes. The separator is part of the comparison, and the plugin's own remap depends on the same rule"
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "writing through the vault > leaves a folder whose name is only a prefix of the renamed one alone"
+
 - feature: T9
   name: The plugin host a test arrives at data.json through
   code: test-stubs/fake-obsidian.ts

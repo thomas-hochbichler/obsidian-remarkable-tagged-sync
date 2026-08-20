@@ -526,9 +526,33 @@ export class FakeVault {
 		return this.index(path, "file") as TFile;
 	}
 
-	/** Not an Obsidian member. What `fileManager.renameFile` does to the index. */
+	/**
+	 * Not an Obsidian member. What `fileManager.renameFile` does to the index.
+	 *
+	 * A folder fans out. app.js, the desktop adapter, after renaming a folder: it fires
+	 * `trigger("renamed", t, e)` for the folder, then `for (s in this.files)` every path
+	 * `s.startsWith(e + "/")` gets moved to `t + s.slice(e.length)` and fires one more. The Vault
+	 * turns each into its own `rename` event, because renaming a folder does *not* move its
+	 * children -- `TFolder` never overrides `setPath`, so only the folder's own path changed and
+	 * every child is still indexed under the old prefix.
+	 *
+	 * So one folder move reaches a subscriber as **1 + one per descendant**, folder first. Modelled
+	 * because a listener that handles only the folder event and one that handles only the child
+	 * events both look correct against a fake that fires once.
+	 */
 	rename(file: TAbstractFile, toPath: string): void {
 		const from = file.path;
+		this.move(file, toPath);
+		if (!(file instanceof TFolder)) return;
+		const prefix = `${from}/`;
+		for (const [path, entry] of [...this.fileMap]) {
+			if (path.startsWith(prefix)) this.move(entry, toPath + path.slice(from.length));
+		}
+	}
+
+	/** One entry, and the single `rename` event it fires. */
+	private move(entry: TAbstractFile, toPath: string): void {
+		const from = entry.path;
 		this.fileMap.delete(from);
 		const content = this.contents.get(from);
 		if (content !== undefined) {
@@ -540,9 +564,9 @@ export class FakeVault {
 			this.binaries.delete(from);
 			this.binaries.set(toPath, binary);
 		}
-		this.setPath(file, toPath);
-		this.fileMap.set(toPath, file);
-		this.trigger("rename", file, from);
+		this.setPath(entry, toPath);
+		this.fileMap.set(toPath, entry);
+		this.trigger("rename", entry, from);
 	}
 
 	/** Not an Obsidian member. What a test asserts a write landed as. */

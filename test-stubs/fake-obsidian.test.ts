@@ -259,6 +259,45 @@ describe("writing through the vault", () => {
 		expect(vault.fileContents()).toEqual({ "Notes/New.md": "body" });
 		expect(seen).toEqual([["Notes/New.md", "Notes/Old.md"]]);
 	});
+
+	it("fans a folder rename out into one event for the folder and one per descendant", async () => {
+		// The shape a listener has to survive. Obsidian's adapter walks the index after moving the
+		// folder and fires again for everything under the old prefix, folder first.
+		const vault = new FakeVault();
+		const folder = (await vault.createFolder("Notes")) as TFolder;
+		vault.seed("Notes/A.md", "a");
+		vault.seed("Notes/Deep/B.md", "b");
+		await vault.createFolder("Notes/Deep");
+		vault.seed("Elsewhere/C.md", "c");
+		const seen: [string, string][] = [];
+		vault.on("rename", ((f: TFile, oldPath: string) => seen.push([f.path, oldPath])) as never);
+
+		await new FakeApp(vault).fileManager.renameFile(folder, "Archive");
+
+		expect(seen[0]).toEqual(["Archive", "Notes"]);
+		expect(seen.slice(1).sort()).toEqual([
+			["Archive/A.md", "Notes/A.md"],
+			["Archive/Deep", "Notes/Deep"],
+			["Archive/Deep/B.md", "Notes/Deep/B.md"],
+		]);
+		expect(vault.fileContents()).toEqual({
+			"Archive/A.md": "a",
+			"Archive/Deep/B.md": "b",
+			"Elsewhere/C.md": "c",
+		});
+	});
+
+	it("leaves a folder whose name is only a prefix of the renamed one alone", async () => {
+		// `Notes2` starts with `Notes`, and the plugin's own remap depends on the separator being
+		// part of the comparison. A fake that got this wrong would hide that.
+		const vault = new FakeVault();
+		const folder = (await vault.createFolder("Notes")) as TFolder;
+		vault.seed("Notes2/Keep.md", "keep");
+
+		await new FakeApp(vault).fileManager.renameFile(folder, "Archive");
+
+		expect(vault.fileContents()).toEqual({ "Notes2/Keep.md": "keep" });
+	});
 });
 
 describe("the plugin host", () => {
