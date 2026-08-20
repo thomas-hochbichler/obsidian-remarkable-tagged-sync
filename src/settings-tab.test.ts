@@ -15,6 +15,12 @@ import {
 } from "../test-stubs/fake-obsidian";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { explainError } from "./explain-error";
+import {
+	ACTIVATION_LIMIT_MESSAGE,
+	OFFLINE_ACTIVATION_MESSAGE,
+	WITHDRAWN_KEY_MESSAGE,
+	WRONG_KEY_MESSAGE,
+} from "./licence-messages";
 import { NO_LICENCE } from "./licence-state";
 import { isListedBackend, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
 
@@ -752,5 +758,51 @@ describe("the actions at the bottom", () => {
 		expect(copied[0]).toContain("9.9.9");
 		expect(copied[0]).toContain("test-plain");
 		expect(takeNotices()).toEqual(["Diagnostics copied to the clipboard."]);
+	});
+});
+
+// Gap G37. The four sentences exist, are argued for at length in `licence-messages.ts`, and appear
+// **zero times** in any test file. `licence-client.test.ts` proves the four outcomes are told apart;
+// nothing proved each one reaches the sentence written for it, so swapping two `case` arms was
+// invisible -- and one of the swaps tells a refunded buyer to go hunting for a typo they did not make.
+describe("what the paste field says about each answer", () => {
+	async function activateWith(outcome: string): Promise<string[]> {
+		const { plugin, tab } = await tabWith({
+			licence: { ...NO_LICENCE, trialStartedAt: new Date(Date.now() - 90 * 86_400_000).toISOString() },
+		});
+		(plugin as unknown as { licenceApi: unknown }).licenceApi = {
+			activate: async () => (outcome === "valid" ? { outcome, activationId: "act-1" } : { outcome }),
+			validate: async () => outcome,
+			deactivate: async () => undefined,
+		};
+		const key = row(draw(tab), "Licence key");
+		key.setting.texts[0].type("TS-XXXX-1234");
+		await key.setting.buttons[0].click();
+		await settle();
+		return takeNotices();
+	}
+
+	it("gives each outcome its own sentence, and none of them another's", async () => {
+		const said = {
+			valid: (await activateWith("valid"))[0],
+			unknownKey: (await activateWith("unknown-key"))[0],
+			withdrawn: (await activateWith("withdrawn"))[0],
+			limit: (await activateWith("activation-limit"))[0],
+			offline: (await activateWith("unreachable"))[0],
+		};
+
+		expect(said.valid).toBe("Tagged Sync Pro is active in this vault.");
+		expect(said.unknownKey).toBe(WRONG_KEY_MESSAGE);
+		expect(said.withdrawn).toBe(WITHDRAWN_KEY_MESSAGE);
+		expect(said.limit).toBe(ACTIVATION_LIMIT_MESSAGE);
+		expect(said.offline).toBe(OFFLINE_ACTIVATION_MESSAGE);
+		expect(new Set(Object.values(said)).size).toBe(5);
+	});
+
+	it("does not tell a refunded buyer to look for a typo", async () => {
+		// The one swap that is cruel rather than merely wrong, and the reason the two outcomes are
+		// separate at all: for the stored state they are identical.
+		expect(await activateWith("withdrawn")).not.toContain(WRONG_KEY_MESSAGE);
+		expect(WITHDRAWN_KEY_MESSAGE).not.toContain("typo");
 	});
 });

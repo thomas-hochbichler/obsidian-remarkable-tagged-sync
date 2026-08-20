@@ -159,8 +159,8 @@
 			"branches": 6
 		},
 		"src/main.ts": {
-			"lines": 45,
-			"branches": 45
+			"lines": 22,
+			"branches": 28
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,
@@ -271,8 +271,8 @@
 			"branches": 0
 		},
 		"src/settings-tab.ts": {
-			"lines": 24,
-			"branches": 13
+			"lines": 20,
+			"branches": 9
 		},
 		"src/shims/setimmediate.ts": {
 			"lines": 27,
@@ -319,7 +319,7 @@
 			"branches": 21
 		},
 		"src/vision-register.ts": {
-			"lines": 1,
+			"lines": 0,
 			"branches": 2
 		}
 	}
