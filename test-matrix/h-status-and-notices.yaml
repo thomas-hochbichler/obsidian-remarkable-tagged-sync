@@ -113,6 +113,118 @@
       file: src/status-and-notices.test.ts
       test: "what the status item shows once a sync ends > crosses out a run that threw"
 
+    - id: H8.5
+      scenario: Every state, asked for its icon and whether it spins
+      expect: "Four states, four icons, and only busy spins. The map is a literal, and a literal is exactly the kind of thing that gets edited by hand"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > gives each state its own icon, and spins only while busy"
+
+    - id: H8.6
+      scenario: A finished state arrives carrying a bar percentage anyway
+      expect: "No bar. The rule belongs to the state, not to the caller remembering to pass null"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > shows no bar unless one was given"
+
+    - id: H8.7
+      scenario: A busy state with a stop already requested
+      expect: Not clickable, and the tooltip drops the offer
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > withdraws the offer to stop once a stop is pending"
+
+    - id: H8.8
+      scenario: A state with a detail but nothing to stop
+      expect: "The detail alone, with no blank line where the offer would have been"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > joins the tooltip without leaving an empty line where a part is missing"
+
+    - id: H8.9
+      scenario: A state with neither a detail nor an offer
+      expect: An empty tooltip rather than a stray newline
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > leaves the tooltip empty when there is nothing to put in it"
+
+    - id: H8.10
+      scenario: The scan reports its counts
+      expect: "The counted sentence, no bar, and the name in its own field -- the whole scanning line, decided in one place"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus > turns a scan tick into a count, a name and no bar"
+
+    - id: H8.11
+      scenario: The working phase reports its counts
+      expect: A percentage, the name, and no text competing with it for the width
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus > turns a working tick into a percentage and a name"
+
+    - id: H8.12
+      scenario: A tick arrives after the user asked to stop
+      expect: "The stopping line, carrying the bar forward unchanged. The ticks would otherwise go on announcing work the user has already ended"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus > answers a pending stop instead of the tick, and carries the bar forward"
+
+    - id: H8.13
+      scenario: A run's outcome, in each of its three shapes
+      expect: "Stopped, wrote, or up to date -- the state and the sentence decided together, because they have to agree"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "outcomeStatus > names the state and the sentence together, since they have to agree"
+
+    - id: H8.14
+      scenario: A finished state is asked whether it offers to stop
+      expect: "It does not. The offer belongs to a run that is happening, not to the item still showing its outcome"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > only ever offers to stop a run that is happening"
+
+    - id: H8.15
+      scenario: A state carrying both a sentence and a document name
+      expect: "They stay two fields. One is truncated and one must survive whole, so merging them would lose the sentence to a long title"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > passes the two texts through separately, because they are cut differently"
+
+    - id: H8.16
+      scenario: A scan tick with a count but no document reached yet
+      expect: The separator is dropped rather than left dangling
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus > drops the separator when nothing follows it"
+
+    - id: H8.17
+      scenario: A scan tick before the enumeration came back
+      expect: '"scanning…", because "checking 0 of 0" reads as a finished run that found nothing'
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus > says it is scanning until there is something to count"
+
+    - id: H8.18
+      scenario: A working tick reporting more work than the pre-scan measured
+      expect: The bar stops at full
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus > stops the bar at full when the pre-scan under-counted"
+
+    - id: H8.19
+      scenario: A stop is requested during the scan, before any bar existed
+      expect: "The stopping line with no bar -- carrying it forward must not invent one"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus > still says stopping when there was no bar to carry"
+
+    - id: H8.20
+      scenario: Each of the three outcomes, asked for a bar
+      expect: "None. A bar left sitting at full claims the run is still happening, and it would sit there until the next sync"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "outcomeStatus > leaves no bar behind in any of the three"
+
 - feature: H7
   name: Partial-outcome notices
   code: src/sync-notices.ts
@@ -230,6 +342,55 @@
       file: src/status-and-notices.test.ts
       test: "what a sync says when it finished but did not do everything > says all of it on a background run the user stopped by hand"
 
+    - id: H7.17
+      scenario: Each of the five outcomes, at one and at more than one
+      expect: "The sentence and its number, without a vault. Five nouns that inflect differently -- note/notes, note was/notes were, notebook was/notebooks were, book has/books have"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > says each outcome in its own words, singular and plural"
+
+    - id: H7.18
+      scenario: A run where nothing was skipped
+      expect: "An empty list, so the caller has nothing to raise rather than a list of empty strings"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > says nothing when nothing was skipped"
+
+    - id: H7.19
+      scenario: Every outcome at once
+      expect: "Five notices in the fixed order, each with a timeout long enough to be read -- Obsidian's default is five seconds and these ask the user to go and do something"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > keeps its order and gives each notice time to be read"
+
+    - id: H7.20
+      scenario: A run's own outcome notice, in each shape and for each of manual and background
+      expect: "Stopped with and without notes written, notes written, nothing written -- and silence for the last of those in the background"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "outcomeNotice > says what the run did, and stays quiet only where a background run must"
+
+    - id: H7.21
+      scenario: Each of the five sentences, read for what it asks of the user
+      expect: "Each names either the thing that is still fine or where to look. The difference between a report and a notification"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > tells the user what to do about each one, not only that it happened"
+
+    - id: H7.22
+      scenario: One of the five happened and the others did not
+      expect: One notice, not five
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > leaves out the ones that did not happen"
+
+    - id: H7.23
+      scenario: A background run wrote notes
+      expect: "Announced. That is the good news auto-sync exists for, and the one thing worth interrupting for"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "outcomeNotice > still announces notes a background run wrote"
+
 - feature: H6
   name: Last error kept for diagnostics
   code: src/main.ts
@@ -288,3 +449,24 @@
       layer: vault
       file: src/status-and-notices.test.ts
       test: "the one-time notice about what this platform cannot transcribe > gives the partial-outcome notices room to be read"
+
+    - id: E15.6
+      scenario: The gap is hit in a build that has other backends to offer, and in one that does not
+      expect: "The clause appears only where there is something to point at. Naming a setting this build does not have is the failure the sentence exists to avoid"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "platformGapNotice > offers another backend only where this build has one"
+
+    - id: E15.7
+      scenario: The notice is asked for a second time, having already been shown
+      expect: "Null, which is how the caller learns not to raise it. The decision is here; persisting the flag is the caller's"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "platformGapNotice > answers null once it has been shown, and when there was nothing to report"
+
+    - id: E15.8
+      scenario: The sentence is read for what it commits the plugin to
+      expect: "Nothing. A promise of a future fix would be a debt, and the platform gap is not this plugin's to close"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "platformGapNotice > promises nothing about a fix"
