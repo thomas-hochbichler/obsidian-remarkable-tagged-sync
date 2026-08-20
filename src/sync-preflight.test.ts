@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeClock } from "../test-stubs/fake-clock";
 import { FakeApp, takeNotices, takeSettings } from "../test-stubs/fake-obsidian";
 import { EMPTY_SYNC_INDEX } from "./sync-engine";
 
@@ -15,15 +16,6 @@ vi.mock("rmapi-js", () => ({
 	auth: async () => "session-token",
 	register: async () => "device-token",
 }));
-
-// Obsidian's timers, as in `settings-on-load.test.ts`. Step 6 of the cut injects a scheduler and
-// this goes away with it.
-vi.stubGlobal("window", {
-	setTimeout: () => 0,
-	clearTimeout: () => undefined,
-	setInterval: () => 0,
-	clearInterval: () => undefined,
-});
 
 /**
  * The engine, replaced. A real run is a network conversation; what this file is about is who is
@@ -91,6 +83,8 @@ async function pluginWith(setup: { connected?: boolean; backend?: string; rows?:
 		ocrBackend: setup.backend ?? "off",
 		syncIndex: { ...EMPTY_SYNC_INDEX, rows },
 	};
+	// A clock nobody moves: the interval backstop arms and never fires.
+	(plugin as unknown as { scheduler: FakeClock }).scheduler = new FakeClock();
 	await (plugin as unknown as { onload(): Promise<void> }).onload();
 
 	// Swapped rather than spied on: the real one talks to Polar, and what this file needs to know is

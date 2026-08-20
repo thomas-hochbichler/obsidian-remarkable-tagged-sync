@@ -156,7 +156,7 @@
 		},
 		"src/main.ts": {
 			"lines": 180,
-			"branches": 137
+			"branches": 136
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,
@@ -249,6 +249,10 @@
 		"src/scene-text.ts": {
 			"lines": 0,
 			"branches": 3
+		},
+		"src/scheduler.ts": {
+			"lines": 0,
+			"branches": 0
 		},
 		"src/settings-store.ts": {
 			"lines": 0,

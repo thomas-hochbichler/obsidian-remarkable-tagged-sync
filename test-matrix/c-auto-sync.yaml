@@ -97,6 +97,13 @@
       file: src/auto-sync-schedule.test.ts
       test: "when a background sync is scheduled > leaves nothing running after unload"
 
+    - id: C15.14
+      scenario: A sync finishes and stamps when it happened
+      expect: The moment is read from the same clock the interval is measured on -- two clocks here would have the backstop answering about a moment that never happened
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > stamps the run's own moment, which is what the backstop counts from"
+
 - feature: C16
   name: Background sync is quiet
   code: src/main.ts
@@ -202,3 +209,36 @@
       layer: vault
       file: src/auto-sync-schedule.test.ts
       test: "what stops a background sync > does not sync when the device is not connected"
+
+- feature: C22
+  name: The clock the plugin schedules on
+  code: src/scheduler.ts
+  tier: free
+  scenarios:
+    - id: C22.1
+      scenario: The shipped plugin arms the launch delay
+      expect: It reaches the platform with the delay it was given, and the id comes back so it can be cancelled
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > arms a one-shot through the platform and hands its id back"
+
+    - id: C22.2
+      scenario: The shipped plugin arms the interval backstop
+      expect: The same, with the period it was given
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > arms a repeat through the platform and hands its id back"
+
+    - id: C22.3
+      scenario: Each kind of timer is cancelled
+      expect: Each through its own canceller. clearTimeout on an interval leaves it running, and the plugin re-arms after every run -- one leaked timer per sync, in the released build only
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > cancels each kind with its own canceller"
+
+    - id: C22.4
+      scenario: The plugin asks what time it is
+      expect: The wall clock. It is the same reading lastSyncAt is written from, so the backstop and the stamp cannot drift apart
+      layer: unit
+      file: src/scheduler.test.ts
+      test: "windowScheduler > reads the wall clock, which is the one lastSyncAt is written on"

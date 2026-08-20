@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../test-stubs/fake-clock";
 import { FakeApp, takeNotices } from "../test-stubs/fake-obsidian";
 import { registerOcrBackend } from "./ocr-registry";
@@ -16,8 +16,9 @@ import { UnavailableOcrBackend } from "./vision-ocr-backend";
 // never armed, shows up as a sync that happens too often or not at all -- months later, on somebody
 // else's machine.
 //
-// This is the characterisation, written against the unmodified `main.ts`. The clock is a
-// `FakeClock`, so "four seconds after launch" and "six hours later" are one call.
+// The clock is a `FakeClock`, handed to the plugin through `plugin.scheduler`, so "four seconds
+// after launch" and "six hours later" are one call. It is also what the plugin stamps `lastSyncAt`
+// from, which is what makes "a manual sync pushes the next auto run out" askable at all.
 
 vi.mock("rmapi-js", () => ({
 	session: () => ({ raw: {} }),
@@ -76,6 +77,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 
 interface Plugin {
 	app: FakeApp;
+	scheduler: FakeClock;
 	data: Record<string, unknown>;
 	syncNow(): Promise<void>;
 	onunload(): void;
@@ -125,6 +127,7 @@ async function loadWith(setup: Setup = {}): Promise<Plugin> {
 			autoTranscribeMetered: setup.autoTranscribeMetered ?? false,
 		},
 	};
+	plugin.scheduler = clock;
 	await (plugin as unknown as { onload(): Promise<void> }).onload();
 	// The real one talks to Polar. What this file is about is the gates around it.
 	plugin.refreshLicence = async () => plugin.data.licence as unknown;
@@ -135,7 +138,6 @@ async function loadWith(setup: Setup = {}): Promise<Plugin> {
 /** Moves the clock and lets whatever it started finish. */
 async function advance(ms: number): Promise<void> {
 	clock.advance(ms);
-	vi.setSystemTime(clock.now());
 	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
@@ -149,27 +151,7 @@ beforeEach(() => {
 	engine.runs = 0;
 	engine.fail = false;
 	clock = new FakeClock();
-	vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: false });
-	vi.setSystemTime(0);
-	// `Date` is moved with the clock rather than after it: the interval tick asks `Date.now()` whether
-	// it is due, from inside the callback, so a system time updated afterwards would answer for the
-	// tick before. Step 6's injected scheduler makes this one `now()` and the wrapper goes away.
-	const tick = (fn: () => void) => () => {
-		vi.setSystemTime(clock.now());
-		fn();
-	};
-	vi.stubGlobal("window", {
-		setTimeout: (fn: () => void, ms: number) => clock.setTimeout(tick(fn), ms),
-		clearTimeout: (id: number) => clock.clearTimeout(id),
-		setInterval: (fn: () => void, ms: number) => clock.setInterval(tick(fn), ms),
-		clearInterval: (id: number) => clock.clearInterval(id),
-		open: () => undefined,
-	});
 	takeNotices();
-});
-
-afterEach(() => {
-	vi.useRealTimers();
 });
 
 describe("when a background sync is scheduled", () => {
@@ -231,19 +213,32 @@ describe("when a background sync is scheduled", () => {
 
 	it("lets a tick pass without syncing when the interval has not elapsed", async () => {
 		// The tick fires on its own period; whether it is *due* is counted from the last completed
-		// sync, which is what makes a manual sync push the next auto run out.
-		const plugin = await loadWith({ intervalHours: 6 });
+		// sync. A vault synced an hour ago gets the six-hour tick and no sync.
+		//
+		// The workspace is deliberately never marked ready: the launch sync would re-arm the interval
+		// from its own moment, and the tick under test would then never fire at all.
+		await loadWith({ intervalHours: 6, lastSyncAt: new Date(5 * HOUR).toISOString() });
+
+		await advance(6 * HOUR);
+		expect(engine.runs).toBe(0);
+
+		// The next tick, by which time a full interval has passed since that last sync.
+		await advance(6 * HOUR);
+		expect(engine.runs).toBe(1);
+	});
+
+	it("stamps the run's own moment, which is what the backstop counts from", async () => {
+		// One clock. A stamp from anywhere else would have the backstop answering a question about a
+		// moment that never happened.
+		const plugin = await loadWith();
+
 		await launch(plugin);
-		const afterLaunch = engine.runs;
 
-		await advance(1 * HOUR);
-
-		expect(engine.runs).toBe(afterLaunch);
+		expect(plugin.data.lastSyncAt).toBe(new Date(4_000).toISOString());
 	});
 
 	it("pushes the next auto run out when the user syncs by hand", async () => {
 		const plugin = await loadWith({ intervalHours: 6 });
-		await launch(plugin);
 
 		await advance(5 * HOUR);
 		await plugin.syncNow();
@@ -251,8 +246,11 @@ describe("when a background sync is scheduled", () => {
 
 		// The tick that would have been due had the manual sync not happened.
 		await advance(1 * HOUR);
-
 		expect(engine.runs).toBe(afterManual);
+
+		// A full interval after the manual sync, it is due again.
+		await advance(5 * HOUR);
+		expect(engine.runs).toBe(afterManual + 1);
 	});
 
 	it("replaces the interval timer rather than stacking another one", async () => {

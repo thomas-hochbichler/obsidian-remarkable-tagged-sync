@@ -47,6 +47,7 @@ import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { tolerateLegacyMetadata } from "./remarkable-metadata";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders, reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
+import { type Scheduler, windowScheduler } from "./scheduler";
 import { NOTHING_SYNCED_NOTICE, type Preflight, preflightRun, reTranscribableUnits, type RunConditions } from "./sync-guards";
 import {
 	defaultOcrBackend,
@@ -123,6 +124,17 @@ export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
 	readonly licenceApi: LicenceApi = createPolarLicenceApi();
+	/** What the launch delay and the interval backstop run on. Replaced in tests; see `./scheduler`. */
+	scheduler: Scheduler = windowScheduler;
+
+	/**
+	 * Now, as a sync writes it. The same clock the interval is measured on, deliberately: `lastSyncAt`
+	 * is the value `isIntervalSyncDue` counts from, so two clocks here would let the backstop answer a
+	 * question about a moment that never existed.
+	 */
+	private nowIso(): string {
+		return new Date(this.scheduler.now()).toISOString();
+	}
 	private statusBar!: HTMLElement;
 	/**
 	 * The status bar's parts are held, not rebuilt per update: recreating the icon on every
@@ -286,7 +298,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// On-launch auto-sync (spec §Triggers): wait for the workspace to finish loading, then a few
 		// seconds more so auth/network are ready.
 		this.app.workspace.onLayoutReady(() => {
-			this.autoSyncLaunchTimer = window.setTimeout(() => {
+			this.autoSyncLaunchTimer = this.scheduler.setTimeout(() => {
 				void this.triggerAutoSync();
 			}, AUTO_SYNC_LAUNCH_DELAY_MS);
 		});
@@ -294,8 +306,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	}
 
 	onunload() {
-		if (this.autoSyncLaunchTimer !== null) window.clearTimeout(this.autoSyncLaunchTimer);
-		if (this.autoSyncIntervalTimer !== null) window.clearInterval(this.autoSyncIntervalTimer);
+		if (this.autoSyncLaunchTimer !== null) this.scheduler.clearTimeout(this.autoSyncLaunchTimer);
+		if (this.autoSyncIntervalTimer !== null) this.scheduler.clearInterval(this.autoSyncIntervalTimer);
 	}
 
 	/**
@@ -539,7 +551,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					attachmentsFolder: normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
 					ocrBackend: backend,
 					marginNotes: this.data.marginNotes,
-					now: () => new Date().toISOString(),
+					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
 					// Checkpoint after each document, so an interrupted sync can't strand written notes
@@ -560,7 +572,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Deliberately not stamped on a stopped run. `isIntervalSyncDue` counts from the last
 			// *completed* sync, so stamping here would push the next auto-sync out by a full interval as
 			// if the work had been done -- and leave "last synced" claiming a run that never finished.
-			if (!result.stopped) this.data.lastSyncAt = new Date().toISOString();
+			if (!result.stopped) this.data.lastSyncAt = this.nowIso();
 			if (speak) this.maybeShowUnavailableNotice(result.unavailableOcrUnits);
 			// Saved either way: this is also the only call that persists what a backend wrote into its own
 			// settings blob during the run (the local model records each page's duration there).
@@ -609,7 +621,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	rearmAutoSyncInterval(): void {
 		if (this.autoSyncIntervalTimer !== null) {
-			window.clearInterval(this.autoSyncIntervalTimer);
+			this.scheduler.clearInterval(this.autoSyncIntervalTimer);
 			this.autoSyncIntervalTimer = null;
 		}
 		const { enabled, intervalHours } = this.data.autoSync;
@@ -617,8 +629,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// Deliberately not registerInterval(): that would pile up a leaked interval on every re-arm,
 		// since registered intervals are only cleared on unload. This one id is cleared above and in
 		// onunload.
-		this.autoSyncIntervalTimer = window.setInterval(() => {
-			if (isIntervalSyncDue(this.data.lastSyncAt, intervalHours, Date.now())) void this.triggerAutoSync();
+		this.autoSyncIntervalTimer = this.scheduler.setInterval(() => {
+			if (isIntervalSyncDue(this.data.lastSyncAt, intervalHours, this.scheduler.now())) void this.triggerAutoSync();
 		}, intervalHours * 3_600_000);
 	}
 
