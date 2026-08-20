@@ -47,6 +47,7 @@ import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { tolerateLegacyMetadata } from "./remarkable-metadata";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders, reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
+import { NOTHING_SYNCED_NOTICE, type Preflight, preflightRun, reTranscribableUnits, type RunConditions } from "./sync-guards";
 import {
 	defaultOcrBackend,
 	hasAlternativeBackends,
@@ -188,7 +189,20 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * A user on Apple Vision or a local server causes no call, whatever they own.
 	 */
 	private async refreshLicenceIfGated(silent: boolean): Promise<void> {
-		if (ocrBackendEntry(this.data.ocrBackend)?.requiresLicence) await this.refreshLicence(silent);
+		if (this.backendRequiresLicence()) await this.refreshLicence(silent);
+	}
+
+	private backendRequiresLicence(): boolean {
+		return ocrBackendEntry(this.data.ocrBackend)?.requiresLicence === true;
+	}
+
+	/** What {@link preflightRun} judges, read off the plugin at the moment it is asked. */
+	private runConditions(): RunConditions {
+		return {
+			connected: this.auth.isConnected(),
+			running: this.syncing,
+			backendRequiresLicence: this.backendRequiresLicence(),
+		};
 	}
 
 	/** The vault's name labels the activation, so the buyer recognises the row in Polar's own list. */
@@ -450,17 +464,13 @@ export default class TaggedSyncPlugin extends Plugin {
 	}
 
 	async syncNow(): Promise<void> {
-		if (!this.auth.isConnected()) {
-			new Notice("Connect to reMarkable first.");
-			return;
-		}
-		// A sync can run for minutes; a second one started on top of it would race on the shared index.
-		if (!this.claimRun()) {
-			new Notice("A sync is already running.");
+		const claim = this.claimRun();
+		if (!claim.start) {
+			new Notice(claim.notice);
 			return;
 		}
 		try {
-			await this.refreshLicenceIfGated(false);
+			if (claim.refreshLicence) await this.refreshLicence(false);
 			await this.runSyncNow(this.resolveOcrBackend(), false);
 		} finally {
 			this.syncing = false;
@@ -498,18 +508,18 @@ export default class TaggedSyncPlugin extends Plugin {
 	}
 
 	/**
-	 * Takes the one-run-at-a-time lock, or answers `false` because a run already holds it.
-	 *
-	 * Synchronous, and that is the whole of it: `syncing` used to be *read* in the pre-flight and
-	 * *set* several awaits later, inside `runSyncNow`. Two presses of Sync now in the same tick both
-	 * got through the read before either did the write, and then both wrote the one sync index.
+	 * Asks {@link preflightRun} whether a long job may start and, if it may, takes the
+	 * one-run-at-a-time lock -- in one synchronous step, which is the whole of it. `syncing` used to
+	 * be *read* in the pre-flight and *set* several awaits later, inside `runSyncNow`; two presses of
+	 * Sync now in the same tick both got through the read before either did the write, and then both
+	 * wrote the one sync index.
 	 *
 	 * Whoever claims it releases it. `runSyncNow` does neither -- it is called with the lock held.
 	 */
-	private claimRun(): boolean {
-		if (this.syncing) return false;
-		this.syncing = true;
-		return true;
+	private claimRun(): Preflight {
+		const preflight = preflightRun(this.runConditions());
+		if (preflight.start) this.syncing = true;
+		return preflight;
 	}
 
 	/** Runs a sync. The caller holds the run lock and releases it; see {@link claimRun}. */
@@ -634,7 +644,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// Claimed here rather than at the top: the gates above can decide not to run at all, and a tick
 		// that holds the lock while deciding makes `isSyncing()` -- and the Stop sync command with it --
 		// lie about a run that never starts. The read above is only fast feedback; this is the gate.
-		if (!this.claimRun()) return;
+		if (!this.claimRun().start) return;
 		try {
 			await this.runSyncNow(backend, true);
 		} finally {
@@ -715,20 +725,19 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * destructive-by-cost operation must never be automatic.
 	 */
 	async reTranscribeAll(): Promise<void> {
-		if (!this.auth.isConnected()) {
-			new Notice("Connect to reMarkable first.");
-			return;
-		}
-		if (this.syncing) {
-			new Notice("A sync is already running.");
+		// Not a claim: this only spares the user a dialog they would be refused after. The lock is
+		// taken below, once they have actually said yes.
+		const preflight = preflightRun(this.runConditions());
+		if (!preflight.start) {
+			new Notice(preflight.notice);
 			return;
 		}
 
-		await this.refreshLicenceIfGated(false);
+		if (preflight.refreshLicence) await this.refreshLicence(false);
 		const backend = this.resolveOcrBackend();
-		const unitCount = Object.values(this.data.syncIndex.rows).filter((row) => row.status === "active").length;
+		const unitCount = reTranscribableUnits(this.data.syncIndex.rows);
 		if (unitCount === 0) {
-			new Notice("No synced notes to re-transcribe yet.");
+			new Notice(NOTHING_SYNCED_NOTICE);
 			return;
 		}
 		// Only a metered cloud adapter actually spends money; local/vision/unavailable backends do not.
@@ -749,9 +758,11 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (!confirmed) return;
 
 		// The dialog may have sat open for minutes, so nothing the pre-flight established is still
-		// known. Said out loud rather than returning quietly: the user has just pressed the button.
-		if (!this.claimRun()) {
-			new Notice("A sync is already running.");
+		// known -- the connection can have gone too. Said out loud rather than returning quietly: the
+		// user has just pressed the button.
+		const claim = this.claimRun();
+		if (!claim.start) {
+			new Notice(claim.notice);
 			return;
 		}
 		this.stopRequested = false;

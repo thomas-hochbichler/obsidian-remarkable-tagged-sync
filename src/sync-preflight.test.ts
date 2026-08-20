@@ -244,12 +244,12 @@ describe("what has to be true before a re-transcribe starts", () => {
 	});
 
 	it("counts only the rows a note still stands behind", async () => {
-		// A `removed` row is history: its note is gone from the vault, and re-transcribing it would
-		// write a note the last sync deliberately took away.
+		// A row goes `orphaned` when its note is gone from the vault -- the user deleted it. Offering to
+		// re-transcribe one would offer to write it straight back.
 		const plugin = await pluginWith({ rows: 0 });
 		plugin.data.syncIndex = {
 			...EMPTY_SYNC_INDEX,
-			rows: { a: { ...activeRow("Notes/a.md"), status: "removed" } },
+			rows: { a: { ...activeRow("Notes/a.md"), status: "orphaned" } },
 		};
 
 		await plugin.reTranscribeAll();
