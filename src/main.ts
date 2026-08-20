@@ -50,6 +50,14 @@ import { tolerateLegacyMetadata } from "./remarkable-metadata";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders, reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
+import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
+import {
+	LONG_NOTICE_MS,
+	outcomeNotice,
+	partialOutcomeNotices,
+	type PartialOutcome,
+	platformGapNotice,
+} from "./sync-notices";
 import { NOTHING_SYNCED_NOTICE, type Preflight, preflightRun, reTranscribableUnits, type RunConditions } from "./sync-guards";
 import {
 	defaultOcrBackend,
@@ -151,7 +159,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	private statusProgress!: ProgressBarComponent;
 	/** The last fraction shown, so a pending stop can freeze the bar where it stands. */
 	private lastBar: number | null = null;
-	private statusState: keyof typeof TaggedSyncPlugin.STATUS_ICONS | null = null;
+	private statusState: SyncStatusState | null = null;
 	private syncing = false;
 	/**
 	 * Set by `requestStop()`, polled by the engine at unit boundaries. Reset at the start of every run
@@ -362,87 +370,43 @@ export default class TaggedSyncPlugin extends Plugin {
 		return plan.use === "vision" ? visionBackend() : new UnavailableOcrBackend(id);
 	}
 
-	/**
-	 * Lucide icon per sync state, rendered via setIcon() so it follows the theme (no raw glyphs).
-	 * `stopped` earns its own state rather than borrowing one: a check would claim a run that finished
-	 * and an x would claim one that broke, and a user-stopped run is neither.
-	 */
-	private static readonly STATUS_ICONS = { busy: "refresh-cw", ok: "check", failed: "x", stopped: "square" } as const;
+	/** Wiring only: `status-model.ts` decides what the item says, this puts it on screen. */
+	private setStatus(state: SyncStatusState, text: string, options: Omit<StatusRequest, "state" | "text"> = {}): void {
+		this.applyStatus({ state, text, ...options });
+	}
 
-	/**
-	 * `bar` is a percentage, or null for the states that must not show one at all: a bar left sitting
-	 * at 100% after a run ends claims that run is still happening. `detail` is the part that does not
-	 * fit beside it -- the item has only about 200px before it starts running off the left of the
-	 * status bar, silently.
-	 *
-	 * `document` is separate from `text` because the two need opposite treatment: a name is of
-	 * unbounded length and is cut short (the tooltip repeats it in full), while `text` is a sentence
-	 * that has nowhere else to be read and must survive whole.
-	 */
-	private setStatus(
-		state: keyof typeof TaggedSyncPlugin.STATUS_ICONS,
-		text: string,
-		options: { bar?: number | null; detail?: string; document?: string } = {},
-	): void {
+	private applyStatus(request: StatusRequest): void {
+		const view = statusView(request, this.stopRequested);
 		// Only the text moves while a state lasts -- the icon is left alone so `is-busy` keeps spinning
 		// it across progress ticks, including the long silent ones (OCR, re-transcribe).
-		if (state !== this.statusState) {
+		if (view.state !== this.statusState) {
 			this.statusIcon.empty();
-			setIcon(this.statusIcon, TaggedSyncPlugin.STATUS_ICONS[state]);
-			this.statusBar.toggleClass("is-busy", state === "busy");
-			this.statusState = state;
+			setIcon(this.statusIcon, view.icon);
+			this.statusBar.toggleClass("is-busy", view.spinning);
+			this.statusState = view.state;
 		}
 		// Outside that guard on purpose: this follows `stopRequested` too, which flips without a state
 		// change. Cheap enough to redo every tick -- a class and an attribute, not a rebuilt icon.
-		const stoppable = state === "busy" && !this.stopRequested;
-		this.statusBar.toggleClass("mod-clickable", stoppable);
-		setTooltip(this.statusBar, [options.detail, stoppable ? "Click to stop the sync" : ""].filter((part) => part).join("\n"));
+		this.statusBar.toggleClass("mod-clickable", view.stoppable);
+		setTooltip(this.statusBar, view.tooltip);
 
-		this.lastBar = options.bar ?? null;
-		if (this.lastBar === null) this.statusBarWrapper.hide();
+		this.lastBar = view.bar;
+		if (view.bar === null) this.statusBarWrapper.hide();
 		else {
-			this.statusProgress.setValue(this.lastBar);
+			this.statusProgress.setValue(view.bar);
 			this.statusBarWrapper.show();
 		}
 		// Both parts are hidden when empty: the item is a flex row with a gap, so an empty span would
 		// still push its neighbours apart.
-		const document = options.document ?? "";
-		this.statusText.setText(text);
-		this.statusText.toggle(text !== "");
-		this.statusName.setText(document);
-		this.statusName.toggle(document !== "");
+		this.statusText.setText(view.text);
+		this.statusText.toggle(view.text !== "");
+		this.statusName.setText(view.document);
+		this.statusName.toggle(view.document !== "");
 		this.statusBar.show();
 	}
 
 	private showProgress(progress: SyncProgress): void {
-		// A pending stop outranks the progress ticks: they would go on announcing work the user has
-		// already asked to end. The bar freezes where it stands rather than emptying -- the work
-		// already done is not undone by stopping.
-		if (this.stopRequested) {
-			this.setStatus("busy", "Tagged Sync: stopping…", { bar: this.lastBar });
-			return;
-		}
-		if (progress.phase === "scanning") {
-			// No bar: how much there is to do is precisely what is not known yet. The name beside the
-			// counter is what separates a slow scan from a stuck one -- the counter itself can stand
-			// still for a long time while several documents are open at once. The prefix goes once
-			// there is something better to spend the width on, exactly as in the working state below.
-			// The separator belongs to whichever side is followed by the other, so it cannot dangle.
-			const counted = `checking ${progress.checked} of ${progress.candidates}${progress.document ? " ·" : ""}`;
-			this.setStatus("busy", progress.candidates === 0 ? "Tagged Sync: scanning…" : counted, {
-				bar: null,
-				document: progress.document,
-				detail: progress.document,
-			});
-			return;
-		}
-		// The document's name alone, without the usual "Tagged Sync:" -- the icon says whose item this
-		// is, and the prefix would cost the width the name needs. Everything else goes to the tooltip.
-		this.setStatus("busy", "", {
-			bar: Math.min(100, (progress.done / progress.total) * 100),
-			document: progress.document,
-			detail: `${progress.document}\ntag: ${progress.tag} · page ${progress.unitDone} of ${progress.unitTotal} · ${progress.step}`,
-		});
+		this.applyStatus(progressStatus(progress, this.stopRequested, this.lastBar));
 	}
 
 	/**
@@ -574,19 +538,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			// is not itself an error and contributes nothing here; only what the partial run hit does.
 			this.lastSyncError = result.skipErrors.length > 0 ? result.skipErrors.join("\n") : null;
 
-			if (result.stopped) {
-				this.setStatus("stopped", `Tagged Sync: stopped · ${result.notesWritten} note(s)`);
-				new Notice(
-					result.notesWritten > 0
-						? `Sync stopped. ${result.notesWritten} note(s) written; the rest will sync next time.`
-						: "Sync stopped before any note was written. Nothing was lost.",
-				);
-			} else {
-				const wrote = result.notesWritten > 0;
-				this.setStatus("ok", wrote ? `Tagged Sync: ${result.notesWritten} note(s)` : "Tagged Sync: up to date");
-				if (wrote) new Notice(`Synced ${result.notesWritten} note(s).`);
-				else if (!auto) new Notice("Already up to date.");
-			}
+			this.applyStatus(outcomeStatus(result));
+			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten: result.notesWritten, background: auto });
+			if (outcome !== null) new Notice(outcome);
 			// Both of these used to be console-only while the notice still reported plain success. A
 			// stopped run's skips and failures are just as real as a completed one's.
 			if (speak) this.reportPartialOutcomes(result);
@@ -658,71 +612,21 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 	}
 
-	/**
-	 * Reports the ways a sync can finish "successfully" while quietly not doing what the user
-	 * expected: notes it refused to overwrite, documents it could not read or render, and notes that
-	 * came back with fewer highlights than they had. Each was `console.warn` only, which nobody sees,
-	 * while the notice said the sync had worked.
-	 */
-	private reportPartialOutcomes(result: { editedNotesSkipped: number; documentsSkipped: number; failedOcrUnits: number; shrunkNotes: number; relaidDocuments: number }): void {
-		// A failed transcription used to leave an empty "## Transcript", a console.warn nobody reads,
-		// and a notice announcing plain success -- so the note looked synced and simply had no text.
-		if (result.failedOcrUnits > 0) {
-			const noun = result.failedOcrUnits === 1 ? "note" : "notes";
-			new Notice(
-				`${result.failedOcrUnits} ${noun} synced without a transcript because transcription failed. ` +
-					"The handwriting render is still there. Press Copy diagnostics in settings if it keeps happening.",
-				15_000,
-			);
-		}
-		if (result.editedNotesSkipped > 0) {
-			const noun = result.editedNotesSkipped === 1 ? "note was" : "notes were";
-			new Notice(
-				`${result.editedNotesSkipped} ${noun} not updated because they were edited. ` +
-					"Tagged Sync only rewrites notes it wrote itself. " +
-					"Undo the change to resume syncing, and keep your own text in a separate note.",
-				15_000,
-			);
-		}
-		if (result.documentsSkipped > 0) {
-			const noun = result.documentsSkipped === 1 ? "notebook was" : "notebooks were";
-			new Notice(`${result.documentsSkipped} ${noun} skipped — see the developer console for details.`, 10_000);
-		}
-		// A book whose font changed keeps every mark and moves the text under them, so the quotes go on
-		// looking perfectly plausible while describing other sentences. Nothing else will ever flag it.
-		if (result.relaidDocuments > 0) {
-			const noun = result.relaidDocuments === 1 ? "book has" : "books have";
-			new Notice(
-				`${result.relaidDocuments} ${noun} been laid out again on the tablet since their notes were written — a font, size or margin change does that. ` +
-					"Marks made before it stay where they were while the text moves, so their quotes may no longer be the sentences you marked. " +
-					"Press Copy diagnostics in settings to see which.",
-				15_000,
-			);
-		}
-		// The device lost the highlights, not the sync — but the vault is where the user might still
-		// have a copy, and only for as long as they know to look. Said out loud for that reason alone.
-		if (result.shrunkNotes > 0) {
-			const noun = result.shrunkNotes === 1 ? "note has" : "notes have";
-			new Notice(
-				`${result.shrunkNotes} ${noun} fewer highlights than the last sync wrote. ` +
-					"The device no longer has them, and notes mirror the device. " +
-					"Press Copy diagnostics in settings to see which, and restore from a backup if you need them.",
-				15_000,
-			);
-		}
+	/** Wiring only: `sync-notices.ts` decides which of the five are said, in what words and in what order. */
+	private reportPartialOutcomes(result: PartialOutcome): void {
+		for (const notice of partialOutcomeNotices(result)) new Notice(notice.message, notice.timeout);
 	}
 
-	/** Once, on the first sync that produces an `unavailable` unit, explain the platform gap; then stay silent forever (spec §6.2). Caller persists `this.data`. */
+	/** Once, on the first sync that produces an `unavailable` unit; then never again. Caller persists `this.data`. */
 	private maybeShowUnavailableNotice(unavailableOcrUnits: number): void {
-		if (unavailableOcrUnits === 0 || this.data.ocrUnavailableNoticeShown) return;
+		const notice = platformGapNotice({
+			unavailableUnits: unavailableOcrUnits,
+			alreadyShown: this.data.ocrUnavailableNoticeShown,
+			alternativesExist: hasAlternativeBackends(ocrBackendEntries()),
+		});
+		if (notice === null) return;
 		this.data.ocrUnavailableNoticeShown = true;
-		// State the limit; promise nothing. Pointing at an API key setting this build does not have is
-		// worse than silence, and a promise of a future fix would be a debt.
-		new Notice(
-			"Text transcription needs macOS 13 or later. On this system, notes sync with the handwriting render only." +
-				(hasAlternativeBackends(ocrBackendEntries()) ? " Choose another OCR backend in settings to transcribe here." : ""),
-			15_000,
-		);
+		new Notice(notice, LONG_NOTICE_MS);
 	}
 
 	/**
