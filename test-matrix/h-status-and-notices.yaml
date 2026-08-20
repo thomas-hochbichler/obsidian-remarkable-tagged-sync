@@ -1,0 +1,290 @@
+# Group H -- what the plugin says about a run, plus E15, the one thing it says once.
+#
+# Every *condition* below is tested in the engine. Not one *sentence* was, and that split is the
+# whole risk: a sync that quietly skipped six notes and a sync that did everything are identical from
+# outside if the announcing code stops working. The announcement is the only place the difference
+# exists.
+#
+# The status item is the same shape from the other side. It is the only thing on screen during a run,
+# and a bar left at full or an icon stuck on the spinner claims a state the plugin is not in --
+# indefinitely, because nothing else will correct it.
+#
+# The `vault` rows drive the shipped handlers with the engine replaced by a scripted result and a
+# gate, which is the only way to read the busy state while it is still busy.
+
+- feature: C3
+  name: Status bar with real progress
+  code: src/status-model.ts
+  tier: free
+  scenarios:
+    - id: C3.1
+      scenario: A sync is running
+      expect: The item is visible, spinning, and offers to stop
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows while a sync runs > spins, and offers to stop"
+
+    - id: C3.2
+      scenario: The pre-scan is walking documents
+      expect: "A count and the document's name, and no bar -- how much there is to do is precisely what is not known yet"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows while a sync runs > counts documents during the scan, with no bar, because how much there is to do is what is not known yet"
+
+    - id: C3.3
+      scenario: The scan has not enumerated anything yet
+      expect: '"Tagged Sync: scanning…" rather than "checking 0 of 0", which reads as a finished run that found nothing'
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows while a sync runs > says it is scanning while it still has nothing to count"
+
+    - id: C3.4
+      scenario: The scan has a count but has not reached a document yet
+      expect: The separator is dropped, so it cannot dangle with nothing after it
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows while a sync runs > drops the separator when there is no document name to put after it"
+
+    - id: C3.5
+      scenario: Work is under way on a measured number of pages
+      expect: "The bar fills against that count and the item shows the document's name in place of the prefix -- the name is what the width is for"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows while a sync runs > fills the bar against the work it counted, and shows the name instead of a prefix"
+
+    - id: C3.6
+      scenario: The pre-scan under-counted and more work is reported than it measured
+      expect: "The bar stops at full. Past it, the plugin looks broken at exactly the moment it is nearly done"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows while a sync runs > never lets the bar past full, however the count was measured"
+
+    - id: C3.7
+      scenario: A user hovers the item during a run
+      expect: "The document, the tag, the page within it and the current step -- everything that does not fit in about 200px"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows while a sync runs > puts the whole story in the tooltip, which is where there is room for it"
+
+    - id: C3.8
+      scenario: A sync ends after the bar reached full
+      expect: "The bar is hidden. One left sitting at 100% claims the run is still happening"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows once a sync ends > hides the bar when the run ends, rather than leaving it sitting at full"
+
+    - id: C3.9
+      scenario: The user asks for a stop and progress keeps arriving
+      expect: "The item reads stopping…, stops offering to stop, and the bar freezes where it stands -- work already done is not undone by stopping"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows once a sync ends > stops offering to stop once the user has asked it to, and freezes the bar where it stands"
+
+- feature: H8
+  name: Status-bar outcome states
+  code: src/status-model.ts
+  tier: free
+  scenarios:
+    - id: H8.1
+      scenario: A run finishes having written notes
+      expect: A check, no spinner, no offer to stop, and the count
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows once a sync ends > checks off a run that wrote notes, and says how many"
+
+    - id: H8.2
+      scenario: A run finishes with nothing to do
+      expect: '"up to date" -- a count of zero would read as a failure'
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows once a sync ends > says up to date when there was nothing to write"
+
+    - id: H8.3
+      scenario: The user stopped the run
+      expect: "Its own icon. A check would claim a run that finished and a cross would claim one that broke, and a stopped run is neither"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows once a sync ends > gives a stopped run its own icon, because a check and a cross would both lie about it"
+
+    - id: H8.4
+      scenario: The run threw
+      expect: A cross, not a spinner left turning forever
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what the status item shows once a sync ends > crosses out a run that threw"
+
+- feature: H7
+  name: Partial-outcome notices
+  code: src/sync-notices.ts
+  tier: free
+  scenarios:
+    - id: H7.1
+      scenario: A sync completes with nothing skipped
+      expect: Only the ordinary success notice
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > says nothing at all when nothing was skipped"
+
+    - id: H7.2
+      scenario: One note synced but transcription failed
+      expect: "Said out loud, with the render explicitly still there. It used to be a console.warn under a notice announcing plain success, so the note looked synced and simply had no text"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > names failed transcription, and keeps the render out of the bad news"
+
+    - id: H7.3
+      scenario: Two notes failed transcription
+      expect: Plural
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > pluralises failed transcription"
+
+    - id: H7.4
+      scenario: A note was edited by hand and not overwritten
+      expect: Said, with what to do about it
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > says which notes it refused to overwrite, and what to do about it"
+
+    - id: H7.5
+      scenario: Two notes were edited by hand
+      expect: Plural
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > pluralises the refused notes"
+
+    - id: H7.6
+      scenario: A notebook could not be read
+      expect: Said, pointing at the console for which one
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > says how many notebooks it could not read"
+
+    - id: H7.7
+      scenario: Three notebooks could not be read
+      expect: Plural
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > pluralises skipped notebooks"
+
+    - id: H7.8
+      scenario: A book was laid out again on the tablet since its notes were written
+      expect: "Warned. The marks stay and the text moves under them, so the quotes go on looking perfectly plausible while describing other sentences -- nothing else will ever flag it"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > warns that a re-laid-out book's quotes may describe other sentences now"
+
+    - id: H7.9
+      scenario: Two books were laid out again
+      expect: Plural
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > pluralises re-laid-out books"
+
+    - id: H7.10
+      scenario: A note came back with fewer highlights than the last sync wrote
+      expect: "Said, because the vault may be the only place a copy still exists -- and only for as long as the user knows to look"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > says a note came back with fewer highlights than it had"
+
+    - id: H7.11
+      scenario: Four notes shrank
+      expect: Plural
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > pluralises shrunk notes"
+
+    - id: H7.12
+      scenario: All five happen in one run
+      expect: "All five, in one fixed order. Notices stack and the last one raised sits on top, so the order decides which one a user standing up from their desk actually reads"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > raises all five in one fixed order, worst first"
+
+    - id: H7.13
+      scenario: Only one of the five happened
+      expect: Only that one is raised
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > leaves the ones that did not happen unsaid"
+
+    - id: H7.14
+      scenario: A background run skipped notes
+      expect: "Silent about the skips, and still says it wrote notes. Nobody is at the keyboard for the bad news, and the good news is why auto-sync is on"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > says none of it on a background run, while still announcing the notes it wrote"
+
+    - id: H7.15
+      scenario: A background run found nothing to do
+      expect: "Nothing at all. That notice would otherwise fire every six hours, forever, to report that nothing happened"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > does not even say 'up to date' on a background run that found nothing"
+
+    - id: H7.16
+      scenario: A background run the user stopped by hand
+      expect: "Everything a manual run would say. They are at the keyboard, watching, and owed the same reporting"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync says when it finished but did not do everything > says all of it on a background run the user stopped by hand"
+
+- feature: H6
+  name: Last error kept for diagnostics
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: H6.1
+      scenario: A run succeeded overall but skipped documents along the way
+      expect: 'The skips are on the plugin, so "Copy diagnostics" does not report "Last error: none" about a run that quietly did not finish its work'
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync records for the diagnostics block > keeps the skip errors, so Last error does not read none after a run that skipped things"
+
+    - id: H6.2
+      scenario: A clean run follows one that had skips
+      expect: "The old error is cleared, so diagnostics describes the latest sync rather than the worst one"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "what a sync records for the diagnostics block > clears a stale error after a clean run, so diagnostics describes the latest sync"
+
+- feature: E15
+  name: One-time platform-gap notice
+  code: src/sync-notices.ts
+  tier: free
+  scenarios:
+    - id: E15.1
+      scenario: The first sync that produces a note this platform cannot transcribe
+      expect: "The limit is stated once. It promises nothing: pointing at an API key setting this build does not have is worse than silence"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > explains the gap the first time a sync produces a note it could not transcribe"
+
+    - id: E15.2
+      scenario: Every note in the run was transcribable
+      expect: Silence
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > stays silent when every note was transcribable"
+
+    - id: E15.3
+      scenario: A second sync in the same session hits the same gap
+      expect: Silent. The promise is "once"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > says it once and never again"
+
+    - id: E15.4
+      scenario: Obsidian is restarted and a sync hits the gap again
+      expect: "Still silent -- the flag is written to data.json. Kept in memory it would say it again every morning"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > is still silent after a restart, because the flag is written to data.json"
+
+    - id: E15.5
+      scenario: The notices that ask the user to go and do something
+      expect: "Long enough to be read. Obsidian's default notice is gone in five seconds"
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > gives the partial-outcome notices room to be read"

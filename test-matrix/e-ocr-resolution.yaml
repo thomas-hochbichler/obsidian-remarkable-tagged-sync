@@ -13,33 +13,33 @@
 # the file Obsidian loads, which registers every backend. The rows naming
 # `src/ocr-resolution.test.ts` drive the decision alone.
 
-- feature: E17
+- feature: E21
   name: The backend a run actually gets
   code: src/ocr-resolution.ts
   tier: free
   scenarios:
-    - id: E17.1
+    - id: E21.1
       scenario: "The user selects a backend and it is present and permitted"
       expect: "That backend runs"
       layer: unit
       file: src/ocr-backend-choice.test.ts
       test: "the backend a run gets > is the one the user selected, when this build has it and the licence permits it"
 
-    - id: E17.2
+    - id: E21.2
       scenario: "data.json names a backend this build no longer has, carried over from another build or an older version"
       expect: "Nothing is transcribed and nothing is said. It does not fall back to something the user did not choose"
       layer: unit
       file: src/ocr-backend-choice.test.ts
       test: "the backend a run gets > transcribes nothing, and says nothing, for an id this build no longer has"
 
-    - id: E17.3
+    - id: E21.3
       scenario: "A fresh install on a Mac"
       expect: "Apple Vision is the default"
       layer: unit
       file: src/ocr-resolution.test.ts
       test: "defaultOcrBackend > is Apple Vision where Apple Vision runs"
 
-    - id: E17.4
+    - id: E21.4
       scenario: "A fresh install where Apple Vision cannot run"
       expect: "Off, not a disabled Vision. Defaulting to an option the user cannot use and cannot change away from without first understanding why is worse than defaulting to nothing"
       layer: unit
@@ -217,47 +217,47 @@
       file: src/ocr-resolution.test.ts
       test: "the fallback for a backend that has no key > never has a third option to fall back to"
 
-- feature: E18
+- feature: E22
   name: What this build has to offer, as the settings strings ask it
   code: src/ocr-resolution.ts
   tier: free
   scenarios:
-    - id: E18.1
+    - id: E22.1
       scenario: "A build has nothing but the two backends every build has"
       expect: "No alternatives. Counting entries would not do -- off is an entry too"
       layer: unit
       file: src/ocr-resolution.test.ts
       test: "what a build has to offer > counts no alternative when all it has is the two every build has"
 
-    - id: E18.2
+    - id: E22.2
       scenario: "Anything else registers"
       expect: "There are alternatives, and the strings that offer one may say so"
       layer: unit
       file: src/ocr-resolution.test.ts
       test: "what a build has to offer > counts one as soon as anything else registers"
 
-    - id: E18.3
+    - id: E22.3
       scenario: "A build is asked whether pages would leave the machine"
       expect: "Yes only when something actually costs money per page. metered is the honest predicate: it already means somebody else's server"
       layer: unit
       file: src/ocr-resolution.test.ts
       test: "what a build has to offer > says there are cloud backends only when something actually costs money per page"
 
-    - id: E18.4
+    - id: E22.4
       scenario: "A free user on a supported Mac has Apple Vision and an offline model and nothing else"
       expect: "The description must say on-device and not cloud. This was wrong in 1.1.0 -- the string asked whether alternatives existed and used the answer to claim the network and an API key were involved"
       layer: unit
       file: src/ocr-resolution.test.ts
       test: "what a build has to offer > tells an on-device alternative apart from a cloud one, which is what the wrong string could not"
 
-    - id: E18.5
+    - id: E22.5
       scenario: "The two built-in backends are asked about"
       expect: "Neither counts as an on-device alternative, though neither is metered"
       layer: unit
       file: src/ocr-resolution.test.ts
       test: "what a build has to offer > does not count the two built-in ones as on-device alternatives, though neither is metered"
 
-    - id: E18.6
+    - id: E22.6
       scenario: "A build registered nothing at all"
       expect: "All four questions answer no rather than throwing"
       layer: unit
