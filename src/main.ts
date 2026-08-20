@@ -18,6 +18,7 @@ import {
 } from "obsidian";
 import { type RemarkableApi, session as remarkableSession } from "rmapi-js";
 import { DEFAULT_ATTACHMENTS_FOLDER, normalizeAttachmentsFolder } from "./attachment-writer";
+import { autoSpendBlocked, backgroundConsentGiven, backgroundRunBlocked } from "./auto-sync-gates";
 import { isIntervalSyncDue, isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
 import { explainError } from "./explain-error";
@@ -641,18 +642,22 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * the actual run.
 	 */
 	private async triggerAutoSync(): Promise<void> {
-		if (!this.data.autoSync.enabled) return;
-		if (this.syncing) return;
-		if (!this.auth.isConnected()) return;
-		// Two separate consents, deliberately. The money gate is read off the *resolved* adapter, which
-		// is the honest answer once a keyless cloud provider has fallen back to a free backend. The
-		// background gate is a property of the backend the user chose: it costs no money and still
-		// costs battery, fans and several GB of RAM without anyone having asked.
 		const entry = ocrBackendEntry(this.data.ocrBackend);
-		if (entry?.needsBackgroundConsent && entry.backgroundConsent && !entry.backgroundConsent.get(this.data.llmProviders[entry.id] ?? {})) return;
+		if (
+			backgroundRunBlocked({
+				enabled: this.data.autoSync.enabled,
+				running: this.syncing,
+				connected: this.auth.isConnected(),
+				backgroundConsent: backgroundConsentGiven(entry, this.data.llmProviders[this.data.ocrBackend] ?? {}),
+			}) !== null
+		) {
+			return;
+		}
+		// Resolved only now, because resolving is not free: it constructs adapters and can raise a
+		// fallback notice. Everything decidable without one has been decided above.
 		await this.refreshLicenceIfGated(true);
 		const backend = this.resolveOcrBackend(true);
-		if (backend.metered && !this.data.autoSync.autoTranscribeMetered) return;
+		if (autoSpendBlocked(backend.metered, this.data.autoSync.autoTranscribeMetered) !== null) return;
 		// Claimed here rather than at the top: the gates above can decide not to run at all, and a tick
 		// that holds the lock while deciding makes `isSyncing()` -- and the Stop sync command with it --
 		// lie about a run that never starts. The read above is only fast feedback; this is the gate.

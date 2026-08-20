@@ -170,6 +170,27 @@
       file: src/auto-sync-schedule.test.ts
       test: "what stops a background sync > reads the money gate off the backend that will actually run, not the one that was chosen"
 
+    - id: C17.5
+      scenario: The money gate is asked about a paid backend with no consent
+      expect: Blocked
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "autoSpendBlocked > blocks a paid backend the user has not consented to run unattended"
+
+    - id: C17.6
+      scenario: The money gate is asked about a paid backend with consent given
+      expect: Clear. The gate asks once and gets out of the way
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "autoSpendBlocked > lets a paid backend through once the consent is given"
+
+    - id: C17.7
+      scenario: The money gate is asked about a backend that spends nothing, with and without the consent
+      expect: Clear either way. On a free backend the consent authorises nothing, so it cannot be what decides
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "autoSpendBlocked > lets a free backend through whether or not the consent was ever given"
+
 - feature: C18
   name: Battery and RAM consent gate
   code: src/main.ts
@@ -195,20 +216,6 @@
       layer: vault
       file: src/auto-sync-schedule.test.ts
       test: "what stops a background sync > runs it unattended once it has been consented to"
-
-    - id: C18.4
-      scenario: Auto-sync is switched off entirely
-      expect: Nothing runs, whatever the backend and whatever the consents
-      layer: vault
-      file: src/auto-sync-schedule.test.ts
-      test: "what stops a background sync > does not sync when auto-sync is switched off"
-
-    - id: C18.5
-      scenario: Auto-sync fires with no device token stored
-      expect: Nothing runs, and nothing is said -- unlike a manual sync, which names the missing connection
-      layer: vault
-      file: src/auto-sync-schedule.test.ts
-      test: "what stops a background sync > does not sync when the device is not connected"
 
 - feature: C22
   name: The clock the plugin schedules on
@@ -242,3 +249,106 @@
       layer: unit
       file: src/scheduler.test.ts
       test: "windowScheduler > reads the wall clock, which is the one lastSyncAt is written on"
+
+    - id: C18.6
+      scenario: A backend that never asks for background consent is judged
+      expect: It has it. Most cost nothing but network, and asking about all of them would make the one that matters unremarkable
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > treats a backend that does not ask as having consented"
+
+    - id: C18.7
+      scenario: A backend that asks is judged against its own settings blob
+      expect: The blob decides, and the plugin never learns which key inside it holds the answer
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > reads the answer out of the backend's own settings blob"
+
+    - id: C18.8
+      scenario: A backend that asks has never been answered
+      expect: Not consented. A consent that defaults to yes is not a consent
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > treats a backend that has never been asked as not consented"
+
+    - id: C18.9
+      scenario: The selected backend is not in this build at all
+      expect: Not blocked here. It cannot run anyway, and refusing it as unconsented would name the wrong reason for the same silence
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > does not block a backend this build does not have"
+
+    - id: C18.10
+      scenario: A backend declares it needs consent but registers no accessor to read one
+      expect: Treated as consented. Blocking would take it off the background air over a registration mistake, silently
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > treats a backend that asks but offers no accessor as having consented"
+
+    - id: C18.11
+      scenario: A backend registers an accessor without declaring it needs consent
+      expect: Its accessor is not consulted. The settings tab draws the consent row off the same two fields, so a backend gated on a flag it never declared would have no control to turn the gate off with
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundConsentGiven > ignores an accessor from a backend that never declared it needs one"
+
+- feature: C23
+  name: The shared gate every unattended run passes
+  code: src/auto-sync-gates.ts
+  tier: free
+  scenarios:
+    - id: C23.1
+      scenario: Both triggers -- launch and interval -- reach the gate with nothing wrong
+      expect: Nothing blocks. The gate is the same one for both, so a rule added for one cannot miss the other
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > lets a run through when every condition is clear"
+
+    - id: C23.2
+      scenario: Auto-sync is switched off entirely
+      expect: Blocked, and named as the master switch
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when the master switch is off"
+
+    - id: C23.3
+      scenario: The same, driven through the shipped plugin
+      expect: Nothing runs, whatever the backend and whatever the consents
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > does not sync when auto-sync is switched off"
+
+    - id: C23.4
+      scenario: A sync or a re-transcribe is already in flight when a tick fires
+      expect: Blocked. Two runs would interleave rows in the one sync index -- the same lock a manual sync respects
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when something is already running"
+
+    - id: C23.5
+      scenario: No device token is stored
+      expect: Blocked
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when no device token is stored"
+
+    - id: C23.6
+      scenario: The same, driven through the shipped plugin
+      expect: Nothing runs, and nothing is said -- unlike a manual sync, which names the missing connection
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "what stops a background sync > does not sync when the device is not connected"
+
+    - id: C23.7
+      scenario: The chosen backend may not run unattended
+      expect: Blocked, and named as the background consent rather than as the money one
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks when the backend may not run unattended"
+
+    - id: C23.8
+      scenario: Every condition is wrong at once
+      expect: The master switch is named. Each refusal is silent, so the order changes nothing a user sees -- it is pinned so a test meaning to exercise one gate cannot pass because another fired
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > names the master switch first when everything is wrong at once"
