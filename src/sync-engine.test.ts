@@ -3277,12 +3277,32 @@ describe("a re-sync that finds fewer highlights", () => {
 		expect(result.index.rows[KEY].highlightCount).toBe(0);
 	});
 
-	it("stays quiet when the count holds, or grows", async () => {
+	it("stays quiet when the count grows", async () => {
 		const first = baseDeps(deviceWith(PAGE_BYTES, 1), { sync: "Target" });
 		const synced = await runSync(first, EMPTY_SYNC_INDEX);
 
 		const result = await runSync({ ...baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore }, synced.index);
 
+		expect(result.skipErrors).toEqual([]);
+		expect(result.shrunkNotes).toBe(0);
+	});
+
+	// Gap G26, and the leg that matters most because it is the common one. This test used to be named
+	// "stays quiet when the count holds, **or grows**" and only ran "grows", so `count >= previous` ->
+	// `count > previous` passed all 996 tests -- while shipped, every re-sync of an unchanged book
+	// would cry data loss. That trains the reader to ignore the one warning that means it.
+	it("stays quiet when the count holds, which is what an unchanged re-sync does", async () => {
+		const first = baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 1), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		expect(synced.index.rows[KEY].highlightCount).toBe(2);
+
+		// The same two highlights, a second time. Only the document hash moved, which is what re-opens it.
+		const result = await runSync(
+			{ ...baseDeps(deviceWith(HIGHLIGHTED_PAGE_BYTES, 2), { sync: "Target" }), noteStore: first.noteStore },
+			synced.index,
+		);
+
+		expect(result.index.rows[KEY].highlightCount).toBe(2);
 		expect(result.skipErrors).toEqual([]);
 		expect(result.shrunkNotes).toBe(0);
 	});

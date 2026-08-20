@@ -1,0 +1,100 @@
+# Gaps G21, G22 and G26 -- three shapes of the same failure, and none of them is subtle.
+#
+# **G21**: a request asserted two fields deep. Deleting the `anthropic-version` header made every
+# call 400 for every buyer, and passed all 996 tests -- the paid backend goes off the air with the
+# licence gate green.
+#
+# **G22**: every shipped default is unpinned, because every test injects its own. Five constants
+# survived being changed to absurd values.
+#
+# **G26**: a test named for two legs that only ran one.
+
+- feature: E7
+  name: Cloud LLM backends -- the request that leaves the machine
+  code: pro/anthropic-ocr-backend.ts
+  tier: pro
+  scenarios:
+    - id: E7.1
+      scenario: One page is transcribed through the Anthropic backend
+      expect: The **whole** header set, not two fields of it. Anthropic requires `anthropic-version` on every call and answers "missing anthropic-version" without it, which reads to the buyer like a bad key
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > recognizes a single page in one HTTP call and reports ok status"
+
+    - id: E7.2
+      scenario: The model answers with thinking and tool_use blocks beside its text
+      expect: Only the text blocks reach the note. Neither of the others is transcription, and both would land in somebody's note as if their handwriting had said it
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > takes the text blocks out of the answer and leaves the rest of them there"
+
+    - id: E7.3
+      scenario: A block type nobody here has seen, carrying a `text` field
+      expect: 'Refused. The filter asks what a block **is**, not whether it happens to carry text -- today those two behave identically, which is why the difference survived every test, and they stop the day Anthropic adds a block type with that field'
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > asks what a block *is*, not whether it happens to carry text"
+
+- feature: E2
+  name: Apple Vision -- the numbers it ships with
+  code: src/vision-ocr-backend.ts
+  tier: free
+  scenarios:
+    - id: E2.1
+      scenario: A backend constructed without a parallelism option transcribes forty pages
+      expect: "At most eight Vision processes at once, near a Mac's perf-core count. 64 was the surviving mutation, and 64 concurrent `osascript` processes is a Mac that stops responding while somebody syncs a notebook"
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "the numbers this backend ships with > keeps concurrent Vision processes near a Mac's perf-core count"
+
+    - id: E2.2
+      scenario: An observation covers a third of a line's height, and then a tenth
+      expect: 'A third counts as read and a tenth does not. Vision reports a confidence of 1.000 over plain misreads, so "no observation covers this writing" is the only signal that a line went missing -- and where the bar sits decides whether the rescue pass runs over the whole page or never'
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "the numbers this backend ships with > treats a line as read when an observation covers a third of it, and not a tenth"
+
+    - id: E2.3
+      scenario: A page of three lines, the first written in two strokes, goes through the rescue pass
+      expect: 'Three clusters. Not two -- a taller line height merges lines into a second full-page read that adds nothing -- and not four, which sends a page through Vision once per stroke. The exact threshold is not pinned to the pixel, deliberately: it is a heuristic, and its neighbouring values are defensible'
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "the numbers this backend ships with > clusters ink into lines rather than into one block or into every stroke"
+
+- feature: E16
+  name: LLM transcript post-processing -- how many requests are in flight
+  code: src/llm-transcript.ts
+  tier: free + Pro
+  scenarios:
+    - id: E16.1
+      scenario: Twenty pages are transcribed through the shared page runner
+      expect: At most four requests at once. 64 was the surviving mutation -- a self-inflicted 429 storm on the first sync of a notebook, against a key whose limits nobody here can reason about in advance
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "how many requests are in flight at once > keeps to the conservative read of the vendors' own limits"
+
+    - id: E16.2
+      scenario: The cloud cap is compared with Vision's
+      expect: They differ, and must. Vision's governs local subprocesses with no rate limiter on the other end; overloading one constant for both would couple two unrelated tunings, and the coupling would only surface as somebody else's provider returning 429
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "how many requests are in flight at once > is not Vision's cap, and must not become it"
+
+- feature: G14
+  name: Shrunk-highlight warning
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: G14.1
+      scenario: A book comes back with the same number of highlights it had -- what an unchanged re-sync does
+      expect: 'Silence. `count >= previous` -> `count > previous` passed all 996 tests, and shipped it would cry data loss on every re-sync -- which trains the reader to ignore the one warning that means it'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a re-sync that finds fewer highlights > stays quiet when the count holds, which is what an unchanged re-sync does"
+
+    - id: G14.2
+      scenario: A book comes back with more highlights than it had
+      expect: Silence
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a re-sync that finds fewer highlights > stays quiet when the count grows"

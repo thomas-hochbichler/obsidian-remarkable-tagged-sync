@@ -830,7 +830,6 @@ src/sync-engine.test.ts :: a book laid out again under its marks > says it once,
 src/sync-engine.test.ts :: a book laid out again under its marks > says so, naming both page counts
 src/sync-engine.test.ts :: a re-sync that finds fewer highlights > compares nothing against a row written before the count existed
 src/sync-engine.test.ts :: a re-sync that finds fewer highlights > says how many were lost, and mirrors the device anyway
-src/sync-engine.test.ts :: a re-sync that finds fewer highlights > stays quiet when the count holds, or grows
 src/sync-engine.test.ts :: collectHighlights > collapses internal newlines and whitespace runs so a wrapped run is one flowing bullet
 src/sync-engine.test.ts :: collectHighlights > drops empty and whitespace-only runs, and omits a page left with no quotes
 src/sync-engine.test.ts :: collectHighlights > orders a page's quotes top-to-bottom then left-to-right by rect anchor
