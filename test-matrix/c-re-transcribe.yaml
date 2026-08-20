@@ -9,7 +9,7 @@
 
 - feature: C20
   name: Command hidden when useless
-  code: src/main.ts
+  code: src/re-transcribe-prompt.ts
   tier: free
   scenarios:
     - id: C20.1
@@ -47,9 +47,29 @@
       file: src/re-transcribe.test.ts
       test: "whether the re-transcribe command is offered at all > asks the backend without letting it speak, so the palette cannot raise a notice"
 
+    - id: C20.6
+      scenario: The id says one thing and the adapter another -- an `UnavailableOcrBackend` carrying a metered provider's id
+      expect: Refused. The id check and the class check are two questions, and the id alone would let it through
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > asks the adapter, which is why an unavailable one named 'off' is refused twice over"
+
+    - id: C20.7
+      scenario: Transcription is off, and separately an id this build does not have
+      expect: Both refused
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > says no to transcription switched off, and to a backend this build does not have"
+
+    - id: C20.8
+      scenario: A free local backend, and a paid cloud one
+      expect: Both offered
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > says yes to anything that can produce text"
 - feature: C19
   name: Re-transcribe all synced notes -- the command surface
-  code: src/main.ts
+  code: src/main.ts, src/re-transcribe-prompt.ts
   tier: free
   scenarios:
     - id: C19.9
@@ -115,9 +135,22 @@
       file: src/re-transcribe.test.ts
       test: "the three ways of saying no > says a stopped run kept what it did, rather than reporting plain success"
 
+    - id: C19.18
+      scenario: The confirmation is built
+      expect: It names the count and the backend id, and ends on what the run fetches
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > names the count and the backend, so the answer is made against both"
+
+    - id: C19.19
+      scenario: The confirmation is read by somebody deciding whether to say yes
+      expect: It states what changed about transcripts. Without it the dialog lists only costs, and the reason to accept them is missing
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > states what changed about transcripts, because that is the fact that decides the answer"
 - feature: E18
   name: Re-transcribe cost caveat
-  code: src/main.ts
+  code: src/re-transcribe-prompt.ts
   tier: free
   scenarios:
     - id: E18.1
@@ -134,9 +167,36 @@
       file: src/re-transcribe.test.ts
       test: "what the confirmation says > names the API quota and the backend's own estimate where both apply"
 
+    - id: E18.3
+      scenario: The backend spends nothing per page
+      expect: No word about quota, API, money or cost -- a cost warning on a free backend teaches the reader to skip the one that means it
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > says nothing about money for a backend that spends none"
+
+    - id: E18.4
+      scenario: The backend is metered
+      expect: The quota clause, joined into the fetching sentence rather than added after it
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > adds the quota clause only where a page actually costs something"
+
+    - id: E18.5
+      scenario: The backend supplies a time estimate
+      expect: Inside the sentence, before the full stop -- appended past it, an estimate reads as a second unfinished sentence
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > lets the backend add its own estimate, and puts it inside the sentence"
+
+    - id: E18.6
+      scenario: A metered backend that also supplies an estimate
+      expect: One sentence carrying both, cost first and time second
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > reads as one sentence with both clauses, in cost-then-time order"
 - feature: C2
   name: One sync at a time -- the stop confirmation
-  code: src/main.ts
+  code: src/main.ts, src/confirm-modal.ts
   tier: free
   scenarios:
     - id: C2.11
@@ -176,7 +236,7 @@
 
 - feature: I3
   name: Paste and activate a key -- one sentence per outcome
-  code: src/main.ts
+  code: src/licence-messages.ts, src/settings-tab.ts
   tier: pro
   scenarios:
     - id: I3.3
@@ -193,6 +253,33 @@
       file: src/settings-tab.test.ts
       test: "what the paste field says about each answer > does not tell a refunded buyer to look for a typo"
 
+    - id: I3.5
+      scenario: Each of the five outcomes is routed
+      expect: Each reaches the sentence written for it, and no two answers read the same
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > gives every outcome its own sentence"
+
+    - id: I3.6
+      scenario: Two outcomes are compared for sameness
+      expect: Five outcomes, five distinct sentences
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > never says the same thing about two different answers"
+
+    - id: I3.7
+      scenario: The key was withdrawn after a refund
+      expect: Not the typo sentence, and it names the refund
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > does not send a refunded buyer hunting for a typo"
+
+    - id: I3.8
+      scenario: Polar answers something this build has no arm for
+      expect: The typo sentence, not the withdrawal one -- nothing was ever active on a key being pasted for the first time, so there is nothing to withdraw
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > reads an answer it has no arm for as a typo, not as a withdrawal"
 - feature: I5
   name: 50 activations per licence
   code: src/licence-messages.ts

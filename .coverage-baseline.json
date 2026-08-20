@@ -42,6 +42,10 @@
 			"lines": 0,
 			"branches": 1
 		},
+		"src/confirm-modal.ts": {
+			"lines": 0,
+			"branches": 0
+		},
 		"src/device-font.ts": {
 			"lines": 0,
 			"branches": 2
@@ -233,6 +237,10 @@
 		"src/quote-correction.ts": {
 			"lines": 0,
 			"branches": 8
+		},
+		"src/re-transcribe-prompt.ts": {
+			"lines": 0,
+			"branches": 0
 		},
 		"src/region-view.ts": {
 			"lines": 90,
