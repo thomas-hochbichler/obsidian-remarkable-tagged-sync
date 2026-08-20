@@ -1,12 +1,9 @@
 import {
-	type App,
-	Modal,
 	normalizePath,
 	Notice,
 	Plugin,
 	ProgressBarComponent,
 	setIcon,
-	Setting,
 	setTooltip,
 	type TAbstractFile,
 	TFile,
@@ -14,6 +11,7 @@ import {
 } from "obsidian";
 import { normalizeAttachmentsFolder } from "./attachment-writer";
 import { autoSpendBlocked, backgroundConsentGiven, backgroundRunBlocked } from "./auto-sync-gates";
+import { confirmDialog } from "./confirm-modal";
 import { isIntervalSyncDue } from "./auto-sync";
 import { explainError } from "./explain-error";
 import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-check";
@@ -23,6 +21,7 @@ import type { OcrBackend as OcrBackendId } from "./note-builder";
 import { remapRows } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { reTranscribeConfirmation, reTranscribeIsUseful } from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
 import { openSession } from "./remarkable-session";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
@@ -221,8 +220,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Pointless without a backend that produces text (Off, or Vision on Windows/Linux):
 			// hidden from the palette rather than failing at run time.
 			checkCallback: (checking) => {
-				const backend = this.resolveOcrBackend(true);
-				if (backend.id === "off" || backend instanceof UnavailableOcrBackend) return false;
+				// Silent: this runs on every keystroke in the palette, and a backend that falls back
+				// announces the fallback.
+				if (!reTranscribeIsUseful(this.resolveOcrBackend(true))) return false;
 				if (!checking) void this.reTranscribeAll();
 				return true;
 			},
@@ -576,19 +576,18 @@ export default class TaggedSyncPlugin extends Plugin {
 			new Notice(NOTHING_SYNCED_NOTICE);
 			return;
 		}
-		// Only a metered cloud adapter actually spends money; local/vision/unavailable backends do not.
-		const costCaveat = backend.metered ? " and re-sends every page to your OCR provider, using your API quota" : "";
-		// A backend whose per-page cost is time rather than money adds its own sentence. The core
-		// cannot compute it: the figure is a rolling mean over the user's own pages, inside the
-		// backend's opaque blob.
 		const entry = ocrBackendEntry(this.data.ocrBackend);
-		const timeCaveat = entry?.reTranscribeCaveat?.(this.data.llmProviders[entry.id] ?? {}, unitCount) ?? "";
 		const confirmed = await confirmDialog(
 			this.app,
 			"Re-transcribe synced notes",
-			// Transcription quality is stated here because it is the fact that decides the answer: notes
-			// synced before it keep the transcript they earned until this command is run.
-			`Re-transcribe ${unitCount} synced note(s) with the "${backend.id}" backend? Transcripts are now split by page, so you can tell which page a line came from. Handwriting is also read more accurately than it used to be, and typed text is transcribed too. This re-fetches each notebook from reMarkable${costCaveat}${timeCaveat}.`,
+			reTranscribeConfirmation({
+				unitCount,
+				backendId: backend.id,
+				// Off the resolved adapter, not the chosen id: a paid backend that fell back to a free
+				// one spends nothing, and would otherwise be warned about anyway.
+				metered: backend.metered,
+				timeCaveat: entry?.reTranscribeCaveat?.(this.data.llmProviders[entry.id] ?? {}, unitCount) ?? "",
+			}),
 			"Re-transcribe",
 		);
 		if (!confirmed) return;
@@ -646,49 +645,3 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 	}
 }
-
-/**
- * A modal confirm dialog with Cancel / confirm buttons. Resolves `true` only on the confirm
- * button; dismissing it any other way (Cancel, Escape, click-outside) resolves `false`. Preferred
- * over `window.confirm`, which blocks the UI thread and reads poorly in an Obsidian pane.
- */
-class ConfirmModal extends Modal {
-	private confirmed = false;
-
-	constructor(
-		app: App,
-		private readonly titleText: string,
-		private readonly bodyText: string,
-		private readonly confirmText: string,
-		private readonly onChoice: (confirmed: boolean) => void,
-	) {
-		super(app);
-	}
-
-	onOpen(): void {
-		this.titleEl.setText(this.titleText);
-		this.contentEl.createEl("p", { text: this.bodyText });
-		new Setting(this.contentEl)
-			.addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()))
-			.addButton((button) =>
-				button
-					.setButtonText(this.confirmText)
-					.setCta()
-					.onClick(() => {
-						this.confirmed = true;
-						this.close();
-					}),
-			);
-	}
-
-	onClose(): void {
-		this.contentEl.empty();
-		this.onChoice(this.confirmed);
-	}
-}
-
-/** Opens a {@link ConfirmModal} and resolves to the user's choice. */
-function confirmDialog(app: App, title: string, body: string, confirmText: string): Promise<boolean> {
-	return new Promise((resolve) => new ConfirmModal(app, title, body, confirmText, resolve).open());
-}
-

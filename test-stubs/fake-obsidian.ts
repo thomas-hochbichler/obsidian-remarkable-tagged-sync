@@ -669,12 +669,30 @@ export function takeNotices(): string[] {
 	return noticeLog.splice(0, noticeLog.length).map((n) => n.message);
 }
 
+/**
+ * Recording. Every modal opened, in order -- a dialog nobody can see is a dialog no test can find,
+ * and "no dialog was opened" is half of what the confirmations are asserted on.
+ */
+export const modalLog: Modal[] = [];
+
+/** Not an Obsidian member. Reads the modals and clears them. */
+export function takeModals(): Modal[] {
+	return modalLog.splice(0, modalLog.length);
+}
+
 export class Modal {
 	readonly contentEl = new FakeEl();
 	readonly titleEl = new FakeEl();
 	opened = false;
 	constructor(readonly app: FakeApp) {}
+	/**
+	 * Escape, a click on the background and `close()` are one path in Obsidian too: both handlers call
+	 * `close()`, which unloads the component and runs `onClose`. So a modal cannot tell a test which
+	 * of the three happened -- and neither can the plugin, which is why a confirmation has to default
+	 * to "no" rather than be set by whichever handler ran.
+	 */
 	open(): void {
+		modalLog.push(this);
 		this.opened = true;
 		this.onOpen();
 	}

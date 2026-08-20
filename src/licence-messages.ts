@@ -9,7 +9,7 @@
  * plugin. So every locking message says what still works, in the same breath as what stopped.
  */
 
-import type { Entitlement, LicenceState } from "./licence-state";
+import type { Entitlement, LicenceOutcome, LicenceState } from "./licence-state";
 import { trialEndsAt } from "./licence-state";
 
 /** What a licence costs, said in one place so the settings tab and the README cannot drift apart. */
@@ -182,3 +182,31 @@ export function trialDaysLeft(state: LicenceState, now: Date): number {
 	if (end === null) return 0;
 	return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
 }
+
+/**
+ * What to say when someone has just pressed Activate.
+ *
+ * The router is the point, not the sentences: `licence-client.ts` already tells the five answers
+ * apart, and this is the only place that decides which of them reaches the user. Two swapped arms
+ * are invisible to every test about the outcomes -- and one particular swap is the cruelty the
+ * sentences above were written to avoid, since `unknown-key` and `withdrawn` are identical for the
+ * stored state and differ only here.
+ */
+export function activationMessage(outcome: LicenceOutcome): string {
+	switch (outcome) {
+		case "valid":
+			return ACTIVATED_MESSAGE;
+		case "activation-limit":
+			return ACTIVATION_LIMIT_MESSAGE;
+		case "unreachable":
+			return OFFLINE_ACTIVATION_MESSAGE;
+		case "withdrawn":
+			return WITHDRAWN_KEY_MESSAGE;
+		// Nothing was ever active here, so an unrecognised key is a typo rather than a withdrawal.
+		default:
+			return WRONG_KEY_MESSAGE;
+	}
+}
+
+/** The one sentence in this file that is good news. */
+export const ACTIVATED_MESSAGE = "Tagged Sync Pro is active in this vault.";

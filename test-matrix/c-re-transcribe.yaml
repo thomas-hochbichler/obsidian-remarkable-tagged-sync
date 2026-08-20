@@ -1,0 +1,293 @@
+# The re-transcribe command surface -- gap G29 -- and the two confirmations in front of the plugin's
+# two long jobs.
+#
+# The engine half was covered: `reTranscribeAll` has six tests including checkpointing and stop. What
+# had nothing was everything the user meets *before* it runs. That matters more here than for most
+# dialogs: on a metered backend this command re-sends every page to a paid API, and on any backend it
+# rewrites the transcript of every synced note -- so a confirmation that resolves the wrong way
+# spends the user's money, or their transcripts, on a click they did not make.
+
+- feature: C20
+  name: Command hidden when useless
+  code: src/re-transcribe-prompt.ts
+  tier: free
+  scenarios:
+    - id: C20.1
+      scenario: Transcription is switched off
+      expect: The command is not in the palette -- it would fetch every notebook again and write the same notes back with no transcript
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the re-transcribe command is offered at all > is hidden with transcription switched off"
+
+    - id: C20.2
+      scenario: The stored backend id is one this build does not have, carried in from another build
+      expect: Hidden. This is the case the check actually detects -- it resolves to an `UnavailableOcrBackend`
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the re-transcribe command is offered at all > is hidden for a backend this build does not have at all"
+
+    - id: C20.3
+      scenario: A backend that produces text is selected
+      expect: Offered
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the re-transcribe command is offered at all > is offered as soon as a backend that produces text is selected"
+
+    - id: C20.4
+      scenario: Apple Vision is the selected backend on a Windows or Linux desktop -- reachable because `data.json` is a synced file, so a Mac in the same vault chose it
+      expect: '**The command is offered, and this feature says it should not be.** `vision.create()` returns a real backend on every desktop and only `recognize()` answers `unavailable`, much later. Characterised as it is; filed as ticket 19'
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the re-transcribe command is offered at all > is offered for Apple Vision on a Windows or Linux desktop, where it produces nothing"
+
+    - id: C20.5
+      scenario: The palette asks the check, which it does on every keystroke, with a backend that would fall back
+      expect: No notice. Without the silent resolver a lapsed licence would raise a fallback notice for typing a letter into the command palette
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the re-transcribe command is offered at all > asks the backend without letting it speak, so the palette cannot raise a notice"
+
+    - id: C20.6
+      scenario: The id says one thing and the adapter another -- an `UnavailableOcrBackend` carrying a metered provider's id
+      expect: Refused. The id check and the class check are two questions, and the id alone would let it through
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > asks the adapter, which is why an unavailable one named 'off' is refused twice over"
+
+    - id: C20.7
+      scenario: Transcription is off, and separately an id this build does not have
+      expect: Both refused
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > says no to transcription switched off, and to a backend this build does not have"
+
+    - id: C20.8
+      scenario: A free local backend, and a paid cloud one
+      expect: Both offered
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > says yes to anything that can produce text"
+- feature: C19
+  name: Re-transcribe all synced notes -- the command surface
+  code: src/main.ts, src/re-transcribe-prompt.ts
+  tier: free
+  scenarios:
+    - id: C19.9
+      scenario: The vault is not connected to reMarkable
+      expect: The missing connection is named, and no dialog opens -- being asked to confirm something that was never going to run is worse than being told why
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the guards in front of the confirmation > names the missing connection rather than a run the user cannot see"
+
+    - id: C19.10
+      scenario: A sync is already holding the index
+      expect: Refused with the running notice, again before any dialog
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the guards in front of the confirmation > refuses while a sync holds the index, without opening a dialog first"
+
+    - id: C19.11
+      scenario: Nothing has ever been synced into this vault
+      expect: One sentence instead of a confirmation dialog over an empty run
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the guards in front of the confirmation > says there is nothing to re-transcribe instead of confirming a run over nothing"
+
+    - id: C19.12
+      scenario: The index holds an orphaned row beside an active one
+      expect: The dialog counts the active row only -- re-transcribing an orphan would write a note the user deleted straight back
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the guards in front of the confirmation > counts only the notes that are still in the vault"
+
+    - id: C19.13
+      scenario: The confirmation is drawn
+      expect: It names the count, the backend id and that every notebook is re-fetched, and it is the count `reTranscribableUnits` produced rather than a second one
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the confirmation says > names the count, the backend and what the run costs in time and data"
+
+    - id: C19.14
+      scenario: Cancel is pressed
+      expect: The engine is never called and nothing is said
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the three ways of saying no > runs nothing when Cancel is pressed"
+
+    - id: C19.15
+      scenario: The dialog is dismissed with Escape or a click outside it
+      expect: Same as Cancel. All three end in `onClose` with the flag still false, which is why it defaults to false rather than being set by whichever handler ran
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the three ways of saying no > runs nothing when the dialog is dismissed without an answer"
+
+    - id: C19.16
+      scenario: The answer is yes
+      expect: The engine runs once and the count it refreshed is announced
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the three ways of saying no > runs, and says how many it refreshed, when the answer is yes"
+
+    - id: C19.17
+      scenario: The run is stopped part way
+      expect: It says what it kept and that the rest are unchanged, rather than reporting plain success
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the three ways of saying no > says a stopped run kept what it did, rather than reporting plain success"
+
+    - id: C19.18
+      scenario: The confirmation is built
+      expect: It names the count and the backend id, and ends on what the run fetches
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > names the count and the backend, so the answer is made against both"
+
+    - id: C19.19
+      scenario: The confirmation is read by somebody deciding whether to say yes
+      expect: It states what changed about transcripts. Without it the dialog lists only costs, and the reason to accept them is missing
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > states what changed about transcripts, because that is the fact that decides the answer"
+- feature: E18
+  name: Re-transcribe cost caveat
+  code: src/re-transcribe-prompt.ts
+  tier: free
+  scenarios:
+    - id: E18.1
+      scenario: The selected backend costs nothing per page
+      expect: The confirmation says nothing about an API quota -- a cost warning on a free backend teaches the user to ignore the one that means it
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the confirmation says > says nothing about money where no money is spent"
+
+    - id: E18.2
+      scenario: The selected backend is metered and declares its own time estimate
+      expect: Both clauses, and the estimate is a total rather than a rate -- "about 3 minutes" decides the answer where "about a minute a note" hands the user a multiplication
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the confirmation says > names the API quota and the backend's own estimate where both apply"
+
+    - id: E18.3
+      scenario: The backend spends nothing per page
+      expect: No word about quota, API, money or cost -- a cost warning on a free backend teaches the reader to skip the one that means it
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > says nothing about money for a backend that spends none"
+
+    - id: E18.4
+      scenario: The backend is metered
+      expect: The quota clause, joined into the fetching sentence rather than added after it
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > adds the quota clause only where a page actually costs something"
+
+    - id: E18.5
+      scenario: The backend supplies a time estimate
+      expect: Inside the sentence, before the full stop -- appended past it, an estimate reads as a second unfinished sentence
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > lets the backend add its own estimate, and puts it inside the sentence"
+
+    - id: E18.6
+      scenario: A metered backend that also supplies an estimate
+      expect: One sentence carrying both, cost first and time second
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > reads as one sentence with both clauses, in cost-then-time order"
+- feature: C2
+  name: One sync at a time -- the stop confirmation
+  code: src/main.ts, src/confirm-modal.ts
+  tier: free
+  scenarios:
+    - id: C2.11
+      scenario: The status bar is clicked while nothing is running
+      expect: No dialog. The item stays on screen after a run ends showing its outcome, and clicking that should do nothing rather than explain itself
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the dialog the status bar opens > does not ask about stopping a run that is not happening"
+
+    - id: C2.12
+      scenario: The status bar is clicked during a run
+      expect: The dialog states the delay, because a stop that leaves the spinner turning for minutes is the one thing that reads as a broken button
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the dialog the status bar opens > states the delay, because a stop that keeps spinning reads as a broken button"
+
+    - id: C2.13
+      scenario: The stop dialog is answered no, then yes
+      expect: No leaves the run alone; yes requests the stop
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the dialog the status bar opens > stops the run on yes and leaves it alone on no"
+
+    - id: C2.14
+      scenario: The status bar is clicked again while the first stop is still pending
+      expect: No second dialog -- the run is already ending
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the dialog the status bar opens > does not ask twice while the first stop is still pending"
+
+    - id: C2.15
+      scenario: The Stop sync command is asked for while nothing is running
+      expect: Hidden, and it carries no confirmation of its own -- a command somebody went looking for and named "Stop sync" *is* the intent, while a click on a status bar could be a slip
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the stop command is offered > is hidden while nothing is running, and there is nothing to confirm about it"
+
+- feature: I3
+  name: Paste and activate a key -- one sentence per outcome
+  code: src/licence-messages.ts, src/settings-tab.ts
+  tier: pro
+  scenarios:
+    - id: I3.3
+      scenario: Polar answers each of the five ways it can
+      expect: Five distinct sentences, each the one written for that outcome. `licence-client.test.ts` proved the outcomes are told apart; nothing proved each reaches its own sentence, so swapping two `case` arms was invisible
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "what the paste field says about each answer > gives each outcome its own sentence, and none of them another's"
+
+    - id: I3.4
+      scenario: The key was withdrawn after a refund
+      expect: Not the typo sentence. For the stored state the two outcomes are identical -- they are separate outcomes only so this sentence can differ, and telling a refunded buyer to hunt for a mistake they did not make is the reason
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "what the paste field says about each answer > does not tell a refunded buyer to look for a typo"
+
+    - id: I3.5
+      scenario: Each of the five outcomes is routed
+      expect: Each reaches the sentence written for it, and no two answers read the same
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > gives every outcome its own sentence"
+
+    - id: I3.6
+      scenario: Two outcomes are compared for sameness
+      expect: Five outcomes, five distinct sentences
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > never says the same thing about two different answers"
+
+    - id: I3.7
+      scenario: The key was withdrawn after a refund
+      expect: Not the typo sentence, and it names the refund
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > does not send a refunded buyer hunting for a typo"
+
+    - id: I3.8
+      scenario: Polar answers something this build has no arm for
+      expect: The typo sentence, not the withdrawal one -- nothing was ever active on a key being pasted for the first time, so there is nothing to withdraw
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "activationMessage > reads an answer it has no arm for as a typo, not as a withdrawal"
+- feature: I5
+  name: 50 activations per licence
+  code: src/licence-messages.ts
+  tier: pro
+  scenarios:
+    - id: I5.1
+      scenario: The licence has no activation slot left
+      expect: The limit is named in its own sentence rather than folded into the typo one -- the buyer's fix is to free a slot in the portal, not to retype the key
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "what the paste field says about each answer > gives each outcome its own sentence, and none of them another's"

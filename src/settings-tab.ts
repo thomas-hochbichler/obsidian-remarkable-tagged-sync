@@ -13,16 +13,8 @@ import { isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
 import { explainError } from "./explain-error";
 import { activateKey, deactivateHere } from "./licence-check";
-import {
-	ACTIVATION_LIMIT_MESSAGE,
-	licenceStatusText,
-	MONEY_BACK_MESSAGE,
-	OFFLINE_ACTIVATION_MESSAGE,
-	trialDaysLeft,
-	WITHDRAWN_KEY_MESSAGE,
-	WRONG_KEY_MESSAGE,
-} from "./licence-messages";
-import { type LicenceOutcome, startTrial, withoutLicence } from "./licence-state";
+import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft } from "./licence-messages";
+import { startTrial, withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
 import { defaultOcrBackend, hasAlternativeBackends, hasCloudBackends, hasOnDeviceBackends } from "./ocr-resolution";
 import { isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
@@ -71,23 +63,6 @@ const PRO_BUY_URL = "https://buy.polar.sh/polar_cl_ri72ZVng24KrtsNUNu8poN2J0rsvT
  * Polar mails this link with every order too; the button is convenience, not the only route.
  */
 const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
-
-/** What to say when someone has just pressed Activate. */
-function activationMessage(outcome: LicenceOutcome): string {
-	switch (outcome) {
-		case "valid":
-			return "Tagged Sync Pro is active in this vault.";
-		case "activation-limit":
-			return ACTIVATION_LIMIT_MESSAGE;
-		case "unreachable":
-			return OFFLINE_ACTIVATION_MESSAGE;
-		case "withdrawn":
-			return WITHDRAWN_KEY_MESSAGE;
-		// Nothing was ever active here, so an unrecognised key is a typo rather than a withdrawal.
-		default:
-			return WRONG_KEY_MESSAGE;
-	}
-}
 
 export class TaggedSyncSettingTab extends PluginSettingTab {
 	private code = "";
