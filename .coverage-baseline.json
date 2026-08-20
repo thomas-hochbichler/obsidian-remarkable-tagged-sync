@@ -7,8 +7,8 @@
 			"branches": 1
 		},
 		"pro/llm-register.ts": {
-			"lines": 60,
-			"branches": 46
+			"lines": 22,
+			"branches": 25
 		},
 		"pro/llm-transcript.ts": {
 			"lines": 0,
@@ -159,8 +159,8 @@
 			"branches": 6
 		},
 		"src/main.ts": {
-			"lines": 138,
-			"branches": 85
+			"lines": 45,
+			"branches": 45
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,
@@ -246,6 +246,10 @@
 			"lines": 1,
 			"branches": 1
 		},
+		"src/remarkable-session.ts": {
+			"lines": 0,
+			"branches": 0
+		},
 		"src/remarkable-tags.ts": {
 			"lines": 0,
 			"branches": 1
@@ -265,6 +269,10 @@
 		"src/settings-store.ts": {
 			"lines": 0,
 			"branches": 0
+		},
+		"src/settings-tab.ts": {
+			"lines": 24,
+			"branches": 13
 		},
 		"src/shims/setimmediate.ts": {
 			"lines": 27,

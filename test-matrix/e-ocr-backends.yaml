@@ -7,21 +7,24 @@
   scenarios:
     - id: E8.1
       scenario: The model field is empty, which is the state of every fresh install since no provider seeds a model id
-      expect: The callout stays empty. Probing "" would render a red "has no image input" verdict about a field the user has not filled in yet
+      expect: The callout stays empty and no probe is ever scheduled. Probing "" would render a red "has no image input" verdict about a field the user has not filled in yet
       layer: vault
-      gap: G28
+      file: pro/llm-register.test.ts
+      test: "the live vision-capability callout > stays empty on the empty model field every fresh install starts with"
 
     - id: E8.2
       scenario: The user types a model name one character at a time
-      expect: One probe fires 500 ms after they stop, not one per keystroke
+      expect: One probe fires 500 ms after they stop, not one per keystroke, and the callout says it is checking in the meantime
       layer: vault
-      gap: G28
+      file: pro/llm-register.test.ts
+      test: "the live vision-capability callout > asks once, 500 ms after the typing stops, not once per keystroke"
 
     - id: E8.3
       scenario: A probe returns after the settings pane has been re-rendered
-      expect: The stale result is dropped -- the el-identity guard exists for this and nothing tests it
+      expect: The stale result is dropped -- without the el-identity guard a verdict about the model the user moved away from lands in the callout of the one they are looking at now
       layer: vault
-      gap: G28
+      file: pro/llm-register.test.ts
+      test: "the live vision-capability callout > drops a verdict that comes back after the pane was drawn again"
 
 - feature: E19
   name: The model id is the user's to supply, and no provider seeds one
