@@ -14,7 +14,7 @@
 
 - feature: C13
   name: Note renames tracked
-  code: src/main.ts
+  code: src/note-rename.ts
   tier: free
   scenarios:
     - id: C13.1
@@ -93,3 +93,122 @@
       layer: vault
       file: src/vault-rename.test.ts
       test: "what a rename does not do > lets a note be renamed onto a path another row already claims"
+
+    - id: C13.12
+      scenario: The renamed file is the note a row holds
+      expect: The row takes the new path
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > moves the note that was renamed"
+
+    - id: C13.13
+      scenario: The renamed file is some other note
+      expect: Null, which is how the caller learns not to write
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > leaves every other note where it is"
+
+    - id: C13.14
+      scenario: A note sits several folders below the one that moved
+      expect: Everything below the moved folder is kept and re-hung under the new one
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > moves a note out of a renamed folder, keeping everything below it"
+
+    - id: C13.15
+      scenario: A folder is renamed whose name is a prefix of a sibling's
+      expect: The sibling's notes do not move. The separator is what says one folder is not inside the other
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > does not treat a sibling whose name merely starts the same as being inside"
+
+    - id: C13.16
+      scenario: The path a row holds is exactly the path of the renamed folder
+      expect: "Nothing moves -- only what is *under* a folder moves. The same two strings as a file rename are that note being renamed, and do move it"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > ignores a folder whose path is exactly what a row holds"
+
+    - id: C13.17
+      scenario: A note is renamed and another row's path starts with the renamed note's path
+      expect: "Nothing moves. A note is not inside another note, so the file branch matches exactly and never by prefix"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > does not read a file rename as a prefix"
+
+    - id: C13.18
+      scenario: A note is dragged into a folder that did not exist before
+      expect: The row takes the whole new path, parents and all
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > follows a note into a folder that did not exist before"
+
+    - id: C13.19
+      scenario: A note is renamed by case only, on a filesystem that folds case
+      expect: "Exact comparison. Obsidian's index does not fold case, so the two strings differ and this is a real move of the row"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapNotePath > compares paths exactly, case included"
+
+    - id: C13.20
+      scenario: A rename touches no row at all
+      expect: "Null. This is almost every rename in a vault, and it is what keeps data.json -- a synced file -- from being rewritten on each one"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > says nothing moved when nothing did"
+
+    - id: C13.21
+      scenario: A rename arrives before anything has ever been synced
+      expect: Null, on an empty index
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > says nothing moved when there are no rows at all"
+
+    - id: C13.22
+      scenario: A folder holding several synced notes is moved
+      expect: One answer with every row under it rewritten, so the caller writes once
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > rewrites every row under a moved folder in one answer"
+
+    - id: C13.23
+      scenario: Some rows move and some do not
+      expect: "The answer is the whole index. Returning only the moved rows would drop every note the user did not touch"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > keeps every row, not only the ones that moved"
+
+    - id: C13.24
+      scenario: A row whose key is its sync key has its note moved
+      expect: "The key survives. A row is found by sync key on the next run -- re-keying by path would strand it exactly as a stale path would"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > keeps the keys, because the key is the sync key and the path is not"
+
+    - id: C13.25
+      scenario: The moved row carries hashes and a render version
+      expect: "All of it survives. Rebuilding the row around the new path would re-render every note the user ever moved"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > carries the rest of the row across untouched"
+
+    - id: C13.26
+      scenario: The answer is computed but the caller discards it
+      expect: "The rows it was given are untouched, so the discard really discards"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > does not write through the rows it was given"
+
+    - id: C13.27
+      scenario: The moved note belongs to an orphaned row
+      expect: "It moves too. Orphaned means gone from the device, not gone from the vault -- its note is still a file the user can move"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > moves an orphaned row too"
+
+    - id: C13.28
+      scenario: A note is renamed onto a path another row already holds
+      expect: "Two rows naming one file. Nothing here looks at where a row lands -- the unit-level record of C13.11"
+      layer: unit
+      file: src/note-rename.test.ts
+      test: "remapRows > lets two rows end up naming one file"
