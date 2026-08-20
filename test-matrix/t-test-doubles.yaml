@@ -299,3 +299,10 @@
       layer: unit
       file: test-stubs/fake-obsidian.test.ts
       test: "the settings controls the plugin reaches past > builds a fragment the way the global does: the callback fills it, the fragment comes back"
+
+    - id: T10.3
+      scenario: The status bar hides and re-shows its own parts as a run reports progress
+      expect: toggle(false) hides and toggle(true) shows, which is all enhance.js does -- the parts are held rather than rebuilt, so a spinner does not restart every tick
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the settings controls the plugin reaches past > hides an element the plugin toggles off, and shows it again"
