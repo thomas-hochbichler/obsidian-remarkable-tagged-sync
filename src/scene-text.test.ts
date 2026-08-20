@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLAIN_TEXT_SIZE_PX } from "./device-font";
+import { HEADING_TEXT_SIZE_PX, PLAIN_TEXT_SIZE_PX } from "./device-font";
 import { notebookPageFrame, resolveDeviceCanvas, toPdfPoint } from "./pdf-renderer";
 import type { RmPage, RmText } from "./rm-parser";
 import { hasTypedText, isDocumentText, sceneHeadings, sceneTextPage } from "./scene-text";
@@ -91,6 +91,25 @@ describe("sceneTextPage", () => {
 		expect(layer.lines[0].height).toBeCloseTo(PLAIN_TEXT_SIZE_PX * SCREEN.pxToPt, 6);
 		expect(layer.lines[0].width).toBeGreaterThan(0);
 		expect(layer.width).toBe(SCREEN.widthPt);
+	});
+
+	// Gap G24. Every fixture in this block was plain text, so collapsing the heading size to the plain
+	// one passed all 996 tests. The text layer is what a reader's selection and a digest's quotes are
+	// measured against: a heading boxed at the plain size has a box smaller than its glyphs, so
+	// selecting it selects part of it and quoting it quotes the wrong span.
+	it("boxes a heading at the size the renderer draws it, not at the plain size", () => {
+		// `"0:0"` is the sentinel key the first paragraph's style is stored under -- the device keys a
+		// style by the newline *above* the paragraph it styles, and the first paragraph has none.
+		const scene = page({
+			text: text([{ id: "1:10", text: "A heading\nplain text", deleted: 0 }], headingAt("0:0")),
+		});
+
+		const lines = sceneTextPage(scene, SCREEN, "1")!.lines;
+
+		expect(lines.map((line) => line.text)).toEqual(["A heading", "plain text"]);
+		expect(lines[0].height).toBeCloseTo(HEADING_TEXT_SIZE_PX * SCREEN.pxToPt, 6);
+		expect(lines[1].height).toBeCloseTo(PLAIN_TEXT_SIZE_PX * SCREEN.pxToPt, 6);
+		expect(lines[0].height).toBeGreaterThan(lines[1].height);
 	});
 
 	it("drops the empty lines a paragraph break leaves, which carry no text to quote", () => {

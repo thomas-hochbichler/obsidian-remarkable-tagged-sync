@@ -1,0 +1,161 @@
+# Gaps G23, G24 and G25 -- three units with a great many tests around them and none on the thing
+# itself.
+#
+# **G23**: `mappingFingerprint` had no test of its own. `sync-engine.test.ts` asserted it against
+# `mappingFingerprint({...})`, which is the function agreeing with itself.
+#
+# **G24**: `bottomY` and the two sentinels had zero assertions in the entire repo, and every
+# `sceneTextPage` fixture was plain text.
+#
+# **G25**: two tests whose names promised more than their assertions did.
+
+- feature: B12
+  name: Settings change forces a full scan
+  code: src/tag-router.ts
+  tier: free
+  scenarios:
+    - id: B12.1
+      scenario: The same mapping, written with its keys in a different order
+      expect: The same fingerprint. `data.json` is edited by hand, merged by Obsidian Sync and rewritten by two vaults, so key order is not stable across any of it -- and without the sort every reordering reads as a settings change and rescans every notebook in the account for nothing
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "mappingFingerprint > is the same string whichever order the keys were written in"
+
+    - id: B12.2
+      scenario: A mapping is added, removed, or pointed at a different folder
+      expect: A different fingerprint each time -- this is the whole reason the field exists
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "mappingFingerprint > changes when a mapping is added, removed or re-targeted"
+
+    - id: B12.3
+      scenario: Two tags swap their folders -- the same tags and the same folders, crossed over
+      expect: A different fingerprint. The one reordering that is a real change, and a fingerprint over sorted values alone would call it equal
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "mappingFingerprint > does not confuse a swap of two folders with the mapping it came from"
+
+    - id: B12.4
+      scenario: The version prefix
+      expect: Asserted against a **literal**, not against the function. The version exists so a change to what routing means makes every vault run one full scan, and the only thing that can enforce that is a test somebody has to edit by hand when the number moves
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "mappingFingerprint > carries its version, asserted as a literal so a semantics change cannot forget the bump"
+
+    - id: B12.5
+      scenario: The router is asked for its own fingerprint
+      expect: The same string the free function produces for its mapping
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "mappingFingerprint > is what the router reports about itself"
+
+- feature: D7
+  name: Typed text drawn into the render -- where a layout begins and ends
+  code: src/text-layout.ts
+  tier: free
+  scenarios:
+    - id: D7.1
+      scenario: A layout of three single-line paragraphs
+      expect: '`bottomY` is the last line''s own slot, not a paragraph advance below it. This is where the bottom sentinel pins ink, and a full advance put a block 45 px too low the moment the text above it started wrapping'
+      layer: unit
+      file: src/text-layout.test.ts
+      test: "where a layout begins and ends > ends on the last line's own slot, not a paragraph advance below it"
+
+    - id: D7.2
+      scenario: A paragraph that wraps onto a second line
+      expect: '`bottomY` follows the line the text actually ends on -- the case that moved when this was wrong'
+      layer: unit
+      file: src/text-layout.test.ts
+      test: "where a layout begins and ends > ends on the last *wrapped* line, which is the case that moved when this was wrong"
+
+    - id: D7.3
+      scenario: A layout of one line
+      expect: Both sentinels resolve to the same place
+      layer: unit
+      file: src/text-layout.test.ts
+      test: "where a layout begins and ends > begins and ends in the same place for a single line"
+
+    - id: D7.4
+      scenario: Every run on the page is tombstoned, so there is no line at all
+      expect: Both ends are still finite and equal. Otherwise the ink anchored to where the first line would have been lands at the top of the *page* instead of the top of the *text*
+      layer: unit
+      file: src/text-layout.test.ts
+      test: "where a layout begins and ends > still has both when every run is tombstoned and there is no line at all"
+
+    - id: D7.5
+      scenario: A wrapped paragraph's characters are looked up one by one
+      expect: Each line holds exactly its own characters plus the space it broke at. Where the offset arithmetic drifts, a whole wrapped paragraph piles onto its first line and every node anchored to it moves by a line height
+      layer: unit
+      file: src/text-layout.test.ts
+      test: "where a layout begins and ends > gives every character on a wrapped line the y of that line, not of the paragraph"
+
+- feature: F21
+  name: Typed pages are documents too -- the text layer's own sizes
+  code: src/scene-text.ts
+  tier: free
+  scenarios:
+    - id: F21.1
+      scenario: A page whose first paragraph is a heading
+      expect: The heading's box is the size the renderer draws it at, not the plain size. The text layer is what a selection and a digest's quotes are measured against, so a heading boxed too small selects part of itself and quotes the wrong span
+      layer: unit
+      file: src/scene-text.test.ts
+      test: "sceneTextPage > boxes a heading at the size the renderer draws it, not at the plain size"
+
+- feature: D2
+  name: '`.rm` v6 scene parsing -- what it does with bytes it cannot read'
+  code: src/rm-parser.ts
+  tier: free
+  scenarios:
+    - id: D2.1
+      scenario: A node whose tail stops right after the label
+      expect: 'No warning is logged, which is what says the node survived. `formatVersion` was the old assertion and it stays 6 even for a page that lost every block'
+      layer: unit
+      file: src/rm-parser.test.ts
+      test: "parseRmV6 > keeps a node whose tail stops after the label, instead of losing it to a missing anchor"
+
+    - id: D2.2
+      scenario: A file with a header and no blocks
+      expect: An empty page, not a failure
+      layer: unit
+      file: src/rm-parser.test.ts
+      test: "parseRmV6 > bytes that are not a page > reads a header with no blocks as an empty page rather than as a failure"
+
+    - id: D2.3
+      scenario: One block's body is unreadable
+      expect: The page survives and exactly one warning is logged -- the blast radius is the block, not the page
+      layer: unit
+      file: src/rm-parser.test.ts
+      test: "parseRmV6 > bytes that are not a page > keeps the page when one block's body is unreadable, and says so once per block"
+
+    - id: D2.4
+      scenario: A block type this build has never heard of
+      expect: Walked past. The device adds block types, and one arriving must not cost the page the strokes in the blocks around it
+      layer: unit
+      file: src/rm-parser.test.ts
+      test: "parseRmV6 > bytes that are not a page > walks past a block type this build has never heard of"
+
+    - id: D2.5
+      scenario: The file ends mid-block -- a half-written page
+      expect: 'It throws, and that is deliberate: there is no honest way to read the rest, `runSync` catches it per document, and a parser that swallowed it would return a page missing whatever was in the unread tail with nothing saying so'
+      layer: unit
+      file: src/rm-parser.test.ts
+      test: "parseRmV6 > bytes that are not a page > throws on a file that ends mid-block, which is a half-written page and not a page"
+
+    - id: D2.6
+      scenario: Bytes with no `.rm` header at all
+      expect: It throws rather than reading them as a scene
+      layer: unit
+      file: src/rm-parser.test.ts
+      test: "parseRmV6 > bytes that are not a page > throws on bytes with no `.rm` header at all"
+
+- feature: F10
+  name: Margin notes -- the field the clustering tells phases apart by
+  code: src/rm-parser.ts
+  tier: free
+  scenarios:
+    - id: F10.1
+      scenario: A real device page's stroke timestamps are read
+      expect: 'Each is a CRDT id in its own right, distinct from the stroke''s own id. **And every stroke in every `.rm` fixture in this repo carries `0001`** -- so what the field exists for, telling one writing phase from another, cannot be exercised here at all. It needs a page written in two sittings: ticket 16''s material. Recorded rather than faked with a hand-built block, which would only assert that the test can set a byte'
+      layer: unit
+      file: src/rm-parser.test.ts
+      test: "parseRmV6 > reads a stroke's timestamp id, which margin-note clustering uses to tell writing phases apart"

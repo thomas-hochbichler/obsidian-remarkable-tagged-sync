@@ -161,3 +161,63 @@ describe("layoutText", () => {
 		});
 	});
 });
+
+// Gap G24. `topY` has tests; `bottomY` and the two sentinels have **none in the whole repo**, and
+// they are what place a node the device pinned above or below the text. A wrong `bottomY` moves that
+// ink by a line height or by a whole paragraph advance -- which is what happened before it was
+// measured: a full advance below the last line put a block 45 px too low the moment the URL above it
+// started wrapping.
+describe("where a layout begins and ends", () => {
+	it("ends on the last line's own slot, not a paragraph advance below it", () => {
+		const layout = layoutText(text([{ id: "1:10", text: "one\ntwo\nthree", deleted: 0 }]));
+
+		expect(layout.bottomY).toBe(layout.lines.at(-1)!.yPx);
+		expect(layout.bottomY).toBeGreaterThan(layout.topY);
+	});
+
+	it("ends on the last *wrapped* line, which is the case that moved when this was wrong", () => {
+		// A paragraph that wraps: the bottom sentinel has to follow the line the text actually ends on,
+		// not the line the paragraph started on.
+		const wrapping = layoutText(text([{ id: "1:10", text: "one two three four five six seven eight nine ten eleven twelve thirteen", deleted: 0 }]));
+
+		expect(wrapping.lines.length).toBeGreaterThan(1);
+		expect(wrapping.bottomY).toBe(wrapping.lines.at(-1)!.yPx);
+	});
+
+	it("begins and ends in the same place for a single line", () => {
+		const layout = layoutText(text([{ id: "1:10", text: "one", deleted: 0 }]));
+
+		expect(layout.topY).toBe(layout.bottomY);
+	});
+
+	it("still has both when every run is tombstoned and there is no line at all", () => {
+		// The page that anchors ink to where its first line would have been. Neither end may be
+		// undefined there, or the ink lands at the top of the page instead of at the top of the text.
+		const layout = layoutText(text([{ id: "1:10", text: "gone", deleted: 1 }]));
+
+		expect(layout.lines).toEqual([]);
+		expect(Number.isFinite(layout.topY)).toBe(true);
+		expect(layout.bottomY).toBe(layout.topY);
+	});
+
+	it("gives every character on a wrapped line the y of that line, not of the paragraph", () => {
+		// `yOfChar` on a wrapped line is where the offset arithmetic can drift: a character counted
+		// against the wrong line moves the ink hanging from it by a whole line height.
+		const runs = [{ id: "1:10", text: "one two three four five six seven eight nine ten eleven twelve thirteen", deleted: 0 }];
+		const layout = layoutText(text(runs));
+
+		const ys = [...layout.yOfChar.values()];
+		const lineYs = layout.lines.map((line) => line.yPx);
+		// Every character sits on a line that exists, and each line holds exactly its own characters --
+		// which is the assertion a mis-counted offset breaks. Without the advance, every wrapped line
+		// writes over the first line's characters instead of past them, so the last line's y ends up on
+		// the paragraph's opening characters.
+		expect(ys.every((y) => lineYs.includes(y))).toBe(true);
+		expect(layout.lines.map((line) => ys.filter((y) => y === line.yPx).length)).toEqual(
+			// Plus the space the break was made at, which belongs to the line it ended and is not part
+			// of that line's drawn text.
+			layout.lines.map((line, index) => line.text.length + (index < layout.lines.length - 1 ? 1 : 0)),
+		);
+		expect(new Set(ys).size).toBe(lineYs.length);
+	});
+});
