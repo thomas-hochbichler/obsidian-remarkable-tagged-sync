@@ -92,7 +92,7 @@
 		},
 		"src/licence-client.ts": {
 			"lines": 1,
-			"branches": 1
+			"branches": 2
 		},
 		"src/licence-messages.ts": {
 			"lines": 0,
@@ -183,8 +183,8 @@
 			"branches": 0
 		},
 		"src/obsidian-fetch.ts": {
-			"lines": 14,
-			"branches": 18
+			"lines": 0,
+			"branches": 0
 		},
 		"src/ocr-backend.ts": {
 			"lines": 0,

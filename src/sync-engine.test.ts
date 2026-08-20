@@ -2937,6 +2937,29 @@ describe("skipped documents", () => {
 		expect(attachmentStore.writeBinary).not.toHaveBeenCalled();
 	});
 
+	// Gap G31's scan half. Nothing in the suite ever made `listItems` reject, so the cloud going down
+	// mid-scan -- the most ordinary failure this plugin has -- ran nowhere.
+	it("fails the sync when the account listing cannot be fetched, rather than reporting nothing to do", async () => {
+		const api = fakeApi({ rootHash: "root-down", entries: [] });
+		api.listItems.mockRejectedValue(new Error("Request failed, status 503"));
+
+		// Loud, and it has to be: "0 notes" from a sync that never saw the account is indistinguishable
+		// from a sync that found nothing changed, and the second is the good news the first is not.
+		await expect(runSync(baseDeps(api, { sync: "Target" }), EMPTY_SYNC_INDEX)).rejects.toThrow("503");
+	});
+
+	it("writes nothing and reports a clean run for an account with no documents at all", async () => {
+		// A fresh reMarkable, or one whose documents are all untagged. Not a failure, and it must not
+		// look like one -- nor may it orphan anything, because there is nothing to compare against.
+		const api = fakeApi({ rootHash: "root-empty-account", entries: [] });
+
+		const result = await runSync(baseDeps(api, { sync: "Target" }), EMPTY_SYNC_INDEX);
+
+		expect(result).toMatchObject({ notesWritten: 0, documentsSkipped: 0, skipErrors: [] });
+		expect(result.index.rows).toEqual({});
+		expect(result.index.rootHash).toBe("root-empty-account");
+	});
+
 	it("is zero on a clean sync", async () => {
 		const api = fakeApi({
 			rootHash: "root-2",

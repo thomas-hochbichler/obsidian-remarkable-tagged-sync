@@ -49,16 +49,58 @@ async function deadKeyReason(response: Response): Promise<LicenceOutcome> {
 	return (await detailSays(response, NOT_ACTIVE)) ? "withdrawn" : "unknown-key";
 }
 
+/**
+ * How long a licence call may take before the sync stops waiting for it.
+ *
+ * There was no limit at all, and the shape of that bug is worth keeping: `refreshLicenceIfGated` is
+ * **awaited on the sync path**, so a Polar server that accepts the connection and never answers did
+ * not fail the licence check -- it hung the sync, with the status bar spinning and no way out but
+ * closing Obsidian. Every failure this file already handles is a server that answers *something*.
+ *
+ * Ten seconds: long enough for a slow connection to a working server, short enough that somebody who
+ * hit it presses Sync again rather than filing a bug about a frozen plugin. A timeout answers
+ * `unreachable`, which is the outcome that keeps Pro working on the last good verdict.
+ */
+export const LICENCE_TIMEOUT_MS = 10_000;
+
+/**
+ * Stops waiting after `ms`, and rejects.
+ *
+ * The request itself is abandoned rather than cancelled: `fetch` here is esbuild-rewritten to
+ * Obsidian's `requestUrl`, which has no abort of its own, so an `AbortSignal` would be accepted and
+ * ignored. What matters is that the *caller* stops waiting -- an abandoned socket costs nothing next
+ * to a sync that never ends.
+ */
+async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+	let timer: number | undefined;
+	try {
+		return await Promise.race([
+			work,
+			new Promise<never>((_resolve, reject) => {
+				// `window`, not the bare global: a timer created on the main window does not fire in a
+				// popout, which is the whole of `obsidianmd/prefer-window-timers`.
+				timer = window.setTimeout(() => reject(new Error(`the licence server did not answer within ${ms} ms`)), ms);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) window.clearTimeout(timer);
+	}
+}
+
 export function createPolarLicenceApi(
 	organizationId: string = POLAR_ORGANIZATION_ID,
 	fetchImpl: Fetch = fetch,
+	timeoutMs: number = LICENCE_TIMEOUT_MS,
 ): LicenceApi {
 	const post = async (path: string, body: Record<string, unknown>): Promise<Response> =>
-		fetchImpl(`${POLAR_API}/${path}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ organization_id: organizationId, ...body }),
-		});
+		withTimeout(
+			fetchImpl(`${POLAR_API}/${path}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ organization_id: organizationId, ...body }),
+			}),
+			timeoutMs,
+		);
 
 	return {
 		/**

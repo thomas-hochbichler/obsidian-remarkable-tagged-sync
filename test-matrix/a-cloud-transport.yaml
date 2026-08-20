@@ -1,0 +1,240 @@
+# Gaps G30, G31 and G33 -- the three places the plugin talks to somebody else's server.
+#
+# **G30** is the single point every cloud request passes through: reMarkable, Polar, and every LLM
+# provider. It had no test file and 0 % coverage. A mistake in it is not one broken feature, it is
+# every request the plugin makes, in every vault, looking exactly like the cloud being down.
+#
+# **G31**: nothing in the suite ever made the reMarkable mocks *reject*, so every failure path of the
+# module that owns the account ran nowhere.
+#
+# **G33** was a bug and not a test gap: there was no timeout on any Polar call.
+
+
+- feature: A6
+  name: Cloud requests work inside Obsidian
+  code: src/obsidian-fetch.ts
+  tier: free
+  scenarios:
+    - id: A6.1
+      scenario: The caller passes a URL as a string, a `URL`, and a `Request`
+      expect: All three reach `requestUrl` as the right URL. `input.toString()` looks right and is wrong for one of them -- a `Request` stringifies to "[object Object]", which fails as a malformed URL rather than as anything diagnosable
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "what reaches requestUrl > takes the URL out of a string, a URL, and a Request alike"
+
+    - id: A6.2
+      scenario: Headers arrive as a plain object, as a `Headers`, and as an entry array
+      expect: All three are flattened. Reading own properties only would send a `Headers` **unauthenticated**, and an unauthenticated reMarkable request answers 401 -- which reads to the user as a broken connection
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "what reaches requestUrl > flattens headers from every shape the caller may hand them in"
+
+    - id: A6.3
+      scenario: No method is given, and an HTTP error comes back
+      expect: 'GET, and `throw: false`. That flag is what makes this a `fetch`: a 404 is a Response with a status rather than a rejection, and without it the code reading `response.status` would never run'
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "what reaches requestUrl > defaults to GET, and never lets requestUrl throw on an HTTP error"
+
+    - id: A6.4
+      scenario: A method is given
+      expect: Passed through
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "what reaches requestUrl > passes the method through when there is one"
+
+    - id: A6.5
+      scenario: A string body, and no body at all
+      expect: Sent as it is, and omitted
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the body it forwards > sends a string as it is, and nothing at all for no body"
+
+    - id: A6.6
+      scenario: A `Uint8Array` that is a **view onto a larger buffer** -- what a chunked read produces
+      expect: Sliced to its own window. Sending the whole buffer would carry bytes from whatever else shared it, silently, in an upload
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the body it forwards > slices a Uint8Array to its own window, not to the whole buffer behind it"
+
+    - id: A6.7
+      scenario: An `ArrayBuffer` body
+      expect: Forwarded untouched
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the body it forwards > forwards an ArrayBuffer untouched"
+
+    - id: A6.8
+      scenario: A body shape the shim was not written for -- `FormData`, a `Blob`, `URLSearchParams`
+      expect: 'Refused loudly. `requestUrl` takes `string | ArrayBuffer` only, so anything else would arrive as *nothing*: the request goes out with an empty body and a success status, which is the worst outcome an upload has'
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the body it forwards > refuses a body shape it was not written for, rather than sending an empty one"
+
+    - id: A6.9
+      scenario: A successful response with a body and headers
+      expect: Status, headers and bytes all carried onto the `Response`
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > carries the status, the headers and the bytes"
+
+    - id: A6.10
+      scenario: A 404
+      expect: 'A `Response` with `ok: false`, not a rejection -- which is what `fetch` does and what every caller here is written against'
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > gives an HTTP error back as a Response, because that is what fetch does"
+
+    - id: A6.11
+      scenario: A 204, a 205 and a 304
+      expect: A null body. The `Response` constructor **throws** on a body for these, `requestUrl` hands one back regardless, and a 304 is what a conditional request gets on a good day
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > gives status 204 a null body rather than throwing"
+
+    - id: A6.12
+      scenario: A 101 or a 103
+      expect: 'Characterisation: it throws a `RangeError` either way. `Response` refuses **any** status below 200, body or no body, so the null-body rule cannot help -- and neither status is reachable through `requestUrl` on an ordinary HTTPS request. Written down rather than handled, because a guard for an unreachable case that cannot work reads as one that does'
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > cannot hand back status 101 at all, whatever the body says"
+
+    - id: A6.16
+      scenario: A 200 whose body happens to be empty
+      expect: The body is kept, not nulled. The rule is about the status and not about the length, and a status that may carry a body must go on being able to
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > keeps the body for a status that is allowed one, including a 200 with nothing in it"
+
+    - id: A6.13
+      scenario: The 205 and the 304 of the null-body rule
+      expect: Each gets a null body of its own, so a change to the list is caught per status rather than as a group
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > gives status 205 a null body rather than throwing"
+
+    - id: A6.14
+      scenario: A 304, which is what a conditional request gets on a good day
+      expect: A null body, not a throw from inside the shim
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > gives status 304 a null body rather than throwing"
+
+    - id: A6.15
+      scenario: A 103 early hint
+      expect: Same as the 101 -- refused by `Response` itself, characterised rather than handled
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "the Response it hands back > cannot hand back status 103 at all, whatever the body says"
+
+- feature: A1
+  name: Connect with one-time code -- when the cloud says no
+  code: src/remarkable-auth.ts
+  tier: free
+  scenarios:
+    - id: A1.3
+      scenario: The one-time code is expired or mistyped
+      expect: No device token stored. Storing anything would leave the plugin believing it is connected, and every later sync would fail somewhere further from the cause
+      layer: unit
+      file: src/remarkable-auth.test.ts
+      test: "RemarkableAuth > when the cloud says no > does not store a device token when the one-time code is refused"
+
+    - id: A1.4
+      scenario: An already-paired vault is re-paired and the code is mistyped
+      expect: The old token survives. One typo must not disconnect a working vault
+      layer: unit
+      file: src/remarkable-auth.test.ts
+      test: "RemarkableAuth > when the cloud says no > keeps an existing connection when a re-connect is refused"
+
+    - id: A1.5
+      scenario: The device token was revoked in the user's reMarkable account
+      expect: 'The failure reaches `explainError`, which turns it into "enter a new code". Returning nothing would make the *next* call fail on an undefined token instead'
+      layer: unit
+      file: src/remarkable-auth.test.ts
+      test: "RemarkableAuth > when the cloud says no > passes a revoked device token up rather than answering with a session it does not have"
+
+    - id: A1.6
+      scenario: A session request fails on a network blip
+      expect: Still connected. Clearing the token here would make an offline morning look like an unpaired vault, and send the user hunting for a one-time code
+      layer: unit
+      file: src/remarkable-auth.test.ts
+      test: "RemarkableAuth > when the cloud says no > still reports connected after a failed session, because the token is what connection means"
+
+    - id: A1.7
+      scenario: '`data.json` cannot be written after a successful registration'
+      expect: Passed up. Swallowing it would report connected for this session and forget everything on restart
+      layer: unit
+      file: src/remarkable-auth.test.ts
+      test: "RemarkableAuth > when the cloud says no > passes a failed write up rather than reporting a connection that was never saved"
+
+- feature: A3
+  name: Disconnect -- when the write fails
+  code: src/remarkable-auth.ts
+  tier: free
+  scenarios:
+    - id: A3.2
+      scenario: Clearing the device token cannot be written
+      expect: It fails loudly. A user who asked to disconnect must never be left connected without being told
+      layer: unit
+      file: src/remarkable-auth.test.ts
+      test: "RemarkableAuth > when the cloud says no > disconnects even when the write fails, or fails loudly -- never silently stays connected"
+
+- feature: B1
+  name: Discover tags -- when the account cannot be listed
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: B1.1
+      scenario: The cloud is down when the account listing is fetched
+      expect: 'The sync fails loudly. "0 notes" from a sync that never saw the account is indistinguishable from a sync that found nothing changed, and only one of those is good news'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "skipped documents > fails the sync when the account listing cannot be fetched, rather than reporting nothing to do"
+
+    - id: B1.2
+      scenario: A fresh reMarkable, or one whose documents are all untagged
+      expect: A clean run that writes nothing, orphans nothing and records the root hash. Not a failure, and it must not look like one
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "skipped documents > writes nothing and reports a clean run for an account with no documents at all"
+
+- feature: I8
+  name: Silence never revokes Pro -- including the silence of no answer at all
+  code: src/licence-client.ts
+  tier: pro
+  scenarios:
+    - id: I8.1
+      scenario: Polar accepts the connection and never answers
+      expect: The call ends. There was **no timeout at all**, and `refreshLicenceIfGated` is awaited on the sync path -- so this did not fail the licence check, it hung the sync, with the status bar spinning and no way out but closing Obsidian
+      layer: unit
+      file: src/licence-client.test.ts
+      test: "a licence server that never answers > stops waiting, rather than leaving the sync that awaited it hanging"
+
+    - id: I8.2
+      scenario: The same, on an activation from the paste field
+      expect: Also ends, so pressing Activate cannot freeze the settings tab
+      layer: unit
+      file: src/licence-client.test.ts
+      test: "a licence server that never answers > stops waiting on an activation too, so the paste field cannot hang either"
+
+    - id: I8.3
+      scenario: The limit is hit
+      expect: The message names it, so a support mail says which one
+      layer: unit
+      file: src/licence-client.test.ts
+      test: "a licence server that never answers > names the limit it gave up on, so a support mail says which one was hit"
+
+    - id: I8.4
+      scenario: A slow but working server, and the shipped limit
+      expect: Ten seconds -- long enough for a bad connection, short enough that somebody who hits it presses Sync again rather than filing a bug about a frozen plugin
+      layer: unit
+      file: src/licence-client.test.ts
+      test: "a licence server that never answers > gives a working server long enough to answer on a slow connection"
+
+    - id: I8.5
+      scenario: A call that answered well inside the limit
+      expect: No timer left running. One per request would keep the event loop alive after the sync finished -- on desktop Obsidian, a plugin that will not unload cleanly
+      layer: unit
+      file: src/licence-client.test.ts
+      test: "a licence server that never answers > does not leave a timer running behind a call that answered in time"
+
