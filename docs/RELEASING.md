@@ -13,6 +13,7 @@ enforce.
 |---|---|---|
 | 1 | Branch off `main` | `git switch -c release/1.0.6` |
 | 2 | Bump **four** files to the new version | `manifest.json`, `package.json`, `package-lock.json`, `versions.json` |
+| 2b | `npm run freeze-state` and commit the result | rewrites `test-fixtures/legacy-state/` in place |
 | 3 | Rename the changelog heading | `## [Unreleased]` → `## [1.0.6] - 2026-08-01` |
 | 4 | Commit and push the branch | `git commit -am "Release 1.0.6" && git push -u origin release/1.0.6` |
 | 5 | Open the PR, wait for green, squash-merge | `gh pr create --title "Release 1.0.6"`, then `gh pr merge --squash --delete-branch` |
@@ -34,6 +35,12 @@ Details that matter:
   caught it.
 - **`versions.json`** needs a new key `"1.0.6": "<minAppVersion>"`, and the value must equal
   `manifest.json`'s `minAppVersion`.
+- **`npm run freeze-state`** rewrites the reference vault in `test-fixtures/legacy-state/` with what
+  *this* build leaves behind after a first sync. `src/legacy-upgrade.test.ts` then runs the next
+  version's engine over a vault the last shipped release actually wrote — which is the only way to
+  test an upgrade against something nobody invented. It overwrites in place, so retiring the
+  previous state is not a step: git holds it in history, where a frozen artefact belongs. The
+  version gate fails the release if this is skipped.
 - **The tag has no `v` prefix.** `1.0.6`, never `v1.0.6`. The store resolves the tag from the
   manifest version, so a `v`-prefixed tag is simply not found.
 - **Step 5 is not optional.** The version gate runs in CI too, so a wrong number fails on the PR
@@ -48,7 +55,7 @@ after a failure.
 |---|---|---|---|
 | 1 | checkout, Node from `.nvmrc`, `npm ci` | ✅ | ✅ |
 | 2 | git author email | ✅ | — |
-| 3 | version consistency across the four files | ✅ | ✅ **plus tag == version** |
+| 3 | version consistency across the four files, and the frozen state | ✅ | ✅ **plus tag == version** |
 | 4 | changelog | ✅ weaker — see below | ✅ hard |
 | 5 | lint ratchet | ✅ | ✅ |
 | 6 | `tsc -noEmit` + 211 tests | ✅ | ✅ |

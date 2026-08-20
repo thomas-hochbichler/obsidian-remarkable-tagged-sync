@@ -14,7 +14,8 @@
     "inspect:rm": "esbuild scripts/inspect-rm.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-rm.cjs && node /tmp/tagged-sync-inspect-rm.cjs",
     "inspect:doc": "esbuild scripts/inspect-doc.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-doc.cjs && node /tmp/tagged-sync-inspect-doc.cjs",
     "test:coverage": "vitest run --coverage",
-    "matrix": "node scripts/matrix-link.mjs"
+    "matrix": "node scripts/matrix-link.mjs",
+    "freeze-state": "esbuild scripts/legacy-state/freeze.ts --bundle --platform=node --format=esm --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --outfile=/tmp/tagged-sync-freeze-state.mjs && node /tmp/tagged-sync-freeze-state.mjs"
   },
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
