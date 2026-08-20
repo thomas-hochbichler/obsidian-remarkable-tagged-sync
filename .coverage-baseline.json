@@ -119,8 +119,8 @@
 			"branches": 0
 		},
 		"src/local-model-fetch.ts": {
-			"lines": 197,
-			"branches": 67
+			"lines": 49,
+			"branches": 17
 		},
 		"src/local-model-gate.ts": {
 			"lines": 0,

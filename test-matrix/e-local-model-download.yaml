@@ -1,0 +1,133 @@
+# Gap G18 -- the half of the managed local model that touches the disk and the network.
+#
+# 504 lines with no test file, and the gap list's summary was exact: "excellent pure planners,
+# unconnected to anything that runs". Every rule here is verified in `local-model-download.test.ts`;
+# that this file *consults* them was not. The stake is 5.5 GB of somebody's bandwidth and a binary
+# that has to start on their machine.
+#
+# Layer `vault`: real `fs` in a real temporary directory, because Node's filesystem is not the thing
+# under test and a faked one would let a rename that never happened pass. The network is faked by
+# replacing `get` on the CommonJS `https` module -- the same singleton the code's dynamic `require`
+# resolves to.
+
+- feature: E5
+  name: Downloadable local model -- the download itself
+  code: src/local-model-fetch.ts
+  tier: free
+  scenarios:
+    - id: E5.1
+      scenario: A download runs from nothing to finished
+      expect: Both model files in place, the archive deleted, no `.part` left, the verified marker written and the lock released
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "a download that runs to the end > writes both markers' worth of state: the files in place and the verified marker"
+
+    - id: E5.2
+      scenario: The order the three artefacts are fetched in
+      expect: The 12 MB engine first. A broken engine, a missing `tar` or a quarantined archive then surfaces in seconds rather than after the hours the model takes
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "a download that runs to the end > fetches the 12 MB engine before the 5.5 GB model, so a broken setup surfaces in seconds"
+
+    - id: E5.3
+      scenario: A `.part` is on disk and the server honours the `Range`, answering 206
+      expect: '`bytes=<offset>-` is asked for and the body is appended. The file is byte-identical to a clean download'
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "resuming a part-finished download > asks for the rest and appends it when the server honours the range"
+
+    - id: E5.4
+      scenario: A `.part` is on disk and the server **ignores** the `Range`, answering 200 -- the sharpest edge in the whole downloader
+      expect: The part is truncated, not appended to. Appending would splice two beginnings together, and only the final hash would find out, after 5.5 GB
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "resuming a part-finished download > throws the part away when the server ignores the range and answers 200"
+
+    - id: E5.5
+      scenario: The `.part` is already the full size -- the last run died between the write and the rename
+      expect: Renamed into place. Nothing is requested at all
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "resuming a part-finished download > renames a part that is already complete instead of asking for it again"
+
+    - id: E5.6
+      scenario: An artefact is already installed at the right size
+      expect: Skipped, and its bytes still counted toward the bar
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "resuming a part-finished download > skips an artefact that is already in place at the right size"
+
+    - id: E5.7
+      scenario: The model's hash does not match, twice
+      expect: One clean retry from zero -- not a resume into the same bad bytes -- then the corrupt marker on disk and a terminal failure. A third attempt is 5.5 GB spent on hope, and the marker is on disk because a restart would otherwise buy one
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "bytes that are not the published ones > tries once more from zero, then records the corrupt marker and stops"
+
+    - id: E5.8
+      scenario: The **engine's** hash does not match
+      expect: No corrupt marker. It is 12 MB, so a fresh attempt after a restart costs seconds, and the marker exists to protect the 5.5 GB half
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "bytes that are not the published ones > leaves no corrupt marker for the engine, which costs seconds to fetch again"
+
+    - id: E5.9
+      scenario: The CDN ends the body early and cleanly -- no error, simply fewer bytes than it promised
+      expect: The short file is refused by name and never renamed into place. Nothing in the stream handling sees this one; the size check is the only thing between it and a truncated model
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "a body that ends early without saying so > refuses a short file rather than renaming it into place"
+
+    - id: E5.10
+      scenario: There is not enough free space for the download plus its extraction headroom
+      expect: Refused before a byte is fetched and before the lock is taken, naming the shortfall
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "the disk it is about to fill > refuses before writing anything, and says how much is missing"
+
+    - id: E5.11
+      scenario: The engine archive is unpacked on macOS, and then on Windows
+      expect: '`--strip-components=1` on macOS and no strip on Windows. Pinned per platform rather than sniffed: the macOS tarball wraps its payload in one directory and the Windows zip does not'
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "unpacking the engine > strips the wrapping directory on macOS and nothing on Windows"
+
+    - id: E5.12
+      scenario: '`tar` exits 0 having written nothing useful -- what a wrong strip depth actually does'
+      expect: A visible extract failure, not a "ready" state whose first transcription dies
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "unpacking the engine > calls a successful tar that unpacked nothing a failure, rather than a ready state"
+
+    - id: E5.13
+      scenario: The user cancels while the download is running
+      expect: Reported as cancelled and never as a network failure, the lock released, and no verified marker
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "cancelling mid-stream > stops, releases the lock, and leaves the part where a resume can find it"
+
+    - id: E5.14
+      scenario: The two tools this file is forbidden to use
+      expect: 'No `shell.openPath` and no `requestUrl` call. A source-level guard on purpose: a quarantined binary is SIGKILLed on somebody else''s Mac, and `requestUrl` buffering 5.5 GB is an out-of-memory crash on a machine that is not this one. Neither has a runtime signal here'
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "the tools it refuses to use > never hands a file to the OS to open, which is what would quarantine the engine"
+
+    - id: E5.15
+      scenario: What is handed to the system `tar`
+      expect: The archive it just wrote and the directory it wants it in -- so a wrong path is a failure here rather than a silent no-op
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "the tools it refuses to use > unpacks with the system tar, and asks for a real archive path"
+
+- feature: T12
+  name: The download fixture's own assumption
+  code: src/local-model-fetch.test.ts
+  tier: free
+  scenarios:
+    - id: T12.1
+      scenario: The tests above fake the system `tar` rather than running it
+      expect: A real `tar --version` succeeds on this machine. Without this, every test above passes on a box where the real download could never unpack -- the fake would be asserting against itself
+      layer: vault
+      file: src/local-model-fetch.test.ts
+      test: "the fixture's own assumption > is running somewhere a system tar exists"
