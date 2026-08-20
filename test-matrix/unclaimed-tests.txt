@@ -661,7 +661,6 @@ src/pdf-renderer.test.ts :: renderPagesToPdf > prefers a known palette id over c
 src/pdf-renderer.test.ts :: renderPagesToPdf > renders a blank page (no layers) as a real, empty PDF page
 src/pdf-renderer.test.ts :: renderPagesToPdf > renders a highlighter stroke at full strength with a Multiply blend, using its true color from color_rgba
 src/pdf-renderer.test.ts :: renderPagesToPdf > renders a real page fixture into a one-page PDF
-src/pdf-renderer.test.ts :: renderPagesToPdf > renders a single-point stroke (a tap) without throwing
 src/pdf-renderer.test.ts :: renderPagesToPdf > renders an empty scene (no strokes) without throwing
 src/pdf-renderer.test.ts :: renderPagesToPdf > renders every known colorId in its correct color, and falls back to black for an unmapped one
 src/pdf-renderer.test.ts :: renderPagesToPdf > renders on the larger Paper Pro canvas when a stroke's x falls outside the reMarkable 1/2 frame
@@ -865,7 +864,6 @@ src/sync-engine.test.ts :: page-anchored transcripts > drops the page structure,
 src/sync-engine.test.ts :: page-anchored transcripts > heads each page of a notebook and names the blank ones once
 src/sync-engine.test.ts :: page-anchored transcripts > leaves a backend with no per-page information rendering flat
 src/sync-engine.test.ts :: page-anchored transcripts > marks a page the backend could not read, on the page it happened to
-src/sync-engine.test.ts :: page-anchored transcripts > sends only the annotated pages of a PDF to the backend
 src/sync-engine.test.ts :: reTranscribeAll > checkpoints each refreshed block hash, so an interruption cannot freeze the notes it already rewrote
 src/sync-engine.test.ts :: reTranscribeAll > counts the pages of every row it will re-transcribe, without rendering them to find out
 src/sync-engine.test.ts :: reTranscribeAll > hands back the block hashes it already refreshed when stopped
@@ -919,7 +917,6 @@ src/sync-engine.test.ts :: runSync > level 2: opens a hash-unchanged notebook an
 src/sync-engine.test.ts :: runSync > level 2: skips opening a notebook whose entry hash matches the stored row
 src/sync-engine.test.ts :: runSync > level 3: re-renders a page-tag note rendered by an older renderer, unchanged page hash and all
 src/sync-engine.test.ts :: runSync > level 3: re-renders only the page whose hash changed, and bumps entryHash on the untouched row
-src/sync-engine.test.ts :: runSync > level 3: self-heals a page-tag note deleted by hand even though its page hash didn't change
 src/sync-engine.test.ts :: runSync > re-renders a note left by an older renderer, even though neither hash changed
 src/sync-engine.test.ts :: runSync > re-transcribes a stale-render rebuild whose ink the parser has now placed
 src/sync-engine.test.ts :: runSync > reopens an unchanged notebook and orphans its note when an inherited folder tag is removed

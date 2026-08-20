@@ -292,7 +292,7 @@
 		},
 		"src/sync-engine.ts": {
 			"lines": 40,
-			"branches": 59
+			"branches": 55
 		},
 		"src/sync-guards.ts": {
 			"lines": 0,

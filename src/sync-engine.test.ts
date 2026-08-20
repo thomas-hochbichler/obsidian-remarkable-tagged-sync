@@ -107,15 +107,23 @@ function cPages(pageIds: string[]): DocumentContent["cPages"] {
 	};
 }
 
-/** cPages carrying per-page `deleted` / `redir` markers -- for PDF-backed docs (redir = source page) and deletion cases. `deleted` is the marker's numeric CRDT value: 1 deleted, 0 present-but-live. */
-function cPagesWith(pages: { id: string; deleted?: number; redir?: number }[]): CPages {
+/**
+ * cPages carrying per-page `deleted` / `redir` markers -- for PDF-backed docs (redir = source page)
+ * and deletion cases. `deleted` is the marker's numeric CRDT value: 1 deleted, 0 present-but-live.
+ *
+ * `idx` overrides the CRDT position, which otherwise follows array order. That default is why the
+ * engine's `.sort()` by `idx` was a no-op in every one of the repo's fixtures: array order and idx
+ * order agreed everywhere, so deleting the sort changed nothing anywhere (gap G05). A page moved in
+ * the device's page overview is exactly the case where they disagree.
+ */
+function cPagesWith(pages: { id: string; deleted?: number; redir?: number; idx?: string }[]): CPages {
 	return {
 		lastOpened: { timestamp: "1:1", value: "" },
 		original: { timestamp: "1:1", value: 0 },
 		uuids: null,
 		pages: pages.map((page, i) => ({
 			id: page.id,
-			idx: { timestamp: "1:1", value: String.fromCharCode(97 + i) },
+			idx: { timestamp: "1:1", value: page.idx ?? String.fromCharCode(97 + i) },
 			...(page.deleted !== undefined ? { deleted: { timestamp: "1:1", value: page.deleted } } : {}),
 			...(page.redir !== undefined ? { redir: { timestamp: "1:1", value: page.redir } } : {}),
 		})),
@@ -539,6 +547,37 @@ describe("runSync", () => {
 		expect(api.getContent).not.toHaveBeenCalled();
 	});
 
+	// Gap G05. Every fixture in this repo builds `cPages` with `idx` in array order, so the engine's
+	// `.sort()` by `idx` was a no-op in all 123 tests -- deleting it entirely passed the suite. A page
+	// dragged in the device's page overview is precisely where the two orders part.
+	//
+	// If it shipped: the wrong page of the embedded PDF, the wrong number in every transcript heading
+	// and every `#page=` anchor -- for a notebook the user reordered themselves and will never think
+	// to check.
+	it("follows the order the device holds, not the order the pages arrived in", async () => {
+		// Written first, second, third; then dragged so that the third page sits at the front.
+		const content = documentContent({
+			cPages: cPagesWith([
+				{ id: "page-first", idx: "b" },
+				{ id: "page-second", idx: "c" },
+				{ id: "page-moved", idx: "a" },
+			]),
+		});
+		const api = fakeApi({
+			rootHash: "root-reordered",
+			entries: [documentEntry({ tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-first": "hash-first", "page-second": "hash-second", "page-moved": "hash-moved" } },
+		});
+		const deps = baseDeps(api, { sync: "Target" });
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		// The sequence of pages the engine asks the device for *is* the order it settled on.
+		const fetched = api.raw.getHash.mock.calls.map((call) => call[0] as string);
+		expect(fetched).toEqual(["doc-1/page-moved.rm", "doc-1/page-first.rm", "doc-1/page-second.rm"]);
+	});
+
 	it("root-hash gate: a mapping change re-scans even though the root hash is unchanged", async () => {
 		const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });
 		const content = documentContent({ cPages: cPages(["page-a"]) });
@@ -825,6 +864,103 @@ describe("runSync", () => {
 		expect(second.index.rows[notebookSyncKey("doc-1", "sync")].status).toBe("orphaned");
 	});
 
+	// Gap G12. A clean 1:1 tag swap is a rename and the note moves. Anything messier is meant to fall
+	// back to orphaning *everything* that dropped out -- and `=== 1 && === 1` -> `>= 1 && >= 1` passed
+	// all 996 tests, because every tag-diff fixture in the repo was the clean 1:1 case, from three
+	// angles.
+	//
+	// Loosened, one of the two removed tags is renamed and the other is simply forgotten: its row
+	// stays `active` forever, naming a note the sync will never write again and which no later sync
+	// will reconcile.
+	it("orphans every tag that dropped out, not just the first, when two go and two arrive", async () => {
+		const mappings = { work: "Work", home: "Home", archive: "Archive", ideas: "Ideas" };
+		const content = documentContent({ cPages: cPages(["page-a"]) });
+		const noteStore = fakeNoteStore();
+		const attachmentStore = fakeAttachmentStore();
+		const docWith = (hash: string, rootHash: string, tags: string[]) =>
+			fakeApi({
+				rootHash,
+				entries: [documentEntry({ hash, tags: tags.map((name) => ({ name, timestamp: 0 })) })],
+				contentById: { "doc-1": content },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+
+		const first = await runSync(
+			{ ...baseDeps(docWith("hash-1", "root-before-messy", ["work", "home"]), mappings), noteStore, attachmentStore },
+			EMPTY_SYNC_INDEX,
+		);
+		expect(first.notesWritten).toBe(2);
+
+		// Both old tags off, both new tags on, in one edit on the device.
+		const second = await runSync(
+			{ ...baseDeps(docWith("hash-2", "root-after-messy", ["archive", "ideas"]), mappings), noteStore, attachmentStore },
+			first.index,
+		);
+
+		expect(second.index.rows[notebookSyncKey("doc-1", "work")].status).toBe("orphaned");
+		expect(second.index.rows[notebookSyncKey("doc-1", "home")].status).toBe("orphaned");
+		expect(second.index.rows[notebookSyncKey("doc-1", "archive")]).toMatchObject({
+			status: "active",
+			notePath: "Archive/Notebook.md",
+		});
+		expect(second.index.rows[notebookSyncKey("doc-1", "ideas")]).toMatchObject({
+			status: "active",
+			notePath: "Ideas/Notebook.md",
+		});
+	});
+
+	// Gap G10. The reconcile test compares the mapped tags a document has now against the tags its
+	// active rows carry, and it compares them two ways: by size, and by membership. Only the size half
+	// was tested -- addition and removal both change it -- so dropping the membership half passed all
+	// 996 tests. A folder re-tagged from one mapped tag to another keeps the size at one.
+	//
+	// The document's own hash never moves for a folder tag, so nothing else in the sync can see it:
+	// the note stays in the old folder, under the old tag, and no later sync ever notices.
+	it("moves a notebook when its folder is re-tagged from one mapped tag to another", async () => {
+		const entry = documentEntry({ parent: "folder-1", hash: "hash-unchanged" });
+		const content = documentContent({ cPages: cPages(["page-a"]) });
+		const noteStore = fakeNoteStore();
+		const attachmentStore = fakeAttachmentStore();
+		const mappings = { work: "Work", home: "Home" };
+
+		const first = await runSync(
+			{
+				...baseDeps(
+					fakeApi({
+						rootHash: "root-before-retag",
+						entries: [collectionEntry({ tags: [{ name: "work", timestamp: 0 }] }), entry],
+						contentById: { "doc-1": content },
+						pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+					}),
+					mappings,
+				),
+				noteStore,
+				attachmentStore,
+			},
+			EMPTY_SYNC_INDEX,
+		);
+		expect(first.index.rows[notebookSyncKey("doc-1", "work")].notePath).toBe("Work/Notebook.md");
+
+		// The folder is re-tagged on the device. One tag out, one tag in -- the set size never moves.
+		const secondApi = fakeApi({
+			rootHash: "root-after-retag",
+			entries: [collectionEntry({ hash: "hash-folder-2", tags: [{ name: "home", timestamp: 0 }] }), entry],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const second = await runSync({ ...baseDeps(secondApi, mappings), noteStore, attachmentStore }, first.index);
+
+		// Reopened despite an unchanged document hash, and the note now lives under the new tag. One
+		// tag out and one in is a clean swap, so it is a *rename*: the note moves rather than being
+		// orphaned and written again, and the old row goes with it.
+		expect(secondApi.getContent).toHaveBeenCalledWith("doc-1", "hash-unchanged");
+		expect(second.index.rows[notebookSyncKey("doc-1", "work")]).toBeUndefined();
+		expect(second.index.rows[notebookSyncKey("doc-1", "home")]).toMatchObject({
+			status: "active",
+			notePath: "Home/Notebook.md",
+		});
+	});
+
 	/**
 	 * A renderer fix changes nothing on the device, so both hash gates would happily skip every
 	 * already-synced note and leave its attachment wrong forever. The stored render version is the
@@ -1027,6 +1163,11 @@ describe("runSync", () => {
 					notePath: "Todo/Notebook — Page 1.md",
 					status: "active",
 					syncedAt: "2025-12-01T00:00:00.000Z",
+					// Gap G11. This row used to carry no `renderVersion`, which made `isStaleRender` true
+					// and re-rendered the note for that reason instead -- so the missing-note check this
+					// test is named for did all of nothing, and deleting it passed all 996 tests. Current
+					// version, so the only thing that can rebuild the note is that it is gone.
+					renderVersion: RENDER_VERSION,
 				},
 			},
 		};
@@ -1116,6 +1257,52 @@ describe("runSync", () => {
 		expect(result.notesWritten).toBe(1);
 		expect(deps.ocrBackend.recognize).not.toHaveBeenCalled();
 		expect(deps.noteStore.write.mock.calls[0][1]).toContain("what the backend said last time");
+	});
+
+	// Gap G02, and the common case rather than an exotic one: a renderer bump lands while the user has
+	// also been writing. The reuse above is only safe because the device did not move; dropping the
+	// `|| !deviceUnchanged` leg passed all 996 tests, and shipped a note with the new render, the
+	// previous words, and nothing saying so.
+	it("does not keep the old transcript when the page changed as well as the renderer", async () => {
+		const entry = documentEntry({ hash: "hash-2" });
+		const content = documentContent({
+			cPages: cPages(["page-a"]),
+			pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }],
+		});
+		const staleRow = {
+			syncKey: pageSyncKey("doc-1", "page-a", "todo"),
+			docId: "doc-1",
+			pageId: "page-a",
+			tag: "todo",
+			// Both moved: the renderer since the note was written, and the page since it was last read.
+			entryHash: "hash-1",
+			pageHash: "hash-a-before",
+			notePath: "Todo/Notebook — Page 1.md",
+			status: "active" as const,
+			syncedAt: "2025-12-01T00:00:00.000Z",
+			renderVersion: RENDER_VERSION - 1,
+		};
+		const api = fakeApi({
+			rootHash: "root-2",
+			entries: [entry],
+			contentById: { "doc-1": content },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a-after" } },
+		});
+		// The same unanchored bytes the reuse test uses, so the *only* difference between the two is
+		// that the page moved. Otherwise this would pass for the reason the test above it is about.
+		api.raw.getHash.mockResolvedValue(UNANCHORED_PAGE_BYTES);
+		const deps = baseDeps(api, { todo: "Todo" });
+		await deps.noteStore.write(
+			"Todo/Notebook — Page 1.md",
+			"> [!info]- x\n\n![[a.pdf]]\n\n## Transcript\nwhat the backend said last time\n<!-- tagged-sync:end -->\n",
+		);
+		deps.noteStore.write.mockClear();
+
+		const result = await runSync(deps, { rootHash: "root-2", rows: { [staleRow.syncKey]: staleRow } });
+
+		expect(result.notesWritten).toBe(1);
+		expect(deps.ocrBackend.recognize).toHaveBeenCalled();
+		expect(deps.noteStore.write.mock.calls[0][1]).not.toContain("what the backend said last time");
 	});
 
 	it("re-transcribes a stale-render rebuild whose ink the parser has now placed", async () => {
@@ -2154,6 +2341,46 @@ describe("collectHighlights", () => {
 		expect(groups).toEqual([{ pageLabel: 1, embedPage: 1, quotes: ["top-left", "top-right", "bottom"] }]);
 	});
 
+	// Gap G07. Every highlight in this repo was built with a single 1x1 rect, so `Math.min` and
+	// `Math.max` over the rects were the same number everywhere and the anchor rule was never
+	// exercised. A quote that wraps across printed lines has one rect per line -- which is most
+	// quotes -- and then the two disagree.
+	it("anchors a wrapped quote at where it starts, not where it ends", () => {
+		// Reading order is the promise. `wrapped` begins above `below` and ends beneath it, which is
+		// exactly what a quote running over a line break looks like: sorted by its last rect it would
+		// come second, and the digest would list the two in the order the reader did not read them.
+		const wrapped = { id: "hl-wrapped", color: 9, text: "wrapped", rects: [
+			{ x: 400, y: 100, width: 100, height: 10 },
+			{ x: 20, y: 300, width: 100, height: 10 },
+		] };
+		const below = { id: "hl-below", color: 9, text: "below", rects: [{ x: 20, y: 200, width: 100, height: 10 }] };
+
+		const groups = collectHighlights([{ pageLabel: 1, embedPage: 1, highlights: [below, wrapped] }]);
+
+		expect(groups[0].quotes).toEqual(["wrapped", "below"]);
+	});
+
+	// Characterisation, and a narrow one worth having written down. The anchor is
+	// `(min y, min x)` over the rects, so for a wrapped quote it is a corner that does not exist on
+	// the page: the top comes from the first line and the left from the second. Where two quotes share
+	// a top edge, that decides the order -- and here it decides it against reading order.
+	it("anchors a wrapped quote at a corner it does not have, which reorders a shared printed line", () => {
+		// One printed line at y=100 carrying two quotes: `second` begins at x=150, `wrapped` begins to
+		// its right at x=300 and runs on to the next line at x=20. A reader meets `second` first.
+		const wrapped = { id: "hl-wrapped", color: 9, text: "wrapped", rects: [
+			{ x: 300, y: 100, width: 200, height: 10 },
+			{ x: 20, y: 120, width: 100, height: 10 },
+		] };
+		const second = { id: "hl-second", color: 9, text: "second", rects: [{ x: 150, y: 100, width: 100, height: 10 }] };
+
+		const groups = collectHighlights([{ pageLabel: 1, embedPage: 1, highlights: [second, wrapped] }]);
+
+		// `wrapped` wins on the left edge it borrowed from its second line. Pinned as it is rather than
+		// fixed: it needs two quotes on one line with the earlier one wrapping, and which corner is
+		// right is a question for the digest spec rather than for this test.
+		expect(groups[0].quotes).toEqual(["wrapped", "second"]);
+	});
+
 	it("collapses internal newlines and whitespace runs so a wrapped run is one flowing bullet", () => {
 		const groups = collectHighlights([{ pageLabel: 1, embedPage: 1, highlights: [hl("  Reading changes\nthe   past.  ")] }]);
 
@@ -2874,7 +3101,15 @@ describe("page-anchored transcripts", () => {
 	// Not exercised end-to-end here, and deliberately: a PDF-backed unit gets a `## Digest` instead of
 	// a transcript, and only falls through to one if the digest build throws. The digest is already
 	// page-anchored by its own route, so this fix now serves that fallback and `reTranscribeAll`.
-	it("sends only the annotated pages of a PDF to the backend", async () => {
+	// Gap G09, first half. This test used to be named "sends only the annotated pages of a PDF to the
+	// backend" and asserted `scenes.length <= drawnOn.length` -- which **sending nothing satisfies**,
+	// and sending nothing is exactly what it was measuring: with margin notes off there is no
+	// page-wide pass at all for a book. `scene: page.annotations` -> `null` therefore passed all 996
+	// tests while every book in every vault shipped with an empty transcript.
+	//
+	// So it says what it can actually show, which is the money-safety half. The claim it used to make
+	// is asserted in the test below, on the path where it is observable.
+	it("sends no page of a book to the backend at all while margin notes are off", async () => {
 		const drawnOn = ["p0", "p2", "p4"];
 		const api = fakeApi({
 			rootHash: "root-anchored-pdf",
@@ -2889,10 +3124,57 @@ describe("page-anchored transcripts", () => {
 
 		await runSync(deps, EMPTY_SYNC_INDEX);
 
-		// Blank pages are never sent: a cloud backend bills per page, and padding a 40-page PDF
-		// annotated on five would cost eight times over for nothing.
+		// A book gets a `## Digest`, built from the highlights it already carries. A cloud backend
+		// bills per page, and a 40-page PDF annotated on five would cost eight times over for nothing.
+		// The backend is still *called* -- once, with nothing, which is its "skipped" contract -- so the
+		// assertion is on the pages, not on the call.
 		const scenes = (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[]);
-		expect(scenes.length).toBeLessThanOrEqual(drawnOn.length);
+		expect(scenes).toEqual([]);
+	});
+
+	// Gaps G09 and G06 together, from the one place a PDF-backed unit's transcript is observable.
+	//
+	// A sync writes a `## Digest` for a book and never a transcript, so the labels `annotationOcrPages`
+	// attaches are invisible there. `reTranscribeAll` is the path that renders them -- and the same
+	// labels feed the digest fallback when a digest build throws.
+	//
+	// The notebook twin of this is covered and the identical mutation there fails two tests by name;
+	// on the book path `pageLabel: index + 1` -> `index` passed all 996.
+	it("labels a book's transcript with the source page each annotation is on, not with its position among them", async () => {
+		const drawnOn = ["p0", "p2", "p4"];
+		const book = async (rootHash: string) =>
+			fakeApi({
+				rootHash,
+				entries: [documentEntry({ fileType: "pdf", visibleName: "Book", tags: [{ name: "sync", timestamp: 0 }] })],
+				contentById: {
+					"doc-1": documentContent({ fileType: "pdf", pageCount: 5, cPages: cPagesWith([0, 1, 2, 3, 4].map((i) => ({ id: `p${i}`, redir: i }))) }),
+				},
+				sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100], [100, 100], [100, 100], [100, 100]]) },
+				pageHashesByDoc: { "doc-1": Object.fromEntries(drawnOn.map((id) => [id, `${id}-anno`])) },
+			});
+
+		const deps = { ...baseDeps(await book("root-book-labels"), { sync: "Target" }), marginNotes: false };
+		const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const backend = perPageBackend(
+			{ status: "ok", text: "on page one" },
+			{ status: "ok", text: "on page three" },
+			{ status: "ok", text: "on page five" },
+		);
+		await reTranscribeAll({ api: await book("root-book-labels"), noteStore: deps.noteStore, ocrBackend: backend }, synced.index);
+
+		const written = deps.noteStore.write.mock.calls.at(-1)![1] as string;
+		// The three annotated pages carry their real ordinals, and each heading anchors at the same
+		// page of the embedded book -- a reader clicking "Page 5" must land on page 5.
+		expect(written).toContain("#page=1|Page 1]]\n\non page one");
+		expect(written).toContain("#page=3|Page 3]]\n\non page three");
+		expect(written).toContain("#page=5|Page 5]]\n\non page five");
+		// And the pages nobody wrote on are named as the pages they are.
+		expect(written).toContain("*No text on pages 2, 4.*");
+
+		// Exactly the annotated pages were sent -- the other two never reached a backend that bills.
+		const sent = (backend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[]);
+		expect(sent).toHaveLength(drawnOn.length);
 	});
 });
 

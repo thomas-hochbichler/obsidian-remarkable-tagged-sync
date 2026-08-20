@@ -451,7 +451,13 @@ describe("renderPagesToPdf", () => {
 		expect(toPdfPoint({ x: 702, y: 0 }).x).toBeCloseTo(447.32, 1);
 	});
 
-	it("renders a single-point stroke (a tap) without throwing", async () => {
+	// Gap G08. This test was named "renders a single-point stroke (a tap) without throwing" and
+	// asserted the page count -- so replacing the single-point branch with an early `return` passed
+	// all 996 tests. A tap is the dot on an i, a full stop, a decimal point: the ink that carries the
+	// most meaning per mark, and the ink whose absence is hardest to spot in a render of a full page.
+	//
+	// `page-rasterizer.test.ts` has the same fixture and asserts the pixel. This asserts the drawing.
+	it("draws a single-point stroke (a tap) as a filled dot, not as nothing at all", async () => {
 		const tapPage: RmPage = {
 			formatVersion: 6,
 			layers: [
@@ -474,9 +480,28 @@ describe("renderPagesToPdf", () => {
 		};
 
 		const bytes = await renderPagesToPdf([tapPage]);
+		const blank = await renderPagesToPdf([{ formatVersion: 6, layers: [{ id: "layer-1", name: null, strokes: [] }] }]);
 
 		const doc = await PDFDocument.load(bytes);
 		expect(doc.getPageCount()).toBe(1);
+
+		// A circle is four beziers and a fill. Compared against the same page with no strokes, so the
+		// assertion is about the tap rather than about pdf-lib's per-page boilerplate.
+		const { ops } = await decodePageContent(bytes);
+		const { ops: emptyOps } = await decodePageContent(blank);
+		expect(ops).toMatch(/\bc\b/); // a curve operator
+		expect(ops).toMatch(/\bf\b/); // filled, not stroked: a dot has no outline
+		expect(emptyOps).not.toMatch(/\bc\b/);
+
+		// And it has a size. A circle drawn at radius zero still emits every one of those operators,
+		// so "there are curves" does not say the dot is visible -- but a zero-radius path only ever
+		// names the centre, twice.
+		// And it covers some of the page. A circle drawn at radius zero still emits every one of those
+		// operators, so "there are curves" does not say the dot is visible -- but its path would then
+		// name the centre over and over, and span nothing.
+		const path = (ops.match(/^[-\d. ]+[mc]$/gm) ?? []).flatMap((line) => line.split(" ").slice(0, -1).map(Number));
+		const xs = path.filter((_, i) => i % 2 === 0);
+		expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0);
 	});
 
 	it("renders every known colorId in its correct color, and falls back to black for an unmapped one", async () => {
