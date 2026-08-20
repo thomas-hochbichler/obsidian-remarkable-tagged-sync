@@ -1,0 +1,95 @@
+# C13 -- keeping data.json pointed at notes the user moved.
+#
+# G11 in the inventory is the same behaviour under its vault-contract name; these rows are the
+# coverage for both.
+#
+# A synced note carries no frontmatter to re-find it by. The sync index is the only link between a
+# reMarkable page and the file it was written to, and that link is one string: the row's `notePath`.
+# Let it go stale and the row strands, the next sync decides the note was never written, and the user
+# gets a duplicate beside the original -- silently.
+#
+# The `vault` rows drive the shipped `vault.on("rename")` handler through `fileManager.renameFile`,
+# so a folder move arrives as the fan-out Obsidian really produces (T8.3): one event for the folder,
+# then one per descendant.
+
+- feature: C13
+  name: Note renames tracked
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C13.1
+      scenario: The user renames a synced note in the file explorer
+      expect: The row follows it, and data.json is written once
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a synced note > follows a note renamed by hand, and writes the new path down"
+
+    - id: C13.2
+      scenario: The user drags a synced note into a different folder
+      expect: The row follows the whole path. Obsidian has no separate move event, and a remap that kept the old folder would still pass a rename-in-place test
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a synced note > follows a note dragged into another folder"
+
+    - id: C13.3
+      scenario: Some file the plugin never wrote is renamed
+      expect: "No row changes and nothing is written. data.json is a synced file: a write per rename would make every tidy-up a conflict candidate on another machine"
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a synced note > leaves a row alone when some other file is renamed"
+
+    - id: C13.4
+      scenario: A folder of synced notes is moved, with notes nested several levels under it
+      expect: Every row beneath it is rewritten, at any depth
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a folder of synced notes > rewrites every row under it, however deep"
+
+    - id: C13.5
+      scenario: A folder holding three synced notes is moved
+      expect: "One write, not three. Obsidian fires a rename per descendant as well, so the rows end up correct without the folder branch -- at one data.json write per note moved. This is the only assertion that makes that branch load-bearing"
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a folder of synced notes > writes data.json once for the whole move, not once per note"
+
+    - id: C13.6
+      scenario: A folder is renamed while a sibling folder's name starts with the same letters
+      expect: Notes2 is untouched by a rename of Notes. The separator is part of the comparison, or a rename drags every sibling whose name it prefixes
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a folder of synced notes > leaves a folder whose name merely starts the same alone"
+
+    - id: C13.7
+      scenario: A folder is renamed whose path is exactly what some row holds
+      expect: "Nothing changes. The exact-match branch is the file one, and a row can never hold a folder path"
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "when the user moves a folder of synced notes > does not mistake a folder for a note that happens to sit at the same path"
+
+    - id: C13.8
+      scenario: A note is renamed while a sync is running
+      expect: "Ignored. A sync moves notes itself and replaces the whole index when it ends, so reacting mid-run only persists a state that is about to be overwritten"
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "what a rename does not do > ignores renames while a sync is running"
+
+    - id: C13.9
+      scenario: A note is renamed after that sync has finished
+      expect: Tracked again. The guard is a flag, and a flag that is set and never cleared looks exactly like a guard that works
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "what a rename does not do > keeps tracking renames once that sync has finished"
+
+    - id: C13.10
+      scenario: The attachments folder is renamed
+      expect: "No row changes -- a row holds a note path only. The embed inside the note is Obsidian's link-update job, and where the *next* attachment goes is a setting, which still names the old folder"
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "what a rename does not do > does not notice the attachments folder being renamed"
+
+    - id: C13.11
+      scenario: A note is renamed onto a path an orphaned row still claims, its own file long deleted
+      expect: "Both rows end up naming one file. The handler remaps by old path and never looks at where anything lands. Recorded as the shipped behaviour, not endorsed as the right one -- deciding which row loses is a product question, and this row is here so the answer cannot be changed by accident"
+      layer: vault
+      file: src/vault-rename.test.ts
+      test: "what a rename does not do > lets a note be renamed onto a path another row already claims"
