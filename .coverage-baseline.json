@@ -172,7 +172,7 @@
 		},
 		"src/note-builder.ts": {
 			"lines": 0,
-			"branches": 5
+			"branches": 4
 		},
 		"src/note-region.ts": {
 			"lines": 0,
@@ -243,8 +243,8 @@
 			"branches": 0
 		},
 		"src/region-view.ts": {
-			"lines": 90,
-			"branches": 40
+			"lines": 0,
+			"branches": 5
 		},
 		"src/remarkable-auth.ts": {
 			"lines": 0,
