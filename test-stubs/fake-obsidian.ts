@@ -198,6 +198,12 @@ export class FakeEl {
 	readonly classes = new Set<string>();
 	readonly attributes: Record<string, string> = {};
 	readonly listeners: Record<string, ((event: unknown) => void)[]> = {};
+	/**
+	 * Not modelled, recorded. `pro/llm-register.ts` sets `el.style.color` to say whether a verdict is
+	 * good news, and a bag of strings is enough to read that back -- claiming anything more would be a
+	 * second implementation of CSS.
+	 */
+	readonly style: Record<string, string> = {};
 	text = "";
 	visible = true;
 	removed = false;
