@@ -7,8 +7,8 @@
 			"branches": 1
 		},
 		"pro/llm-register.ts": {
-			"lines": 60,
-			"branches": 46
+			"lines": 40,
+			"branches": 34
 		},
 		"pro/llm-transcript.ts": {
 			"lines": 0,
@@ -159,8 +159,8 @@
 			"branches": 6
 		},
 		"src/main.ts": {
-			"lines": 138,
-			"branches": 85
+			"lines": 69,
+			"branches": 58
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,

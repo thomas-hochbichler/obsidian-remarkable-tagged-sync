@@ -1,0 +1,401 @@
+# The settings tab -- gap G28. Every string, state and rule *below* this screen was already verified
+# and every wire between them was not: `main.ts` was one of only two files that construct a `Setting`
+# and it had no test file at all.
+#
+# The rows here are the wires. Layer `vault` throughout: they drive the shipped tab through the fake
+# Obsidian, because what they assert is that the plugin the user opens asks the questions the rules
+# below it answer.
+
+- feature: A1
+  name: Connect with one-time code
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: A1.1
+      scenario: The eight-letter code from my.remarkable.com is typed into the Connect field and the button pressed
+      expect: The device token is stored, the tab says so in one notice, and it re-draws as connected without being reopened
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection > takes a one-time code, says where to get it, and re-draws as connected"
+
+    - id: A1.2
+      scenario: reMarkable refuses the code -- expired, or a typo
+      expect: The sentence is `explainError`'s, not the cloud's; the raw status never reaches the screen and the field stays there to be corrected
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection > explains a refused code instead of repeating the cloud's words, and leaves the field there"
+
+- feature: A2
+  name: Connection status shown
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: A2.1
+      scenario: The tab is opened with a device token stored, and again after Disconnect
+      expect: '"Connected." and "Not connected." -- the row states which it is instead of leaving the user guessing'
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection > disconnects and re-draws, without touching what is already in the vault"
+
+- feature: A3
+  name: Disconnect
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: A3.1
+      scenario: Disconnect is pressed on a paired vault that already has tag mappings
+      expect: The token is gone and the connect form is back, while the mappings stay -- disconnecting is not a reset
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection > disconnects and re-draws, without touching what is already in the vault"
+
+- feature: A7
+  name: Tag routing hidden until connected
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: A7.1
+      scenario: The tab is opened before the vault has ever been paired
+      expect: No Tag routing section and no Sync now button -- controls that cannot work are not offered
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the shape of the settings screen > hides tag routing and Sync now until there is a device to sync with"
+
+    - id: A7.2
+      scenario: The tab is opened on a paired vault
+      expect: The six sections come in touch-frequency order, tag routing first and the links last
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the shape of the settings screen > orders the sections by how often a row is touched, not by how they were built"
+
+- feature: D15
+  name: Attachments folder is configurable
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: D15.1
+      scenario: A fresh install opens the tab
+      expect: The field carries the default as both value and placeholder, so there is no state in which the two disagree
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > shows the folder the plugin will actually use, as both placeholder and value"
+
+    - id: D15.2
+      scenario: A vault whose owner chose a folder of their own opens the tab
+      expect: Their folder, not the default
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > keeps a folder the user chose, rather than showing them the default"
+
+    - id: D15.3
+      scenario: The folder is typed one character at a time
+      expect: The in-memory value moves on every keystroke and `data.json` is written once, 500 ms after the last one -- `debounce(..., 500, true)` is trailing with a resetting timer, not leading
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > takes the typed folder immediately and reaches data.json 500 ms after the last keystroke"
+
+- feature: D17
+  name: Handwritten margin notes switch
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: D17.10
+      scenario: The Handwritten notes switch is flipped on a vault that already has synced notes
+      expect: Every active row loses its render version, so the notes are rewritten -- nothing changed on the device, and without this the switch would take effect only for notebooks edited later
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > re-renders every synced note when the handwriting switch moves"
+
+- feature: E1
+  name: Backend dropdown
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: E1.1
+      scenario: The dropdown is drawn over the registry this build actually has
+      expect: Exactly the entries `isListedBackend` admits -- a backend whose gap its own card explains is absent, one whose gap nothing can close is present
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > lists exactly what the listing rule says, over the registry this build actually has"
+
+    - id: E1.2
+      scenario: A listed backend cannot run on this machine
+      expect: Its option is disabled and its name is replaced by the reason, so the gap explains itself in place
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > shows a gap nothing can close, disabled, with the reason where the name was"
+
+    - id: E1.3
+      scenario: The selected backend is one the listing rule would otherwise hide -- picked while it worked, its model gone since
+      expect: It stays in the list, disabled, so the dropdown never shows an empty box
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > keeps a hidden backend visible while it is the selected one, so the box is never blank"
+
+    - id: E1.4
+      scenario: Another backend is picked
+      expect: The choice is persisted and the tab re-draws itself, because every row under the dropdown belongs to the backend that was just replaced
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > saves the pick and re-draws itself, because the rows below it belong to the backend"
+
+    - id: E1.5
+      scenario: The description under the dropdown is composed
+      expect: One clause per family this build registers -- three different promises, and no clause about a family that is not there
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > describes the families this build has, and claims nothing about the ones it does not"
+
+- feature: E13
+  name: Note-contract hint
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: E13.1
+      scenario: Apple Vision cannot run on this machine and the selected backend has no contract of its own
+      expect: Nothing is said about Vision's flat-text ceiling -- naming the limit of a backend this system does not offer reads as a limit of whatever was picked
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the sentence under the dropdown > says nothing about Apple Vision's ceiling on a machine that cannot run Apple Vision"
+
+    - id: E13.2
+      scenario: Apple Vision is a real option here
+      expect: Both clauses -- the ceiling, and where to go for structured Markdown
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the sentence under the dropdown > names the ceiling where Apple Vision is a real option"
+
+    - id: E13.3
+      scenario: The selected backend declares its own note contract
+      expect: It replaces the generic sentence rather than joining it -- Vision's ceiling is simply not true of the notes this user is about to get
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the sentence under the dropdown > lets the selected backend's own contract replace it, rather than join it"
+
+- feature: E14
+  name: Per-backend settings and setup cards
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: E14.1
+      scenario: One backend is selected and others are registered
+      expect: Only the selected one's `renderSettings` runs -- the rows are the chosen backend's key, URL and model, and no other's
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows and its setup card > draws the settings rows of the selected backend and of no other"
+
+    - id: E14.2
+      scenario: A backend that has to be set up before it can be selected is registered
+      expect: Its `renderSetup` runs anyway -- `renderSettings` fires only once a backend already is selectable, so a card is the only way it can say what would make it so
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows and its setup card > draws every registered backend's setup card, selected or not"
+
+    - id: E14.3
+      scenario: A card belongs to the backend that is currently selected
+      expect: The context says so, so a card with nothing left to set up can stand down beside the backend the user actually picked
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows and its setup card > tells a card whether it is the selected backend, so a finished one can stand down"
+
+- feature: C15
+  name: Interval backstop -- the settings side
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C15.15
+      scenario: Automatic sync is off
+      expect: One switch and nothing else -- the interval and consent rows are conditional on the thing they configure
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > shows one switch and nothing else while it is off"
+
+    - id: C15.16
+      scenario: The master switch is turned on
+      expect: Saved, and the tab re-draws at once so the rows it unlocks are there to be set without reopening settings
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > re-draws the moment it is switched on, so the rows it unlocks are there to be set"
+
+    - id: C15.17
+      scenario: The interval dropdown is drawn and launch-only is picked
+      expect: Five entries, and launch-only stores `null` rather than a number -- the two are different states, not a zero
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > offers launch-only and four intervals, and stores launch-only as no interval at all"
+
+    - id: C15.18
+      scenario: The interval is changed while Obsidian is running
+      expect: The timer is re-armed on the spot, not at the next restart -- which is the one moment the user is not there to notice nothing changed
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > re-arms the timer on every change, not only on the next restart"
+
+- feature: C17
+  name: Money-safety gate -- the settings side
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C17.8
+      scenario: The selected backend costs money per page, and then one that does not
+      expect: The paid-API consent row appears only for the metered one, off by default, and writes the flag the background gate reads
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > asks about spending money only on a backend that spends money"
+
+- feature: C18
+  name: Battery/RAM consent gate -- the settings side
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C18.12
+      scenario: One backend declares `needsBackgroundConsent` with `backgroundConsent`, another declares only the first half
+      expect: The row is drawn for the complete pair only -- a backend that declares the need alone is background-gated with no way for anyone to lift the gate
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > asks for background consent only where the backend declares both halves of it"
+
+    - id: C18.13
+      scenario: The consent switch is flipped
+      expect: Written through the backend's own accessors -- the plugin never learns which key inside the opaque blob holds the answer
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > writes the consent through the backend's own accessors, never into a field of its own"
+
+- feature: I1
+  name: Pro section in settings
+  code: src/main.ts
+  tier: free surface
+  scenarios:
+    - id: I1.1
+      scenario: A licence is active
+      expect: No key field and no money-back sentence -- a field under a working licence invites a second key pasted over a good first, and the refund offer is for somebody who has not bought
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > swaps Buy for the two account buttons once the licence is active"
+
+    - id: I1.2
+      scenario: The licence was refunded
+      expect: Back to a free user's screen -- Buy and the key field return, and the row names the refund rather than asking them to hunt for a typo
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > puts a refunded buyer back where a free user is, and does not ask them to hunt for a typo"
+
+- feature: I2
+  name: 14-day trial, one click
+  code: src/main.ts
+  tier: Pro trial
+  scenarios:
+    - id: I2.1
+      scenario: Nobody has ever started a trial in this vault
+      expect: The trial is offered, beside Buy
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > offers the trial once, to somebody who has never had one"
+
+    - id: I2.2
+      scenario: A trial is running, and then one that has run out
+      expect: Never offered a second time -- a restart button would turn the purchase into a donation
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > never offers it again, not even after it has run out"
+
+    - id: I2.3
+      scenario: A trial has two days behind it
+      expect: The row itself says how many days are left, so the number is where the decision is made
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > counts the days left on a running trial, on the row itself"
+
+    - id: I2.4
+      scenario: Start free trial is pressed
+      expect: Started, saved and re-drawn without the button -- one click, no key, no email
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > starts the trial on the spot, saves it, and re-draws without the button"
+
+    - id: I2.5
+      scenario: A Pro licence is active, or was refunded, in a vault where no trial was ever started
+      expect: The trial button stands beside Deactivate and beside Buy -- the condition asks the trial's own history and nothing else. Characterised, not endorsed
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > offers the trial by the trial's own history, even to somebody who already has Pro"
+
+- feature: I3
+  name: Paste and activate a key
+  code: src/main.ts
+  tier: pro
+  scenarios:
+    - id: I3.1
+      scenario: A key pasted out of an order mail, with the whitespace that comes with it, is activated
+      expect: Trimmed before Polar is asked and trimmed in what is stored, saved once, one sentence, and the section re-draws as Pro
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > activates a pasted key, saves the result, says one sentence and re-draws as Pro"
+
+    - id: I3.2
+      scenario: Activate is pressed on an empty or whitespace-only field
+      expect: Nothing at all -- no call, no save, no notice, and the button stays pressable
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > does nothing at all on an empty field, rather than asking Polar about whitespace"
+
+- feature: I4
+  name: Buy / manage devices / deactivate this vault
+  code: src/main.ts
+  tier: pro
+  scenarios:
+    - id: I4.1
+      scenario: Buy is pressed without a licence, Manage devices with one
+      expect: The checkout link and the customer portal -- two different destinations, and the checkout one must be the `buy.polar.sh` form that mints a session per visitor
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > sends Buy and Manage devices to the two links they are for"
+
+- feature: I6
+  name: Licence status sentence -- on the row the user reads
+  code: src/main.ts
+  tier: free surface
+  scenarios:
+    - id: I6.3
+      scenario: A valid licence has not been re-confirmed for two months
+      expect: The row says so and keeps both account buttons -- Pro keeps working, because this is almost always a network problem and taking the buttons away would act on a suspicion with no evidence
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > keeps those buttons while a valid licence has merely not been re-confirmed"
+
+- feature: H1
+  name: Copy diagnostics
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: H1.1
+      scenario: Copy diagnostics is pressed
+      expect: The clipboard gets the block, carrying this build's version and the selected backend, and one notice says it happened -- nothing leaves the machine
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the actions at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+
+- feature: H2
+  name: Report a problem / request a feature
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: H2.1
+      scenario: The Report a problem row is drawn
+      expect: 'It states "Nothing is sent from here." beside the button that fills the clipboard'
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the actions at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+
+- feature: C2
+  name: Sync from the settings screen
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C2.10
+      scenario: A paired vault opens the tab
+      expect: A Sync button under Actions -- syncing was reachable only from the command palette, and the plugin registers no ribbon icon
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the actions at the bottom > puts a Sync button on the settings screen, because the palette was the only way in"
