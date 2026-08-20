@@ -455,12 +455,16 @@ export default class TaggedSyncPlugin extends Plugin {
 			return;
 		}
 		// A sync can run for minutes; a second one started on top of it would race on the shared index.
-		if (this.syncing) {
+		if (!this.claimRun()) {
 			new Notice("A sync is already running.");
 			return;
 		}
-		await this.refreshLicenceIfGated(false);
-		await this.runSyncNow(this.resolveOcrBackend(), false);
+		try {
+			await this.refreshLicenceIfGated(false);
+			await this.runSyncNow(this.resolveOcrBackend(), false);
+		} finally {
+			this.syncing = false;
+		}
 	}
 
 	/**
@@ -493,9 +497,24 @@ export default class TaggedSyncPlugin extends Plugin {
 		return this.syncing;
 	}
 
+	/**
+	 * Takes the one-run-at-a-time lock, or answers `false` because a run already holds it.
+	 *
+	 * Synchronous, and that is the whole of it: `syncing` used to be *read* in the pre-flight and
+	 * *set* several awaits later, inside `runSyncNow`. Two presses of Sync now in the same tick both
+	 * got through the read before either did the write, and then both wrote the one sync index.
+	 *
+	 * Whoever claims it releases it. `runSyncNow` does neither -- it is called with the lock held.
+	 */
+	private claimRun(): boolean {
+		if (this.syncing) return false;
+		this.syncing = true;
+		return true;
+	}
+
+	/** Runs a sync. The caller holds the run lock and releases it; see {@link claimRun}. */
 	private async runSyncNow(backend: OcrBackendAdapter, auto: boolean): Promise<void> {
 		this.stopRequested = false;
-		this.syncing = true;
 		if (!auto) new Notice("Syncing…");
 		this.setStatus("busy", "Tagged Sync: starting…");
 		try {
@@ -564,7 +583,6 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.setStatus("failed", "Tagged Sync: sync failed");
 			if (!auto) new Notice(explainError(error, "sync"));
 		} finally {
-			this.syncing = false;
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.
@@ -613,7 +631,15 @@ export default class TaggedSyncPlugin extends Plugin {
 		await this.refreshLicenceIfGated(true);
 		const backend = this.resolveOcrBackend(true);
 		if (backend.metered && !this.data.autoSync.autoTranscribeMetered) return;
-		await this.runSyncNow(backend, true);
+		// Claimed here rather than at the top: the gates above can decide not to run at all, and a tick
+		// that holds the lock while deciding makes `isSyncing()` -- and the Stop sync command with it --
+		// lie about a run that never starts. The read above is only fast feedback; this is the gate.
+		if (!this.claimRun()) return;
+		try {
+			await this.runSyncNow(backend, true);
+		} finally {
+			this.syncing = false;
+		}
 	}
 
 	/**
@@ -722,8 +748,13 @@ export default class TaggedSyncPlugin extends Plugin {
 		);
 		if (!confirmed) return;
 
+		// The dialog may have sat open for minutes, so nothing the pre-flight established is still
+		// known. Said out loud rather than returning quietly: the user has just pressed the button.
+		if (!this.claimRun()) {
+			new Notice("A sync is already running.");
+			return;
+		}
 		this.stopRequested = false;
-		this.syncing = true;
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		try {
 			const sessionToken = await this.auth.session();

@@ -53,6 +53,20 @@
       file: src/sync-preflight.test.ts
       test: "what has to be true before a sync starts > checks the connection before the running job -- an unplugged user is told the more useful thing"
 
+    - id: C2.4
+      scenario: Two presses of Sync now land in the same tick
+      expect: One run. The check and the claim have to be the same step -- an await between them lets both through
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "two runs at once > does not let two presses of Sync now become two runs"
+
+    - id: C2.5
+      scenario: The re-transcribe confirmation is left open, a sync is started, then the dialog is confirmed
+      expect: Refused. Everything the pre-flight established went stale while the dialog sat there
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "two runs at once > re-checks the lock after the confirmation dialog, not only before it"
+
 - feature: C19
   name: Re-transcribe all synced notes
   code: src/main.ts

@@ -119,6 +119,7 @@ function dialogButtons() {
 	return row.buttons;
 }
 
+const confirmDialog = () => dialogButtons().at(-1)?.click();
 const cancelDialog = () => dialogButtons().at(0)?.click();
 
 beforeEach(() => {
@@ -270,5 +271,47 @@ describe("what has to be true before a re-transcribe starts", () => {
 		cancelDialog();
 		await run;
 		expect(engine.reTranscribeRuns).toBe(0);
+	});
+});
+
+describe("two runs at once", () => {
+	it("does not let two presses of Sync now become two runs", async () => {
+		// The pre-flight reads the flag, then awaits -- the licence re-check, and the `async` call
+		// itself. Both presses get through the check before either sets the flag, and then both write
+		// the one sync index.
+		const plugin = await pluginWith();
+		const gate = deferred();
+		engine.hold = gate.promise;
+
+		const both = Promise.all([plugin.syncNow(), plugin.syncNow()]);
+		await settle();
+
+		expect(engine.syncRuns).toBe(1);
+
+		gate.open();
+		await both;
+	});
+
+	it("re-checks the lock after the confirmation dialog, not only before it", async () => {
+		// The dialog can sit open for as long as the user leaves it. Everything the pre-flight
+		// established is stale by the time they answer, and a sync started in between is running.
+		const plugin = await pluginWith({ rows: 2 });
+		const confirmation = plugin.reTranscribeAll();
+		await settle();
+
+		const gate = deferred();
+		engine.hold = gate.promise;
+		const sync = plugin.syncNow();
+		await settle();
+		takeNotices();
+
+		confirmDialog();
+		await settle();
+
+		expect(engine.reTranscribeRuns).toBe(0);
+		expect(takeNotices()).toEqual(["A sync is already running."]);
+
+		gate.open();
+		await Promise.all([confirmation, sync]);
 	});
 });

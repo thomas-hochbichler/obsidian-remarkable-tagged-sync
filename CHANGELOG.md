@@ -30,6 +30,18 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **Two syncs can no longer start at once and write over each other's bookkeeping.** Pressing *Sync
+  now* twice in quick succession — or confirming a *Re-transcribe synced notes* dialog that had been
+  left open while a sync started in the meantime — could start a second run on top of the first.
+  Both runs then wrote the same record of what is synced, and whichever finished second decided.
+  Notes written by the other run could be left in your vault with nothing recording them, so the
+  next sync wrote them a second time.
+
+  The plugin already refused a second run, but it checked and then took a moment to make the check
+  true, and a second press landed in that moment. It now claims the run in the same breath as
+  checking, and re-checks after the re-transcribe dialog is answered rather than trusting what was
+  true before it opened.
+
 - **A notebook whose name matches a note you already have, except for capitalisation, now syncs.**
   Before this, if your vault held `Work/my notebook.md` and a synced notebook was called *My
   Notebook*, the sync stopped with *"File already exists."* — and it stopped again on every run
