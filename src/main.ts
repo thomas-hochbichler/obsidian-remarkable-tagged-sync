@@ -35,20 +35,18 @@ import {
 import {
 	type Entitlement,
 	entitlementOf,
-	type LicenceState,
 	type LicenceOutcome,
-	NO_LICENCE,
 	startTrial,
 	withoutLicence,
 } from "./licence-state";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
-import { type BackendSettings, isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { registerRegionProcessor } from "./region-view";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { tolerateLegacyMetadata } from "./remarkable-metadata";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
-import { EMPTY_SYNC_INDEX, invalidateRenders, reTranscribeAll, runSync, type SyncIndex, type SyncProgress } from "./sync-engine";
+import { invalidateRenders, reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import {
 	defaultOcrBackend,
 	hasAlternativeBackends,
@@ -59,7 +57,8 @@ import {
 	planGatedFallback,
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
-import { TagRouter, type TagFolderMap } from "./tag-router";
+import { TagRouter } from "./tag-router";
+import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { planTagRouting } from "./tag-routing-view";
 import { createAttachmentStore, createNoteStore } from "./vault-stores";
 import { UnavailableOcrBackend, visionRunStats } from "./vision-ocr-backend";
@@ -110,68 +109,6 @@ function activationMessage(outcome: LicenceOutcome): string {
 
 /** How long after `onload` to fire the on-launch auto-sync — a few seconds so auth/network are ready and startup isn't janked (auto-sync spec §Triggers). */
 const AUTO_SYNC_LAUNCH_DELAY_MS = 4_000;
-
-/** Opt-in background sync (auto-sync spec §"Settings & data model"). */
-interface AutoSyncSettings {
-	/** Master toggle; default off. */
-	enabled: boolean;
-	/** Interval backstop in hours; `null` means on-launch only (interval disabled). */
-	intervalHours: number | null;
-	/** Durable one-time consent to auto-run a metered cloud backend; default off. */
-	autoTranscribeMetered: boolean;
-}
-
-const DEFAULT_AUTO_SYNC: AutoSyncSettings = {
-	enabled: false,
-	intervalHours: 6,
-	autoTranscribeMetered: false,
-};
-
-interface TaggedSyncData {
-	deviceToken: string | null;
-	tagFolderMap: TagFolderMap;
-	syncIndex: SyncIndex;
-	ocrBackend: OcrBackendId;
-	/**
-	 * Each backend's own settings blob, keyed by backend id and remembered across backend switches
-	 * (multi-provider spec §4). Opaque here — only the backend that owns a blob reads inside it.
-	 */
-	llmProviders: Record<string, BackendSettings>;
-	/** Set once the platform "no transcription here" notice has been shown, so it never nags again (spec §6.2). */
-	ocrUnavailableNoticeShown: boolean;
-	autoSync: AutoSyncSettings;
-	/** ISO timestamp of the last *completed* sync (manual or auto); drives the interval backstop. */
-	lastSyncAt: string | null;
-	/** Vault folder for rendered PDFs (spec §8: configurable, default `tagged-sync/attachments`). Stored raw; normalized at use. */
-	attachmentsFolder: string;
-	/**
-	 * F20. Handwritten margin notes on annotated PDFs, off by default: transcribing them spawns an OCR
-	 * process per note, and a transcription of someone's own handwriting is not something to write into
-	 * their vault unasked.
-	 */
-	marginNotes: boolean;
-	/**
-	 * The Pro licence, beside `deviceToken` because that is where this vault's other credential
-	 * already lives. In a synced vault these fields travel to the other machine, which is correct:
-	 * one vault is one activation, wherever it is opened.
-	 */
-	licence: LicenceState;
-}
-
-const DEFAULT_DATA: TaggedSyncData = {
-	deviceToken: null,
-	tagFolderMap: {},
-	syncIndex: EMPTY_SYNC_INDEX,
-	// Placeholder only -- the effective default is platform-derived on load (multi-provider spec §7).
-	ocrBackend: "vision",
-	llmProviders: {},
-	ocrUnavailableNoticeShown: false,
-	autoSync: DEFAULT_AUTO_SYNC,
-	lastSyncAt: null,
-	attachmentsFolder: DEFAULT_ATTACHMENTS_FOLDER,
-	marginNotes: false,
-	licence: NO_LICENCE,
-};
 
 /** The only way this plugin opens a cloud session -- see tolerateLegacyMetadata for what it fixes. */
 function openSession(sessionToken: string): RemarkableApi {
@@ -281,31 +218,10 @@ export default class TaggedSyncPlugin extends Plugin {
 		// decided at click time -- `mod-clickable` and the tooltip come and go with the busy state.
 		this.registerDomEvent(this.statusBar, "click", () => void this.confirmStop());
 		this.statusBar.hide();
-		const saved = (await this.loadData()) as (Partial<TaggedSyncData> & { ocrBackendChoice?: unknown }) | null;
-		// Migration (multi-provider spec §7): coerce any backend that isn't a currently-valid literal to
-		// the platform default. Old installs stored the choice under `ocrBackendChoice`, so "vision"
-		// survives; the retired "llm-vision"/"tesseract" reset. The old single `llmVisionApiKey` is
-		// dropped by not carrying it forward -- users re-enter their key once under the new per-provider model.
-		const savedBackend = saved?.ocrBackend ?? saved?.ocrBackendChoice;
-		this.data = {
-			deviceToken: saved?.deviceToken ?? DEFAULT_DATA.deviceToken,
-			tagFolderMap: saved?.tagFolderMap ?? {},
-			syncIndex: saved?.syncIndex ?? EMPTY_SYNC_INDEX,
-			ocrBackend: isRegisteredOcrBackend(savedBackend) ? savedBackend : defaultOcrBackend(visionPlatformSupported()),
-			llmProviders: saved?.llmProviders ?? {},
-			ocrUnavailableNoticeShown: saved?.ocrUnavailableNoticeShown ?? false,
-			autoSync: { ...DEFAULT_AUTO_SYNC, ...saved?.autoSync },
-			lastSyncAt: saved?.lastSyncAt ?? null,
-			attachmentsFolder: saved?.attachmentsFolder ?? DEFAULT_DATA.attachmentsFolder,
-			// A saved `true` is honoured. It can only have been written by someone who switched the
-			// setting on themselves, in a 1.1.0 beta; the feature they said yes to now draws the
-			// handwriting out of the embedded PDF instead of storing a picture of it, and the setting
-			// they used to say it with is on screen again to say no with.
-			marginNotes: saved?.marginNotes ?? DEFAULT_DATA.marginNotes,
-			// Spread over the default so a `data.json` written by an older version, or one a user has
-			// edited by hand, is missing fields rather than being rejected.
-			licence: { ...NO_LICENCE, ...saved?.licence },
-		};
+		this.data = migrateSettings(await this.loadData(), {
+			isKnownBackend: isRegisteredOcrBackend,
+			defaultBackend: defaultOcrBackend(visionPlatformSupported()),
+		});
 
 		const store: AuthStore = {
 			getDeviceToken: () => this.data.deviceToken,
