@@ -282,6 +282,13 @@
       file: test-stubs/fake-obsidian.test.ts
       test: "the plugin host > hands loadData whatever the test says data.json holds, and records every save"
 
+    - id: T9.2
+      scenario: A plugin is loaded before the workspace has finished loading, and another after
+      expect: The first callback waits and runs when the workspace is marked ready; the second runs at once. A fake that always ran it at once would make "waits for the workspace" pass by construction
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the plugin host > holds an onLayoutReady callback until the workspace is ready, then runs it"
+
 - feature: T10
   name: The settings controls the plugin reaches past
   code: test-stubs/fake-obsidian.ts
@@ -306,3 +313,70 @@
       layer: unit
       file: test-stubs/fake-obsidian.test.ts
       test: "the settings controls the plugin reaches past > hides an element the plugin toggles off, and shows it again"
+
+- feature: T11
+  name: A clock a test moves by hand
+  code: test-stubs/fake-clock.ts
+  scenarios:
+    - id: T11.1
+      scenario: A one-shot timer is armed and time is moved to just short of its moment, then past it
+      expect: It fires once its moment arrives and not a millisecond before -- "four seconds after launch" has to mean four seconds
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > fires a timeout when its moment arrives, and not before"
+
+    - id: T11.2
+      scenario: A one-shot timer fires
+      expect: It leaves nothing armed. The armed count is what leak tests read, so a fired timeout must come off it
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > forgets a one-shot once it has fired"
+
+    - id: T11.3
+      scenario: Time jumps three and a half periods of an interval at once
+      expect: Three firings, and the interval still armed. A jump is how a six-hour backstop gets tested at all
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > fires an interval once per period, however far time jumps"
+
+    - id: T11.4
+      scenario: A later timer is armed before an earlier one
+      expect: They fire in due order. The plugin's launch timer and interval are armed in the other order from the one they fire in
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > fires timers in the order they fall due, not the order they were armed"
+
+    - id: T11.5
+      scenario: A timer's own callback clears itself and arms a replacement
+      expect: The cleared one does not fire again. This is exactly what a re-arm from inside a run does, and a clock that collected due timers up front would get it wrong
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > lets a callback re-arm the timer it is running in"
+
+    - id: T11.6
+      scenario: A timer is cleared before its moment
+      expect: It never fires, and it is off the armed count
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > stops firing a timer that was cleared before its moment"
+
+    - id: T11.7
+      scenario: Five intervals are armed and none cleared
+      expect: The count is five. This is the reading that catches a leaked timer, so it has to count them all
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > counts every timer nobody cleared -- which is what a leak looks like"
+
+    - id: T11.8
+      scenario: Time is moved forward six hours and then read back
+      expect: It reads six hours. The plugin asks the same clock whether an interval is due, so the two answers have to be the same clock
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > reads back the time it was moved to, so a due check can be asked the same question"
+
+    - id: T11.9
+      scenario: Time is moved a second past a timer that fires early in the span
+      expect: It stops where it was asked to, not where the last timer fired
+      layer: unit
+      file: test-stubs/fake-clock.test.ts
+      test: "a clock a test moves by hand > leaves time exactly where it was asked to stop, not on the last timer it fired"

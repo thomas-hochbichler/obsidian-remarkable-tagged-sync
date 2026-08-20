@@ -230,8 +230,10 @@
       file: src/settings-on-load.test.ts
       test: "what the plugin arrives with > defaults to off where Apple Vision cannot run"
 
+# The same feature as the interval backstop in `c-auto-sync.yaml`, seen from the load side: these
+# are the fields that decide it, arriving from a file an older version wrote.
 - feature: C15
-  name: Auto-sync settings survive a partial or older data.json
+  name: Interval backstop
   code: src/settings-store.ts
   tier: free
   scenarios:
