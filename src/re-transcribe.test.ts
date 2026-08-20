@@ -25,7 +25,16 @@ vi.mock("rmapi-js", () => ({
 const machine = vi.hoisted(() => ({ visionAvailable: false }));
 vi.mock("./vision-ocr-runtime", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./vision-ocr-runtime")>();
-	return { ...actual, visionPlatformSupported: () => machine.visionAvailable };
+	// Both, and not only the boolean: `visionPlatformSupported()` is defined as
+	// `visionUnavailableReason() === null`, so mocking one and leaving the other real lets them
+	// disagree -- and the one left real reads `os.platform()`, which is the machine the test happens
+	// to run on. That is how a test passes on a Mac and fails on CI, or worse, passes on both for
+	// opposite reasons.
+	return {
+		...actual,
+		visionPlatformSupported: () => machine.visionAvailable,
+		visionUnavailableReason: () => (machine.visionAvailable ? null : "macos-only"),
+	};
 });
 
 const engine = vi.hoisted(() => ({
@@ -191,27 +200,36 @@ describe("whether the re-transcribe command is offered at all", () => {
 		expect(offered(plugin, "re-transcribe-all")).toBe(false);
 	});
 
-	// Characterisation of a hole, not of a rule. `main.ts` says this command is hidden "when the
-	// backend produces no text (Off, or **Vision on Windows/Linux**)", and the Off half works. The
-	// Vision half does not: `vision`'s `create()` hands back a real `VisionOcrBackend` on every
-	// desktop, and only its `recognize()` -- much later, mid-run -- answers `unavailable`. The check
-	// looks for an `UnavailableOcrBackend`, and never sees one.
+	// Ticket 19, fixed. This was the shipped hole: the command was offered here, and running it
+	// re-fetched every notebook and deleted every transcript in the vault -- `updateTranscript`
+	// removes the whole section for a blank result, which `note-builder.test.ts` asserts on purpose.
+	//
+	// The adapter cannot answer this question and the assertions below say why: Apple Vision builds a
+	// real `VisionOcrBackend` on every desktop and only reports the gap from inside `recognize()`, one
+	// page at a time. So the entry is asked as well, through the `unavailableLabel()` the settings
+	// dropdown already uses.
 	//
 	// Reachable, and not exotically: `data.json` is a synced file (see `settings-store.ts`), so a Mac
-	// and a Windows machine on one vault share the selected backend. And the run is destructive --
-	// `updateTranscript` removes the whole Transcript section for a blank result, which
-	// `note-builder.test.ts` asserts on purpose. So the command that promises to hide itself here
-	// instead re-fetches every notebook and strips every transcript in the vault.
-	//
-	// Recorded as it is. Filed as ticket 19.
-	it("is offered for Apple Vision on a Windows or Linux desktop, where it produces nothing", async () => {
+	// and a Windows machine on one vault share the selected backend.
+	it("is hidden for Apple Vision on a Windows or Linux desktop, where it would produce nothing", async () => {
 		Platform.isDesktop = true;
 		machine.visionAvailable = false;
 		const plugin = await pluginWith({ ocrBackend: "vision" });
 		const backend = (plugin as unknown as { resolveOcrBackend(silent: boolean): { id: string } }).resolveOcrBackend(true);
 
+		// The two facts that make the adapter useless as the sole witness.
 		expect(backend.id).toBe("vision");
 		expect(backend).not.toBeInstanceOf(UnavailableOcrBackend);
+
+		expect(offered(plugin, "re-transcribe-all")).toBe(false);
+	});
+
+	it("is offered for Apple Vision on a Mac that can run it", async () => {
+		// The other side of the same check, so the fix cannot be "hide it always".
+		Platform.isDesktop = true;
+		machine.visionAvailable = true;
+		const plugin = await pluginWith({ ocrBackend: "vision" });
+
 		expect(offered(plugin, "re-transcribe-all")).toBe(true);
 	});
 
