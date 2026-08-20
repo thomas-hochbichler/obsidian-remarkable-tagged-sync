@@ -5,6 +5,7 @@ import {
 	debounce,
 	DropdownComponent,
 	FakeApp,
+	FakeEl,
 	FakeVault,
 	normalizePath,
 	parseLinktext,
@@ -300,5 +301,17 @@ describe("the settings controls the plugin reaches past", () => {
 
 		expect(filled.allText()).toEqual(["Needs a licence. ", "Buy"]);
 		expect(createFragment().allText()).toEqual([]);
+	});
+
+	it("hides an element the plugin toggles off, and shows it again", () => {
+		// enhance.js, in full: `toggle(t) { t ? this.show() : this.hide() }`. The status bar hides its
+		// own parts this way rather than emptying them, so that a progress tick does not rebuild them.
+		const el = new FakeEl("span");
+
+		el.toggle(false);
+		expect(el.visible).toBe(false);
+
+		el.toggle(true);
+		expect(el.visible).toBe(true);
 	});
 });

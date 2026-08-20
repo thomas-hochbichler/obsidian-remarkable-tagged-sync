@@ -269,6 +269,11 @@ export class FakeEl {
 	show(): void {
 		this.visible = true;
 	}
+	/** `enhance.js`, in full: `toggle(t) { t ? this.show() : this.hide() }`. */
+	toggle(visible: boolean): void {
+		if (visible) this.show();
+		else this.hide();
+	}
 	remove(): void {
 		this.removed = true;
 	}

@@ -1,0 +1,211 @@
+# Group C -- what has to be true before a long job starts. Also I7, whose promise ("a free user never
+# phones home") is kept or broken on exactly this path.
+#
+# Both long jobs write the one sync index, so the interesting failure here is not a confusing screen:
+# it is two writers interleaving rows while the loser's notes strand in the vault with nothing
+# describing them. That is why the lock gets rows of its own rather than being folded into C1.
+#
+# The `vault` rows drive the shipped `syncNow()` and `reTranscribeAll()` with the engine replaced by a
+# counter and a gate, which is the only way to hold a run open long enough to start a second one.
+
+- feature: C1
+  name: "Sync now"
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: C1.1
+      scenario: Sync now is pressed with no device token stored
+      expect: A notice naming the missing connection, and no run -- the session cannot be opened without one
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > refuses to sync without a device token, and says which thing is missing"
+
+    - id: C1.2
+      scenario: Sync now is pressed with nothing in the way
+      expect: The run starts, and the lock is free again when it ends
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > lets the sync through once nothing is in the way"
+
+    - id: C1.3
+      scenario: The pre-flight is asked with a token stored and no run in flight
+      expect: It says start, and asks for no licence re-read it was not told to want
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > lets a run start when nothing is in the way"
+
+    - id: C1.4
+      scenario: The pre-flight is asked with no device token
+      expect: Refused, with the sentence that names the connection
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > refuses a run with no device token, naming the connection"
+
+- feature: C2
+  name: One sync at a time
+  code: src/sync-guards.ts
+  tier: free
+  scenarios:
+    - id: C2.1
+      scenario: A second Sync now is pressed while the first run is still going
+      expect: Refused with a notice. Two runs would interleave rows in the one sync index
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > refuses a second sync while one is running"
+
+    - id: C2.2
+      scenario: Re-transcribe is started while a sync is running
+      expect: Refused the same way -- the lock is one lock, not one per command
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > refuses a re-transcribe while a sync is running"
+
+    - id: C2.3
+      scenario: The connection is dropped in settings while a run is in flight, then Sync now is pressed
+      expect: The connection is named, not the running job. "A sync is already running" would send the user looking for a run they cannot see
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > checks the connection before the running job -- an unplugged user is told the more useful thing"
+
+    - id: C2.4
+      scenario: Two presses of Sync now land in the same tick
+      expect: One run. The check and the claim have to be the same step -- an await between them lets both through
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "two runs at once > does not let two presses of Sync now become two runs"
+
+    - id: C2.5
+      scenario: The re-transcribe confirmation is left open, a sync is started, then the dialog is confirmed
+      expect: Refused. Everything the pre-flight established went stale while the dialog sat there
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "two runs at once > re-checks the lock after the confirmation dialog, not only before it"
+
+    - id: C2.6
+      scenario: The pre-flight is asked while a run holds the lock
+      expect: Refused, with the sentence naming the running job
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > refuses a run while another one holds the lock"
+
+    - id: C2.7
+      scenario: The same conditions are judged twice
+      expect: The same answer. The pre-flight keeps no state, so the lock it reads is never a lock it holds
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > refuses on the state it was handed and nothing else"
+
+    - id: C2.8
+      scenario: Neither the connection nor the lock is available
+      expect: The connection is the one named. The order is a decision, not the order the checks happen to be written in
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > names the connection first when both are wrong"
+
+- feature: C19
+  name: Re-transcribe all synced notes
+  code: src/sync-guards.ts
+  tier: free
+  scenarios:
+    - id: C19.1
+      scenario: Re-transcribe is started with no device token stored
+      expect: The same notice a sync gives. Every long job needs the same connection
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a re-transcribe starts > refuses without a device token"
+
+    - id: C19.2
+      scenario: Re-transcribe is started before anything has ever been synced
+      expect: A sentence saying so, instead of a confirmation dialog offering to spend money on nothing
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a re-transcribe starts > says there is nothing to re-transcribe when no note has been synced"
+
+    - id: C19.3
+      scenario: The sync index holds only orphaned rows -- every note behind them was deleted from the vault
+      expect: Counted as nothing to do. Re-transcribing an orphaned row would write its deleted note straight back
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a re-transcribe starts > counts only the rows a note still stands behind"
+
+    - id: C19.4
+      scenario: Re-transcribe is started with synced notes present
+      expect: Nothing runs until the dialog is answered -- the count alone never starts a job that re-sends every page
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a re-transcribe starts > starts nothing until the dialog is answered"
+
+    - id: C19.5
+      scenario: Active and orphaned rows sit side by side in the index
+      expect: The count is the active ones. It is the same number the confirmation dialog quotes, so the two cannot disagree
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "reTranscribableUnits > counts the rows a note still stands behind"
+
+    - id: C19.6
+      scenario: One notebook is split into three synced pages
+      expect: Three, not one. The unit of a re-transcribe is the row, which is what the dialog has to quote
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "reTranscribableUnits > counts rows, not documents -- a notebook split into pages is several"
+
+    - id: C19.7
+      scenario: A re-transcribe is asked about an empty sync index
+      expect: Zero. Nothing has ever been synced, so there is nothing to re-run OCR over
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "reTranscribableUnits > counts nothing before anything has been synced"
+
+    - id: C19.8
+      scenario: Every row in the index is orphaned
+      expect: "Zero -- the same answer as an empty index, and for the same reason: no note is standing behind any of them"
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "reTranscribableUnits > counts an index of nothing but orphaned rows as nothing to do"
+
+- feature: I7
+  name: A free user never phones home
+  code: src/sync-guards.ts
+  tier: free
+  scenarios:
+    - id: I7.1
+      scenario: A sync is started on a backend only a licence unlocks
+      expect: The licence is re-read first, and out loud -- the user is at the keyboard and a lapsed licence is worth a sentence
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > re-reads the licence before a sync on a backend that needs one"
+
+    - id: I7.2
+      scenario: A sync is started on a backend that needs no licence
+      expect: "No licence call at all. This is the whole promise: a free user's sync never talks to Polar"
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > causes no licence call at all on a backend that needs none"
+
+    - id: I7.3
+      scenario: A re-transcribe is started on a gated backend
+      expect: The same re-read. Re-transcribe spends more than a sync does, so it cannot be the cheaper path to a gated backend
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > re-reads the licence before a re-transcribe too"
+
+    - id: I7.4
+      scenario: The pre-flight is asked about an ungated backend
+      expect: It answers that no re-read is wanted. The decision is one predicate, not one per caller
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > asks for no licence re-read on a backend that needs none"
+
+    - id: I7.5
+      scenario: A licence would come back lapsed on a gated backend
+      expect: The pre-flight still starts the run. Refusing would strand a buyer mid-notebook; the fallback to a free backend, with a message, is what happens instead
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > never turns a licence into a refusal"
+
+    - id: I7.6
+      scenario: The pre-flight is asked about a gated backend
+      expect: It asks for the re-read. A licence that lapsed since the last run is worth knowing before a job that spends money
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > asks for a licence re-read on a backend that needs one"
