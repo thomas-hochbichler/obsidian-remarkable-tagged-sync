@@ -35,10 +35,17 @@
 
     - id: C20.4
       scenario: Apple Vision is the selected backend on a Windows or Linux desktop -- reachable because `data.json` is a synced file, so a Mac in the same vault chose it
-      expect: '**The command is offered, and this feature says it should not be.** `vision.create()` returns a real backend on every desktop and only `recognize()` answers `unavailable`, much later. Characterised as it is; filed as ticket 19'
+      expect: Hidden. The adapter cannot say so -- `vision.create()` returns a real backend on every desktop and only `recognize()` answers `unavailable`, one page at a time -- so the entry's `unavailableLabel()` is asked as well. This shipped offered; ticket 19
       layer: vault
       file: src/re-transcribe.test.ts
-      test: "whether the re-transcribe command is offered at all > is offered for Apple Vision on a Windows or Linux desktop, where it produces nothing"
+      test: "whether the re-transcribe command is offered at all > is hidden for Apple Vision on a Windows or Linux desktop, where it would produce nothing"
+
+    - id: C20.9
+      scenario: Apple Vision on a Mac that can run it
+      expect: Offered. The other side of the same check, so the fix cannot be "hide it always"
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the re-transcribe command is offered at all > is offered for Apple Vision on a Mac that can run it"
 
     - id: C20.5
       scenario: The palette asks the check, which it does on every keystroke, with a backend that would fall back
@@ -62,11 +69,32 @@
       test: "reTranscribeIsUseful > says no to transcription switched off, and to a backend this build does not have"
 
     - id: C20.8
-      scenario: A free local backend, and a paid cloud one
+      scenario: A free local backend, and a paid cloud one, both able to run here
       expect: Both offered
       layer: unit
       file: src/re-transcribe-prompt.test.ts
-      test: "reTranscribeIsUseful > says yes to anything that can produce text"
+      test: "reTranscribeIsUseful > says yes to anything that can produce text here"
+
+    - id: C20.10
+      scenario: The adapter builds fine and the entry reports a gap -- Apple Vision off macOS
+      expect: Refused. The adapter alone cannot tell this apart from a working backend, which is what ticket 19 was
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > says no to a backend that builds an adapter here and still cannot run"
+
+    - id: C20.11
+      scenario: The managed local model, before its download has finished
+      expect: Refused. Same shape, different sentence, and the entry is the only thing that knows either
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > says no to a backend whose setup is not finished, for the same reason"
+
+    - id: C20.12
+      scenario: An entry that omits `unavailableLabel` entirely, as most backends do
+      expect: Offered -- a missing hook is not a gap
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeIsUseful > does not require an entry to declare the hook at all"
 - feature: C19
   name: Re-transcribe all synced notes -- the command surface
   code: src/main.ts, src/re-transcribe-prompt.ts

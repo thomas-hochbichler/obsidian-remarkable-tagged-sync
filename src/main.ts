@@ -222,7 +222,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			checkCallback: (checking) => {
 				// Silent: this runs on every keystroke in the palette, and a backend that falls back
 				// announces the fallback.
-				if (!reTranscribeIsUseful(this.resolveOcrBackend(true))) return false;
+				const backend = this.resolveOcrBackend(true);
+				if (!reTranscribeIsUseful(backend, ocrBackendEntry(backend.id))) return false;
 				if (!checking) void this.reTranscribeAll();
 				return true;
 			},
