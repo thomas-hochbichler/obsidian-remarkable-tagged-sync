@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseRmV6 } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -272,9 +272,61 @@ describe("parseRmV6", () => {
 			name.length, 1, ...name, // varuint length, is-ascii flag, the name
 		]);
 
-		// The block parses to completion rather than throwing, which is what the page's ink depends on.
+		// Gap G25. This asserted `formatVersion`, which is read before the block and stays 6 even if the
+		// block was caught and thrown away -- so it says nothing about the node surviving. What does say
+		// it is the absence of the warning: the parser logs one for every block it gives up on, and a
+		// tail that simply ends is not a block it gives up on.
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
 		expect(() => parseRmV6(fileWithBlock(2, body))).not.toThrow();
 		expect(parseRmV6(fileWithBlock(2, body)).formatVersion).toBe(6);
+		expect(warn).not.toHaveBeenCalled();
+
+		warn.mockRestore();
+	});
+
+	// Gap G25's other half: bytes that are not a page. Branch coverage was 78.8 % and the fail-soft
+	// catches are most of what is missing -- they are also all that stands between a half-written file
+	// on the device and a sync that dies on it.
+	describe("bytes that are not a page", () => {
+		const header = () => new TextEncoder().encode("reMarkable .lines file, version=6          ");
+
+		it("reads a header with no blocks as an empty page rather than as a failure", () => {
+			expect(parseRmV6(header())).toMatchObject({ formatVersion: 6, layers: [] });
+		});
+
+		it("keeps the page when one block's body is unreadable, and says so once per block", () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+			const page = parseRmV6(fileWithBlock(5, new Uint8Array(4)));
+
+			expect(page).toMatchObject({ formatVersion: 6, layers: [] });
+			expect(warn).toHaveBeenCalledTimes(1);
+			warn.mockRestore();
+		});
+
+		it("walks past a block type this build has never heard of", () => {
+			// The forward-compatible half: the device adds block types, and one of them arriving must
+			// not cost the page the strokes in the blocks around it.
+			expect(() => parseRmV6(fileWithBlock(0x7e, new Uint8Array([1, 2, 3, 4])))).not.toThrow();
+		});
+
+		it("throws on a file that ends mid-block, which is a half-written page and not a page", () => {
+			// Characterisation. The block header promises 1000 bytes and the file holds two, so there is
+			// no honest way to read the rest -- and `runSync` catches it per document and skips that one,
+			// which is the right blast radius. A parser that swallowed this would hand back a page
+			// missing however much of the writing was in the unread tail, with nothing saying so.
+			const truncated = new Uint8Array(header().length + 8 + 2);
+			truncated.set(header(), 0);
+			new DataView(truncated.buffer).setUint32(header().length, 1000, true);
+			truncated.set([0, 1, 1, 5], header().length + 4);
+
+			expect(() => parseRmV6(truncated)).toThrow(/1000 bytes/);
+		});
+
+		it("throws on bytes with no `.rm` header at all", () => {
+			expect(() => parseRmV6(new Uint8Array([1, 2, 3]))).toThrow();
+		});
 	});
 
 	it("places an anchored node's strokes where the device draws them", () => {
@@ -526,6 +578,22 @@ describe("parseRmV6", () => {
 
 		const strokes = page.layers.flatMap((layer) => layer.strokes);
 		expect(strokes.every((stroke) => stroke.timestamp.length > 0)).toBe(true);
+
+		// Gap G25. "Non-empty" was the whole assertion, and it is satisfied by a parser that reads the
+		// wrong field or hands every stroke a constant.
+		//
+		// **And the fixtures cannot do better, which is the finding.** Every stroke in every `.rm`
+		// file in this repo carries the timestamp `0001` -- 25 strokes in the colour fixture, 65 in
+		// the PDF page, all identical. So the thing this field exists for, telling one writing phase
+		// from another, is not exercisable here at all: it needs a page written in two sittings, which
+		// is ticket 16's material. Recorded rather than faked with a hand-built block, because a
+		// synthetic timestamp would assert that the *test* can set a byte.
+		//
+		// What is assertable is that the field is read from where the format puts it: a CRDT id in its
+		// own right, distinct from the stroke's own id, which sits three tags earlier.
+		expect(strokes.every((stroke) => /^[0-9a-f]+$/.test(stroke.timestamp))).toBe(true);
+		expect(strokes.some((stroke) => stroke.timestamp !== stroke.id)).toBe(true);
+		expect(new Set(strokes.map((stroke) => stroke.id)).size).toBe(strokes.length);
 	});
 
 	it("leaves colorRgba undefined for strokes that don't carry one, including the extended palette", () => {

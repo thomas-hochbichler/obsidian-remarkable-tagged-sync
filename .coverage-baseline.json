@@ -92,7 +92,7 @@
 		},
 		"src/licence-client.ts": {
 			"lines": 1,
-			"branches": 1
+			"branches": 2
 		},
 		"src/licence-messages.ts": {
 			"lines": 0,
@@ -119,8 +119,8 @@
 			"branches": 0
 		},
 		"src/local-model-fetch.ts": {
-			"lines": 197,
-			"branches": 67
+			"lines": 49,
+			"branches": 17
 		},
 		"src/local-model-gate.ts": {
 			"lines": 0,
@@ -132,7 +132,7 @@
 		},
 		"src/local-model-settings.ts": {
 			"lines": 0,
-			"branches": 2
+			"branches": 1
 		},
 		"src/local-model-store.ts": {
 			"lines": 1,
@@ -172,7 +172,7 @@
 		},
 		"src/note-builder.ts": {
 			"lines": 0,
-			"branches": 5
+			"branches": 4
 		},
 		"src/note-region.ts": {
 			"lines": 0,
@@ -183,8 +183,8 @@
 			"branches": 0
 		},
 		"src/obsidian-fetch.ts": {
-			"lines": 14,
-			"branches": 18
+			"lines": 0,
+			"branches": 0
 		},
 		"src/ocr-backend.ts": {
 			"lines": 0,
@@ -212,7 +212,7 @@
 		},
 		"src/page-rasterizer.ts": {
 			"lines": 0,
-			"branches": 6
+			"branches": 5
 		},
 		"src/pdf-paint-repair.ts": {
 			"lines": 3,
@@ -224,13 +224,17 @@
 		},
 		"src/pdf-source.ts": {
 			"lines": 0,
-			"branches": 1
+			"branches": 0
 		},
 		"src/pdf-text.ts": {
 			"lines": 6,
 			"branches": 42
 		},
 		"src/png-encoder.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/pro-capabilities.ts": {
 			"lines": 0,
 			"branches": 0
 		},
@@ -243,8 +247,8 @@
 			"branches": 0
 		},
 		"src/region-view.ts": {
-			"lines": 90,
-			"branches": 40
+			"lines": 0,
+			"branches": 5
 		},
 		"src/remarkable-auth.ts": {
 			"lines": 0,
@@ -292,7 +296,7 @@
 		},
 		"src/sync-engine.ts": {
 			"lines": 40,
-			"branches": 59
+			"branches": 54
 		},
 		"src/sync-guards.ts": {
 			"lines": 0,
@@ -312,7 +316,7 @@
 		},
 		"src/text-layout.ts": {
 			"lines": 0,
-			"branches": 1
+			"branches": 0
 		},
 		"src/vault-stores.ts": {
 			"lines": 0,

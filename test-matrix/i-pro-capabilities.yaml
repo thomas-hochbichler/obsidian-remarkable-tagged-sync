@@ -1,0 +1,198 @@
+# Ticket 11 -- the Pro capability walk.
+#
+# It exists because of a measurement, not a worry. Setting `requiresLicence` to `false` for all four
+# cloud providers passed all 996 tests, and so did deleting the gate block outright: a paywall that
+# falls open is invisible from both sides, because the buyer cannot tell a paid feature from a free
+# one and nothing goes red.
+#
+# The shape is a **walk over a declared list**, not a test per gate -- the way a paywall breaks is
+# that somebody adds a feature and nobody adds its test. Two halves make forgetting loud: membership
+# comes from a checked-in declaration rather than from the flag under test, and there is no default,
+# so an undeclared backend fails by id.
+#
+# All three of the audit's surviving mutations die here, and three more with them.
+
+
+- feature: I13
+  name: Cloud transcription backends require a licence -- the walk over all of them
+  code: src/pro-capabilities.ts
+  tier: pro
+  scenarios:
+    - id: I13.1
+      scenario: The capability list is built
+      expect: It is not empty, and holds the four cloud providers and the tag cap by id. This assertion comes first because every other one has the shape "nothing is open" -- which an empty list satisfies perfectly
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "the list the walk walks > is not empty, and holds the capabilities this build actually sells"
+
+    - id: I13.2
+      scenario: Where the list's membership comes from
+      expect: The checked-in declaration, never `requiresLicence`. Filtering on the flag under test would empty the list the moment the flag was wrong, and an empty walk passes everything -- which is how the original mutation survived 996 tests
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "the list the walk walks > takes its membership from the declaration, never from the flag under test"
+
+    - id: I13.3
+      scenario: A user who never bought anything
+      expect: Every gated capability is locked, named by id. `requiresLicence -> false` fails here on all four providers at once
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with no licence > locks every gated capability -- never bought"
+
+    - id: I13.4
+      scenario: A trial that ran out
+      expect: Same. A gate that only checks one of the four free reasons is caught by the other three
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with no licence > locks every gated capability -- trial ended"
+
+    - id: I13.5
+      scenario: A licence withdrawn after a refund
+      expect: Same
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with no licence > locks every gated capability -- revoked"
+
+    - id: I13.6
+      scenario: A key pasted but never confirmed -- the state `licence-state.ts` deliberately grants nothing for
+      expect: Same
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with no licence > locks every gated capability -- key pasted, never confirmed"
+
+    - id: I13.7
+      scenario: What each locked capability promises instead
+      expect: 'One of the two declared outcomes. There is deliberately no third member: "nothing happens, silently" is the failure this whole file is about, so it cannot be declared'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with no licence > says what happens instead, for every one of them -- never nothing"
+
+    - id: I13.8
+      scenario: The enforcement site itself, run at a free entitlement
+      expect: It answers what the capability promised. **Driven, not grepped** -- the original design could only check that an `if` was still written in `main.ts`, which proves nothing about what the branch does. The cut moved both gates into importable modules
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with no licence > does what it says it does, at the site that does it"
+
+    - id: I13.9
+      scenario: A licence bought and validated
+      expect: Nothing is locked. This is the direction a wrongly-strict gate fails in, and it is the one that costs a refund
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with a licence that is working > locks nothing -- bought and validated"
+
+    - id: I13.10
+      scenario: A trial in progress
+      expect: Nothing is locked
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with a licence that is working > locks nothing -- trial running"
+
+    - id: I13.11
+      scenario: A valid licence not confirmed for a month
+      expect: 'Nothing is locked, and the entitlement is `pro` with `stale: true`. A gate reading stale as free would take Pro away from somebody whose only problem is a bad connection'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with a licence that is working > locks nothing -- validated a month ago, not since"
+
+    - id: I13.12
+      scenario: Every enforcement site at a paid entitlement
+      expect: All allowed, not merely the predicate. The two can disagree, and the site is the one that ships
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with a licence that is working > lets every enforcement site through, and not merely the predicate"
+
+    - id: I13.13
+      scenario: The staleness boundary itself
+      expect: '`CARRY_DAYS` says a valid verdict carries, and stale is not locked'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "with a licence that is working > does not lock a licence that has merely gone unconfirmed"
+
+
+- feature: I11
+  name: Silence never revokes Pro -- the invariant, executed
+  code: src/licence-check.ts
+  tier: pro
+  scenarios:
+    - id: I11.1
+      scenario: The real `checkLicence`, from a state genuinely due a re-check, with a call that throws
+      expect: Nothing is locked **and no notice fires**. The notice is what tells a user their licence ended; firing it on an outage is the user-visible half of the same bug
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "when the licence server cannot be reached > locks nothing when the call throws"
+
+    - id: I11.2
+      scenario: The same, with the answer `unreachable` rather than a throw
+      expect: Nothing is locked, no notice. `applyOutcome` returns the state unchanged for `unreachable`
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "when the licence server cannot be reached > locks nothing when the answer is 'unreachable'"
+
+    - id: I11.3
+      scenario: The last good answer is four months old and the server is dead
+      expect: Nothing is locked. `licence-state.ts` states it as an invariant -- a provider outage must not shut every paying customer at once a month later
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "when the licence server cannot be reached > locks nothing when the last good answer is four months old"
+
+    - id: I11.4
+      scenario: A running trial while the server is dead
+      expect: Silence does not end a trial either
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "when the licence server cannot be reached > does not end a running trial either"
+
+
+- feature: E7
+  name: Cloud LLM backends -- the census that makes forgetting loud
+  code: src/pro-capabilities.ts
+  tier: pro
+  scenarios:
+    - id: E7.4
+      scenario: A backend is registered with no line in the declaration
+      expect: 'Fails by id, and the message reads `expected false to be ''undeclared''`. There is no fallback value: an id nobody wrote down is an error, not a free backend. Demonstrated with a real fake provider, not argued'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "nothing gated escapes the list > declares every backend this build registers, paid or free"
+
+    - id: E7.5
+      scenario: The entry's flag and the declaration disagree
+      expect: 'Fails by id. The two can disagree in both directions, and each is its own bug: a paid backend flagged free is given away, a free one flagged paid is refused to somebody who owes nothing'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "nothing gated escapes the list > keeps the entry flag and the declaration saying the same thing"
+
+    - id: E7.6
+      scenario: The set of paid backends changes
+      expect: 'Fails against a pinned list, so "what Pro sells changed" is a sentence somebody has to write. Demonstrated in three stages: registering is not enough, declaring is not enough, only flag **and** declaration **and** the pinned list go green'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "nothing gated escapes the list > pins which backends are paid, so the declaration is checked against something"
+
+    - id: E7.7
+      scenario: A backend is declared free
+      expect: 'It costs a written sentence. `paid: false` is a claim a reviewer can disagree with, where a bare `requiresLicence: false` inside a registration loop is neither visible nor arguable'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "nothing gated escapes the list > makes opting out cost a sentence somebody can disagree with"
+
+    - id: E7.8
+      scenario: A gate is hand-written in some other file entirely -- the shape nothing can enumerate, because it does not exist until somebody writes it
+      expect: Fails the tier-read census, which pins **which** files may read `entitlement.tier` and **how many times**. The count is what makes it bite inside a file that is already allowed. It does not stop the gate; it makes adding one impossible to do quietly
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "nothing gated escapes the list > lets no other file read the entitlement tier"
+
+
+- feature: I15b
+  name: The free tag cap's own number
+  code: src/tag-routing-view.ts
+  tier: free
+  scenarios:
+    - id: I15b.1
+      scenario: The limit, and how the gate is phrased
+      expect: 'One, and the gate asks the **quantity** rather than the tier. Both agree today and only one can see the mutation: with the limit at infinity a tier test would still cheerfully report "free means locked"'
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "the tag cap's own number > is one, and the gate is phrased in the quantity rather than in the tier"

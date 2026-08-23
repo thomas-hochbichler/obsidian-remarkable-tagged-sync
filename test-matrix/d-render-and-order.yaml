@@ -1,0 +1,118 @@
+# The first nine gaps of the legacy backlog, worked in rank order: G02, G05-G12.
+#
+# What they have in common is the reason they went unnoticed. Each was a rule with a test beside it
+# and a fixture that could not tell whether the rule held: every `cPages` fixture assigned `idx` in
+# array order, so the sort was a no-op; every highlight was built with one 1x1 rect, so `min` and
+# `max` were the same number; the tap test asserted the page count; the annotated-pages test asserted
+# an upper bound that sending nothing satisfies. Nine surviving mutants, none of them subtle, all of
+# them invisible to 996 tests.
+
+- feature: G12
+  name: Existing transcript reused where safe
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: G12.1
+      scenario: A renderer bump lands on a page the user has also written on since the last sync -- the common case, not an exotic one
+      expect: The stored transcript is **not** reused. Dropping the device check kept the previous words under the new render, with nothing saying so
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > does not keep the old transcript when the page changed as well as the renderer"
+
+- feature: C9
+  name: Level-3 skip -- page unchanged
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C9.1
+      scenario: A page-tag note was deleted by hand, and its row is current in every other respect
+      expect: Re-created. The fixture used to carry no `renderVersion`, so the stale-render exception rebuilt it and the missing-note check this scenario is about did nothing at all
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > level 3: self-heals a page-tag note deleted by hand even though its page hash didn't change"
+
+- feature: D1
+  name: Handwriting rendered to a vector PDF
+  code: src/pdf-renderer.ts
+  tier: free
+  scenarios:
+    - id: D1.1
+      scenario: A notebook whose pages were dragged into a new order in the device's page overview, so the CRDT `idx` disagrees with the order the pages arrive in
+      expect: The device's order wins. Every fixture in the repo agreed on both orders, so deleting the sort changed nothing anywhere -- and shipped, it is the wrong page of the PDF, the wrong number in every transcript heading and the wrong `#page=` anchor
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > follows the order the device holds, not the order the pages arrived in"
+
+- feature: D3
+  name: Pen colours, widths and tools
+  code: src/pdf-renderer.ts
+  tier: free
+  scenarios:
+    - id: D3.1
+      scenario: A stroke with exactly one point -- a tap. The dot on an i, a full stop, a decimal point
+      expect: A filled dot with a real radius. The old test was named "without throwing" and asserted the page count, so replacing the whole branch with an early return passed
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderPagesToPdf > draws a single-point stroke (a tap) as a filled dot, not as nothing at all"
+
+- feature: D9
+  name: Highlights section with quotes
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: D9.1
+      scenario: A quote that wraps across printed lines -- which is most quotes -- against one that sits below where it starts
+      expect: Sorted by where it begins, not by where it ends. Every highlight in the repo had a single 1x1 rect, so `min` and `max` over the rects were the same number and the anchor rule was never exercised
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "collectHighlights > anchors a wrapped quote at where it starts, not where it ends"
+
+    - id: D9.2
+      scenario: Two quotes share a printed line and the earlier one wraps
+      expect: 'Characterisation, not a rule: the anchor is `(min y, min x)` over the rects, which for a wrapped quote is a corner it does not have -- the top from its first line and the left from its second. Here that orders it against reading order. Which corner is right is a question for the digest spec'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "collectHighlights > anchors a wrapped quote at a corner it does not have, which reorders a shared printed line"
+
+- feature: D10
+  name: Page-anchored transcript -- the book path
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: D10.1
+      scenario: A five-page book annotated on pages 1, 3 and 5, re-transcribed
+      expect: Headings read "Page 1", "Page 3", "Page 5" and each anchors at that page of the embed; the two blank pages are named as pages 2 and 4. The notebook twin is protected and the identical mutation there fails two tests by name; on the book path `index + 1` -> `index` passed all 996
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "page-anchored transcripts > labels a book's transcript with the source page each annotation is on, not with its position among them"
+
+    - id: D10.2
+      scenario: The same book, synced with margin notes switched off
+      expect: 'No page reaches the backend at all. The old assertion here was `<= drawnOn.length`, which sending nothing satisfies -- and sending nothing is what it was measuring, so `scene: page.annotations` -> `null` passed the whole suite while every book shipped an empty transcript'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "page-anchored transcripts > sends no page of a book to the backend at all while margin notes are off"
+
+- feature: B8
+  name: Folder tags are inherited -- reconciling a rename
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: B8.1
+      scenario: A reMarkable folder is re-tagged from one mapped tag to another, so the set of mapped tags changes membership without changing size
+      expect: The document is reopened and the note moves. Only the size half of the reconcile test was covered -- addition and removal both change it -- so dropping the membership half passed. The document's own hash never moves for a folder tag, so nothing else in the sync can see this
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > moves a notebook when its folder is re-tagged from one mapped tag to another"
+
+- feature: B10
+  name: Renamed tag moves its note
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: B10.1
+      scenario: Two mapped tags come off a notebook and two different ones go on, in one edit
+      expect: Both old rows are orphaned and both new notes are written. Every tag-diff fixture in the repo was the clean 1:1 case, so loosening the rename test to `>= 1 && >= 1` passed -- and shipped, one removed row stays `active` forever, naming a note the sync will never write again
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > orphans every tag that dropped out, not just the first, when two go and two arrive"

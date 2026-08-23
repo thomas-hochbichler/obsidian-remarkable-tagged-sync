@@ -104,6 +104,19 @@ function versionGate(tag) {
 		ok(`versions.json["${v}"] = ${minApp}, matches manifest minAppVersion`);
 	}
 
+	// The frozen legacy state must have been produced by *this* version, or the upgrade test is
+	// testing an older release than the one before. The point of freezing one state per release is
+	// that `src/legacy-upgrade.test.ts` runs today's engine over a vault the **previous** release
+	// actually wrote -- and the state committed in release N's PR is produced by N's own code, which
+	// is byte-identical to what tag N will hold.
+	//
+	// It sits here rather than in a job of its own because `ci.yml` and `release.yml` both already run
+	// this gate: no new step, no new file to remember, and the failure shows up on the release PR in
+	// under a minute -- before a tag is spent.
+	const legacyState = readJson("test-fixtures/legacy-state/meta.json");
+	if (legacyState.version === v) ok(`test-fixtures/legacy-state produced by ${legacyState.version}`);
+	else fail(`test-fixtures/legacy-state was produced by ${legacyState.version}, manifest.json says ${v} -- run \`npm run freeze-state\``);
+
 	// release.yml only. The tag carries no `v` prefix -- the store resolves the tag from the
 	// manifest version, so `v1.0.6` would simply not be found.
 	if (tag !== undefined) {

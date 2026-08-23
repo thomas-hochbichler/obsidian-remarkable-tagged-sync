@@ -151,6 +151,17 @@ describe("humanDuration", () => {
 		expect(humanDuration(7_200)).toBe("about 2 hours");
 		expect(humanDuration(5_400)).toBe("about 1.5 hours");
 	});
+
+	// Gap G40. Between 90 and 150 seconds the rounding lands on zero, and `|| step` is what stops the
+	// card reading "about 0 minutes" -- which says the job is instant about a job that is not.
+	it("never says about zero minutes, which is the one answer that is always wrong", () => {
+		expect(humanDuration(90)).toBe("about 5 minutes");
+		expect(humanDuration(149)).toBe("about 5 minutes");
+		// And the sentence never contains a zero at all, at any input the guard is near.
+		for (let seconds = 90; seconds < 200; seconds++) {
+			expect(humanDuration(seconds)).not.toContain("about 0");
+		}
+	});
 });
 
 describe("reTranscribeCaveat", () => {

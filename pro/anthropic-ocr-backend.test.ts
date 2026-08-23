@@ -61,10 +61,18 @@ describe("AnthropicOcrBackend", () => {
 		expect(result).toEqual({ status: "ok", pages: [{ status: "ok", text: "Hello world" }], text: "Hello world", confidence: null });
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 
+		// Gap G21: the **whole** header set, not two fields of it. Deleting `anthropic-version` made
+		// every request 400 for every buyer, and passed all 996 tests -- the paid backend went off the
+		// air with the licence gate green. Anthropic requires the version header on every call and
+		// answers "missing anthropic-version" without it, which reads to the user like a bad key.
 		const [url, init] = fetchMock.mock.calls[0];
 		expect(url).toBe("https://api.anthropic.com/v1/messages");
 		expect(init.method).toBe("POST");
-		expect(init.headers["x-api-key"]).toBe("sk-test");
+		expect(init.headers).toEqual({
+			"x-api-key": "sk-test",
+			"anthropic-version": "2023-06-01",
+			"content-type": "application/json",
+		});
 
 		const body = requestBody();
 		expect(body.model).toBe("claude-sonnet-5");
@@ -74,6 +82,53 @@ describe("AnthropicOcrBackend", () => {
 		expect(content[1].source!.media_type).toBe("image/png");
 		const pngBytes = Buffer.from(content[1].source!.data, "base64");
 		expect([...pngBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+	});
+
+	// Gap G21's other half. Anthropic's `content` is a list of blocks and only some of them are text:
+	// a model with extended thinking on returns `thinking` blocks, and one that reaches for a tool
+	// returns `tool_use`. Neither is transcription, and both would land in somebody's note as if the
+	// handwriting had said it.
+	it("takes the text blocks out of the answer and leaves the rest of them there", async () => {
+		fetchMock.mockResolvedValue(
+			jsonResponse(200, {
+				content: [
+					{ type: "thinking", thinking: "The handwriting is cursive; let me read it slowly." },
+					{ type: "text", text: "The first line." },
+					{ type: "tool_use", id: "toolu_1", name: "zoom", input: {} },
+					{ type: "text", text: "The second line." },
+					{ type: "text", text: "   " },
+				],
+			}),
+		);
+		const backend = new AnthropicOcrBackend({ apiKey: "sk-test", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.text).toBe("The first line.\n\nThe second line.");
+		expect(result.text).not.toContain("cursive");
+		expect(result.text).not.toContain("zoom");
+	});
+
+	it("asks what a block *is*, not whether it happens to carry text", async () => {
+		// The rule, pinned rather than the shapes: only `type: "text"` is transcription. Today's
+		// non-text blocks carry their payload under other keys, so a filter on `block.text` alone
+		// behaves identically -- which is exactly why it survived every test in the repo. It stops
+		// behaving identically the day Anthropic adds a block type with a `text` field, and then the
+		// difference is somebody's note carrying words their handwriting never said.
+		//
+		// The block below is deliberately hypothetical. That is the point: the filter has to be a
+		// question about the type, so a shape nobody here has seen is refused by default.
+		fetchMock.mockResolvedValue(
+			jsonResponse(200, {
+				content: [
+					{ type: "text", text: "What the page says." },
+					{ type: "some-future-block", text: "What the model thought about it." },
+				],
+			}),
+		);
+		const backend = new AnthropicOcrBackend({ apiKey: "sk-test", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()])).text).toBe("What the page says.");
 	});
 
 	// One image per call is the only shape where the page boundary comes from the request array --

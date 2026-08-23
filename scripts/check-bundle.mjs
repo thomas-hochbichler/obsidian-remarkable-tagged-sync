@@ -43,6 +43,23 @@ const OBFUSCATION = [
 
 const GATE = ["api.polar.sh", "e1f4bd71-6fb3-4f0f-a602-f42985a89e15"];
 
+// 3. The CORS shim, and this one is a *build* fact rather than a source fact.
+//
+//    reMarkable's API sends no CORS headers, so the renderer's own `fetch` is blocked before the
+//    request leaves -- rmapi-js sets an Authorization header, which forces a preflight. rmapi-js
+//    calls the global `fetch` with no injection point of its own, so esbuild's `inject` rewrites
+//    every free-identifier `fetch` in the bundle to `obsidianFetch` at build time.
+//
+//    Nothing in `src/` can check that it happened: the rewrite is the bundler's, and `obsidian-fetch.ts`
+//    passes all its own tests whether or not anything routes through it. A config edit, an esbuild
+//    upgrade that changes how `inject` resolves, or a dependency reaching for `globalThis.fetch`
+//    instead of the bare identifier, and every cloud request in the plugin is blocked -- in every
+//    vault, looking exactly like the cloud being down.
+//
+//    Asserted the way the gate is: the shim's own name must be in the bytes. A bundle where the
+//    inject did nothing does not contain it, because nothing else references the module.
+const SHIM = ["obsidianFetch"];
+
 let bundle;
 try {
 	bundle = readFileSync(file, "utf8");
@@ -85,10 +102,14 @@ for (const { label, needles } of OBFUSCATION) {
 console.log("\nlicence gate (must be in every published bundle)");
 for (const needle of GATE) reportPresent(needle, countOf(needle));
 
+console.log("\nCORS shim (every cloud request goes through it, or none of them work)");
+for (const needle of SHIM) reportPresent(needle, countOf(needle));
+
 if (failed) {
 	console.error("\nbundle scan: FAIL");
 	console.error("If a licence-gate needle is missing: this bundle would give the paid backends away. Do not publish it.");
 	console.error("If an obfuscation pattern hit: a dependency reintroduced a polyfill. See the aliases in esbuild.config.mjs.");
+	console.error("If the CORS shim is missing: esbuild's `inject` did not run, and every cloud request in this bundle is blocked.");
 	process.exit(1);
 }
 console.log("\nbundle scan: PASS");

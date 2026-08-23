@@ -152,6 +152,23 @@ describe("enumerateNotebookTags", () => {
 		expect(notebooks[0].tags).toEqual(["direct", "content", "journal", "obsidian"]);
 	});
 
+	// Gap G40. A document the user moved to the trash keeps its `parent` chain, and the folder it came
+	// out of keeps its tags -- so without the `trash` guard a deleted notebook goes on syncing into
+	// the vault forever, and deleting it on the device does nothing.
+	it("stops at the trash, so a deleted notebook stops inheriting tags", async () => {
+		// The device lists a `trash` collection of its own, and a deleted item's `parent` points at it
+		// while keeping everything else about the item intact. Without the guard, any tag on that
+		// collection -- or on anything above it -- routes every deleted notebook in the account into
+		// the vault, and deleting a notebook on the device does nothing at all.
+		const trash = collectionEntry({ id: "trash", parent: "", tags: [{ name: "obsidian", timestamp: 0 }] });
+		const entry = documentEntry({ parent: "trash" });
+		const api = fakeApi([trash, entry], { "doc-1": documentContent() });
+
+		const notebooks = await enumerateNotebookTags(api);
+
+		expect(notebooks[0].tags).toEqual([]);
+	});
+
 	it("stops safely when the folder parent chain contains a cycle", async () => {
 		const first = collectionEntry({ id: "folder-1", parent: "folder-2", tags: ["one"] });
 		const second = collectionEntry({ id: "folder-2", parent: "folder-1", tags: ["two"] });

@@ -1,0 +1,175 @@
+# Gap G19 -- `region-view.ts`, the reading side of a margin note.
+#
+# 300 lines and no test file. `note-region.test.ts` covers the *contract* thoroughly, including a
+# writer-to-reader round trip, and stops at the seam: whether a button is drawn, whether it opens the
+# vault's own PDF, whether a failure reaches the reader instead of only the console -- none of it ran
+# anywhere.
+#
+# This is the only code in the plugin that draws *inside* somebody's note, and the promise it makes is
+# unusual enough to have a row of its own: **no image file is ever added to the vault** (F12.4).
+
+
+- feature: F12
+  name: Show the handwriting on demand
+  code: src/region-view.ts
+  tier: free
+  scenarios:
+    - id: F12.1
+      scenario: A note carrying a `remarkable-note` block is opened
+      expect: A button and nothing else. A note with thirty margin notes must cost nothing until somebody asks for one -- no PDF is opened
+      layer: vault
+      file: src/region-view.test.ts
+      test: "the block, before anybody presses anything > draws a button and nothing else -- no PDF is opened until it is asked for"
+
+    - id: F12.2
+      scenario: The button is drawn
+      expect: It takes `clickable-icon`, Obsidian's own icon-button class. `app.css` reaches every other button through `button:not(.clickable-icon)`, which outranks a plain class of ours -- without it the button keeps its grey face and its border whatever we write
+      layer: vault
+      file: src/region-view.test.ts
+      test: "the block, before anybody presses anything > takes Obsidian's own icon-button class, which is the only way it can be styled at all"
+
+    - id: F12.3
+      scenario: The button is clicked in Live Preview
+      expect: The event is held back from the editor's caret handling, and the default prevented on the two pointer events but not on the click. A block the caret sits inside falls back to its own source, so pressing the button showed the reader `page:` and `rect:` instead of the handwriting
+      layer: vault
+      file: src/region-view.test.ts
+      test: "the block, before anybody presses anything > keeps a click on the button out of the editor's caret handling"
+
+    - id: F12.4
+      scenario: The button is pressed
+      expect: 'The band is drawn out of the vault''s own PDF, and **no file is added to the vault**. This is the promise the whole design exists for: a rendered image beside the note would be a second copy of the handwriting, in a file nobody asked for'
+      layer: vault
+      file: src/region-view.test.ts
+      test: "pressing the button > draws the band out of the vault's own PDF, and adds no file to the vault"
+
+    - id: F12.5
+      scenario: The canvas is allocated and the render asked for
+      expect: Sized to the band, with a transform that slides the band's corner to the canvas origin -- the viewport is the whole page, and the transform is what makes pdf.js clip instead of rasterising the page around it
+      layer: vault
+      file: src/region-view.test.ts
+      test: "pressing the button > sizes the canvas to the band and slides the band's corner to its origin"
+
+    - id: F12.6
+      scenario: A poster-sized page whose band would need a canvas larger than a browser allows
+      expect: The scale gives way rather than the allocation throwing. A poster is a legitimate document; its band is simply drawn at fewer pixels per point
+      layer: vault
+      file: src/region-view.test.ts
+      test: "pressing the button > gives back the page rather than the band when the band is too big for a canvas"
+
+    - id: F12.7
+      scenario: The drawn handwriting itself is clicked
+      expect: Held back from the editor as well. A reader looking at their own handwriting clicks on it, and without this the caret lands in the block and Live Preview replaces the image with its source
+      layer: vault
+      file: src/region-view.test.ts
+      test: "pressing the button > keeps a click on the handwriting out of the editor too"
+
+    - id: F12.8
+      scenario: The button is pressed a second time
+      expect: The image is removed and nothing is re-rendered
+      layer: vault
+      file: src/region-view.test.ts
+      test: "pressing the button > hides the handwriting again on a second press, without reopening anything"
+
+    - id: F12.9
+      scenario: Several regions of one note are drawn in turn
+      expect: The document is opened once and kept. 75 ms to open against 6 ms to draw out of an open one, measured -- the difference between a button that answers instantly and one that visibly waits
+      layer: vault
+      file: src/region-view.test.ts
+      test: "pressing the button > keeps the document open between two notes' blocks, and opens it once"
+
+    - id: F12.10
+      scenario: The plugin registers the processor
+      expect: The `remarkable-note` language, and a cleanup that closes the open PDF. Registering the language is what turns this from a sync tool into a viewer extension; without the plugin the block stays two readable lines
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the plugin registers > registers the language the block format was chosen for, and a cleanup that closes the PDF"
+
+    - id: F12.11
+      scenario: The plugin unloads with a document open
+      expect: The document is destroyed rather than held for as long as Obsidian runs
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the plugin registers > closes the open document when the plugin unloads"
+
+    - id: F12.12
+      scenario: The note is closed while a render is still running
+      expect: The render is cancelled. Otherwise pdf.js keeps drawing into a canvas nobody will see, and its promise rejects afterwards on a child that is gone
+      layer: vault
+      file: src/region-view.test.ts
+      test: "a note that closes while it is still drawing > cancels the render rather than leaving pdf.js drawing into a canvas nobody will see"
+
+
+- feature: F13
+  name: Unreadable region degrades gracefully
+  code: src/region-view.ts
+  tier: free
+  scenarios:
+    - id: F13.1
+      scenario: The block does not say what it must -- somebody typed in it, or a merge mangled it
+      expect: The sentence, and **no button**. A control that cannot work is worse than the sentence explaining why
+      layer: vault
+      file: src/region-view.test.ts
+      test: "the block, before anybody presses anything > says so in the note, without a button, when the block cannot be read"
+
+    - id: F13.2
+      scenario: The note itself is no longer in the vault
+      expect: Named in the note, in words
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > names a note that is no longer in the vault"
+
+    - id: F13.3
+      scenario: The note embeds no PDF at all
+      expect: Named in the note
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > names a note that embeds no PDF"
+
+    - id: F13.4
+      scenario: The embed points at a PDF that is not there
+      expect: The path is named, so the reader knows what to put back
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > names the PDF by path when the embed points at nothing"
+
+    - id: F13.5
+      scenario: The PDF was rebuilt outside the plugin with fewer pages than when the note was written
+      expect: The page number is named
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > names the page when the PDF has been rebuilt with fewer pages"
+
+    - id: F13.6
+      scenario: The rectangle does not touch the page
+      expect: Said plainly. Asking for a region a million points tall is also how a canvas gets too big to allocate
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > says the block points off the page when the rectangle does not touch it"
+
+    - id: F13.7
+      scenario: pdf.js fails on the file itself -- a corrupt PDF
+      expect: 'Both, not either: the sentence in the note because that is where the reader is, and the stack in the console, because "the PDF could not be opened" is not a diagnosis'
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > passes an unexpected failure through in the reader's own words, and keeps the stack in the console"
+
+    - id: F13.8
+      scenario: An Obsidian version that does not expose `loadPdfJs`
+      expect: A sentence, not a rejected promise nobody awaits. "No pdf.js" is a normal outcome here, not a crash
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > says so on an Obsidian with no pdf.js, rather than throwing into a promise nobody awaits"
+
+    - id: F13.9
+      scenario: Any of the above has just happened
+      expect: The button stays pressable. Every one of these is something the reader can put right -- move the PDF back, undo an edit -- and then the same button works
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > leaves the button pressable, because every one of these is something the reader can put right"
+
+    - id: F13.10
+      scenario: The reader fixes the vault and presses again
+      expect: The old sentence is cleared. Otherwise the note goes on explaining a problem that is gone
+      layer: vault
+      file: src/region-view.test.ts
+      test: "what the reader is told when it cannot be drawn > clears the last failure when the button is pressed again"

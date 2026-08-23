@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { rasterizePage } from "./page-rasterizer";
+import { inkBounds, rasterizePage } from "./page-rasterizer";
 import { parseRmV6, type RmPage } from "./rm-parser";
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -188,5 +188,80 @@ describe("rasterizePage", () => {
 		};
 
 		expect(() => rasterizePage(outOfBoundsPage)).not.toThrow();
+
+		// Gap G36: `not.toThrow()` was the whole assertion, so a rasteriser producing a 5050x5050
+		// bitmap of nothing passed. `clampPoint` holds a coordinate to the page, so the ink box stays
+		// the size of a page rather than the size of the numbers in the file.
+		// The two points are 10 000 apart in each axis; `clampPoint` holds each to the page, so the
+		// bitmap is the size of a page rather than the size of the numbers in the file.
+		const image = rasterizePage(outOfBoundsPage);
+		expect(image.width).toBeLessThan(10_000);
+		expect(image.height).toBeLessThan(10_000);
+		expect(image.pixels).toHaveLength(image.width * image.height);
+	});
+});
+
+// Gap G36. `inkBounds` is exported because it is the frame anything reading an OCR result back has to
+// work in -- an observation's box is normalised against this bitmap, so mapping one onto the scene
+// means undoing exactly this box. Its own doc says an approximation of it makes every comparison
+// silently wrong, and it had no direct test at all.
+/** A one-stroke page through the given points, at the given brush size. */
+function pageWith(points: RmPage["layers"][number]["strokes"][number]["points"], brushSize: number): RmPage {
+	return {
+		formatVersion: 6,
+		layers: [
+			{
+				id: "layer-1",
+				name: null,
+				strokes: [{ layerId: "layer-1", id: "stroke-1", timestamp: "0001", penType: 0, color: 0, brushSize, points }],
+			},
+		],
+	};
+}
+
+describe("inkBounds", () => {
+	it("has nothing to bound on a page with no ink", () => {
+		expect(inkBounds({ formatVersion: 6, layers: [] })).toBeNull();
+		expect(inkBounds({ formatVersion: 6, layers: [{ id: "l", name: null, strokes: [] }] })).toBeNull();
+	});
+
+	it("boxes the ink, and opens the box by the widest stroke's own radius", () => {
+		// The pad is not decoration: a stroke is drawn centred on its points, so a box drawn to the
+		// points alone cuts half the ink off every edge.
+		const page = pageWith([
+			{ x: 100, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+			{ x: 200, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 },
+		], 8);
+		const bounds = inkBounds(page)!;
+
+		expect(bounds.minX).toBeLessThan(100);
+		expect(bounds.width).toBeGreaterThan(100);
+	});
+
+	it("never asks for a bitmap larger than a raster can be, whatever the file says", () => {
+		// A corrupt coordinate is not hypothetical -- a `.rm` file is bytes off a device, and a single
+		// wrong exponent asks for a bitmap of a billion pixels a side. The guard is what stands between
+		// that and an allocation that takes the app down.
+		const bounds = inkBounds(
+			pageWith(
+				[
+					{ x: -1e9, y: -1e9, speed: 0, width: 0, direction: 0, pressure: 0 },
+					{ x: 1e9, y: 1e9, speed: 0, width: 0, direction: 0, pressure: 0 },
+				],
+				2,
+			),
+		)!;
+
+		expect(bounds.width).toBeLessThanOrEqual(6000);
+		expect(bounds.height).toBeLessThanOrEqual(6000);
+	});
+
+	it("gives a single point a bitmap of at least one pixel, not of none", () => {
+		// A tap has zero extent. Zero times zero is an image with no pixels, which every consumer of a
+		// `RasterImage` would then divide by.
+		const bounds = inkBounds(pageWith([{ x: 100, y: 100, speed: 0, width: 0, direction: 0, pressure: 0 }], 0))!;
+
+		expect(bounds.width).toBeGreaterThanOrEqual(1);
+		expect(bounds.height).toBeGreaterThanOrEqual(1);
 	});
 });

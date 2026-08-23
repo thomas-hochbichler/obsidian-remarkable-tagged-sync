@@ -62,6 +62,15 @@ workflow publishes the section as the GitHub release body. See
   the *"N notes were not updated because they were edited"* notice, exactly as it is during a normal
   sync. A note that is untouched is still refreshed, and one you deleted is still written again.
 
+- **A licence server that stops answering no longer freezes the sync.** The plugin checks your
+  licence before a sync that uses a paid transcription backend, and it waited for that answer
+  without a time limit. A server that accepts the connection and then goes quiet — a bad connection,
+  a proxy holding the request — left the sync running with nothing to show for it, the status bar
+  spinning, and no way out but restarting Obsidian.
+
+  The check now gives up after ten seconds and treats the silence the way it already treats an
+  unreachable server: Pro keeps working on its last confirmed answer, and the sync carries on.
+
 - **Two syncs can no longer start at once and write over each other's bookkeeping.** Pressing *Sync
   now* twice in quick succession — or confirming a *Re-transcribe synced notes* dialog that had been
   left open while a sync started in the meantime — could start a second run on top of the first.

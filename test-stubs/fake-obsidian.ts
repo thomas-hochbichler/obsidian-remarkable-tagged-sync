@@ -208,6 +208,8 @@ export class FakeEl {
 	visible = true;
 	removed = false;
 	disabled = false;
+	/** Set when this element is put into another. `remove()` uses it to detach, as the DOM does. */
+	parentEl: FakeEl | null = null;
 
 	constructor(readonly tag = "div") {}
 
@@ -216,6 +218,7 @@ export class FakeEl {
 		if (options?.cls) for (const c of options.cls.split(/\s+/)) el.classes.add(c);
 		if (options?.text) el.text = options.text;
 		if (options?.attr) Object.assign(el.attributes, options.attr);
+		el.parentEl = this;
 		this.children.push(el);
 		return el;
 	}
@@ -230,6 +233,7 @@ export class FakeEl {
 		return this.child("span", options);
 	}
 	appendChild(el: FakeEl): FakeEl {
+		el.parentEl = this;
 		this.children.push(el);
 		return el;
 	}
@@ -265,9 +269,28 @@ export class FakeEl {
 	removeEventListener(type: string, handler: (event: unknown) => void): void {
 		this.listeners[type] = (this.listeners[type] ?? []).filter((h) => h !== handler);
 	}
-	/** Fires every handler registered for `type`. Not an Obsidian member -- the way a test clicks. */
-	dispatch(type: string, event: unknown = {}): void {
-		for (const handler of this.listeners[type] ?? []) handler(event);
+	/**
+	 * Fires every handler registered for `type`. Not an Obsidian member -- the way a test clicks.
+	 *
+	 * The event carries `stopPropagation` and `preventDefault`, and records that they were called.
+	 * A bare `{}` is not an event: a handler that reaches for either would throw, which turns a
+	 * question about behaviour into a question about the double. Recording them is also what lets a
+	 * test ask whether a click was held back from the editor, which has no other visible effect.
+	 */
+	dispatch(type: string, event: Record<string, unknown> = {}): { stopped: boolean; defaultPrevented: boolean } {
+		const record = { stopped: false, defaultPrevented: false };
+		const full = {
+			type,
+			stopPropagation: () => {
+				record.stopped = true;
+			},
+			preventDefault: () => {
+				record.defaultPrevented = true;
+			},
+			...event,
+		};
+		for (const handler of this.listeners[type] ?? []) handler(full);
+		return record;
 	}
 	hide(): void {
 		this.visible = false;
@@ -280,8 +303,25 @@ export class FakeEl {
 		if (visible) this.show();
 		else this.hide();
 	}
+	/** `Element.remove()`: detached from its parent, not merely flagged. */
 	remove(): void {
 		this.removed = true;
+		const siblings = this.parentEl?.children;
+		if (siblings) {
+			const at = siblings.indexOf(this);
+			if (at >= 0) siblings.splice(at, 1);
+		}
+		this.parentEl = null;
+	}
+	/**
+	 * `Node.isConnected`: whether the element is still in the document.
+	 *
+	 * There is no document here, so this models the one transition the product code asks about --
+	 * `region-view.ts` checks it to find out whether the note is still open after an await. An element
+	 * is connected until something removes it.
+	 */
+	get isConnected(): boolean {
+		return !this.removed;
 	}
 	/** Every string in this element and below it, in document order. The usual thing to assert. */
 	allText(): string[] {
@@ -310,6 +350,42 @@ export function createFragment(build?: (fragment: FakeEl) => unknown): FakeEl {
 	const fragment = new FakeEl("#document-fragment");
 	build?.(fragment);
 	return fragment;
+}
+
+/**
+ * A `<canvas>`, recorded rather than drawn.
+ *
+ * `region-view.ts` allocates one, sizes it, asks for a 2d context and hands both to pdf.js. What a
+ * test wants to know is the size it chose -- that is where the scale ceiling and the band arithmetic
+ * end up -- and modelling a rasteriser to find out would be asserting against a second browser.
+ *
+ * `getContext` answers `null` for anything but `"2d"`, which is what a browser does for a context it
+ * cannot give, and the product code has a branch for exactly that.
+ */
+export class FakeCanvasEl extends FakeEl {
+	width = 0;
+	height = 0;
+	/** Set to true to model a platform that refuses a 2d context. */
+	refuseContext = false;
+	constructor() {
+		super("canvas");
+	}
+	getContext(kind: string): object | null {
+		if (this.refuseContext || kind !== "2d") return null;
+		return { canvas: this };
+	}
+}
+
+/**
+ * A global, like {@link createFragment} -- `enhance.js` puts `createEl` on `window`, so `src/` calls
+ * it without importing anything and it does not exist under vitest at all.
+ */
+export function createEl(tag: string, options?: { cls?: string; text?: string; attr?: Record<string, string> }): FakeEl {
+	const el = tag === "canvas" ? new FakeCanvasEl() : new FakeEl(tag);
+	if (options?.cls) for (const c of options.cls.split(/\s+/)) el.classes.add(c);
+	if (options?.text) el.text = options.text;
+	if (options?.attr) Object.assign(el.attributes, options.attr);
+	return el;
 }
 
 // --- the file tree -------------------------------------------------------------------------------
@@ -498,6 +574,15 @@ export class FakeVault {
 		this.binaries.set(p, data);
 		this.writeLog.push(p);
 		return this.index(p, "file") as TFile;
+	}
+
+	/** The bytes of a binary file, as `region-view.ts` reads the embedded PDF back out of the vault. */
+	async readBinary(file: TFile): Promise<ArrayBuffer> {
+		const bytes = this.binaries.get(file.path);
+		if (bytes === undefined) throw new Error(`FakeVault: no binary at ${file.path}`);
+		// A copy, because Obsidian hands back a fresh buffer and a caller that transfers it -- pdf.js
+		// does -- must not detach the vault's own copy.
+		return bytes.slice(0);
 	}
 
 	async modifyBinary(file: TFile, data: ArrayBuffer): Promise<void> {

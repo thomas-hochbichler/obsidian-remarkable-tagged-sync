@@ -31,15 +31,17 @@
 
     - id: D16.4
       scenario: The vault rejects the write (read-only folder, disk full, illegal path)
-      expect: writeBinary rejecting surfaces as a skipped document with the reason, not as a half-written note claiming an attachment that is not there
-      layer: vault
-      gap: G35
+      expect: '**Not** a skipped document -- it fails the whole sync, carrying the reason. This row used to claim a per-document skip; measured, there is none. Defensible for the case that produces it, since a full disk is a whole-vault problem and `main.ts` shows a failed status with the reason, but a single unwritable path takes down documents that would have synced. Characterised, not fixed'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "skipped documents > fails the whole sync when the vault refuses an attachment, rather than skipping that document"
 
     - id: D16.5
-      scenario: The renderer hands back zero bytes
-      expect: An empty pdfBytes is refused before it reaches the vault, so no note embeds a 0-byte PDF
-      layer: vault
-      gap: G35
+      scenario: A notebook with no pages at all, so the renderer would hand back nothing
+      expect: Refused before anything reaches the vault, so no note embeds an empty PDF -- which is why `writeAttachment` itself is free to write exactly the bytes it is given
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "skipped documents > refuses a notebook with no pages rather than embedding an empty PDF"
 
     - id: D16.6
       scenario: The rendered PDF is written for the first time
@@ -143,3 +145,38 @@
       layer: unit
       file: src/vault-stores.test.ts
       test: "the note store's read > normalizes the path it is given, so a stored path with an odd space still finds its note"
+
+    - id: D17.11
+      scenario: A 200-character CJK title, on a vault synced to a Linux machine
+      expect: Cut to 66 whole characters -- ext4 caps a filename at 255 bytes and 200 CJK characters are 603, measured ENAMETOOLONG 2026-08-23
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > cuts an overlong CJK title by bytes, since ext4 counts bytes -- 66 whole characters fit the cap, not 200"
+
+    - id: D17.12
+      scenario: A 200-character accented title, the two-byte case of the same failure
+      expect: Cut to 100 whole characters, half the old cap, because each is two UTF-8 bytes
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > cuts an overlong accented title by bytes too -- two bytes per character halves the cap"
+
+    - id: D17.13
+      scenario: The byte cut lands where a four-byte character starts
+      expect: The character is dropped whole -- a cut inside a surrogate pair would put invalid UTF-16 into a filename
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > keeps a character whole at the cut -- a four-byte character that does not fit is dropped, never split into half a surrogate pair"
+
+    - id: D17.14
+      scenario: The byte cut lands between a base character and its combining mark
+      expect: Base and mark are dropped together -- a stranded mark at the end of a filename renders as garbage
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > never strands a combining mark at the cut -- if the mark does not fit, its base character goes with it"
+
+    - id: D17.15
+      scenario: A title of nothing but combining marks, long enough to be cut
+      expect: The cut walks all the way back to an empty name, which falls to the same dash a dots-only title does
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "sanitizeFilenamePart > falls back to a dash when a title of nothing but combining marks is cut down to nothing"

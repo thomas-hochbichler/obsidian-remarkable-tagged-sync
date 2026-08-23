@@ -1,0 +1,93 @@
+# The upgrade layer -- the second half of the question this whole effort exists to answer.
+#
+# "A new feature must not silently break an existing one" is what every other file here is about.
+# **"An update must not damage a vault that already exists"** is this one, and it cannot be answered
+# by a fixture somebody wrote: an invented "old" vault only proves the current version copes with
+# something we made up, and the assumption about what old looked like is the same assumption that was
+# already wrong once -- issue #10 was an ancient notebook nobody had expected.
+#
+# So the state in `test-fixtures/legacy-state/` was produced by **tag 1.4.2's own build**, replayed
+# against the fake device beside it. `npm run freeze-state` rewrites it once per release, and the
+# version gate fails the release if that is skipped.
+#
+# Layer `vault`: a real temporary directory, a real filesystem, today's `runSync`.
+
+- feature: A8
+  name: An upgrade keeps what the user had -- the vault half
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: A8.20
+      scenario: The frozen state is inspected before anything runs against it
+      expect: 'It was produced by an older release and is stale two ways -- `renderVersion` below today''s, and a routing fingerprint from before the last bump. Both matter: without them the plain upgrade run hits `runSync`''s early return and asserts nothing at all'
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "the frozen state itself > was produced by the previous release, and is stale in the two ways that make it a test"
+
+    - id: A8.21
+      scenario: The shape of the frozen vault
+      expect: One document under two tags, one tagged by folder inheritance, and a nested target folder. That is the minimum worth freezing -- the first is where duplication bugs live
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "the frozen state itself > holds the three shapes duplication bugs live in"
+
+    - id: A8.22
+      scenario: A user paragraph below the fence, and an unrelated note of their own, in a vault seven renderer versions old
+      expect: Both survive the re-render. The assertion resolves the note through its index row rather than through a fixed path, because a legitimate re-mapping moves it -- the naive form crashes
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > keeps what the user wrote below the fence, across seven renderer versions"
+
+    - id: A8.23
+      scenario: The user edited a note **inside** the managed block
+      expect: Not overwritten, and counted as skipped. The only assertion here whose failure is silent data loss rather than clutter
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > refuses to overwrite a managed block the user edited, and counts it"
+
+    - id: A8.24
+      scenario: A tag is re-pointed at a different folder between the two versions
+      expect: The note moves, taking the user's own paragraph with it, and nothing is left at the old path
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > moves a re-mapped note rather than leaving a second copy behind"
+
+    - id: A8.25
+      scenario: Every index row after the upgrade
+      expect: Each points at a file that exists, under the folder its tag maps to
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > leaves every row pointing at a file that exists, under the folder its tag maps to"
+
+    - id: A8.26
+      scenario: The attachment after a re-render
+      expect: 'Same path, same embed, **different bytes** -- and that is not a change. `pdf-lib` stamps the wall clock into a compressed stream, so a hash assertion here would fail on every run. Stated in the test rather than assumed, so nobody adds one later'
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > keeps the attachment at its path, and never asserts its bytes"
+
+    - id: A8.27
+      scenario: The upgrade is run a second time
+      expect: Nothing left to do. A settled vault stays settled, which is what says the first run finished rather than merely stopped
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > finds nothing left to do on a second upgrade, which is what a settled vault looks like"
+
+- feature: G7
+  name: Notes are never deleted -- and never quietly duplicated
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: G7.1
+      scenario: The user deleted a synced note before upgrading
+      expect: 'Recreated, and **no second file beside it**. This is the case "no note duplicated" gets wrong when written as "no note added": the recreation is documented behaviour, and that assertion calls it damage'
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > recreates a note the user deleted, and does not leave a second one beside it"
+
+    - id: G7.2
+      scenario: An interrupted sync left a note on disk with no index row, and then the vault is upgraded
+      expect: 'The real duplicate -- `Reading List (read).md` written beside the file the sync would not clobber. Caught by the assertion that every fence-carrying file is the `notePath` of exactly one active row, which is the only formulation that separates this from G7.1. Its other half catches two rows writing to one path'
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "a vault an interrupted sync left behind > is caught by ownership, where 'no note added' would have missed it"

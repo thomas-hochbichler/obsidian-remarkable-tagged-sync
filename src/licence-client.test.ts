@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPolarLicenceApi } from "./licence-client";
+import { createPolarLicenceApi, LICENCE_TIMEOUT_MS } from "./licence-client";
 
 const ORG = "org_123";
+
+// `licence-client.ts` reaches for `window.setTimeout`, which is Obsidian's rule for popout-window
+// compatibility and does not exist under vitest. Delegated per call rather than captured, so a test
+// that installs fake timers still sees them.
+vi.stubGlobal("window", {
+	setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+	clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+});
 
 /** Answers each call in turn, and records what was asked. */
 function stubFetch(...responses: Response[]) {
@@ -138,5 +146,67 @@ describe("deactivate", () => {
 		await createPolarLicenceApi(ORG, impl).deactivate("TSPRO-1", "act_1");
 		expect(calls[0].url).toBe("https://api.polar.sh/v1/customer-portal/license-keys/deactivate");
 		expect(calls[0].body).toEqual({ organization_id: ORG, key: "TSPRO-1", activation_id: "act_1" });
+	});
+});
+
+// Gap G33, and it was a bug rather than a test gap: there was no timeout anywhere on a Polar call.
+// `refreshLicenceIfGated` is **awaited on the sync path**, so a server that accepts the connection
+// and never answers did not fail the licence check -- it hung the sync, with the status bar spinning
+// and no way out but closing Obsidian. Every failure this file already handled is a server that
+// answers *something*.
+describe("a licence server that never answers", () => {
+	/** A fetch that accepts the connection and then does nothing at all, for ever. */
+	const neverAnswers = (() => {
+		return vi.fn(() => new Promise<Response>(() => undefined)) as unknown as typeof fetch;
+	})();
+
+	it("stops waiting, rather than leaving the sync that awaited it hanging", async () => {
+		const api = createPolarLicenceApi(ORG, neverAnswers, 5);
+
+		// It rejects, and `licence-check.ts` turns a rejection into `unreachable` -- the outcome that
+		// keeps Pro working on the last good verdict. That mapping is tested there; what could not be
+		// tested anywhere was that the call ends at all.
+		await expect(api.validate("TSPRO-1", "act_1")).rejects.toThrow(/did not answer/);
+	});
+
+	it("stops waiting on an activation too, so the paste field cannot hang either", async () => {
+		const api = createPolarLicenceApi(ORG, neverAnswers, 5);
+
+		await expect(api.activate("TSPRO-1", "My Vault")).rejects.toThrow(/did not answer/);
+	});
+
+	it("names the limit it gave up on, so a support mail says which one was hit", async () => {
+		const api = createPolarLicenceApi(ORG, neverAnswers, 5);
+
+		await expect(api.validate("TSPRO-1", "act_1")).rejects.toThrow("5 ms");
+	});
+
+	it("gives a working server long enough to answer on a slow connection", async () => {
+		// The limit is not so tight that an ordinary slow response trips it. Ten seconds is long enough
+		// for a bad connection and short enough that somebody who hits it presses Sync again rather
+		// than filing a bug about a frozen plugin.
+		expect(LICENCE_TIMEOUT_MS).toBe(10_000);
+
+		const slow = vi.fn(
+			async () => await new Promise<Response>((resolve) => setTimeout(() => resolve(ok()), 5)),
+		) as unknown as typeof fetch;
+
+		await expect(createPolarLicenceApi(ORG, slow, 200).validate("TSPRO-1", "act_1")).resolves.toBe("valid");
+	});
+
+	it("does not leave a timer running behind a call that answered in time", async () => {
+		// A pending timer per request would keep the event loop alive after a sync finished, which on
+		// desktop Obsidian is a plugin that will not unload cleanly -- and the timeout here is a minute,
+		// so it would hold it for a minute per licence call.
+		vi.useFakeTimers();
+		try {
+			const before = vi.getTimerCount();
+
+			await createPolarLicenceApi(ORG, stubFetch(ok()).impl, 60_000).validate("TSPRO-1", "act_1");
+
+			expect(vi.getTimerCount()).toBe(before);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

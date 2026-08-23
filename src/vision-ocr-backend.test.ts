@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { chunk, mapWithConcurrency, UnavailableOcrBackend, type VisionBatchResult, VisionOcrBackend, visionRunStats } from "./vision-ocr-backend";
+import {
+	chunk,
+	DEFAULT_MAX_PARALLELISM,
+	mapWithConcurrency,
+	UnavailableOcrBackend,
+	type VisionBatchResult,
+	VisionOcrBackend,
+	visionRunStats,
+} from "./vision-ocr-backend";
 import type { RmPage } from "./rm-parser";
 
 function page(): RmPage {
@@ -65,12 +73,39 @@ function twoLinePage(): RmPage {
 	return { formatVersion: 6, layers: [{ id: "layer-1", name: null, strokes: [stroke("stroke-1", 100), stroke("stroke-2", 400)] }] };
 }
 
+/**
+ * Three lines of writing, the first of them written in two strokes -- which is what a line of real
+ * handwriting is. The stroke centres sit at 110, 114, 170 and 410 device px, so the line height
+ * decides the clustering three different ways: at 40 the two strokes of the first line are one line
+ * and the other two stand alone, at 200 the first two lines merge, and at 2 even one line's own
+ * strokes come apart.
+ */
+function threeLinePage(): RmPage {
+	return {
+		formatVersion: 6,
+		layers: [
+			{
+				id: "layer-1",
+				name: null,
+				strokes: [stroke("stroke-1", 100), stroke("stroke-2", 104), stroke("stroke-3", 160), stroke("stroke-4", 400)],
+			},
+		],
+	};
+}
+
 /** A page read whose one observation covers the whole image, so no cluster is left for the rescue pass. */
 function readAll(text: string): VisionBatchResult {
 	return { lines: text.trim() === "" ? [] : [text], boxes: text.trim() === "" ? [] : [{ x: 0, y: 0, w: 1, h: 1 }] };
 }
 
 const available = () => Promise.resolve(true);
+
+/**
+ * The normalised height of the top line's band on {@link twoLinePage}, as `uncoveredClusters`
+ * measures it: the two strokes span y 100..420 together, and each is 20px tall, so a line's band is
+ * 20/320 of the ink frame.
+ */
+const TOP_BAND_H = 20 / 320;
 
 describe("chunk", () => {
 	it("splits into contiguous chunks of at most size, order preserved", () => {
@@ -93,6 +128,96 @@ describe("mapWithConcurrency", () => {
 		});
 		expect(out).toEqual([10, 20, 30, 40, 50]);
 		expect(peak).toBeLessThanOrEqual(2);
+	});
+});
+
+// Gap G22. Every test in this file injects its own `maxParallelism` and its own runner, so not one of
+// them ever saw a shipped default -- `DEFAULT_MAX_PARALLELISM` 8 -> 64 passed all 996, and 64
+// concurrent `osascript` processes is a Mac that stops responding while somebody syncs a notebook.
+//
+// The rescue pass has the same problem and it is worse there: it is Vision's most expensive
+// behaviour, and none of the three numbers deciding how often it runs was pinned.
+describe("the numbers this backend ships with", () => {
+	it("keeps concurrent Vision processes near a Mac's perf-core count", async () => {
+		// Not asserted as a literal alone: the constant and the behaviour, because a constant nothing
+		// reads is a number, not a default.
+		expect(DEFAULT_MAX_PARALLELISM).toBe(8);
+
+		let inFlight = 0;
+		let peak = 0;
+		const backend = new VisionOcrBackend({
+			batchSize: 1,
+			probe: available,
+			runBatch: async () => {
+				inFlight++;
+				peak = Math.max(peak, inFlight);
+				await new Promise((resolve) => setTimeout(resolve, 0));
+				inFlight--;
+				return [readAll("x")];
+			},
+		});
+
+		await backend.recognize(Array.from({ length: 40 }, page));
+
+		expect(peak).toBeLessThanOrEqual(DEFAULT_MAX_PARALLELISM);
+		expect(peak).toBeGreaterThan(1);
+	});
+
+	it("treats a line as read when an observation covers a third of it, and not a tenth", async () => {
+		// `COVERAGE_FRACTION`. Vision reports a confidence of 1.000 over plain misreads, so "no
+		// observation covers this writing" is the only signal that a line went missing -- and where the
+		// bar sits decides whether the rescue pass runs over the whole page or not at all.
+		const rescued = async (coverage: number): Promise<number> => {
+			let calls = 0;
+			// The rescue pass reads every uncovered cluster in one batch, so the *images* it sends are
+			// the cluster count -- the call count is not.
+			const sent: number[] = [];
+			const backend = new VisionOcrBackend({
+				probe: available,
+				runBatch: async (images) => {
+					calls++;
+					sent.push(images.length);
+					// The page pass first: one observation over the top line only, covering `coverage` of
+					// its height. Everything after is the rescue pass.
+					return calls === 1
+						? [{ lines: ["the top line"], boxes: [{ x: 0, y: 0, w: 1, h: TOP_BAND_H * coverage }] }]
+						: images.map(() => readAll("rescued"));
+				},
+			});
+			await backend.recognize([twoLinePage()]);
+			return sent.slice(1).reduce((total, count) => total + count, 0);
+		};
+
+		// A third of the band covered is enough: only the second line is rescued.
+		expect(await rescued(0.4)).toBe(1);
+		// A tenth is not: both lines go back through Vision.
+		expect(await rescued(0.1)).toBe(2);
+	});
+
+	it("clusters ink into lines rather than into one block or into every stroke", async () => {
+		// `RESCUE_LINE_HEIGHT_PX`. Too small and every stroke is its own "line", which sends a page
+		// through Vision a hundred times; too large and the whole page is one cluster, which makes the
+		// rescue pass a second full-page read that adds nothing.
+		let calls = 0;
+		const sent: number[] = [];
+		const backend = new VisionOcrBackend({
+			probe: available,
+			runBatch: async (images) => {
+				calls++;
+				sent.push(images.length);
+				// Nothing read at all, so every cluster on the page is rescued -- the images sent after
+				// the page pass are exactly the clusters it found.
+				return calls === 1 ? [{ lines: [], boxes: [] }] : images.map(() => readAll("rescued"));
+			},
+		});
+
+		await backend.recognize([threeLinePage()]);
+
+		// Three lines of writing, three clusters. Not two -- which is what a taller line height gives,
+		// by merging two lines into a second full-page read that adds nothing -- and not four, which is
+		// what a shorter one gives by splitting one line's own strokes and sending a page through
+		// Vision once per stroke.
+		expect(sent.slice(1).reduce((total, count) => total + count, 0)).toBe(3);
 	});
 });
 

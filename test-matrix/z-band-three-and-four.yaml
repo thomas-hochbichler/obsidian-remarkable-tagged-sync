@@ -1,0 +1,198 @@
+# Gaps G32, G35, G36, G38, G39 and G40 -- band 3 and band 4, worked in one pass.
+#
+# What they share is that each had a test beside it whose assertion was weaker than its name: an
+# `expect(...).not.toThrow()` standing in for "the guard bounds it", a `toContain` standing in for
+# "the date is a day", a `<= 300` standing in for "capped at 200", a `toBeLessThanOrEqual` standing
+# in for "the annotated pages are sent".
+
+
+- feature: C3
+  name: Status bar with real progress -- the bar's own ceiling
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C3.10
+      scenario: A backend reports a page done more often than the scan counted it -- a retry after a rate limit, or Vision's rescue pass
+      expect: The bar never counts past its own total. Every progress fixture met a backend that ticks once per page, so the over-count was unconstructible and removing the guard passed all 996 tests
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync progress > never counts past the total, however often a backend says a page is done"
+
+
+- feature: D16
+  name: Deterministic attachment paths -- when the vault refuses
+  code: src/attachment-writer.ts
+  tier: free
+  scenarios:
+    - id: D16.11
+      scenario: Creating the attachments folder fails -- a read-only vault, or a folder the user turned into a file
+      expect: The failure is passed up and **no write is attempted**, so what the user is told names the folder rather than the file
+      layer: unit
+      file: src/attachment-writer.test.ts
+      test: "writeAttachment > when the vault refuses > passes a failed folder creation up, without writing bytes into a folder that is not there"
+
+    - id: D16.12
+      scenario: The write itself fails -- a full disk
+      expect: Passed up. Swallowing it would return a path the caller embeds in a note, so the vault would carry an embed pointing at nothing and the sync would report success
+      layer: unit
+      file: src/attachment-writer.test.ts
+      test: "writeAttachment > when the vault refuses > passes a failed write up rather than returning a path to a file that was never written"
+
+    - id: D16.13
+      scenario: The render came back empty
+      expect: Written as the empty file it is. Skipping it silently would leave the note embedding the *previous* render, which is worse than an obviously empty one
+      layer: unit
+      file: src/attachment-writer.test.ts
+      test: "writeAttachment > writes an empty render as the empty file it is, rather than skipping it"
+
+
+- feature: D6
+  name: The ink frame everything else is measured against
+  code: src/page-rasterizer.ts
+  tier: free
+  scenarios:
+    - id: D6.1
+      scenario: A page with no ink at all
+      expect: Null. There is no frame, and inventing one would put every later comparison in a coordinate space that describes nothing
+      layer: unit
+      file: src/page-rasterizer.test.ts
+      test: "inkBounds > has nothing to bound on a page with no ink"
+
+    - id: D6.2
+      scenario: A stroke with a real brush width
+      expect: The box opens by the widest stroke's own radius. A stroke is drawn centred on its points, so a box drawn to the points alone cuts half the ink off every edge
+      layer: unit
+      file: src/page-rasterizer.test.ts
+      test: "inkBounds > boxes the ink, and opens the box by the widest stroke's own radius"
+
+    - id: D6.3
+      scenario: A coordinate a billion points off the page -- one wrong exponent in bytes off a device
+      expect: The bitmap is bounded. `MAX_RASTER_PX` 6000 -> 1e9 passed all 996 tests, and what it stands between is an allocation that takes the app down
+      layer: unit
+      file: src/page-rasterizer.test.ts
+      test: "inkBounds > never asks for a bitmap larger than a raster can be, whatever the file says"
+
+    - id: D6.4
+      scenario: A single point -- a tap, which has zero extent
+      expect: At least one pixel each way. Zero by zero is an image with no pixels, which every consumer of a `RasterImage` then divides by
+      layer: unit
+      file: src/page-rasterizer.test.ts
+      test: "inkBounds > gives a single point a bitmap of at least one pixel, not of none"
+
+
+- feature: F1
+  name: A tagged PDF syncs as the document -- the source it composites over
+  code: src/pdf-source.ts
+  tier: free
+  scenarios:
+    - id: F1.1
+      scenario: The source PDF has no pages -- what a half-finished upload looks like from here
+      expect: Refused. The doc comment said empty **or pageless** and only the empty half was tested; without it the note embeds an empty PDF, written once and skipped by every sync after it because the device hash never moves again
+      layer: unit
+      file: src/pdf-source.test.ts
+      test: "validateSourcePdf > throws on a PDF with no pages, which is what a half-finished upload looks like"
+
+    - id: F1.2
+      scenario: The bytes are not a PDF -- what a truncated fetch or a 502 page looks like
+      expect: Refused here rather than deeper, where the message would name pdf-lib instead of the document
+      layer: unit
+      file: src/pdf-source.test.ts
+      test: "validateSourcePdf > throws on bytes that are not a PDF at all, rather than compositing over them"
+
+    - id: F1.3
+      scenario: A valid source passes the guard
+      expect: The same array comes back, not a copy -- the caller hands it straight to the render, and a copy would double the peak memory of a book-sized PDF for nothing
+      layer: unit
+      file: src/pdf-source.test.ts
+      test: "validateSourcePdf > does not copy the bytes, because they are the same bytes the render composites over"
+
+
+- feature: I2
+  name: 14-day trial -- the arithmetic
+  code: src/licence-messages.ts
+  tier: Pro trial
+  scenarios:
+    - id: I2.6
+      scenario: Eighteen hours of trial left, and then one minute
+      expect: Both read as one day. Every fixture landed on a whole-day boundary where `ceil` and `floor` agree, so the change passed -- and with `floor` somebody is told "0 day(s) left" while Pro is still working, which reads as a plugin that has lost track of its own state
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "dates and counting > rounds a part-day up, because part of a day left is a day the trial still works"
+
+
+- feature: B8
+  name: Folder tags are inherited -- where the chain stops
+  code: src/remarkable-tags.ts
+  tier: free
+  scenarios:
+    - id: B8.2
+      scenario: A deleted notebook, whose parent is the device's own `trash` collection
+      expect: No tags inherited. Without the guard, a tag anywhere above the trash routes every deleted notebook in the account into the vault -- and deleting a notebook on the device does nothing at all
+      layer: unit
+      file: src/remarkable-tags.test.ts
+      test: "enumerateNotebookTags > stops at the trash, so a deleted notebook stops inheriting tags"
+
+
+- feature: E18
+  name: Re-transcribe cost caveat -- the wording of a duration
+  code: src/local-model-settings.ts
+  tier: free
+  scenarios:
+    - id: E18.7
+      scenario: A job between 90 and 150 seconds, where the rounding lands on zero
+      expect: Never "about 0 minutes", which says the job is instant about a job that is not
+      layer: unit
+      file: src/local-model-settings.test.ts
+      test: "humanDuration > never says about zero minutes, which is the one answer that is always wrong"
+
+
+- feature: F3
+  name: A book's text layer, and what happens without one
+  code: src/pdf-text.ts
+  tier: free
+  scenarios:
+    - id: F3.1
+      scenario: pdf.js cannot read the PDF's text layer
+      expect: 'The console says so **and carries the error**. Returning null is half of it: this is the only record that a digest fell back to highlight text alone, and the user sees a thinner digest with nothing saying why'
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "loadPdfText > says why in the console, with the error, rather than degrading in silence"
+
+- feature: A5
+  name: Old documents don't break the account -- the assumption the patch rests on
+  code: src/remarkable-metadata.ts
+  tier: free
+  scenarios:
+    - id: A5.10
+      scenario: rmapi-js's own shipped source is read for the member the patch replaces
+      expect: '`raw.getMetadata` is still there. The patch only helps if the library calls it -- rename it, inline it, or fetch metadata another way, and the patch becomes a no-op, issue #10 returns for every account with one legacy document, and every test in this repo stays green'
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "the assumption the patch rests on > still finds a `raw.getMetadata` for the patch to replace"
+
+    - id: A5.11
+      scenario: The path from `listItems` to metadata is read
+      expect: It still goes through the raw API rather than around it. A recorded contract in ticket 06's sense -- it reads the shipped library instead of mocking it, so the day the assumption stops holding is the day `npm update` turns this red
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "the assumption the patch rests on > still has `listItems` reach metadata through the raw API, not around it"
+
+    - id: A5.12
+      scenario: The library version the assumption was checked against
+      expect: Pinned to the major. 11.1.2 was read by hand; a major bump is where a rename would arrive, so it has to be looked at rather than absorbed
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "the assumption the patch rests on > is pinned to the version this assumption was checked against"
+
+- feature: I9
+  name: Weekly re-validation -- and what stops it
+  code: src/licence-state.ts
+  tier: pro
+  scenarios:
+    - id: I9.1
+      scenario: A revoked key whose last verdict has gone stale
+      expect: Nothing is asked of Polar. The existing test passed without the revocation guard at all -- its fixture was a day old, so the freshness check answered first and the guard was never reached. On a stale verdict it is the only thing between a refunded buyer and a call to Polar on every gated feature, forever
+      layer: unit
+      file: src/licence-state.test.ts
+      test: "nextLicenceCall > asks for nothing about a revoked key whose verdict has gone stale"
+

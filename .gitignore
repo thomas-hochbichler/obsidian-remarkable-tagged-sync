@@ -3,6 +3,8 @@ main.js
 coverage/
 *.js.map
 data.json
+# The frozen legacy state IS a committed data.json -- the sync index the upgrade test replays.
+!test-fixtures/legacy-state/vault/.obsidian/plugins/remarkable-tagged-sync/data.json
 test/
 docs/_archive/
 .DS_Store

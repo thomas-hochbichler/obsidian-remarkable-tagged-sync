@@ -3,7 +3,7 @@
 // need coverage in the suite that actually gates this repo.
 
 import { describe, expect, it } from "vitest";
-import { sanitizeTranscript, TRANSCRIPTION_PROMPT, typedText } from "./llm-transcript";
+import { LLM_MAX_PARALLELISM, sanitizeTranscript, TRANSCRIPTION_PROMPT, transcribePages, typedText } from "./llm-transcript";
 import type { RmPage } from "./rm-parser";
 
 function pageWithText(text: string | null): RmPage {
@@ -99,5 +99,39 @@ describe("typedText", () => {
 		expect(typedText([pageWithText(null), pageWithText("only this"), pageWithText(null)])).toBe("only this");
 		expect(typedText([pageWithText(null)])).toBe("");
 		expect(typedText([])).toBe("");
+	});
+});
+
+// Gap G22. `LLM_MAX_PARALLELISM` 4 -> 64 passed all 996 tests, because every test that transcribes
+// injects its own runner and none of them ever counted what was in flight. Shipped, that is 64
+// simultaneous requests to a paid provider on the first sync of a notebook -- a self-inflicted 429
+// storm, on a key whose limits nobody here can reason about in advance.
+describe("how many requests are in flight at once", () => {
+	it("keeps to the conservative read of the vendors' own limits", async () => {
+		// The constant and the behaviour, because a constant nothing reads is a number, not a default.
+		expect(LLM_MAX_PARALLELISM).toBe(4);
+
+		let inFlight = 0;
+		let peak = 0;
+		const pages: RmPage[] = Array.from({ length: 20 }, () => ({ formatVersion: 6, layers: [] }));
+
+		await transcribePages(pages, async () => {
+			inFlight++;
+			peak = Math.max(peak, inFlight);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			inFlight--;
+			return { kind: "ok", text: "a page" };
+		});
+
+		expect(peak).toBe(LLM_MAX_PARALLELISM);
+	});
+
+	it("is not Vision's cap, and must not become it", async () => {
+		// Vision's 8 governs local subprocesses with no rate limiter on the other end. Overloading one
+		// constant for both would couple two unrelated tunings, and the coupling would only show up as
+		// somebody else's provider returning 429.
+		const { DEFAULT_MAX_PARALLELISM } = await import("./vision-ocr-backend");
+
+		expect(LLM_MAX_PARALLELISM).not.toBe(DEFAULT_MAX_PARALLELISM);
 	});
 });
