@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { asApp, asVault, FakeApp, FakeVault } from "../test-stubs/fake-obsidian";
 import { type NoteFields, writeNote } from "./note-builder";
-import { createAttachmentStore, createNoteStore, ensureFolder } from "./vault-stores";
+import {
+	createAttachmentStore,
+	createNoteStore,
+	ensureFolder,
+	resolveFolderCasing,
+	resolveTagMapCasing,
+} from "./vault-stores";
 
 // Gap G01. Until this file existed, every test that wrote a note wrote it into an in-memory store
 // that could not fail -- so the whole collision suite proved the naming logic and nothing about the
@@ -48,6 +54,76 @@ describe("ensureFolder", () => {
 		const vault = vaultWith({}, "linux");
 		await ensureFolder(asVault(vault), "work");
 		await expect(ensureFolder(asVault(vault), "Work")).resolves.toBeUndefined();
+	});
+});
+
+// Issue #73's repair. The throw above is deliberate (ticket 18: swallowing it mis-files notes and
+// duplicates them later), so the fix is upstream: a configured folder resolves to the casing the
+// vault really holds before any path is derived from it, and the throw is never provoked.
+describe("resolveFolderCasing", () => {
+	it("returns the vault's own casing where the configured one differs", async () => {
+		const vault = vaultWith();
+		await vault.createFolder("media");
+		await expect(resolveFolderCasing(asVault(vault), "Media")).resolves.toBe("media");
+	});
+
+	it("returns an exactly-matching path as it is", async () => {
+		const vault = vaultWith();
+		await vault.createFolder("Media");
+		await expect(resolveFolderCasing(asVault(vault), "Media")).resolves.toBe("Media");
+	});
+
+	it("keeps the typed casing when nothing is there yet, so the folder is created as typed", async () => {
+		const vault = vaultWith();
+		await expect(resolveFolderCasing(asVault(vault), "remarkable-media")).resolves.toBe("remarkable-media");
+	});
+
+	it("resolves the segments that exist and keeps the typed tail", async () => {
+		const vault = vaultWith();
+		await vault.createFolder("work");
+		await expect(resolveFolderCasing(asVault(vault), "Work/New Notes")).resolves.toBe("work/New Notes");
+	});
+
+	it("does not merge two folders that really are two on Linux", async () => {
+		const vault = vaultWith({}, "linux");
+		await vault.createFolder("work");
+		await expect(resolveFolderCasing(asVault(vault), "Work")).resolves.toBe("Work");
+	});
+
+	it("leaves the path as typed where a file, not a folder, is in the way", async () => {
+		const vault = vaultWith({ media: "a note named like the folder" });
+		await expect(resolveFolderCasing(asVault(vault), "Media")).resolves.toBe("Media");
+	});
+
+	it("walks through a segment the index knows exactly and still folds the one after it", async () => {
+		const vault = vaultWith();
+		await vault.createFolder("Work");
+		await vault.createFolder("Work/notes");
+		await expect(resolveFolderCasing(asVault(vault), "Work/Notes")).resolves.toBe("Work/notes");
+	});
+
+	it("keeps a typed segment behind a resolved prefix where a file sits at it", async () => {
+		const vault = vaultWith({ "work/Media": "a note where the folder should be" });
+		await vault.createFolder("work");
+		await expect(resolveFolderCasing(asVault(vault), "Work/Media")).resolves.toBe("work/Media");
+	});
+
+	// The pair G15.4 pins as a throw, taken through the repair: resolved first, accepted after.
+	it("hands ensureFolder a path it accepts where the typed one threw", async () => {
+		const vault = vaultWith();
+		await vault.createFolder("media");
+		const resolved = await resolveFolderCasing(asVault(vault), "Media");
+		await expect(ensureFolder(asVault(vault), resolved)).resolves.toBeUndefined();
+		expect(vault.getAllLoadedFiles().map((f) => f.path)).toEqual(["media"]);
+	});
+});
+
+describe("resolveTagMapCasing", () => {
+	it("resolves every mapped folder and leaves the tags alone", async () => {
+		const vault = vaultWith();
+		await vault.createFolder("work");
+		const mapping = await resolveTagMapCasing(asVault(vault), { sync: "Work", read: "Reading" });
+		expect(mapping).toEqual({ sync: "work", read: "Reading" });
 	});
 });
 

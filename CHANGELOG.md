@@ -30,6 +30,14 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A folder you configured is now matched to the folder your vault really holds.** On Windows and
+  macOS, `media` and `Media` are the same folder on disk but two different names to Obsidian's file
+  list. A tag or attachments folder typed in a different capitalisation than the existing one
+  therefore failed the sync with *"Folder already exists."* (issue #73). Release 1.4.4 stopped that
+  error; this goes further: the configured name is resolved to the vault's own spelling before any
+  note or attachment path is built from it, so everything lands in the folder that exists instead
+  of alongside it. On Linux, where the two names really are two folders, nothing is merged.
+
 - **"Re-transcribe all synced notes" no longer offers to run where it would erase your transcripts.**
   On Windows and Linux the command was in the command palette even with *Apple Vision* selected —
   and Apple Vision only runs on macOS. Running it there re-fetched every notebook from reMarkable,

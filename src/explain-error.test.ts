@@ -23,6 +23,21 @@ describe("explainError", () => {
 		expect(explainError(new Error("invalid_token"), "sync")).toBe(BAD_TOKEN);
 	});
 
+	// Issue #73: Obsidian's own refusals are local, and blaming the cloud for them sent a user
+	// hunting a reMarkable API break that was a folder-name conflict in their vault.
+	it("names a vault name conflict as local, not as a cloud problem", () => {
+		for (const raw of ["Folder already exists.", "File already exists."]) {
+			const message = explainError(new Error(raw), "sync");
+			expect(message).toContain("not a reMarkable problem");
+			expect(message).not.toContain("changes their service");
+		}
+	});
+
+	it("treats a forbidden character in a configured folder the same way", () => {
+		const message = explainError(new Error('File name cannot contain ":"'), "sync");
+		expect(message).toContain("not a reMarkable problem");
+	});
+
 	// The reverse-engineered API is unversioned, so this is the plugin's whole answer to a firmware
 	// break -- it must never fall through to raw rmapi-js text.
 	it("explains an unexpected answer as a possible service change", () => {

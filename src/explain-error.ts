@@ -10,6 +10,10 @@ export type ErrorContext = "connect" | "sync";
 // unrecognised error still gets the honest "unexpected answer" message below.
 const OFFLINE_RE = /network|failed to fetch|fetch failed|enotfound|econnrefused|eai_again|getaddrinfo|err_internet_disconnected|offline/i;
 const REJECTED_RE = /\b401\b|\b403\b|unauthorized|unauthorised|forbidden|invalid[ _-]?token|token[ _-]?expired/i;
+// Obsidian's own vault refusals: "File already exists.", "Folder already exists.", and the
+// forbidden-character sentence. Without this, a local name conflict falls through to the
+// unexpected-answer message below and reads as a reMarkable API break (issue #73).
+const VAULT_RE = /already exists|cannot contain/i;
 
 /**
  * Turns whatever the cloud or the runtime threw into one plain sentence that says what to do next.
@@ -30,6 +34,13 @@ export function explainError(error: unknown, context: ErrorContext): string {
 
 	if (REJECTED_RE.test(text)) {
 		return "Your reMarkable connection is no longer valid. Open Settings → Connect and enter a new code.";
+	}
+
+	if (VAULT_RE.test(text)) {
+		return (
+			"A file or folder in your vault is in the way of what the sync tried to write. This is a local " +
+			"name conflict, not a reMarkable problem — check the folder names in the plugin settings."
+		);
 	}
 
 	return (

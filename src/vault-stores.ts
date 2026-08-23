@@ -6,14 +6,60 @@
 // This is the whole of gap G01 -- the only gap on the list where what gets destroyed is content the
 // *user* wrote. Everything a sync writes is regenerable; a clobbered open note is not.
 
-import { type App, normalizePath, type Vault } from "obsidian";
+import { type App, normalizePath, TFolder, type Vault } from "obsidian";
 import type { AttachmentStore } from "./attachment-writer";
 import type { NoteStore } from "./note-builder";
+import type { TagFolderMap } from "./tag-router";
 
 export async function ensureFolder(vault: Vault, path: string): Promise<void> {
 	const p = normalizePath(path);
 	if (vault.getFolderByPath(p)) return;
 	await vault.createFolder(p);
+}
+
+/**
+ * Resolves a configured folder path to the name the vault actually holds (issue #73).
+ *
+ * A folder setting is typed text, and on macOS and Windows the filesystem folds case while the
+ * file index does not. A user whose vault holds `media/` and whose attachments setting says
+ * `Media` therefore fails every index lookup and hits every filesystem write -- `ensureFolder`
+ * throws "Folder already exists." on a folder that is, by the only reading that matters, already
+ * there. Swallowing that throw is the wrong repair: the notes would land in `media/` while
+ * `data.json` records `Media/...`, paths the index can never resolve again (ticket 18). So the
+ * configured path is resolved to the vault's real casing *before* anything downstream is derived
+ * from it, segment by segment, keeping the typed casing for segments that do not exist yet.
+ *
+ * The adapter, not a blanket lowercase comparison, decides whether a segment is taken: on Linux
+ * nothing folds, `work/` and `Work/` really are two folders, and this function must not merge
+ * them. A segment the filesystem calls taken but the index cannot name (a file in the way, say)
+ * is left as typed -- the write that follows will refuse it loudly, which is the honest outcome.
+ */
+export async function resolveFolderCasing(vault: Vault, path: string): Promise<string> {
+	const p = normalizePath(path);
+	if (p === "/" || vault.getFolderByPath(p)) return p;
+	const segments = p.split("/");
+	let resolved = "";
+	for (let i = 0; i < segments.length; i++) {
+		const candidate = resolved === "" ? segments[i] : `${resolved}/${segments[i]}`;
+		if (vault.getFolderByPath(candidate)) {
+			resolved = candidate;
+			continue;
+		}
+		const typedTail = segments.slice(i).join("/");
+		if (!(await vault.adapter.exists(candidate))) return resolved === "" ? p : `${resolved}/${typedTail}`;
+		const lower = candidate.toLowerCase();
+		const match = vault.getAllLoadedFiles().find((f) => f instanceof TFolder && f.path.toLowerCase() === lower);
+		if (!match) return resolved === "" ? p : `${resolved}/${typedTail}`;
+		resolved = match.path;
+	}
+	return resolved;
+}
+
+/** {@link resolveFolderCasing} over every folder a tag is mapped to, for the router a sync runs on. */
+export async function resolveTagMapCasing(vault: Vault, mapping: TagFolderMap): Promise<TagFolderMap> {
+	const resolved: TagFolderMap = {};
+	for (const [tag, folder] of Object.entries(mapping)) resolved[tag] = await resolveFolderCasing(vault, folder);
+	return resolved;
 }
 
 /**
