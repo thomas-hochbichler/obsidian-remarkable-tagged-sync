@@ -85,6 +85,13 @@ workflow publishes the section as the GitHub release body. See
   folder the tag currently points at, keeping the note itself and the links to it intact, and a note
   you deleted is recreated in the new folder rather than the old one.
 
+- **A library item without a `parent` field no longer stops tag discovery.** The reMarkable cloud
+  can send an item whose metadata omits `parent` (or stores `null` there) — rmapi-js's own types
+  document the omission as meaning "root directory". The plugin rejected such an item with
+  *"reMarkable metadata field "parent" was not a string"*, and because the whole library is listed
+  in one go, that single item took down tag discovery and sync for the entire account. A missing
+  `parent` is now read as the root folder, which is what it means. (#69)
+
 ### Changed
 
 - **The status bar now shows how much of the sync is left, not where it is in a list.** It used to

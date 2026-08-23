@@ -6,6 +6,77 @@
 # The decision half of this group is `src/tag-routing-view.ts` (unit rows); the drawing half is the
 # settings tab in `src/main.ts` (vault rows). Both are asserted, because between them sits the slip
 # this seam was cut for: a plan can be right and still be drawn in the wrong order.
+#
+# A5 lives here too: it is metadata parsing on paper, but the failure it exists to prevent is
+# "Discover tags stops for the whole account" (issues #10 and #69), which is this group's story.
+
+- feature: A5
+  name: Old documents don't break the account
+  code: src/remarkable-metadata.ts
+  tier: free
+  scenarios:
+    - id: A5.1
+      scenario: Cloud metadata carries null in the four legacy sync fields, as issue #10's account did
+      expect: The document parses; the null fields read as absent rather than failing the whole listing
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > reads metadata whose legacy fields are null"
+
+    - id: A5.2
+      scenario: A legacy field carries a real value, not null
+      expect: The value survives the parse instead of being stripped with the nulls
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > keeps a legacy field that carries a real value"
+
+    - id: A5.3
+      scenario: A required field is missing entirely
+      expect: The error names the field, so the broken document can be found on the device
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > names the field when a required one is missing"
+
+    - id: A5.4
+      scenario: A required field is null
+      expect: Rejected -- null tolerance is for the four legacy fields, not a licence to ship nothing
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > rejects a required field that is null, rather than reading it as absent"
+
+    - id: A5.5
+      scenario: The metadata file does not hold a JSON object at all
+      expect: Rejected as not an object
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > rejects metadata that is not an object"
+
+    - id: A5.6
+      scenario: rmapi-js asks for metadata after the patch is applied
+      expect: getMetadata goes through the lenient parse, not the intolerant upstream schema
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "tolerateLegacyMetadata > routes getMetadata through the lenient parse"
+
+    - id: A5.7
+      scenario: An item's metadata has no parent field, which the cloud sends for root-level items (issue #69)
+      expect: The item parses with parent "", the root folder -- discovery is not stopped
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > reads a missing parent as the root directory"
+
+    - id: A5.8
+      scenario: An item's metadata has parent set to null
+      expect: Read as the root folder, same as an omitted parent
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > reads a null parent as the root directory"
+
+    - id: A5.9
+      scenario: parent is present but not a string
+      expect: Still rejected -- the root default is for absence, not for malformed values
+      layer: unit
+      file: src/remarkable-metadata.test.ts
+      test: "parseMetadataText > still rejects a parent that is present but not a string"
 
 - feature: B2
   name: Map a tag to a vault folder
