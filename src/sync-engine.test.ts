@@ -2497,6 +2497,67 @@ describe("edited sync blocks", () => {
 		expect(await noteStore.read(path)).toContain("a thought I put at the very top");
 	});
 
+	// An orphaned row still names a file, and its note is still a file the user can edit, delete, or
+	// replace. The document coming back revives the row and writes to that name -- so if the check
+	// only ever looked at active rows, revival would be a hole straight through it.
+	it("does not overwrite a note the user changed while its row was orphaned", async () => {
+		const { noteStore, index } = await syncedOnce();
+		const key = notebookSyncKey("doc-1", "sync");
+		const path = index.rows[key].notePath;
+		await noteStore.write(path, (await noteStore.read(path))!.replace("## Transcript", "## Transcript\nmine now"));
+
+		const second = { ...baseDeps(changedDoc(), { sync: "Target" }), noteStore };
+		const result = await runSync(second, { ...index, rows: { [key]: { ...index.rows[key], status: "orphaned" } } });
+
+		expect(result.editedNotesSkipped).toBe(1);
+		expect(await noteStore.read(path)).toContain("mine now");
+	});
+
+	// The same hole, reached without anyone editing anything. A rename can put one note at a path an
+	// orphaned row still claims -- possible once that row's own note was deleted, so the name is free
+	// as far as the vault is concerned. Reviving the row then writes over a note that belongs to a
+	// different row entirely, and the user loses it with nothing on screen.
+	it("does not overwrite a different synced note that now sits at an orphaned row's path", async () => {
+		const { noteStore, index } = await syncedOnce();
+		const key = notebookSyncKey("doc-1", "sync");
+		const path = index.rows[key].notePath;
+		// Another synced note, moved here by a rename: a real managed block, just not this row's.
+		await noteStore.write(path, (await noteStore.read(path))!.replace("misread text", "the other note's transcript"));
+
+		const second = { ...baseDeps(changedDoc(), { sync: "Target" }), noteStore };
+		const result = await runSync(second, { ...index, rows: { [key]: { ...index.rows[key], status: "orphaned" } } });
+
+		expect(result.notesWritten).toBe(0);
+		expect(await noteStore.read(path)).toContain("the other note's transcript");
+	});
+
+	it("still revives an orphaned row whose note is untouched", async () => {
+		// The protection must not cost the ordinary case: a document comes back, its note was left
+		// alone, and it is rewritten and made active again.
+		const { noteStore, index } = await syncedOnce();
+		const key = notebookSyncKey("doc-1", "sync");
+
+		const second = { ...baseDeps(changedDoc(), { sync: "Target" }), noteStore };
+		const result = await runSync(second, { ...index, rows: { [key]: { ...index.rows[key], status: "orphaned" } } });
+
+		expect(result.editedNotesSkipped).toBe(0);
+		expect(result.notesWritten).toBe(1);
+		expect(result.index.rows[key].status).toBe("active");
+	});
+
+	it("still re-creates an orphaned row's note when the user deleted it", async () => {
+		// Nothing on disk to protect, so nothing to mistake for an edit. An empty store is the vault
+		// after the user cleared the note out.
+		const { index } = await syncedOnce();
+		const key = notebookSyncKey("doc-1", "sync");
+
+		const second = baseDeps(changedDoc(), { sync: "Target" });
+		const result = await runSync(second, { ...index, rows: { [key]: { ...index.rows[key], status: "orphaned" } } });
+
+		expect(result.editedNotesSkipped).toBe(0);
+		expect(result.notesWritten).toBe(1);
+	});
+
 	it("leaves rows written before blockHash existed unprotected, so they catch up on one write", async () => {
 		const { noteStore, index } = await syncedOnce();
 		const key = notebookSyncKey("doc-1", "sync");
