@@ -60,6 +60,34 @@ describe("sanitizeFilenamePart", () => {
 		expect(sanitizeFilenamePart(long)).toBe("a".repeat(200));
 	});
 
+	// The cap counts UTF-8 bytes, not characters: ext4 caps a filename at 255 bytes per component,
+	// so 200 accented characters (403 bytes) or 200 CJK characters (603 bytes) fail with
+	// ENAMETOOLONG on Linux -- measured 2026-08-23. APFS and NTFS count characters and never were
+	// at risk; the three tests below are for the vault synced to a Linux machine.
+
+	it("cuts an overlong CJK title by bytes, since ext4 counts bytes -- 66 whole characters fit the cap, not 200", () => {
+		expect(sanitizeFilenamePart("日".repeat(200))).toBe("日".repeat(66));
+	});
+
+	it("cuts an overlong accented title by bytes too -- two bytes per character halves the cap", () => {
+		expect(sanitizeFilenamePart("ä".repeat(200))).toBe("ä".repeat(100));
+	});
+
+	it("keeps a character whole at the cut -- a four-byte character that does not fit is dropped, never split into half a surrogate pair", () => {
+		expect(sanitizeFilenamePart("a".repeat(197) + "\u{1D11E}x")).toBe("a".repeat(197));
+	});
+
+	it("never strands a combining mark at the cut -- if the mark does not fit, its base character goes with it", () => {
+		// U+0335 has no precomposed form, so NFC keeps it a separate mark.
+		expect(sanitizeFilenamePart("a".repeat(199) + "e̵")).toBe("a".repeat(199));
+		// The base being dropped can itself be a surrogate pair; the step back must clear both halves.
+		expect(sanitizeFilenamePart("a".repeat(195) + "\u{1D11E}̵")).toBe("a".repeat(195));
+	});
+
+	it("falls back to a dash when a title of nothing but combining marks is cut down to nothing", () => {
+		expect(sanitizeFilenamePart("̵".repeat(150))).toBe("-");
+	});
+
 	it("leaves ordinary names untouched", () => {
 		expect(sanitizeFilenamePart("My Notebook")).toBe("My Notebook");
 	});

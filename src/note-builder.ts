@@ -76,8 +76,12 @@ const NON_BREAKING_SPACES = /[\u00A0\u202F]/g;
 // platform on purpose: a vault synced between a Mac and a PC has to produce the same filename on
 // both, and the alternative is one note per machine.
 const WINDOWS_RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-// Leaves room for a " — Page 999" or " (abcdef)" suffix and the ".md" extension under typical filesystem limits.
-const MAX_BASENAME_LENGTH = 200;
+// Leaves room for a " — Page 999" or " (abcdef)" suffix and the ".md" extension under typical
+// filesystem limits. Counted in UTF-8 bytes, not characters: ext4 caps a name component at 255
+// bytes, so 200 accented or CJK characters (403 / 603 bytes) fail with ENAMETOOLONG on Linux --
+// measured 2026-08-23. APFS counts 255 characters and NTFS 255 UTF-16 units; both are looser, so
+// the byte count is the one cap that holds everywhere.
+const MAX_BASENAME_BYTES = 200;
 
 // No begin marker: the managed block always starts at the top of the body (`buildNoteContent` writes
 // frontmatter, block, then whatever follows), so marking the start said nothing the position did not
@@ -125,7 +129,7 @@ export function sanitizeFilenamePart(name: string): string {
 		.replace(NON_BREAKING_SPACES, " ")
 		.normalize("NFC")
 		.trim();
-	const capped = sanitized.length > MAX_BASENAME_LENGTH ? sanitized.slice(0, MAX_BASENAME_LENGTH).trim() : sanitized;
+	const capped = capUtf8Bytes(sanitized, MAX_BASENAME_BYTES).trim();
 
 	// Windows rejects a name ending in a dot, and `trim()` does not remove one. A title that is
 	// nothing but dots would leave an empty name -- and a filename starting with "." is hidden --
@@ -134,6 +138,28 @@ export function sanitizeFilenamePart(name: string): string {
 	const base = withoutTrailingDots === "" ? "-" : withoutTrailingDots;
 
 	return WINDOWS_RESERVED_NAMES.test(base) ? `${base}-` : base;
+}
+
+/**
+ * Cuts `name` to at most `maxBytes` of UTF-8. The cut lands between characters: iterating code
+ * points keeps surrogate pairs whole, and a combining mark that does not fit takes its base
+ * character with it -- a stranded mark at the end of a filename renders as garbage.
+ */
+function capUtf8Bytes(name: string, maxBytes: number): string {
+	let bytes = 0;
+	let cut = 0;
+	for (const ch of name) {
+		const cp = ch.codePointAt(0)!;
+		bytes += cp <= 0x7f ? 1 : cp <= 0x7ff ? 2 : cp <= 0xffff ? 3 : 4;
+		if (bytes > maxBytes) break;
+		cut += ch.length;
+	}
+	if (cut >= name.length) return name;
+	while (cut > 0 && /\p{M}/u.test(String.fromCodePoint(name.codePointAt(cut)!))) {
+		const before = name.charCodeAt(cut - 1);
+		cut -= before >= 0xdc00 && before <= 0xdfff ? 2 : 1;
+	}
+	return name.slice(0, cut);
 }
 
 /** `<notebook>` for a notebook-level note, `<notebook> — Page N` for a page-level one. */
