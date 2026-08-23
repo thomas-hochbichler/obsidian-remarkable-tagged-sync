@@ -45,6 +45,26 @@ describe("parseMetadataText", () => {
 	it("rejects metadata that is not an object", () => {
 		expect(() => parseMetadataText('"not an object"')).toThrow(/object/);
 	});
+
+	// Issue #69: the cloud can omit `parent` -- rmapi-js's own Entry type documents it as
+	// '"" (empty string) for the root directory ... or omitted for root'.
+	it("reads a missing parent as the root directory", () => {
+		const { parent: _dropped, ...rest } = JSON.parse(LEGACY_NULLS) as Record<string, unknown>;
+
+		expect(parseMetadataText(JSON.stringify(rest)).parent).toBe("");
+	});
+
+	it("reads a null parent as the root directory", () => {
+		const text = JSON.stringify({ ...JSON.parse(LEGACY_NULLS), parent: null });
+
+		expect(parseMetadataText(text).parent).toBe("");
+	});
+
+	it("still rejects a parent that is present but not a string", () => {
+		const text = JSON.stringify({ ...JSON.parse(LEGACY_NULLS), parent: 7 });
+
+		expect(() => parseMetadataText(text)).toThrow(/parent/);
+	});
 });
 
 describe("tolerateLegacyMetadata", () => {

@@ -34,6 +34,11 @@ export function parseMetadataText(text: string): Metadata {
 		if (value !== null) fields[key] = value;
 	}
 
+	// The cloud omits `parent` (or stores null) on some root-level items; rmapi-js's Entry type
+	// documents `parent` as '"" (empty string) for the root directory ... or omitted for root',
+	// even though its schema rejects the omission (issue #69).
+	if (fields.parent === undefined) fields.parent = "";
+
 	for (const key of ["visibleName", "lastModified", "parent"]) {
 		if (typeof fields[key] !== "string") throw new Error(`reMarkable metadata field "${key}" was not a string`);
 	}
