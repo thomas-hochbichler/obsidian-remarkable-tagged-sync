@@ -1,0 +1,228 @@
+{
+	"schema": 1,
+	"commit": "0567cc4cd4ff3efc20b80568772c1790235ee11a",
+	"runId": "32659983194",
+	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/32659983194",
+	"parts": {
+		"contract": {
+			"status": "unknown",
+			"measuredAt": "2026-08-23T19:05:40.986Z",
+			"detail": {
+				"reason": "job did not report"
+			}
+		},
+		"ocr": {
+			"status": "pass",
+			"measuredAt": "2026-08-23T19:05:25.738Z",
+			"lastMeasuredAt": "2026-08-23T19:05:25.738Z",
+			"detail": {
+				"backends": {
+					"openrouter/anthropic/claude-sonnet-5": {
+						"status": "pass",
+						"pages": {
+							"10": {
+								"cer": 0.007134363852556481,
+								"structure": {}
+							},
+							"11": {
+								"cer": 0.034782608695652174,
+								"structure": {}
+							},
+							"12": {
+								"cer": 0.014005602240896359,
+								"structure": {}
+							},
+							"13": {
+								"cer": 0.18584070796460178,
+								"structure": {}
+							},
+							"14": {
+								"cer": 0.18974358974358974,
+								"structure": {}
+							},
+							"01": {
+								"cer": 0,
+								"structure": {}
+							},
+							"02": {
+								"cer": 0,
+								"structure": {}
+							},
+							"03": {
+								"cer": 0.00510204081632653,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"04": {
+								"cer": 0.009615384615384616,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"05": {
+								"cer": 0.03067484662576687,
+								"structure": {
+									"table": "ok"
+								}
+							},
+							"06": {
+								"cer": 0.023809523809523808,
+								"structure": {}
+							},
+							"07": {
+								"cer": 0,
+								"structure": {}
+							},
+							"08": {
+								"cer": 0.5208333333333334,
+								"structure": {}
+							},
+							"09": {
+								"cer": 0,
+								"structure": {}
+							}
+						},
+						"medianCer": 0.009615384615384616
+					},
+					"openrouter/openai/gpt-4o": {
+						"status": "pass",
+						"pages": {
+							"10": {
+								"cer": 0.011890606420927468,
+								"structure": {}
+							},
+							"11": {
+								"cer": 0.02608695652173913,
+								"structure": {}
+							},
+							"12": {
+								"cer": 0.022408963585434174,
+								"structure": {}
+							},
+							"13": {
+								"cer": 0.14601769911504425,
+								"structure": {}
+							},
+							"14": {
+								"cer": 0.046153846153846156,
+								"structure": {}
+							},
+							"01": {
+								"cer": 0,
+								"structure": {}
+							},
+							"02": {
+								"cer": 0.024,
+								"structure": {}
+							},
+							"03": {
+								"cer": 0.01020408163265306,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"04": {
+								"cer": 0.01282051282051282,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"05": {
+								"cer": 0.03067484662576687,
+								"structure": {
+									"table": "ok"
+								}
+							},
+							"06": {
+								"cer": 0.30952380952380953,
+								"structure": {}
+							},
+							"07": {
+								"cer": 0,
+								"structure": {}
+							},
+							"08": {
+								"cer": 0.3125,
+								"structure": {}
+							},
+							"09": {
+								"cer": 0,
+								"structure": {}
+							}
+						},
+						"medianCer": 0.022408963585434174
+					},
+					"openrouter/google/gemini-2.5-flash": {
+						"status": "pass",
+						"pages": {
+							"10": {
+								"cer": 0.01070154577883472,
+								"structure": {}
+							},
+							"11": {
+								"cer": 0.034782608695652174,
+								"structure": {}
+							},
+							"12": {
+								"cer": 0.0196078431372549,
+								"structure": {}
+							},
+							"13": {
+								"cer": 0.11504424778761062,
+								"structure": {}
+							},
+							"14": {
+								"cer": 0.19487179487179487,
+								"structure": {}
+							},
+							"01": {
+								"cer": 0,
+								"structure": {}
+							},
+							"02": {
+								"cer": 0.012,
+								"structure": {}
+							},
+							"03": {
+								"cer": 0.015306122448979591,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"04": {
+								"cer": 0,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"05": {
+								"cer": 0.049079754601226995,
+								"structure": {
+									"table": "ok"
+								}
+							},
+							"06": {
+								"cer": 0.08333333333333333,
+								"structure": {}
+							},
+							"07": {
+								"cer": 0.00954653937947494,
+								"structure": {}
+							},
+							"08": {
+								"cer": 0.1875,
+								"structure": {}
+							},
+							"09": {
+								"cer": 0,
+								"structure": {}
+							}
+						},
+						"medianCer": 0.015306122448979591
+					}
+				}
+			}
+		}
+	}
+}
