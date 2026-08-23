@@ -44,7 +44,8 @@ jobs:
       - name: Measure the reference pages
         run: npm run nightly:ocr
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Accepts either secret name: the environment was first set up as OPENROUTER_API.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || secrets.OPENROUTER_API }}
       - name: Keep the part for the verdict job
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -63,10 +64,15 @@ jobs:
     if: always() && github.repository == 'thomas-hochbichler/obsidian-remarkable-tagged-sync'
     needs: [ocr]
     runs-on: ubuntu-latest
+    # For NIGHTLY_DEPLOY_KEY: main's ruleset requires pull requests, and the GitHub Actions app
+    # cannot be a bypass actor on a personal repo -- a deploy key can. The key is scoped to this
+    # one repo, lives only in this environment, and pushing with it is the one thing it exists for.
+    environment: nightly
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
+          ssh-key: ${{ secrets.NIGHTLY_DEPLOY_KEY }}
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: part-ocr
