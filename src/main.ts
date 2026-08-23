@@ -47,7 +47,7 @@ import {
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
-import { createAttachmentStore, createNoteStore } from "./vault-stores";
+import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 import { visionBackend } from "./vision-register";
 import { visionPlatformSupported } from "./vision-ocr-runtime";
@@ -426,10 +426,15 @@ export default class TaggedSyncPlugin extends Plugin {
 			const result = await runSync(
 				{
 					api,
-					tagRouter: new TagRouter(this.data.tagFolderMap),
+					// Both configured folder sets resolve to the vault's real casing here, before any
+					// path is derived from them -- see resolveFolderCasing for why (issue #73).
+					tagRouter: new TagRouter(await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap)),
 					noteStore: createNoteStore(this.app),
 					attachmentStore: createAttachmentStore(this.app.vault),
-					attachmentsFolder: normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
+					attachmentsFolder: await resolveFolderCasing(
+						this.app.vault,
+						normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
+					),
 					ocrBackend: backend,
 					marginNotes: this.data.marginNotes,
 					now: () => this.nowIso(),

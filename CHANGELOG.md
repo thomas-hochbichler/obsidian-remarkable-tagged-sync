@@ -30,6 +30,14 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A folder you configured is now matched to the folder your vault really holds.** On Windows and
+  macOS, `media` and `Media` are the same folder on disk but two different names to Obsidian's file
+  list. A tag or attachments folder typed in a different capitalisation than the existing one
+  therefore failed the sync with *"Folder already exists."* (issue #73). Release 1.4.4 stopped that
+  error; this goes further: the configured name is resolved to the vault's own spelling before any
+  note or attachment path is built from it, so everything lands in the folder that exists instead
+  of alongside it. On Linux, where the two names really are two folders, nothing is merged.
+
 - **"Re-transcribe all synced notes" no longer offers to run where it would erase your transcripts.**
   On Windows and Linux the command was in the command palette even with *Apple Vision* selected —
   and Apple Vision only runs on macOS. Running it there re-fetched every notebook from reMarkable,
@@ -123,6 +131,19 @@ workflow publishes the section as the GitHub release body. See
   measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
   so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
   the full name, the tag, the page within the notebook, and what is happening to it right now.
+
+## [1.4.4] - 2026-08-23
+
+### Fixed
+
+- **An attachments or tag folder that already exists no longer fails the sync.** When the folder
+  name in the settings differed from the one on disk only in a way the filesystem ignores —
+  letter case, on Windows and macOS — the plugin's lookup missed it, the create ran into it, and
+  every sync stopped with *"Folder already exists."*. An existing folder is now simply used. (#73)
+- **A local vault name conflict is no longer blamed on the reMarkable cloud.** The error above
+  surfaced as *"reMarkable's cloud answered in a way this plugin did not expect"*, sending users
+  hunting an API problem that was a folder conflict in their own vault. Obsidian's own refusals
+  now get a message that says the problem is local and points at the folder settings. (#73)
 
 ## [1.4.3] - 2026-08-23
 

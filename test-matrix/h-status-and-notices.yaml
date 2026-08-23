@@ -470,3 +470,22 @@
       layer: unit
       file: src/sync-notices.test.ts
       test: "platformGapNotice > promises nothing about a fix"
+
+- feature: H9
+  name: Local vault refusals named as local
+  code: src/explain-error.ts
+  tier: free
+  scenarios:
+    - id: H9.1
+      scenario: A sync fails on Obsidian's own "already exists" refusal
+      expect: The message says the conflict is local and points at the folder settings -- not at a reMarkable service change the user cannot fix (issue #73)
+      layer: unit
+      file: src/explain-error.test.ts
+      test: "explainError > names a vault name conflict as local, not as a cloud problem"
+
+    - id: H9.2
+      scenario: A configured folder carries a character the platform forbids
+      expect: The same local message -- the refusal is Obsidian's, whatever its exact sentence
+      layer: unit
+      file: src/explain-error.test.ts
+      test: "explainError > treats a forbidden character in a configured folder the same way"

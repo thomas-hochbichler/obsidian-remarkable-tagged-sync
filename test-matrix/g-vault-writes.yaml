@@ -197,7 +197,7 @@
 
     - id: G15.4
       scenario: The vault already holds work/ and a tag routes to Work/
-      expect: "Throws \"Folder already exists.\" on the first sync after the mapping, and deliberately still does. Swallowing it would write the note into the differently-cased folder the filesystem resolves to, leave data.json holding a path the index can never find, and duplicate the note on the next sync -- silent damage in place of a loud failure. The real repair resolves the mapped folder to the vault's actual casing where the path is built; see ticket 18"
+      expect: "Throws \"Folder already exists.\" on the first sync after the mapping, and deliberately still does. Swallowing it would write the note into the differently-cased folder the filesystem resolves to, leave data.json holding a path the index can never find, and duplicate the note on the next sync -- silent damage in place of a loud failure. The real repair resolves the mapped folder to the vault's actual casing where the path is built; that is G16, and this row is what it protects (ticket 18)"
       layer: unit
       file: src/vault-stores.test.ts
       test: "ensureFolder > throws where the vault already holds the same folder under a different case"
@@ -222,3 +222,78 @@
       layer: unit
       file: src/vault-stores.test.ts
       test: "each store's own ensureFolder > creates the attachments folder in the vault the attachment store was built on"
+
+- feature: G16
+  name: Configured folders resolve to the vault's real casing
+  code: src/vault-stores.ts
+  tier: free
+  scenarios:
+    - id: G16.1
+      scenario: The attachments setting says Media and the vault holds media/
+      expect: The path the sync builds on is media -- the folder that exists -- so G15.4's throw is never provoked (issue #73)
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > returns the vault's own casing where the configured one differs"
+
+    - id: G16.2
+      scenario: The configured name matches the vault exactly
+      expect: Returned as it is, from the index alone -- the filesystem is never asked
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > returns an exactly-matching path as it is"
+
+    - id: G16.3
+      scenario: No folder of that name exists in any casing
+      expect: The typed casing survives, so the folder the sync then creates is the one the user asked for
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > keeps the typed casing when nothing is there yet, so the folder is created as typed"
+
+    - id: G16.4
+      scenario: Work/New Notes is configured and only work/ exists
+      expect: The existing prefix takes the vault's casing, the missing tail keeps the typed one -- resolution is per segment, not all-or-nothing
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > resolves the segments that exist and keeps the typed tail"
+
+    - id: G16.5
+      scenario: The same pair on Linux, where work/ and Work/ really are two folders
+      expect: No merge. The adapter is the oracle for whether a name is taken, so folding happens exactly where the filesystem folds and nowhere else
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > does not merge two folders that really are two on Linux"
+
+    - id: G16.6
+      scenario: A file, not a folder, sits at the configured name
+      expect: The path stays as typed and the write that follows refuses it loudly -- resolving onto a file would trade a visible error for a wrong one
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > leaves the path as typed where a file, not a folder, is in the way"
+
+    - id: G16.7
+      scenario: The exact pair G15.4 pins as a throw, taken through the repair first
+      expect: ensureFolder accepts the resolved path and creates nothing -- the throw stays pinned and is simply never provoked
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > hands ensureFolder a path it accepts where the typed one threw"
+
+    - id: G16.8
+      scenario: A whole tag-to-folder mapping is resolved for the router a sync runs on
+      expect: Every folder value resolves, every tag key survives -- the mapping the sync sees is the mapping the vault can honour
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveTagMapCasing > resolves every mapped folder and leaves the tags alone"
+
+    - id: G16.9
+      scenario: The first segment matches the index exactly, the second differs in case
+      expect: The exact segment passes through the index alone and the walk continues -- resolution is per segment in both directions
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > walks through a segment the index knows exactly and still folds the one after it"
+
+    - id: G16.10
+      scenario: A file sits where a segment behind an already-resolved prefix should be
+      expect: The prefix keeps its resolved casing, the blocked segment keeps the typed one, and the write that follows refuses it loudly
+      layer: unit
+      file: src/vault-stores.test.ts
+      test: "resolveFolderCasing > keeps a typed segment behind a resolved prefix where a file sits at it"
