@@ -1,0 +1,64 @@
+{
+	"deviceToken": "frozen-device-token",
+	"tagFolderMap": {
+		"sync": "Inbox",
+		"work": "Work/Notes",
+		"read": "Reading"
+	},
+	"syncIndex": {
+		"rootHash": "root-legacy-state",
+		"mappings": "2:[[\"read\",\"Reading\"],[\"sync\",\"Inbox\"],[\"work\",\"Work/Notes\"]]",
+		"rows": {
+			"doc-notes:sync": {
+				"syncKey": "doc-notes:sync",
+				"docId": "doc-notes",
+				"pageId": null,
+				"tag": "sync",
+				"entryHash": "h-doc-notes",
+				"pageHash": null,
+				"notePath": "Inbox/Field Notes.md",
+				"status": "active",
+				"syncedAt": "2026-01-01T00:00:00.000Z",
+				"renderVersion": 23,
+				"blockHash": "7e2fef62"
+			},
+			"doc-notes:work": {
+				"syncKey": "doc-notes:work",
+				"docId": "doc-notes",
+				"pageId": null,
+				"tag": "work",
+				"entryHash": "h-doc-notes",
+				"pageHash": null,
+				"notePath": "Work/Notes/Field Notes.md",
+				"status": "active",
+				"syncedAt": "2026-01-01T00:00:00.000Z",
+				"renderVersion": 23,
+				"blockHash": "7e2fef62"
+			},
+			"doc-paper:read": {
+				"syncKey": "doc-paper:read",
+				"docId": "doc-paper",
+				"pageId": null,
+				"tag": "read",
+				"entryHash": "h-doc-paper",
+				"pageHash": null,
+				"notePath": "Reading/Reading List.md",
+				"status": "active",
+				"syncedAt": "2026-01-01T00:00:00.000Z",
+				"renderVersion": 23,
+				"blockHash": "94bed6a5"
+			}
+		}
+	},
+	"ocrBackend": "off",
+	"llmProviders": {},
+	"ocrUnavailableNoticeShown": false,
+	"autoSync": {
+		"enabled": false,
+		"intervalHours": 6,
+		"autoTranscribeMetered": false
+	},
+	"lastSyncAt": "2026-01-01T00:00:00.000Z",
+	"attachmentsFolder": "tagged-sync/attachments",
+	"marginNotes": false
+}
