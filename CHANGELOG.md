@@ -132,6 +132,19 @@ workflow publishes the section as the GitHub release body. See
   so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
   the full name, the tag, the page within the notebook, and what is happening to it right now.
 
+## [1.4.4] - 2026-08-23
+
+### Fixed
+
+- **An attachments or tag folder that already exists no longer fails the sync.** When the folder
+  name in the settings differed from the one on disk only in a way the filesystem ignores —
+  letter case, on Windows and macOS — the plugin's lookup missed it, the create ran into it, and
+  every sync stopped with *"Folder already exists."*. An existing folder is now simply used. (#73)
+- **A local vault name conflict is no longer blamed on the reMarkable cloud.** The error above
+  surfaced as *"reMarkable's cloud answered in a way this plugin did not expect"*, sending users
+  hunting an API problem that was a folder conflict in their own vault. Obsidian's own refusals
+  now get a message that says the problem is local and points at the folder settings. (#73)
+
 ## [1.4.3] - 2026-08-23
 
 ### Fixed
