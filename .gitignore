@@ -5,6 +5,8 @@ coverage/
 data.json
 # The frozen legacy state IS a committed data.json -- the sync index the upgrade test replays.
 !test-fixtures/legacy-state/vault/.obsidian/plugins/remarkable-tagged-sync/data.json
+# The nightly's local part files; only the merged .nightly-verdict.json is ever committed.
+nightly-parts/
 test/
 docs/_archive/
 .DS_Store

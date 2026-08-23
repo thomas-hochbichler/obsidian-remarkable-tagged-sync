@@ -28,6 +28,9 @@ export default defineConfig(
 		"**/*.cts",
 		"**/*.mts",
 		"**/scripts/**",
+		// The nightly's runner and instrument: Node CLI code like `scripts/`, not plugin code, so
+		// the Obsidian rules (no console, no fetch) do not apply to it.
+		"test-support/**",
 		"**/docs/**",
 		"test-fixtures/**",
 		"test-stubs/**",

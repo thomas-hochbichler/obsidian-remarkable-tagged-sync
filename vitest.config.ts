@@ -11,7 +11,10 @@ export default defineConfig({
 		// `test-stubs/` is here for the fake Obsidian's own tests. A test double with behaviour --
 		// this one throws, folds case and normalises paths -- is code, and untested code in a test
 		// double is the failure mode a fake exists to prevent.
-		include: ["src/**/*.test.ts", "pro/**/*.test.ts", "scripts/**/*.test.mjs", "test-stubs/**/*.test.ts"],
+		// `test-support/` is here for the nightly's measuring instrument (cer.ts): an unverified
+		// measuring instrument is worse than none. Like `scripts/`, it is not product code and stays
+		// outside the coverage numbers below.
+		include: ["src/**/*.test.ts", "pro/**/*.test.ts", "scripts/**/*.test.mjs", "test-stubs/**/*.test.ts", "test-support/**/*.test.ts"],
 
 		coverage: {
 			provider: "v8",
