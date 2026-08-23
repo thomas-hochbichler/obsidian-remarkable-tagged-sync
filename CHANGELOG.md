@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-08-23
+
 ### Fixed
 
 - **A library item without a `parent` field no longer stops tag discovery.** The reMarkable cloud
