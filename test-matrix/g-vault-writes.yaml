@@ -108,6 +108,41 @@
       file: src/vault-stores.test.ts
       test: "choosing a path for a new note, against a vault that folds case > still takes the plain name on Linux, where nothing folds and nothing is in the way"
 
+# Only the orphan half of G3 is claimed here. The rest of the edited-block suite predates the matrix
+# and is still on the shrink-only allowlist; these four rows are new tests, so they need rows.
+- feature: G3
+  name: Edited notes are never overwritten
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: G3.1
+      scenario: The document was untagged, the user then corrected the note by hand, and the document comes back
+      expect: "The note is left alone and counted as skipped. Orphaning is index-only -- the note stays an ordinary file the whole time, so the user editing it is the same act it always was"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "edited sync blocks > does not overwrite a note the user changed while its row was orphaned"
+
+    - id: G3.2
+      scenario: An orphaned row's own note was deleted, another synced note was renamed onto that path, and the document comes back
+      expect: "Nothing is written. The revived row would otherwise overwrite a note belonging to a different row -- a note the user loses with nothing on screen"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "edited sync blocks > does not overwrite a different synced note that now sits at an orphaned row's path"
+
+    - id: G3.3
+      scenario: A document comes back and its note was left untouched
+      expect: "It is rewritten and the row goes active again. The protection must not cost the ordinary revival"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "edited sync blocks > still revives an orphaned row whose note is untouched"
+
+    - id: G3.4
+      scenario: A document comes back and the user had deleted its note
+      expect: "It is written again. Nothing on disk is nothing to protect, and refusing here would strand a note no sync could repair"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "edited sync blocks > still re-creates an orphaned row's note when the user deleted it"
+
 - feature: G10
   name: Moves preserve backlinks
   code: src/vault-stores.ts

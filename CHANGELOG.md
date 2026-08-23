@@ -44,6 +44,16 @@ workflow publishes the section as the GitHub release body. See
   offering itself, the same question the settings dropdown asks before greying an option out. If
   this already happened to you, running the command once on a Mac writes the transcripts back.
 
+- **A note is no longer overwritten when a document you had removed comes back.** When a notebook
+  loses its tag or leaves your reMarkable, the plugin stops tracking its note but leaves the note
+  itself in your vault. From that moment it is an ordinary file: you can correct it, rename another
+  note over it, or delete it. If the document later came back, the plugin wrote over whatever was at
+  that path — without the usual check that the note is still the one it wrote.
+
+  That check now runs for these notes too. A note you changed by hand is left alone and counted in
+  the *"N notes were not updated because they were edited"* notice, exactly as it is during a normal
+  sync. A note that is untouched is still refreshed, and one you deleted is still written again.
+
 - **Two syncs can no longer start at once and write over each other's bookkeeping.** Pressing *Sync
   now* twice in quick succession — or confirming a *Re-transcribe synced notes* dialog that had been
   left open while a sync started in the meantime — could start a second run on top of the first.
@@ -113,6 +123,17 @@ workflow publishes the section as the GitHub release body. See
   measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
   so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
   the full name, the tag, the page within the notebook, and what is happening to it right now.
+
+## [1.4.3] - 2026-08-23
+
+### Fixed
+
+- **A library item without a `parent` field no longer stops tag discovery.** The reMarkable cloud
+  can send an item whose metadata omits `parent` (or stores `null` there) — rmapi-js's own types
+  document the omission as meaning "root directory". The plugin rejected such an item with
+  *"reMarkable metadata field "parent" was not a string"*, and because the whole library is listed
+  in one go, that single item took down tag discovery and sync for the entire account. A missing
+  `parent` is now read as the root folder, which is what it means. (#69)
 
 ## [1.4.2] - 2026-08-15
 

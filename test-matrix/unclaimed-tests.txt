@@ -773,12 +773,6 @@ src/remarkable-auth.test.ts :: RemarkableAuth > is not connected without a devic
 src/remarkable-auth.test.ts :: RemarkableAuth > obtains a fresh session token from the persisted device token
 src/remarkable-auth.test.ts :: RemarkableAuth > re-calls auth on every session request instead of caching
 src/remarkable-auth.test.ts :: RemarkableAuth > throws when requesting a session without connecting first
-src/remarkable-metadata.test.ts :: parseMetadataText > keeps a legacy field that carries a real value
-src/remarkable-metadata.test.ts :: parseMetadataText > names the field when a required one is missing
-src/remarkable-metadata.test.ts :: parseMetadataText > reads metadata whose legacy fields are null
-src/remarkable-metadata.test.ts :: parseMetadataText > rejects a required field that is null, rather than reading it as absent
-src/remarkable-metadata.test.ts :: parseMetadataText > rejects metadata that is not an object
-src/remarkable-metadata.test.ts :: tolerateLegacyMetadata > routes getMetadata through the lenient parse
 src/remarkable-tags.test.ts :: collectTagNames > dedupes and sorts tags across notebooks, docs, and pages
 src/remarkable-tags.test.ts :: enumerateNotebookTags > handles legacy string[] tags
 src/remarkable-tags.test.ts :: enumerateNotebookTags > handles pages: null without crashing
