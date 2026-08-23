@@ -1,0 +1,314 @@
+{
+	"coverPageNumber": -1,
+	"documentMetadata": {},
+	"extraMetadata": {
+		"LastActiveTool": "secondary",
+		"LastBallpointColor": "Black",
+		"LastBallpointSize": "2",
+		"LastBallpointv2Color": "Black",
+		"LastBallpointv2Size": "3",
+		"LastCalligraphyColor": "Green",
+		"LastCalligraphySize": "3",
+		"LastClearPageColor": "Black",
+		"LastClearPageSize": "2",
+		"LastEraseSectionColor": "Black",
+		"LastEraseSectionSize": "2",
+		"LastEraserColor": "Black",
+		"LastEraserSize": "2",
+		"LastEraserTool": "Eraser",
+		"LastFinelinerColor": "Black",
+		"LastFinelinerSize": "2",
+		"LastFinelinerv2Color": "Black",
+		"LastFinelinerv2Size": "1",
+		"LastHighlighterColor": "Black",
+		"LastHighlighterSize": "2",
+		"LastHighlighterv2Color": "HighlighterYellow",
+		"LastHighlighterv2Size": "1",
+		"LastMarkerColor": "Black",
+		"LastMarkerSize": "2",
+		"LastMarkerv2Color": "Red",
+		"LastMarkerv2Size": "3",
+		"LastPaintbrushColor": "Black",
+		"LastPaintbrushSize": "2",
+		"LastPaintbrushv2Color": "Black",
+		"LastPaintbrushv2Size": "3",
+		"LastPen": "Finelinerv2",
+		"LastPencilColor": "Black",
+		"LastPencilSize": "2",
+		"LastPencilv2Color": "Black",
+		"LastPencilv2Size": "3",
+		"LastReservedPenColor": "Black",
+		"LastReservedPenSize": "2",
+		"LastSelectionToolColor": "Black",
+		"LastSelectionToolSize": "2",
+		"LastShadingMarkerColor": "ArgbCode",
+		"LastShadingMarkerColorCode": "1075912220",
+		"LastShadingMarkerSize": "3",
+		"LastSharpPencilColor": "Black",
+		"LastSharpPencilSize": "2",
+		"LastSharpPencilv2Color": "Gray",
+		"LastSharpPencilv2Size": "3",
+		"LastSolidPenColor": "Black",
+		"LastSolidPenSize": "2",
+		"LastZoomToolColor": "Black",
+		"LastZoomToolSize": "2",
+		"SecondaryBallpointv2Color": "Green",
+		"SecondaryBallpointv2Size": "1",
+		"SecondaryCalligraphyColor": "Red",
+		"SecondaryCalligraphySize": "3",
+		"SecondaryFinelinerv2Color": "Red",
+		"SecondaryFinelinerv2Size": "2",
+		"SecondaryHighlighterv2Color": "ArgbCode",
+		"SecondaryHighlighterv2ColorCode": "4294090495",
+		"SecondaryHighlighterv2Size": "1",
+		"SecondaryMarkerv2Color": "Blue",
+		"SecondaryMarkerv2Size": "1",
+		"SecondaryPaintbrushv2Color": "Blue",
+		"SecondaryPaintbrushv2Size": "3",
+		"SecondaryPen": "Finelinerv2",
+		"SecondaryPencilv2Color": "Black",
+		"SecondaryPencilv2Size": "2",
+		"SecondaryShadingMarkerColor": "ArgbCode",
+		"SecondaryShadingMarkerColorCode": "2160099282",
+		"SecondaryShadingMarkerSize": "2",
+		"SecondarySharpPencilv2Color": "Black",
+		"SecondarySharpPencilv2Size": "1"
+	},
+	"fileType": "notebook",
+	"fontName": "",
+	"lineHeight": 100,
+	"orientation": "portrait",
+	"pageCount": 14,
+	"textAlignment": "justify",
+	"textScale": 1,
+	"cPages": {
+		"lastOpened": {
+			"timestamp": "2:16",
+			"value": "2a7a7542-108b-4487-a600-5da0ea2013dd"
+		},
+		"original": {
+			"timestamp": "0:0",
+			"value": -1
+		},
+		"pages": [
+			{
+				"id": "4a3b282d-ddc0-4731-a663-8a4b29a8241f",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "ba"
+				},
+				"template": {
+					"timestamp": "2:4",
+					"value": "P Margin medium"
+				},
+				"scrollTime": {
+					"timestamp": "2:1",
+					"value": "2026-08-23T13:22:41Z"
+				},
+				"verticalScroll": {
+					"timestamp": "2:1",
+					"value": 2869
+				},
+				"modifed": "1787491110308"
+			},
+			{
+				"id": "81afb05f-3ae2-4ff4-9b07-74b9040f52d1",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bb"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"scrollTime": {
+					"timestamp": "2:1",
+					"value": "2026-08-23T14:22:12Z"
+				},
+				"verticalScroll": {
+					"timestamp": "2:1",
+					"value": 2622
+				},
+				"modifed": "1787491438868"
+			},
+			{
+				"id": "fb52cdf4-6bd7-4b15-93cb-dcf51f1303af",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bc"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"modifed": "1787495110117"
+			},
+			{
+				"id": "e433a47b-7e8c-45b0-a1f4-a8d76083cf59",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bd"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"modifed": "1787495400056"
+			},
+			{
+				"id": "dee8586c-d0c7-40c0-a4d1-9c155a59b83f",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "be"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"modifed": "1787495580414"
+			},
+			{
+				"id": "77f06450-0fc0-43d7-8afa-af5c6cf95c5a",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bf"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"modifed": "1787495777939"
+			},
+			{
+				"id": "6fca75c4-eacd-46e4-817d-5e2c45334b6f",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bg"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"modifed": "1787496105810"
+			},
+			{
+				"id": "ce841c54-de09-41f3-8b9d-d4ac513c7362",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bh"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"modifed": "1787496238310"
+			},
+			{
+				"id": "caa614e0-602d-48ba-923a-890d559084e6",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bi"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Margin medium"
+				},
+				"modifed": "1787496271313"
+			},
+			{
+				"id": "1d1eb4f0-f2ab-452b-bbff-7c2896978831",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bj"
+				},
+				"template": {
+					"timestamp": "2:3",
+					"value": "P Lines small"
+				},
+				"modifed": "1787496928751"
+			},
+			{
+				"id": "85535ff3-2a27-4998-a7c1-67b8d054b6f7",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bk"
+				},
+				"template": {
+					"timestamp": "2:3",
+					"value": "P Lines medium"
+				},
+				"modifed": "1787497629766"
+			},
+			{
+				"id": "187b4222-4347-45db-810d-b2771eecec4d",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bl"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Lines medium"
+				},
+				"modifed": "1787497958299"
+			},
+			{
+				"id": "c08ba447-538a-46f9-969f-7095497d0bc0",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bm"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Lines medium"
+				},
+				"modifed": "1787498183291"
+			},
+			{
+				"id": "2a7a7542-108b-4487-a600-5da0ea2013dd",
+				"idx": {
+					"timestamp": "2:2",
+					"value": "bn"
+				},
+				"template": {
+					"timestamp": "2:2",
+					"value": "P Lines medium"
+				},
+				"scrollTime": {
+					"timestamp": "2:1",
+					"value": "2026-08-23T15:23:42Z"
+				},
+				"verticalScroll": {
+					"timestamp": "2:1",
+					"value": 1961
+				},
+				"modifed": "1787498618833"
+			}
+		],
+		"uuids": [
+			{
+				"first": "f4451bbf-854e-5858-9017-1c0c149fa3b0",
+				"second": 2
+			},
+			{
+				"first": "0f1cd9e2-7199-5c4d-bcba-d52ebbb576eb",
+				"second": 1
+			}
+		]
+	},
+	"customZoomCenterX": 0,
+	"customZoomCenterY": 936,
+	"customZoomOrientation": "portrait",
+	"customZoomPageHeight": 1872,
+	"customZoomPageWidth": 1404,
+	"customZoomScale": 1,
+	"formatVersion": 2,
+	"pageTags": [],
+	"sizeInBytes": "1646050",
+	"zoomMode": "bestFit",
+	"tags": [
+		{
+			"name": "sync",
+			"timestamp": 1787498651423
+		}
+	]
+}
