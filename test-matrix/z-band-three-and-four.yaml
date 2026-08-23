@@ -163,21 +163,21 @@
   code: src/remarkable-metadata.ts
   tier: free
   scenarios:
-    - id: A5.1
+    - id: A5.10
       scenario: rmapi-js's own shipped source is read for the member the patch replaces
       expect: '`raw.getMetadata` is still there. The patch only helps if the library calls it -- rename it, inline it, or fetch metadata another way, and the patch becomes a no-op, issue #10 returns for every account with one legacy document, and every test in this repo stays green'
       layer: unit
       file: src/remarkable-metadata.test.ts
       test: "the assumption the patch rests on > still finds a `raw.getMetadata` for the patch to replace"
 
-    - id: A5.2
+    - id: A5.11
       scenario: The path from `listItems` to metadata is read
       expect: It still goes through the raw API rather than around it. A recorded contract in ticket 06's sense -- it reads the shipped library instead of mocking it, so the day the assumption stops holding is the day `npm update` turns this red
       layer: unit
       file: src/remarkable-metadata.test.ts
       test: "the assumption the patch rests on > still has `listItems` reach metadata through the raw API, not around it"
 
-    - id: A5.3
+    - id: A5.12
       scenario: The library version the assumption was checked against
       expect: Pinned to the major. 11.1.2 was read by hand; a major bump is where a rename would arrive, so it has to be looked at rather than absorbed
       layer: unit
