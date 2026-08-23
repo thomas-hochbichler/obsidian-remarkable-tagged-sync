@@ -1,0 +1,93 @@
+# The nightly measurement (ticket 14): what changed out there while nothing changed in here.
+#
+# Two measuring jobs and one merge. `ocr` sends the fourteen committed reference pages through the
+# live cloud backends and scores them as character error rate; `contract` (not yet built -- it
+# waits on the throwaway reMarkable account) will replay the three foreign APIs against recorded
+# shape digests. `verdict` merges whatever parts reported into `.nightly-verdict.json` and commits
+# it to `main` -- a job that died is recorded `unknown`, never carried forward, so a stale number
+# can never wear a fresh timestamp.
+#
+# The jobs run in parallel on purpose: cheap-first ordering would let one API's outage silently
+# skip the other measurement, and this workflow publishes nothing so there is nothing to save by
+# failing early. Secrets live in the `nightly` environment, limited to `main`, passed per step.
+#
+# Actions are pinned by commit SHA. The trailing comment is the human-readable tag; update both
+# together.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ocr:
+    # A fork must neither schedule this nor reach for the secrets.
+    if: github.repository == 'thomas-hochbichler/obsidian-remarkable-tagged-sync'
+    runs-on: ubuntu-latest
+    environment: nightly
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # One credential: every model rides through OpenRouter (see NIGHTLY_BACKENDS), bought as
+      # credits with a spend cap on OpenRouter's side. Direct-provider keys would buy live coverage
+      # of the direct endpoints' envelopes; that belongs to the contract half when it lands.
+      - name: Measure the reference pages
+        run: npm run nightly:ocr
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      - name: Keep the part for the verdict job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: part-ocr
+          path: nightly-parts/ocr.json
+      - name: Keep the failing transcripts for whoever debugs a CER jump
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ocr-transcripts
+          path: nightly-parts/artifacts/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  verdict:
+    if: always() && github.repository == 'thomas-hochbichler/obsidian-remarkable-tagged-sync'
+    needs: [ocr]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: part-ocr
+          path: nightly-parts
+        # A missing artifact means the job died before reporting; the merge records `unknown`.
+        continue-on-error: true
+      - name: Merge the parts and commit the verdict
+        run: |
+          subject="$(node scripts/nightly-merge.mjs | tail -1)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .nightly-verdict.json
+          if git diff --cached --quiet; then
+            echo "verdict unchanged"
+            exit 0
+          fi
+          git commit -m "$subject"
+          # A push race with the maintainer retries, then fails loudly -- a silently dropped
+          # verdict is a stale verdict.
+          for attempt in 1 2 3; do
+            git push && exit 0
+            git pull --rebase
+          done
+          exit 1

@@ -1,0 +1,289 @@
+# Group N -- the nightly measurement: the CER instrument, the OCR part runner, the verdict merge.
+# The gate that READS the verdict is group R (r-release-gates.yaml); this group is what WRITES it.
+#
+# One file per feature group. A feature is a container; the rows underneath it are its scenarios.
+# Exactly one of `test:`, `gap:` or `waived:` per scenario. See README.md for the field contract.
+
+- feature: N1
+  name: The CER normaliser
+  code: test-support/cer.ts
+  tier: free
+  scenarios:
+    - id: N1.1
+      scenario: A backend emits a decomposed umlaut
+      expect: NFC on both sides, so the encoding choice is not a reading error
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > normalises to NFC, so a decomposed umlaut is not a reading error"
+
+    - id: N1.2
+      scenario: The reference carries a superscript or an ellipsis -- the characters pages 06 and 12 measure
+      expect: They survive, because the rule is NFC and never NFKC, which would rewrite them
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > does NOT apply NFKC -- the superscripts and ellipsis pages 06 and 12 measure must survive"
+
+    - id: N1.3
+      scenario: Transport noise -- a BOM, CRLF line endings, zero-width characters, a narrow no-break space
+      expect: Repaired before comparison; none of it can be handwritten, so none of it may score
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > repairs transport noise: BOM, CRLF, zero-width characters, exotic spaces"
+
+    - id: N1.4
+      scenario: Runs of spaces and trailing whitespace
+      expect: Collapsed and trimmed
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > collapses space runs and trailing whitespace"
+
+    - id: N1.5
+      scenario: Page 04's indented sub-items, written with two spaces, three spaces or a tab
+      expect: Indentation becomes a nesting depth rather than being stripped -- the trait survives, the spelling of the indent does not
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > keeps indentation as nesting depth rather than stripping it -- page 04's trait"
+
+    - id: N1.6
+      scenario: The device wraps a paragraph at page width
+      expect: A single line break inside plain text joins with a space; a blank line stays a paragraph break
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > joins a wrapped line inside a paragraph with a space, and keeps a blank line a paragraph break"
+
+    - id: N1.7
+      scenario: A heading, list item or table row sits between two lines
+      expect: Never joined across -- the join rule has a scope, or it would fold page 03's six bullets into one line
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > never joins across a heading, a list item or a table row"
+
+    - id: N1.8
+      scenario: The backend picked a star, plus, dot or dash as its bullet
+      expect: All become a dash -- the marker choice is not a reading error
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > normalises every bullet flavour to a dash, so the marker choice is not a reading error"
+
+    - id: N1.9
+      scenario: A numbered list comes back as 1./1./1. where the reference wrote 1./2./3.
+      expect: Renumbered canonically by position, so display-equivalent forms collapse while a dropped item still moves the text
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > renumbers ordinals canonically, so 1./1./1. and 1./2./3. collapse together while a dropped item still shows"
+
+    - id: N1.10
+      scenario: Page 04's lettered sub-items a., b., c.
+      expect: Left verbatim -- CommonMark does not treat letters as markers, so the lettering stays measurable
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > leaves page 04's lettered sub-items verbatim -- they are not CommonMark markers"
+
+    - id: N1.11
+      scenario: Page 05's table with a shifted pipe and a delimiter row written with alignment colons
+      expect: Delimiter row dropped, cells re-emitted canonically -- the shift costs zero edits, measured
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > drops the table delimiter row and re-emits cells canonically, so a shifted pipe costs nothing"
+
+    - id: N1.12
+      scenario: The backend guesses a heading level or a bold word the pen never expressed
+      expect: Heading and emphasis markers stripped from both sides; structure is observed separately, never scored as characters
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the normaliser > strips heading and emphasis markers -- a pen has no bold, so a guessed level or weight is not an error"
+
+- feature: N2
+  name: The character error rate
+  code: test-support/cer.ts
+  tier: free
+  scenarios:
+    - id: N2.1
+      scenario: Two strings differing by substitutions, insertions and a surrogate-pair character
+      expect: Edit distance counted over Unicode code points
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the metric > counts edits over code points"
+
+    - id: N2.2
+      scenario: One wrong character on the 22-character page 09
+      expect: 4.5 % -- the measured arithmetic that forces the absolute floor in the catastrophe rule
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the metric > reproduces the measured short-page arithmetic: one character on page 09 is 4.5 %"
+
+    - id: N2.3
+      scenario: One misread word on page 09
+      expect: 9.1 % -- a single word on a short page dwarfs a real regression on a long one
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the metric > one misread word on page 09 is 9.1 % -- the arithmetic behind the catastrophe floor"
+
+    - id: N2.4
+      scenario: A transcript far longer than its reference
+      expect: CER above 100 % is reported as such -- a cap would have hidden a real 836.8 % collapse
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the metric > is never capped at 100 %"
+
+    - id: N2.5
+      scenario: Every committed reference page, transcribed perfectly
+      expect: Zero -- the normaliser must never charge the ground truth against itself
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the metric > scores a perfect transcription of every reference page at zero"
+
+    - id: N2.6
+      scenario: Page 06 answered in its declared LaTeX alternate
+      expect: The minimum over body and alternates, each scored against its own length
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the metric > takes the minimum over declared alternates, each scored against its own length"
+
+    - id: N2.7
+      scenario: An empty reference body reaches the metric
+      expect: Refused -- the denominator must be positive, and the loader is supposed to have rejected the page
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the metric > refuses an empty reference body instead of dividing by zero"
+
+- feature: N3
+  name: The structure observation
+  code: test-support/cer.ts
+  tier: free
+  scenarios:
+    - id: N3.1
+      scenario: Page 05's table comes back as prose, every word correct
+      expect: Recorded as table lost, beside the CER and never folded into it -- 41 % CER alone is indistinguishable from misreading
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the structure observation > records page 05's table coming back as prose -- 41 % CER is indistinguishable from misreading without this"
+
+    - id: N3.2
+      scenario: A list flattened into a sentence, and a prose page with no structure to lose
+      expect: List lost is recorded; a structure the reference does not have is never observed
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "the structure observation > records a list that stopped being a list, and observes nothing the reference does not have"
+
+- feature: N4
+  name: The OCR part runner
+  code: test-support/nightly/ocr.ts
+  tier: free
+  scenarios:
+    - id: N4.1
+      scenario: The committed reference set is loaded
+      expect: Exactly pages 01 through 14, in order, none empty -- a page cannot fall out silently
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "loading the reference pages > loads the committed fourteen with their ids in order"
+
+    - id: N4.2
+      scenario: A provider rejects our request with a 400
+      expect: An abort -- our request shape broke, which is a real break and a catastrophe
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "classifying a failed page (§4.4) > treats a 400 as an abort -- our request shape was rejected, a real break"
+
+    - id: N4.3
+      scenario: A provider answers 401, 402, 429 or 5xx
+      expect: Unavailable -- not evidence the plugin is broken, so unknown and never blocking on its own
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "classifying a failed page (§4.4) > treats auth, quota and server trouble as unavailable -- the provider could not answer tonight"
+
+    - id: N4.4
+      scenario: The fetch itself dies without an HTTP status
+      expect: Unavailable, not a break -- a network error says nothing about the request shape
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "classifying a failed page (§4.4) > treats a fetch that never got a status as unavailable, not as a break"
+
+    - id: N4.5
+      scenario: A clean transcription on a key with no baseline yet
+      expect: Pass, with the CER measured and the median reported
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "evaluating a backend's night (§5.3) > a clean transcription with no baseline is pass, with its CER measured"
+
+    - id: N4.6
+      scenario: A backend returns empty output for a page
+      expect: Catastrophe with no baseline needed -- the user's note silently loses its content, the worst harm band
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "evaluating a backend's night (§5.3) > empty output is a catastrophe with no baseline needed -- the note silently loses its content"
+
+    - id: N4.7
+      scenario: One page aborted, another merely unavailable
+      expect: The abort is a catastrophe; the unavailable page makes the night unknown, which blocks only through the 72-hour second clock
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "evaluating a backend's night (§5.3) > an aborted page is a catastrophe; an unavailable one is unknown and never blocks on its own"
+
+    - id: N4.8
+      scenario: CER over twice the baseline on the short page 09
+      expect: Blocks only together with the 5 pp floor -- one misread word is Tuesday, not a catastrophe
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "evaluating a backend's night (§5.3) > CER over twice the baseline blocks only together with the 5 pp floor -- one wrong word is Tuesday, not a catastrophe"
+
+    - id: N4.9
+      scenario: A new model's first night, with a visibly imperfect transcription
+      expect: Degraded at worst -- a key with no baseline cannot block a release on the night it is added
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "evaluating a backend's night (§5.3) > a key with no baseline is degraded at worst -- a new model cannot block a release on its first night"
+
+    - id: N4.10
+      scenario: Every page drifts to double its baseline while no single page trips the 5 pp floor
+      expect: The median aggregate rule fires -- a uniform degradation must not hide between the per-page floors
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "evaluating a backend's night (§5.3) > a uniform doubling that trips no single page is caught by the median rule"
+
+    - id: N4.11
+      scenario: Four backends with mixed nights
+      expect: The part carries the worst backend's status; pass only when every backend passed
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "merging backend statuses into the part > the part carries the worst backend, and pass only when every backend passed"
+
+- feature: N5
+  name: The verdict merge
+  code: scripts/nightly-merge.mjs
+  tier: free
+  scenarios:
+    - id: N5.1
+      scenario: A measuring job crashed before writing its part file
+      expect: Recorded unknown with "job did not report" -- never last night's value wearing a fresh timestamp
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "merging the part files into the verdict > a job that did not report becomes unknown -- never last night's value wearing a fresh timestamp"
+
+    - id: N5.2
+      scenario: A part produced a real measurement
+      expect: Its lastMeasuredAt is stamped with its own measuredAt, arming the gate's second clock
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "merging the part files into the verdict > a measured part stamps lastMeasuredAt with its own measuredAt"
+
+    - id: N5.3
+      scenario: A part is unknown tonight but measured last night
+      expect: lastMeasuredAt carries forward while measuredAt stays honest, so the 72-hour clock keeps ticking
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "merging the part files into the verdict > an unknown part carries the previous lastMeasuredAt forward, so the gate's second clock keeps ticking"
+
+    - id: N5.4
+      scenario: A part that has never measured anything
+      expect: No lastMeasuredAt at all -- the gate reads that as "never produced a real measurement" and fails
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "merging the part files into the verdict > a part that has never measured carries no lastMeasuredAt at all"
+
+    - id: N5.5
+      scenario: The verdict is committed to main
+      expect: The commit subject carries the headline number, so git log --oneline is the drift curve at a glance
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "the commit subject > carries the headline number, so git log --oneline is the drift curve at a glance"
