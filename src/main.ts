@@ -231,7 +231,16 @@ function openSession(sessionToken: string): RemarkableApi {
 
 async function ensureFolder(vault: Vault, path: string): Promise<void> {
 	if (vault.getFolderByPath(path)) return;
-	await vault.createFolder(path);
+	try {
+		await vault.createFolder(path);
+	} catch (error) {
+		// The lookup above asks the file index, an exact-string map; `createFolder` asks the
+		// filesystem, which folds case on macOS and Windows. So a vault already holding `media/`
+		// makes the index say "not there" and the create throw on `Media/` -- and "already exists"
+		// is precisely the state this function exists to reach, not a failure of it (issue #73).
+		if (error instanceof Error && /already exists/i.test(error.message)) return;
+		throw error;
+	}
 }
 
 function createNoteStore(app: App): NoteStore {
