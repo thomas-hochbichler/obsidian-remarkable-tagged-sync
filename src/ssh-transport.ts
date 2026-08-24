@@ -68,6 +68,8 @@ export interface SshTransportStore {
 	hashes(): StoredHashes;
 	/** Called after a run with the pruned cache, so the next sync costs a listing. */
 	saveHashes(hashes: StoredHashes): Promise<void>;
+	/** Where to say what the device is doing while it does it -- the status bar, in the plugin. */
+	report?(message: string): void;
 }
 
 export class SshTransport implements Transport {
@@ -93,7 +95,7 @@ export class SshTransport implements Transport {
 		const connection = await this.connect(settings);
 		const cache = new PersistentHashCache(this.store.hashes());
 		try {
-			const api = await openDeviceApi(connection, cache);
+			const api = await openDeviceApi(connection, cache, (message) => this.store.report?.(message));
 			return {
 				api,
 				close: async () => {

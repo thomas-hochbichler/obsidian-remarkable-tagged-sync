@@ -221,6 +221,14 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						button.setDisabled(false);
 					}),
 			);
+
+		// Before the attempt, not after it. On a Paper Pro or Paper Pure the answer to "nothing
+		// happens" is a factory reset, and nobody should meet that fact halfway through pairing --
+		// finding it out afterwards is the worst possible moment. Folded away so an rM2 owner, who
+		// needs none of it, is not made to read it.
+		const help = containerEl.createEl("details", { cls: "tagged-sync-pairing-help" });
+		help.createEl("summary", { text: "What your reMarkable needs before this works" });
+		for (const line of pairingGuidance("unknown")) help.createEl("p", { text: line });
 	}
 
 	/** One pairing attempt, and what to say about however it ended. */

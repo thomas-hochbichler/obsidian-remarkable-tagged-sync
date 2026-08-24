@@ -104,9 +104,9 @@ export function parseHashLine(line: string): { path: string; hash: string } | nu
 /**
  * How many paths go into one `xargs` batch.
  *
- * Not an arg-length limit -- paths are fed through stdin precisely so there is none -- but a
- * progress and memory bound: the first run of a full library is thousands of files, and one
- * unbroken command would report nothing until all of it finished.
+ * Not an arg-length limit -- paths are fed through stdin precisely so there is none -- but the step
+ * the progress report moves in: the first run of a full library is thousands of files, and one
+ * unbroken command would say nothing at all until every one of them was done.
  */
 const HASH_BATCH = 250;
 
@@ -194,9 +194,13 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 			});
 		},
 
-		async hash(paths: readonly string[]): Promise<Map<string, string>> {
+		async hash(
+			paths: readonly string[],
+			onProgress?: (done: number, total: number) => void,
+		): Promise<Map<string, string>> {
 			const hashes = new Map<string, string>();
 			for (let start = 0; start < paths.length; start += HASH_BATCH) {
+				onProgress?.(start, paths.length);
 				const batch = paths.slice(start, start + HASH_BATCH);
 				// NUL-separated through stdin: no quoting to get wrong, and no command-line length limit
 				// to hit on an account with thousands of pages.
@@ -206,6 +210,7 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 					if (parsed !== null) hashes.set(parsed.path, parsed.hash);
 				}
 			}
+			onProgress?.(paths.length, paths.length);
 			return hashes;
 		},
 

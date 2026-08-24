@@ -285,6 +285,9 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.data.sshHashes = hashes;
 				await this.saveData(this.data);
 			},
+			// Only while a run is on screen. The first pairing reads the whole library, which takes long
+			// enough that "starting…" would read as a plugin that has stopped responding.
+			report: (message) => this.setStatus("busy", message),
 		});
 
 		this.addSettingTab(new TaggedSyncSettingTab(this.app, this));

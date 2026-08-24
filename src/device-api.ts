@@ -36,7 +36,7 @@ export interface DeviceFiles {
 	 * sending the bytes: the whole library is ~185 MB, and hashing it over the wire on first pairing
 	 * would be minutes of transfer for numbers the tablet can produce in seconds.
 	 */
-	hash(paths: readonly string[]): Promise<Map<string, string>>;
+	hash(paths: readonly string[], onProgress?: (done: number, total: number) => void): Promise<Map<string, string>>;
 }
 
 /**
@@ -100,6 +100,7 @@ async function hashAll(
 	files: DeviceFiles,
 	cache: HashCache,
 	stats: readonly DeviceFileStat[],
+	report?: (message: string) => void,
 ): Promise<Map<string, string>> {
 	const known = new Map<string, string>();
 	const unknown: string[] = [];
@@ -110,7 +111,11 @@ async function hashAll(
 	}
 	if (unknown.length === 0) return known;
 
-	const fresh = await files.hash(unknown);
+	// The first pairing hashes the whole library -- on a real account thousands of files and a minute
+	// of work -- and a minute of a status bar saying "starting…" reads as a plugin that has hung.
+	const fresh = await files.hash(unknown, (done, total) =>
+		report?.(`Tagged Sync: reading your reMarkable (${done} of ${total} files)`),
+	);
 	for (const stat of stats) {
 		const hash = fresh.get(stat.path);
 		if (hash === undefined) continue;
@@ -147,7 +152,7 @@ interface DeviceDocument {
  * change-detection gates are answered out of it -- the root hash it compares first, the per-document
  * hashes it compares next, and the per-page hashes it compares last are all already here.
  */
-async function readAccount(files: DeviceFiles, cache: HashCache) {
+async function readAccount(files: DeviceFiles, cache: HashCache, report?: (message: string) => void) {
 	const byDocument = new Map<string, DeviceFileStat[]>();
 	for (const stat of await files.list()) {
 		const docId = documentOf(stat.path);
@@ -157,7 +162,7 @@ async function readAccount(files: DeviceFiles, cache: HashCache) {
 		else group.push(stat);
 	}
 
-	const hashes = await hashAll(files, cache, [...byDocument.values()].flat());
+	const hashes = await hashAll(files, cache, [...byDocument.values()].flat(), report);
 	const documents = new Map<string, DeviceDocument>();
 	for (const [docId, stats] of byDocument) {
 		const entries = documentEntries(hashes, stats);
@@ -199,8 +204,12 @@ interface DeviceMetadata {
  * then served from the small-text cache below rather than fetched again, which is what rmapi-js's
  * own cache does for the cloud path.
  */
-export async function openDeviceApi(files: DeviceFiles, cache: HashCache): Promise<SyncApi> {
-	const { documents, root } = await readAccount(files, cache);
+export async function openDeviceApi(
+	files: DeviceFiles,
+	cache: HashCache,
+	report?: (message: string) => void,
+): Promise<SyncApi> {
+	const { documents, root } = await readAccount(files, cache, report);
 
 	/**
 	 * Small text files this session has already fetched, mirroring what rmapi-js caches on the cloud
