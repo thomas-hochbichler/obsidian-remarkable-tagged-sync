@@ -14,8 +14,8 @@
 //     "schema": 1,
 //     "commit": "…", "runId": "…", "runUrl": "https://github.com/…/actions/runs/…",
 //     "parts": {
-//       "contract": { "status": "pass", "measuredAt": "2026-08-19T03:07:11Z", "detail": {} },
-//       "ocr":      { "status": "pass", "measuredAt": "2026-08-19T03:09:44Z", "detail": {} }
+//       "ocr":  { "status": "pass", "measuredAt": "2026-08-19T03:09:44Z", "detail": {} },
+//       "perf": { "status": "pass", "measuredAt": "2026-08-19T03:09:44Z", "detail": {} }
 //     }
 //   }
 //
@@ -26,7 +26,10 @@
 
 export const STALE_HOURS = 72;
 
-export const PARTS = ["contract", "ocr", "perf"];
+// `contract` was deliberately dropped 2026-08-24: measuring the live reMarkable and Polar APIs
+// nightly needs a throwaway account and a test licence key held as CI secrets, and the user ruled
+// that cost out. If it ever returns, it returns as its own effort, not by re-adding a name here.
+export const PARTS = ["ocr", "perf"];
 const TOP_KEYS = ["schema", "commit", "runId", "runUrl", "parts"];
 const PART_KEYS = ["status", "measuredAt", "lastMeasuredAt", "detail"];
 const STATUSES = ["pass", "degraded", "unknown", "catastrophe"];

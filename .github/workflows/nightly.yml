@@ -2,9 +2,10 @@
 #
 # Measuring jobs and one merge. `ocr` sends the fourteen committed reference pages through the
 # live cloud backends and scores them as character error rate; `perf` times the heavy synthetic
-# page on this fixed runner class (ticket 21); `contract` (not yet built -- it waits on the
-# throwaway reMarkable account) will replay the three foreign APIs against recorded shape
-# digests. `verdict` merges whatever parts reported into `.nightly-verdict.json` and commits
+# page on this fixed runner class (ticket 21). A `contract` half was planned and deliberately
+# dropped 2026-08-24 -- measuring the live reMarkable and Polar APIs nightly needs a throwaway
+# account and a test licence key as CI secrets, and that cost was ruled out.
+# `verdict` merges whatever parts reported into `.nightly-verdict.json` and commits
 # it to `main` -- a job that died is recorded `unknown`, never carried forward, so a stale number
 # can never wear a fresh timestamp.
 #
@@ -138,8 +139,7 @@ jobs:
           [ -n "$pushed" ] || exit 1
       # Layer 2 of "who is told": one standing issue per measuring part, found by its title marker.
       # Consecutive bad nights append a comment instead of piling up duplicates; the first fully
-      # green night closes it and says which night recovered. `contract` gets its own wiring when
-      # it is built -- today it is unknown-by-construction and an issue for it would only be noise.
+      # green night closes it and says which night recovered.
       - name: Keep the standing issues in step with the night
         if: always()
         env:
