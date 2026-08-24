@@ -26,40 +26,39 @@ per-stroke optional `color_rgba` field), and `Pen.BALLPOINT_2` strokes in
 lookup against real device-produced data, per the pdf-color-rendering map
 (`.scratch/pdf-color-rendering/map.md`).
 
-`pdf-page-highlights-and-margin-notes.rm` is a real firmware-v6 `.rm` page from a
-PDF-backed document, captured from the maintainer's own reMarkable:
+`weather-station-page1.rm` is a real firmware-v6 `.rm` page from a PDF-backed
+document, written by the maintainer for publication:
 
-- Source: page 2 of the maintainer's annotated "Best Practices für Prompting.pdf"
-  (the cloud page id stays out of this file; it is in the private raw copy)
-- Rights: the maintainer's own handwriting; highlight runs quote short snippets of
-  the annotated document's text
-- Retrieved: 2026-08-04
+- Source: page 1 of `weather-station.pdf` (committed beside it), annotated on the
+  maintainer's reMarkable Paper Pro on 2026-08-24 following
+  `.scratch/test-strategy/fixture-source/README.md` (ticket 16 of the test-strategy
+  effort)
+- Rights: the maintainer's own handwriting over a wholly invented text; everything
+  on the page was authored for this repository
 
-Contains one layer with 65 pen strokes (handwritten margin notes) and 9 `glyph_def`
-text highlights with text, rects, and color. First real fixture with `glyph_def`
-blocks and the first from a PDF-backed page — used by the pdf-annotation effort
-(`.scratch/pdf-annotation/map.md`) to prove highlight parsing, margin-note
-clustering, and anchoring against device-produced data. The full raw document
-(source PDF, all 7 annotated pages, content/meta JSON) stays private in
-`.scratch/pdf-annotation/fixture/`.
+Contains one layer with 59 pen strokes (four handwritten margin notes, one body
+underline, two circles) and 7 `glyph_def` text highlights carrying text, rects,
+color and real `start`/`length` fields indexing the PDF's text layer. Three of the
+four logical highlights wrap the printed line, so one run arrives as two blocks.
+Used to prove highlight parsing, margin-note clustering and digest anchoring
+against device-produced data. The source PDF is public, so a reader can open it
+and see exactly which words every rectangle covers.
 
-`notebook-typed-text-highlights.rm` holds three `glyph_def` blocks lifted verbatim
-from a real firmware-v6 page and re-wrapped in a minimal v6 file (the header and
-those three blocks, nothing else):
+`cape-marrow-typed-highlights.rm` is a real firmware-v6 notebook page of typed
+text, written by the maintainer for publication:
 
-- Source: a notebook the "Read on reMarkable" Chrome extension created from
-  <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents>,
-  captured from the maintainer's own reMarkable
-- Rights: two highlight runs quoting four words of a public Anthropic post
-  ("Why", "is the art"); no handwriting, none of the page's other content
-- Retrieved: 2026-08-13
+- Source: a one-page typed-text notebook ("Cape Marrow — notes") produced on the
+  maintainer's reMarkable on 2026-08-24, per the same ticket-16 instructions; its
+  wording deliberately repeats `weather-station.pdf`, so a test confusing the two
+  fixtures fails loudly
+- Rights: wholly invented text, authored for this repository
 
-That page is typed text rather than a source PDF, and its highlights carry **no**
-`start`/`length` fields — those index a PDF's text layer, which such a page does not
-have. All 57 blocks on the real page are written that way. Used to prove
-`parseGlyphBody` reads them, which it did not until the two fields were made optional:
-the page's highlights were dropped whole. The third block is a tombstoned run, so the
-fixture covers the `deleted_length` path as well.
+That page is typed text rather than a source PDF, and its two highlights carry
+**no** `start`/`length` fields — those index a PDF's text layer, which such a page
+does not have. `parseGlyphBody` dropped such highlights whole until the two fields
+were made optional. The page also carries several tombstoned runs (a line was
+typed, partly highlighted, then deleted), so the fixture covers the
+`deleted_length` path with real device bytes.
 
 `notebook-with-image.rm` is `normal-a-stroke-2-layers.rm` with an `image_table`
 (`0x0E`) and an `image_def` (`0x0F`) block appended, both **hand-built** — no device

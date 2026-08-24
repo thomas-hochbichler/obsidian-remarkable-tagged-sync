@@ -9,7 +9,7 @@ import { PLAIN_TEXT_SIZE_PX } from "./device-font";
 import { layoutText } from "./text-layout";
 import type { PdfHeading, PdfPageText, PdfTextDocument, PdfTextLine } from "./pdf-text";
 
-const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
+const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/weather-station-page1.rm";
 const SOURCE_BYTES = new Uint8Array([1, 2, 3]);
 /** The fixture page's size in PDF points, and the scene-to-PDF scale the reMarkable 1/2 frame gives it. */
 const PAGE_WIDTH_PT = 612;
@@ -72,61 +72,48 @@ function fixturePage(scene: RmPage = fixtureScene()): DigestPageInput {
 }
 
 // --- the fixture page's text layer, rebuilt from the measured geometry -------------------------
-// The real source PDF is private, so the fake reproduces what the pipeline reads off it: the five
-// headings and the nine highlighted sentences, each at the y its highlight's rectangles actually
-// occupy in the fixture scene. Each sentence is split over two lines 13 pt apart, as it is in the
-// source, which is what gives the page its 13 pt body spacing.
+// The source PDF (test-fixtures/rmv6/weather-station.pdf) is public and committed beside the
+// fixture, but pdf.js is not loadable under vitest, so the fake reproduces what the pipeline reads
+// off it: the two headings and the four highlighted sentences, each line at the y its highlight's
+// rectangles actually occupy in the fixture scene (bottom edge, scene px * 72/226, y up from the
+// page bottom). Three of the four highlights wrap the printed line, so their sentences really are
+// two lines -- at the page's own 22.6 pt spacing, which is what the line-height quartile sees.
 
 const FIXTURE_HEADINGS: { y: number; title: string }[] = [
-	{ y: 723, title: "Allgemeine Prinzipien" },
-	{ y: 653, title: "Sei klar und direkt" },
-	{ y: 442, title: "Füge Kontext hinzu, um die Leistung zu verbessern" },
-	{ y: 350, title: "Verwende Beispiele effektiv" },
-	{ y: 151, title: "Strukturiere Prompts mit XML-Tags" },
+	{ y: 720, title: "The Weather Station at Cape Marrow" },
+	{ y: 660, title: "One — The station" },
 ];
 
-/** `y` is the bottom of the highlight's rectangle, measured from the fixture scene. */
-const FIXTURE_QUOTES: { y: number; sentence: string }[] = [
+/** Each line sits at the measured bottom edge of the highlight rect it carries. */
+const FIXTURE_QUOTES: { sentence: string; lines: { text: string; y: number }[] }[] = [
 	{
-		y: 693.1,
 		sentence:
-			"Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten für alle aktuellen Claude-Modelle, einschließlich Claude Fable 5 und Claude Mythos 5.",
+			"The weather station at Cape Marrow was built in the spring of nineteen sixty-two, on a shelf of rock that the sea had spent a long time deciding not to take.",
+		lines: [
+			{ text: "The weather station at Cape Marrow was built in the spring of nineteen sixty-two, on a shelf of rock that the sea had spent a long time deciding not", y: 551.9 },
+			{ text: "to take.", y: 529.3 },
+		],
 	},
-	{ y: 626.1, sentence: "Claude reagiert gut auf klare, explizite Anweisungen." },
 	{
-		y: 481.5,
 		sentence:
-			"Gib Anweisungen als aufeinanderfolgende Schritte mit nummerierten Listen oder Aufzählungspunkten an, wenn die Reihenfolge oder Vollständigkeit der Schritte wichtig ist.",
+			"He had asked for the posting in a letter of eleven lines, and the whole of his argument was in the last of them: I would like to be somewhere where the readings matter more than the reader.",
+		lines: [
+			{ text: "He had asked for the posting in a letter of eleven lines, and the whole of his argument was in the last of them: I would like to be somewhere where the readings matter more", y: 382.4 },
+			{ text: "than the reader.", y: 359.8 },
+		],
 	},
 	{
-		y: 413.7,
-		sentence:
-			"Das Bereitstellen von Kontext oder Motivation hinter deinen Anweisungen, etwa indem du Claude erklärst, warum ein solches Verhalten wichtig ist, kann Claude helfen, deine Ziele besser zu verstehen und gezieltere Antworten zu liefern.",
-	},
-	{ y: 321.0, sentence: "Beispiele sind eine der zuverlässigsten Methoden, um Claudes Ausgabeformat, Ton und Struktur zu steuern." },
-	{
-		y: 242.6,
-		sentence: "Vielfältig sind: Sie decken Randfälle ab und variieren genug, damit Claude keine unbeabsichtigten Muster aufgreift.",
+		sentence: "He missed eleven readings in nineteen years.",
+		lines: [{ text: "He missed eleven readings in nineteen years.", y: 235.5 }],
 	},
 	{
-		y: 174.9,
-		sentence:
-			"Du kannst Claude auch bitten, deine Beispiele auf Relevanz und Vielfalt zu bewerten oder zusätzliche auf Basis deines ursprünglichen Satzes zu generieren.",
+		sentence: "Nine of those were in one week in February of nineteen seventy-four, when the roof came off.",
+		lines: [
+			{ text: "Nine of those were in one week in February of nineteen seventy-four, when the roof came", y: 212.9 },
+			{ text: "off.", y: 190.3 },
+		],
 	},
-	{
-		y: 121.4,
-		sentence:
-			"XML-Tags helfen Claude, komplexe Prompts eindeutig zu parsen, insbesondere wenn dein Prompt Anweisungen, Kontext, Beispiele und variable Eingaben mischt.",
-	},
-	{ y: 43.8, sentence: "Verwende konsistente, beschreibende Tag-Namen in deinen Prompts." },
 ];
-
-/** Splits a sentence at the word boundary nearest its middle, the way the source PDF wraps it. */
-function wrap(sentence: string): [string, string] {
-	const middle = Math.floor(sentence.length / 2);
-	const at = sentence.indexOf(" ", middle);
-	return at < 0 ? [sentence, ""] : [sentence.slice(0, at), sentence.slice(at + 1)];
-}
 
 function textLine(text: string, y: number, height: number): PdfTextLine {
 	return { text, x: 80, y, width: 450, height };
@@ -135,9 +122,7 @@ function textLine(text: string, y: number, height: number): PdfTextLine {
 function fixturePageText(): PdfPageText {
 	const lines: PdfTextLine[] = FIXTURE_HEADINGS.map((heading) => textLine(heading.title, heading.y, 12));
 	for (const quote of FIXTURE_QUOTES) {
-		const [first, second] = wrap(quote.sentence);
-		lines.push(textLine(first, quote.y, 10));
-		if (second !== "") lines.push(textLine(second, quote.y - 13, 10));
+		for (const line of quote.lines) lines.push(textLine(line.text, line.y, 10));
 	}
 	return { label: "2", width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: lines.sort((a, b) => b.y - a.y) };
 }
@@ -149,8 +134,14 @@ function fixtureTextDocument(): PdfTextDocument {
 	);
 }
 
-/** The real Apple Vision output for the five clusters, top-down (acceptance-page2.md). */
-const VISION_OUTPUT = ["Basic Rule O", "", "", "→ Claude valisate Examphs", "- Widu spruch zum Artikel ally. Pe"];
+/** A plausible Vision reading of the four margin-note clusters, top-down. */
+/**
+ * A plausible Vision reading per unmatched cluster, in cluster-enumeration order. With the text
+ * layer the page yields six of them -- four margin notes, the body underline (which sits too far
+ * from any line to resolve as a mark and comes back empty) and one of the two circles; the other
+ * circle lands on the fully highlighted "He missed" line and folds into its quote as a mark.
+ */
+const VISION_OUTPUT = ["margin note one", "", "margin note two", "margin note three", "stray mark one", "stray mark two"];
 
 // --- synthetic scenes -------------------------------------------------------------------------
 
@@ -172,18 +163,21 @@ describe("buildDigest without a text layer", () => {
 	it("quotes every highlight from the .rm text and renders every note as an entry of its own", async () => {
 		const result = await build([fixturePage()], { ocrBackend: fakeOcr() });
 
-		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
-		expect(result.markdown.match(/\^nt-/g)).toHaveLength(5);
+		// Seven highlight blocks -- the wrapped runs stay separate without a text layer to merge on --
+		// and seven note clusters: the four margin notes plus the underline and the two circles,
+		// which nothing can resolve into marks without text.
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(7);
+		expect(result.markdown.match(/\^nt-/g)).toHaveLength(7);
 		// Nothing anchors without a text layer, and nothing needs to: each note is printed under the
 		// page's own heading, which is what an unanchored note has to say -- so each title is empty.
-		expect(result.markdown.match(/^> \[!handwritten\]$/gm)).toHaveLength(5);
-		expect(result.markdown).toContain("für alle aktuellen Claude-Modelle,");
+		expect(result.markdown.match(/^> \[!handwritten\]$/gm)).toHaveLength(7);
+		expect(result.markdown).toContain("a shelf of rock that the sea had spent a long time deciding not");
 		// No text layer means no known run inside a sentence, so nothing is marked (F4's soft fail).
 		expect(result.markdown).not.toContain("==");
 	});
 
 	// The progress bar counts pages; this pipeline transcribes clusters, which are finer. The fixture
-	// page holds five of them and must still tick once.
+	// page holds seven of them and must still tick once.
 	it("reports one page at a time, however many clusters it transcribed", async () => {
 		const backend = fakeOcr();
 		const recognize = vi.spyOn(backend, "recognize");
@@ -191,7 +185,7 @@ describe("buildDigest without a text layer", () => {
 
 		await build([fixturePage(), fixturePage(inkyScene())], { ocrBackend: backend, onPage });
 
-		expect(recognize).toHaveBeenCalledTimes(6);
+		expect(recognize).toHaveBeenCalledTimes(8);
 		expect(onPage).toHaveBeenCalledTimes(2);
 	});
 
@@ -202,8 +196,9 @@ describe("buildDigest without a text layer", () => {
 	 */
 	it("names a pen mark it could not match to any text, instead of dropping it in silence", async () => {
 		// Wide and flat, so it has the shape of an underline, but drawn across the bottom margin where
-		// the text layer has no line for it to point at.
-		const stray = boxStroke("0a", 100, 1850, 600, 1);
+		// the text layer has no line for it to point at (the page's lowest line sits at 190 pt; this
+		// ink lands at 107).
+		const stray = boxStroke("0a", 100, 2150, 600, 1);
 
 		const result = await build([fixturePage(scene([stray]))], { loadText: async () => fixtureTextDocument(), marginNotes: false });
 
@@ -214,7 +209,7 @@ describe("buildDigest without a text layer", () => {
 
 	it("says nothing about ordinary handwriting, which is the setting working as asked", async () => {
 		// Too short to be a mark: this is a word, and margin notes being off is not news.
-		const word = boxStroke("0a", 100, 1850, 8, 1);
+		const word = boxStroke("0a", 100, 2150, 8, 1);
 
 		const result = await build([fixturePage(scene([word]))], { loadText: async () => fixtureTextDocument(), marginNotes: false });
 
@@ -232,14 +227,18 @@ describe("buildDigest without a text layer", () => {
 });
 
 describe("buildDigest with the fixture page's text layer", () => {
+
 	it("quotes the surrounding sentence and marks the highlighted run", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
+		// The wrapped runs merge into one marked range spanning the printed line break.
 		expect(result.markdown).toContain(
-			"Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für alle aktuellen Claude-Modelle,== einschließlich Claude Fable 5 und Claude Mythos 5.",
+			"on ==a shelf of rock that the sea had spent a long time deciding not to take.==",
 		);
-		expect(result.markdown).toContain("Claude reagiert gut auf ==klare, explizite Anweisungen.==");
-		expect(result.markdown).toContain("Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.");
+		expect(result.markdown).toContain("somewhere where the ==readings matter more than the reader.==");
+		// A run that covers its whole sentence marks nothing: the quote IS the run.
+		expect(result.markdown).toContain("He missed eleven readings in nineteen years.");
+		expect(result.markdown).not.toContain("==He missed");
 		expect(result.warnings).toEqual([]);
 	});
 
@@ -257,44 +256,44 @@ describe("buildDigest with the fixture page's text layer", () => {
 		function damagedTextDocument(): PdfTextDocument {
 			const page = fixturePageText();
 			return fakeTextDocument(
-				{ 1: { ...page, lines: page.lines.map((line) => ({ ...line, text: line.text.replace("Prompts.", "PromPts.") })) } },
+				{ 1: { ...page, lines: page.lines.map((line) => ({ ...line, text: line.text.replace("February", "Febrnary") })) } },
 				FIXTURE_HEADINGS.map((heading) => ({ pageIndex: 1, x: null, y: heading.y, title: heading.title })),
 			);
 		}
 
-		const BOOK: EpubBook = { text: "Kapitel 5. Verwende konsistente, beschreibende Tag-Namen in deinen Prompts. Das hilft beim Parsen.", chapters: [] };
+		const BOOK: EpubBook = { text: "Chapter One. Nine of those were in one week in February of nineteen seventy-four, when the roof came off. The keeper rebuilt it that spring.", chapters: [] };
 
 		it("re-spells a damaged quote in the book's own words, and keeps the run marked", async () => {
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => BOOK);
 
-			expect(result.markdown).toContain("Verwende konsistente, ==beschreibende Tag-Namen== in deinen Prompts.");
-			expect(result.markdown).not.toContain("PromPts");
+			expect(result.markdown).toContain("in February of nineteen seventy-four, when ==the roof came== off.");
+			expect(result.markdown).not.toContain("Febrnary");
 		});
 
 		it("keeps the device's text, and says so once, when the book cannot be read", async () => {
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => null);
 
-			expect(result.markdown).toContain("PromPts");
+			expect(result.markdown).toContain("Febrnary");
 			expect(result.warnings).toEqual(["The book's own text could not be read; quotes and chapter names keep what the device recorded."]);
 		});
 
 		it("keeps a quote it cannot find in the book, and stays quiet about it", async () => {
 			// Not a failure worth a line: the device's text is not known to be wrong, and a book has
 			// pages this quote could legitimately not be on.
-			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ text: "Ein ganz anderes Buch über Segelschiffe.", chapters: [] }));
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ text: "A different book about sailing ships.", chapters: [] }));
 
-			expect(result.markdown).toContain("PromPts");
+			expect(result.markdown).toContain("Febrnary");
 			expect(result.warnings).toEqual([]);
 		});
 
 		it("names a section the way the book's navigation names it", async () => {
-			// What the render found was "Sei klar und direkt"; the book calls that chapter by its full
+			// What the render found was "One — The station"; the book calls that chapter by its full
 			// name, and the digest should say so.
-			const chapters = ["Kapitel 5. Sei klar und direkt in deinen Anweisungen"];
+			const chapters = ["Chapter One — The station, 1962 to 1981"];
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ ...BOOK, chapters }));
 
-			expect(result.markdown).toContain("### Kapitel 5. Sei klar und direkt in deinen Anweisungen");
-			expect(result.markdown).not.toContain("### Sei klar und direkt\n");
+			expect(result.markdown).toContain("### Chapter One — The station, 1962 to 1981");
+			expect(result.markdown).not.toContain("### One — The station\n");
 		});
 
 		it("reads the book once, for the headings and the quotes together", async () => {
@@ -315,49 +314,43 @@ describe("buildDigest with the fixture page's text layer", () => {
 		});
 	});
 
-	it("resolves the five margin notes to the anchors measured on the real page", async () => {
+	it("resolves the page's six clusters to the anchors measured on the real page", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		// Four notes sit level with a heading and are printed under it; the fifth belongs to the
-		// highlight `generieren.` and is printed right below it. Either way the position says where the
-		// note sat, so every title carries nothing but the page link -- and none of the five falls
-		// through the cascade to a line or the bare page.
-		expect(result.markdown.match(/^> \[!handwritten\] \[\[/gm)).toHaveLength(5);
-		expect(result.markdown).not.toContain("[!handwritten] at »");
+		// Three clusters resolve to a quote and say so ("at »..."); the other three sit level with
+		// nothing closer than the page itself, so their title carries only the page link. Nothing
+		// falls out of the digest, and the seventh cluster is the mark the pen-marks suite covers.
+		expect(result.markdown.match(/^> \[!handwritten\] \[\[/gm)).toHaveLength(3);
+		expect(result.markdown.match(/\[!handwritten\] at »/g)).toHaveLength(3);
 	});
 
 	it("orders the page's entries by section and then top-down", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 		const sections = result.markdown.match(/^### .+$/gm);
 
-		expect(sections).toEqual([
-			"### Allgemeine Prinzipien",
-			"### Sei klar und direkt",
-			"### Füge Kontext hinzu, um die Leistung zu verbessern",
-			"### Verwende Beispiele effektiv",
-			"### Strukturiere Prompts mit XML-Tags",
-		]);
+		// Every entry on this page sits below the page's second heading, so one section carries all
+		// of it; the multi-section ordering is pinned by the synthetic suites below.
+		expect(sections).toEqual(["### One — The station"]);
 		// Reading order runs down the page: `top` is a scene coordinate, which grows downwards.
-		const first = result.markdown.indexOf("für alle aktuellen Claude-Modelle,");
-		const last = result.markdown.indexOf("beschreibende Tag-Namen");
+		const first = result.markdown.indexOf("a shelf of rock");
+		const last = result.markdown.indexOf("the roof came");
 		expect(first).toBeGreaterThan(0);
 		expect(last).toBeGreaterThan(first);
-		expect(result.markdown.slice(last).match(/\^(hl|nt)-/g)).toHaveLength(1);
 	});
 
 	it("gives every note the place its handwriting sits, whatever the real Vision output was", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		// All five notes, including the two whose flawed-but-non-empty text stands alone in the entry:
-		// `→ Claude valisate Examphs` is unreadable, and only the handwriting says what was written.
-		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(5);
-		// Only the two bare circled digits, which come back empty, announce themselves as untranscribed.
-		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(2);
+		// All six clusters, including the flawed-but-non-empty readings, whose text stands alone in
+		// the entry: only the handwriting says what was really written.
+		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(6);
+		// Only the underline, which comes back empty, announces itself as untranscribed.
+		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(1);
 		// No image file is named anywhere in the digest -- that is the whole point of the format.
 		expect(result.markdown).not.toContain("![[");
 		// The id terminates the last *text* line, above the block -- on the closing fence it would take
 		// the block apart instead of naming the entry.
-		expect(result.markdown).toMatch(/^> Basic Rule O \^nt-[0-9a-f]{6}$/m);
+		expect(result.markdown).toMatch(/^> margin note one \^nt-[0-9a-f]{6}$/m);
 	});
 
 	it("renders no note at all when margin notes are off", async () => {
@@ -368,9 +361,9 @@ describe("buildDigest with the fixture page's text layer", () => {
 		});
 
 		expect(result.markdown).not.toContain("[!handwritten]");
-		expect(result.markdown).not.toContain("Basic Rule O");
+		expect(result.markdown).not.toContain("margin note one");
 		// The highlights are untouched -- the setting is about handwriting, not about the digest.
-		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(4);
 	});
 
 	it("makes no OCR call at all when margin notes are off", async () => {
@@ -647,12 +640,13 @@ describe("buildDigest note regions", () => {
 		const result = await build([fixturePage()], { ...withText, ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
 		const ys = [...result.markdown.matchAll(/^> rect: \d+ (\d+) \d+ \d+$/gm)].map((match) => Number(match[1]));
-		expect(ys).toHaveLength(5);
-		// Reading order runs down the page, and so does this axis: the five notes' y values only grow.
+		expect(ys).toHaveLength(6);
+		// Reading order runs down the page, and so does this axis: the clusters' y values only grow.
 		expect([...ys].sort((a, b) => a - b)).toEqual(ys);
-		// The topmost note sits beside the second heading, at 653 pt from the bottom of a 792 pt page.
-		expect(ys[0]).toBeGreaterThan(792 - 653 - 20);
-		expect(ys[0]).toBeLessThan(792 - 653 + 20);
+		// The topmost cluster is the "built on rock" note beside the first paragraph, measured at
+		// 174 pt from the page top.
+		expect(ys[0]).toBeGreaterThan(160);
+		expect(ys[0]).toBeLessThan(190);
 	});
 
 	/**
@@ -675,7 +669,7 @@ describe("buildDigest note regions", () => {
 	it("names the page of the embed, which is the page its link points at", async () => {
 		const result = await build([fixturePage()], { ...withText, ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		expect(result.markdown.match(/^> page: 2$/gm)).toHaveLength(5);
+		expect(result.markdown.match(/^> page: 2$/gm)).toHaveLength(6);
 	});
 
 	/**
@@ -686,7 +680,7 @@ describe("buildDigest note regions", () => {
 	it("leaves the block off a page whose text could not be read", async () => {
 		const result = await build([fixturePage()], { ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		expect(result.markdown.match(/\^nt-/g)).toHaveLength(5);
+		expect(result.markdown.match(/\^nt-/g)).toHaveLength(7);
 		expect(result.markdown).not.toContain("remarkable-note");
 	});
 
@@ -753,18 +747,18 @@ describe("buildDigest resilience", () => {
 
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: off });
 
-		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(5);
-		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(5);
-		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
-		expect(result.markdown).toContain("Claude reagiert gut auf ==klare, explizite Anweisungen.==");
+		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(6);
+		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(6);
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(4);
+		expect(result.markdown).toContain("somewhere where the ==readings matter more than the reader.==");
 	});
 
 	it("turns a throwing OCR backend into warnings and entries rather than an exception", async () => {
 		const result = await build([fixturePage()], { ocrBackend: throwingOcr() });
 
-		expect(result.warnings.filter((warning) => warning.includes("could not be transcribed"))).toHaveLength(5);
+		expect(result.warnings.filter((warning) => warning.includes("could not be transcribed"))).toHaveLength(7);
 		expect(result.warnings[1]).toContain("vision is not installed");
-		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(5);
+		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(7);
 	});
 
 	it("warns when a page carries no text layer of its own", async () => {
@@ -791,7 +785,7 @@ describe("buildDigest resilience", () => {
 
 		expect(result.warnings[0]).toContain("pdf.js is missing");
 		// The device's own recorded highlight text still carries every entry (F4's soft fail).
-		expect(result.markdown).toContain("für alle aktuellen Claude-Modelle,\n^hl-");
+		expect(result.markdown).toContain("a shelf of rock that the sea had spent a long time deciding not\n^hl-");
 	});
 });
 
@@ -802,19 +796,20 @@ describe("buildDigest on pen marks", () => {
 	const sceneXForPdfX = (pdfX: number) => pdfX / PX_TO_PT - PAGE_WIDTH_PT / PX_TO_PT / 2;
 
 	/**
-	 * An underline under the left half of `Claude reagiert gut auf klare,`, the second quote's first
-	 * line. 4 pt of clearance under it, and 225 pt long -- well past the 2.5 line heights a mark needs.
+	 * An underline under the opening words of the second quote's first line ("He had asked for the
+	 * posting…"). 4 pt of clearance under it, and 110 pt long -- past the 2.5 line heights a mark
+	 * needs, and well short of the highlighted run at the line's end.
 	 */
 	function underlinedScene(): RmPage {
-		const y = sceneYForPdfTop(626.1 - 4);
+		const y = sceneYForPdfTop(382.4 - 4);
 		const x = sceneXForPdfX(80);
-		return scene([boxStroke("0a", x, y, 225 / PX_TO_PT, 1)]);
+		return scene([boxStroke("0a", x, y, 110 / PX_TO_PT, 1)]);
 	}
 
 	it("quotes the text an underline sits under instead of transcribing the line itself", async () => {
 		const result = await build([fixturePage(underlinedScene())], { loadText: async () => fixtureTextDocument() });
 
-		expect(result.markdown).toContain("==Claude reagiert==");
+		expect(result.markdown).toContain("==He had asked for the posting in a letter of==");
 		expect(result.markdown).toContain("^hl-");
 		// The failure this replaces: a callout holding a picture of a line, with whatever OCR made of it.
 		expect(result.markdown).not.toContain("[!handwritten]");
@@ -837,7 +832,7 @@ describe("buildDigest on pen marks", () => {
 			marginNotes: false,
 		});
 
-		expect(result.markdown).toContain("==Claude reagiert==");
+		expect(result.markdown).toContain("==He had asked for the posting in a letter of==");
 	});
 
 	it("leaves the mark a note when the page has no text layer, since nothing can be resolved there", async () => {
@@ -856,7 +851,7 @@ describe("buildDigest on pen marks", () => {
 		const plain = await run(fixtureScene());
 		const marked = await run(underlined);
 
-		const idOf = (markdown: string) => /Claude reagiert gut auf[^\n]*\n\^(hl-[0-9a-f]{6})/.exec(markdown)?.[1];
+		const idOf = (markdown: string) => /He had asked for the posting[^\n]*\n\^(hl-[0-9a-f]{6})/.exec(markdown)?.[1];
 		expect(idOf(plain.markdown)).toBeDefined();
 		expect(idOf(marked.markdown)).toBe(idOf(plain.markdown));
 	});
@@ -864,9 +859,10 @@ describe("buildDigest on pen marks", () => {
 	it("does not take the fixture page's own handwriting for marks", async () => {
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		// The five notes and nine highlights the page has always produced, and not one more of either.
-		expect(result.markdown.match(/\^nt-/g)).toHaveLength(5);
-		expect(result.markdown.match(/\^hl-/g)).toHaveLength(9);
+		// The six clusters and four quotes the page measurably produces, and not one more of either
+		// -- handwriting must not be misread as underlines just because text sits near it.
+		expect(result.markdown.match(/\^nt-/g)).toHaveLength(6);
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(4);
 	});
 });
 

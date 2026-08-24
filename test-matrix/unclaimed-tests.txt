@@ -191,7 +191,6 @@ src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > 
 src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > orders the page's entries by section and then top-down
 src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > quotes the surrounding sentence and marks the highlighted run
 src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > renders no note at all when margin notes are off
-src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > resolves the five margin notes to the anchors measured on the real page
 src/digest-pipeline.test.ts :: buildDigest without a text layer > labels the page from its source index and says once that the text could not be read
 src/digest-pipeline.test.ts :: buildDigest without a text layer > names a pen mark it could not match to any text, instead of dropping it in silence
 src/digest-pipeline.test.ts :: buildDigest without a text layer > quotes every highlight from the .rm text and renders every note as an entry of its own
@@ -479,7 +478,6 @@ src/margin-notes.test.ts :: clusterStrokes > absorbs a speck into the line besid
 src/margin-notes.test.ts :: clusterStrokes > anchors a cluster on its smallest stroke CRDT id, independent of parse order
 src/margin-notes.test.ts :: clusterStrokes > does not let a bracket taller than a line claim a note by overlap alone
 src/margin-notes.test.ts :: clusterStrokes > does not let a stroke overlapping only a fraction of a line height join across rows
-src/margin-notes.test.ts :: clusterStrokes > finds the fixture page's five margin notes, including the two that overlap in both axes
 src/margin-notes.test.ts :: clusterStrokes > ignores strokes that carry no points
 src/margin-notes.test.ts :: clusterStrokes > keeps a descender with the word beside it, which the center test alone misses
 src/margin-notes.test.ts :: clusterStrokes > keeps a tall stroke with the line it belongs to, since the vertical test reads centers not boxes

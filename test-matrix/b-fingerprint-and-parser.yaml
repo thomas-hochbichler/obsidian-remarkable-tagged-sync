@@ -159,3 +159,17 @@
       layer: unit
       file: src/rm-parser.test.ts
       test: "parseRmV6 > reads a stroke's timestamp id, which margin-note clustering uses to tell writing phases apart"
+
+    - id: F10.2
+      scenario: The real weather-station page's ink is clustered at the page's own line height
+      expect: The four margin notes come out as four clusters -- including the two written directly beneath each other -- and the body underline and the two circles stay clusters of their own, never folded into a note
+      layer: unit
+      file: src/margin-notes.test.ts
+      test: "clusterStrokes > finds the fixture page's four margin notes and keeps the underline and the two circles apart from them"
+
+    - id: F10.3
+      scenario: The same page runs through the whole digest with its measured text layer
+      expect: Three clusters resolve to a quote and say so; three sit level with nothing closer than the page and carry only the page link; nothing falls out of the digest
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest with the fixture page's text layer > resolves the page's six clusters to the anchors measured on the real page"

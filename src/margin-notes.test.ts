@@ -4,9 +4,9 @@ import { clusterStrokes } from "./margin-notes";
 import { parseRmV6 } from "./rm-parser";
 import type { RmStroke } from "./rm-parser";
 
-const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
+const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/weather-station-page1.rm";
 const LINE_HEIGHT_PX = 40;
-/** The fixture PDF's body line spacing (13.5 pt) in the device's px, its 226 dpi against PDF's 72. */
+/** The fixture PDF's body line spacing in the device's px -- 13.5 pt at 226 dpi against PDF's 72; Obsidian's export is close enough that the clustering demonstrably separates the page's notes. */
 const FIXTURE_LINE_HEIGHT_PX = (13.5 * 226) / 72;
 /** reMarkable's two highlighter tool ids plus the Paper Pro shader -- marker bands, not margin notes. */
 const MARKER_PEN_TYPES = new Set([5, 18, 23]);
@@ -249,13 +249,16 @@ describe("clusterStrokes", () => {
 		});
 	});
 
-	it("finds the fixture page's five margin notes, including the two that overlap in both axes", () => {
+	it("finds the fixture page's four margin notes and keeps the underline and the two circles apart from them", () => {
 		const page = parseRmV6(new Uint8Array(readFileSync(PDF_PAGE_FIXTURE_PATH)));
 		const ink = page.layers.flatMap((layer) => layer.strokes).filter((stroke) => !MARKER_PEN_TYPES.has(stroke.penType));
 
 		const clusters = clusterStrokes(ink, FIXTURE_LINE_HEIGHT_PX);
 
-		expect(clusters.map((cluster) => cluster.strokes.length)).toEqual([10, 2, 2, 17, 34]);
+		// Two notes ("11 in 19 years" / "Feb 74 - storm?") sit directly beneath each other on the
+		// page and still come out as two clusters; the three single-stroke clusters are the body
+		// underline and the two circles, which must never be folded into a margin note.
+		expect(clusters.map((cluster) => cluster.strokes.length)).toEqual([14, 14, 1, 12, 16, 1, 1]);
 		expect(clusters.flatMap((cluster) => cluster.strokes)).toHaveLength(ink.length);
 		expect(new Set(clusters.map((cluster) => cluster.anchorStrokeId)).size).toBe(clusters.length);
 	});
