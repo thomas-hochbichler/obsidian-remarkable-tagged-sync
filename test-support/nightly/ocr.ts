@@ -87,7 +87,9 @@ export function loadReferencePages(dir: string): ReferencePage[] {
 		const trait = /(^|\n)trait:\s*(\S+)/.exec(front)?.[2];
 		if (!id || !trait) throw new Error(`${name}: frontmatter must carry id and trait`);
 		const alternates: string[] = [];
-		const accept = /(^|\n)accept:\s*\|\n((?:[ \t]+.*\n?)*)/.exec(front);
+		// A literal block may contain blank lines (they carry no indent), so the block runs over
+		// indented lines and bare newlines both, and ends at the first unindented non-empty line.
+		const accept = /(^|\n)accept:\s*\|\n((?:[ \t]+.*\n|\n)*)/.exec(front);
 		if (accept) alternates.push(accept[2].replace(/^[ \t]{2}/gm, "").trim());
 		return { id, trait, body, alternates };
 	});

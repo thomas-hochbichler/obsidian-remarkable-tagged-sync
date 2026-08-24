@@ -287,3 +287,69 @@
       layer: unit
       file: scripts/nightly-merge.test.mjs
       test: "the commit subject > carries the headline number, so git log --oneline is the drift curve at a glance"
+
+- feature: N6
+  name: The OCR baseline and its change discipline
+  code: scripts/ocr-baseline.mjs
+  tier: free
+  scenarios:
+    - id: N6.1
+      scenario: A committed verdict is read back as a recorded night
+      expect: Measured nights yield their numbers; an unknown night yields nothing worth baselining, and a page that could not be measured is left out
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "extracting a night from a committed verdict > takes the numbers from a measured night and refuses an unknown one"
+
+    - id: N6.2
+      scenario: A key has fewer than five recorded nights
+      expect: No baseline yet -- one run is one draw from a non-deterministic process, and a lucky draw sets a floor a normal night then trips
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "the baseline computation (§5) > refuses a first baseline before five recorded nights exist"
+
+    - id: N6.3
+      scenario: The first five nights exist
+      expect: The baseline is their median, carrying spread, night count and the three provenance fields the change discipline reads
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "the baseline computation (§5) > sets the first baseline as the median of the recorded nights, with spread and provenance"
+
+    - id: N6.4
+      scenario: The recorded median fell below the stored baseline
+      expect: Written silently -- improvement is absorbed, the same direction the lint and coverage ratchets allow
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "the baseline computation (§5) > writes a falling key silently -- improvement is absorbed, like the other ratchets"
+
+    - id: N6.5
+      scenario: The recorded median rose above the stored baseline
+      expect: Refused unless the run names the key with --accept -- a threshold the author can silently edit is not a threshold
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "the baseline computation (§5) > refuses a rising key without --accept"
+
+    - id: N6.6
+      scenario: A provider silently swaps the model behind an alias, and --accept is tried
+      expect: Still refused -- model, promptSha and renderVersion are all unchanged, so nothing explains the raise
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "the baseline computation (§5) > refuses --accept when model, promptSha and renderVersion are all unchanged -- the alias-swap case stays red"
+
+    - id: N6.7
+      scenario: The prompt really changed and the raise is named with a reason
+      expect: Accepted, with the reason recorded in the entry
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "the baseline computation (§5) > accepts a raise when the prompt changed and a reason is given"
+
+- feature: N7
+  name: The run summary
+  code: scripts/nightly-summary.mjs
+  tier: free
+  scenarios:
+    - id: N7.1
+      scenario: A night with a drifted page, a failed page and a lost table is rendered
+      expect: CER, baseline and delta per page; problems named in place of a number; a lost structure surfaced beside the score
+      layer: unit
+      file: scripts/nightly-summary.test.mjs
+      test: "the run summary table > shows CER, baseline and delta per page, names problems, and surfaces a lost structure"

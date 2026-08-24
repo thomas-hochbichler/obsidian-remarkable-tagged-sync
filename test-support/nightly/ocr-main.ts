@@ -6,11 +6,14 @@
 // makes every backend `unknown`: reported, never invented. Transcripts of failing pages go into
 // `nightly-parts/artifacts/` for the run's artifact upload; they never enter the part file.
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
 import { OpenAiCompatOcrBackend } from "../../src/openai-compat-ocr-backend";
 import { PROVIDERS } from "../../pro/ocr-providers";
 import { parseRmV6 } from "../../src/rm-parser";
+import { RENDER_VERSION } from "../../src/sync-engine";
 import {
 	type BackendRun,
 	type BaselineEntry,
@@ -52,7 +55,7 @@ async function main() {
 	const apiKey = process.env.OPENROUTER_API_KEY ?? "";
 
 	mkdirSync(join(OUT_DIR, "artifacts"), { recursive: true });
-	const backends: Record<string, BackendRun> = {};
+	const backends: Record<string, BackendRun & { model?: string }> = {};
 
 	for (const spec of NIGHTLY_BACKENDS) {
 		if (apiKey === "") {
@@ -80,7 +83,7 @@ async function main() {
 		}
 
 		const run = evaluateBackend(pages, outcomes, baseline[spec.key] ?? {});
-		backends[spec.key] = run;
+		backends[spec.key] = { ...run, model: spec.model };
 		console.log(`${spec.key}: ${run.status}${run.reason ? ` -- ${run.reason}` : ""} (median CER ${run.medianCer === null ? "n/a" : `${(run.medianCer * 100).toFixed(1)} %`})`);
 
 		for (const page of pages) {
@@ -95,7 +98,13 @@ async function main() {
 	const part = {
 		status: mergeBackendStatuses(backends),
 		measuredAt: new Date().toISOString(),
-		detail: { backends },
+		// The three fields the baseline's change discipline reads: a baseline may only be raised
+		// when the model, the prompt or the image we send actually changed (ticket 14 §5.4).
+		detail: {
+			promptSha: createHash("sha256").update(TRANSCRIPTION_PROMPT).digest("hex").slice(0, 16),
+			renderVersion: RENDER_VERSION,
+			backends,
+		},
 	};
 	writeFileSync(join(OUT_DIR, "ocr.json"), `${JSON.stringify(part, null, "\t")}\n`);
 	console.log(`ocr part: ${part.status} -> nightly-parts/ocr.json`);
