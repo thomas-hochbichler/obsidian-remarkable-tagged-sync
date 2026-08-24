@@ -330,3 +330,90 @@
       layer: unit
       file: src/ssh-transport.test.ts
       test: "which failures may quietly go to the other source > never fails over on a refused key or a changed host key"
+
+- feature: S7
+  name: Pairing costs a password once, and says what it will cost before that
+  code: src/ssh-pairing.ts
+  tier: pro
+  scenarios:
+    - id: S7.1
+      scenario: A Paper Pro and a Paper Pure, identified by the hostname they report
+      expect: Recognised as the generation whose SSH costs a factory reset -- which is what lets the warning appear before a password is asked for rather than after
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "which reMarkable this is > reads a Paper Pro and a Paper Pure off their hostnames"
+
+    - id: S7.2
+      scenario: Any other reMarkable
+      expect: Treated as a tablet that already answers, because rM1 and rM2 do
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "which reMarkable this is > treats everything else as a tablet that already answers"
+
+    - id: S7.3
+      scenario: The guidance a Paper Pro or Paper Pure owner is shown
+      expect: 'That Developer Mode **erases the tablet**, that notes come back from the cloud, and that the warning screen is permanent. No competitor says any of this in-product, and it is the one fact that cannot be discovered afterwards'
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "what the user is told before they type a password > says out loud that Developer Mode erases the tablet, and that notes come back from the cloud"
+
+    - id: S7.4
+      scenario: The guidance an rM1 or rM2 owner is shown
+      expect: No talk of erasing anything. Their tablet needs nothing turned on, and a warning meant for a different device would cost this plugin a user for no reason
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "what the user is told before they type a password > does not frighten an rM1 or rM2 owner, who has nothing to turn on"
+
+    - id: S7.5
+      scenario: Either kind of tablet
+      expect: Where the root password is, spelled out. It is on a screen nobody visits by accident
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "what the user is told before they type a password > says where the root password is, for either kind of tablet"
+
+    - id: S7.6
+      scenario: The key generated for a vault
+      expect: ECDSA. The older tablets' SSH server predates ed25519, and a key it cannot read fails after the password has already been accepted -- the least debuggable moment pairing has
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "the key this vault installs on the tablet > is an ECDSA key, because the older tablets' SSH server predates ed25519"
+
+    - id: S7.7
+      scenario: Two vaults pairing with the same tablet
+      expect: Different keys. Forgetting one device must not be able to lock the other out
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "the key this vault installs on the tablet > is a different key every time, so two vaults never share one"
+
+    - id: S7.8
+      scenario: Somebody reads `authorized_keys` on their own tablet a year later
+      expect: The line says what put it there
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "the key this vault installs on the tablet > says who put it there, for whoever reads authorized_keys later"
+
+    - id: S7.9
+      scenario: A tablet that already has the user's own key, or this vault's from a previous pairing
+      expect: 'Appended, never replaced, and never twice. Replacing would lock the user out of their own device with a command they did not know they were running'
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "installing it > appends without disturbing any other key, and without adding its own twice"
+
+    - id: S7.10
+      scenario: A tablet whose `.ssh` directory does not exist yet
+      expect: Created with the permissions dropbear insists on. It silently ignores an `authorized_keys` it considers too readable, which looks exactly like a refused key
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "installing it > creates the directory with the permissions an SSH server insists on"
+
+- feature: S8
+  name: A sleeping tablet is not a failed sync
+  code: src/auto-sync-gates.ts
+  tier: pro
+  scenarios:
+    - id: S8.1
+      scenario: A background run is due and the paired tablet does not answer a probe
+      expect: 'Refused, silently, under a reason of its own. Not `not-connected` -- that is a vault nobody set up, while this is one set up perfectly whose tablet is in a drawer, and a nightly "sync failed" for it trains people to ignore the status bar'
+      layer: unit
+      file: src/auto-sync-gates.test.ts
+      test: "backgroundRunBlocked > blocks quietly when the tablet is asleep, and says so as its own reason"

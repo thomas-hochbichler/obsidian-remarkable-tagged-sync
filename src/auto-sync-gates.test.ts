@@ -9,7 +9,13 @@ import {
 // The decisions, without a vault or a registry. `auto-sync-schedule.test.ts` is the other half: that
 // the shipped `triggerAutoSync` asks these and obeys the answer.
 
-const CLEAR: BackgroundConditions = { enabled: true, running: false, connected: true, backgroundConsent: true };
+const CLEAR: BackgroundConditions = {
+	enabled: true,
+	running: false,
+	connected: true,
+	reachable: true,
+	backgroundConsent: true,
+};
 
 describe("backgroundRunBlocked", () => {
 	it("lets a run through when every condition is clear", () => {
@@ -29,6 +35,13 @@ describe("backgroundRunBlocked", () => {
 		expect(backgroundRunBlocked({ ...CLEAR, connected: false })).toBe("not-connected");
 	});
 
+	it("blocks quietly when the tablet is asleep, and says so as its own reason", () => {
+		// Not `not-connected`: that is a vault nobody set up, and this is one set up perfectly whose
+		// tablet is in a drawer. Reporting the second as a failed sync every night trains people to
+		// ignore the status bar.
+		expect(backgroundRunBlocked({ ...CLEAR, reachable: false })).toBe("device-unreachable");
+	});
+
 	it("blocks when the backend may not run unattended", () => {
 		expect(backgroundRunBlocked({ ...CLEAR, backgroundConsent: false })).toBe("no-background-consent");
 	});
@@ -36,9 +49,15 @@ describe("backgroundRunBlocked", () => {
 	it("names the master switch first when everything is wrong at once", () => {
 		// Whichever it names is silent, so the order changes nothing a user sees. It is asserted so a
 		// test that means to exercise one gate cannot pass because a different one fired.
-		expect(backgroundRunBlocked({ enabled: false, running: true, connected: false, backgroundConsent: false })).toBe(
-			"auto-sync-off",
-		);
+		expect(
+			backgroundRunBlocked({
+				enabled: false,
+				running: true,
+				connected: false,
+				reachable: false,
+				backgroundConsent: false,
+			}),
+		).toBe("auto-sync-off");
 	});
 });
 

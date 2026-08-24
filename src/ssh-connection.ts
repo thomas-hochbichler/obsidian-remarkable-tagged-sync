@@ -63,6 +63,8 @@ export class HostKeyMismatchError extends Error {
 export interface DeviceConnection extends DeviceFiles {
 	/** What the device presented, so pairing can pin it. */
 	readonly hostKeyFingerprint: string;
+	/** One command on the device. Pairing needs it; the sync path uses only the three above. */
+	exec(command: string, stdin?: string): Promise<string>;
 	close(): Promise<void>;
 }
 
@@ -165,6 +167,7 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 
 	return {
 		hostKeyFingerprint: fingerprint,
+		exec,
 
 		async list(): Promise<DeviceFileStat[]> {
 			// One walk for names, sizes and times together. BusyBox `find` has no `-printf`, so `stat`

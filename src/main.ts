@@ -24,9 +24,17 @@ import { reTranscribeConfirmation, reTranscribeIsUseful } from "./re-transcribe-
 import { registerRegionProcessor } from "./region-view";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { CloudTransport } from "./cloud-transport";
-import { type Transport, type TransportId, type TransportSession, explainTransportError } from "./transport";
+import {
+	type Transport,
+	type TransportId,
+	type TransportSession,
+	type TransportStatus,
+	explainTransportError,
+} from "./transport";
+import type { ErrorContext } from "./explain-error";
 import { failoverNotice, openTransportChain, type TransportChain } from "./transport-chain";
 import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-transport";
+import { probeDevice } from "./ssh-pairing";
 import { reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -145,6 +153,16 @@ export default class TaggedSyncPlugin extends Plugin {
 
 	private backendRequiresLicence(): boolean {
 		return ocrBackendEntry(this.data.ocrBackend)?.requiresLicence === true;
+	}
+
+	/** The cloud's own connection state, which the settings tab shows whichever source is selected. */
+	cloudTransportStatus(): TransportStatus {
+		return this.cloudTransport.status();
+	}
+
+	/** One sentence for a failure, worded by whichever source it came from. */
+	transportError(error: unknown, context: ErrorContext): string {
+		return explainTransportError(this.transport(), error, context);
 	}
 
 	/** Both transports, by id. Built once in `onload`; which one runs is decided per call below. */
@@ -573,7 +591,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			backgroundRunBlocked({
 				enabled: this.data.autoSync.enabled,
 				running: this.syncing,
-				connected: this.auth.isConnected(),
+				connected: this.transport().status().connected,
+				reachable: await this.autoSyncSourceReachable(),
 				backgroundConsent: backgroundConsentGiven(entry, this.data.llmProviders[this.data.ocrBackend] ?? {}),
 			}) !== null
 		) {
@@ -593,6 +612,20 @@ export default class TaggedSyncPlugin extends Plugin {
 		} finally {
 			this.syncing = false;
 		}
+	}
+
+	/**
+	 * Is there any point starting a background run?
+	 *
+	 * Only the direct-device transport can answer this cheaply, and only it needs to: the cloud is
+	 * either reachable or the run fails in a second, while a sleeping tablet holds a connection open
+	 * until it times out -- on every tick, all night. A chain with a cloud in it is always worth
+	 * trying, because the fallback is exactly what a sleeping tablet is for.
+	 */
+	private async autoSyncSourceReachable(): Promise<boolean> {
+		const chain = this.transportChain();
+		if (chain.primary.id !== "ssh" || chain.fallback !== null) return true;
+		return await probeDevice(this.data.ssh.host, this.data.ssh.port);
 	}
 
 	/** Wiring only: `sync-notices.ts` decides which of the five are said, in what words and in what order. */
