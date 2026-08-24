@@ -14,7 +14,7 @@
 
 import type { Content, Entry, RawEntry } from "rmapi-js";
 import type { SyncApi } from "./sync-engine";
-import { indexEntry, type Sync15Entry } from "./sync15-hash";
+import { hashBytes, indexEntry, type Sync15Entry } from "./sync15-hash";
 
 /** One file on the device, as a listing reports it. Paths are relative to the xochitl directory. */
 export interface DeviceFileStat {
@@ -189,11 +189,28 @@ interface DeviceMetadata {
 export async function openDeviceApi(files: DeviceFiles, cache: HashCache): Promise<SyncApi> {
 	const { documents, root } = await readAccount(files, cache);
 
-	/** A member file's bytes, checked against the hash the index gave for it. */
+	/**
+	 * A member file's bytes, checked against the hash this session indexed it under.
+	 *
+	 * The device is *live*: xochitl keeps writing while a sync reads, so a file can move between the
+	 * listing that hashed it and the read that fetches it. Nobody in this field locks -- the tablet
+	 * offers no way to -- so the guard is to notice instead, by hashing what was actually read.
+	 *
+	 * A second read covers a genuinely torn one. If it still disagrees the file really did change, and
+	 * throwing is right: the engine skips that one document and the next sync picks it up, because the
+	 * hash that moved is the same hash the gates read. What must never happen is the quiet version --
+	 * rendering half-written bytes and recording them under the old page hash, which is a page that
+	 * looks synced and never updates again.
+	 */
 	const readMember = async (docId: string, path: string): Promise<Uint8Array> => {
 		const document = documents.get(docId);
 		if (document === undefined) throw new Error(`No document ${docId} on the device.`);
-		return await files.read(path);
+		const expected = document.hashes.get(path);
+		let bytes = await files.read(path);
+		if (expected === undefined || (await hashBytes(bytes)) === expected) return bytes;
+		bytes = await files.read(path);
+		if ((await hashBytes(bytes)) === expected) return bytes;
+		throw new Error(`${path} changed on the device while it was being read.`);
 	};
 
 	const contentOf = async (docId: string): Promise<Content> => {
@@ -207,7 +224,7 @@ export async function openDeviceApi(files: DeviceFiles, cache: HashCache): Promi
 			for (const [docId, document] of documents) {
 				const metadataFile = document.files.find((file) => file.path === `${docId}.metadata`);
 				if (metadataFile === undefined) continue;
-				const metadata = parseJson(await files.read(metadataFile.path)) as DeviceMetadata;
+				const metadata = parseJson(await readMember(docId, metadataFile.path)) as DeviceMetadata;
 				// The device keeps a tombstone until the next cloud sync clears it; the cloud listing has
 				// no such row, so honouring it is what keeps the two transports listing the same account.
 				if (metadata.deleted === true) continue;

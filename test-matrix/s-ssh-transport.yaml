@@ -417,3 +417,41 @@
       layer: unit
       file: src/auto-sync-gates.test.ts
       test: "backgroundRunBlocked > blocks quietly when the tablet is asleep, and says so as its own reason"
+
+- feature: S9
+  name: Reading a tablet that is still writing
+  code: src/device-api.ts
+  tier: pro
+  scenarios:
+    - id: S9.1
+      scenario: A page comes back half-written -- xochitl was mid-save when the sync read it
+      expect: 'Read again, and the good bytes used. Nothing in this field locks the device because the tablet offers no way to, so the guard is to notice: what was read is hashed and compared against what the listing indexed it as'
+      layer: unit
+      file: src/device-api.test.ts
+      test: "reading a device that is still being written to > reads a torn page a second time rather than handing it on"
+
+    - id: S9.2
+      scenario: The page really was rewritten between the listing and the read
+      expect: 'Refused, so the engine skips that one document and the next sync picks it up -- the hash that moved is the same hash the gates read. The quiet alternative is the dangerous one: rendering the new bytes under the old page hash gives a page that looks synced and never updates again'
+      layer: unit
+      file: src/device-api.test.ts
+      test: "reading a device that is still being written to > refuses a page the device really did rewrite, rather than storing it under the old hash"
+
+- feature: S10
+  name: The engine's own gate closes over hashes computed from a filesystem
+  code: src/device-api.ts
+  tier: pro
+  scenarios:
+    - id: S10.1
+      scenario: '`runSync` itself, run twice against a device nothing happened to'
+      expect: 'The second run returns the previous index **by identity** and hashes no file at all -- the engine''s own pinned contract for "nothing to do", now met by a root hash built off `xochitl/` rather than handed over by a server. The stores throw if touched, so an idle run reaching the vault fails rather than passing quietly'
+      layer: engine
+      file: src/device-api.test.ts
+      test: "the engine over the device > records the device's root hash on a run, and does nothing at all on the next one"
+
+    - id: S10.2
+      scenario: A page is written on between two runs
+      expect: The gate opens and the recorded root hash moves. Without this the first assertion could be satisfied by a gate that is simply always closed
+      layer: engine
+      file: src/device-api.test.ts
+      test: "the engine over the device > notices on the next run that a page was written on"

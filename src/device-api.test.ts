@@ -8,6 +8,8 @@ import {
 	openDeviceApi,
 } from "./device-api";
 import { enumerateNotebookTags } from "./remarkable-tags";
+import { EMPTY_SYNC_INDEX, runSync, type SyncDeps } from "./sync-engine";
+import { TagRouter } from "./tag-router";
 import { hashBytes } from "./sync15-hash";
 
 const DOC = "b9ff40e1-1b3d-4479-b905-fb931ad618bc";
@@ -20,12 +22,18 @@ function fakeDevice(contents: Record<string, string>) {
 	const mtimes = new Map([...files.keys()].map((path) => [path, 1_000]));
 	const hashed: string[][] = [];
 	const read: string[] = [];
+	const torn = new Map<string, Uint8Array>();
 
 	const device: DeviceFiles = {
 		list: async (): Promise<DeviceFileStat[]> =>
 			[...files].map(([path, bytes]) => ({ path, size: bytes.length, mtimeMs: mtimes.get(path) ?? 0 })),
 		read: async (path) => {
 			read.push(path);
+			const half = torn.get(path);
+			if (half !== undefined) {
+				torn.delete(path);
+				return half;
+			}
 			const bytes = files.get(path);
 			if (bytes === undefined) throw new Error(`no ${path}`);
 			return bytes;
@@ -49,6 +57,10 @@ function fakeDevice(contents: Record<string, string>) {
 		write(path: string, text: string) {
 			files.set(path, new TextEncoder().encode(text));
 			mtimes.set(path, (mtimes.get(path) ?? 0) + 1_000);
+		},
+		/** Hand back wrong bytes for the next read of a path -- what a half-written file looks like. */
+		tearOnce(path: string, text: string) {
+			torn.set(path, new TextEncoder().encode(text));
 		},
 		/** Touch without changing anything -- what a copy or a clock adjustment does. */
 		touch(path: string) {
@@ -134,6 +146,31 @@ describe("the device as a SyncApi", () => {
 		const { entries } = await api.raw.getEntries(`${DOC}.docSchema`, "unused");
 
 		expect(entries.map((entry) => entry.id).sort()).toEqual([`${DOC}.content`, `${DOC}.metadata`, `${DOC}/${PAGE}.rm`]);
+	});
+});
+
+describe("reading a device that is still being written to", () => {
+	it("reads a torn page a second time rather than handing it on", async () => {
+		const tablet = fakeDevice(NOTEBOOK);
+		const api = await openDeviceApi(tablet.device, NO_HASH_CACHE);
+		tablet.tearOnce(`${DOC}/${PAGE}.rm`, "half a pa");
+
+		const bytes = await api.raw.getHash(`${DOC}/${PAGE}.rm`, "unused");
+
+		// xochitl keeps writing while a sync reads and there is no way to lock it, so the guard is to
+		// notice: the bytes are hashed and compared against what the listing indexed them as.
+		expect(new TextDecoder().decode(bytes)).toBe("page bytes");
+	});
+
+	it("refuses a page the device really did rewrite, rather than storing it under the old hash", async () => {
+		const tablet = fakeDevice(NOTEBOOK);
+		const api = await openDeviceApi(tablet.device, NO_HASH_CACHE);
+		tablet.write(`${DOC}/${PAGE}.rm`, "a whole new page");
+
+		// The engine skips this one document and the next sync picks it up, because the hash that moved
+		// is the same hash the gates read. The quiet version -- rendering the new bytes under the old
+		// page hash -- would be a page that looks synced and never updates again.
+		await expect(api.raw.getHash(`${DOC}/${PAGE}.rm`, "unused")).rejects.toThrow("changed on the device");
 	});
 });
 
@@ -234,5 +271,67 @@ describe("the hash cache", () => {
 		await openDeviceApi(tablet.device, cache);
 
 		expect(tablet.hashed.flat()).toEqual([`${DOC}/${PAGE}.rm`]);
+	});
+});
+
+
+/**
+ * The engine, over the device.
+ *
+ * The unit tests above prove the six methods answer correctly; this proves the *engine* reads them
+ * the way it reads the cloud -- specifically that the top-level gate, which is what makes an idle
+ * sync cost one listing instead of a library, closes over hashes this module computed. The stores
+ * throw if touched, which is half the assertion: an idle run must not reach the vault at all.
+ */
+function refusingDeps(api: SyncDeps["api"]): SyncDeps {
+	const refuse = (what: string) => () => {
+		throw new Error(`an unchanged device must not reach the ${what}`);
+	};
+	return {
+		api,
+		tagRouter: new TagRouter({ nothing: "Target" }),
+		noteStore: { read: refuse("vault"), exists: refuse("vault"), write: refuse("vault"), delete: refuse("vault") } as never,
+		attachmentStore: { ensureFolder: refuse("vault"), writeBinary: refuse("vault") },
+		ocrBackend: { transcribe: refuse("OCR backend") } as never,
+		marginNotes: false,
+		now: () => "2026-08-24T00:00:00.000Z",
+	};
+}
+
+describe("the engine over the device", () => {
+	it("records the device's root hash on a run, and does nothing at all on the next one", async () => {
+		const tablet = fakeDevice(NOTEBOOK);
+		const cache = memoryCache();
+
+		// Nothing is tagged into the router, so the first run plans no work and only records where the
+		// device stood -- which is exactly the state an idle vault is in every day after the first.
+		const first = await runSync(refusingDeps(await openDeviceApi(tablet.device, cache)), EMPTY_SYNC_INDEX);
+		expect(first.notesWritten).toBe(0);
+		expect(first.index.rootHash).not.toBeNull();
+
+		tablet.hashed.length = 0;
+		const second = await openDeviceApi(tablet.device, cache);
+		const result = await runSync(refusingDeps(second), first.index);
+
+		// Identity, not equality: the engine's own pinned contract for "nothing to do", now met by a
+		// root hash this module computed off a filesystem rather than one a server handed over.
+		expect(result.index).toBe(first.index);
+		// And it cost nothing: the second session hashed no file, because the cache answered for all
+		// of them.
+		expect(tablet.hashed.flat()).toEqual([]);
+	});
+
+	it("notices on the next run that a page was written on", async () => {
+		const tablet = fakeDevice(NOTEBOOK);
+		const cache = memoryCache();
+		const first = await runSync(refusingDeps(await openDeviceApi(tablet.device, cache)), EMPTY_SYNC_INDEX);
+
+		tablet.write(`${DOC}/${PAGE}.rm`, "page bytes, and one more stroke");
+		const result = await runSync(refusingDeps(await openDeviceApi(tablet.device, cache)), first.index);
+
+		// The gate opens. Nothing is written because nothing is tagged into the router, but the run is
+		// no longer the identity short-circuit -- which is the signal a real vault would act on.
+		expect(result.index).not.toBe(first.index);
+		expect(result.index.rootHash).not.toBe(first.index.rootHash);
 	});
 });
