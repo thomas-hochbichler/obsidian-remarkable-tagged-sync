@@ -1,0 +1,171 @@
+# golden weather-station-page1-annotated
+# render-version 30
+# fixture test-fixtures/rmv6/weather-station.pdf + weather-station-page1.rm
+
+## scene
+formatVersion 6
+paperSize 1404x1872
+layers 1
+  layer 0 name="Layer 1" visible=true anchor=- placement=- strokes=59 ids=0112..0157
+    timestamps 0001x59 ascending
+    stroke 0 pen=17 color=0 brush=1.19 rgba=- points=2 x=-71..199 y=1145..1145 width=10..10
+    stroke 1 pen=17 color=0 brush=1.19 rgba=- points=25 x=974..995 y=665..713 width=10..10
+    stroke 2 pen=17 color=0 brush=1.19 rgba=- points=22 x=1005..1025 y=686..707 width=10..10
+    stroke 3 pen=17 color=0 brush=1.19 rgba=- points=4 x=1038..1039 y=690..706 width=10..10
+    stroke 4 pen=17 color=0 brush=1.19 rgba=- points=2 x=1046..1046 y=667..669 width=10..10
+    stroke 5 pen=17 color=0 brush=1.19 rgba=- points=10 x=1054..1061 y=666..709 width=10..10
+    stroke 6 pen=17 color=0 brush=1.19 rgba=- points=33 x=1069..1091 y=682..711 width=10..10
+    stroke 7 pen=17 color=0 brush=1.19 rgba=- points=8 x=1090..1095 y=668..705 width=10..10
+    stroke 8 pen=17 color=0 brush=1.19 rgba=- points=35 x=1121..1144 y=685..710 width=10..10
+    stroke 9 pen=17 color=0 brush=1.19 rgba=- points=14 x=1149..1171 y=689..707 width=10..10
+    stroke 10 pen=17 color=0 brush=1.19 rgba=- points=8 x=1196..1205 y=680..705 width=10..10
+    stroke 11 pen=17 color=0 brush=1.19 rgba=- points=31 x=1214..1235 y=686..706 width=10..10
+    stroke 12 pen=17 color=0 brush=1.19 rgba=- points=16 x=1238..1257 y=687..707 width=10..10
+    stroke 13 pen=17 color=0 brush=1.19 rgba=- points=13 x=1261..1289 y=668..704 width=10..10
+    stroke 14 pen=17 color=0 brush=1.19 rgba=- points=8 x=1273..1282 y=698..714 width=10..10
+    stroke 15 pen=17 color=0 brush=1.19 rgba=- points=21 x=978..1005 y=1113..1141 width=10..10
+    stroke 16 pen=17 color=0 brush=1.19 rgba=- points=13 x=1010..1028 y=1100..1140 width=10..10
+    stroke 17 pen=17 color=0 brush=1.19 rgba=- points=22 x=1037..1059 y=1122..1142 width=10..10
+    stroke 18 pen=17 color=0 brush=1.19 rgba=- points=14 x=1069..1087 y=1123..1143 width=10..10
+    stroke 19 pen=17 color=0 brush=1.19 rgba=- points=10 x=1096..1119 y=1104..1140 width=10..10
+    stroke 20 pen=17 color=0 brush=1.19 rgba=- points=5 x=1108..1115 y=1135..1148 width=10..10
+    stroke 21 pen=17 color=0 brush=1.19 rgba=- points=9 x=1154..1161 y=1102..1144 width=10..10
+    stroke 22 pen=17 color=0 brush=1.19 rgba=- points=5 x=1142..1158 y=1123..1125 width=10..10
+    stroke 23 pen=17 color=0 brush=1.19 rgba=- points=17 x=1170..1196 y=1103..1140 width=10..10
+    stroke 24 pen=17 color=0 brush=1.19 rgba=- points=21 x=1203..1224 y=1119..1143 width=10..10
+    stroke 25 pen=17 color=0 brush=1.19 rgba=- points=56 x=1243..1290 y=1100..1143 width=10..10
+    stroke 26 pen=17 color=0 brush=1.19 rgba=- points=30 x=1286..1314 y=1124..1143 width=10..10
+    stroke 27 pen=17 color=0 brush=1.19 rgba=- points=4 x=1321..1329 y=1103..1141 width=10..10
+    stroke 28 pen=17 color=0 brush=1.19 rgba=- points=25 x=1323..1372 y=1118..1141 width=10..10
+    stroke 29 pen=17 color=0 brush=1.19 rgba=- points=8 x=980..1007 y=1705..1735 width=10..10
+    stroke 30 pen=17 color=0 brush=1.19 rgba=- points=11 x=1016..1035 y=1704..1736 width=10..10
+    stroke 31 pen=17 color=0 brush=1.19 rgba=- points=4 x=1053..1060 y=1717..1738 width=10..10
+    stroke 32 pen=17 color=0 brush=1.19 rgba=- points=2 x=1067..1067 y=1708..1709 width=10..10
+    stroke 33 pen=17 color=0 brush=1.19 rgba=- points=11 x=1070..1094 y=1718..1739 width=10..10
+    stroke 34 pen=17 color=0 brush=1.19 rgba=- points=15 x=1122..1142 y=1703..1740 width=10..10
+    stroke 35 pen=17 color=0 brush=1.19 rgba=- points=35 x=1149..1174 y=1705..1746 width=10..10
+    stroke 36 pen=17 color=0 brush=1.19 rgba=- points=5 x=1195..1205 y=1725..1744 width=10..10
+    stroke 37 pen=17 color=0 brush=1.19 rgba=- points=11 x=1193..1218 y=1726..1759 width=10..10
+    stroke 38 pen=17 color=0 brush=1.19 rgba=- points=64 x=1227..1281 y=1724..1749 width=10..10
+    stroke 39 pen=17 color=0 brush=1.19 rgba=- points=12 x=1286..1301 y=1728..1747 width=10..10
+    stroke 40 pen=17 color=0 brush=1.19 rgba=- points=17 x=1305..1318 y=1730..1753 width=10..10
+    stroke 41 pen=17 color=0 brush=1.19 rgba=- points=6 x=985..988 y=1790..1822 width=10..10
+    stroke 42 pen=17 color=0 brush=1.19 rgba=- points=7 x=975..1011 y=1786..1791 width=10..10
+    stroke 43 pen=17 color=0 brush=1.19 rgba=- points=8 x=990..1009 y=1801..1803 width=10..10
+    stroke 44 pen=17 color=0 brush=1.19 rgba=- points=22 x=1002..1031 y=1803..1822 width=10..10
+    stroke 45 pen=17 color=0 brush=1.19 rgba=- points=18 x=1037..1059 y=1793..1823 width=10..10
+    stroke 46 pen=17 color=0 brush=1.19 rgba=- points=14 x=1089..1103 y=1789..1825 width=10..10
+    stroke 47 pen=17 color=0 brush=1.19 rgba=- points=6 x=1088..1107 y=1808..1811 width=10..10
+    stroke 48 pen=17 color=0 brush=1.19 rgba=- points=12 x=1121..1142 y=1790..1821 width=10..10
+    stroke 49 pen=17 color=0 brush=1.19 rgba=- points=7 x=1163..1186 y=1808..1811 width=10..10
+    stroke 50 pen=17 color=0 brush=1.19 rgba=- points=16 x=1200..1212 y=1804..1826 width=10..10
+    stroke 51 pen=17 color=0 brush=1.19 rgba=- points=5 x=1227..1232 y=1791..1825 width=10..10
+    stroke 52 pen=17 color=0 brush=1.19 rgba=- points=30 x=1223..1263 y=1806..1828 width=10..10
+    stroke 53 pen=17 color=0 brush=1.19 rgba=- points=13 x=1270..1286 y=1805..1828 width=10..10
+    stroke 54 pen=17 color=0 brush=1.19 rgba=- points=23 x=1291..1325 y=1809..1826 width=10..10
+    stroke 55 pen=17 color=0 brush=1.19 rgba=- points=15 x=1346..1359 y=1791..1812 width=10..10
+    stroke 56 pen=17 color=0 brush=1.19 rgba=- points=7 x=1345..1347 y=1833..1840 width=10..10
+    stroke 57 pen=17 color=0 brush=1.19 rgba=- points=104 x=-482..-174 y=2039..2127 width=10..10
+    stroke 58 pen=17 color=0 brush=1.19 rgba=- points=85 x=35..166 y=2119..2193 width=10..10
+highlights 7
+  highlight 0 color=5 rects=1 text="a shelf of rock that the sea had spent a long time deciding not"
+  highlight 1 color=5 rects=1 text="to take."
+  highlight 2 color=3 rects=1 text="readings matter more"
+  highlight 3 color=3 rects=1 text="than the reader."
+  highlight 4 color=4 rects=1 text="He missed eleven readings in nineteen years."
+  highlight 5 color=9 rects=1 text="the roof came"
+  highlight 6 color=9 rects=1 text="off."
+images 0
+text -
+
+## pdf
+pages 1
+page 1 size=612.0x792.0
+  xobject EmbeddedPdfPage box=[0.0,139.9 0.8,140.7]
+  path f fill=255,192,203 blend=Multiply m1l3h1 box=[112.2,594.3 453.9,608.1] from=(112.2,594.3) to=(453.9,594.3) sig=1f44bbf7
+  path f fill=255,192,203 blend=Multiply m1l3h1 box=[39.6,575.7 83.6,589.5] from=(39.6,575.7) to=(83.6,575.7) sig=3f47ae9d
+  path f fill=251,247,25 blend=Multiply m1l3h1 box=[332.0,454.7 453.7,468.5] from=(332.0,454.7) to=(453.7,454.7) sig=7c88831f
+  path f fill=251,247,25 blend=Multiply m1l3h1 box=[40.1,436.1 129.9,449.9] from=(40.1,436.1) to=(129.9,436.1) sig=31ea119a
+  path f fill=0,255,0 blend=Multiply m1l3h1 box=[111.4,333.8 364.8,347.5] from=(111.4,333.8) to=(364.8,333.8) sig=23a37bac
+  path f fill=190,234,254 blend=Multiply m1l3h1 box=[378.2,315.2 457.8,328.9] from=(378.2,315.2) to=(457.8,315.2) sig=2e361161
+  path f fill=190,234,254 blend=Multiply m1l3h1 box=[39.8,296.6 59.9,310.3] from=(39.8,296.6) to=(59.9,296.6) sig=26980a20
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l1 box=[233.3,491.6 304.2,491.6] from=(233.3,491.6) to=(304.2,491.6) sig=dc5313a7
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l24 box=[507.6,604.9 513.1,617.6] from=(508.5,617.6) to=(510.2,608.8) sig=1743d166
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l21 box=[515.6,606.5 520.9,612.1] from=(516.1,612.1) to=(520.9,606.5) sig=77d0e789
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l3 box=[524.3,606.8 524.5,610.9] from=(524.5,610.9) to=(524.4,606.8) sig=8022eee4
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l1 box=[526.3,616.6 526.3,617.0] from=(526.3,617.0) to=(526.3,616.6) sig=e034b029
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l9 box=[528.5,606.1 530.2,617.3] from=(529.3,617.3) to=(530.2,606.5) sig=9fc5d0de
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l32 box=[532.4,605.5 538.1,613.2] from=(532.5,610.1) to=(537.4,607.7) sig=d399bcc2
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l7 box=[537.9,607.1 539.2,616.9] from=(539.2,616.9) to=(538.9,607.1) sig=8f4b1f77
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l34 box=[546.1,605.9 552.1,612.4] from=(548.1,610.1) to=(551.6,607.1) sig=0ab5bc03
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l13 box=[553.4,606.6 559.3,611.3] from=(553.5,611.3) to=(559.3,606.9) sig=33b0ce33
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l7 box=[565.6,607.1 568.1,613.7] from=(565.7,610.3) to=(568.1,613.1) sig=66be62e4
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l30 box=[570.4,606.9 575.9,612.1] from=(573.0,610.8) to=(573.2,606.9) sig=2b08d1fe
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l15 box=[576.6,606.7 581.6,611.7] from=(580.4,610.7) to=(581.6,608.3) sig=83ca7853
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l12 box=[582.6,607.2 590.1,616.7] from=(583.2,616.7) to=(590.1,610.8) sig=3ae62eeb
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l7 box=[585.9,604.8 588.3,608.8] from=(585.9,608.8) to=(588.3,604.8) sig=a8ab09b3
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l20 box=[508.6,492.7 515.7,500.1] from=(515.7,498.4) to=(515.7,494.3) sig=39bd24aa
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l12 box=[516.9,492.9 521.7,503.6] from=(518.3,503.6) to=(521.3,492.9) sig=1eee36d3
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l21 box=[523.9,492.4 529.7,497.6] from=(524.3,493.4) to=(528.2,492.6) sig=d4fb80ad
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l13 box=[532.4,492.2 537.2,497.5] from=(536.3,497.5) to=(537.2,493.0) sig=076dc18b
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l9 box=[539.6,492.9 545.5,502.4] from=(540.6,502.4) to=(545.5,495.4) sig=8df72be0
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l4 box=[542.7,491.0 544.4,494.3] from=(542.7,494.3) to=(544.4,491.0) sig=383778fb
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l8 box=[554.7,492.0 556.6,502.9] from=(556.6,502.9) to=(554.7,492.0) sig=c7971268
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l4 box=[551.6,496.9 555.7,497.4] from=(551.6,497.1) to=(555.7,497.4) sig=2f14b545
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l16 box=[558.8,492.9 565.6,502.7] from=(561.3,502.7) to=(565.6,493.0) sig=b64d194a
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l20 box=[567.4,492.2 573.1,498.6] from=(568.4,494.3) to=(571.4,492.5) sig=702f9ad1
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l55 box=[578.0,492.2 590.4,503.4] from=(581.6,495.6) to=(587.2,493.3) sig=223f1422
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l29 box=[589.3,492.2 596.8,497.2] from=(589.7,494.3) to=(596.8,494.0) sig=f31768a9
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l3 box=[598.6,492.8 600.6,502.6] from=(600.6,502.6) to=(598.7,492.8) sig=efbbec8b
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l24 box=[599.1,492.6 612.0,498.7] from=(599.1,496.7) to=(612.0,494.1) sig=e0a89dda
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l7 box=[509.0,336.9 516.1,344.7] from=(509.2,340.2) to=(515.1,336.9) sig=03bb48c9
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l10 box=[518.4,336.5 523.3,345.1] from=(518.4,341.1) to=(520.6,336.5) sig=e596e1d0
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l3 box=[528.2,336.1 530.0,341.5] from=(530.0,341.5) to=(528.2,336.1) sig=088ff940
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l1 box=[531.8,343.8 531.9,343.9] from=(531.9,343.9) to=(531.8,343.8) sig=c8cd91a6
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l10 box=[532.5,335.8 538.9,341.4] from=(533.9,341.4) to=(538.6,336.8) sig=d4191d80
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l14 box=[546.3,335.7 551.4,345.4] from=(546.4,339.4) to=(549.0,335.7) sig=e1c14fbb
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l34 box=[553.3,333.9 560.1,344.7] from=(553.8,340.9) to=(558.0,333.9) sig=3b8a1e51
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l4 box=[565.4,334.6 568.0,339.6] from=(565.4,339.6) to=(568.0,334.6) sig=d79257ec
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l10 box=[564.9,330.6 571.4,339.2] from=(564.9,330.7) to=(571.4,339.2) sig=32686332
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l63 box=[573.7,333.2 588.0,339.8] from=(573.7,335.3) to=(588.0,334.4) sig=1e3ab5f3
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l11 box=[589.3,333.7 593.3,338.6] from=(590.6,337.2) to=(593.3,338.5) sig=5e71e84a
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l16 box=[594.2,332.0 597.7,338.3] from=(597.5,336.9) to=(594.8,332.3) sig=e4159cd4
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l5 box=[510.4,314.0 511.1,322.4] from=(511.1,322.4) to=(510.4,314.0) sig=c82d1aa4
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l6 box=[507.8,322.3 517.1,323.6] from=(507.8,322.4) to=(517.1,322.9) sig=bfe95416
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l7 box=[511.7,319.1 516.7,319.6] from=(511.9,319.1) to=(516.6,319.5) sig=92fecc7e
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l21 box=[514.8,314.0 522.3,319.0] from=(514.8,315.3) to=(522.3,315.7) sig=1febab1c
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l17 box=[524.0,313.8 529.8,321.7] from=(525.3,321.7) to=(525.7,314.3) sig=eaaf770e
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l13 box=[537.5,313.2 541.3,322.6] from=(537.5,321.3) to=(540.5,313.2) sig=7e3cc571
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l5 box=[537.5,317.0 542.4,317.8] from=(537.5,317.2) to=(542.4,317.8) sig=0ab1c0aa
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l11 box=[546.1,314.2 551.6,322.4] from=(547.3,322.4) to=(550.7,314.2) sig=4737b809
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l6 box=[557.2,316.9 563.2,317.8] from=(557.2,317.2) to=(563.2,317.8) sig=61a88745
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l15 box=[566.8,313.0 569.9,318.8] from=(569.8,318.8) to=(567.8,317.2) sig=7b9f5468
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l4 box=[573.8,313.4 575.1,322.2] from=(575.1,322.2) to=(574.0,313.4) sig=374bf9d1
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l29 box=[572.9,312.6 583.2,318.1] from=(572.9,317.3) to=(578.5,314.4) sig=15c10420
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l12 box=[585.2,312.6 589.3,318.4] from=(585.6,316.0) to=(589.3,318.0) sig=9a247067
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l22 box=[590.6,313.0 599.6,317.6] from=(591.7,317.6) to=(599.3,313.3) sig=90c108ff
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l14 box=[604.9,316.7 608.4,322.1] from=(604.9,321.0) to=(608.4,316.7) sig=dade0744
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l6 box=[604.7,309.4 605.4,311.2] from=(604.8,311.2) to=(605.2,310.4) sig=d2a1ee1f
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l103 box=[125.4,234.0 206.2,257.1] from=(159.5,254.6) to=(157.3,255.4) sig=328d37b5
+  path S stroke=0,0,0 w=0.66 cap=round join=round m1l84 box=[261.2,216.7 295.5,236.2] from=(280.5,233.9) to=(279.0,235.2) sig=ac77f2ec
+
+## text layer
+none
+
+## raster
+inkBounds origin=-484,663 size=1858x1531
+image 1858x1531 dark=11052 (0.39%)
+pixels sha256=8391b87d9e64c114
+map 48x20 cell=38.7x77.4px
+  |                                     ---------  |
+  ... (4 blank rows)
+  |                                     -----------|
+  |          --------                   -----------|
+  ... (6 blank rows)
+  |                                     ---------- |
+  |                                     -----------|
+  |                                        -  -----|
+  |                                                |
+  |--------                                        |
+  |---------     ---                               |
+  |             ----                               |
