@@ -16,6 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "matrix": "node scripts/matrix-link.mjs",
     "nightly:ocr": "esbuild test-support/nightly/ocr-main.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-ocr.cjs && node /tmp/tagged-sync-nightly-ocr.cjs",
+    "ocr:curve": "node scripts/ocr-curve.mjs",
     "freeze-state": "esbuild scripts/legacy-state/freeze.ts --bundle --platform=node --format=esm --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --outfile=/tmp/tagged-sync-freeze-state.mjs && node /tmp/tagged-sync-freeze-state.mjs"
   },
   "license": "SEE LICENSE IN LICENSE",

@@ -10,6 +10,16 @@ writing: >
   is deliberate — a stacked fraction has no single agreed one-line spelling, so it could not be
   compared against a ground truth without measuring our own choice of notation instead of the
   reading.
+accept: |
+  Two things worth remembering
+
+  $a^2 + b^2 = c^2$
+
+  $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$
+
+  The mean of n values is their sum / n.
+
+  If n doubles, a $O(n^2)$ running time grows by roughly 4×.
 ---
 
 Two things worth remembering

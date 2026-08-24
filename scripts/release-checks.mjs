@@ -21,6 +21,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { judgeVerdict, STALE_HOURS } from "./nightly-verdict.mjs";
+import { computeBaseline, nightFromVerdict } from "./ocr-baseline.mjs";
 
 // npm's own form for a tree that is not under one licence: `src/` is Apache-2.0, `pro/` is PolyForm
 // Strict 1.0.0, and paid commercial use is granted separately. PolyForm Strict has no settled SPDX
@@ -484,6 +485,77 @@ function nightlyGate() {
 	finish("nightly verdict");
 }
 
+// --- the OCR baseline ---------------------------------------------------------------------------
+//
+// The rules live in ocr-baseline.mjs (tested there); this reads the recorded nights out of the git
+// history of the verdict file -- the history IS the record, no database -- and writes
+// .ocr-baseline.json. See that file's header for the change discipline.
+
+const OCR_BASELINE = ".ocr-baseline.json";
+
+/** The verdict file at every commit that touched it on this branch, newest first. */
+function recordedNights() {
+	const shas = execFileSync("git", ["log", "--format=%H", "--", NIGHTLY_VERDICT], { encoding: "utf8" })
+		.split("\n")
+		.filter((sha) => sha !== "");
+	const nights = [];
+	for (const sha of shas) {
+		try {
+			const night = nightFromVerdict(JSON.parse(execFileSync("git", ["show", `${sha}:${NIGHTLY_VERDICT}`], { encoding: "utf8" })));
+			if (night !== null) nights.push(night);
+		} catch {
+			// An unparseable historical revision is simply not a recorded night.
+		}
+	}
+	return nights;
+}
+
+function ocrBaseline(write, accepts, because) {
+	let existing = {};
+	try {
+		existing = readJson(OCR_BASELINE).entries ?? {};
+	} catch (e) {
+		if (e.code !== "ENOENT") {
+			console.error(`${OCR_BASELINE} will not parse: ${e.message}`);
+			process.exit(1);
+		}
+	}
+
+	const nights = recordedNights();
+	const { entries, refused, skipped, changed } = computeBaseline({
+		nights,
+		existing,
+		accepts,
+		because,
+		today: new Date().toISOString().slice(0, 10),
+	});
+
+	console.log(`ocr baseline: ${nights.length} recorded night(s) in the history of ${NIGHTLY_VERDICT}\n`);
+	for (const line of skipped) console.log(`  wait  ${line}`);
+	for (const line of changed) ok(line);
+	for (const line of refused) fail(line);
+	if (changed.length === 0 && refused.length === 0) console.log("  ok    nothing to change");
+
+	if (write && problems.length === 0 && changed.length > 0) {
+		writeFileSync(
+			OCR_BASELINE,
+			`${JSON.stringify(
+				{
+					comment:
+						"One entry per <backend>/<model>/<page>: the median CER of the last 30 recorded nights. Never edit by hand. Recompute with `node scripts/release-checks.mjs ocr-baseline --write`; a key that falls is absorbed silently, a key that rises is refused unless --accept names it AND the model, the prompt or the render version actually changed -- the only three honest reasons a transcription baseline can get worse.",
+					entries,
+				},
+				null,
+				"\t",
+			)}\n`,
+		);
+		console.log(`\nwrote ${OCR_BASELINE}`);
+	} else if (!write && changed.length > 0) {
+		console.log("\ndry run -- pass --write to apply");
+	}
+	finish("ocr baseline");
+}
+
 // --- dispatch ---------------------------------------------------------------------------------
 
 const [command, ...rest] = process.argv.slice(2);
@@ -519,7 +591,10 @@ switch (command) {
 	case "nightly":
 		nightlyGate();
 		break;
+	case "ocr-baseline":
+		ocrBaseline(rest.includes("--write"), flag("--accept") === undefined ? [] : [flag("--accept")], flag("--because") ?? "");
+		break;
 	default:
-		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly> [...]");
+		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly|ocr-baseline> [...]");
 		process.exit(2);
 }

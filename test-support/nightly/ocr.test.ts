@@ -13,6 +13,12 @@ describe("loading the reference pages", () => {
 		const pages = loadReferencePages(PAGES_DIR);
 		expect(pages.map((p) => p.id)).toEqual(Array.from({ length: 14 }, (_, i) => String(i + 1).padStart(2, "0")));
 		expect(pages.every((p) => p.body.length > 0)).toBe(true);
+		// Page 06 declares its LaTeX rendering as an accept alternate (ticket 14 §2.3), authored
+		// before the first baseline; blank lines inside the block must survive the frontmatter.
+		const formulas = pages[5];
+		expect(formulas.alternates).toHaveLength(1);
+		expect(formulas.alternates[0]).toContain("$a^2 + b^2 = c^2$");
+		expect(formulas.alternates[0].split("\n\n").length).toBeGreaterThan(2);
 	});
 });
 
