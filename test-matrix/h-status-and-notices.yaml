@@ -489,3 +489,15 @@
       layer: unit
       file: src/explain-error.test.ts
       test: "explainError > treats a forbidden character in a configured folder the same way"
+
+- feature: H10
+  name: A tablet in a drawer reads as a tablet in a drawer
+  code: src/status-model.ts
+  tier: pro
+  scenarios:
+    - id: H10.1
+      scenario: A background sync is skipped because the paired device did not answer
+      expect: 'Its own icon, spinning nothing and offering nothing. The alternatives both lie: a check claims a sync that happened and a cross claims one that broke, and a cross painted every night for a tablet that was simply asleep is how a status bar stops being read at all'
+      layer: unit
+      file: src/status-model.test.ts
+      test: "statusView > gives each state its own icon, and spins only while busy"

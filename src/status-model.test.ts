@@ -18,6 +18,10 @@ describe("statusView", () => {
 		expect(iconOf("ok")).toMatchObject({ icon: "check", spinning: false });
 		expect(iconOf("failed")).toMatchObject({ icon: "x", spinning: false });
 		expect(iconOf("stopped")).toMatchObject({ icon: "square", spinning: false });
+		// Same argument as `stopped`, one step further: a background run skipped because the tablet was
+		// in a drawer is neither a finished run nor a broken one, and a cross every night is how a
+		// status bar stops being read at all.
+		expect(iconOf("asleep")).toMatchObject({ icon: "moon", spinning: false });
 	});
 
 	it("shows no bar unless one was given", () => {
@@ -36,7 +40,7 @@ describe("statusView", () => {
 	});
 
 	it("only ever offers to stop a run that is happening", () => {
-		for (const state of ["ok", "failed", "stopped"] as const) {
+		for (const state of ["ok", "failed", "stopped", "asleep"] as const) {
 			expect(statusView({ state, text: "" }, false).stoppable).toBe(false);
 		}
 	});

@@ -587,15 +587,23 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	private async triggerAutoSync(): Promise<void> {
 		const entry = ocrBackendEntry(this.data.ocrBackend);
-		if (
-			backgroundRunBlocked({
-				enabled: this.data.autoSync.enabled,
-				running: this.syncing,
-				connected: this.transport().status().connected,
-				reachable: await this.autoSyncSourceReachable(),
-				backgroundConsent: backgroundConsentGiven(entry, this.data.llmProviders[this.data.ocrBackend] ?? {}),
-			}) !== null
-		) {
+		const blocked = backgroundRunBlocked({
+			enabled: this.data.autoSync.enabled,
+			running: this.syncing,
+			connected: this.transport().status().connected,
+			reachable: await this.autoSyncSourceReachable(),
+			backgroundConsent: backgroundConsentGiven(entry, this.data.llmProviders[this.data.ocrBackend] ?? {}),
+		});
+		if (blocked !== null) {
+			// The one refusal that says something the user might want to know: their tablet was asleep, so
+			// this run did nothing. Said in the status bar rather than a notice -- a background run must
+			// never interrupt -- and with its own icon, because a cross every night is how a status bar
+			// stops being read.
+			if (blocked === "device-unreachable") {
+				this.setStatus("asleep", "Tagged Sync: reMarkable not reachable", {
+					detail: "The last background sync was skipped because your reMarkable did not answer.",
+				});
+			}
 			return;
 		}
 		// Resolved only now, because resolving is not free: it constructs adapters and can raise a
