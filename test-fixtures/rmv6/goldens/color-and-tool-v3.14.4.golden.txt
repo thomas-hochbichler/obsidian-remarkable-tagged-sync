@@ -1,0 +1,110 @@
+# golden color-and-tool-v3.14.4
+# render-version 30
+# fixture test-fixtures/rmv6/color-and-tool-v3.14.4.rm
+
+## scene
+formatVersion 6
+paperSize 1620x2160
+layers 1
+  layer 0 name="Layer 1" visible=true anchor=- placement=- strokes=25 ids=0114..012e
+    timestamps 0001x25 ascending
+    stroke 0 pen=23 color=9 brush=1.19 rgba=33,30,28 points=43 x=11..67 y=423..517 width=19..56
+    stroke 1 pen=23 color=9 brush=1.19 rgba=33,30,28 points=53 x=85..157 y=395..508 width=19..56
+    stroke 2 pen=23 color=9 brush=1.19 rgba=33,30,28 points=43 x=168..217 y=450..505 width=21..56
+    stroke 3 pen=23 color=9 brush=1.19 rgba=33,30,28 points=54 x=231..305 y=393..508 width=19..56
+    stroke 4 pen=23 color=9 brush=1.19 rgba=33,30,28 points=40 x=306..348 y=447..504 width=29..56
+    stroke 5 pen=23 color=9 brush=1.19 rgba=33,30,28 points=31 x=372..431 y=450..502 width=19..56
+    stroke 6 pen=15 color=10 brush=2.38 rgba=- points=43 x=74..139 y=724..792 width=14..21
+    stroke 7 pen=15 color=10 brush=2.38 rgba=- points=37 x=147..178 y=733..790 width=14..21
+    stroke 8 pen=15 color=10 brush=2.38 rgba=- points=47 x=204..261 y=740..791 width=14..21
+    stroke 9 pen=15 color=10 brush=2.38 rgba=- points=53 x=296..357 y=735..853 width=14..21
+    stroke 10 pen=15 color=10 brush=2.38 rgba=- points=31 x=373..397 y=733..776 width=14..21
+    stroke 11 pen=15 color=10 brush=2.38 rgba=- points=130 x=400..568 y=731..795 width=14..21
+    stroke 12 pen=15 color=11 brush=2.38 rgba=- points=38 x=62..122 y=862..930 width=14..21
+    stroke 13 pen=15 color=11 brush=2.38 rgba=- points=42 x=127..172 y=880..930 width=14..21
+    stroke 14 pen=15 color=11 brush=2.38 rgba=- points=42 x=186..242 y=875..925 width=14..21
+    stroke 15 pen=15 color=11 brush=2.38 rgba=- points=29 x=334..370 y=860..925 width=14..21
+    stroke 16 pen=15 color=11 brush=2.38 rgba=- points=18 x=386..401 y=867..902 width=14..21
+    stroke 17 pen=15 color=11 brush=2.38 rgba=- points=22 x=372..411 y=874..969 width=14..21
+    stroke 18 pen=15 color=11 brush=2.38 rgba=- points=47 x=420..471 y=877..921 width=14..21
+    stroke 19 pen=15 color=11 brush=2.38 rgba=- points=34 x=472..530 y=880..914 width=14..21
+    stroke 20 pen=15 color=11 brush=2.38 rgba=- points=102 x=73..262 y=1011..1087 width=14..21
+    stroke 21 pen=15 color=11 brush=2.38 rgba=- points=60 x=331..414 y=1014..1070 width=14..21
+    stroke 22 pen=15 color=11 brush=2.38 rgba=- points=143 x=402..493 y=1012..1143 width=14..21
+    stroke 23 pen=15 color=11 brush=2.38 rgba=- points=115 x=496..614 y=969..1056 width=14..21
+    stroke 24 pen=15 color=11 brush=2.38 rgba=- points=73 x=569..683 y=994..1046 width=14..21
+highlights 6
+  highlight 0 color=9 rects=1 text="This is a test sentence."
+  highlight 1 color=9 rects=1 text="This is a test sentence."
+  highlight 2 color=9 rects=1 text="This is a test sentence."
+  highlight 3 color=9 rects=1 text="This is a test sentence."
+  highlight 4 color=9 rects=1 text="This is a test sentence."
+  highlight 5 color=9 rects=1 text="This is a test sentence."
+images 0
+text -
+
+## pdf
+pages 1
+page 1 size=509.3x679.1
+  path f fill=255,237,117 blend=Multiply m1l3h1 box=[20.2,594.8 135.7,611.1] from=(20.2,594.8) to=(135.7,594.8) sig=051c35f0
+  path f fill=190,234,254 blend=Multiply m1l3h1 box=[20.2,580.4 135.7,596.7] from=(20.2,580.4) to=(135.7,580.4) sig=a87eba24
+  path f fill=242,158,255 blend=Multiply m1l3h1 box=[20.2,566.0 135.7,582.3] from=(20.2,566.0) to=(135.7,566.0) sig=5edb6556
+  path f fill=255,195,140 blend=Multiply m1l3h1 box=[20.2,551.6 135.7,567.9] from=(20.2,551.6) to=(135.7,551.6) sig=8b8aedd6
+  path f fill=172,255,133 blend=Multiply m1l3h1 box=[20.2,537.1 135.7,553.4] from=(20.2,537.1) to=(135.7,537.1) sig=4a3bba18
+  path f fill=199,199,198 blend=Multiply m1l3h1 box=[20.2,522.7 135.7,539.0] from=(20.2,522.7) to=(135.7,522.7) sig=bd06c813
+  path S stroke=33,30,28 w=4.40 cap=round join=round blend=Multiply m1l42 box=[258.2,516.5 275.9,546.3] from=(275.9,546.3) to=(261.0,525.0) sig=1622d360
+  path S stroke=33,30,28 w=4.40 cap=round join=round blend=Multiply m1l52 box=[281.5,519.3 303.9,555.0] from=(289.4,555.0) to=(303.9,520.9) sig=103a9b9e
+  path S stroke=33,30,28 w=4.40 cap=round join=round blend=Multiply m1l42 box=[307.4,520.5 323.0,537.7] from=(318.8,537.7) to=(323.0,522.2) sig=f10a92ff
+  path S stroke=33,30,28 w=4.40 cap=round join=round blend=Multiply m1l53 box=[327.4,519.4 350.6,555.7] from=(339.1,537.5) to=(345.6,520.9) sig=223f93ba
+  path S stroke=33,30,28 w=4.40 cap=round join=round blend=Multiply m1l39 box=[350.9,520.5 364.1,538.7] from=(351.2,528.6) to=(360.3,522.7) sig=c59b03c6
+  path S stroke=33,30,28 w=4.40 cap=round join=round blend=Multiply m1l30 box=[371.5,521.2 390.1,537.7] from=(374.6,537.7) to=(390.1,529.8) sig=57079341
+  path S stroke=161,216,125 w=1.52 cap=round join=round m1l42 box=[278.1,430.0 298.3,451.5] from=(283.6,451.5) to=(298.3,435.6) sig=8dd2e989
+  path S stroke=161,216,125 w=1.57 cap=round join=round m1l36 box=[301.0,430.8 310.7,448.5] from=(301.0,438.1) to=(310.4,434.2) sig=e0bf9b04
+  path S stroke=161,216,125 w=1.55 cap=round join=round m1l46 box=[318.8,430.5 336.9,446.5] from=(320.5,445.8) to=(336.9,446.5) sig=30841c0c
+  path S stroke=161,216,125 w=1.56 cap=round join=round m1l52 box=[347.6,411.0 366.8,448.0] from=(366.8,446.1) to=(347.9,421.9) sig=1177db85
+  path S stroke=161,216,125 w=1.47 cap=round join=round m1l30 box=[371.8,435.0 379.4,448.8] from=(374.6,448.8) to=(379.4,447.7) sig=9422615d
+  path S stroke=161,216,125 w=1.57 cap=round join=round m1l129 box=[380.5,429.1 433.2,449.2] from=(380.5,440.0) to=(433.2,435.8) sig=e45dabb9
+  path S stroke=139,208,229 w=1.55 cap=round join=round m1l37 box=[274.0,386.7 293.0,408.2] from=(277.5,408.2) to=(293.0,391.2) sig=c402da76
+  path S stroke=139,208,229 w=1.53 cap=round join=round m1l41 box=[294.5,386.8 308.9,402.6] from=(296.7,398.6) to=(308.9,395.2) sig=2c3000cb
+  path S stroke=139,208,229 w=1.51 cap=round join=round m1l41 box=[313.0,388.4 330.9,404.0] from=(314.4,404.0) to=(330.8,402.9) sig=6c5ba50d
+  path S stroke=139,208,229 w=1.50 cap=round join=round m1l28 box=[359.8,388.4 371.0,408.8] from=(369.1,408.8) to=(371.0,392.4) sig=d2d6600d
+  path S stroke=139,208,229 w=1.30 cap=round join=round m1l17 box=[376.1,395.6 380.8,406.6] from=(376.3,406.6) to=(380.8,397.3) sig=2acea266
+  path S stroke=139,208,229 w=1.38 cap=round join=round m1l21 box=[371.5,374.5 383.8,404.5] from=(383.8,404.5) to=(373.2,375.3) sig=e67d8497
+  path S stroke=139,208,229 w=1.52 cap=round join=round m1l46 box=[386.7,389.4 402.6,403.5] from=(397.7,403.4) to=(402.6,394.0) sig=a1cef4f7
+  path S stroke=139,208,229 w=1.52 cap=round join=round m1l33 box=[403.1,391.8 421.2,402.5] from=(407.4,402.5) to=(421.2,397.4) sig=60594be5
+  path S stroke=139,208,229 w=1.61 cap=round join=round m1l101 box=[277.7,337.3 337.0,361.3] from=(279.9,350.7) to=(335.4,361.3) sig=13d68de7
+  path S stroke=139,208,229 w=1.51 cap=round join=round m1l59 box=[358.8,342.6 384.9,360.5] from=(361.5,357.4) to=(384.9,349.1) sig=f50b45d7
+  path S stroke=139,208,229 w=1.50 cap=round join=round m1l142 box=[381.1,319.7 409.7,360.9] from=(390.4,360.0) to=(409.7,350.7) sig=e70a23d3
+  path S stroke=139,208,229 w=1.56 cap=round join=round m1l114 box=[410.8,347.1 447.7,374.5] from=(416.6,355.9) to=(442.7,357.8) sig=55417f81
+  path S stroke=139,208,229 w=1.49 cap=round join=round m1l72 box=[433.5,350.2 469.3,366.4] from=(434.5,366.4) to=(469.3,356.0) sig=0c44e527
+
+## text layer
+none
+
+## raster
+inkBounds origin=9,390 size=677x756
+image 677x756 dark=24776 (4.84%)
+pixels sha256=473bfd62507b2fe1
+map 48x27 cell=14.1x28.2px
+  |       -           ---                          |
+  |----- --          ---                           |
+  |----  ---- ---  ---- ---- ----                  |
+  |- -- ----  --------  --- --  -                  |
+  |---  -  ---- ---- -- --  -                      |
+  ... (6 blank rows)
+  |     --                                         |
+  |     +++--++---+-+-  -+++-=-+++++- -++          |
+  |    -=-+-+++-++=-+  -+-=----+--=+-+#+---        |
+  |    -- ----- -----  ---+   -------+----         |
+  |                    + +-                        |
+  |    -               -+-----                     |
+  |    +-+ -++ +-- +     -+- ++--++ +++--          |
+  |   -=+=-=-+-++++-     -+---+-+=+++-++-          |
+  |   -- - ---   --       ---+                     |
+  |                         --               +-    |
+  |                 -                 ---++-+#++=- |
+  |       - -- --   +-    -+==-+++++=-+====+#++-=-+|
+  |    +++= =+-=-+--+-   -+-=++=+++=+++-- ----+----|
+  |    +- --+-+-+-+-     --      -+=               |
+  |                             +-+-               |
+  |                             =+-                |

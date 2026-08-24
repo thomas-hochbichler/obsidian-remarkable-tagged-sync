@@ -1,0 +1,33 @@
+# golden synthetic-runaway-ink
+# render-version 30
+# fixture synthetic (test-support/golden/scenes.ts)
+
+## scene
+formatVersion 6
+paperSize -
+layers 1
+  layer 0 name="Layer 1" visible=true anchor=- placement=- strokes=2 ids=0b01..0b02
+    timestamps 0001x2 ascending
+    stroke 0 pen=17 color=0 brush=2.00 rgba=- points=2 x=-3600..3600 y=0..60 width=8..8
+    stroke 1 pen=17 color=0 brush=2.00 rgba=- points=2 x=-3600..3600 y=4000..4060 width=8..8
+highlights 0
+images 0
+text -
+
+## pdf
+pages 1
+page 1 size=447.3x1293.8
+  path S stroke=0,0,0 w=0.64 cap=round join=round m1l1 box=[-923.3,1274.6 1370.5,1293.8] from=(-923.3,1293.8) to=(1370.5,1274.6) sig=36037d4e
+  path S stroke=0,0,0 w=0.64 cap=round join=round m1l1 box=[-923.3,0.3 1370.5,19.4] from=(-923.3,19.4) to=(1370.5,0.3) sig=dd247aa1
+
+## text layer
+none
+
+## raster
+inkBounds origin=-3601,-1 size=6000x4062
+image 6000x4062 dark=22770 (0.09%)
+pixels sha256=ca9bd087332b2c5f
+map 48x17 cell=125.0x250.0px
+  |------------------------------------------------|
+  ... (15 blank rows)
+  |------------------------------------------------|

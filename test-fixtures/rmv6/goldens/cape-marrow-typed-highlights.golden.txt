@@ -1,0 +1,64 @@
+# golden cape-marrow-typed-highlights
+# render-version 30
+# fixture test-fixtures/rmv6/cape-marrow-typed-highlights.rm
+
+## scene
+formatVersion 6
+paperSize 1620x2160
+layers 5
+  layer 0 name="Layer 1" visible=true anchor=- placement=- strokes=0 ids=-
+  layer 1 name="" visible=true anchor=1:18@-572.0 placement=applied strokes=1 ids=0119..0119
+    timestamps 0001x1 ascending
+    stroke 0 pen=18 color=9 brush=1.00 rgba=190,234,254 points=2 x=-564..-564 y=302..302 width=120..120
+  layer 2 name="" visible=true anchor=1:197@-356.5 placement=unknown-anchor strokes=0 ids=-
+  layer 3 name=null visible=- anchor=- placement=- strokes=0 ids=-
+  layer 4 name="" visible=true anchor=1:58@-433.7 placement=applied strokes=2 ids=01ea01..01ed01
+    timestamps 0001x2 ascending
+    stroke 0 pen=18 color=3 brush=1.00 rgba=- points=2 x=-422..-422 y=496..496 width=120..120
+    stroke 1 pen=18 color=3 brush=1.00 rgba=- points=2 x=-423..-423 y=497..497 width=120..120
+highlights 2
+  highlight 0 color=3 rects=1 text="went inland before the pressure fell."
+  highlight 1 color=4 rects=1 text="does not fit the form"
+images 0
+text pos=-576,234 width=1152 runs=13 styles=1
+  run 0 deleted=0 text="\n\n"
+  run 1 deleted=0 text="Cape Marrow - notes\nThe gul"
+  run 2 deleted=2 text=""
+  run 3 deleted=0 text="ls went inland before the pressure fell"
+  run 4 deleted=1 text=""
+  run 5 deleted=0 text=".\nAn observation that does not fit the form is not therefore n"
+  run 6 deleted=5 text=""
+  run 7 deleted=0 text="oise.\n"
+  run 8 deleted=6 text=""
+  run 9 deleted=21 text=""
+  run 10 deleted=16 text=""
+  run 11 deleted=7 text=""
+  run 12 deleted=0 text="."
+
+## pdf
+pages 1
+page 1 size=509.3x679.1
+  text "Cape Marrow - notes" at=(74.9,542.4) size=10.07 font=Helvetica fill=0,0,0
+  text "The gulls went inland before the pressure fell." at=(74.9,520.5) size=10.07 font=Helvetica fill=0,0,0
+  text "An observation that does not fit the form is not therefore noise." at=(74.9,498.7) size=10.07 font=Helvetica fill=0,0,0
+  text "." at=(74.9,476.8) size=10.07 font=Helvetica fill=0,0,0
+  path f fill=251,247,25 blend=Multiply m1l3h1 box=[116.0,517.5 283.9,531.4] from=(116.0,517.5) to=(283.9,517.5) sig=b5b788e0
+  path f fill=0,255,0 blend=Multiply m1l3h1 box=[164.5,495.6 261.9,509.6] from=(164.5,495.6) to=(261.9,495.6) sig=4167208a
+  path S stroke=190,234,254 w=9.43 cap=round join=round blend=Multiply m1l1 box=[77.4,584.2 77.5,584.2] from=(77.4,584.2) to=(77.5,584.2) sig=9e38e064
+  path S stroke=251,247,25 w=9.43 cap=round join=round blend=Multiply m1l1 box=[121.9,523.1 121.9,523.1] from=(121.9,523.1) to=(121.9,523.1) sig=cefc7390
+  path S stroke=251,247,25 w=9.43 cap=round join=round blend=Multiply m1l1 box=[121.6,522.9 121.6,523.0] from=(121.6,522.9) to=(121.6,523.0) sig=99c38228
+
+## text layer
+page 1 509.3x679.1 lines=4
+  line at=(74.9,542.4) w=95.1 h=10.07 "Cape Marrow - notes"
+  line at=(74.9,520.5) w=208.1 h=10.07 "The gulls went inland before the pressure fell."
+  line at=(74.9,498.7) w=286.8 h=10.07 "An observation that does not fit the form is not therefore noise."
+  line at=(74.9,476.8) w=2.1 h=10.07 "."
+
+## raster
+inkBounds origin=-564,301 size=143x196
+image 143x196 dark=2 (0.01%)
+pixels sha256=38ed0914930b3c40
+map 48x33 cell=3.0x6.0px
+  ... (32 blank rows)
+  |                                               -|

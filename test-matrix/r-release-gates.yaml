@@ -98,3 +98,85 @@
       layer: unit
       file: scripts/nightly-verdict.test.mjs
       test: "judgeVerdict > refuses a verdict written by a newer nightly than this gate understands"
+
+- feature: R2
+  name: Render goldens
+  code: test-support/golden/extract.ts
+  tier: free
+  scenarios:
+    - id: R2.1
+      scenario: The rmscene reference page -- two anchored group nodes, typed text, v1 stroke points
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > normal-a-stroke-2-layers renders exactly its committed golden"
+
+    - id: R2.2
+      scenario: The Paper Pro palette page -- SHADER strokes, color_rgba, the extended colors
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > color-and-tool-v3.14.4 renders exactly its committed golden"
+
+    - id: R2.3
+      scenario: The page showing a picture -- the image placement the anchor names
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > notebook-with-image renders exactly its committed golden"
+
+    - id: R2.4
+      scenario: The real annotated PDF page -- seven highlight runs, margin notes, body marks
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > weather-station-page1 renders exactly its committed golden"
+
+    - id: R2.5
+      scenario: The typed-text page -- highlights without start/length, tombstoned runs
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > cape-marrow-typed-highlights renders exactly its committed golden"
+
+    - id: R2.6
+      scenario: A single-point tap and a highlighter band -- the disc and the blend no device fixture has
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > synthetic-tap-and-highlight renders exactly its committed golden"
+
+    - id: R2.7
+      scenario: A typed heading paragraph -- the heading type size in the text layer
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > synthetic-typed-heading renders exactly its committed golden"
+
+    - id: R2.8
+      scenario: Ink past the 6000 px raster clamp -- MAX_RASTER_PX made load-bearing
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > synthetic-runaway-ink renders exactly its committed golden"
+
+    - id: R2.9
+      scenario: A node whose tail simply ends -- kept fail-soft, without its placement
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > synthetic-truncated-node renders exactly its committed golden"
+
+    - id: R2.10
+      scenario: A node whose tail is malformed mid-field -- the one input that reaches the parser's catch
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > synthetic-corrupt-node-tail renders exactly its committed golden"
+
+    - id: R2.11
+      scenario: The same fixture is rendered twice in one process
+      expect: Byte-identical goldens, so a diff is always a change and never noise
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > renders byte-identical goldens twice, so a diff is always a change and never noise"

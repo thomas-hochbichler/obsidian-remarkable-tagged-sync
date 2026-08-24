@@ -1,0 +1,45 @@
+# golden notebook-with-image
+# render-version 30
+# fixture test-fixtures/rmv6/notebook-with-image.rm
+
+## scene
+formatVersion 6
+paperSize -
+layers 4
+  layer 0 name="Layer 1" visible=true anchor=- placement=- strokes=0 ids=-
+  layer 1 name="Layer 2" visible=true anchor=- placement=- strokes=0 ids=-
+  layer 2 name="" visible=true anchor=1:14@-464.0 placement=applied strokes=1 ids=0119..0119
+    timestamps 0001x1 ascending
+    stroke 0 pen=17 color=0 brush=2.00 rgba=- points=7 x=-480..-479 y=237..238 width=16..16
+  layer 3 name="" visible=true anchor=1:14@-464.0 placement=applied strokes=1 ids=011f..011f
+    timestamps 0001x1 ascending
+    stroke 0 pen=17 color=0 brush=2.00 rgba=- points=7 x=-428..-427 y=282..283 width=16..16
+highlights 0
+images 1
+text pos=-468,234 width=936 runs=1 styles=0
+  run 0 deleted=0 text="A"
+
+## pdf
+pages 1
+page 1 size=447.3x596.4
+  text "A" at=(75.9,511.1) size=10.20 font=Helvetica fill=0,0,0
+  path S stroke=0,0,0 w=1.27 cap=round join=round m1l6 box=[70.6,520.7 71.0,520.8] from=(70.6,520.8) to=(70.8,520.8) sig=54e1fc21
+  path S stroke=0,0,0 w=1.27 cap=round join=round m1l6 box=[87.3,506.1 87.5,506.6] from=(87.3,506.5) to=(87.5,506.2) sig=039d7f1c
+
+## text layer
+page 1 447.3x596.4 lines=1
+  line at=(75.9,511.1) w=6.6 h=10.20 "A"
+
+## raster
+inkBounds origin=-482,235 size=57x51
+image 57x51 dark=38 (1.31%)
+pixels sha256=da224815cc1d4895
+map 48x22 cell=1.2x2.4px
+  |+###=-                                          |
+  |+@@@@+                                          |
+  | -++-                                           |
+  ... (15 blank rows)
+  |                                             -++|
+  |                                            +@@@|
+  |                                            +@@@|
+  |                                             =@@|

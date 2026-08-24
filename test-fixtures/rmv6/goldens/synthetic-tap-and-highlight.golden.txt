@@ -1,0 +1,34 @@
+# golden synthetic-tap-and-highlight
+# render-version 30
+# fixture synthetic (test-support/golden/scenes.ts)
+
+## scene
+formatVersion 6
+paperSize -
+layers 1
+  layer 0 name="Layer 1" visible=true anchor=- placement=- strokes=3 ids=0a01..0a03
+    timestamps 0001x3 ascending
+    stroke 0 pen=17 color=0 brush=2.00 rgba=- points=1 x=-100..-100 y=300..300 width=8..8
+    stroke 1 pen=17 color=0 brush=2.00 rgba=- points=3 x=-60..90 y=300..310 width=8..8
+    stroke 2 pen=18 color=5 brush=2.00 rgba=- points=2 x=-70..100 y=296..296 width=24..24
+highlights 0
+images 0
+text -
+
+## pdf
+pages 1
+page 1 size=447.3x596.4
+  path S stroke=255,192,203 w=1.91 cap=round join=round blend=Multiply m1l1 box=[201.3,502.1 255.5,502.1] from=(201.3,502.1) to=(255.5,502.1) sig=ce74a65b
+  path f fill=0,0,0 m1c4 box=[191.5,500.5 192.1,501.1] from=(191.5,500.8) to=(191.5,500.8) sig=ea024458
+  path S stroke=0,0,0 w=0.64 cap=round join=round m1l2 box=[204.5,497.6 252.3,500.8] from=(204.5,500.8) to=(252.3,497.6) sig=db65902a
+
+## text layer
+none
+
+## raster
+inkBounds origin=-101,295 size=202x16
+image 202x16 dark=815 (25.22%)
+pixels sha256=6d8f38c2b073e897
+map 48x2 cell=4.2x8.4px
+  |-      ++====================+++++++++++++++++++|
+  |                   -----+++++++++++++++++++++-  |
