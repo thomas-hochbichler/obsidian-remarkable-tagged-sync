@@ -88,5 +88,7 @@ export interface Transport {
  * from, and only a transport can word the ones that do not.
  */
 export function explainTransportError(transport: Transport, error: unknown, context: ErrorContext): string {
-	return transport.explainError(error, context) ?? explainError(error, context);
+	// The neutral layer is told which source it is talking about, so its last-resort sentence names the
+	// tablet when the tablet is what answered strangely.
+	return transport.explainError(error, context) ?? explainError(error, context, transport.label);
 }

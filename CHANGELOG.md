@@ -12,6 +12,32 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Pro: sync straight from your reMarkable, without the reMarkable cloud.** The plugin can now read
+  your tablet directly over USB or Wi-Fi, so a sync no longer depends on a cloud API that reMarkable
+  neither documents nor promises to keep. Settings gained two rows for it: *Sync from*, and what to
+  try when that source is not reachable.
+
+  **Switching between the two costs nothing.** The direct connection computes the same content
+  hashes the cloud does, so a vault that already synced through the cloud keeps its whole index:
+  nothing is re-rendered, nothing is transcribed a second time, and a failover in either direction is
+  invisible in your notes.
+
+  Pairing asks for the root password from your tablet's *Settings → General → Help → About →
+  Copyrights and licenses* screen. It is used once, to install a key for this vault, and is never
+  stored. The tablet's host key is shown to you and pinned; if it ever changes, the plugin refuses
+  to connect and tells you why rather than reconnecting to something else.
+
+  **On a Paper Pro or Paper Pure this costs a factory reset.** Those devices only allow SSH in
+  Developer Mode, and turning it on erases the tablet — your notes come back from the reMarkable
+  cloud afterwards, but the tablet shows a warning screen at every start from then on. The plugin
+  says all of this before you type anything. reMarkable 1 and 2 need none of it; SSH is on by
+  default there.
+
+  Background syncs check whether the tablet is awake before starting, so a sleeping device is a
+  quiet skip rather than a failed sync every night. Desktop only, like the rest of the plugin.
+
 ### Changed
 
 - **You now enter the transcription model yourself; the plugin no longer suggests one.** Every

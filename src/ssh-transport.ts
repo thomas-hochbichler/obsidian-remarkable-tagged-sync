@@ -23,7 +23,7 @@ import {
 import type { Entitlement } from "./licence-state";
 import type { Transport, TransportId, TransportSession, TransportStatus } from "./transport";
 
-export const SSH_TRANSPORT_LABEL = "your reMarkable directly";
+export const SSH_TRANSPORT_LABEL = "your reMarkable";
 
 /** What pairing writes and a sync reads. Lives in `data.json` beside the cloud's device token. */
 export interface SshSettings {

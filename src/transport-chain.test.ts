@@ -82,10 +82,10 @@ describe("trying the other source", () => {
 
 	it("names both sources in the one notice a failover gets", () => {
 		const from = fake({ label: "the reMarkable cloud" }).transport;
-		const to = fake({ id: "ssh", label: "your reMarkable directly" }).transport;
+		const to = fake({ id: "ssh", label: "your reMarkable" }).transport;
 
 		expect(failoverNotice(from, to)).toBe(
-			"Could not reach the reMarkable cloud — synced from your reMarkable directly instead.",
+			"Could not reach the reMarkable cloud — synced from your reMarkable instead.",
 		);
 	});
 });

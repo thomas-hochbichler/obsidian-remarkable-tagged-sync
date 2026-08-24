@@ -16,7 +16,7 @@ import { openSession } from "./remarkable-session";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import type { Transport, TransportSession, TransportStatus } from "./transport";
 
-export const CLOUD_TRANSPORT_LABEL = "reMarkable cloud";
+export const CLOUD_TRANSPORT_LABEL = "reMarkable's cloud";
 
 export class CloudTransport implements Transport {
 	readonly id = "cloud" as const;
