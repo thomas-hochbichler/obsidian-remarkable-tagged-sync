@@ -65,8 +65,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * exists to avoid. A file wrongly excluded does the same, but only for a file type reMarkable added
  * after this was written, which is a thing to find out about rather than to guess at.
  *
- * `.local` and `.thumbnails/` are on the device and *not* in the cloud tree -- verified against the
- * device's own `.tree`.
+ * Checked against a real device's own `.tree` -- the hash tree xochitl keeps -- across a
+ * 115-document library: the only extensions the cloud hashes are `.content`, `.metadata`,
+ * `.pagedata`, `.pdf`, `.epub`, `.template`, and the `.rm`/`.png`/`.jpg` inside a document's folder.
+ * `.local`, `.thumbnails/` and per-page `-metadata.json` appear in that tree **zero** times, so they
+ * are on the device and not in the account.
  */
 const DOCUMENT_SUFFIXES = [".content", ".metadata", ".pagedata", ".pdf", ".epub", ".template"];
 
