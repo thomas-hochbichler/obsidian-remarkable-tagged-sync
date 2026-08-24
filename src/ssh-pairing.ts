@@ -70,14 +70,6 @@ export function probeDevice(host: string, port = 22): Promise<boolean> {
 export type DeviceGeneration = "cable-or-wifi" | "developer-mode-required" | "unknown";
 
 /**
- * The tablet's own hostname says which generation it is: `imx8mm-ferrari` is a Paper Pro,
- * `imx93-tatsu` a Paper Pure, and the older models report something else entirely.
- */
-export function generationOf(hostname: string): DeviceGeneration {
-	return /ferrari|tatsu/i.test(hostname) ? "developer-mode-required" : "cable-or-wifi";
-}
-
-/**
  * What to tell someone whose tablet did not answer.
  *
  * Split by generation because the two answers have nothing in common: one is "check the cable", the
@@ -158,6 +150,14 @@ export interface PairingRequest {
 	 * authority to check a tablet's key against, so the honest thing is to show it and pin the answer.
 	 */
 	confirmHostKey(fingerprint: string): Promise<boolean>;
+	/**
+	 * Ask before opening SSH on the user's network.
+	 *
+	 * Pairing can start over a cable, and leaving SSH reachable over Wi-Fi afterwards is what makes
+	 * the feature usable day to day -- but it is also a service listening on a LAN the plugin knows
+	 * nothing about, so it is offered rather than assumed.
+	 */
+	confirmWifi?(): Promise<boolean>;
 	report?(step: string): void;
 }
 
@@ -171,6 +171,25 @@ export class PairingRefusedError extends Error {}
  * user should not have to find it themselves.
  */
 export async function pairDevice(request: PairingRequest): Promise<SshSettings> {
+	const paired = await installKey(request);
+
+	// Proved, not assumed, and only after the password connection has been closed -- the tablet's SSH
+	// server is a small one and a second session alongside the first is a needless thing to ask of it.
+	//
+	// Everything in `installKey` can succeed while the key is still unusable: a full filesystem, a
+	// read-only `/home`, an `authorized_keys` dropbear refuses as too readable. Without this check that
+	// surfaces as "pairing worked" followed by every sync being refused, long after the password that
+	// could have fixed it was forgotten.
+	request.report?.("Checking the key works…");
+	// Over the address pairing actually ran on: enabling Wi-Fi does not make the device reachable there
+	// on every network *yet*, and failing a good pairing over that would be wrong.
+	const check = await connectToDevice({ ...paired, host: paired.pairedOverHost, password: undefined });
+	await check.close();
+	return { host: paired.host, port: paired.port, privateKey: paired.privateKey, hostKeyFingerprint: paired.hostKeyFingerprint };
+}
+
+/** The password half: connect, trust, install, optionally open Wi-Fi. */
+async function installKey(request: PairingRequest): Promise<SshSettings & { pairedOverHost: string }> {
 	const port = request.port ?? 22;
 	const host = await reachableHost(request.host, port);
 	if (host === null) throw new DeviceUnreachableError(request.host ?? USB_HOST, null);
@@ -187,10 +206,14 @@ export async function pairDevice(request: PairingRequest): Promise<SshSettings> 
 		const { privateKey, authorizedKeysLine } = generateDeviceKey();
 		await connection.exec(installKeyCommand(authorizedKeysLine));
 
-		request.report?.("Allowing SSH over Wi-Fi…");
-		const wifiHost = await enableWifiAccess(connection);
+		let wifiHost: string | null = null;
+		if ((await request.confirmWifi?.()) === true) {
+			request.report?.("Allowing SSH over Wi-Fi…");
+			wifiHost = await enableWifiAccess(connection);
+		}
 
-		return {
+		const paired: SshSettings & { pairedOverHost: string } = {
+			pairedOverHost: host,
 			// The Wi-Fi address when the device has one: a cable is how pairing starts, not how syncing
 			// should have to continue. `SshTransport` probes the cable anyway when this stops answering.
 			host: wifiHost ?? host,
@@ -198,6 +221,8 @@ export async function pairDevice(request: PairingRequest): Promise<SshSettings> 
 			privateKey,
 			hostKeyFingerprint: connection.hostKeyFingerprint,
 		};
+
+		return paired;
 	} finally {
 		await connection.close();
 	}
@@ -218,9 +243,4 @@ async function enableWifiAccess(connection: DeviceConnection): Promise<string | 
 	} catch {
 		return null;
 	}
-}
-
-/** The tablet's hostname, for {@link generationOf} -- asked before a password is, so it can guide. */
-export async function readGeneration(connection: DeviceConnection): Promise<DeviceGeneration> {
-	return generationOf((await connection.exec("uname -n")).trim());
 }

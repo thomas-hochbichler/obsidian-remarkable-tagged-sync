@@ -88,12 +88,19 @@ export function documentOf(path: string): string | null {
 	return DOCUMENT_SUFFIXES.includes(path.slice(dot)) ? docId : null;
 }
 
-/** The document's files, hashed, as the sync15 index lines that name them. */
-async function documentEntries(
+/**
+ * A hash for every file in the account, asked for in **one** request.
+ *
+ * The account, not the document: a first pairing has to hash thousands of files, and asking per
+ * document would be one round trip per document -- on a real library, over a hundred of them, each
+ * paying the latency of a command that could have carried the lot. What the cache already knows is
+ * never asked for again, so a steady-state sync usually asks for nothing at all.
+ */
+async function hashAll(
 	files: DeviceFiles,
 	cache: HashCache,
 	stats: readonly DeviceFileStat[],
-): Promise<Sync15Entry[]> {
+): Promise<Map<string, string>> {
 	const known = new Map<string, string>();
 	const unknown: string[] = [];
 	for (const stat of stats) {
@@ -101,19 +108,23 @@ async function documentEntries(
 		if (cached === undefined) unknown.push(stat.path);
 		else known.set(stat.path, cached);
 	}
-	if (unknown.length > 0) {
-		const fresh = await files.hash(unknown);
-		for (const stat of stats) {
-			const hash = fresh.get(stat.path);
-			if (hash === undefined) continue;
-			known.set(stat.path, hash);
-			cache.set(stat, hash);
-		}
-	}
+	if (unknown.length === 0) return known;
 
+	const fresh = await files.hash(unknown);
+	for (const stat of stats) {
+		const hash = fresh.get(stat.path);
+		if (hash === undefined) continue;
+		known.set(stat.path, hash);
+		cache.set(stat, hash);
+	}
+	return known;
+}
+
+/** The document's files as the sync15 index lines that name them, given hashes already in hand. */
+function documentEntries(hashes: ReadonlyMap<string, string>, stats: readonly DeviceFileStat[]): Sync15Entry[] {
 	const entries: Sync15Entry[] = [];
 	for (const stat of stats) {
-		const hash = known.get(stat.path);
+		const hash = hashes.get(stat.path);
 		// A file that vanished between the listing and the hashing is skipped rather than fatal: the
 		// device is live, and a document xochitl deleted mid-scan is not this sync's business.
 		if (hash === undefined) continue;
@@ -146,9 +157,10 @@ async function readAccount(files: DeviceFiles, cache: HashCache) {
 		else group.push(stat);
 	}
 
+	const hashes = await hashAll(files, cache, [...byDocument.values()].flat());
 	const documents = new Map<string, DeviceDocument>();
 	for (const [docId, stats] of byDocument) {
-		const entries = await documentEntries(files, cache, stats);
+		const entries = documentEntries(hashes, stats);
 		if (entries.length === 0) continue;
 		documents.set(docId, {
 			entry: await indexEntry(docId, entries),
@@ -182,12 +194,27 @@ interface DeviceMetadata {
 /**
  * Builds the six-method surface the engine reads, for one connection.
  *
- * The account is read once, here, and the returned object answers out of that snapshot -- which is
- * also what makes the engine's doubled reads (it opens each document once while scanning and once
- * while working) free, exactly as rmapi-js's content-addressed cache makes them free on the cloud.
+ * The account is indexed once, here, so all three of the engine's gates are answered out of one
+ * snapshot. The engine's doubled document opens -- once while scanning, once while working -- are
+ * then served from the small-text cache below rather than fetched again, which is what rmapi-js's
+ * own cache does for the cloud path.
  */
 export async function openDeviceApi(files: DeviceFiles, cache: HashCache): Promise<SyncApi> {
 	const { documents, root } = await readAccount(files, cache);
+
+	/**
+	 * Small text files this session has already fetched, mirroring what rmapi-js caches on the cloud
+	 * side -- and for the same reason.
+	 *
+	 * The engine opens each candidate document twice, once while scanning and once while working, and
+	 * `listItems` has read its `.metadata` before either. Without this that is three fetches and three
+	 * verifications of the same few kilobytes per document per run, which on the cloud costs nothing
+	 * because rmapi-js answers the repeats from its own cache. Only `.content` and `.metadata` are
+	 * held: they are small, they are the ones read repeatedly, and holding pages or PDFs would trade a
+	 * saved round trip for the whole library in memory -- the same line rmapi-js draws.
+	 */
+	const textCache = new Map<string, Uint8Array>();
+	const isSmallText = (path: string): boolean => path.endsWith(".content") || path.endsWith(".metadata");
 
 	/**
 	 * A member file's bytes, checked against the hash this session indexed it under.
@@ -205,12 +232,20 @@ export async function openDeviceApi(files: DeviceFiles, cache: HashCache): Promi
 	const readMember = async (docId: string, path: string): Promise<Uint8Array> => {
 		const document = documents.get(docId);
 		if (document === undefined) throw new Error(`No document ${docId} on the device.`);
+		const held = textCache.get(path);
+		if (held !== undefined) return held;
 		const expected = document.hashes.get(path);
 		let bytes = await files.read(path);
-		if (expected === undefined || (await hashBytes(bytes)) === expected) return bytes;
-		bytes = await files.read(path);
-		if ((await hashBytes(bytes)) === expected) return bytes;
-		throw new Error(`${path} changed on the device while it was being read.`);
+		if (expected !== undefined && (await hashBytes(bytes)) !== expected) {
+			// A second read covers a genuinely torn one; a second disagreement means the file really did
+			// change, and is refused rather than rendered under a hash that no longer describes it.
+			bytes = await files.read(path);
+			if ((await hashBytes(bytes)) !== expected) {
+				throw new Error(`${path} changed on the device while it was being read.`);
+			}
+		}
+		if (isSmallText(path)) textCache.set(path, bytes);
+		return bytes;
 	};
 
 	const contentOf = async (docId: string): Promise<Content> => {

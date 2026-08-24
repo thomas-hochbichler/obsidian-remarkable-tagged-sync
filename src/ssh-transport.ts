@@ -149,6 +149,14 @@ export class SshTransport implements Transport {
 		if (context === "connect") {
 			return "Could not reach your reMarkable over SSH. Check the address, and that the tablet is awake.";
 		}
+		if (/econnreset|epipe|socket|closed by|disconnect|timed out|timeout/i.test(text)) {
+			// Claimed here so it never reaches the neutral layer, whose offline sentence talks about the
+			// cloud and an internet connection -- neither of which is what happened to a tablet on a desk.
+			return (
+				"The connection to your reMarkable dropped part-way through. It may have gone to sleep — " +
+				"the next sync carries on from where this one stopped."
+			);
+		}
 		return null;
 	}
 

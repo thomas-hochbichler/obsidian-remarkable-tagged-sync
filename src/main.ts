@@ -32,9 +32,9 @@ import {
 	explainTransportError,
 } from "./transport";
 import type { ErrorContext } from "./explain-error";
-import { failoverNotice, openTransportChain, type TransportChain } from "./transport-chain";
+import { failoverNotice, openTransportChain, type OpenedTransport, type TransportChain } from "./transport-chain";
 import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-transport";
-import { probeDevice } from "./ssh-pairing";
+import { reachableHost } from "./ssh-pairing";
 import { reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -177,11 +177,42 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * choice `resolveOcrBackend` makes for a gated backend, and for the same reason: a buyer whose card
 	 * expired mid-notebook can act on a sentence, not on a sync that stopped working.
 	 */
-	transport(): Transport {
+	private resolveTransport(): { transport: Transport; downgraded: boolean } {
 		const chosen = this.data.primaryTransport;
-		if (allowedTransports(this.entitlement()).includes(chosen)) return this.transportById(chosen);
-		new Notice(`Syncing from ${SSH_TRANSPORT_LABEL} needs Tagged Sync Pro — using the reMarkable cloud.`);
-		return this.cloudTransport;
+		if (allowedTransports(this.entitlement()).includes(chosen)) {
+			return { transport: this.transportById(chosen), downgraded: false };
+		}
+		return { transport: this.cloudTransport, downgraded: true };
+	}
+
+	/**
+	 * Silent, because it is asked constantly -- every settings row, every pre-flight, every background
+	 * tick. Saying the downgrade here meant a lapsed user got it twice per settings render and twice
+	 * per auto-sync tick, which breaks the rule that a background run never interrupts. Whoever is
+	 * *starting* something a person asked for announces it instead; see {@link openSource}.
+	 */
+	transport(): Transport {
+		return this.resolveTransport().transport;
+	}
+
+	/**
+	 * Opens whichever source answers, and says anything the user is owed about how that went.
+	 *
+	 * Every long job goes through here -- a sync, a re-transcribe, a tag scan -- so the failover a
+	 * vault configured applies to all of them rather than only to the one it was written for.
+	 *
+	 * `announce` is false for background runs: they must never raise a notice (auto-sync spec
+	 * §Failure), and a failover they took silently is still the right outcome.
+	 */
+	async openSource(announce = true): Promise<OpenedTransport> {
+		if (announce && this.resolveTransport().downgraded) {
+			new Notice(`Syncing from ${SSH_TRANSPORT_LABEL} needs Tagged Sync Pro — using the reMarkable cloud.`);
+		}
+		const opened = await openTransportChain(this.transportChain());
+		if (announce && opened.failedOverFrom !== null) {
+			new Notice(failoverNotice(opened.failedOverFrom, opened.transport));
+		}
+		return opened;
 	}
 
 	/** The primary, and what to try when it does not answer (SSH transport spec §7). */
@@ -197,8 +228,10 @@ export default class TaggedSyncPlugin extends Plugin {
 
 	/** What {@link preflightRun} judges, read off the plugin at the moment it is asked. */
 	private runConditions(): RunConditions {
+		const status = this.transport().status();
 		return {
-			connected: this.transport().status().connected,
+			connected: status.connected,
+			connectNotice: status.connectNotice,
 			running: this.syncing,
 			backendRequiresLicence: this.backendRequiresLicence(),
 		};
@@ -481,16 +514,14 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.stopRequested = false;
 		if (!auto) new Notice("Syncing…");
 		this.setStatus("busy", "Tagged Sync: starting…");
-		const chain = this.transportChain();
 		// Named before the run so the `catch` can word a failure in the primary's terms even when
 		// opening never got far enough to say which source it would have been.
-		let transport = chain.primary;
+		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
 		try {
-			const opened = await openTransportChain(chain);
+			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;
-			if (opened.failedOverFrom !== null) new Notice(failoverNotice(opened.failedOverFrom, transport));
 			const result = await runSync(
 				{
 					api: session.api,
@@ -633,7 +664,9 @@ export default class TaggedSyncPlugin extends Plugin {
 	private async autoSyncSourceReachable(): Promise<boolean> {
 		const chain = this.transportChain();
 		if (chain.primary.id !== "ssh" || chain.fallback !== null) return true;
-		return await probeDevice(this.data.ssh.host, this.data.ssh.port);
+		// The cable counts as reachable too, exactly as it does for a real run: a tablet plugged in
+		// after its Wi-Fi address went stale would otherwise be "asleep" in the background forever.
+		return (await reachableHost(this.data.ssh.host, this.data.ssh.port)) !== null;
 	}
 
 	/** Wiring only: `sync-notices.ts` decides which of the five are said, in what words and in what order. */
@@ -700,10 +733,12 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 		this.stopRequested = false;
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
-		const transport = this.transport();
+		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
 		try {
-			session = await transport.open();
+			const opened = await this.openSource();
+			transport = opened.transport;
+			session = opened.session;
 			const { updated, index, stopped } = await reTranscribeAll(
 				{
 					api: session.api,

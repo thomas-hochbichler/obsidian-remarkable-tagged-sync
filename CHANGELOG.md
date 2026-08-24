@@ -31,9 +31,9 @@ workflow publishes the section as the GitHub release body. See
 
   **On a Paper Pro or Paper Pure this costs a factory reset.** Those devices only allow SSH in
   Developer Mode, and turning it on erases the tablet — your notes come back from the reMarkable
-  cloud afterwards, but the tablet shows a warning screen at every start from then on. The plugin
-  says all of this before you type anything. reMarkable 1 and 2 need none of it; SSH is on by
-  default there.
+  cloud afterwards, but the tablet shows a warning screen at every start from then on. If a tablet
+  does not answer, the plugin spells this out rather than leaving you to find it. reMarkable 1 and 2
+  need none of it; SSH is on by default there.
 
   Background syncs check whether the tablet is awake before starting, so a sleeping device is a
   quiet skip rather than a failed sync every night. Desktop only, like the rest of the plugin.

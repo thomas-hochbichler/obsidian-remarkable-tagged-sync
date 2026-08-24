@@ -170,8 +170,13 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 		exec,
 
 		async list(): Promise<DeviceFileStat[]> {
-			// One walk for names, sizes and times together. BusyBox `find` has no `-printf`, so `stat`
-			// does the formatting; `-exec … +` batches rather than forking per file.
+			// One walk for names, sizes and times together, over a shell rather than over SFTP -- the one
+			// place this transport does not use the SFTP subsystem, and worth the exception: a recursive
+			// SFTP listing is a round trip per directory, and a real library is a directory per document
+			// plus one per page that carries a picture. One command replaces hundreds.
+			//
+			// BusyBox `find` has no `-printf`, so `stat -c` does the formatting; `-exec … +` batches
+			// rather than forking per file. Both are BusyBox applets the device ships.
 			const out = await exec(`cd ${XOCHITL_DIR} && find . -type f -exec stat -c '%s %Y %n' {} +`);
 			const stats: DeviceFileStat[] = [];
 			for (const line of out.split("\n")) {

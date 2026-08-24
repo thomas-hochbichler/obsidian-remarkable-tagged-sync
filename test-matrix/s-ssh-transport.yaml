@@ -336,40 +336,26 @@
   code: src/ssh-pairing.ts
   tier: pro
   scenarios:
-    - id: S7.1
-      scenario: A Paper Pro and a Paper Pure, identified by the hostname they report
-      expect: Recognised as the generation whose SSH costs a factory reset -- which is what lets the warning appear before a password is asked for rather than after
-      layer: unit
-      file: src/ssh-pairing.test.ts
-      test: "which reMarkable this is > reads a Paper Pro and a Paper Pure off their hostnames"
-
-    - id: S7.2
-      scenario: Any other reMarkable
-      expect: Treated as a tablet that already answers, because rM1 and rM2 do
-      layer: unit
-      file: src/ssh-pairing.test.ts
-      test: "which reMarkable this is > treats everything else as a tablet that already answers"
-
     - id: S7.3
       scenario: The guidance a Paper Pro or Paper Pure owner is shown
       expect: 'That Developer Mode **erases the tablet**, that notes come back from the cloud, and that the warning screen is permanent. No competitor says any of this in-product, and it is the one fact that cannot be discovered afterwards'
       layer: unit
       file: src/ssh-pairing.test.ts
-      test: "what the user is told before they type a password > says out loud that Developer Mode erases the tablet, and that notes come back from the cloud"
+      test: "what the user is told when nothing answers > says out loud that Developer Mode erases the tablet, and that notes come back from the cloud"
 
     - id: S7.4
       scenario: The guidance an rM1 or rM2 owner is shown
       expect: No talk of erasing anything. Their tablet needs nothing turned on, and a warning meant for a different device would cost this plugin a user for no reason
       layer: unit
       file: src/ssh-pairing.test.ts
-      test: "what the user is told before they type a password > does not frighten an rM1 or rM2 owner, who has nothing to turn on"
+      test: "what the user is told when nothing answers > does not frighten an rM1 or rM2 owner, who has nothing to turn on"
 
     - id: S7.5
       scenario: Either kind of tablet
       expect: Where the root password is, spelled out. It is on a screen nobody visits by accident
       layer: unit
       file: src/ssh-pairing.test.ts
-      test: "what the user is told before they type a password > says where the root password is, for either kind of tablet"
+      test: "what the user is told when nothing answers > says where the root password is, for either kind of tablet"
 
     - id: S7.6
       scenario: The key generated for a vault
@@ -418,6 +404,25 @@
       file: src/auto-sync-gates.test.ts
       test: "backgroundRunBlocked > blocks quietly when the tablet is asleep, and says so as its own reason"
 
+- feature: S11
+  name: What one sync over SSH actually costs
+  code: src/device-api.ts
+  tier: pro
+  scenarios:
+    - id: S11.1
+      scenario: A session opens over an account with several documents whose hashes are not cached
+      expect: One hash request for the whole account, not one per document. Per document is one round trip per document -- on a real library over a hundred of them, each paying the latency of a command that could have carried the lot
+      layer: unit
+      file: src/device-api.test.ts
+      test: "what one session costs > asks for every file's hash in one request rather than one per document"
+
+    - id: S11.2
+      scenario: The engine opens a document twice, as it does on every run -- once scanning, once working -- after `listItems` already read its metadata
+      expect: 'Each small file crosses the wire once. On the cloud rmapi-js answers the repeats out of its own cache; without the same here every document would be fetched and verified three times per run'
+      layer: unit
+      file: src/device-api.test.ts
+      test: "what one session costs > reads a document's content once however often the engine opens it"
+
 - feature: S9
   name: Reading a tablet that is still writing
   code: src/device-api.ts
@@ -455,3 +460,43 @@
       layer: engine
       file: src/device-api.test.ts
       test: "the engine over the device > notices on the next run that a page was written on"
+
+- feature: S12
+  name: Pairing proves what it claims before it claims it
+  code: src/ssh-pairing.ts
+  tier: pro
+  scenarios:
+    - id: S12.1
+      scenario: A pairing that goes through
+      expect: 'The key and the pinned fingerprint are stored and the password is nowhere in the result. `data.json` travels between machines through Obsidian Sync, and a root password riding along to every one of them is a different promise from a key that grants one tablet on one LAN'
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "pairing, end to end > keeps nothing of the password, and stores the key it installed"
+
+    - id: S12.2
+      scenario: The key is installed but the device will not accept it -- a full filesystem, a read-only `/home`, permissions dropbear refuses
+      expect: 'Pairing fails. Everything before this step can succeed while the key is unusable, and without the check that surfaces as "pairing worked" followed by every sync being refused, long after the password that could have fixed it was forgotten'
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "pairing, end to end > checks the key actually works before reporting success"
+
+    - id: S12.3
+      scenario: The user declines Wi-Fi access while pairing over the cable
+      expect: '`rm-ssh-over-wlan` is never run. It leaves a service listening on whatever network the tablet joins, so it is offered and not assumed'
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "pairing, end to end > does not open SSH over Wi-Fi unless the user said yes"
+
+    - id: S12.4
+      scenario: The user allows it
+      expect: Wi-Fi SSH is turned on and the address is read back off the device, so nobody has to go and find their tablet's IP
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "pairing, end to end > opens it, and takes the address back off the device, when they did"
+
+    - id: S12.5
+      scenario: The user does not trust the host key they were shown
+      expect: Nothing is installed and nothing is stored. Trust on first use means the answer has to be able to be no
+      layer: unit
+      file: src/ssh-pairing.test.ts
+      test: "pairing, end to end > stops when the device's key is not trusted"

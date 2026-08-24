@@ -170,6 +170,15 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				.setName("Paired device")
 				.setDesc(`root@${ssh.host} · host key pinned`)
 				.addButton((button) =>
+					// Offered here because it is the action every failure message asks for -- a refused key
+					// and a changed host key both end in "pair again", and both leave the address correct.
+					button.setButtonText("Re-pair").onClick(async () => {
+						this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
+						await this.plugin.saveData(this.plugin.data);
+						this.display();
+					}),
+				)
+				.addButton((button) =>
 					button.setButtonText("Forget device").onClick(async () => {
 						// The key stays on the tablet: removing it would need the password again, and this
 						// button is what somebody presses *because* they can no longer reach the device.
@@ -227,6 +236,14 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						"Trust this reMarkable?",
 						`The device identifies itself as ${fingerprint}. This vault will refuse to connect if it ever presents a different key.`,
 						"Trust",
+					),
+				confirmWifi: () =>
+					confirmDialog(
+						this.app,
+						"Allow SSH over Wi-Fi?",
+						"Your reMarkable can keep accepting connections over Wi-Fi, so syncing does not need the cable. " +
+							"It means the tablet listens for SSH on whatever network it joins. Say no to keep it cable-only.",
+						"Allow",
 					),
 				report: (step) => new Notice(step),
 			});
@@ -665,7 +682,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					button.setDisabled(true);
 					let session: TransportSession | null = null;
 					try {
-						session = await this.plugin.transport().open();
+						// Through the same chain a sync uses, so a vault that configured a fallback gets one
+						// here too rather than only on the job this was written for.
+						session = (await this.plugin.openSource()).session;
 						const notebooks = await enumerateNotebookTags(session.api);
 						this.discoveredTags = collectTagNames(notebooks);
 						new Notice(`Found ${this.discoveredTags.length} tag(s).`);

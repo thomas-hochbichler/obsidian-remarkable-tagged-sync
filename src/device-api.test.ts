@@ -245,6 +245,37 @@ describe("hashes a vault can keep across a transport switch", () => {
 	});
 });
 
+describe("what one session costs", () => {
+	it("asks for every file's hash in one request rather than one per document", async () => {
+		const { device, hashed } = fakeDevice({
+			...NOTEBOOK,
+			[`${OTHER}.metadata`]: JSON.stringify({ visibleName: "Second", type: "DocumentType" }),
+			[`${OTHER}.content`]: JSON.stringify({ fileType: "notebook" }),
+		});
+
+		await openDeviceApi(device, NO_HASH_CACHE);
+
+		// Per document would be one round trip per document -- on a real library over a hundred of
+		// them, each paying the latency of a command that could have carried the lot.
+		expect(hashed.length).toBe(1);
+	});
+
+	it("reads a document's content once however often the engine opens it", async () => {
+		const { device, read } = fakeDevice(NOTEBOOK);
+		const api = await openDeviceApi(device, NO_HASH_CACHE);
+
+		await api.getContent(DOC, "unused");
+		await api.getContent(DOC, "unused");
+		await api.listItems();
+
+		// The engine opens each candidate twice, and listItems has read the metadata before either.
+		// On the cloud rmapi-js answers the repeats from its own cache; without the same here, every
+		// document would cross the wire three times per run and be verified three times.
+		expect(read.filter((path) => path === `${DOC}.content`)).toHaveLength(1);
+		expect(read.filter((path) => path === `${DOC}.metadata`)).toHaveLength(1);
+	});
+});
+
 describe("the hash cache", () => {
 	it("hashes nothing again on a second sync of an untouched device", async () => {
 		const tablet = fakeDevice(NOTEBOOK);
