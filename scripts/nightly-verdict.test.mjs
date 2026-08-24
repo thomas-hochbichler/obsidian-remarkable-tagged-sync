@@ -10,7 +10,6 @@ const verdict = (parts) => ({
 	runId: "1234567890",
 	runUrl: "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/1234567890",
 	parts: {
-		contract: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
 		ocr: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
 		perf: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
 		...parts,
@@ -21,19 +20,19 @@ describe("judgeVerdict", () => {
 	it("lets a release through when every part of last night measured and passed", () => {
 		const { problems, notes } = judgeVerdict(verdict(), NOW);
 		expect(problems).toEqual([]);
-		expect(notes).toEqual(["contract: pass, measured 9 h ago", "ocr: pass, measured 9 h ago", "perf: pass, measured 9 h ago"]);
+		expect(notes).toEqual(["ocr: pass, measured 9 h ago", "perf: pass, measured 9 h ago"]);
 	});
 
-	it("blocks the release when the contract half found the live API broken", () => {
-		const { problems } = judgeVerdict(verdict({ contract: { status: "catastrophe", measuredAt: hoursAgo(2) } }), NOW);
+	it("blocks the release when a part found the world broken", () => {
+		const { problems } = judgeVerdict(verdict({ ocr: { status: "catastrophe", measuredAt: hoursAgo(2) } }), NOW);
 		expect(problems).toHaveLength(1);
-		expect(problems[0]).toContain("`contract` is a catastrophe");
+		expect(problems[0]).toContain("`ocr` is a catastrophe");
 	});
 
-	it("treats a new key in a live response as a report, not a blocker", () => {
-		const { problems, notes } = judgeVerdict(verdict({ contract: { status: "degraded", measuredAt: hoursAgo(3) } }), NOW);
+	it("treats a degraded part as a report, not a blocker", () => {
+		const { problems, notes } = judgeVerdict(verdict({ perf: { status: "degraded", measuredAt: hoursAgo(3) } }), NOW);
 		expect(problems).toEqual([]);
-		expect(notes).toContain("contract: degraded, measured 3 h ago");
+		expect(notes).toContain("perf: degraded, measured 3 h ago");
 	});
 
 	it("refuses a verdict older than three nights, however green it says it is", () => {
@@ -88,7 +87,7 @@ describe("judgeVerdict", () => {
 	});
 
 	it("blocks on a part whose freshness cannot be established", () => {
-		const { problems } = judgeVerdict(verdict({ contract: { status: "pass", measuredAt: "last tuesday" } }), NOW);
+		const { problems } = judgeVerdict(verdict({ perf: { status: "pass", measuredAt: "last tuesday" } }), NOW);
 		expect(problems).toHaveLength(1);
 		expect(problems[0]).toContain("no readable `measuredAt`");
 	});

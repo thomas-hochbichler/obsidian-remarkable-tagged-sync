@@ -16,18 +16,18 @@
       test: "judgeVerdict > lets a release through when every part of last night measured and passed"
 
     - id: R1.2
-      scenario: The contract half found a key gone or a type changed in a live API response
-      expect: The release is blocked -- the shipped code is already broken against the live API, so releasing ships a plugin that cannot list a notebook
+      scenario: A part found the world broken -- an OCR backend collapsed to empty output, or a metric went catastrophic
+      expect: The release is blocked -- the shipped code is already broken against what it was measured against
       layer: unit
       file: scripts/nightly-verdict.test.mjs
-      test: "judgeVerdict > blocks the release when the contract half found the live API broken"
+      test: "judgeVerdict > blocks the release when a part found the world broken"
 
     - id: R1.3
-      scenario: A live response grew a key nobody has seen before
-      expect: Reported as degraded and never red. A new key breaks nothing, and a gate that fires on it teaches the author to ignore red
+      scenario: A part came back degraded -- slower or worse than baseline, but working
+      expect: Reported and never red. A gate that fires on a report teaches the author to ignore red
       layer: unit
       file: scripts/nightly-verdict.test.mjs
-      test: "judgeVerdict > treats a new key in a live response as a report, not a blocker"
+      test: "judgeVerdict > treats a degraded part as a report, not a blocker"
 
     - id: R1.4
       scenario: The verdict in the tree says pass, but it was written four nights ago

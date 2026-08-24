@@ -41,7 +41,7 @@ export function mergeParts({ parts, previous, now, run }) {
 	return { schema: 1, commit: run.commit, runId: run.runId, runUrl: run.runUrl, parts: merged };
 }
 
-/** `chore(nightly): ocr pass (median CER 3.9 %) · contract unknown [skip ci]` */
+/** `chore(nightly): ocr pass (median CER 3.9 %) · perf pass (render 210 ms) [skip ci]` */
 export function commitSubject(verdict) {
 	const pieces = PARTS.map((name) => {
 		const part = verdict.parts[name];
