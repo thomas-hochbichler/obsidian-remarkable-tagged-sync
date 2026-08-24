@@ -288,6 +288,13 @@
       file: scripts/nightly-merge.test.mjs
       test: "the commit subject > carries the headline number, so git log --oneline is the drift curve at a glance"
 
+    - id: N5.6
+      scenario: A night that measured the perf part
+      expect: The commit subject carries the render time, so the render cost has its own drift curve in the log
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "the commit subject > carries the perf number too, so the render cost has its own drift curve in the log"
+
 - feature: N6
   name: The OCR baseline and its change discipline
   code: scripts/ocr-baseline.mjs
@@ -353,3 +360,43 @@
       layer: unit
       file: scripts/nightly-summary.test.mjs
       test: "the run summary table > shows CER, baseline and delta per page, names problems, and surfaces a lost structure"
+
+- feature: N8
+  name: The perf part
+  code: test-support/nightly/perf.ts
+  tier: free
+  scenarios:
+    - id: N8.1
+      scenario: No .perf-baseline.json exists -- the state the first five nights run in
+      expect: The night observes and passes; recording without judging is what the pre-baseline nights are for
+      layer: unit
+      file: test-support/nightly/perf.test.ts
+      test: "the perf part > observes and passes while no baseline exists -- the first nights create the reference"
+
+    - id: N8.2
+      scenario: Tonight is slower than baseline but inside the 1.5x headroom
+      expect: Pass -- the measured spread on one machine was 9-17 %, and a gate that flaps on its own noise gets ignored
+      layer: unit
+      file: test-support/nightly/perf.test.ts
+      test: "the perf part > passes inside the headroom, because a 9-17 % spread must never flap the gate"
+
+    - id: N8.3
+      scenario: A metric lands past 1.5x its baseline and more than 50 ms over it
+      expect: Degraded, naming the metric with both numbers, so the commit and the standing issue say what regressed
+      layer: unit
+      file: test-support/nightly/perf.test.ts
+      test: "the perf part > degrades past 1.5x the baseline and names the metric with both numbers"
+
+    - id: N8.4
+      scenario: A tiny metric doubles but stays under the 50 ms absolute floor
+      expect: Pass -- scheduler noise on a 3 ms number is not a regression
+      layer: unit
+      file: test-support/nightly/perf.test.ts
+      test: "the perf part > stays quiet over the factor but under the absolute floor -- a 3 ms metric must not flap on scheduler noise"
+
+    - id: N8.5
+      scenario: Tonight is faster than the baseline
+      expect: Silent pass -- lowering the reference is the baseline script's reviewed change, a gate must never tighten itself overnight
+      layer: unit
+      file: test-support/nightly/perf.test.ts
+      test: "the perf part > is silent about a faster night -- lowering the reference is the baseline script's reviewed change, never the gate's"

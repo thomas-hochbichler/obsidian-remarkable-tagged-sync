@@ -26,7 +26,7 @@
 
 export const STALE_HOURS = 72;
 
-export const PARTS = ["contract", "ocr"];
+export const PARTS = ["contract", "ocr", "perf"];
 const TOP_KEYS = ["schema", "commit", "runId", "runUrl", "parts"];
 const PART_KEYS = ["status", "measuredAt", "lastMeasuredAt", "detail"];
 const STATUSES = ["pass", "degraded", "unknown", "catastrophe"];
