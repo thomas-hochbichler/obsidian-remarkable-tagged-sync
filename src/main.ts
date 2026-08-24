@@ -13,7 +13,6 @@ import { normalizeAttachmentsFolder } from "./attachment-writer";
 import { autoSpendBlocked, backgroundConsentGiven, backgroundRunBlocked } from "./auto-sync-gates";
 import { confirmDialog } from "./confirm-modal";
 import { isIntervalSyncDue } from "./auto-sync";
-import { explainError } from "./explain-error";
 import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-check";
 import { createPolarLicenceApi } from "./licence-client";
 import { type Entitlement, entitlementOf } from "./licence-state";
@@ -23,8 +22,9 @@ import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { reTranscribeConfirmation, reTranscribeIsUseful } from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
-import { openSession } from "./remarkable-session";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
+import { CloudTransport } from "./cloud-transport";
+import { type Transport, type TransportSession, explainTransportError } from "./transport";
 import { reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -58,6 +58,7 @@ const AUTO_SYNC_LAUNCH_DELAY_MS = 4_000;
 export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
+	private cloudTransport!: Transport;
 	readonly licenceApi: LicenceApi = createPolarLicenceApi();
 	/** What the launch delay and the interval backstop run on. Replaced in tests; see `./scheduler`. */
 	scheduler: Scheduler = windowScheduler;
@@ -143,10 +144,15 @@ export default class TaggedSyncPlugin extends Plugin {
 		return ocrBackendEntry(this.data.ocrBackend)?.requiresLicence === true;
 	}
 
+	/** Where this vault reads its notes from right now. */
+	transport(): Transport {
+		return this.cloudTransport;
+	}
+
 	/** What {@link preflightRun} judges, read off the plugin at the moment it is asked. */
 	private runConditions(): RunConditions {
 		return {
-			connected: this.auth.isConnected(),
+			connected: this.transport().status().connected,
 			running: this.syncing,
 			backendRequiresLicence: this.backendRequiresLicence(),
 		};
@@ -192,6 +198,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			},
 		};
 		this.auth = new RemarkableAuth(store);
+		this.cloudTransport = new CloudTransport(this.auth);
 
 		this.addSettingTab(new TaggedSyncSettingTab(this.app, this));
 		// Registered whatever the setting says: it governs whether a sync *writes* margin notes, while a
@@ -420,12 +427,13 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.stopRequested = false;
 		if (!auto) new Notice("Syncing…");
 		this.setStatus("busy", "Tagged Sync: starting…");
+		const transport = this.transport();
+		let session: TransportSession | null = null;
 		try {
-			const sessionToken = await this.auth.session();
-			const api = openSession(sessionToken);
+			session = await transport.open();
 			const result = await runSync(
 				{
-					api,
+					api: session.api,
 					// Both configured folder sets resolve to the vault's real casing here, before any
 					// path is derived from them -- see resolveFolderCasing for why (issue #73).
 					tagRouter: new TagRouter(await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap)),
@@ -479,8 +487,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");
-			if (!auto) new Notice(explainError(error, "sync"));
+			if (!auto) new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
+			await session?.close();
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.
@@ -608,12 +617,13 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 		this.stopRequested = false;
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
+		const transport = this.transport();
+		let session: TransportSession | null = null;
 		try {
-			const sessionToken = await this.auth.session();
-			const api = openSession(sessionToken);
+			session = await transport.open();
 			const { updated, index, stopped } = await reTranscribeAll(
 				{
-					api,
+					api: session.api,
 					noteStore: createNoteStore(this.app),
 					ocrBackend: backend,
 					onProgress: (progress) => this.showProgress(progress),
@@ -644,8 +654,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: re-transcribe failed");
-			new Notice(explainError(error, "sync"));
+			new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
+			await session?.close();
 			this.syncing = false;
 			this.stopRequested = false;
 		}

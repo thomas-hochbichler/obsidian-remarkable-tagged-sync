@@ -16,6 +16,16 @@ const REJECTED_RE = /\b401\b|\b403\b|unauthorized|unauthorised|forbidden|invalid
 const VAULT_RE = /already exists|cannot contain/i;
 
 /**
+ * "The other end was not there" -- as opposed to a credential that was refused.
+ *
+ * Exported because the failover decision turns on exactly this distinction: an unreachable source
+ * may be replaced by the secondary transport, a rejected one may not (see `transport-chain`).
+ */
+export function isOfflineError(error: unknown): boolean {
+	return OFFLINE_RE.test(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+}
+
+/**
  * Turns whatever the cloud or the runtime threw into one plain sentence that says what to do next.
  * Users see raw rmapi-js and Electron text otherwise, which explains nothing and reads as a crash.
  *

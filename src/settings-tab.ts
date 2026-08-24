@@ -18,7 +18,7 @@ import { startTrial, withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
 import { defaultOcrBackend, hasAlternativeBackends, hasCloudBackends, hasOnDeviceBackends } from "./ocr-resolution";
 import { isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
-import { openSession } from "./remarkable-session";
+import type { TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
@@ -500,14 +500,16 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button.setButtonText("Scan").onClick(async () => {
 					button.setDisabled(true);
+					let session: TransportSession | null = null;
 					try {
-						const sessionToken = await this.plugin.auth.session();
-						const api = openSession(sessionToken);
-						const notebooks = await enumerateNotebookTags(api);
+						session = await this.plugin.transport().open();
+						const notebooks = await enumerateNotebookTags(session.api);
 						this.discoveredTags = collectTagNames(notebooks);
 						new Notice(`Found ${this.discoveredTags.length} tag(s).`);
 					} catch (error) {
 						new Notice(`Failed to discover tags: ${(error as Error).message}`);
+					} finally {
+						await session?.close();
 					}
 					this.display();
 				}),
