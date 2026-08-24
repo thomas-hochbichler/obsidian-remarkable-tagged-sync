@@ -51,7 +51,10 @@ export function commitSubject(verdict) {
 			.filter((cer) => typeof cer === "number")
 			.sort((a, b) => a - b);
 		const median = medians.length === 0 ? null : medians[Math.floor((medians.length - 1) / 2)];
-		const number = name === "ocr" && median !== null ? ` (median CER ${(median * 100).toFixed(1)} %)` : "";
+		let number = "";
+		if (name === "ocr" && median !== null) number = ` (median CER ${(median * 100).toFixed(1)} %)`;
+		const renderMs = part.detail?.metrics?.renderPagesToPdfMs;
+		if (name === "perf" && typeof renderMs === "number") number = ` (render ${Math.round(renderMs)} ms)`;
 		return `${name} ${part.status}${number}`;
 	});
 	return `chore(nightly): ${pieces.join(" · ")} [skip ci]`;

@@ -56,6 +56,18 @@ describe("the commit subject", () => {
 			now: NOW,
 			run: RUN,
 		});
-		expect(commitSubject(verdict)).toBe("chore(nightly): contract unknown · ocr pass (median CER 3.9 %) [skip ci]");
+		expect(commitSubject(verdict)).toBe("chore(nightly): contract unknown · ocr pass (median CER 3.9 %) · perf unknown [skip ci]");
+	});
+
+	it("carries the perf number too, so the render cost has its own drift curve in the log", () => {
+		const verdict = mergeParts({
+			parts: {
+				perf: { status: "pass", measuredAt: NOW, detail: { metrics: { renderPagesToPdfMs: 209.8, rasterizePageMs: 94 } } },
+			},
+			previous: null,
+			now: NOW,
+			run: RUN,
+		});
+		expect(commitSubject(verdict)).toBe("chore(nightly): contract unknown · ocr unknown · perf pass (render 210 ms) [skip ci]");
 	});
 });

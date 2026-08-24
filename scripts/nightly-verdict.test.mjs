@@ -12,15 +12,16 @@ const verdict = (parts) => ({
 	parts: {
 		contract: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
 		ocr: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
+		perf: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
 		...parts,
 	},
 });
 
 describe("judgeVerdict", () => {
-	it("lets a release through when both halves of last night measured and passed", () => {
+	it("lets a release through when every part of last night measured and passed", () => {
 		const { problems, notes } = judgeVerdict(verdict(), NOW);
 		expect(problems).toEqual([]);
-		expect(notes).toEqual(["contract: pass, measured 9 h ago", "ocr: pass, measured 9 h ago"]);
+		expect(notes).toEqual(["contract: pass, measured 9 h ago", "ocr: pass, measured 9 h ago", "perf: pass, measured 9 h ago"]);
 	});
 
 	it("blocks the release when the contract half found the live API broken", () => {
@@ -70,7 +71,7 @@ describe("judgeVerdict", () => {
 		expect(problems[0]).toContain("never produced a real measurement");
 	});
 
-	it("blocks when a night measured only one of the two halves", () => {
+	it("blocks when a night measured only some of its parts", () => {
 		const half = verdict();
 		delete half.parts.ocr;
 		const { problems } = judgeVerdict(half, NOW);

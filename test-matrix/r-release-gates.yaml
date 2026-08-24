@@ -9,11 +9,11 @@
   code: scripts/nightly-verdict.mjs
   scenarios:
     - id: R1.1
-      scenario: Last night ran and both halves passed
+      scenario: Last night ran and every part passed
       expect: The release proceeds, and the gate prints how old each measurement is rather than only "pass"
       layer: unit
       file: scripts/nightly-verdict.test.mjs
-      test: "judgeVerdict > lets a release through when both halves of last night measured and passed"
+      test: "judgeVerdict > lets a release through when every part of last night measured and passed"
 
     - id: R1.2
       scenario: The contract half found a key gone or a type changed in a live API response
@@ -65,11 +65,11 @@
       test: "judgeVerdict > does not let last night's number stand in for a half that could not be measured at all"
 
     - id: R1.9
-      scenario: The nightly wrote the contract half and died before the OCR half
-      expect: Blocked. A verdict that measured half of the night is not a verdict, and a lenient parser would read it as a pass
+      scenario: The nightly wrote some parts and died before the rest
+      expect: Blocked. A verdict that measured part of the night is not a verdict, and a lenient parser would read it as a pass
       layer: unit
       file: scripts/nightly-verdict.test.mjs
-      test: "judgeVerdict > blocks when a night measured only one of the two halves"
+      test: "judgeVerdict > blocks when a night measured only some of its parts"
 
     - id: R1.10
       scenario: Somebody edited the verdict by hand, or a merge left a key behind
@@ -187,3 +187,22 @@
       layer: unit
       file: test-support/golden/render-goldens.test.ts
       test: "render goldens > weather-station-page1-annotated renders exactly its committed golden"
+
+- feature: R3
+  name: The render cluster stays linear
+  code: test-support/perf/complexity-ratio.test.ts
+  tier: free
+  scenarios:
+    - id: R3.1
+      scenario: renderPagesToPdf at 500 and at 2000 strokes in one process
+      expect: The ratio stays under 6x -- linear code measured 3.5-4.2x over ten rounds, and the subtlest injected O(n^2) measured 6.6x, so the limit sits between what is and what must not be
+      layer: unit
+      file: test-support/perf/complexity-ratio.test.ts
+      test: "complexity ratio > renderPagesToPdf stays linear: 4x the strokes may not cost more than 6x the time"
+
+    - id: R3.2
+      scenario: rasterizePage at 500 and at 2000 strokes in one process
+      expect: The ratio stays under 6x, on every PR on any runner, because the ratio is a property of the code and needs no reference number
+      layer: unit
+      file: test-support/perf/complexity-ratio.test.ts
+      test: "complexity ratio > rasterizePage stays linear: 4x the strokes may not cost more than 6x the time"
