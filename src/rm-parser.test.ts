@@ -9,8 +9,8 @@ const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
 const RM_1_2_HALF_WIDTH_PX = 702;
 const RM_1_2_HEIGHT_PX = 1872;
 const COLOR_FIXTURE_PATH = "./test-fixtures/rmv6/color-and-tool-v3.14.4.rm";
-const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/pdf-page-highlights-and-margin-notes.rm";
-const NOTEBOOK_HIGHLIGHTS_FIXTURE_PATH = "./test-fixtures/rmv6/notebook-typed-text-highlights.rm";
+const PDF_PAGE_FIXTURE_PATH = "./test-fixtures/rmv6/weather-station-page1.rm";
+const NOTEBOOK_HIGHLIGHTS_FIXTURE_PATH = "./test-fixtures/rmv6/cape-marrow-typed-highlights.rm";
 
 /** A little-endian uint32 as four bytes, for hand-building block bodies. */
 function u32le(value: number): number[] {
@@ -539,8 +539,8 @@ describe("parseRmV6", () => {
 		const page = parseRmV6(new Uint8Array(data));
 
 		expect(page.highlights?.map((highlight) => ({ text: highlight.text, color: highlight.color }))).toEqual([
-			{ text: "Why", color: 3 },
-			{ text: "is the art", color: 5 },
+			{ text: "went inland before the pressure fell.", color: 3 },
+			{ text: "does not fit the form", color: 4 },
 		]);
 		expect(page.highlights?.every((highlight) => highlight.rects.length > 0)).toBe(true);
 	});
@@ -563,8 +563,8 @@ describe("parseRmV6", () => {
 
 		const strokeIds = page.layers.flatMap((layer) => layer.strokes).map((stroke) => stroke.id);
 		const highlightIds = (page.highlights ?? []).map((highlight) => highlight.id);
-		expect(strokeIds).toHaveLength(65);
-		expect(highlightIds).toHaveLength(9);
+		expect(strokeIds).toHaveLength(59);
+		expect(highlightIds).toHaveLength(7);
 		expect(strokeIds.every((id) => id.length > 0)).toBe(true);
 		expect(highlightIds.every((id) => id.length > 0)).toBe(true);
 		expect(new Set(strokeIds).size).toBe(strokeIds.length);
