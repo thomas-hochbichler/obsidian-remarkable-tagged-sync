@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
 import { inkBounds, rasterizePage } from "../../src/page-rasterizer";
-import { notebookPageFrame, renderPagesToPdf, resolveDeviceCanvas } from "../../src/pdf-renderer";
+import { notebookPageFrame, renderAnnotatedPdf, renderPagesToPdf, resolveDeviceCanvas } from "../../src/pdf-renderer";
 import type { RmPage } from "../../src/rm-parser";
 import { sceneTextPage } from "../../src/scene-text";
 import { RENDER_VERSION } from "../../src/sync-engine";
@@ -526,10 +526,19 @@ export interface GoldenTarget {
 	page: RmPage;
 	/** Where the page came from, recorded in the header: a fixture path, or "synthetic". */
 	source: string;
+	/**
+	 * When set, the `## pdf` section is the annotated composite -- `renderAnnotatedPdf` over this
+	 * source PDF with `page` as its annotations -- instead of the notebook path. The other three
+	 * sections describe the annotation scene itself and are path-independent.
+	 */
+	sourcePdf?: Uint8Array;
 }
 
 export async function renderGolden(target: GoldenTarget): Promise<string> {
-	const doc = await PDFDocument.load(await renderPagesToPdf([target.page]));
+	const bytes = target.sourcePdf
+		? await renderAnnotatedPdf(target.sourcePdf, [{ sourceIndex: 0, annotations: target.page }])
+		: await renderPagesToPdf([target.page]);
+	const doc = await PDFDocument.load(bytes);
 	const lines = [
 		`# golden ${target.name}`,
 		`# render-version ${RENDER_VERSION}`,

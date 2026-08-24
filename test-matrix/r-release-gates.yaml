@@ -180,3 +180,10 @@
       layer: unit
       file: test-support/golden/render-goldens.test.ts
       test: "render goldens > renders byte-identical goldens twice, so a diff is always a change and never noise"
+
+    - id: R2.12
+      scenario: The annotated-PDF path -- the seven-highlight page composited onto the PDF it was written on, ink past the paper edge forcing the shrink-to-fit
+      expect: Renders exactly its committed golden -- scene, pdf operations, text layer and raster, byte for byte
+      layer: unit
+      file: test-support/golden/render-goldens.test.ts
+      test: "render goldens > weather-station-page1-annotated renders exactly its committed golden"

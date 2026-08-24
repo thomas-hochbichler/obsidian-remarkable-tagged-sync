@@ -23,6 +23,14 @@ export function goldenTargets(): GoldenTarget[] {
 			const source = `test-fixtures/rmv6/${name}.rm`;
 			return { name, page: parseRmV6(new Uint8Array(readFileSync(source))), source };
 		}),
+		// The annotated-PDF path (ticket 20): the real seven-highlight page composited onto the PDF it
+		// was written on -- the one render entry point the notebook goldens above never exercise.
+		{
+			name: "weather-station-page1-annotated",
+			page: parseRmV6(new Uint8Array(readFileSync("test-fixtures/rmv6/weather-station-page1.rm"))),
+			source: "test-fixtures/rmv6/weather-station.pdf + weather-station-page1.rm",
+			sourcePdf: new Uint8Array(readFileSync("test-fixtures/rmv6/weather-station.pdf")),
+		},
 		...syntheticScenes().map(({ name, page }) => ({ name, page, source: "synthetic (test-support/golden/scenes.ts)" })),
 	];
 }
