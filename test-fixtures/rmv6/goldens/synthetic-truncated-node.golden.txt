@@ -1,0 +1,22 @@
+# golden synthetic-truncated-node
+# render-version 30
+# fixture synthetic (test-support/golden/scenes.ts)
+
+## scene
+formatVersion 6
+paperSize -
+layers 1
+  layer 0 name="Layer 1" visible=- anchor=- placement=- strokes=0 ids=-
+highlights 0
+images 0
+text -
+
+## pdf
+pages 1
+page 1 size=447.3x596.4
+
+## text layer
+none
+
+## raster
+inkBounds -

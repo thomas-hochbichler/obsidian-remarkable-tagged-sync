@@ -70,3 +70,16 @@ that moves a picture onto the line its anchor names.
 
 Both block types were read off a real page and are documented in
 `.scratch/notebook-images/spec.md`; nothing of that page is in the repo.
+
+## goldens/
+
+One render golden per fixture above plus five synthetic scenes
+(`test-support/golden/scenes.ts` — each exists because no device page on hand
+can express its case). A golden holds the render cluster's four products as
+plain text — `## scene`, `## pdf`, `## text layer`, `## raster` — and the suite
+regenerates and compares them on every run. Update with `npm run goldens:update`,
+which **refuses a change to any drawn section while `RENDER_VERSION` is
+unchanged**: the renderer changing and the bump that re-renders every synced
+note are one event, shipped together or not at all. A golden contains only what
+its fixture contains, and the target list is explicit — nothing outside
+`test-fixtures/` may ever feed one.
