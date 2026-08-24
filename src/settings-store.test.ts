@@ -105,6 +105,10 @@ describe("migrateSettings", () => {
 	it("keeps a whole working install exactly as it found it", () => {
 		const stored = {
 			deviceToken: "device-token",
+			primaryTransport: "ssh",
+			fallbackTransport: "cloud",
+			ssh: { host: "192.168.1.9", port: 22, privateKey: "PEM", hostKeyFingerprint: "SHA256:abc" },
+			sshHashes: { "doc.content|12|1000": "a".repeat(64) },
 			tagFolderMap: { "#work": "Work" },
 			syncIndex: { version: 4, rows: { "doc/1": { note: "Work/One.md" } } },
 			ocrBackend: "anthropic",

@@ -24,7 +24,9 @@ import { reTranscribeConfirmation, reTranscribeIsUseful } from "./re-transcribe-
 import { registerRegionProcessor } from "./region-view";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { CloudTransport } from "./cloud-transport";
-import { type Transport, type TransportSession, explainTransportError } from "./transport";
+import { type Transport, type TransportId, type TransportSession, explainTransportError } from "./transport";
+import { failoverNotice, openTransportChain, type TransportChain } from "./transport-chain";
+import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-transport";
 import { reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -59,6 +61,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
 	private cloudTransport!: Transport;
+	private sshTransport!: Transport;
 	readonly licenceApi: LicenceApi = createPolarLicenceApi();
 	/** What the launch delay and the interval backstop run on. Replaced in tests; see `./scheduler`. */
 	scheduler: Scheduler = windowScheduler;
@@ -144,9 +147,34 @@ export default class TaggedSyncPlugin extends Plugin {
 		return ocrBackendEntry(this.data.ocrBackend)?.requiresLicence === true;
 	}
 
-	/** Where this vault reads its notes from right now. */
+	/** Both transports, by id. Built once in `onload`; which one runs is decided per call below. */
+	private transportById(id: TransportId): Transport {
+		return id === "ssh" ? this.sshTransport : this.cloudTransport;
+	}
+
+	/**
+	 * Where this vault reads its notes from, after the licence has had its say.
+	 *
+	 * A lapsed licence falls back to the cloud with a message rather than refusing the run -- the same
+	 * choice `resolveOcrBackend` makes for a gated backend, and for the same reason: a buyer whose card
+	 * expired mid-notebook can act on a sentence, not on a sync that stopped working.
+	 */
 	transport(): Transport {
+		const chosen = this.data.primaryTransport;
+		if (allowedTransports(this.entitlement()).includes(chosen)) return this.transportById(chosen);
+		new Notice(`Syncing from ${SSH_TRANSPORT_LABEL} needs Tagged Sync Pro — using the reMarkable cloud.`);
 		return this.cloudTransport;
+	}
+
+	/** The primary, and what to try when it does not answer (SSH transport spec §7). */
+	private transportChain(): TransportChain {
+		const primary = this.transport();
+		const configured = this.data.fallbackTransport;
+		// Gated the same way as the primary, so a lapsed licence cannot smuggle the Pro transport back
+		// in through the fallback slot -- and silently, because the primary already said it once.
+		const usable =
+			configured !== null && configured !== primary.id && allowedTransports(this.entitlement()).includes(configured);
+		return { primary, fallback: usable ? this.transportById(configured) : null };
 	}
 
 	/** What {@link preflightRun} judges, read off the plugin at the moment it is asked. */
@@ -199,6 +227,14 @@ export default class TaggedSyncPlugin extends Plugin {
 		};
 		this.auth = new RemarkableAuth(store);
 		this.cloudTransport = new CloudTransport(this.auth);
+		this.sshTransport = new SshTransport({
+			settings: () => this.data.ssh,
+			hashes: () => this.data.sshHashes,
+			saveHashes: async (hashes) => {
+				this.data.sshHashes = hashes;
+				await this.saveData(this.data);
+			},
+		});
 
 		this.addSettingTab(new TaggedSyncSettingTab(this.app, this));
 		// Registered whatever the setting says: it governs whether a sync *writes* margin notes, while a
@@ -427,10 +463,16 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.stopRequested = false;
 		if (!auto) new Notice("Syncing…");
 		this.setStatus("busy", "Tagged Sync: starting…");
-		const transport = this.transport();
+		const chain = this.transportChain();
+		// Named before the run so the `catch` can word a failure in the primary's terms even when
+		// opening never got far enough to say which source it would have been.
+		let transport = chain.primary;
 		let session: TransportSession | null = null;
 		try {
-			session = await transport.open();
+			const opened = await openTransportChain(chain);
+			transport = opened.transport;
+			session = opened.session;
+			if (opened.failedOverFrom !== null) new Notice(failoverNotice(opened.failedOverFrom, transport));
 			const result = await runSync(
 				{
 					api: session.api,

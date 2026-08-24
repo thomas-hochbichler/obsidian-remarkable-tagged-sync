@@ -1,0 +1,332 @@
+# Reading the tablet directly instead of the reMarkable cloud (SSH transport spec).
+#
+# The feature's whole promise is that the two sources are **interchangeable**: a vault can be
+# pointed at either, or fall over between them, and its sync index stays valid. That rests on one
+# fact -- the SSH transport emits the cloud's own sync15 hashes -- so the rows under S1 are the load
+# -bearing ones. If those go, the feature still "works" and silently re-renders and re-transcribes
+# every note on every switch, which is exactly the kind of expensive silence the matrix exists for.
+
+- feature: S1
+  name: The device's files hash to what the cloud says they hash to
+  code: src/sync15-hash.ts
+  tier: pro
+  scenarios:
+    - id: S1.1
+      scenario: A file's hash
+      expect: The SHA-256 of exactly its bytes, checked against a published digest rather than against this module's own answer
+      layer: unit
+      file: src/sync15-hash.test.ts
+      test: "sync15 hashes > hashes a file as the SHA-256 of exactly its bytes"
+
+    - id: S1.2
+      scenario: Bytes read as a window onto a larger buffer -- what a chunked read produces
+      expect: Only the window is hashed. Hashing the neighbours too would make every page hash wrong in a way no size or count would show
+      layer: unit
+      file: src/sync15-hash.test.ts
+      test: "sync15 hashes > hashes the window it was given, not the buffer behind it"
+
+    - id: S1.3
+      scenario: A real document's ten files, with the hashes and sizes the tablet itself recorded in `.tree`
+      expect: 'The document hash reMarkable''s own code wrote. This is the row the feature stands on: reproduce it and a vault switches transports for free, miss it and every document re-renders'
+      layer: unit
+      file: src/sync15-hash.test.ts
+      test: "sync15 hashes > reproduces the document hash the device itself recorded"
+
+    - id: S1.4
+      scenario: The same files, listed in a different order
+      expect: The same hash. The index is hashed as rendered text, so an unsorted listing is a different hash for identical content -- and the device is under no obligation to list in any particular order
+      layer: unit
+      file: src/sync15-hash.test.ts
+      test: "sync15 hashes > sorts the index by id, so the same files in any order hash the same"
+
+    - id: S1.5
+      scenario: The index file itself
+      expect: Schema line, the self-describing info line, then one line per file -- the format the hash is taken over, pinned by its text rather than only through a digest
+      layer: unit
+      file: src/sync15-hash.test.ts
+      test: "sync15 hashes > writes the schema, the self-describing info line, and one line per file"
+
+    - id: S1.6
+      scenario: The root index
+      expect: It calls itself `.`, as the cloud writes it -- a detail worth a row because nothing else would catch it until the top-level gate missed on every sync
+      layer: unit
+      file: src/sync15-hash.test.ts
+      test: "sync15 hashes > calls the root index `.` rather than `root`, as the cloud does"
+
+    - id: S1.7
+      scenario: One member file's hash moves
+      expect: A different document hash. The change signal itself
+      layer: unit
+      file: src/sync15-hash.test.ts
+      test: "sync15 hashes > gives a different hash when a member file changed"
+
+- feature: S2
+  name: Which of the device's files the cloud counts as part of a document
+  code: src/device-api.ts
+  tier: pro
+  scenarios:
+    - id: S2.1
+      scenario: Pages and the pictures on them, under the document's own folder
+      expect: All of them belong to it
+      layer: unit
+      file: src/device-api.test.ts
+      test: "which files belong to a document > takes everything under the document's own folder"
+
+    - id: S2.2
+      scenario: '`.content` and `.epub`, which the cloud hashes -- and `.local`, which it does not'
+      expect: 'The first two count and `.local` does not. An allowlist because the two mistakes are not symmetric: a file wrongly included moves every document away from the cloud''s hash, which is the one thing this design exists to avoid'
+      layer: unit
+      file: src/device-api.test.ts
+      test: "which files belong to a document > takes the siblings the cloud hashes, and no others"
+
+    - id: S2.3
+      scenario: The device's own housekeeping -- `.tree`, the search index
+      expect: Not part of any document
+      layer: unit
+      file: src/device-api.test.ts
+      test: "which files belong to a document > ignores what is not a document at all"
+
+- feature: S3
+  name: The device answers everything the sync engine asks a source for
+  code: src/device-api.ts
+  tier: pro
+  scenarios:
+    - id: S3.1
+      scenario: A tagged notebook is listed
+      expect: Name, type and the tags out of its `.content` -- where the device keeps them, and where the cloud's listing gets them from too
+      layer: unit
+      file: src/device-api.test.ts
+      test: "the device as a SyncApi > lists a document with the tags from its content file"
+
+    - id: S3.2
+      scenario: A document deleted on the tablet but not yet synced away
+      expect: Not listed. The device keeps a tombstone the cloud listing does not have, and honouring it is what keeps the two transports listing the same account
+      layer: unit
+      file: src/device-api.test.ts
+      test: "the device as a SyncApi > leaves out a document the device has deleted but not yet synced away"
+
+    - id: S3.3
+      scenario: The engine asks for a page by the name it knows it by
+      expect: That page's bytes
+      layer: unit
+      file: src/device-api.test.ts
+      test: "the device as a SyncApi > hands the engine a page's bytes by the name it asks for"
+
+    - id: S3.4
+      scenario: A document's entry index is read
+      expect: Its member files, so the per-page change signal comes out of one listing rather than a request per page
+      layer: unit
+      file: src/device-api.test.ts
+      test: "the device as a SyncApi > indexes the document's member files, so page hashes come from one listing"
+
+    - id: S3.5
+      scenario: The ordinary tag scan, run against the device instead of the cloud
+      expect: Notebook tags, page tags, and a tag inherited from the folder above -- the real reader, unmodified, over entries this module built
+      layer: engine
+      file: src/device-api.test.ts
+      test: "what a real reader makes of it > finds notebook tags, page tags and an inherited folder tag through the ordinary tag scan"
+
+- feature: S4
+  name: A vault keeps its sync index across a transport switch
+  code: src/device-api.ts
+  tier: pro
+  scenarios:
+    - id: S4.1
+      scenario: Two reads of a device nothing happened to
+      expect: The same root hash. The top-level gate is only cheap if this holds
+      layer: unit
+      file: src/device-api.test.ts
+      test: "hashes a vault can keep across a transport switch > gives the same root hash for a device nothing happened to"
+
+    - id: S4.2
+      scenario: One page is written on
+      expect: All three signals move -- root, document and that page -- because all three gates read them
+      layer: unit
+      file: src/device-api.test.ts
+      test: "hashes a vault can keep across a transport switch > moves the root hash, the document hash and the page hash when a page is written on"
+
+    - id: S4.3
+      scenario: A file is touched but not changed -- a copy, or a clock adjustment
+      expect: No hash moves. Content addressing is what makes this free; a timestamp-based signal would re-render and re-transcribe the page for nothing
+      layer: unit
+      file: src/device-api.test.ts
+      test: "hashes a vault can keep across a transport switch > does not move any hash when a file is only touched"
+
+    - id: S4.4
+      scenario: A second sync of a device nothing happened to
+      expect: Nothing is hashed again. Without the cache every run would re-hash the whole library, which on a real account is the difference between one listing and 185 MB
+      layer: unit
+      file: src/device-api.test.ts
+      test: "the hash cache > hashes nothing again on a second sync of an untouched device"
+
+    - id: S4.5
+      scenario: One page changed since the last sync
+      expect: Only that file is hashed again
+      layer: unit
+      file: src/device-api.test.ts
+      test: "the hash cache > hashes only the file that changed"
+
+    - id: S4.6
+      scenario: A cached hash is asked for after the file's size or time moved
+      expect: A miss. Keyed on all three so a changed file is a miss rather than something anyone has to remember to invalidate
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "the hash cache > answers for a file whose size and time both still match"
+
+    - id: S4.7
+      scenario: A file the device wrote less than the freshness window ago
+      expect: 'Its hash is used but not written down. This userland reports whole seconds, so a file rewritten twice inside one second keeps both its size and its timestamp -- and a stored hash would then be served forever for bytes that had moved on: a page that never updates again'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "the hash cache > does not write down a hash for a file the device only just touched"
+
+    - id: S4.8
+      scenario: The cache is written back after a run
+      expect: Only what the run saw. Otherwise it grows by one entry per page ever deleted, forever, inside a synced `data.json`
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "the hash cache > keeps only what this run actually saw, so deleted pages do not pile up forever"
+
+- feature: S5
+  name: Pairing, and what the user is told when the tablet says no
+  code: src/ssh-transport.ts
+  tier: pro
+  scenarios:
+    - id: S5.1
+      scenario: An address alone, a key alone, a pinned host key alone, and all three
+      expect: Only all three count as paired. Any weaker rule lets a run start that cannot possibly connect
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what counts as paired > needs a key and a pinned host key, not just an address"
+
+    - id: S5.2
+      scenario: A pre-flight refuses because the device is not paired
+      expect: 'This transport''s own sentence. "Connect to reMarkable first." would send someone hunting for a one-time code they do not need'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what counts as paired > refuses a run in its own words rather than the cloud's"
+
+    - id: S5.3
+      scenario: The settings row for a paired device
+      expect: The address is in it, because a vault may have two sources and which one this row is about is the thing a reader needs
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what counts as paired > names the address it is paired with, because a vault may have two sources"
+
+    - id: S5.4
+      scenario: The tablet is asleep or on another network
+      expect: The address, and the cable as the way out
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what the user is told when the device says no > tells someone whose tablet is asleep to wake it, and offers the cable"
+
+    - id: S5.5
+      scenario: The device presents a different host key than the vault pinned
+      expect: Explained as a factory reset or a different device, with re-pairing as the action -- not as a failure to connect, which would send the user to check their Wi-Fi
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what the user is told when the device says no > explains a changed host key as a reset rather than as a failure to connect"
+
+    - id: S5.6
+      scenario: The stored key is refused
+      expect: Re-pairing, and the reset that causes it named -- including the one that turning on Developer Mode performs
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what the user is told when the device says no > sends a refused key to re-pairing, and names the reset that causes it"
+
+    - id: S5.7
+      scenario: A vault name conflict during a run over SSH
+      expect: Left to the neutral wording. It means the same thing whichever source the bytes came from, and a per-transport copy is how two of them drift apart
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what the user is told when the device says no > leaves a vault name conflict to the neutral wording"
+
+    - id: S5.8
+      scenario: What the device's `stat` and `sha256sum` wrote, including a path with a space in it
+      expect: Parsed. A page whose name has a space is ordinary, and splitting on the first space would silently drop it from the account
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reading what the device's shell wrote > takes size, time and a path that has spaces in it"
+
+    - id: S5.9
+      scenario: A `sha256sum` line, whose separator is two spaces
+      expect: Split on the two, not on the first
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reading what the device's shell wrote > splits a sha256sum line on its two spaces, not on the first one"
+
+    - id: S5.10
+      scenario: A line that is neither -- a blank, or an error the tool printed
+      expect: Ignored rather than parsed into a file that does not exist
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reading what the device's shell wrote > ignores a line that is not one of those"
+
+    - id: S5.11
+      scenario: A free vault and a bought one
+      expect: The cloud stays free and the device is Pro. Driven through the real gate, so widening it shows up here rather than nowhere
+      layer: unit
+      tier: pro
+      file: src/ssh-transport.test.ts
+      test: "who may sync straight from the device > keeps the cloud free and the device Pro"
+
+- feature: S6
+  name: Falling over to the other source
+  code: src/transport-chain.ts
+  tier: pro
+  scenarios:
+    - id: S6.1
+      scenario: The primary answers
+      expect: It is used and the fallback is never opened
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > uses the primary and does not touch the fallback when the primary answers"
+
+    - id: S6.2
+      scenario: Nobody answered at the primary
+      expect: The fallback runs, and the run says which way it went
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > goes to the fallback when nobody answered, and says which way it went"
+
+    - id: S6.3
+      scenario: The primary refuses the credential
+      expect: 'The run fails. This is the rule the whole design turns on: syncing on over the other source would hide a connection the user has to repair, and they would find out weeks later from a note that stopped updating'
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > does not fail over on a refused credential"
+
+    - id: S6.4
+      scenario: A fallback is chosen but never configured
+      expect: 'The primary''s failure is what surfaces. "Not paired" is not a connection problem, and reporting it in place of the real failure sends the user to the wrong screen'
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > does not try a fallback that is not configured"
+
+    - id: S6.5
+      scenario: No fallback at all -- the shape every vault has before it configures one
+      expect: Exactly the failure the primary gave
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > fails as the primary failed when there is no fallback at all"
+
+    - id: S6.6
+      scenario: The one notice a failover is allowed
+      expect: Both sources named, so the user knows where the notes came from without opening settings
+      layer: unit
+      file: src/transport-chain.test.ts
+      test: "trying the other source > names both sources in the one notice a failover gets"
+
+    - id: S6.7
+      scenario: The two failure classes, asked of the SSH transport itself
+      expect: Unreachable fails over; a refused key and a changed host key never do
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "which failures may quietly go to the other source > fails over when nobody answered"
+
+    - id: S6.8
+      scenario: The same, from the other direction
+      expect: Neither credential failure is treated as "nobody answered"
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "which failures may quietly go to the other source > never fails over on a refused key or a changed host key"
