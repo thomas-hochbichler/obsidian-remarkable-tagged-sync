@@ -43,6 +43,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [reMarkable → Obsidian sync](#how-it-works) | ✓ | ✓ |
 | [One-way by design — never writes to your tablet](#what-gets-synced) | ✓ | ✓ |
 | [No reMarkable Connect subscription needed](#install-and-set-up) | ✓ | ✓ |
+| [Sync straight from the tablet, without the reMarkable cloud](#syncing-without-the-cloud) | — | ✓ |
 | [Your edits are never silently overwritten](#writing-your-own-notes) | ✓ | ✓ |
 | [Never deletes a synced note](#what-gets-synced) | ✓ | ✓ |
 | [Stop a running sync](#stopping-a-sync) | ✓ | ✓ |
@@ -97,6 +98,7 @@ Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 - [Handwriting transcription](#handwriting-transcription)
 - [Typed text and the Type Folio](#typed-text-and-the-type-folio)
 - [Tagged Sync Pro](#tagged-sync-pro)
+- [Syncing without the cloud](#syncing-without-the-cloud)
 - [Annotated PDFs](#annotated-pdfs)
 - [What gets synced](#what-gets-synced)
 - [Limitations](#limitations)
@@ -125,7 +127,8 @@ Two limits, so you know them up front:
 ## How it works
 
 1. Tag a notebook, a PDF, a single page, or a whole folder on your reMarkable — e.g. `sync`.
-2. It syncs to the reMarkable cloud as usual.
+2. It syncs to the reMarkable cloud as usual — or, with Pro, the plugin reads it
+   [straight off the tablet](#syncing-without-the-cloud) and the cloud never comes into it.
 3. In Obsidian, map that tag to a vault folder in the plugin settings.
 4. Run **Sync now** (or let automatic sync do it).
 5. You get a Markdown note with the render embedded, and either a searchable transcript or a digest
@@ -290,6 +293,8 @@ Everything described above is free and stays free. Two things are paid:
 - **Cloud transcription** — Anthropic, OpenAI, Google and OpenRouter as transcription backends, with
   your own API key.
 - **Unlimited tag mappings.** The free version syncs one tag; Pro syncs as many as you like.
+- **[Syncing without the reMarkable cloud](#syncing-without-the-cloud)** — the plugin reads your
+  tablet directly over USB or Wi-Fi.
 
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
@@ -330,6 +335,54 @@ Updates come through the Obsidian plugin store, to everyone, for as long as the 
 I promise is effort, not dates.
 
 None of this changes your rights as a consumer under EU law.
+
+## Syncing without the cloud
+
+*[Tagged Sync Pro](#tagged-sync-pro).*
+
+Everything above goes through the reMarkable cloud, which works well and has one weakness worth
+being honest about: the interface it uses is not documented or promised by reMarkable. It has been
+worked out by reading what the official apps do. That is how every tool of this kind talks to a
+reMarkable account, and it means a change on their side can break syncing for everybody at once.
+
+So Pro can skip it. The plugin connects to the tablet itself — over the USB cable, or over your
+Wi-Fi — and reads the notes off it. Nothing in between: no reMarkable account, no server of mine,
+no internet connection needed at all. On a slow line it is also simply faster, because the notes
+travel across your desk instead of twice across the world.
+
+**Switching costs nothing.** The plugin works out the same fingerprints for your notes as the cloud
+does, so a vault that has been syncing through the cloud for a year can switch to the cable and
+carry straight on. Nothing is re-rendered, nothing is transcribed again, and no cloud API bill is
+run up doing it. You can also switch back whenever you like.
+
+You can set a second source as a fallback: sync from your tablet and fall back to the cloud when it
+is asleep, or the other way round when your internet is out. A background sync checks whether the
+tablet is awake before it starts, so a device in a drawer is a quiet skip and not a failure.
+
+### What your tablet needs
+
+**reMarkable 1 and reMarkable 2** — nothing to turn on. They accept these connections as they come
+out of the box.
+
+**reMarkable Paper Pro and Paper Pure** — read this before you buy Pro for this feature. These
+devices only allow the connection in **Developer Mode**, and turning Developer Mode on **erases the
+tablet**. Your notes come back from the reMarkable cloud afterwards, and the tablet shows a warning
+screen every time it starts from then on. That is reMarkable's decision, not something this plugin
+can work around. If that trade is not worth it to you, the cloud sync works exactly as before —
+and the plugin says all of this in the settings, before it asks you for anything.
+
+Pairing asks for the **root password**, which is on the tablet under *Settings → General → Help →
+About → Copyrights and licenses*, at the end of the GPLv3 section. It is used for that one
+connection, to install a key for your vault, and is never stored.
+
+Whether you need the **cable** depends on the firmware. Newer reMarkables keep Wi-Fi access
+switched off until something turns it on, so the first pairing goes over USB; the plugin then
+offers to switch it on for you, and after that the cable is never needed again. It asks first, and
+saying no keeps the tablet cable-only. Older reMarkables accept Wi-Fi straight away, and the plugin
+uses whichever address answers.
+
+Windows note: recent Windows versions have been dropping support for the driver the USB connection
+uses, so Wi-Fi is the more reliable route there.
 
 ## Annotated PDFs
 
@@ -479,7 +532,9 @@ stays where it is and is still preserved on every sync — new notes just no lon
 - **A PDF you only wrote on syncs with the render and no text.** The digest quotes what you marked;
   handwriting on the page is not read.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
-  firmware changes on reMarkable's side can break sync. See below.
+  firmware changes on reMarkable's side can break sync. See below. [Syncing straight from the
+  tablet](#syncing-without-the-cloud) avoids that interface entirely, and is what Pro buys you as
+  a way out — on a Paper Pro or Paper Pure at the cost of a factory reset.
 
 > **What I do not control**
 >
@@ -490,6 +545,8 @@ stays where it is and is still preserved on every sync — new notes just no lon
 > If it happens again:
 >
 > - I will work on a fix as fast as I can. **I cannot promise a date.**
+> - **[Syncing without the cloud](#syncing-without-the-cloud) does not go through any of this.** It
+>   reads the tablet on your own network, so a change to their cloud cannot stop it.
 > - **Your notes are safe.** Everything already synced is plain Markdown and PDF in your own
 >   vault. It stays there. Nothing is deleted.
 
@@ -503,6 +560,21 @@ This plugin makes network requests to exactly one place by default:
   one-time device code, then reads your notebook/page list, tags, and content over the
   reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
   your reMarkable account.
+
+**Your tablet, over your own network — only if you set it up**
+([Syncing without the cloud](#syncing-without-the-cloud), [Tagged Sync Pro](#tagged-sync-pro)):
+
+- **An SSH connection to your reMarkable**, at the address you pair with — the USB address
+  (`10.11.99.1`) or the tablet's address on your Wi-Fi. The plugin reads the notes directory over
+  SFTP and runs two commands on the device: one to list the files with their sizes and times, and
+  `sha256sum` to hash them so it can tell what changed. It is read-only apart from pairing, which
+  appends one public key to `/home/root/.ssh/authorized_keys`, and — only if you agree when asked —
+  runs `rm-ssh-over-wlan on` so the tablet keeps accepting connections over Wi-Fi.
+
+  **This connection stays on your network.** It goes to your tablet and nowhere else; no server of
+  mine and none of reMarkable's is involved, and with it configured a sync needs no internet
+  connection at all. The root password you type while pairing is used for that one connection and
+  is never stored.
 
 **A transcription backend you choose yourself.** Which of these is contacted, if any, depends
 entirely on the backend selected in settings:
