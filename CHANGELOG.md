@@ -24,7 +24,7 @@ workflow publishes the section as the GitHub release body. See
   nothing is re-rendered, nothing is transcribed a second time, and a failover in either direction is
   invisible in your notes.
 
-  Pairing asks for the root password from your tablet's *Settings → General → Help → About →
+  Pairing asks for the root password from your tablet's *Settings → Help → About →
   Copyrights and licenses* screen. It is used once, to install a key for this vault, and is never
   stored. The tablet's host key is shown to you and pinned; if it ever changes, the plugin refuses
   to connect and tells you why rather than reconnecting to something else.

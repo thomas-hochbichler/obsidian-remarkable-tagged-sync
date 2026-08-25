@@ -371,8 +371,8 @@ screen every time it starts from then on. That is reMarkable's decision, not som
 can work around. If that trade is not worth it to you, the cloud sync works exactly as before —
 and the plugin says all of this in the settings, before it asks you for anything.
 
-Pairing asks for the **root password**, which is on the tablet under *Settings → General → Help →
-About → Copyrights and licenses*, at the end of the GPLv3 section. It is used for that one
+Pairing asks for the **root password**, which is on the tablet under *Settings → Help → About →
+Copyrights and licenses*, at the end of the GPLv3 section. It is used for that one
 connection, to install a key for your vault, and is never stored.
 
 Whether you need the **cable** depends on the firmware. Newer reMarkables keep Wi-Fi access

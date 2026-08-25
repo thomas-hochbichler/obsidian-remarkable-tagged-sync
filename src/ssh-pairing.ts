@@ -91,13 +91,13 @@ export function pairingGuidance(generation: DeviceGeneration): string[] {
 			"Your reMarkable Paper Pro and Paper Pure only allow SSH in Developer Mode.",
 			"Turning Developer Mode on erases the tablet. Your notes come back from the reMarkable cloud afterwards, but check they are synced first — and the tablet will show a warning screen at every start from then on.",
 			"Settings → General → Software → Developer mode, then set the tablet up again.",
-			"Afterwards the root password appears under Settings → General → Help → About → Copyrights and licenses, and the first connection has to be over the USB cable.",
+			"Afterwards the root password appears under Settings → Help → About → Copyrights and licenses, and the first connection has to be over the USB cable.",
 		];
 	}
 	return [
 		"Your reMarkable allows SSH out of the box — there is nothing to turn on.",
 		"Connect it by USB cable, or make sure it is awake and on the same Wi-Fi network.",
-		"The root password is under Settings → General → Help → About → Copyrights and licenses, at the end of the GPLv3 section.",
+		"The root password is under Settings → Help → About → Copyrights and licenses, at the end of the GPLv3 section.",
 	];
 }
 

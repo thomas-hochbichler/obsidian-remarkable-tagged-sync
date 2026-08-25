@@ -86,10 +86,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		this.renderSources(containerEl);
-
 		const connected = this.plugin.transport().status().connected;
-		this.renderCloudConnection(containerEl);
+		this.renderSources(containerEl);
 
 		// Order follows how often a row is touched, not how it was built: what to sync is the setting a
 		// user comes back to, transcription is chosen roughly once, and the links at the end are read
@@ -116,7 +114,20 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const allowed = allowedTransports(this.plugin.entitlement());
 		const label = (id: TransportId): string => (id === "ssh" ? "Your reMarkable directly (USB or Wi-Fi)" : "reMarkable cloud");
 
-		const source = new Setting(containerEl).setName("Sync from").setDesc(this.plugin.transport().status().summary);
+		// A heading, like every other group on this page. Without one these rows read as loose settings
+		// belonging to nothing, and once there are two sources and a fallback that is three or four of
+		// them in a row -- which is exactly where the eye needs somewhere to start.
+		new Setting(containerEl).setName("Where your notes come from").setHeading();
+
+		const source = new Setting(containerEl)
+			.setName("Sync from")
+			// What the choice *means*, not where the device is: the address belongs to the device row
+			// below, and saying it twice makes the reader check whether the two agree.
+			.setDesc(
+				data.primaryTransport === "ssh"
+					? "Read straight off the tablet. No reMarkable account is involved."
+					: "Through your reMarkable account, as before.",
+			);
 		source.addDropdown((dropdown) => {
 			for (const id of ["cloud", "ssh"] as const) {
 				dropdown.addOption(id, allowed.includes(id) ? label(id) : `${label(id)} (Pro)`);
@@ -154,6 +165,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			});
 
 		if (data.primaryTransport === "ssh" || data.fallbackTransport === "ssh") this.renderDevicePairing(containerEl);
+		this.renderCloudConnection(containerEl);
 	}
 
 	/**
@@ -167,8 +179,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		if (isPaired(ssh)) {
 			new Setting(containerEl)
-				.setName("Paired device")
-				.setDesc(`root@${ssh.host} · host key pinned`)
+				.setName("Your reMarkable")
+				.setDesc(`Paired with root@${ssh.host} · host key pinned`)
 				.addButton((button) =>
 					// Offered here because it is the action every failure message asks for -- a refused key
 					// and a changed host key both end in "pair again", and both leave the address correct.
@@ -196,7 +208,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.setDesc(
 				createFragment((desc: DocumentFragment) => {
 					desc.appendText("Connect the tablet by USB, or give its Wi-Fi address. ");
-					desc.appendText("The root password is on the tablet under Settings → General → Help → About → ");
+					desc.appendText("The root password is on the tablet under Settings → Help → About → ");
 					desc.appendText("Copyrights and licenses. It is used once and never stored.");
 				}),
 			)
@@ -282,7 +294,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private renderCloudConnection(containerEl: HTMLElement): void {
 		const cloudStatus = this.plugin.cloudTransportStatus();
 		const connectionSetting = new Setting(containerEl)
-			.setName("reMarkable connection")
+			// "reMarkable connection" was unambiguous while there was one; beside a paired tablet it reads
+			// as though it might be either. This row is the account, and says so.
+			.setName("reMarkable cloud account")
 			.setDesc(cloudStatus.summary);
 
 		if (cloudStatus.connected) {
