@@ -206,3 +206,59 @@
       layer: unit
       file: test-support/perf/complexity-ratio.test.ts
       test: "complexity ratio > rasterizePage stays linear: 4x the strokes may not cost more than 6x the time"
+
+# The scripts nothing else runs. `tsc` does not see them as bundles, no test imports them, and the
+# only things that reach them are a scheduled nightly and a maintainer with a question -- so a broken
+# one reports nothing rather than failing. That is how the 2026-08-25 night came back `unknown`.
+- feature: R4
+  name: The scripts that bundle still bundle
+  code: package.json
+  scenarios:
+    - id: R4.1
+      scenario: A new bundling script is added to package.json
+      expect: 'It is checked like the rest. A guard on the guard: were the list ever to come back empty -- a renamed field, a changed shape -- every row below would pass by having nothing left to say'
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > is looking at all of them, so a new one cannot be added without being checked"
+
+    - id: R4.2
+      scenario: The nightly's OCR entry point, after an import somewhere under it starts reaching `obsidian`
+      expect: 'Caught here rather than by a night that reports nothing. This is the real one: `RENDER_VERSION` came in from `sync-engine`, which reaches `pdf-text` and its `obsidian` import, and `nightly:ocr` was the one esbuild command without `--alias:obsidian`. Nothing was red, the scheduled run simply produced no measurement, and the five nights a baseline needs started counting from further away'
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of nightly:ocr"
+
+    - id: R4.3
+      scenario: The nightly's performance entry point
+      expect: The same. It measures the renderer, so it reaches further into `src/` than anything else here
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of nightly:perf"
+
+    - id: R4.4
+      scenario: The golden updater
+      expect: The same. A broken one is found at the worst moment -- while re-recording the goldens a release is about to be judged against
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of goldens:update"
+
+    - id: R4.5
+      scenario: The legacy-state freezer
+      expect: The same. It is run once per format change and never in between, which is the longest anything here goes unnoticed
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of freeze-state"
+
+    - id: R4.6
+      scenario: The `.rm` inspector
+      expect: The same. A maintainer reaches for it while debugging a page, which is the moment a broken tool costs the most attention
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of inspect:rm"
+
+    - id: R4.7
+      scenario: The cloud document inspector
+      expect: The same
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of inspect:doc"
