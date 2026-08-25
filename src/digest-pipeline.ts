@@ -29,9 +29,9 @@ import {
 	type PdfRect,
 } from "./pdf-renderer";
 import { sceneHeadings, sceneTextPage } from "./scene-text";
-import { bodyLineSpacing, loadPdfText, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
+import { bodyLineSpacing, loadPdfText, paragraphBounds, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
 import { correctQuote } from "./quote-correction";
-import type { RmPage, RmStroke } from "./rm-parser";
+import type { RmHighlight, RmPage, RmRect, RmStroke } from "./rm-parser";
 
 export interface DigestPipelineDeps {
 	ocrBackend: OcrBackend;
@@ -207,9 +207,90 @@ interface PageContext extends BuildState {
 	highlights: PlacedHighlight[];
 }
 
+/** The lowest of a highlight's rectangles (scene y grows down), for the junction test below. */
+function bottomRect(highlight: RmHighlight): RmRect {
+	return highlight.rects.reduce((lowest, rect) => (rect.y > lowest.y ? rect : lowest));
+}
+
+/** The highest of a highlight's rectangles. */
+function topRect(highlight: RmHighlight): RmRect {
+	return highlight.rects.reduce((highest, rect) => (rect.y < highest.y ? rect : highest));
+}
+
+/** `markedRange`'s threshold, restated: how much of a line's height a rectangle must cover to sit on it. */
+const WRAP_LINE_OVERLAP = 0.3;
+
+/** The reading-order index of the text line a rectangle sits on, or null when it covers none. */
+function lineIndexAt(page: PdfPageText, rect: PdfRect): number | null {
+	let best: number | null = null;
+	let bestOverlap = 0;
+	page.lines.forEach((line, index) => {
+		const overlap = Math.min(rect.y + rect.height, line.y + line.height) - Math.max(rect.y, line.y);
+		if (overlap <= (line.height > 0 ? WRAP_LINE_OVERLAP * line.height : 0)) return;
+		if (rect.x >= line.x + line.width || rect.x + rect.width <= line.x) return;
+		if (overlap > bestOverlap) {
+			bestOverlap = overlap;
+			best = index;
+		}
+	});
+	return best;
+}
+
+/**
+ * Whether `below` continues the marker gesture that ends in `above`: same colour, sitting on the
+ * very next text line, and the wrap shape at the junction -- the upper run reaches the end of its
+ * line, the lower one starts at the beginning of its own. Two runs that are stacked but stop short
+ * of their line ends are two separate swipes, not one wrapped gesture.
+ */
+function isWrappedContinuation(above: RmHighlight, below: RmHighlight, frame: DeviceCanvas, page: PdfPageText): boolean {
+	if (above.color !== below.color) return false;
+	if (above.rects.length === 0 || below.rects.length === 0) return false;
+	const upper = sceneRectToPdf(bottomRect(above), frame);
+	const lower = sceneRectToPdf(topRect(below), frame);
+	const upperIndex = lineIndexAt(page, upper);
+	const lowerIndex = lineIndexAt(page, lower);
+	if (upperIndex === null || lowerIndex === null || lowerIndex !== upperIndex + 1) return false;
+	const upperLine = page.lines[upperIndex];
+	const lowerLine = page.lines[lowerIndex];
+	// About two characters of slack: the device's line-snapped rectangles land well within that.
+	const slack = 2 * Math.max(upperLine.height, lowerLine.height);
+	return upper.x + upper.width >= upperLine.x + upperLine.width - slack && lower.x <= lowerLine.x + slack;
+}
+
+/**
+ * Rejoins the marker gestures the device split one per line.
+ *
+ * A highlight drawn across a paragraph arrives as one run per wrapped line, each with its own id and
+ * text snippet. The reader drew one highlight, so the digest owes them one entry -- per-sentence
+ * merging alone (see `mergeBySentence`) prints a multi-sentence gesture as one entry per sentence it
+ * crossed. The merged run keeps the topmost id, so the entry's F15 block id is the one that entry
+ * carried while the runs were still separate. Without a text layer the runs stay separate: the wrap
+ * shape can only be read against the lines the text actually occupies.
+ */
+function mergeMarkerStrokes(sources: RmHighlight[], frame: DeviceCanvas, page: PdfPageText | null): RmHighlight[] {
+	if (page === null) return sources;
+	const topOf = (highlight: RmHighlight) => (highlight.rects.length > 0 ? topRect(highlight).y : Number.POSITIVE_INFINITY);
+	const sorted = [...sources].sort((a, b) => topOf(a) - topOf(b) || a.id.localeCompare(b.id));
+	const groups: RmHighlight[][] = [];
+	for (const source of sorted) {
+		const group = groups[groups.length - 1];
+		if (group && source.rects.length > 0 && isWrappedContinuation(group[group.length - 1], source, frame, page)) group.push(source);
+		else groups.push([source]);
+	}
+	return groups.map((members) =>
+		members.length === 1
+			? members[0]
+			: {
+					...members[0],
+					text: members.map((member) => member.text).filter((text) => text !== "").join(" "),
+					rects: members.flatMap((member) => member.rects),
+				},
+	);
+}
+
 function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedHighlight[] {
 	const { frame, pageText } = geometry;
-	return (page.scene?.highlights ?? []).map((source) => {
+	return mergeMarkerStrokes(page.scene?.highlights ?? [], frame, pageText).map((source) => {
 		const rects = source.rects.map((rect) => sceneRectToPdf(rect, frame));
 		const found = pageText ? quoteForRects(pageText, rects, source.text) : null;
 		return {
@@ -405,8 +486,12 @@ async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<
 	// the embed -- and a document with no crops in it is the point of the exercise.
 	const rect = clusterRect(cluster, geometry.frame);
 	const anchor = anchorFor(rect, context);
+	// The clip is for context: handwriting beside a paragraph shows that paragraph, not just the strip
+	// of prose level with the ink. The ink stays inside the region, so it is always in the picture.
+	const paragraph = geometry.pageText ? paragraphBounds(geometry.pageText, rect.y + rect.height, rect.y) : null;
+	const regionRect = paragraph ? (unionRect([rect, paragraph]) ?? rect) : rect;
 	return {
-		note: { id, anchor, text, region: noteRegion(rect, context), top: cluster.rowTop },
+		note: { id, anchor, text, region: noteRegion(regionRect, context), top: cluster.rowTop },
 		anchor,
 		pdfLeft: rect.x,
 		pdfTop: rect.y + rect.height,

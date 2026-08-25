@@ -95,9 +95,13 @@ export type SyncRowStatus = "active" | "orphaned";
  * the device with the number of the source page it happens to sit at -- inserted after page 8, it
  * used to call itself page 9, which is a page of the book that exists somewhere else; version 30
  * draws such a page on a blank sheet instead of on that source page, which had been printing a page
- * of the book the reader never wrote on underneath their handwriting.
+ * of the book the reader never wrote on underneath their handwriting; version 31 prints one marker
+ * gesture across wrapped lines as the one entry the reader drew -- the per-line runs the device
+ * records are rejoined, and closing punctuation stays with the sentence it ends, which had been
+ * printing a parenthetical twice, once behind a stranded closing quote -- and a margin note's clip
+ * now spans the paragraph the ink sits beside, so the picture carries the context the note is about.
  */
-export const RENDER_VERSION = 30;
+export const RENDER_VERSION = 31;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {

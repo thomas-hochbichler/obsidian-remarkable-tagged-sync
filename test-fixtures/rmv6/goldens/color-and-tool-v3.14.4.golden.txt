@@ -1,5 +1,5 @@
 # golden color-and-tool-v3.14.4
-# render-version 30
+# render-version 31
 # fixture test-fixtures/rmv6/color-and-tool-v3.14.4.rm
 
 ## scene

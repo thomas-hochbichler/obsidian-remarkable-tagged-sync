@@ -594,6 +594,118 @@ describe("buildDigest merges highlights that share a sentence", () => {
 		expect(ids[1]).toBe(single.markdown.match(/\^hl-[0-9a-f]{6}/)?.[0]);
 	});
 
+	// The Alice bug: one marker stroke across a line break arrives as one run per line. The closing
+	// quote before the parenthetical made the two runs' sentences overlap without containment, so
+	// they never merged -- the digest printed `(Which was very likely true.)` twice, once behind a
+	// stranded `”`.
+	it("does not print the parenthetical of one marker stroke twice when it crosses the line break", async () => {
+		const line0 = "Why, I wouldn’t say anything about it, even if I fell off the top of the house!”";
+		const line1 = "(Which was very likely true.) Down, down, down.";
+		const { page, document } = sharedSentencePage([line0, line1], [
+			{ sentence: 0, from: 0, to: line0.length },
+			{ sentence: 1, from: 0, to: "(Which was very likely true.)".length },
+		]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.markdown.match(/\(Which was very likely true\.\)/g)).toHaveLength(1);
+		expect(result.markdown).not.toMatch(/^”/m);
+	});
+
+	// One drawn marker gesture across wrapped lines arrives as one run per line, in the wrap shape:
+	// every junction has the upper run reaching the right margin and the lower one starting at the
+	// left. The reader drew one highlight, so the digest owes them one entry -- not one per sentence
+	// the gesture happened to cross.
+	it("prints one marker stroke across several wrapped lines as one entry", async () => {
+		const lines = [
+			"“Well!” thought Alice, “after such a fall I shall think nothing of stairs!",
+			"How brave they’ll all think me at home! Why, I wouldn’t say anything now!”",
+			"(Which was very likely true.)",
+		];
+		const { page, document } = sharedSentencePage(lines, [
+			{ sentence: 0, from: 5, to: lines[0].length },
+			{ sentence: 1, from: 0, to: lines[1].length },
+			{ sentence: 2, from: 0, to: lines[2].length },
+		]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(1);
+		expect(result.markdown).toContain("How brave they’ll all think me at home!");
+		expect(result.markdown).toContain("(Which was very likely true.)");
+	});
+
+	it("does not merge wrapped lines drawn in different colors", async () => {
+		const lines = ["“Well!” thought Alice, “after such a fall I shall think nothing of stairs!", "How brave they’ll all think me at home!"];
+		const { page, document } = sharedSentencePage(lines, [
+			{ sentence: 0, from: 5, to: lines[0].length },
+			{ sentence: 1, from: 0, to: lines[1].length },
+		]);
+		page.scene!.highlights![1] = { ...page.scene!.highlights![1], color: 5 };
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(2);
+	});
+
+	// A run whose rectangles hang in the margin sits on no text line; the wrap test must fail it
+	// rather than glue it to whatever run happens to be stacked above.
+	it("does not merge a run whose rectangles sit on no text line", async () => {
+		const lines = ["“Well!” thought Alice, “after such a fall I shall think nothing of stairs!", "How brave they’ll all think me at home!"];
+		const { page, document } = sharedSentencePage(lines, [
+			{ sentence: 0, from: 5, to: lines[0].length },
+			{ sentence: 1, from: 0, to: lines[1].length },
+		]);
+		// Push the second run's rectangle right of the text column: same drop, but on no line.
+		const second = page.scene!.highlights![1];
+		page.scene!.highlights![1] = { ...second, rects: second.rects.map((rect) => ({ ...rect, x: rect.x + 2000 })) };
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(2);
+	});
+
+	// The device may store a run with text but no rectangles at all; it must neither crash the sort
+	// nor be glued onto a gesture it cannot be located against.
+	it("leaves a highlight with no rectangles out of the gesture merge", async () => {
+		const lines = ["“Well!” thought Alice, “after such a fall I shall think nothing of stairs!", "How brave they’ll all think me at home!"];
+		const { page, document } = sharedSentencePage(lines, [
+			{ sentence: 0, from: 5, to: lines[0].length },
+			{ sentence: 1, from: 0, to: lines[1].length },
+		]);
+		page.scene!.highlights!.push({ id: "hx", color: 0, text: "a rectless run", rects: [] });
+
+		const result = await build([page], { loadText: async () => document });
+
+		// The wrapped pair still merges; the rectless run stands alone on the device's own text.
+		expect(result.markdown).toContain("a rectless run");
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(2);
+	});
+
+	// The device can hand one run several rectangles of its own; the junction test then reads the
+	// lowest of the upper run against the highest of the lower one.
+	it("merges runs that already carry several rectangles by their outermost lines", async () => {
+		const lines = [
+			"“Well!” thought Alice, “after such a fall I shall think nothing of stairs!",
+			"How brave they’ll all think me at home! Why, I wouldn’t say anything now!”",
+			"(Which was very likely true.) Down, down, down. Would the fall never end?",
+		];
+		const { page, document } = sharedSentencePage(lines, [
+			{ sentence: 0, from: 5, to: lines[0].length },
+			{ sentence: 1, from: 0, to: lines[1].length },
+			{ sentence: 2, from: 0, to: lines[2].length },
+		]);
+		const [first, second, third] = page.scene!.highlights!;
+		// The first two lines arrive as ONE run with several rectangles, deliberately out of order --
+		// the outermost-line lookup must not depend on the order the device stored them in.
+		const jitter = { ...first.rects[0], y: first.rects[0].y + 1 };
+		page.scene!.highlights = [{ ...first, text: `${first.text} ${second.text}`, rects: [...second.rects, ...first.rects, jitter] }, third];
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.markdown.match(/\^hl-/g)).toHaveLength(1);
+	});
+
 	it("leaves highlights on different sentences alone", async () => {
 		const { page, document } = sharedSentencePage(["Ein erster Satz auf dieser Seite steht hier.", SENTENCE], [
 			{ sentence: 0, from: 0, to: 10 },
@@ -656,8 +768,10 @@ describe("buildDigest note regions", () => {
 	 * 44 pt to the left of the handwriting it was asked for.
 	 */
 	it("measures the rectangle where the renderer drew the ink, not where the source page had it", async () => {
-		// 1100 px left of the midline, on a 612 pt page whose own half-width is 960 px.
-		const marginNote = scene([boxStroke("0a", -1100, 800, 100, 20)]);
+		// 1100 px left of the midline, on a 612 pt page whose own half-width is 960 px. Level with no
+		// text line (2300 px is below the fixture's prose), so the paragraph expansion stays out of it
+		// and the rectangle is the ink's own box -- what this test is about is the fit transform.
+		const marginNote = scene([boxStroke("0a", -1100, 2300, 100, 20)]);
 
 		const result = await build([fixturePage(marginNote)], { ...withText, ocrBackend: fakeOcr("Am Rand.") });
 
@@ -688,6 +802,35 @@ describe("buildDigest note regions", () => {
 		const result = await build([{ pageId: "p", sourceIndex: 0, embedPage: 1, scene: inkyScene() }], { ocrBackend: fakeOcr("") });
 
 		expect(result.markdown).toContain("Handwriting that could not be transcribed.");
+	});
+
+	// The clip exists so the reader sees what the note is *about*: handwriting beside the last line
+	// of a paragraph, clipped to its own box, shows one line of prose and no context at all.
+	it("spans the whole paragraph the handwriting sits beside, so the clip carries its context", async () => {
+		const lines = [
+			textLine("Poor Alice! It was as much as she could do, lying down on one side, to look", 700, 10),
+			textLine("through into the garden with one eye; but to get through was more hopeless", 687, 10),
+			textLine("than ever: she sat down and began to cry again.", 674, 10),
+		];
+		const text: PdfPageText = { label: "1", width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines };
+		// Ink in the right margin, level with the paragraph's LAST line (pdf top edge 684).
+		const toSceneX = (pt: number) => (pt - PAGE_WIDTH_PT / 2) / PX_TO_PT;
+		const toSceneY = (ptTop: number) => (PAGE_HEIGHT_PT - ptTop) / PX_TO_PT;
+		const ink = scene([boxStroke("0a", toSceneX(540), toSceneY(684), 40 / PX_TO_PT, 10 / PX_TO_PT)]);
+
+		const result = await build([{ pageId: "p", sourceIndex: 0, embedPage: 1, scene: ink }], {
+			loadText: async () => fakeTextDocument({ 0: text }),
+			ocrBackend: fakeOcr("Why is Alice poor?"),
+		});
+
+		expect(result.markdown).toContain("Why is Alice poor?");
+		const rect = result.markdown.match(/^> rect: (\d+) (\d+) (\d+) (\d+)$/m);
+		expect(rect).not.toBeNull();
+		const [, , top, , height] = rect!.map(Number);
+		// The region reaches up to the paragraph's first line (top edge 710 pt -> 82 pt from the page
+		// top) and down over the ink -- not just the ink's own 10 pt strip beside the last line.
+		expect(top).toBeLessThan(90);
+		expect(top + height).toBeGreaterThan(115);
 	});
 
 	// The one that matters: a transcription no heuristic can fault -- long, plausible, confident --
