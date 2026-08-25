@@ -1,7 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { entitlementOf, NO_LICENCE, type LicenceState } from "./licence-state";
-import { hashRequest, parseHashLine, parseStatLine, DeviceUnreachableError, HostKeyMismatchError } from "./ssh-connection";
-import { PersistentHashCache } from "./ssh-hash-cache";
+
+// Only the connecting is faked. Everything this file reads off a device -- the stat lines, the hash
+// request, the errors -- stays the real thing, and `ssh-connection.test.ts` runs the connecting
+// itself against a real SSH server.
+vi.mock("./ssh-connection", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./ssh-connection")>()),
+	connectToDevice: vi.fn(),
+}));
+
+import {
+	connectToDevice,
+	type DeviceConnection,
+	DeviceUnreachableError,
+	hashRequest,
+	HostKeyMismatchError,
+	parseHashLine,
+	parseStatLine,
+	USB_HOST,
+} from "./ssh-connection";
+import { PersistentHashCache, type StoredHashes } from "./ssh-hash-cache";
 import {
 	allowedTransports,
 	DEFAULT_SSH_SETTINGS,
@@ -102,6 +120,127 @@ describe("which failures may quietly go to the other source", () => {
 		// find out weeks later from a note that stopped updating.
 		expect(transport().isUnreachable(new HostKeyMismatchError("SHA256:zzz"))).toBe(false);
 		expect(transport().isUnreachable(new Error("All configured authentication methods failed"))).toBe(false);
+	});
+});
+
+/** A tablet that answers, with nothing on it -- enough for a session to open over. */
+function connection(overrides: Partial<DeviceConnection> = {}): DeviceConnection {
+	return {
+		hostKeyFingerprint: "SHA256:abc",
+		exec: async () => "",
+		list: async () => [],
+		read: async () => new Uint8Array(),
+		hash: async () => new Map(),
+		close: async () => {},
+		...overrides,
+	};
+}
+
+describe("reaching a tablet that has moved", () => {
+	beforeEach(() => vi.mocked(connectToDevice).mockReset());
+
+	/** Which address each attempt was made to, in order. */
+	const addresses = (): string[] => vi.mocked(connectToDevice).mock.calls.map(([credentials]) => credentials.host);
+
+	it("tries the cable when the address in the settings has gone quiet", async () => {
+		vi.mocked(connectToDevice)
+			.mockRejectedValueOnce(new DeviceUnreachableError("192.168.1.9", null))
+			.mockResolvedValueOnce(connection());
+
+		await transport().open();
+
+		// A vault paired over Wi-Fi is unreachable the moment the tablet sleeps or joins another
+		// network, and the answer is usually already in the user's hand.
+		expect(addresses()).toEqual(["192.168.1.9", USB_HOST]);
+	});
+
+	it("does not ask the cable a question it has just asked the cable", async () => {
+		vi.mocked(connectToDevice).mockRejectedValueOnce(new DeviceUnreachableError(USB_HOST, null));
+
+		await expect(transport({ ...PAIRED, host: USB_HOST }).open()).rejects.toBeInstanceOf(DeviceUnreachableError);
+
+		// A second attempt at the same address would double every timeout for no chance of an answer.
+		expect(addresses()).toEqual([USB_HOST]);
+	});
+
+	it("names the address the user chose when neither it nor the cable answers", async () => {
+		vi.mocked(connectToDevice)
+			.mockRejectedValueOnce(new DeviceUnreachableError("192.168.1.9", null))
+			.mockRejectedValueOnce(new DeviceUnreachableError(USB_HOST, null));
+
+		const error = await transport().open().catch((caught: unknown) => caught);
+
+		// The error the user is shown is built here, from two attempts. Until this test the sentence
+		// was checked against an error written by hand, so nothing ran the fallback that produces it.
+		expect((error as DeviceUnreachableError).hosts).toEqual(["192.168.1.9", USB_HOST]);
+	});
+
+	it("leaves a refused key where it happened, instead of asking the cable the same thing", async () => {
+		const refused = new Error("All configured authentication methods failed");
+		vi.mocked(connectToDevice).mockRejectedValueOnce(refused);
+
+		await expect(transport().open()).rejects.toBe(refused);
+
+		// The cable would refuse the same key. Trying is a wasted timeout and a worse error message.
+		expect(addresses()).toEqual(["192.168.1.9"]);
+	});
+
+	it("says what the cable said when the cable had something better to say than silence", async () => {
+		const mismatch = new HostKeyMismatchError("SHA256:zzz");
+		vi.mocked(connectToDevice)
+			.mockRejectedValueOnce(new DeviceUnreachableError("192.168.1.9", null))
+			.mockRejectedValueOnce(mismatch);
+
+		// Reporting "nothing answered" here would hide the one thing that did happen: a tablet on the
+		// end of the cable presenting a host key this vault does not trust.
+		await expect(transport().open()).rejects.toBe(mismatch);
+	});
+});
+
+describe("what a session leaves behind", () => {
+	beforeEach(() => vi.mocked(connectToDevice).mockReset());
+
+	it("writes back only the hashes the device still has", async () => {
+		const saved: StoredHashes[] = [];
+		vi.mocked(connectToDevice).mockResolvedValue(connection());
+		const store = {
+			settings: () => PAIRED,
+			hashes: (): StoredHashes => ({ "gone/0.rm|10|1755000000000": "deadbeef" }),
+			saveHashes: async (hashes: StoredHashes) => void saved.push(hashes),
+		};
+
+		const session = await new SshTransport(store).open();
+		await session.close();
+
+		// One entry per page ever deleted would otherwise pile up in `data.json` for the life of the
+		// vault. The device listed nothing, so nothing was seen, so nothing is kept.
+		expect(saved).toEqual([{}]);
+	});
+
+	it("closes the connection when the device's own listing cannot be read", async () => {
+		let closed = false;
+		vi.mocked(connectToDevice).mockResolvedValue(
+			connection({
+				list: () => Promise.reject(new Error("stat: applet not found")),
+				close: async () => void (closed = true),
+			}),
+		);
+
+		await expect(transport().open()).rejects.toThrow("applet not found");
+
+		// The caller has nothing to close -- it never received a session -- so an open connection here
+		// is one nobody holds a reference to.
+		expect(closed).toBe(true);
+	});
+
+	it("closes the connection when the session is done with it", async () => {
+		let closed = false;
+		vi.mocked(connectToDevice).mockResolvedValue(connection({ close: async () => void (closed = true) }));
+
+		const session = await transport().open();
+		await session.close();
+
+		expect(closed).toBe(true);
 	});
 });
 

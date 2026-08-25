@@ -22,6 +22,8 @@ import {
 	WRONG_KEY_MESSAGE,
 } from "./licence-messages";
 import { NO_LICENCE } from "./licence-state";
+import { DeviceUnreachableError } from "./ssh-connection";
+import { PairingRefusedError } from "./ssh-pairing";
 import { isListedBackend, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
 
 // Gap G28 -- the settings tab. `main.ts` and `local-register.ts` are the only files that construct a
@@ -42,6 +44,20 @@ vi.mock("rmapi-js", () => ({
 	auth: async () => "session-token",
 	register: (code: string) => cloud.register(code),
 }));
+
+// Pairing itself stays real -- `ssh-pairing.test.ts` runs it. Only the one call is replaceable, so a
+// test can say what the tablet did without a tablet, and what the user is then told.
+const pairing = vi.hoisted(() => ({ fail: null as unknown }));
+vi.mock("./ssh-pairing", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./ssh-pairing")>();
+	return {
+		...actual,
+		pairDevice: async (request: Parameters<typeof actual.pairDevice>[0]) => {
+			if (pairing.fail !== null) throw pairing.fail;
+			return actual.pairDevice(request);
+		},
+	};
+});
 
 // Whether Apple Vision can run is a property of the machine the test runs on, and the dropdown, the
 // note contract hint and the default backend all turn on it. Left real, this file would say one thing
@@ -223,6 +239,7 @@ beforeEach(() => {
 	Platform.isDesktop = false;
 	Platform.isMacOS = false;
 	machine.visionAvailable = false;
+	pairing.fail = null;
 	cloud.register = async () => "device-token";
 	opened.length = 0;
 	copied.length = 0;
@@ -436,6 +453,39 @@ describe("where your notes come from", () => {
 
 		expect((plugin.data.ssh as { privateKey: string | null }).privateKey).toBeNull();
 		expect(row(draw(tab), "Connect device").setting.texts[1].value).toBe("");
+	});
+
+	it("gives a tablet that never answered the whole paragraph, not a line about a connection", async () => {
+		pairing.fail = new DeviceUnreachableError("192.168.1.9", null);
+		const { tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ...BOUGHT_PRO });
+		const drawn = draw(tab);
+		row(drawn, "Connect device").setting.texts[1].type("hunter2");
+		takeNotices();
+
+		await buttons(drawn, "Connect device")[0].click();
+		await settle();
+
+		// On a Paper Pro the answer to a silent tablet is a factory reset, and nobody should meet that
+		// fact halfway through pairing. Which tablet this is cannot be known when it did not answer, so
+		// the guidance covers both generations -- including, out loud, the one that costs the reset.
+		const [notice] = takeNotices();
+		expect(notice).toContain("erases the tablet");
+		expect(notice).toContain("Copyrights");
+	});
+
+	it("passes on a refusal the tablet itself explained, without talking over it", async () => {
+		pairing.fail = new PairingRefusedError("Pairing stopped: the device's key was not trusted.");
+		const { tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ...BOUGHT_PRO });
+		const drawn = draw(tab);
+		row(drawn, "Connect device").setting.texts[1].type("hunter2");
+		takeNotices();
+
+		await buttons(drawn, "Connect device")[0].click();
+		await settle();
+
+		// Saying "not trusted" and then a paragraph about Developer Mode would send someone to erase a
+		// tablet over a dialog they answered themselves.
+		expect(takeNotices()).toEqual(["Pairing stopped: the device's key was not trusted."]);
 	});
 
 	it("says out loud, before anyone types a password, what Developer Mode costs", async () => {

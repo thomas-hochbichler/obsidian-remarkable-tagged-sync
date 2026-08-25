@@ -623,6 +623,20 @@
       file: src/settings-tab.test.ts
       test: "where your notes come from > says out loud, before anyone types a password, what Developer Mode costs"
 
+    - id: S14.11
+      scenario: A pairing attempt where the tablet never answered at all
+      expect: 'The whole guidance paragraph, not a line about a connection. On a Paper Pro the answer to a silent tablet is a factory reset, and which tablet this is cannot be known when it did not answer -- so it covers both generations, including out loud the one that costs the reset'
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > gives a tablet that never answered the whole paragraph, not a line about a connection"
+
+    - id: S14.12
+      scenario: Pairing stops because the user did not trust the host key they were shown
+      expect: That sentence and nothing else. Following it with the Developer Mode paragraph would send someone to erase a tablet over a dialog they answered themselves
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > passes on a refusal the tablet itself explained, without talking over it"
+
 # Everything above this line reads the device through a `DeviceFiles` made of a plain map, which is
 # what makes membership, hashing and caching testable without a tablet. `connectToDevice` is what is
 # left over: the host key, the two shell commands, the SFTP read, the exit code. Five deliberate
@@ -760,3 +774,68 @@
       layer: unit
       file: src/ssh-connection.test.ts
       test: "where this may run at all > refuses anywhere the node modules it needs are not there"
+
+# S5.12 said the transport tries the cable on its own and reports the address the user chose. Its
+# test asserted the sentence, over a two-address error written by hand -- so the fallback that
+# builds that error had never run. These rows make the attempts, and they cover the block that the
+# coverage ratchet named as the largest untested one on this branch.
+- feature: S16
+  name: Reaching a tablet that has moved, and what the session leaves behind
+  code: src/ssh-transport.ts
+  tier: pro
+  scenarios:
+    - id: S16.1
+      scenario: The address in the settings has gone quiet, and the tablet is plugged in
+      expect: The cable is tried after it, without being asked for. A vault paired over Wi-Fi is unreachable the moment the tablet sleeps or joins another network, and the user's answer to that is usually already in their hand
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reaching a tablet that has moved > tries the cable when the address in the settings has gone quiet"
+
+    - id: S16.2
+      scenario: The address in the settings *is* the cable, and nothing answers
+      expect: One attempt, not two. Asking the same address twice doubles every timeout for no chance of an answer
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reaching a tablet that has moved > does not ask the cable a question it has just asked the cable"
+
+    - id: S16.3
+      scenario: Neither the configured address nor the cable answers
+      expect: 'The error names both, configured address first, so the sentence can be about the one the user chose. This is the row that actually makes two attempts: S5.12 checks the wording, over an error written by hand'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reaching a tablet that has moved > names the address the user chose when neither it nor the cable answers"
+
+    - id: S16.4
+      scenario: The configured address refuses the stored key
+      expect: One attempt, and the error stands as it is. The cable would refuse the same key -- trying it is a wasted timeout and a worse message
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reaching a tablet that has moved > leaves a refused key where it happened, instead of asking the cable the same thing"
+
+    - id: S16.5
+      scenario: Silence over Wi-Fi, and a changed host key over the cable
+      expect: The cable's answer, because it is the more informative one. Reporting "nothing answered" would hide the one thing that did happen
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "reaching a tablet that has moved > says what the cable said when the cable had something better to say than silence"
+
+    - id: S16.6
+      scenario: A run finishes, with hashes stored for pages the device no longer has
+      expect: Only what this run saw is written back. One entry per page ever deleted would otherwise pile up in `data.json` for the life of the vault
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what a session leaves behind > writes back only the hashes the device still has"
+
+    - id: S16.7
+      scenario: The device answers, and then its own listing cannot be read
+      expect: The connection is closed. The caller never received a session, so it has nothing to close and an open connection here is one nobody holds a reference to
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what a session leaves behind > closes the connection when the device's own listing cannot be read"
+
+    - id: S16.8
+      scenario: An ordinary run, finishing normally
+      expect: The connection is closed
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what a session leaves behind > closes the connection when the session is done with it"
