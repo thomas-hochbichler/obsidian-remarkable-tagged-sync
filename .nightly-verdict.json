@@ -1,25 +1,235 @@
 {
 	"schema": 1,
-	"commit": "0bbb486a4b4edd9cbda68e84ae524944a72e5518",
-	"runId": "32806783359",
-	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/32806783359",
+	"commit": "4fd68e3b29ad73ace581c6c06e35c44e05d7bf35",
+	"runId": "32839194965",
+	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/32839194965",
 	"parts": {
 		"ocr": {
-			"status": "unknown",
-			"measuredAt": "2026-08-25T03:52:49.598Z",
-			"lastMeasuredAt": "2026-08-24T04:00:07.540Z",
+			"status": "pass",
+			"measuredAt": "2026-08-25T10:53:08.275Z",
+			"lastMeasuredAt": "2026-08-25T10:53:08.275Z",
 			"detail": {
-				"reason": "job did not report"
+				"promptSha": "635b0b92a4432be2",
+				"renderVersion": 30,
+				"backends": {
+					"openrouter/anthropic/claude-sonnet-5": {
+						"status": "pass",
+						"pages": {
+							"10": {
+								"cer": 0.007134363852556481,
+								"structure": {}
+							},
+							"11": {
+								"cer": 0.03768115942028986,
+								"structure": {}
+							},
+							"12": {
+								"cer": 0.0196078431372549,
+								"structure": {}
+							},
+							"13": {
+								"cer": 0.18584070796460178,
+								"structure": {}
+							},
+							"14": {
+								"cer": 0.18974358974358974,
+								"structure": {}
+							},
+							"01": {
+								"cer": 0,
+								"structure": {}
+							},
+							"02": {
+								"cer": 0,
+								"structure": {}
+							},
+							"03": {
+								"cer": 0.00510204081632653,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"04": {
+								"cer": 0.009615384615384616,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"05": {
+								"cer": 0.03067484662576687,
+								"structure": {
+									"table": "ok"
+								}
+							},
+							"06": {
+								"cer": 0.023809523809523808,
+								"structure": {}
+							},
+							"07": {
+								"cer": 0,
+								"structure": {}
+							},
+							"08": {
+								"cer": 0.1875,
+								"structure": {}
+							},
+							"09": {
+								"cer": 0,
+								"structure": {}
+							}
+						},
+						"medianCer": 0.009615384615384616,
+						"model": "anthropic/claude-sonnet-5"
+					},
+					"openrouter/openai/gpt-4o": {
+						"status": "pass",
+						"pages": {
+							"10": {
+								"cer": 0.015457788347205707,
+								"structure": {}
+							},
+							"11": {
+								"cer": 0.043478260869565216,
+								"structure": {}
+							},
+							"12": {
+								"cer": 0.03081232492997199,
+								"structure": {}
+							},
+							"13": {
+								"cer": 0.14601769911504425,
+								"structure": {}
+							},
+							"14": {
+								"cer": 0.046153846153846156,
+								"structure": {}
+							},
+							"01": {
+								"cer": 0,
+								"structure": {}
+							},
+							"02": {
+								"cer": 0.026,
+								"structure": {}
+							},
+							"03": {
+								"cer": 0.00510204081632653,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"04": {
+								"cer": 0.01282051282051282,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"05": {
+								"cer": 0.03067484662576687,
+								"structure": {
+									"table": "ok"
+								}
+							},
+							"06": {
+								"cer": 0.20833333333333334,
+								"structure": {}
+							},
+							"07": {
+								"cer": 0,
+								"structure": {}
+							},
+							"08": {
+								"cer": 0.22916666666666666,
+								"structure": {}
+							},
+							"09": {
+								"cer": 0,
+								"structure": {}
+							}
+						},
+						"medianCer": 0.026,
+						"model": "openai/gpt-4o"
+					},
+					"openrouter/google/gemini-2.5-flash": {
+						"status": "pass",
+						"pages": {
+							"10": {
+								"cer": 0.005945303210463734,
+								"structure": {}
+							},
+							"11": {
+								"cer": 0.0463768115942029,
+								"structure": {}
+							},
+							"12": {
+								"cer": 0.014005602240896359,
+								"structure": {}
+							},
+							"13": {
+								"cer": 0.12389380530973451,
+								"structure": {}
+							},
+							"14": {
+								"cer": 0.19487179487179487,
+								"structure": {}
+							},
+							"01": {
+								"cer": 0,
+								"structure": {}
+							},
+							"02": {
+								"cer": 0.008,
+								"structure": {}
+							},
+							"03": {
+								"cer": 0.01020408163265306,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"04": {
+								"cer": 0,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"05": {
+								"cer": 0.049079754601226995,
+								"structure": {
+									"table": "ok"
+								}
+							},
+							"06": {
+								"cer": 0.03571428571428571,
+								"structure": {}
+							},
+							"07": {
+								"cer": 0,
+								"structure": {}
+							},
+							"08": {
+								"cer": 0.1875,
+								"structure": {}
+							},
+							"09": {
+								"cer": 0,
+								"structure": {}
+							}
+						},
+						"medianCer": 0.01020408163265306,
+						"model": "google/gemini-2.5-flash"
+					}
+				}
 			}
 		},
 		"perf": {
 			"status": "pass",
-			"measuredAt": "2026-08-25T03:52:35.129Z",
-			"lastMeasuredAt": "2026-08-25T03:52:35.129Z",
+			"measuredAt": "2026-08-25T10:50:30.391Z",
+			"lastMeasuredAt": "2026-08-25T10:50:30.391Z",
 			"detail": {
 				"metrics": {
-					"renderPagesToPdfMs": 371,
-					"rasterizePageMs": 153
+					"renderPagesToPdfMs": 380,
+					"rasterizePageMs": 143
 				},
 				"page": "2000 strokes x 50 points",
 				"node": "v22.23.2"
