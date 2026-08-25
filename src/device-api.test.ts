@@ -82,15 +82,25 @@ const NOTEBOOK = {
 	[`${DOC}.metadata`]: JSON.stringify({ visibleName: "Field notes", type: "DocumentType", parent: "", lastModified: "7" }),
 	[`${DOC}.content`]: JSON.stringify({ fileType: "notebook", tags: [{ name: "work", timestamp: 1 }] }),
 	[`${DOC}/${PAGE}.rm`]: "page bytes",
-	// Neither of these is in the cloud's tree, and including one would change the document's hash.
+	// None of these is in the cloud's tree, and including one would change the document's hash.
 	[`${DOC}.local`]: JSON.stringify({ contentFormatVersion: 2 }),
 	[`${DOC}.thumbnails/${PAGE}.jpg`]: "thumbnail bytes",
+	[`${DOC}/${PAGE}-metadata.json`]: JSON.stringify({ layers: [{ name: "Layer 1" }] }),
 };
 
 describe("which files belong to a document", () => {
-	it("takes everything under the document's own folder", () => {
+	it("takes the pages and the pictures on them, under the document's own folder", () => {
 		expect(documentOf(`${DOC}/${PAGE}.rm`)).toBe(DOC);
 		expect(documentOf(`${DOC}/${PAGE}/picture.png`)).toBe(DOC);
+		expect(documentOf(`${DOC}/${PAGE}/photo.jpg`)).toBe(DOC);
+	});
+
+	it("leaves out a v5 page's layer names, which the cloud does not hash either", () => {
+		// A reMarkable 1 or 2 with notebooks from before software 3.0 still has these beside the pages.
+		// Counting one moves that document's hash away from the cloud's, and the vault then re-renders
+		// and re-transcribes it on every transport switch -- the one cost this design exists to avoid.
+		// A Paper Pro has none, so the live run against one could not have shown this.
+		expect(documentOf(`${DOC}/${PAGE}-metadata.json`)).toBeNull();
 	});
 
 	it("takes the siblings the cloud hashes, and no others", () => {

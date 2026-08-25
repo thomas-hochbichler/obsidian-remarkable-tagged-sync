@@ -87,13 +87,32 @@ const DEVICE_READ_PARALLELISM = 32;
  */
 const DOCUMENT_SUFFIXES = [".content", ".metadata", ".pagedata", ".pdf", ".epub", ".template"];
 
+/**
+ * The same allowlist, one level in: what the cloud hashes *inside* a document's folder.
+ *
+ * An allowlist here too, and for a reason that took a bug to see. `<page>-metadata.json` -- the
+ * v5-era file that held a page's layer names, which v6 folded into the `.rm` itself -- is one of
+ * the three kinds of file the `.tree` check found **zero** records of, alongside `.local` and
+ * `.thumbnails/`. It is still on the disk of any reMarkable 1 or 2 that has notebooks from before
+ * software 3.0, and taking everything under the folder counted it: that document's hash then stops
+ * matching the cloud's, and every transport switch re-renders and re-transcribes it -- precisely
+ * the cost this whole design exists to avoid.
+ *
+ * Invisible on a Paper Pro, which is v6 only and has no such file to include, so the live run
+ * against one could not have caught it.
+ */
+const MEMBER_SUFFIXES = [".rm", ".png", ".jpg"];
+
 /** Which document a device file belongs to, or `null` if the cloud does not hash it. */
 export function documentOf(path: string): string | null {
 	const slash = path.indexOf("/");
 	if (slash !== -1) {
-		// Everything under `<uuid>/` -- the pages, and the picture folders a page keeps beside them.
 		const docId = path.slice(0, slash);
-		return UUID_RE.test(docId) ? docId : null;
+		if (!UUID_RE.test(docId)) return null;
+		// The last segment, because a page's pictures sit one folder deeper again.
+		const name = path.slice(path.lastIndexOf("/") + 1);
+		const suffix = name.lastIndexOf(".");
+		return suffix !== -1 && MEMBER_SUFFIXES.includes(name.slice(suffix)) ? docId : null;
 	}
 	const dot = path.indexOf(".");
 	if (dot === -1) return null;
@@ -165,6 +184,13 @@ interface DeviceDocument {
  * This is the expensive call and it happens once per session, because all three of the engine's
  * change-detection gates are answered out of it -- the root hash it compares first, the per-document
  * hashes it compares next, and the per-page hashes it compares last are all already here.
+ *
+ * A document the tablet has tombstoned is indexed here and hidden by `listItems`, which is not an
+ * oversight to tidy up. Deciding it here would mean reading every `.metadata` before a single hash
+ * could be taken, to save a root hash that has to move anyway -- the account did change. The
+ * residual is that while a tombstone sits there unsynced, this root hash and the cloud's disagree,
+ * which costs one full scan and re-renders nothing: the per-document hashes, which are what protect
+ * the renders, are untouched by it.
  */
 async function readAccount(files: DeviceFiles, cache: HashCache, report?: (message: string) => void) {
 	const byDocument = new Map<string, DeviceFileStat[]>();

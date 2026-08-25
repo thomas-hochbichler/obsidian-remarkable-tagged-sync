@@ -70,7 +70,14 @@
       expect: All of them belong to it
       layer: unit
       file: src/device-api.test.ts
-      test: "which files belong to a document > takes everything under the document's own folder"
+      test: "which files belong to a document > takes the pages and the pictures on them, under the document's own folder"
+
+    - id: S2.4
+      scenario: '`<page>-metadata.json` inside the folder -- a v5 page''s layer names, which any reMarkable 1 or 2 with pre-3.0 notebooks still has on disk'
+      expect: 'Not part of the document. The allowlist applies inside the folder as well as beside it: the `.tree` check found zero records of this file, so counting it moves that document''s hash away from the cloud''s and re-renders it on every transport switch. A Paper Pro is v6 only and has none, so the live run could not have shown this'
+      layer: unit
+      file: src/device-api.test.ts
+      test: "which files belong to a document > leaves out a v5 page's layer names, which the cloud does not hash either"
 
     - id: S2.2
       scenario: '`.content` and `.epub`, which the cloud hashes -- and `.local`, which it does not'
