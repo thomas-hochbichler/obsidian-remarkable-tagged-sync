@@ -1,6 +1,6 @@
 {
-	"version": "1.4.4",
-	"renderVersion": 23,
+	"version": "1.5.0",
+	"renderVersion": 30,
 	"rootHash": "root-legacy-state",
 	"producedAt": "2026-01-01T00:00:00.000Z"
 }

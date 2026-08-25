@@ -7,7 +7,7 @@
 	},
 	"syncIndex": {
 		"rootHash": "root-legacy-state",
-		"mappings": "2:[[\"read\",\"Reading\"],[\"sync\",\"Inbox\"],[\"work\",\"Work/Notes\"]]",
+		"mappings": "3:[[\"read\",\"Reading\"],[\"sync\",\"Inbox\"],[\"work\",\"Work/Notes\"]]",
 		"rows": {
 			"doc-notes:sync": {
 				"syncKey": "doc-notes:sync",
@@ -19,8 +19,9 @@
 				"notePath": "Inbox/Field Notes.md",
 				"status": "active",
 				"syncedAt": "2026-01-01T00:00:00.000Z",
-				"renderVersion": 23,
-				"blockHash": "7e2fef62"
+				"renderVersion": 30,
+				"blockHash": "7e2fef62",
+				"highlightCount": 0
 			},
 			"doc-notes:work": {
 				"syncKey": "doc-notes:work",
@@ -32,8 +33,9 @@
 				"notePath": "Work/Notes/Field Notes.md",
 				"status": "active",
 				"syncedAt": "2026-01-01T00:00:00.000Z",
-				"renderVersion": 23,
-				"blockHash": "7e2fef62"
+				"renderVersion": 30,
+				"blockHash": "7e2fef62",
+				"highlightCount": 0
 			},
 			"doc-paper:read": {
 				"syncKey": "doc-paper:read",
@@ -45,8 +47,9 @@
 				"notePath": "Reading/Reading List.md",
 				"status": "active",
 				"syncedAt": "2026-01-01T00:00:00.000Z",
-				"renderVersion": 23,
-				"blockHash": "94bed6a5"
+				"renderVersion": 30,
+				"blockHash": "94bed6a5",
+				"highlightCount": 0
 			}
 		}
 	},
