@@ -265,3 +265,24 @@
       layer: unit
       file: src/digest-pipeline.test.ts
       test: "buildDigest note regions > spans the whole paragraph the handwriting sits beside, so the clip carries its context"
+
+    - id: F4.5
+      scenario: A run whose rectangles hang beside the text column, stacked under a wrapped run
+      expect: No merge -- a run on no text line cannot show the wrap shape, so it stands alone
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > does not merge a run whose rectangles sit on no text line"
+
+    - id: F4.6
+      scenario: A run with recorded text but no rectangles at all
+      expect: It neither crashes the gesture sort nor joins a gesture; its entry keeps the device's own text
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > leaves a highlight with no rectangles out of the gesture merge"
+
+    - id: F4.7
+      scenario: One run already carrying several rectangles, stored out of order
+      expect: The junction reads the outermost lines -- lowest of the upper run, highest of the lower -- whatever order the device stored
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > merges runs that already carry several rectangles by their outermost lines"

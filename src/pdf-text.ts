@@ -564,7 +564,7 @@ const PARAGRAPH_INDENT_RATIO = 0.8;
  * vertical gap for the spacing test to see.
  */
 function opensParagraph(lines: PdfTextLine[], index: number, spacing: number | null): boolean {
-	if (index === 0) return true;
+	// Never called with 0: both walks in `paragraphBounds` stop before asking about the first line.
 	const line = lines[index];
 	const above = lines[index - 1];
 	if (separated(above, line, spacing)) return true;

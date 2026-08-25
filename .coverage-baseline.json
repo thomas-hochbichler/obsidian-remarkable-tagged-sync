@@ -84,7 +84,7 @@
 		},
 		"src/epub-text.ts": {
 			"lines": 0,
-			"branches": 9
+			"branches": 8
 		},
 		"src/explain-error.ts": {
 			"lines": 0,
@@ -139,8 +139,8 @@
 			"branches": 0
 		},
 		"src/local-model-runtime.ts": {
-			"lines": 45,
-			"branches": 15
+			"lines": 36,
+			"branches": 14
 		},
 		"src/local-model-settings.ts": {
 			"lines": 0,
@@ -159,8 +159,8 @@
 			"branches": 25
 		},
 		"src/local-register.ts": {
-			"lines": 104,
-			"branches": 90
+			"lines": 100,
+			"branches": 88
 		},
 		"src/localhost-providers.ts": {
 			"lines": 0,
@@ -180,7 +180,7 @@
 		},
 		"src/margin-notes.ts": {
 			"lines": 0,
-			"branches": 5
+			"branches": 4
 		},
 		"src/note-builder.ts": {
 			"lines": 0,
@@ -232,7 +232,7 @@
 		},
 		"src/pdf-renderer.ts": {
 			"lines": 2,
-			"branches": 11
+			"branches": 8
 		},
 		"src/pdf-source.ts": {
 			"lines": 0,
@@ -252,7 +252,7 @@
 		},
 		"src/quote-correction.ts": {
 			"lines": 0,
-			"branches": 8
+			"branches": 4
 		},
 		"src/re-transcribe-prompt.ts": {
 			"lines": 0,
@@ -279,8 +279,8 @@
 			"branches": 1
 		},
 		"src/rm-parser.ts": {
-			"lines": 22,
-			"branches": 31
+			"lines": 19,
+			"branches": 26
 		},
 		"src/scene-text.ts": {
 			"lines": 0,
@@ -367,7 +367,7 @@
 			"branches": 7
 		},
 		"src/vision-ocr-runtime.ts": {
-			"lines": 33,
+			"lines": 32,
 			"branches": 21
 		},
 		"src/vision-register.ts": {
