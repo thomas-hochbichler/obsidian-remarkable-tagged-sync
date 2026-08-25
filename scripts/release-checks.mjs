@@ -105,18 +105,35 @@ function versionGate(tag) {
 		ok(`versions.json["${v}"] = ${minApp}, matches manifest minAppVersion`);
 	}
 
-	// The frozen legacy state must have been produced by *this* version, or the upgrade test is
-	// testing an older release than the one before. The point of freezing one state per release is
-	// that `src/legacy-upgrade.test.ts` runs today's engine over a vault the **previous** release
-	// actually wrote -- and the state committed in release N's PR is produced by N's own code, which
-	// is byte-identical to what tag N will hold.
+	// The frozen legacy state must have been produced by the **previously released** version -- the
+	// one before the version being cut here -- because `src/legacy-upgrade.test.ts` runs today's
+	// engine over a vault that a shipped release actually wrote.
+	//
+	// This rule used to demand *this* version, and freezing was step 2b of the release PR. Those two
+	// gates cannot both be green: a fresh freeze stamps today's `RENDER_VERSION` into the state, and
+	// A8.20 asserts `meta.renderVersion < RENDER_VERSION` -- the staleness that forces `runSync` past
+	// its early return. Cutting 1.5.0 hit it head-on: freeze and five tests go red, skip it and this
+	// gate goes red. Ticket 13 §4 predicted exactly this ("One caveat").
+	//
+	// So the freeze moved out of the release PR to the first commit *after* the tag, where the tree is
+	// byte-identical to the build that shipped -- which is what "produced by the previous release"
+	// was always supposed to mean. See docs/RELEASING.md step 8.
 	//
 	// It sits here rather than in a job of its own because `ci.yml` and `release.yml` both already run
 	// this gate: no new step, no new file to remember, and the failure shows up on the release PR in
 	// under a minute -- before a tag is spent.
 	const legacyState = readJson("test-fixtures/legacy-state/meta.json");
-	if (legacyState.version === v) ok(`test-fixtures/legacy-state produced by ${legacyState.version}`);
-	else fail(`test-fixtures/legacy-state was produced by ${legacyState.version}, manifest.json says ${v} -- run \`npm run freeze-state\``);
+	// Insertion order is the release order, and `v` is always the last key by the time the gate runs
+	// -- the check above fails first if the key for this version is missing altogether.
+	const releases = Object.keys(versions);
+	const previous = releases[releases.length - 2];
+	if (previous === undefined) ok("test-fixtures/legacy-state has no previous release to be produced by");
+	else if (legacyState.version === previous) ok(`test-fixtures/legacy-state produced by ${legacyState.version}, the release before ${v}`);
+	else
+		fail(
+			`test-fixtures/legacy-state was produced by ${legacyState.version}, the release before ${v} is ${previous} -- ` +
+				"run `npm run freeze-state` on a tree checked out at that tag, or see docs/RELEASING.md step 8",
+		);
 
 	// release.yml only. The tag carries no `v` prefix -- the store resolves the tag from the
 	// manifest version, so `v1.0.6` would simply not be found.
