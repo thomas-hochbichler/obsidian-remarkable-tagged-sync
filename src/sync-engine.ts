@@ -23,7 +23,7 @@ import { getDocumentFiles, type DocumentFiles } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
 import { readEpubBook, type EpubBook } from "./epub-text";
 import { validateSourcePdf } from "./pdf-source";
-import { inheritedFolderTagNames, tagNames } from "./remarkable-tags";
+import { inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
@@ -1271,7 +1271,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 	const entries = await api.listItems();
 	const entriesById = new Map(entries.map((entry) => [entry.id, entry]));
-	const documents = entries.filter((entry) => entry.type === "DocumentType");
+	// A trashed document is not a document any more: it still enumerates (the tombstone only comes
+	// with the next cloud sync) and its own tags and page tags are still in its `.content`, so
+	// without this it would keep writing notes -- and the orphan sweep below would keep it alive.
+	const documents = entries.filter((entry) => entry.type === "DocumentType" && !isInTrash(entry, entriesById));
 
 	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop);
 	// Nothing has been written yet, so there is nothing to checkpoint -- but the caller still has to
@@ -1596,9 +1599,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	}
 
 	// Deletion: any unit whose doc no longer appears in the enumeration at all is flagged
-	// orphaned, never auto-deleted (spec §7). A doc still present but missing a specific tag was
-	// already orphaned above, per-tag, while its content was open.
-	const liveDocIds = new Set(entries.filter((entry) => entry.type === "DocumentType").map((entry) => entry.id));
+	// orphaned, never auto-deleted (spec §7). A doc in the trash counts as gone, same as one whose
+	// files have vanished. A doc still present but missing a specific tag was already orphaned
+	// above, per-tag, while its content was open.
+	const liveDocIds = new Set(documents.map((entry) => entry.id));
 	for (const row of Object.values(rows)) {
 		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
 	}
