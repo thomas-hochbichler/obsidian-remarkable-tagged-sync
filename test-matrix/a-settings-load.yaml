@@ -57,6 +57,13 @@
       file: src/settings-store.test.ts
       test: "migrateSettings > keeps a whole working install exactly as it found it"
 
+    - id: A8.17
+      scenario: The transport pair names the same source twice, either outright or because the primary was unreadable and resolved to the fallback's value
+      expect: 'The fallback is dropped. It is the one rule the pair has, and it has to be checked against the primary that was *resolved*: against the raw stored value, an unreadable primary resolved to "cloud" and kept a "cloud" fallback -- a second attempt at what just failed, and a value the settings picker does not offer'
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > never leaves the fallback naming the source the primary resolved to"
+
     - id: A8.7
       scenario: data.json carries marginNotes true, written by a 1.1.0 beta
       expect: Honoured. Someone switched it on themselves, and the setting is on screen again to say no with

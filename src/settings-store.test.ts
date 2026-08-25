@@ -123,6 +123,20 @@ describe("migrateSettings", () => {
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);
 	});
 
+	it("never leaves the fallback naming the source the primary resolved to", () => {
+		// The pair has one rule -- the two are never the same -- and it has to survive a primary that
+		// could not be read. Checked against the raw stored value instead, `{"nonsense", "cloud"}`
+		// resolved the primary to "cloud" and kept the fallback, leaving both pointing at the cloud:
+		// a fallback that is a second attempt at what just failed, and a settings picker handed a
+		// value it does not offer.
+		const junk = migrateSettings({ primaryTransport: "nonsense", fallbackTransport: "cloud" }, ENV);
+		expect(junk.primaryTransport).toBe("cloud");
+		expect(junk.fallbackTransport).toBeNull();
+
+		const explicit = migrateSettings({ primaryTransport: "ssh", fallbackTransport: "ssh" }, ENV);
+		expect(explicit.fallbackTransport).toBeNull();
+	});
+
 	it("honours a marginNotes: true written by a 1.1.0 beta", () => {
 		expect(migrateSettings({ marginNotes: true }, ENV).marginNotes).toBe(true);
 		expect(migrateSettings({}, ENV).marginNotes).toBe(false);

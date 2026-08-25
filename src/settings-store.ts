@@ -147,15 +147,22 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 	// "llm-vision"/"tesseract" reset (multi-provider spec §7). The old single `llmVisionApiKey` is
 	// dropped by not carrying it forward -- users re-enter their key once under the per-provider model.
 	const savedBackend = stored?.ocrBackend ?? stored?.ocrBackendChoice;
+	// A file written before the SSH transport existed has neither field, and "cloud, no fallback" is
+	// exactly what such a vault was doing -- so the absent case needs no branch of its own.
+	//
+	// Named before the object because the fallback is checked against it. Comparing against the raw
+	// stored value instead let an unreadable primary through: `{primary: "nonsense", fallback:
+	// "cloud"}` resolved the primary to "cloud" and then kept the fallback, leaving both the same.
+	// The run survived it -- `transportChain` re-checks -- but the settings dropdown was handed a
+	// value it does not offer.
+	const primaryTransport: TransportId = isTransportId(stored?.primaryTransport) ? stored.primaryTransport : "cloud";
 	return {
 		deviceToken: stored?.deviceToken ?? DEFAULT_DATA.deviceToken,
-		// A file written before the SSH transport existed has neither field, and "cloud, no fallback"
-		// is exactly what such a vault was doing -- so the absent case needs no branch of its own.
-		primaryTransport: isTransportId(stored?.primaryTransport) ? stored.primaryTransport : "cloud",
+		primaryTransport,
 		// Never the same as the primary: a fallback to where the run just failed is a second attempt
 		// dressed as a recovery, and it would double every timeout.
 		fallbackTransport:
-			isTransportId(stored?.fallbackTransport) && stored.fallbackTransport !== stored.primaryTransport
+			isTransportId(stored?.fallbackTransport) && stored.fallbackTransport !== primaryTransport
 				? stored.fallbackTransport
 				: null,
 		ssh: { ...DEFAULT_SSH_SETTINGS, ...stored?.ssh },
