@@ -622,3 +622,141 @@
       layer: vault
       file: src/settings-tab.test.ts
       test: "where your notes come from > says out loud, before anyone types a password, what Developer Mode costs"
+
+# Everything above this line reads the device through a `DeviceFiles` made of a plain map, which is
+# what makes membership, hashing and caching testable without a tablet. `connectToDevice` is what is
+# left over: the host key, the two shell commands, the SFTP read, the exit code. Five deliberate
+# breakages of it passed the whole suite -- the host key check off, the stat format swapped, the
+# xochitl prefix dropped, a failed command read as an empty answer, the timeout wording removed --
+# so these rows run the plugin's own client against an `ssh2` server instead. The fake answers
+# commands and does not interpret them: what BusyBox does with them is measured in S13, not here.
+- feature: S15
+  name: What actually crosses the wire to a tablet
+  code: src/ssh-connection.ts
+  tier: pro
+  scenarios:
+    - id: S15.1
+      scenario: A first connection, with nothing pinned yet
+      expect: The fingerprint comes back in OpenSSH's own spelling, worked out here from the server's public key rather than from this module's answer -- pairing shows it so that a user can compare it with what `ssh` told them
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "the host key of the tablet that answered > is pinned in the spelling ssh itself uses, so pairing can show a comparable fingerprint"
+
+    - id: S15.2
+      scenario: The tablet answers with a different host key than the one this vault pinned
+      expect: Refused rather than re-learned. Trust on first use is worth nothing if the second use does not check, and the two things that cause a mismatch are a factory reset and somebody else answering on that address
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "the host key of the tablet that answered > is checked against the pinned one, and a different one is refused rather than re-learned"
+
+    - id: S15.3
+      scenario: What the refusal carries
+      expect: The fingerprint that was actually presented. It is the only thing that identifies who answered, and the user needs it to tell a reset tablet from a stranger
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "the host key of the tablet that answered > is named in the refusal, because the fingerprint is the only thing that identifies who did answer"
+
+    - id: S15.4
+      scenario: A mismatch reaches the failover
+      expect: Never treated as unreachable. Quietly syncing from the cloud instead would bury the one message on this transport worth reading
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "the host key of the tablet that answered > never sends the failover a mismatch, which is the one refusal the other source cannot explain"
+
+    - id: S15.5
+      scenario: Every wording the network has for an absent tablet -- a handshake timeout, `ETIMEDOUT`, `ECONNREFUSED`, `EHOSTUNREACH`, `ENETUNREACH`, `ECONNRESET`, `ENOTFOUND`
+      expect: 'All unreachable, so the run may fall over to the cloud. `ETIMEDOUT` needs naming separately and was missing until this row: node spells the code without the `u` that the word "timeout" has, and a tablet that is simply switched off answers a connection with exactly that. The classifier is reached directly because a handshake timeout is fifteen seconds of waiting'
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "which failures read as nobody answered > takes every way a tablet can be absent, however the network worded it"
+
+    - id: S15.6
+      scenario: The device refuses the stored key
+      expect: Not unreachable, and the error is handed on as it stands. Falling over here would sync from the cloud forever and never say that the pairing is dead
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "which failures read as nobody answered > leaves a refused key alone, because the other source cannot fix a key"
+
+    - id: S15.7
+      scenario: A real connection to a port nothing is listening on
+      expect: Unreachable, naming the address that was tried -- the only thing the user can act on
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "which failures read as nobody answered > names the address that was tried, which is the only one the user can act on"
+
+    - id: S15.8
+      scenario: The listing command as it leaves for the device
+      expect: 'One walk of the xochitl directory asking for `%s %Y %n` in that order. The order is the whole contract with `parseStatLine`: swapped, every file gets a size of a unix timestamp and a time of a few kilobytes, and the hash cache rots without a single test moving'
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "listing what is on the tablet > asks for size, time and name in one walk of the xochitl directory"
+
+    - id: S15.9
+      scenario: What the device's shell wrote, coming back
+      expect: One stat per file, with the seconds this userland counts in turned into the milliseconds the cache is keyed by
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "listing what is on the tablet > reads back what the shell wrote, with the seconds it counts in turned into milliseconds"
+
+    - id: S15.10
+      scenario: The engine asks for a page by the relative path it knows
+      expect: The file is opened under the xochitl directory. Every caller above this line holds a relative path and nothing else knows where xochitl is
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "reading a file off the tablet > asks for it under the xochitl directory, because the caller only ever holds a relative path"
+
+    - id: S15.11
+      scenario: A page, which is not text
+      expect: The bytes exactly as they are. Anything that went through a string here would corrupt every `.rm` file and no size or count would show it
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "reading a file off the tablet > hands the bytes on exactly as they are, which for a page means not text"
+
+    - id: S15.12
+      scenario: The page is not on the device
+      expect: 'The read fails. The quiet alternative is the dangerous one: an empty answer renders a blank page and stores it under the hash of a real one'
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "reading a file off the tablet > fails rather than reporting an empty file when the page is not there"
+
+    - id: S15.13
+      scenario: An ordinary command that succeeds
+      expect: What the device printed, handed back as it stands
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "running a command on the tablet > hands back what the device printed"
+
+    - id: S15.14
+      scenario: A command the device refuses -- a read-only `/home`, permissions dropbear will not take
+      expect: 'It fails, saying what the device said. Pairing installs the key with this: reading a non-zero exit as an empty answer reports a pairing that worked and a device that refuses every sync afterwards'
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "running a command on the tablet > fails when the device refused, and says what the device said about it"
+
+    - id: S15.15
+      scenario: Six hundred paths hashed in one call
+      expect: Every one of them in one map, the short last batch included. Dropping it is the failure that looks exactly like a full run
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "hashing a library > takes the paths on standard input and puts every batch's answer into one map"
+
+    - id: S15.16
+      scenario: A first run, which is thousands of files
+      expect: Batched, with a report before each batch and one when the last lands. The batch size is about progress alone -- the paths travel on standard input, so there is nothing to work around -- and one unbroken command would say nothing at all until every file was done
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "hashing a library > breaks a first run into batches, so a library of thousands says something before it is done"
+
+    - id: S15.17
+      scenario: The device authenticates and then will not open the file subsystem
+      expect: The connection is closed here, because this is the last point at which anybody can -- the caller only receives something to `close()` once the whole connection is built, so a rejection past this line leaves an authenticated socket open with nothing holding a reference to it
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "a connection that cannot be finished > is closed rather than left authenticated with nobody holding it"
+
+    - id: S15.18
+      scenario: Something reaches this on mobile
+      expect: Refused in words. The plugin is desktop-only and this module is the reason it says so twice -- `ssh2` and node's `crypto` are both absent there
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: "where this may run at all > refuses anywhere the node modules it needs are not there"

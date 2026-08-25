@@ -269,10 +269,18 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 	};
 }
 
-/** Anything that reads as "nobody answered" becomes the error the failover is allowed to act on. */
-function asConnectionError(error: Error, credentials: SshCredentials): Error {
+/**
+ * Anything that reads as "nobody answered" becomes the error the failover is allowed to act on.
+ *
+ * Exported for its own tests: every other branch of this module can be reached over a socket, but a
+ * handshake timeout is fifteen seconds of waiting, and that one wording is the one that decides
+ * whether a sleeping tablet falls over to the cloud or fails the run.
+ */
+export function asConnectionError(error: Error, credentials: SshCredentials): Error {
 	const text = `${error.name}: ${error.message}`;
-	if (/timed out|timeout|ehostunreach|enetunreach|econnrefused|econnreset|enotfound|network/i.test(text)) {
+	// `etimedout` is its own case and not covered by `timeout`: node spells the code `ETIMEDOUT`, with
+	// no `u` where the word has one. It is what a tablet that is simply off answers a connection with.
+	if (/timed out|timeout|etimedout|ehostunreach|enetunreach|econnrefused|econnreset|enotfound|network/i.test(text)) {
 		return new DeviceUnreachableError(credentials.host, error);
 	}
 	return error;
