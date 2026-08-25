@@ -1,0 +1,418 @@
+# Group K -- EPUB books: the original `.epub` behind what the device rendered.
+#
+# A reMarkable has no EPUB reader. It converts the book to a PDF on-device and keeps that render in
+# the cloud next to the `.epub` -- and the conversion loses letters, so the render's text is not the
+# author's wording (`.scratch/epub-sync/spec.md` §2). Everything here exists to put the author's
+# wording back: the book is found, read, and used to re-spell a quote and to name a chapter.
+#
+# The feature shipped in #51, before this matrix existed in #53, so all 44 of its tests were
+# grandfathered into `unclaimed-tests.txt` and nobody ever wrote its rows. Writing them started with
+# mutation, as the concept requires, and 13 of 29 deliberate breakings survived the whole suite --
+# including several under tests already named for the very thing that survived. The rows below say
+# so where it happened, because a row whose test passes for the wrong reason is the defect this
+# matrix is for.
+
+
+- feature: K1
+  name: The book behind a rendered document is found
+  code: src/page-hash.ts
+  tier: free
+  scenarios:
+    - id: K1.1
+      scenario: A document's cloud entry list carries a `.epub` beside the render, and another document's does not
+      expect: The `.epub` is reported with its own hash, and a handwritten notebook reports none. It sits beside the document's folder as `<docId>.epub`, not inside it, so a rule written for pages would never see it
+      layer: unit
+      file: src/page-hash.test.ts
+      test: "getDocumentFiles > finds the original .epub a book was rendered from, and reports none for a document without one"
+
+- feature: K2
+  name: A tagged book syncs through the PDF path
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: K2.1
+      scenario: A tagged document whose `fileType` is `epub`
+      expect: It syncs as the PDF the device rendered, with its annotations -- not as a handwritten notebook. The device's render is the only thing there is to embed; the `.epub` is a text source, never a page
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > PDF-backed documents > treats a tagged EPUB as PDF-backed: the book the device rendered, with its annotations"
+
+- feature: K3
+  name: Reading the prose out of an `.epub`
+  code: src/epub-text.ts
+  tier: free
+  scenarios:
+    - id: K3.1
+      scenario: An archive holding two XHTML documents, one stored and one deflated
+      expect: Both are read and joined. An EPUB writer picks either method per file, so reading only one of them silently loses half a book
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > reads the prose out of every XHTML document, stored or deflated"
+
+    - id: K3.2
+      scenario: Prose broken by an inline tag, and a `<script>`/`<style>` block beside it
+      expect: The tag becomes a space and the script and style contents are dropped whole. Without the space, "fell" and "off" run together as one word and no quote spanning the emphasis is findable again
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > keeps the word boundary an inline tag stands for, and drops script and style whole"
+
+    - id: K3.3
+      scenario: Punctuation written as named and numeric entities
+      expect: Decoded to the characters themselves. A book's quotation marks arrive as `&ldquo;` more often than not, and an undecoded entity is six characters of pure edit distance in the middle of every quote
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > decodes the entities a book's punctuation is written with"
+
+    - id: K3.4
+      scenario: A book whose own prose contains the four bytes of a ZIP end-of-directory record
+      expect: Read normally. The record is looked for from the end of the file backwards and the search stops at the first hit, which is the last one in the file. Dropping that `break` reads the book's own bytes as the directory and returns null for a perfectly good book -- and passed all 1797 tests
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > reads the record at the end of the file, not a book's own bytes that look like one"
+
+    - id: K3.5
+      scenario: Bytes that are not a ZIP at all
+      expect: Null, never a throw. A book that cannot be read costs the quotes their spelling; a throw costs the reader the annotation
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > returns null for bytes that are not a ZIP"
+
+    - id: K3.6
+      scenario: A readable archive with no XHTML in it
+      expect: Null, on the same terms -- there is no prose to correct anything against
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > returns null for an archive with no XHTML in it"
+
+- feature: K4
+  name: The book's own names for its parts
+  code: src/epub-text.ts
+  tier: free
+  scenarios:
+    - id: K4.1
+      scenario: An EPUB 2 book, which carries its table of contents in an `.ncx`
+      expect: The `<navLabel>` texts, in document order. *Alice* on the test device is this form
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the navigation > reads an EPUB 2 book's chapter names off its .ncx"
+
+    - id: K4.2
+      scenario: An EPUB 3 book, which carries it in a navigation document
+      expect: The links of the `epub:type="toc"` nav. An article captured by the "Read on reMarkable" extension has only this form, so both are read
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the navigation > reads an EPUB 3 book's chapter names off its navigation document"
+
+    - id: K4.3
+      scenario: A book carrying both forms, where the `.ncx` a converter left behind names nothing
+      expect: 'The navigation document is read instead. Returning the empty `.ncx` result costs the book every chapter name it has, and no test noticed: the EPUB 3 case above carries no `.ncx` to fall through from'
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the navigation > falls through to the navigation document when the .ncx names nothing"
+
+    - id: K4.4
+      scenario: A navigation document holding a landmarks nav as well as the table of contents
+      expect: Only the table of contents. "Cover" is not a chapter, and a heading renamed to it is worse than one left alone
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the navigation > takes only the table of contents, not every list of links in the book"
+
+    - id: K4.5
+      scenario: A book with no navigation at all
+      expect: No chapters, which is not a failure -- the headings the render found are then all there is, and they stay exactly as they are
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the navigation > reports no chapters for a book that carries no navigation"
+
+- feature: K5
+  name: Naming a section the way the book names it
+  code: src/chapter-names.ts
+  tier: free
+  scenarios:
+    - id: K5.1
+      scenario: The render cut the heading short -- "CHAPTER I." for a chapter the book calls more
+      expect: 'The book''s full name. This is the whole case: the note used to read "### CHAPTER I."'
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > completes the heading the render cut short"
+
+    - id: K5.2
+      scenario: "\"CHAPTER II.\", where \"CHAPTER I.\" is a prefix of it"
+      expect: Chapter II, not chapter I. A prefix match would name half a book after its first chapter
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > tells the chapter apart from the one whose number merely starts the same"
+
+    - id: K5.3
+      scenario: A heading the conversion damaged -- a letter dropped or replaced
+      expect: Still recognised. The damage is the reason this path exists at all; an exact lookup would find nothing
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > recognises a heading the conversion to a PDF damaged"
+
+    - id: K5.4
+      scenario: A bare "CHAPTER", which fits the opening of every chapter equally well
+      expect: Null. Two chapters equally close is not a match, and naming it after the wrong one is worse than leaving it as the render found it
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > keeps a heading that names no chapter in particular"
+
+    - id: K5.5
+      scenario: '"CHAPTER Vl." -- one edit from chapter VI and two from chapter VII'
+      expect: Chapter VI. Closest wins outright; only a tie refuses
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > still reads a damaged numeral as the chapter it fits best"
+
+    - id: K5.6
+      scenario: An article's own subheading, which its navigation does not name
+      expect: Kept as it stands. A name only ever renames a heading the render found, never adds one -- an article's subheadings are finer than its navigation, and replacing them costs the reader the structure they annotated
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > keeps a heading the navigation does not name at all"
+
+    - id: K5.7
+      scenario: A book with no navigation
+      expect: Every heading kept
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > keeps every heading when the book has no navigation"
+
+    - id: K5.8
+      scenario: A blank heading, in a book with several chapters and in a book with one
+      expect: Null in both. With several, a tie refuses it anyway -- which is why deleting the guard for a blank passed every test; the single-chapter book is where the guard is the only thing standing between a blank heading and a chapter's name
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > has nothing to say about a heading that is empty"
+
+    - id: K5.9
+      scenario: Three of a ten-character heading's letters wrong, against a thirty-one-character chapter name
+      expect: Null. The budget is the heading's, because the heading is what has to be recognised -- taking it from the chapter name (four edits, not two) accepts a heading nobody could read, and passed all 1797 tests
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > measures the damage against the heading, not against the name it would be given"
+
+    - id: K5.10
+      scenario: The book sets a curly apostrophe where the render wrote a straight one
+      expect: The same heading. Typography a layout engine chose is not a difference the reader made
+      layer: unit
+      file: src/chapter-names.test.ts
+      test: "chapterName > reads the same heading through the punctuation a layout engine changed"
+
+- feature: K6
+  name: Re-spelling a quote in the book's own words
+  code: src/quote-correction.ts
+  tier: free
+  scenarios:
+    - id: K6.1
+      scenario: The device's conversion turned `off` into `oP` -- a plain U+0050 with no ligature codepoint to map back
+      expect: The book's spelling. This is the defect the whole path exists for
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > restores the letters the device's conversion lost"
+
+    - id: K6.2
+      scenario: A highlighted run inside a sentence that gets re-spelled
+      expect: The run moves onto the corrected wording and is still a run of it. A corrected sentence whose `==...==` addressed the old spelling marks the wrong words, which is worse than the wrong letter it set out to fix
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > moves the highlighted run onto the corrected wording"
+
+    - id: K6.3
+      scenario: Two separate runs marked in one sentence
+      expect: Both carried across
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > carries several runs of one sentence across"
+
+    - id: K6.4
+      scenario: The device wrote straight quotes where the book sets curly ones
+      expect: Found anyway
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > matches across the typographic punctuation a device and a book disagree on"
+
+    - id: K6.5
+      scenario: A quote from an entirely different book
+      expect: Null, and the caller keeps the device's text. A wrong correction is silent and unfixable; an uncorrected quote is merely a blemish
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > returns null when the quote is not in this book"
+
+    - id: K6.6
+      scenario: A quote damaged past the error budget, with its longest word left intact so the passage is still found and aligned
+      expect: 'Null -- refused on the budget alone. The word is intact on purpose: with every word damaged there is no anchor, the null says nothing about the budget, and raising it from 15% to 50% passed all 1797 tests under a test named for exactly that budget'
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > returns null when too much of the quote is damaged to trust a match"
+
+    - id: K6.7
+      scenario: A marked run that is not a substring of the sentence it belongs to
+      expect: Nothing is corrected. Correcting the sentence but not the run would drop the highlight's markers
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > leaves everything alone when a marked run is not inside the sentence"
+
+    - id: K6.8
+      scenario: An empty quote
+      expect: Null -- and it holds because a blank has no word to search the book by, not because anything checks for a blank. The explicit guard was unreachable and is gone; this row records why the test cannot pin one
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > returns null for an empty quote rather than matching the start of the book"
+
+    - id: K6.9
+      scenario: The quote sits at the end of a book-length source
+      expect: Found, and only the right occurrence
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > finds a quote that appears late in a long book, and only the right one"
+
+    - id: K6.10
+      scenario: The quote's own longest word stands thirty times before the passage itself
+      expect: 'Found. Two separate bounds have to hold: more than one window per anchor is tried, and near-identical windows are collapsed so those thirty do not use up the budget meant for the quote''s other words. Breaking either passed the whole suite'
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > keeps looking when the quote's own longest word is all over the book"
+
+    - id: K6.11
+      scenario: The book contains `İ`, which lowercases to two code points
+      expect: Null -- the book is not folded at all. Every index past that character would address a different one, and a run mapped back through it marks the wrong words. The device's own spelling is kept instead
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "correctQuote > returns null for a book whose letters cannot be folded one for one"
+
+    - id: K6.12
+      scenario: Curly quotes, an em dash, a curly apostrophe and a no-break space, against the render's plain forms
+      expect: Distance zero -- not one edit spent. The 15% budget is for the letters the conversion lost, and a quote is short enough that four quotation marks alone can spend it. Measured directly because at 15% the effect is a margin rather than an outcome, so no `correctQuote` case can pin it without being tuned to the knife edge
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "matchDistance > reads a device's punctuation and a book's as the same text"
+
+    - id: K6.13
+      scenario: One letter genuinely different
+      expect: 'Distance one. The counterpart to the row above: folding must not flatten the damage it exists to measure'
+      layer: unit
+      file: src/quote-correction.test.ts
+      test: "matchDistance > counts the letters that really differ"
+
+- feature: K7
+  name: The colour the device never wrote
+  code: src/pdf-paint-repair.ts
+  tier: free
+  scenarios:
+    - id: K7.1
+      scenario: The device wrote `scn` with no operands at all -- 60 times on one page of *Alice*
+      expect: Black. macOS reads it as "no change" and paints black; pdf.js, which is what Obsidian renders an embed with, keeps the page's own white background -- so the reader opens the note and the page is blank, with only our highlights floating on it
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairBareColourOps > gives black to a colour operator the device left empty"
+
+    - id: K7.2
+      scenario: The one colour that page does set -- the `1 1 1` of its own background
+      expect: Left white. It is also the colour pdf.js was painting the text in, so a repair that touched it would fix nothing
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairBareColourOps > leaves the page's real colours alone"
+
+    - id: K7.3
+      scenario: The stroking form, `SCN`
+      expect: Repaired too
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairBareColourOps > repairs the stroking form too"
+
+    - id: K7.4
+      scenario: A stream that sets its colours properly
+      expect: Nothing to do, reported as null, and the caller leaves the stream untouched. This is the common case -- an article captured by the "Read on reMarkable" extension had no bare operator at all
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairBareColourOps > reports nothing to do for a stream that sets its colours properly"
+
+    - id: K7.5
+      scenario: A pattern colour, whose operand is a name and not a number
+      expect: Left alone. The name in the fixture carries no digit on purpose -- with `/P0` the operand ends in one, so a check that only ever looked for a number passed this test while repairing every named pattern there is
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairBareColourOps > leaves a pattern colour alone, whose operand is a name and not a number"
+
+    - id: K7.6
+      scenario: A word inside a text string that merely ends in the operator's letters
+      expect: Not an operator. A content stream's text operands are arbitrary prose
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairBareColourOps > does not mistake a word that merely ends in the operator's letters"
+
+    - id: K7.7
+      scenario: A page whose content stream the device wrote, repaired before it is embedded elsewhere and its bytes copied as they stand
+      expect: Repaired, and it says it was
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairPagePaint > repairs the page a device wrote, and says it did"
+
+    - id: K7.8
+      scenario: A healthy page
+      expect: Byte for byte unchanged, and reported as untouched
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairPagePaint > leaves a healthy page byte for byte alone"
+
+    - id: K7.9
+      scenario: A page written as an array of content streams, both of them broken
+      expect: Both repaired. A device is free to split a page anywhere, including between the colour operator and the text it was meant to paint -- repairing only the first leaves the half nobody looked at white on white, and passed the whole suite
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairPagePaint > repairs every content stream of a page, not only the first"
+
+    - id: K7.10
+      scenario: A stream compressed by a filter this does not know
+      expect: Left as it is rather than guessed at. A page drawn in the colour the device meant is worth having; a page we corrupted trying is not
+      layer: unit
+      file: src/pdf-paint-repair.test.ts
+      test: "repairPagePaint > leaves a stream compressed by something it does not know"
+
+- feature: K8
+  name: The digest asks the book, once
+  code: src/digest-pipeline.ts
+  tier: free
+  scenarios:
+    - id: K8.1
+      scenario: A page whose text layer carries the damage, with a highlight over it
+      expect: The quote is re-spelled in the book's words and the run stays marked
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest with the fixture page's text layer > against the original book > re-spells a damaged quote in the book's own words, and keeps the run marked"
+
+    - id: K8.2
+      scenario: The `.epub` cannot be read
+      expect: The device's text is kept and one warning says so. A source failing is reported; losing the annotation is not on the table
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest with the fixture page's text layer > against the original book > keeps the device's text, and says so once, when the book cannot be read"
+
+    - id: K8.3
+      scenario: The book reads fine but this quote is not in it
+      expect: Kept as recorded, and no warning. The device's text is not known to be wrong, and a line per unmatched quote reports a problem the reader mostly does not have
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest with the fixture page's text layer > against the original book > keeps a quote it cannot find in the book, and stays quiet about it"
+
+    - id: K8.4
+      scenario: The render found "One -- The station"; the book's navigation names that chapter in full
+      expect: The heading is the book's name for it
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest with the fixture page's text layer > against the original book > names a section the way the book's navigation names it"
+
+    - id: K8.5
+      scenario: A digest that needs the book for both its headings and its quotes
+      expect: One read. The `.epub` is a megabyte-scale download and the two consumers must not each pay for it
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest with the fixture page's text layer > against the original book > reads the book once, for the headings and the quotes together"
+
+    - id: K8.6
+      scenario: A page of ink with no heading and no quote on it
+      expect: The book is never fetched. A megabyte nobody should download for a page the book has nothing to say about
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest with the fixture page's text layer > against the original book > does not fetch the book for a page with no heading and no quote on it"

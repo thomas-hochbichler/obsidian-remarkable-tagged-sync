@@ -107,6 +107,15 @@ describe("readEpubBook", () => {
 		expect(await readEpubBook(new TextEncoder().encode("not a zip at all"))).toBeNull();
 	});
 
+	it("reads the record at the end of the file, not a book's own bytes that look like one", async () => {
+		// The end-of-directory signature is four ordinary bytes, and a book is free to contain them. Only
+		// the last one in the file is the real record -- reading the first turns a perfectly good book
+		// into an unreadable one.
+		const zip = await makeZip([{ name: "a.xhtml", content: "<p>Alice found PK\u0005\u0006 written on the wall.</p>" }]);
+
+		expect((await readEpubBook(zip))?.text).toBe("Alice found PK\u0005\u0006 written on the wall.");
+	});
+
 	it("returns null for an archive with no XHTML in it", async () => {
 		expect(await readEpubBook(await makeZip([{ name: "mimetype", content: "application/epub+zip" }]))).toBeNull();
 	});
@@ -131,6 +140,18 @@ describe("readEpubBook", () => {
 			const zip = await makeZip([
 				{ name: "OEBPS/article.xhtml", content: "<p>Sonnet 5 is our best model.</p>" },
 				{ name: "OEBPS/nav.xhtml", content: `<html><body><nav epub:type="toc" id="toc"><ol><li><a href='article.xhtml'>Introducing Claude Sonnet 5</a></li></ol></nav></body></html>` },
+			]);
+
+			expect((await readEpubBook(zip))?.chapters).toEqual(["Introducing Claude Sonnet 5"]);
+		});
+
+		it("falls through to the navigation document when the .ncx names nothing", async () => {
+			// A book may carry both forms, and an empty `.ncx` is not an answer -- it is the older form
+			// left behind by a converter. Stopping at it costs the book every chapter name it has.
+			const zip = await makeZip([
+				{ name: "OEBPS/article.xhtml", content: "<p>Sonnet 5 is our best model.</p>" },
+				{ name: "OEBPS/toc.ncx", content: "<ncx><navMap></navMap></ncx>" },
+				{ name: "OEBPS/nav.xhtml", content: `<html><body><nav epub:type="toc"><ol><li><a href='article.xhtml'>Introducing Claude Sonnet 5</a></li></ol></nav></body></html>` },
 			]);
 
 			expect((await readEpubBook(zip))?.chapters).toEqual(["Introducing Claude Sonnet 5"]);

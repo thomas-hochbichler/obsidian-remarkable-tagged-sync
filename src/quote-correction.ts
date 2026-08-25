@@ -166,7 +166,6 @@ function locate(quote: string, source: string): Alignment | null {
  * the old spelling would mark the wrong words, which is worse than the wrong letter it set out to fix.
  */
 export function correctQuote(sentence: string, marked: string[], source: string): { sentence: string; marked: string[] } | null {
-	if (sentence.trim().length === 0) return null;
 	const alignment = locate(sentence, source);
 	if (!alignment) return null;
 

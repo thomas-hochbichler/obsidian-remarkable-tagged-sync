@@ -71,15 +71,6 @@ src/auto-sync.test.ts :: isIntervalSyncDue > is due when there is no recorded la
 src/auto-sync.test.ts :: isIntervalSyncDue > is not due when less than the interval has elapsed
 src/auto-sync.test.ts :: isMeteredProvider > is false for Apple Vision
 src/auto-sync.test.ts :: isMeteredProvider > is false for a backend this build does not have
-src/chapter-names.test.ts :: chapterName > completes the heading the render cut short
-src/chapter-names.test.ts :: chapterName > has nothing to say about a heading that is empty
-src/chapter-names.test.ts :: chapterName > keeps a heading that names no chapter in particular
-src/chapter-names.test.ts :: chapterName > keeps a heading the navigation does not name at all
-src/chapter-names.test.ts :: chapterName > keeps every heading when the book has no navigation
-src/chapter-names.test.ts :: chapterName > reads the same heading through the punctuation a layout engine changed
-src/chapter-names.test.ts :: chapterName > recognises a heading the conversion to a PDF damaged
-src/chapter-names.test.ts :: chapterName > still reads a damaged numeral as the chapter it fits best
-src/chapter-names.test.ts :: chapterName > tells the chapter apart from the one whose number merely starts the same
 src/diagnostics.test.ts :: buildDiagnostics > carries every fact a bug report otherwise has to be asked for
 src/diagnostics.test.ts :: buildDiagnostics > includes the raw last error, which is often the whole diagnosis
 src/diagnostics.test.ts :: buildDiagnostics > says Vision has not run here rather than printing a null revision
@@ -179,12 +170,6 @@ src/digest-pipeline.test.ts :: buildDigest sections across pages > orders a head
 src/digest-pipeline.test.ts :: buildDigest sections across pages > renders no section at all for a document without headings
 src/digest-pipeline.test.ts :: buildDigest sections across pages > takes a heading on the entry's own page when the entry sits below it
 src/digest-pipeline.test.ts :: buildDigest sections across pages > takes the section from reading order, not from what sits higher on a two-column page
-src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > does not fetch the book for a page with no heading and no quote on it
-src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > keeps a quote it cannot find in the book, and stays quiet about it
-src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > keeps the device's text, and says so once, when the book cannot be read
-src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > names a section the way the book's navigation names it
-src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > re-spells a damaged quote in the book's own words, and keeps the run marked
-src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > against the original book > reads the book once, for the headings and the quotes together
 src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > derives the line height from the lower quartile of the baseline gaps, not from their mode
 src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > gives every note the place its handwriting sits, whatever the real Vision output was
 src/digest-pipeline.test.ts :: buildDigest with the fixture page's text layer > makes no OCR call at all when margin notes are off
@@ -200,15 +185,6 @@ src/digest-pipeline.test.ts :: typed text as the document > anchors a margin not
 src/digest-pipeline.test.ts :: typed text as the document > places a note's region on the page the renderer actually writes, which grows with the text
 src/digest-pipeline.test.ts :: typed text as the document > quotes the typed text a highlight covers, out of the scene and not out of a PDF
 src/digest-pipeline.test.ts :: typed text as the document > says nothing about a PDF's text layer, because there is no PDF
-src/epub-text.test.ts :: readEpubBook > decodes the entities a book's punctuation is written with
-src/epub-text.test.ts :: readEpubBook > keeps the word boundary an inline tag stands for, and drops script and style whole
-src/epub-text.test.ts :: readEpubBook > reads the prose out of every XHTML document, stored or deflated
-src/epub-text.test.ts :: readEpubBook > returns null for an archive with no XHTML in it
-src/epub-text.test.ts :: readEpubBook > returns null for bytes that are not a ZIP
-src/epub-text.test.ts :: readEpubBook > the navigation > reads an EPUB 2 book's chapter names off its .ncx
-src/epub-text.test.ts :: readEpubBook > the navigation > reads an EPUB 3 book's chapter names off its navigation document
-src/epub-text.test.ts :: readEpubBook > the navigation > reports no chapters for a book that carries no navigation
-src/epub-text.test.ts :: readEpubBook > the navigation > takes only the table of contents, not every list of links in the book
 src/explain-error.test.ts :: explainError > blames the one-time code when connecting, whatever the cloud said
 src/explain-error.test.ts :: explainError > explains an unexpected answer as a possible service change
 src/explain-error.test.ts :: explainError > names a network failure first, in either context
@@ -601,7 +577,6 @@ src/openai-compat-ocr-backend.test.ts :: the server's own refusal > lets the not
 src/openai-compat-ocr-backend.test.ts :: the server's own refusal > passes the server's message and status through to the report
 src/openai-compat-ocr-backend.test.ts :: the server's own refusal > reads the message out of a server that sends a bare string
 src/openai-compat-ocr-backend.test.ts :: the server's own refusal > says nothing beyond the status when the body carries no message
-src/page-hash.test.ts :: getDocumentFiles > finds the original .epub a book was rendered from, and reports none for a document without one
 src/page-hash.test.ts :: getDocumentFiles > ignores non-.rm subfiles (content/metadata)
 src/page-hash.test.ts :: getDocumentFiles > keys a page's pictures by file name, and keeps the entry id it takes to fetch one
 src/page-hash.test.ts :: getDocumentFiles > maps each page's .rm entry to its content-addressed hash
@@ -615,15 +590,6 @@ src/page-rasterizer.test.ts :: rasterizePage > falls back to the reMarkable devi
 src/page-rasterizer.test.ts :: rasterizePage > grows the bitmap by the padding on all four sides, carrying the ink along with it
 src/page-rasterizer.test.ts :: rasterizePage > keeps a highlighter stroke at its size setting, where its true width would black out the line
 src/page-rasterizer.test.ts :: rasterizePage > keeps ink left of the page midline, where scene x is negative
-src/pdf-paint-repair.test.ts :: repairBareColourOps > does not mistake a word that merely ends in the operator's letters
-src/pdf-paint-repair.test.ts :: repairBareColourOps > gives black to a colour operator the device left empty
-src/pdf-paint-repair.test.ts :: repairBareColourOps > leaves a pattern colour alone, whose operand is a name and not a number
-src/pdf-paint-repair.test.ts :: repairBareColourOps > leaves the page's real colours alone
-src/pdf-paint-repair.test.ts :: repairBareColourOps > repairs the stroking form too
-src/pdf-paint-repair.test.ts :: repairBareColourOps > reports nothing to do for a stream that sets its colours properly
-src/pdf-paint-repair.test.ts :: repairPagePaint > leaves a healthy page byte for byte alone
-src/pdf-paint-repair.test.ts :: repairPagePaint > leaves a stream compressed by something it does not know
-src/pdf-paint-repair.test.ts :: repairPagePaint > repairs the page a device wrote, and says it did
 src/pdf-renderer.test.ts :: renderAnnotatedPdf > degrades an out-of-range source index to an annotations-only page instead of failing
 src/pdf-renderer.test.ts :: renderAnnotatedPdf > draws text highlights under the ink that annotates them
 src/pdf-renderer.test.ts :: renderAnnotatedPdf > draws the annotation strokes over the page
@@ -754,15 +720,6 @@ src/png-encoder.test.ts :: encodeGrayscalePng > round-trips pixel data through a
 src/png-encoder.test.ts :: encodeGrayscalePng > writes a valid PNG signature and IHDR for a small image
 src/png-encoder.test.ts :: encodeInkPng > writes an indexed image whose palette is one grey and whose alpha is the inverted pixel value
 src/png-encoder.test.ts :: encodeInkPng > writes the same pixel bytes as the grayscale form, so a crop costs no more than it did
-src/quote-correction.test.ts :: correctQuote > carries several runs of one sentence across
-src/quote-correction.test.ts :: correctQuote > finds a quote that appears late in a long book, and only the right one
-src/quote-correction.test.ts :: correctQuote > leaves everything alone when a marked run is not inside the sentence
-src/quote-correction.test.ts :: correctQuote > matches across the typographic punctuation a device and a book disagree on
-src/quote-correction.test.ts :: correctQuote > moves the highlighted run onto the corrected wording
-src/quote-correction.test.ts :: correctQuote > restores the letters the device's conversion lost
-src/quote-correction.test.ts :: correctQuote > returns null for an empty quote rather than matching the start of the book
-src/quote-correction.test.ts :: correctQuote > returns null when the quote is not in this book
-src/quote-correction.test.ts :: correctQuote > returns null when too much of the quote is damaged to trust a match
 src/remarkable-auth.test.ts :: RemarkableAuth > connects by registering the code and persisting the device token
 src/remarkable-auth.test.ts :: RemarkableAuth > disconnects by clearing the stored device token
 src/remarkable-auth.test.ts :: RemarkableAuth > is connected once a device token is stored
@@ -876,7 +833,6 @@ src/sync-engine.test.ts :: runSync > PDF-backed documents > composites every pag
 src/sync-engine.test.ts :: runSync > PDF-backed documents > composites the source page with its annotation, and OCRs the handwriting, for a page-level tag
 src/sync-engine.test.ts :: runSync > PDF-backed documents > draws a page inserted on the device on a blank sheet, not on the source page it displaced
 src/sync-engine.test.ts :: runSync > PDF-backed documents > skips OCR for a PDF whose pages carry no handwritten annotations
-src/sync-engine.test.ts :: runSync > PDF-backed documents > treats a tagged EPUB as PDF-backed: the book the device rendered, with its annotations
 src/sync-engine.test.ts :: runSync > annotation digest > adds the notes when the setting is turned on, and takes them away again
 src/sync-engine.test.ts :: runSync > annotation digest > gives a PDF-backed note a digest instead of a transcript
 src/sync-engine.test.ts :: runSync > annotation digest > gives a notebook whose text was typed a digest, not a transcript of its own text
