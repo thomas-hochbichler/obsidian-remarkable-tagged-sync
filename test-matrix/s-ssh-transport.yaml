@@ -74,7 +74,7 @@
 
     - id: S2.4
       scenario: '`<page>-metadata.json` inside the folder -- a v5 page''s layer names, which any reMarkable 1 or 2 with pre-3.0 notebooks still has on disk'
-      expect: 'Not part of the document. The allowlist applies inside the folder as well as beside it: the `.tree` check found zero records of this file, so counting it moves that document''s hash away from the cloud''s and re-renders it on every transport switch. A Paper Pro is v6 only and has none, so the live run could not have shown this'
+      expect: 'Not part of the document. Counting it moves that document''s hash away from the cloud''s and re-renders and re-transcribes it on every transport switch. The `.tree` check that first claimed this proves nothing on its own -- it was measured on a Paper Pro, which is v6 only, so its zero records are what an absent file looks like either way. What does prove it is the cloud''s own membership list, read over 116 documents: 13 of them predate software 3.0 and carry 39 handwritten pages between them, and not one lists a `-metadata.json`. The same pass checked every file the cloud hashes in that account -- 747 of them -- against this rule, and found no disagreement. Still unproven: that a reMarkable 1 or 2 has the file on disk in the first place, which needs the device'
       layer: unit
       file: src/device-api.test.ts
       test: "which files belong to a document > leaves out a v5 page's layer names, which the cloud does not hash either"
