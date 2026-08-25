@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { entitlementOf, NO_LICENCE, type LicenceState } from "./licence-state";
-import { parseHashLine, parseStatLine, DeviceUnreachableError, HostKeyMismatchError } from "./ssh-connection";
+import { hashRequest, parseHashLine, parseStatLine, DeviceUnreachableError, HostKeyMismatchError } from "./ssh-connection";
 import { PersistentHashCache } from "./ssh-hash-cache";
 import {
 	allowedTransports,
@@ -110,6 +110,34 @@ describe("reading what the device's shell wrote", () => {
 	it("ignores a line that is not one of those", () => {
 		expect(parseStatLine("")).toBeNull();
 		expect(parseHashLine("sha256sum: can't open 'x'")).toBeNull();
+	});
+});
+
+describe("asking the device to hash files", () => {
+	const paths = Array.from({ length: 400 }, (_, index) => `${"a".repeat(36)}/${index}.rm`);
+
+	it("sends the paths on standard input, not on the command line", () => {
+		const request = hashRequest("/x", paths);
+
+		// Both obvious alternatives were tried against a real tablet and both failed there: its BusyBox
+		// rejects `xargs -0`, and passing the paths as arguments resets the connection at around 19 kB
+		// -- which presents as "unable to exec" and says nothing about length.
+		expect(request.command.length).toBeLessThan(120);
+		expect(request.command).not.toContain(paths[0]);
+		expect(request.stdin.split("\n").filter(Boolean)).toHaveLength(400);
+	});
+
+	it("keeps the name exactly as it was written", () => {
+		// `IFS=` and `-r`: no trimming, no backslash escapes. A page name is a uuid, but a name the
+		// shell had quietly edited would hash a file that does not exist and report it as missing.
+		expect(hashRequest("/x", []).command).toContain("while IFS= read -r p");
+		expect(hashRequest("/x", ["a b.rm"]).command).toContain('sha256sum "$p"');
+	});
+
+	it("refuses a name with a newline in it rather than hashing the wrong file", () => {
+		// It cannot happen -- every name under xochitl is a uuid -- which is what makes the check cheap.
+		// If that ever stops being true this says so instead of silently returning someone else's hash.
+		expect(() => hashRequest("/x", ["fine.rm", "two\nlines.rm"])).toThrow("newline");
 	});
 });
 

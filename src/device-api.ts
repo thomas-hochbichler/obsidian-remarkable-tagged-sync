@@ -14,6 +14,7 @@
 
 import type { Content, Entry, RawEntry } from "rmapi-js";
 import type { SyncApi } from "./sync-engine";
+import { mapWithConcurrency } from "./vision-ocr-backend";
 import { hashBytes, indexEntry, type Sync15Entry } from "./sync15-hash";
 
 /** One file on the device, as a listing reports it. Paths are relative to the xochitl directory. */
@@ -55,6 +56,19 @@ export interface HashCache {
 export const NO_HASH_CACHE: HashCache = { get: () => undefined, set: () => {} };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * How many small files to read from the device at once, while listing the account.
+ *
+ * Measured on a real tablet over Wi-Fi, 116 documents, two small files each: **78 s** one after
+ * another, 7.4 s at six in flight, 4.3 s at sixteen, **1.0 s at thirty-two**. The listing is almost
+ * entirely waiting, so the number is about how many round trips overlap and nothing else.
+ *
+ * It bounds only this listing, where every file is a few kilobytes of JSON. Pages and PDFs are
+ * fetched by the engine, under its own limit, so nothing here can put a large file in flight
+ * thirty-two times over.
+ */
+const DEVICE_READ_PARALLELISM = 32;
 
 /**
  * Sibling files that are part of what the cloud hashes for a document.
@@ -264,14 +278,18 @@ export async function openDeviceApi(
 
 	return {
 		async listItems(): Promise<Entry[]> {
-			const items: Entry[] = [];
-			for (const [docId, document] of documents) {
+			// Two small files per document, and on a real account that is a couple of hundred reads. Done
+			// one after another they cost a round trip each and the listing took **78 seconds** on a
+			// tablet over Wi-Fi -- before a sync had looked at anything. SFTP is happy to have many
+			// requests in flight, so they go in parallel; the limit matches the engine's own for opening
+			// documents, which is what the connection is sized for anyway.
+			const listed = await mapWithConcurrency<[string, DeviceDocument], Entry | null>([...documents], DEVICE_READ_PARALLELISM, async ([docId, document]) => {
 				const metadataFile = document.files.find((file) => file.path === `${docId}.metadata`);
-				if (metadataFile === undefined) continue;
+				if (metadataFile === undefined) return null;
 				const metadata = parseJson(await readMember(docId, metadataFile.path)) as DeviceMetadata;
 				// The device keeps a tombstone until the next cloud sync clears it; the cloud listing has
 				// no such row, so honouring it is what keeps the two transports listing the same account.
-				if (metadata.deleted === true) continue;
+				if (metadata.deleted === true) return null;
 
 				const common = {
 					id: docId,
@@ -284,20 +302,18 @@ export async function openDeviceApi(
 				if (metadata.type === "CollectionType") {
 					// A folder's tags are what makes a tagged folder route everything inside it, so they are
 					// read here from the same place a document's are.
-					const tags = await folderTags(docId);
-					items.push({ ...common, type: "CollectionType", tags });
-					continue;
+					return { ...common, type: "CollectionType" as const, tags: await folderTags(docId) };
 				}
 				const content = (await contentOf(docId)) as { fileType?: string; tags?: Entry["tags"] };
-				items.push({
+				return {
 					...common,
-					type: "DocumentType",
+					type: "DocumentType" as const,
 					fileType: (content.fileType as "epub" | "pdf" | "notebook") ?? "notebook",
 					lastOpened: metadata.lastOpened ?? "0",
 					tags: content.tags ?? [],
-				});
-			}
-			return items;
+				};
+			});
+			return listed.filter((item) => item !== null);
 		},
 
 		getContent: (id: string): Promise<Content> => contentOf(id),

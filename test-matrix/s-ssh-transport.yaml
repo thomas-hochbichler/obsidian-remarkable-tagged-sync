@@ -423,6 +423,32 @@
       file: src/device-api.test.ts
       test: "what one session costs > reads a document's content once however often the engine opens it"
 
+- feature: S13
+  name: Asking a real tablet to hash files
+  code: src/ssh-connection.ts
+  tier: pro
+  scenarios:
+    - id: S13.1
+      scenario: A batch of several hundred paths
+      expect: 'The paths travel on standard input and the command stays short. Both obvious alternatives were tried against a real device and both failed there: its BusyBox rejects `xargs -0`, and passing paths as arguments resets the connection at around 19 kB — which surfaces as "unable to exec" and says nothing about length'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "asking the device to hash files > sends the paths on standard input, not on the command line"
+
+    - id: S13.2
+      scenario: A name with a space in it
+      expect: '`IFS=`, `-r` and a quoted expansion, so the shell hands the name on exactly as written. A name the shell had quietly edited would hash a file that does not exist and be reported as missing'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "asking the device to hash files > keeps the name exactly as it was written"
+
+    - id: S13.3
+      scenario: A name containing a newline
+      expect: "Refused. It cannot occur — every name under xochitl is a uuid — which is what makes the check cheap: if that stops being true this says so instead of silently returning another file's hash"
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "asking the device to hash files > refuses a name with a newline in it rather than hashing the wrong file"
+
 - feature: S9
   name: Reading a tablet that is still writing
   code: src/device-api.ts

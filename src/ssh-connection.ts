@@ -102,13 +102,43 @@ export function parseHashLine(line: string): { path: string; hash: string } | nu
 }
 
 /**
- * How many paths go into one `xargs` batch.
+ * How many paths go into one request.
  *
- * Not an arg-length limit -- paths are fed through stdin precisely so there is none -- but the step
- * the progress report moves in: the first run of a full library is thousands of files, and one
- * unbroken command would say nothing at all until every one of them was done.
+ * Purely the step the progress report moves in -- the paths travel on standard input, so there is no
+ * limit to work around. A first run is thousands of files and one unbroken command would say nothing
+ * at all until every one of them was done.
  */
 const HASH_BATCH = 250;
+
+/**
+ * Hashing a batch: a short, constant command, with the paths arriving on standard input.
+ *
+ * Both obvious alternatives were tried against a real tablet and both failed there, which is the
+ * whole reason this is a named, tested function rather than a template string at the call site:
+ *
+ * - **`xargs -0`** -- this device's BusyBox rejects `-0` outright.
+ * - **Passing the paths as arguments.** Works for a small batch and then stops: dropbear resets the
+ *   connection on a command line around 19 kB, which is only a few hundred of these paths, and it
+ *   presents as "unable to exec" rather than as anything about length.
+ *
+ * Standard input has neither limit, so the batch size below is free to be about progress alone. The
+ * loop forks `sha256sum` per file, which sounds wasteful and is not: the whole library -- 747 files,
+ * 185 MB -- measured 7.7 s on the device, where the reading dominates and the forks vanish into it.
+ *
+ * A newline in a path would end a line early and hash the wrong file, so it is refused. It cannot
+ * occur -- every name under `xochitl/` is a uuid -- which is what makes the check cheap: if that
+ * ever stops being true this says so instead of quietly returning a hash for something else.
+ */
+export function hashRequest(directory: string, paths: readonly string[]): { command: string; stdin: string } {
+	for (const path of paths) {
+		if (path.includes("\n")) throw new Error(`Cannot read a file whose name contains a newline: ${path}`);
+	}
+	return {
+		// `IFS=` and `-r` keep the name exactly as it was written: no trimming, no backslash escapes.
+		command: `cd ${directory} && while IFS= read -r p; do sha256sum "$p"; done`,
+		stdin: paths.map((path) => `${path}\n`).join(""),
+	};
+}
 
 export async function connectToDevice(credentials: SshCredentials): Promise<DeviceConnection> {
 	if (!Platform.isDesktop) throw new Error("Tagged Sync: connecting to a device directly is desktop-only");
@@ -202,9 +232,8 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 			for (let start = 0; start < paths.length; start += HASH_BATCH) {
 				onProgress?.(start, paths.length);
 				const batch = paths.slice(start, start + HASH_BATCH);
-				// NUL-separated through stdin: no quoting to get wrong, and no command-line length limit
-				// to hit on an account with thousands of pages.
-				const out = await exec(`cd ${XOCHITL_DIR} && xargs -0 sha256sum`, `${batch.join("\0")}\0`);
+				const request = hashRequest(XOCHITL_DIR, batch);
+				const out = await exec(request.command, request.stdin);
 				for (const line of out.split("\n")) {
 					const parsed = parseHashLine(line);
 					if (parsed !== null) hashes.set(parsed.path, parsed.hash);
