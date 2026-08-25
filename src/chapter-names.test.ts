@@ -50,6 +50,16 @@ describe("chapterName", () => {
 
 	it("has nothing to say about a heading that is empty", () => {
 		expect(chapterName("   ", ALICE)).toBeNull();
+		// And in a book with a single chapter, where no tie refuses it first: a blank is two edits from
+		// any name at all, which is exactly the budget a two-character heading gets.
+		expect(chapterName(" ", ["Introduction"])).toBeNull();
+	});
+
+	it("measures the damage against the heading, not against the name it would be given", () => {
+		// Three of ten characters wrong is not a heading anyone can recognise, however long the chapter
+		// name is. Taking the budget from the name -- 31 characters, so four edits -- accepts it.
+		expect(chapterName("CHAPTXR l,", ["CHAPTER I. Down the Rabbit-Hole"])).toBeNull();
+		expect(chapterName("CHAPTXR I.", ["CHAPTER I. Down the Rabbit-Hole"])).toBe("CHAPTER I. Down the Rabbit-Hole");
 	});
 
 	it("reads the same heading through the punctuation a layout engine changed", () => {

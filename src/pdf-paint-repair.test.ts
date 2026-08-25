@@ -25,7 +25,9 @@ describe("repairBareColourOps", () => {
 	});
 
 	it("leaves a pattern colour alone, whose operand is a name and not a number", () => {
-		expect(repairBareColourOps("/Pattern cs\n/P0 scn\n0 0 10 10 re\nf\n")).toBeNull();
+		// The name carries no digit on purpose. With `/P0` the operand ends in one, so a check that only
+		// ever looked for a number would pass this test while repairing every named pattern there is.
+		expect(repairBareColourOps("/Pattern cs\n/Hatch scn\n0 0 10 10 re\nf\n")).toBeNull();
 	});
 
 	it("does not mistake a word that merely ends in the operator's letters", () => {
@@ -60,6 +62,19 @@ describe("repairPagePaint", () => {
 
 		expect(await repairPagePaint(doc, doc.getPage(0))).toBe(false);
 		expect(contentOf(doc, ref)).toBe(healthy);
+	});
+
+	it("repairs every content stream of a page, not only the first", async () => {
+		// A page may be written as an array of streams, and the device is free to split one anywhere --
+		// including between the colour operator and the text it was meant to paint.
+		const doc = await PDFDocument.create();
+		const page = doc.addPage([100, 100]);
+		const first = doc.context.register(PDFRawStream.of(doc.context.obj({}), new TextEncoder().encode(DEVICE_PAGE)));
+		const second = doc.context.register(PDFRawStream.of(doc.context.obj({}), new TextEncoder().encode(DEVICE_PAGE)));
+		page.node.set(PDFName.of("Contents"), doc.context.obj([first, second]));
+
+		expect(await repairPagePaint(doc, doc.getPage(0))).toBe(true);
+		expect(contentOf(doc, second)).toContain("0 0 0 scn");
 	});
 
 	it("leaves a stream compressed by something it does not know", async () => {
