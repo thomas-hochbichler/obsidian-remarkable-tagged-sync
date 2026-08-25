@@ -185,6 +185,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					// Offered here because it is the action every failure message asks for -- a refused key
 					// and a changed host key both end in "pair again", and both leave the address correct.
 					button.setButtonText("Re-pair").onClick(async () => {
+						// Carried into the form below rather than left in `data.ssh` alone, where it would be
+						// stored and invisible: somebody re-pairing a tablet they reached over Wi-Fi is doing
+						// it *because* it stopped answering, and making them go and find the address again at
+						// that moment is the worst time to ask. The cable's address is the field's default
+						// anyway, so there is nothing to carry for a cable-paired device.
+						this.deviceHost = ssh.host === USB_HOST ? "" : ssh.host;
 						this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
 						await this.plugin.saveData(this.plugin.data);
 						this.display();
@@ -194,6 +200,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					button.setButtonText("Forget device").onClick(async () => {
 						// The key stays on the tablet: removing it would need the password again, and this
 						// button is what somebody presses *because* they can no longer reach the device.
+						this.deviceHost = "";
 						this.plugin.data.ssh = { ...DEFAULT_SSH_SETTINGS };
 						this.plugin.data.sshHashes = {};
 						await this.plugin.saveData(this.plugin.data);
@@ -213,9 +220,15 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				}),
 			)
 			.addText((text) =>
-				text.setPlaceholder(`Address (default ${USB_HOST})`).onChange((value) => {
-					this.deviceHost = value.trim();
-				}),
+				text
+					.setPlaceholder(`Address (default ${USB_HOST})`)
+					// So the field on screen and what a "Pair" would actually use are never two different
+					// things -- which is what an address carried in from "Re-pair", or left over from an
+					// attempt that failed, would otherwise be.
+					.setValue(this.deviceHost)
+					.onChange((value) => {
+						this.deviceHost = value.trim();
+					}),
 			)
 			.addText((text) => {
 				text.inputEl.type = "password";
@@ -268,10 +281,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				report: (step) => new Notice(step),
 			});
 			this.plugin.data.ssh = settings;
-			this.devicePassword = "";
 			await this.plugin.saveData(this.plugin.data);
 			new Notice(`Paired with your reMarkable at ${settings.host}.`);
-			this.display();
 		} catch (error) {
 			if (error instanceof PairingRefusedError) {
 				new Notice(error.message);
@@ -287,6 +298,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				return;
 			}
 			new Notice(this.plugin.transportError(error, "connect"), 15_000);
+		} finally {
+			// However it went. A root password kept in a settings tab after the attempt that needed it is
+			// one nobody asked to store, and the redraw is what makes the emptied field visible rather
+			// than leaving the box on screen full of a password the next "Pair" would no longer send.
+			this.devicePassword = "";
+			this.display();
 		}
 	}
 

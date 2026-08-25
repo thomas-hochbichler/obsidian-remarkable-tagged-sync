@@ -241,6 +241,9 @@ describe("the shape of the settings screen", () => {
 		const { tab } = await tabWith({ deviceToken: "d" });
 
 		expect(draw(tab).filter((item) => item.kind === "heading").map((item) => item.name)).toEqual([
+			// First, because with two sources the question before every other one is which source this
+			// vault is reading from.
+			"Where your notes come from",
 			"Tag routing",
 			"Vault output",
 			"Transcription",
@@ -259,19 +262,19 @@ describe("the shape of the settings screen", () => {
 	});
 });
 
-describe("the reMarkable connection", () => {
+describe("the reMarkable cloud account", () => {
 	it("takes a one-time code, says where to get it, and re-draws as connected", async () => {
 		const { plugin, tab } = await tabWith();
 		const drawn = draw(tab);
 
-		expect(row(drawn, "reMarkable connection").desc).toBe("Not connected.");
+		expect(row(drawn, "reMarkable cloud account").desc).toBe("Not connected.");
 		expect(row(drawn, "Connect").desc).toContain("https://my.remarkable.com/device/browser/connect");
 		field(drawn, "Connect").type("ABCDEFGH");
 		await buttons(drawn, "Connect")[0].click();
 		await settle();
 
 		expect(takeNotices()).toEqual(["Connected to reMarkable."]);
-		expect(row(draw(tab), "reMarkable connection").desc).toBe("Connected.");
+		expect(row(draw(tab), "reMarkable cloud account").desc).toBe("Connected.");
 		expect(plugin.data.deviceToken).toBe("device-token");
 	});
 
@@ -297,11 +300,152 @@ describe("the reMarkable connection", () => {
 	it("disconnects and re-draws, without touching what is already in the vault", async () => {
 		const { plugin, tab } = await tabWith({ deviceToken: "d", tagFolderMap: { "#work": "Work" } });
 
-		await buttons(draw(tab), "reMarkable connection")[0].click();
+		await buttons(draw(tab), "reMarkable cloud account")[0].click();
 		await settle();
 
-		expect(row(draw(tab), "reMarkable connection").desc).toBe("Not connected.");
+		expect(row(draw(tab), "reMarkable cloud account").desc).toBe("Not connected.");
 		expect(plugin.data.tagFolderMap).toEqual({ "#work": "Work" });
+	});
+});
+
+// The second transport's whole entrance is these rows: which source, what to try when it is not
+// there, and the pairing that makes the second one possible at all. Everything *below* them is
+// verified in `ssh-transport.test.ts` and `ssh-pairing.test.ts`, and every **wire** was not -- a
+// picker that offers a Pro source to a free user and saves it, a fallback left pointing at the
+// primary, a "Forget device" that forgets the key and keeps the hashes. Same argument as the file
+// header makes for the backend dropdown.
+describe("where your notes come from", () => {
+	const PAIRED = { host: "192.168.178.76", port: 22, privateKey: "PRIVATE-KEY", hostKeyFingerprint: "SHA256:abcd" };
+	const BOUGHT_PRO = {
+		licence: {
+			...NO_LICENCE,
+			key: "TS-XXXX-1234",
+			activationId: "act-1",
+			validatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+		},
+	};
+
+	/** Every option on a picker, in draw order: its value, its label, and whether it can be chosen. */
+	function options(drawn: Drawn[], name: string): { id: string; text: string; disabled: boolean }[] {
+		return dropdown(drawn, name).selectEl.options.map((option) => ({
+			id: option.value,
+			text: option.text,
+			disabled: option.disabled,
+		}));
+	}
+
+	it("shows a free user the direct connection, locked, rather than hiding what Pro buys", async () => {
+		// Hidden, it is a feature nobody can decide to buy. Shown and enabled, Obsidian would save the
+		// choice the moment it is made and the vault would point at a source it may not use.
+		const { tab } = await tabWith({ deviceToken: "d" });
+
+		expect(options(draw(tab), "Sync from")).toEqual([
+			{ id: "cloud", text: "reMarkable cloud", disabled: false },
+			{ id: "ssh", text: "Your reMarkable directly (USB or Wi-Fi) (Pro)", disabled: true },
+		]);
+	});
+
+	it("unlocks it for a licence, and drops the (Pro) from its name", async () => {
+		const { tab } = await tabWith({ deviceToken: "d", ...BOUGHT_PRO });
+
+		expect(options(draw(tab), "Sync from")).toContainEqual({
+			id: "ssh",
+			text: "Your reMarkable directly (USB or Wi-Fi)",
+			disabled: false,
+		});
+	});
+
+	it("offers as a fallback only the source that is not already the primary", async () => {
+		// A fallback to where the run just failed is a second attempt dressed as a recovery, and it
+		// would double every timeout. The picker cannot offer it, so nobody can configure it.
+		const cloudFirst = await tabWith({ deviceToken: "d", ...BOUGHT_PRO });
+		expect(options(draw(cloudFirst.tab), "If that is not reachable").map((o) => o.id)).toEqual(["none", "ssh"]);
+
+		const deviceFirst = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ...BOUGHT_PRO });
+		expect(options(draw(deviceFirst.tab), "If that is not reachable").map((o) => o.id)).toEqual(["none", "cloud"]);
+	});
+
+	it("clears a fallback the new primary has just become, and saves both", async () => {
+		const { plugin, tab } = await tabWith({ deviceToken: "d", fallbackTransport: "ssh", ...BOUGHT_PRO });
+
+		dropdown(draw(tab), "Sync from").pick("ssh");
+		await settle();
+
+		expect(plugin.data.primaryTransport).toBe("ssh");
+		expect(plugin.data.fallbackTransport).toBeNull();
+		expect(plugin.saves).toHaveLength(1);
+	});
+
+	it("keeps the pairing row out of the way of a vault that syncs from the cloud alone", async () => {
+		const cloudOnly = await tabWith({ deviceToken: "d", ...BOUGHT_PRO });
+		expect(rowNames(draw(cloudOnly.tab))).not.toContain("Connect device");
+
+		// As a fallback it is just as much a source, and just as much in need of a paired device.
+		const asFallback = await tabWith({ deviceToken: "d", fallbackTransport: "ssh", ...BOUGHT_PRO });
+		expect(rowNames(draw(asFallback.tab))).toContain("Connect device");
+	});
+
+	it("names the tablet it is paired with, because a vault may have two sources", async () => {
+		const { tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ssh: PAIRED, ...BOUGHT_PRO });
+
+		expect(row(draw(tab), "Your reMarkable").desc).toBe("Paired with root@192.168.178.76 · host key pinned");
+	});
+
+	it("carries the address into a re-pair, which is asked for when the tablet stopped answering", async () => {
+		// The button is pressed *because* the device is unreachable. Making somebody go and find the
+		// Wi-Fi address again at that exact moment is the worst time to ask for it.
+		const { plugin, tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ssh: PAIRED, ...BOUGHT_PRO });
+
+		await buttons(draw(tab), "Your reMarkable")[0].click();
+		await settle();
+
+		const drawn = draw(tab);
+		expect((plugin.data.ssh as { privateKey: string | null }).privateKey).toBeNull();
+		expect(field(drawn, "Connect device").value).toBe("192.168.178.76");
+	});
+
+	it("forgets the address and the hashes along with the device, but leaves the key on the tablet", async () => {
+		const { plugin, tab } = await tabWith({
+			deviceToken: "d",
+			primaryTransport: "ssh",
+			ssh: PAIRED,
+			sshHashes: { "a.rm|1|2": "hash" },
+			...BOUGHT_PRO,
+		});
+
+		await buttons(draw(tab), "Your reMarkable")[1].click();
+		await settle();
+
+		expect(plugin.data.ssh).toEqual({ host: "10.11.99.1", port: 22, privateKey: null, hostKeyFingerprint: null });
+		expect(plugin.data.sshHashes).toEqual({});
+		// Nothing left in the form either: the next pairing is a different tablet as far as this vault
+		// is concerned, and an address carried over from the last one is a wrong answer already typed in.
+		expect(field(draw(tab), "Connect device").value).toBe("");
+	});
+
+	it("drops the root password however the attempt ended", async () => {
+		// It buys one connection and is never stored -- which has to hold for the attempt that failed
+		// as much as for the one that worked. `Platform.isDesktop` is false here, so pairing refuses
+		// before it reaches a socket: the failing path, which is the one that used to keep it.
+		const { plugin, tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ...BOUGHT_PRO });
+		const drawn = draw(tab);
+		row(drawn, "Connect device").setting.texts[1].type("hunter2");
+
+		await buttons(drawn, "Connect device")[0].click();
+		await settle();
+
+		expect((plugin.data.ssh as { privateKey: string | null }).privateKey).toBeNull();
+		expect(row(draw(tab), "Connect device").setting.texts[1].value).toBe("");
+	});
+
+	it("says out loud, before anyone types a password, what Developer Mode costs", async () => {
+		// The one fact no competitor states in-product, and the worst possible one to meet halfway
+		// through pairing. Folded away, but present and reachable without an attempt first.
+		const { tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ...BOUGHT_PRO });
+		const help = draw(tab).filter((item) => item.kind === "note" && item.cls.includes("tagged-sync-pairing-help"));
+
+		expect(help).toHaveLength(1);
+		expect(help[0].kind === "note" && help[0].text).toContain("erases the tablet");
 	});
 });
 

@@ -547,3 +547,78 @@
       layer: unit
       file: src/ssh-pairing.test.ts
       test: "pairing, end to end > stops when the device's key is not trusted"
+
+- feature: S14
+  name: Choosing a source, and pairing the tablet, in the settings tab
+  code: src/settings-tab.ts
+  tier: pro
+  scenarios:
+    - id: S14.1
+      scenario: A free user opens the source picker
+      expect: 'The direct connection is listed, labelled `(Pro)` and disabled. Hidden, it is a feature nobody can decide to buy; enabled, Obsidian saves the choice the moment it is made and the vault points at a source it may not use'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > shows a free user the direct connection, locked, rather than hiding what Pro buys"
+
+    - id: S14.2
+      scenario: A licensed user opens it
+      expect: The same entry is selectable and drops the `(Pro)` from its name
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > unlocks it for a licence, and drops the (Pro) from its name"
+
+    - id: S14.3
+      scenario: The fallback picker, for either primary
+      expect: Only the other source is offered. A fallback to where the run just failed is a second attempt dressed as a recovery, and it would double every timeout
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > offers as a fallback only the source that is not already the primary"
+
+    - id: S14.4
+      scenario: The primary is switched to the source that is currently the fallback
+      expect: The fallback is cleared and both are saved in one write, so the pair can never name the same source twice
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > clears a fallback the new primary has just become, and saves both"
+
+    - id: S14.5
+      scenario: A vault that syncs from the cloud alone, and one that keeps the device as its fallback
+      expect: The pairing row appears for the second and not the first. As a fallback the device is just as much a source, and just as much in need of a paired tablet
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > keeps the pairing row out of the way of a vault that syncs from the cloud alone"
+
+    - id: S14.6
+      scenario: A paired device
+      expect: The row names the address and says the host key is pinned, rather than only "Connected." -- with two sources configured, which one a row is about is the thing a reader needs
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > names the tablet it is paired with, because a vault may have two sources"
+
+    - id: S14.7
+      scenario: '"Re-pair" on a device that was paired over Wi-Fi'
+      expect: The key and the pinned host key are dropped and the address is carried into the form. That button is pressed *because* the tablet stopped answering, which is the worst moment to make somebody go and find its address again
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > carries the address into a re-pair, which is asked for when the tablet stopped answering"
+
+    - id: S14.8
+      scenario: '"Forget device"'
+      expect: 'Address, key, pinned host key and the whole hash cache go. The key stays on the tablet: removing it would need the password again, and this is the button somebody presses because they can no longer reach the device'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > forgets the address and the hashes along with the device, but leaves the key on the tablet"
+
+    - id: S14.9
+      scenario: A pairing attempt that fails
+      expect: The root password is dropped and the field redrawn empty. It buys one connection and is never stored, which has to hold for the attempt that failed as much as for the one that worked
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > drops the root password however the attempt ended"
+
+    - id: S14.10
+      scenario: The pairing row, before anything has been typed
+      expect: The Developer Mode factory reset is on screen, folded away. It is the one fact no competitor states in-product and the worst possible one to meet halfway through pairing
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "where your notes come from > says out loud, before anyone types a password, what Developer Mode costs"

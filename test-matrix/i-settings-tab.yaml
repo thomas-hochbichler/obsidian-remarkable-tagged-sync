@@ -16,14 +16,14 @@
       expect: The device token is stored, the tab says so in one notice, and it re-draws as connected without being reopened
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the reMarkable connection > takes a one-time code, says where to get it, and re-draws as connected"
+      test: "the reMarkable cloud account > takes a one-time code, says where to get it, and re-draws as connected"
 
     - id: A1.2
       scenario: reMarkable refuses the code -- expired, or a typo
       expect: The sentence is `explainError`'s, not the cloud's; the raw status never reaches the screen and the field stays there to be corrected
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the reMarkable connection > explains a refused code instead of repeating the cloud's words, and leaves the field there"
+      test: "the reMarkable cloud account > explains a refused code instead of repeating the cloud's words, and leaves the field there"
 
 - feature: A2
   name: Connection status shown
@@ -35,7 +35,7 @@
       expect: '"Connected." and "Not connected." -- the row states which it is instead of leaving the user guessing'
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the reMarkable connection > disconnects and re-draws, without touching what is already in the vault"
+      test: "the reMarkable cloud account > disconnects and re-draws, without touching what is already in the vault"
 
 - feature: A3
   name: Disconnect
@@ -47,7 +47,7 @@
       expect: The token is gone and the connect form is back, while the mappings stay -- disconnecting is not a reset
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the reMarkable connection > disconnects and re-draws, without touching what is already in the vault"
+      test: "the reMarkable cloud account > disconnects and re-draws, without touching what is already in the vault"
 
 - feature: A7
   name: Tag routing hidden until connected
