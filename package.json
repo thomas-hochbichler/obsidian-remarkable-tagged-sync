@@ -15,7 +15,7 @@
     "inspect:doc": "esbuild scripts/inspect-doc.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-inspect-doc.cjs && node /tmp/tagged-sync-inspect-doc.cjs",
     "test:coverage": "vitest run --coverage",
     "matrix": "node scripts/matrix-link.mjs",
-    "nightly:ocr": "esbuild test-support/nightly/ocr-main.ts --bundle --platform=node --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-ocr.cjs && node /tmp/tagged-sync-nightly-ocr.cjs",
+    "nightly:ocr": "esbuild test-support/nightly/ocr-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-ocr.cjs && node /tmp/tagged-sync-nightly-ocr.cjs",
     "nightly:perf": "esbuild test-support/nightly/perf-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-perf.cjs && node /tmp/tagged-sync-nightly-perf.cjs",
     "ocr:curve": "node scripts/ocr-curve.mjs",
     "goldens:update": "esbuild test-support/golden/update-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-goldens-update.cjs && node /tmp/tagged-sync-goldens-update.cjs",
