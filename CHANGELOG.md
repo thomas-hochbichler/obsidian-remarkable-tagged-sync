@@ -38,6 +38,29 @@ workflow publishes the section as the GitHub release body. See
   Background syncs check whether the tablet is awake before starting, so a sleeping device is a
   quiet skip rather than a failed sync every night. Desktop only, like the rest of the plugin.
 
+- **A book you read as an EPUB now syncs as the book.** Tagging one used to give you your
+  handwriting on blank pages, with none of the text you wrote it on underneath — the plugin took
+  anything that was not a PDF for a notebook.
+
+  A reMarkable has no EPUB reader. It converts the book to a PDF on the tablet and reads that, and
+  keeps that render beside the book. Tagged Sync now reads the same one, so a passage you swiped
+  the marker across comes through as the quote it is, a sentence you underlined or circled with the
+  pen does too, and each sits under the chapter it belongs to — named the way the book's own table
+  of contents names it. The wording is taken from the EPUB itself rather than from the device's
+  rendering of it, so a quote is the book's text and not an approximation of it.
+
+  **One thing to know before you start, and it is the device's doing rather than the plugin's.**
+  Changing a book's font, its size or its margins makes the reMarkable lay the whole book out again
+  and rebuild that PDF. Measured on a real tablet: every mark survived — and every mark kept its
+  exact position while the text moved out from under it, so a highlight that had covered one
+  sentence covered a different one afterwards. Tagged Sync mirrors what the device holds and cannot
+  put those marks back. What it does is say so: a book whose page count has moved since its notes
+  were written is reported after the sync, and so is a note that comes back with fewer highlights
+  than it had. Nothing else would flag it, because a quote you never marked reads exactly like one
+  you did. So settle the font before you start annotating.
+
+  Books already synced the old way are re-rendered on the next sync; nothing changes on your tablet.
+
 ### Changed
 
 - **You now enter the transcription model yourself; the plugin no longer suggests one.** Every
