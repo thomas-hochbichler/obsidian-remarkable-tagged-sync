@@ -137,7 +137,8 @@ Two limits, so you know them up front:
 ## Install and set up
 
 You need Obsidian **1.5.7 or later** on **desktop** (Windows, macOS, or Linux — Obsidian on mobile
-is unsupported), and a reMarkable account with cloud sync switched on.
+is unsupported), and a reMarkable account with cloud sync switched on — unless you sync
+[straight from the tablet](#syncing-without-the-cloud), which needs no account at all.
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Tagged Sync for
    reMarkable**, and click **Install**, then **Enable**.
@@ -199,6 +200,13 @@ deleted as soon as it has been read.
 Four **cloud** backends are also available, with [Tagged Sync Pro](#tagged-sync-pro). Those are the
 one case where a page image leaves your device: you choose them, they use your own API key, and they
 are off unless you turn them on.
+
+**Apple Vision aside, you name the model yourself.** The Model field starts empty on every backend,
+local and cloud alike, and the plugin suggests nothing: a model id shipped inside a plugin goes stale
+the day its provider retires it, and the error you then get reads like a problem with your API key
+rather than what it is. Take a current name from your provider's own list. Until you do, settings
+says so, and a sync reports *"No model is set for this OCR backend"* rather than quietly producing
+no transcript.
 
 On **Windows and Linux** nothing transcribes by default: notes sync with the handwriting render
 embedded and no `## Transcript` text, until you set up one of the other two local backends. You can
@@ -291,7 +299,7 @@ strokes. The plugin treats it accordingly:
 Everything described above is free and stays free. Two things are paid:
 
 - **Cloud transcription** — Anthropic, OpenAI, Google and OpenRouter as transcription backends, with
-  your own API key.
+  your own API key and [a model you name yourself](#handwriting-transcription).
 - **Unlimited tag mappings.** The free version syncs one tag; Pro syncs as many as you like.
 - **[Syncing without the reMarkable cloud](#syncing-without-the-cloud)** — the plugin reads your
   tablet directly over USB or Wi-Fi.
@@ -374,6 +382,11 @@ and the plugin says all of this in the settings, before it asks you for anything
 Pairing asks for the **root password**, which is on the tablet under *Settings → Help → About →
 Copyrights and licenses*, at the end of the GPLv3 section. It is used for that one
 connection, to install a key for your vault, and is never stored.
+
+**The tablet identifies itself, and the plugin remembers it.** Before anything is installed, pairing
+shows you the tablet's own key fingerprint and pins it to this vault. If a device at that address
+ever answers with a different key, the sync stops and says so, instead of handing your notes to
+whatever picked the address up.
 
 Whether you need the **cable** depends on the firmware. Newer reMarkables keep Wi-Fi access
 switched off until something turns it on, so the first pairing goes over USB; the plugin then

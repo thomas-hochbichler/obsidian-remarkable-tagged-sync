@@ -54,6 +54,19 @@ workflow publishes the section as the GitHub release body. See
   say so per sync rather than failing quietly. If you had already typed a model, nothing changes for
   you.
 
+- **The status bar now shows how much of the sync is left, not where it is in a list.** It used to
+  read something like `17/74`, which was the position in a walk through every document on your
+  reMarkable — and most of those are skipped without any work at all, so the number raced through
+  sixty in seconds and then sat still for minutes on the one page that was actually being
+  transcribed. Neither number said anything about how long anything would take.
+
+  A sync now counts the pages it is really going to work on before it starts, and fills a bar
+  against that count, next to the name of the notebook it is on. The count is honest: a notebook
+  filed under three tags is written three times, and the bar says so. While the work is being
+  measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
+  so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
+  the full name, the tag, the page within the notebook, and what is happening to it right now.
+
 ### Fixed
 
 - **A folder you configured is now matched to the folder your vault really holds.** On Windows and
@@ -151,21 +164,6 @@ workflow publishes the section as the GitHub release body. See
   first did not help: it reappeared where it used to be. A sync now moves such a note into the
   folder the tag currently points at, keeping the note itself and the links to it intact, and a note
   you deleted is recreated in the new folder rather than the old one.
-
-### Changed
-
-- **The status bar now shows how much of the sync is left, not where it is in a list.** It used to
-  read something like `17/74`, which was the position in a walk through every document on your
-  reMarkable — and most of those are skipped without any work at all, so the number raced through
-  sixty in seconds and then sat still for minutes on the one page that was actually being
-  transcribed. Neither number said anything about how long anything would take.
-
-  A sync now counts the pages it is really going to work on before it starts, and fills a bar
-  against that count, next to the name of the notebook it is on. The count is honest: a notebook
-  filed under three tags is written three times, and the bar says so. While the work is being
-  measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
-  so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
-  the full name, the tag, the page within the notebook, and what is happening to it right now.
 
 ## [1.4.4] - 2026-08-23
 
