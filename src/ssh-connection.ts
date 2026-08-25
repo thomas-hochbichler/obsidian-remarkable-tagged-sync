@@ -205,8 +205,14 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 			});
 		});
 
+	// Closed here on refusal, because this is the last point at which anybody can: the caller only
+	// gets something to `close()` once the whole connection is built, so a rejection past this line
+	// would leave an authenticated socket open with nothing holding a reference to it.
 	const sftp = await new Promise<import("ssh2").SFTPWrapper>((resolve, reject) => {
 		client.sftp((error, wrapper) => (error ? reject(error) : resolve(wrapper)));
+	}).catch((error: unknown) => {
+		client.end();
+		throw error;
 	});
 
 	return {
