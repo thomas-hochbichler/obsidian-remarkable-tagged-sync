@@ -1444,6 +1444,89 @@ describe("runSync", () => {
 		expect(result.index.rows[notebookSyncKey("doc-broken", "sync")]).toBeUndefined();
 	});
 
+	describe("documents in the trash", () => {
+		// Deleting on the device only re-parents into `trash`; the tombstone the transports hide
+		// (`deleted: true`) is only written by the next cloud sync. Until then the document still
+		// enumerates, with its own tags and page tags intact in its `.content`.
+		it("writes nothing for a page-tagged document sitting in the trash", async () => {
+			const entry = documentEntry({ parent: "trash" });
+			const content = documentContent({
+				cPages: cPages(["page-a"]),
+				pageTags: [{ name: "sync", timestamp: 0, pageId: "page-a" }],
+			});
+			const api = fakeApi({
+				rootHash: "root-a",
+				entries: [entry],
+				contentById: { "doc-1": content },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+			const deps = baseDeps(api, { sync: "Target" });
+
+			const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			expect(result.notesWritten).toBe(0);
+			expect(deps.noteStore.write).not.toHaveBeenCalled();
+			expect(result.index.rows).toEqual({});
+		});
+
+		it("orphans the rows of a document moved to the trash, instead of resurrecting its hand-deleted note", async () => {
+			const entry = documentEntry({ hash: "hash-1", parent: "trash", tags: [{ name: "sync", timestamp: 0 }] });
+			const content = documentContent({ cPages: cPages(["page-a"]) });
+			const api = fakeApi({
+				rootHash: "root-b", // the trash move changed the account
+				entries: [entry],
+				contentById: { "doc-1": content },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+			const previousIndex: SyncIndex = {
+				rootHash: "root-a",
+				mappings: mappingFingerprint({ sync: "Target" }),
+				rows: {
+					[notebookSyncKey("doc-1", "sync")]: {
+						syncKey: notebookSyncKey("doc-1", "sync"),
+						docId: "doc-1",
+						pageId: null,
+						tag: "sync",
+						entryHash: "hash-1",
+						pageHash: null,
+						notePath: "Target/Notebook.md",
+						status: "active",
+						syncedAt: "2025-12-01T00:00:00.000Z",
+						renderVersion: RENDER_VERSION,
+					},
+				},
+			};
+			const deps = baseDeps(api, { sync: "Target" });
+			// The note is deliberately NOT in the store: the user already deleted it by hand. Without
+			// the trash check, self-heal would write it right back.
+
+			const result = await runSync(deps, previousIndex);
+
+			expect(result.notesWritten).toBe(0);
+			expect(deps.noteStore.write).not.toHaveBeenCalled();
+			expect(result.index.rows[notebookSyncKey("doc-1", "sync")].status).toBe("orphaned");
+		});
+
+		it("treats a document inside a trashed folder as deleted too", async () => {
+			// Trashing a folder re-parents only the folder; its children still point at it.
+			const folder = collectionEntry({ id: "folder-1", parent: "trash" });
+			const entry = documentEntry({ parent: "folder-1", tags: [{ name: "sync", timestamp: 0 }] });
+			const content = documentContent({ cPages: cPages(["page-a"]) });
+			const api = fakeApi({
+				rootHash: "root-a",
+				entries: [folder, entry],
+				contentById: { "doc-1": content },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+			});
+			const deps = baseDeps(api, { sync: "Target" });
+
+			const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			expect(result.notesWritten).toBe(0);
+			expect(deps.noteStore.write).not.toHaveBeenCalled();
+		});
+	});
+
 	describe("edge cases (ticket 11)", () => {
 		it("orphans a note whose document disappears from the enumeration, without deleting it", async () => {
 			const entry = documentEntry({ tags: [{ name: "sync", timestamp: 0 }] });

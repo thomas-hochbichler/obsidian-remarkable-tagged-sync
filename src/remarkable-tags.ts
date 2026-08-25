@@ -43,6 +43,24 @@ export function inheritedFolderTagNames(item: Entry, itemsById: ReadonlyMap<stri
 	return [...names];
 }
 
+/**
+ * Whether an item sits in the device's trash -- directly, or inside a folder that was trashed.
+ *
+ * Deleting on the device only re-parents into `trash`; the tombstone (`deleted: true`) comes later,
+ * with the next cloud sync. Until then the document still enumerates with its own tags and page
+ * tags intact, so without this check "delete on the device" would not stop its notes from syncing.
+ */
+export function isInTrash(item: Entry, itemsById: ReadonlyMap<string, Entry>): boolean {
+	const visited = new Set<string>();
+	let parentId = item.parent;
+	while (parentId && !visited.has(parentId)) {
+		if (parentId === "trash") return true;
+		visited.add(parentId);
+		parentId = itemsById.get(parentId)?.parent;
+	}
+	return false;
+}
+
 export async function enumerateNotebookTags(api: EnumerateApi): Promise<NotebookTags[]> {
 	const items = await api.listItems();
 	const itemsById = new Map(items.map((item) => [item.id, item]));

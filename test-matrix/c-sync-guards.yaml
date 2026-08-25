@@ -221,3 +221,30 @@
       layer: unit
       file: src/sync-guards.test.ts
       test: "preflightRun > refuses in the words of whichever source the vault syncs from"
+
+
+- feature: C25
+  name: Deleting on the device stops the sync
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C25.1
+      scenario: A page-tagged document sits in the device's trash -- deleted in the UI, tombstone not yet written
+      expect: No note is written and no row is created. The trash move only re-parents; the page tags are still in the `.content`, and honouring them keeps re-creating notes the user just deleted
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > documents in the trash > writes nothing for a page-tagged document sitting in the trash"
+
+    - id: C25.2
+      scenario: A synced document is moved to the trash after its note was hand-deleted from the vault
+      expect: The row orphans and the note stays deleted -- self-heal must not resurrect a note whose document the user just threw away
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > documents in the trash > orphans the rows of a document moved to the trash, instead of resurrecting its hand-deleted note"
+
+    - id: C25.3
+      scenario: A tagged document inside a folder that was trashed as a whole
+      expect: Treated as deleted too -- trashing a folder re-parents only the folder, its children still point at it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > documents in the trash > treats a document inside a trashed folder as deleted too"
