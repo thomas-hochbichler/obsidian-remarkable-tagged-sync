@@ -7,18 +7,18 @@ numbers, writes notes, merges the bump through a pull request, and pushes a tag.
 in CI, in a fresh checkout, and published from there. That is the rule the pipeline exists to
 enforce.
 
-## The seven steps
+## The eight steps
 
 | # | Step | Command / file |
 |---|---|---|
 | 1 | Branch off `main` | `git switch -c release/1.0.6` |
 | 2 | Bump **four** files to the new version | `manifest.json`, `package.json`, `package-lock.json`, `versions.json` |
-| 2b | `npm run freeze-state` and commit the result | rewrites `test-fixtures/legacy-state/` in place |
 | 3 | Rename the changelog heading | `## [Unreleased]` → `## [1.0.6] - 2026-08-01` |
 | 4 | Commit and push the branch | `git commit -am "Release 1.0.6" && git push -u origin release/1.0.6` |
 | 5 | Open the PR, wait for green, squash-merge | `gh pr create --title "Release 1.0.6"`, then `gh pr merge --squash --delete-branch` |
 | 6 | Tag the **merged** commit on `main` and push the tag | `git switch main && git pull --ff-only && git tag 1.0.6 && git push origin 1.0.6` |
 | 7 | Wait for the release workflow | it builds, attests, publishes and uploads |
+| 8 | **After** the tag: `npm run freeze-state`, in a PR of its own — see the warning below | rewrites `test-fixtures/legacy-state/` in place |
 
 Details that matter:
 
@@ -35,12 +35,25 @@ Details that matter:
   caught it.
 - **`versions.json`** needs a new key `"1.0.6": "<minAppVersion>"`, and the value must equal
   `manifest.json`'s `minAppVersion`.
-- **`npm run freeze-state`** rewrites the reference vault in `test-fixtures/legacy-state/` with what
-  *this* build leaves behind after a first sync. `src/legacy-upgrade.test.ts` then runs the next
-  version's engine over a vault the last shipped release actually wrote — which is the only way to
-  test an upgrade against something nobody invented. It overwrites in place, so retiring the
-  previous state is not a step: git holds it in history, where a frozen artefact belongs. The
-  version gate fails the release if this is skipped.
+- **`npm run freeze-state` belongs *after* the tag, not in the release PR** — step 8, and the reason
+  is worth knowing before anyone moves it back. It rewrites the reference vault in
+  `test-fixtures/legacy-state/` with what the current build leaves behind after a first sync, and
+  `src/legacy-upgrade.test.ts` runs today's engine over it — the only way to test an upgrade against
+  a vault nobody invented. That test needs the state to be **stale**: a `renderVersion` below
+  today's is what forces the sync past its early return, so a state frozen from the very build being
+  released asserts nothing, and five of its ten tests say so out loud. Right after the tag the tree
+  is byte-identical to what shipped, which is exactly what "produced by the previous release" means,
+  and the state then goes stale by itself as the renderer moves during the next cycle.
+  It overwrites in place, so retiring the previous state is not a step: git holds it in history,
+  where a frozen artefact belongs. The version gate fails the *next* release if this is skipped, and
+  names the version it expected.
+- ⚠️ **The step-8 PR itself goes red today, and that is a known open defect, not your mistake.** The
+  freshly frozen state is not stale yet — it carries the renderer version of the build that just
+  shipped — so the five tests that rest on staleness fail until the renderer moves during the next
+  cycle. Do not "fix" it by skipping the freeze or by bumping `RENDER_VERSION`, which would re-render
+  every user's vault for nothing. The repair is to make those four scenarios force the sync path
+  themselves; it is written up, with the table of what each one needs, in
+  `.scratch/test-strategy/issues/23-freeze-state-pr-goes-red.md`.
 - **The tag has no `v` prefix.** `1.0.6`, never `v1.0.6`. The store resolves the tag from the
   manifest version, so a `v`-prefixed tag is simply not found.
 - **Step 5 is not optional.** The version gate runs in CI too, so a wrong number fails on the PR
@@ -58,7 +71,7 @@ after a failure.
 | 3 | version consistency across the four files, and the frozen state | ✅ | ✅ **plus tag == version** |
 | 4 | changelog | ✅ weaker — see below | ✅ hard |
 | 5 | lint ratchet | ✅ | ✅ |
-| 6 | `tsc -noEmit` + 211 tests | ✅ | ✅ |
+| 6 | `tsc -noEmit` + 1805 tests | ✅ | ✅ |
 | 7 | build | ✅ | ✅ |
 | 8 | bundle scan | ✅ | ✅ |
 | 9 | attest `main.js`, `manifest.json`, `styles.css` | — | ✅ |
@@ -177,7 +190,7 @@ body can still be edited.
 npm install
 npm run dev     # watch build
 npm run build   # production build + typecheck
-npm test        # 211 tests
+npm test        # 1805 tests
 ```
 
 Then reload Obsidian to pick up the rebuilt plugin. The branch workflow, the test vault, and

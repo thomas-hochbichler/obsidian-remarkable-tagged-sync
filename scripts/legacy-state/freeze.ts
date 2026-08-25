@@ -2,16 +2,22 @@
 //
 //   npm run freeze-state
 //
-// Run once per release, in the release PR, so the repo always carries a state produced by the last
-// shipped version. `versionGate` in `release-checks.mjs` fails the release if it was skipped.
+// Run once per release, **immediately after the tag** and in a PR of its own (docs/RELEASING.md
+// step 8), so the repo always carries a state produced by the last shipped version. At that moment
+// the tree is byte-identical to what shipped. `versionGate` in `release-checks.mjs` fails the *next*
+// release if it was skipped, and names the version it expected.
+//
+// It used to run inside the release PR, and that could never work: the state would then come from
+// the build being released rather than the one before it. Cutting 1.5.0 proved it -- freeze and five
+// tests go red, skip it and the gate goes red.
 //
 // **It overwrites in place.** Retirement is not a separate step: only one state ever exists, and git
 // holds the previous one in history, where a frozen artefact belongs.
 //
-// **Running it outside a release is destructive, and the *test* is what catches that**, not the
-// version gate: the gate compares `meta.version` with `manifest.json`, and mid-cycle those still
-// agree. `src/legacy-upgrade.test.ts` asserts `meta.renderVersion < RENDER_VERSION`, which a fresh
-// freeze cannot satisfy -- five of its ten tests go red, including one that says so in as many words.
+// **Running it at any other time is destructive, and the *test* is what catches that**, not the
+// version gate: `src/legacy-upgrade.test.ts` asserts `meta.renderVersion < RENDER_VERSION`, which a
+// freeze from the current tree cannot satisfy -- five of its ten tests go red, including one that
+// says so in as many words. Right after a tag that is the point; at any other time it is the alarm.
 //
 // It never touches Obsidian. `runSync` takes a `SyncDeps` bag and every reach for the vault is behind
 // `NoteStore`/`AttachmentStore`, so an fs-backed pair of those is the whole harness -- which is also
