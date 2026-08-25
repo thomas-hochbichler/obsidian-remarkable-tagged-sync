@@ -127,7 +127,19 @@ export class SshTransport implements Transport {
 			return await connectToDevice(credentials);
 		} catch (error) {
 			if (!(error instanceof DeviceUnreachableError) || settings.host === USB_HOST) throw error;
-			return await connectToDevice({ ...credentials, host: USB_HOST });
+			try {
+				return await connectToDevice({ ...credentials, host: USB_HOST });
+			} catch (overCable) {
+				// Both silent: report it as the one thing that happened, naming the address the user
+				// actually configured. Letting the cable's own error through would tell them nothing
+				// answered at an address they never chose.
+				if (overCable instanceof DeviceUnreachableError) {
+					throw new DeviceUnreachableError([settings.host, USB_HOST], overCable.reason);
+				}
+				// Anything else over the cable -- a refused key, a host key that changed -- is more
+				// informative than the silence over Wi-Fi, so it surfaces as itself.
+				throw overCable;
+			}
 		}
 	}
 
@@ -139,9 +151,17 @@ export class SshTransport implements Transport {
 			);
 		}
 		if (error instanceof DeviceUnreachableError) {
-			return `${error.message} Wake it up, or connect it by cable, and try again.`;
+			return error.hosts.length > 1
+				? `${error.message} Wake it up, or plug it in, and try again.`
+				: `${error.message} Wake it up, or connect it by cable, and try again.`;
 		}
 		const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+		if (/cannot parse privatekey|unsupported key format|no key/i.test(text)) {
+			// The stored key itself is unreadable, which `data.json` travelling between machines through
+			// Obsidian Sync makes possible. Without this it fell through to the sentence about reMarkable
+			// changing their service, which sends the user to look at entirely the wrong thing.
+			return "The key this vault stored for your reMarkable cannot be read. Pair again in Settings to make a new one.";
+		}
 		if (/all configured authentication methods failed|authentication|permission denied/i.test(text)) {
 			return (
 				"Your reMarkable refused the key this vault stored. A factory reset (including the one that " +

@@ -43,11 +43,25 @@ export interface SshCredentials {
 
 /** The device did not answer -- asleep, unplugged, or on another network. Fails over; see `Transport`. */
 export class DeviceUnreachableError extends Error {
+	/**
+	 * Every address that was tried, in order, because the transport quietly tries the cable when the
+	 * configured address goes quiet. Naming only the last one told a user whose tablet sat on
+	 * `192.168.178.76` that there was "no answer at 10.11.99.1" -- an address they never entered and
+	 * cannot place, which reads as the plugin talking about someone else's device.
+	 */
+	readonly hosts: readonly string[];
+
 	constructor(
-		host: string,
+		hosts: string | readonly string[],
 		readonly reason: unknown,
 	) {
-		super(`No answer from your reMarkable at ${host}.`);
+		const tried = typeof hosts === "string" ? [hosts] : hosts;
+		super(
+			tried.length > 1
+				? `No answer from your reMarkable — not at ${tried[0]}, and not over the USB cable.`
+				: `No answer from your reMarkable at ${tried[0]}.`,
+		);
+		this.hosts = tried;
 		this.name = "DeviceUnreachableError";
 	}
 }

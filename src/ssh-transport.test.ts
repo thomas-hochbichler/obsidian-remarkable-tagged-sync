@@ -53,10 +53,30 @@ describe("what the user is told when the device says no", () => {
 		expect(sentence).toContain("cable");
 	});
 
+	it("names the address the user configured, not the cable it quietly tried as well", () => {
+		// The transport falls back to the USB address on its own. Reporting only the last attempt told
+		// someone whose tablet sits on 192.168.178.76 that nothing answered at 10.11.99.1 -- an address
+		// they never entered and cannot place, which reads as the plugin describing someone else's device.
+		const both = transport().explainError(new DeviceUnreachableError(["192.168.1.9", "10.11.99.1"], null), "sync") ?? "";
+
+		expect(both).toContain("192.168.1.9");
+		expect(both).toContain("USB cable");
+		expect(both).not.toContain("10.11.99.1");
+	});
+
 	it("explains a changed host key as a reset rather than as a failure to connect", () => {
 		const sentence = transport().explainError(new HostKeyMismatchError("SHA256:zzz"), "sync") ?? "";
 
 		expect(sentence).toContain("factory reset");
+		expect(sentence).toContain("Pair again");
+	});
+
+	it("says a stored key that cannot be read is a key to replace, not a reMarkable problem", () => {
+		// `data.json` travels between machines through Obsidian Sync, so an unreadable key is possible.
+		// It used to fall through to the sentence about reMarkable changing their service, which sends
+		// the user to look at entirely the wrong thing.
+		const sentence = transport().explainError(new Error("Cannot parse privateKey: Unsupported key format"), "sync") ?? "";
+
 		expect(sentence).toContain("Pair again");
 	});
 

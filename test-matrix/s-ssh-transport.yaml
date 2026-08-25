@@ -220,12 +220,26 @@
       file: src/ssh-transport.test.ts
       test: "what the user is told when the device says no > tells someone whose tablet is asleep to wake it, and offers the cable"
 
+    - id: S5.12
+      scenario: Wi-Fi is off and the cable is not plugged in either, so both attempts fail
+      expect: 'The address the user configured is what they are told about. The transport tries the USB address on its own, and reporting only that last attempt told someone whose tablet sits on their Wi-Fi that nothing answered at 10.11.99.1 — an address they never entered and cannot place'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what the user is told when the device says no > names the address the user configured, not the cable it quietly tried as well"
+
     - id: S5.5
       scenario: The device presents a different host key than the vault pinned
       expect: Explained as a factory reset or a different device, with re-pairing as the action -- not as a failure to connect, which would send the user to check their Wi-Fi
       layer: unit
       file: src/ssh-transport.test.ts
       test: "what the user is told when the device says no > explains a changed host key as a reset rather than as a failure to connect"
+
+    - id: S5.13
+      scenario: The key stored in `data.json` is unreadable — the file travels between machines through Obsidian Sync
+      expect: Told to pair again, which is the fix. It used to fall through to the sentence about reMarkable changing their service, sending the user to look at entirely the wrong thing
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "what the user is told when the device says no > says a stored key that cannot be read is a key to replace, not a reMarkable problem"
 
     - id: S5.6
       scenario: The stored key is refused
