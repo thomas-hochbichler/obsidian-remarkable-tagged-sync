@@ -6,9 +6,13 @@
 # something we made up, and the assumption about what old looked like is the same assumption that was
 # already wrong once -- issue #10 was an ancient notebook nobody had expected.
 #
-# So the state in `test-fixtures/legacy-state/` was produced by **tag 1.4.2's own build**, replayed
-# against the fake device beside it. `npm run freeze-state` rewrites it once per release, and the
-# version gate fails the release if that is skipped.
+# So the state in `test-fixtures/legacy-state/` was produced by **a shipped release's own build**,
+# replayed against the fake device beside it. `npm run freeze-state` rewrites it once per release,
+# right after the tag, and the version gate fails the *next* release if that is skipped.
+#
+# What makes an upgrade do any work is the scenario's job, not the fixture's: an unchanged device, an
+# unchanged mapping and an unchanged renderer add up to an upgrade that really does nothing, and
+# `runSync` returns early on exactly that. Each row below names its own reason to run.
 #
 # Layer `vault`: a real temporary directory, a real filesystem, today's `runSync`.
 
@@ -19,10 +23,10 @@
   scenarios:
     - id: A8.20
       scenario: The frozen state is inspected before anything runs against it
-      expect: 'It was produced by an older release and is stale two ways -- `renderVersion` below today''s, and a routing fingerprint from before the last bump. Both matter: without them the plain upgrade run hits `runSync`''s early return and asserts nothing at all'
+      expect: 'It names the release that produced it, its renderer is no newer than today''s, and every row agrees with `meta.json` about which renderer wrote it. It is deliberately **not** asserted to be stale: the freeze runs right after a tag, so its renderer *is* today''s until the next bump -- demanding staleness here failed the freeze in the PR that ran it, and made every scenario below depend on when that happened (ticket 23). Each one now brings its own reason to run'
       layer: vault
       file: src/legacy-upgrade.test.ts
-      test: "the frozen state itself > was produced by the previous release, and is stale in the two ways that make it a test"
+      test: "the frozen state itself > was produced by a shipped release, and every row carries the renderer that wrote it"
 
     - id: A8.21
       scenario: The shape of the frozen vault
@@ -32,11 +36,11 @@
       test: "the frozen state itself > holds the three shapes duplication bugs live in"
 
     - id: A8.22
-      scenario: A user paragraph below the fence, and an unrelated note of their own, in a vault seven renderer versions old
-      expect: Both survive the re-render. The assertion resolves the note through its index row rather than through a fixed path, because a legitimate re-mapping moves it -- the naive form crashes
+      scenario: A user paragraph below the fence, and an unrelated note of their own, in a vault whose renderer has moved on
+      expect: Both survive the re-render. The renderer bump is the scenario's own -- it is what makes an upgrade re-render anything, and stating it here is what keeps the test from depending on the fixture's age. The assertion resolves the note through its index row rather than through a fixed path, because a legitimate re-mapping moves it -- the naive form crashes
       layer: vault
       file: src/legacy-upgrade.test.ts
-      test: "upgrading a vault the last release wrote > keeps what the user wrote below the fence, across seven renderer versions"
+      test: "upgrading a vault the last release wrote > keeps what the user wrote below the fence when the renderer moves under it"
 
     - id: A8.23
       scenario: The user edited a note **inside** the managed block
@@ -60,15 +64,15 @@
       test: "upgrading a vault the last release wrote > leaves every row pointing at a file that exists, under the folder its tag maps to"
 
     - id: A8.26
-      scenario: The attachment after a re-render
-      expect: 'Same path, same embed, **different bytes** -- and that is not a change. `pdf-lib` stamps the wall clock into a compressed stream, so a hash assertion here would fail on every run. Stated in the test rather than assumed, so nobody adds one later'
+      scenario: The attachment after a re-render the renderer bump asked for
+      expect: 'Same path, same embed, and the file really was rewritten -- proved by putting bytes there that no render produces, not by comparing two renders. `pdf-lib` stamps the wall clock into a compressed stream, so a hash assertion would fail on every run; asserting the two renders *differ* is the same mistake reversed, and it went red the first time a state was frozen and tested within one second. The bytes are compared in neither direction'
       layer: vault
       file: src/legacy-upgrade.test.ts
       test: "upgrading a vault the last release wrote > keeps the attachment at its path, and never asserts its bytes"
 
     - id: A8.27
       scenario: The upgrade is run a second time
-      expect: Nothing left to do. A settled vault stays settled, which is what says the first run finished rather than merely stopped
+      expect: Nothing left to do. A settled vault stays settled, which is what says the first run finished rather than merely stopped. The first run is given a renderer bump to do, or both runs would find nothing and the test would pass on a vault nobody touched
       layer: vault
       file: src/legacy-upgrade.test.ts
       test: "upgrading a vault the last release wrote > finds nothing left to do on a second upgrade, which is what a settled vault looks like"
@@ -86,7 +90,7 @@
       test: "upgrading a vault the last release wrote > recreates a note the user deleted, and does not leave a second one beside it"
 
     - id: G7.2
-      scenario: An interrupted sync left a note on disk with no index row, and then the vault is upgraded
+      scenario: An interrupted sync left a note on disk with no index row, and then a renderer bump makes the next sync look at that document
       expect: 'The real duplicate -- `Reading List (read).md` written beside the file the sync would not clobber. Caught by the assertion that every fence-carrying file is the `notePath` of exactly one active row, which is the only formulation that separates this from G7.1. Its other half catches two rows writing to one path'
       layer: vault
       file: src/legacy-upgrade.test.ts

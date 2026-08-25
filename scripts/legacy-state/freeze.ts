@@ -14,10 +14,13 @@
 // **It overwrites in place.** Retirement is not a separate step: only one state ever exists, and git
 // holds the previous one in history, where a frozen artefact belongs.
 //
-// **Running it at any other time is destructive, and the *test* is what catches that**, not the
-// version gate: `src/legacy-upgrade.test.ts` asserts `meta.renderVersion < RENDER_VERSION`, which a
-// freeze from the current tree cannot satisfy -- five of its ten tests go red, including one that
-// says so in as many words. Right after a tag that is the point; at any other time it is the alarm.
+// **Running it at any other time is destructive, and this script is the only thing that can say so**
+// -- so it refuses unless `HEAD` carries the tag for `manifest.json`'s version. A state frozen
+// mid-cycle comes from a tree nobody ever shipped, which quietly voids the one property the whole
+// fixture exists for. Nothing downstream can see it: the version gate compares version *strings* and
+// the upgrade tests bring their own renderer bump since ticket 23, so both stay green on a state
+// that is a lie. `--anyway` overrides the refusal, for the case where a shipped build has to be
+// reproduced from a tree the tag does not point at any more.
 //
 // It never touches Obsidian. `runSync` takes a `SyncDeps` bag and every reach for the vault is behind
 // `NoteStore`/`AttachmentStore`, so an fs-backed pair of those is the whole harness -- which is also
@@ -90,7 +93,31 @@ function fsAttachmentStore(root: string): AttachmentStore {
 	};
 }
 
+/**
+ * Refuses a freeze from a tree that is not the one a release was tagged at (see the header). Checked
+ * before anything is deleted, because the previous state is only recoverable from git.
+ */
+async function requireTaggedTree(version: string): Promise<void> {
+	if (process.argv.includes("--anyway")) {
+		console.warn(`freezing from an untagged tree because --anyway was passed; the state will claim to be ${version}`);
+		return;
+	}
+	const { execFileSync } = await import("node:child_process");
+	// `--points-at HEAD` and not `git describe`: a tag on an ancestor is precisely the case to refuse.
+	const tags = execFileSync("git", ["tag", "--points-at", "HEAD"], { encoding: "utf8" }).split("\n");
+	if (tags.includes(version)) return;
+	throw new Error(
+		`HEAD does not carry the tag ${version}, so this tree is not what release ${version} shipped.\n` +
+			"Freeze right after tagging (docs/RELEASING.md step 8), or pass --anyway if you know the tree matches.",
+	);
+}
+
 async function main(): Promise<void> {
+	const manifestVersion = (
+		JSON.parse((await import("node:fs")).readFileSync(join(process.cwd(), "manifest.json"), "utf8")) as { version: string }
+	).version;
+	await requireTaggedTree(manifestVersion);
+
 	rmSync(STATE_DIR, { recursive: true, force: true });
 	mkdirSync(VAULT, { recursive: true });
 
@@ -110,10 +137,6 @@ async function main(): Promise<void> {
 	// run reports success over nothing. Refusing an empty freeze is the only thing that catches it.
 	if (result.notesWritten === 0) throw new Error("freeze wrote no notes -- the fake device is mis-wired");
 	if (result.skipErrors.length > 0) throw new Error(`freeze had skips: ${result.skipErrors.join("; ")}`);
-
-	const manifest = JSON.parse((await import("node:fs")).readFileSync(join(process.cwd(), "manifest.json"), "utf8")) as {
-		version: string;
-	};
 
 	write(
 		DATA_JSON,
@@ -137,10 +160,10 @@ async function main(): Promise<void> {
 
 	write(
 		join(STATE_DIR, "meta.json"),
-		`${JSON.stringify({ version: manifest.version, renderVersion: RENDER_VERSION, rootHash: ROOT_HASH, producedAt: FROZEN_AT }, null, "\t")}\n`,
+		`${JSON.stringify({ version: manifestVersion, renderVersion: RENDER_VERSION, rootHash: ROOT_HASH, producedAt: FROZEN_AT }, null, "\t")}\n`,
 	);
 
-	console.log(`froze ${result.notesWritten} note(s) from ${manifest.version} (renderVersion ${RENDER_VERSION}) into test-fixtures/legacy-state`);
+	console.log(`froze ${result.notesWritten} note(s) from ${manifestVersion} (renderVersion ${RENDER_VERSION}) into test-fixtures/legacy-state`);
 }
 
 await main();
