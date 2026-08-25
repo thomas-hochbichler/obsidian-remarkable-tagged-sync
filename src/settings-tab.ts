@@ -11,6 +11,7 @@ import {
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
+import { confirmDialog } from "./confirm-modal";
 import { explainError } from "./explain-error";
 import { activateKey, deactivateHere } from "./licence-check";
 import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft } from "./licence-messages";
@@ -18,7 +19,10 @@ import { startTrial, withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
 import { defaultOcrBackend, hasAlternativeBackends, hasCloudBackends, hasOnDeviceBackends } from "./ocr-resolution";
 import { isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
-import { openSession } from "./remarkable-session";
+import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
+import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
+import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
+import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
@@ -67,6 +71,9 @@ const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
 export class TaggedSyncSettingTab extends PluginSettingTab {
 	private code = "";
 	private discoveredTags: string[] = [];
+	/** What the pairing row holds between keystrokes. The password is dropped the moment it is used. */
+	private deviceHost = "";
+	private devicePassword = "";
 
 	constructor(
 		app: App,
@@ -79,13 +86,237 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		const connected = this.plugin.auth.isConnected();
+		const connected = this.plugin.transport().status().connected;
+		this.renderSources(containerEl);
 
-		const connectionSetting = new Setting(containerEl)
-			.setName("reMarkable connection")
-			.setDesc(connected ? "Connected." : "Not connected.");
-
+		// Order follows how often a row is touched, not how it was built: what to sync is the setting a
+		// user comes back to, transcription is chosen roughly once, and the links at the end are read
+		// when something has already gone wrong.
 		if (connected) {
+			this.renderTagRouting(containerEl);
+		}
+		this.renderVaultOutput(containerEl);
+		this.renderOcrSettings(containerEl);
+		this.renderAutoSyncSettings(containerEl);
+		this.renderPro(containerEl);
+		this.renderActions(containerEl, connected);
+	}
+
+	/**
+	 * Where this vault reads from, and what it falls back to.
+	 *
+	 * Rendered above the cloud account rather than beside it, because with two sources the first
+	 * question is which one is in use -- and the row a free user sees here is the only place the
+	 * direct-device feature explains itself before it is bought.
+	 */
+	private renderSources(containerEl: HTMLElement): void {
+		const data = this.plugin.data;
+		const allowed = allowedTransports(this.plugin.entitlement());
+		const label = (id: TransportId): string => (id === "ssh" ? "Your reMarkable directly (USB or Wi-Fi)" : "reMarkable cloud");
+
+		// A heading, like every other group on this page. Without one these rows read as loose settings
+		// belonging to nothing, and once there are two sources and a fallback that is three or four of
+		// them in a row -- which is exactly where the eye needs somewhere to start.
+		new Setting(containerEl).setName("Where your notes come from").setHeading();
+
+		const source = new Setting(containerEl)
+			.setName("Sync from")
+			// What the choice *means*, not where the device is: the address belongs to the device row
+			// below, and saying it twice makes the reader check whether the two agree.
+			.setDesc(
+				data.primaryTransport === "ssh"
+					? "Read straight off the tablet. No reMarkable account is involved."
+					: "Through your reMarkable account, as before.",
+			);
+		source.addDropdown((dropdown) => {
+			for (const id of ["cloud", "ssh"] as const) {
+				dropdown.addOption(id, allowed.includes(id) ? label(id) : `${label(id)} (Pro)`);
+				// Shown and disabled rather than hidden: a feature a free user cannot see is one they
+				// cannot decide to buy, and Obsidian saves a dropdown change the moment it is made.
+				if (!allowed.includes(id)) {
+					dropdown.selectEl.options[dropdown.selectEl.options.length - 1].disabled = true;
+				}
+			}
+			dropdown.setValue(data.primaryTransport);
+			dropdown.onChange(async (value) => {
+				data.primaryTransport = value as TransportId;
+				if (data.fallbackTransport === data.primaryTransport) data.fallbackTransport = null;
+				await this.plugin.saveData(data);
+				this.display();
+			});
+		});
+
+		new Setting(containerEl)
+			.setName("If that is not reachable")
+			.setDesc(
+				"Both sources hand this plugin the same content, so switching between them costs nothing and re-transcribes nothing.",
+			)
+			.addDropdown((dropdown) => {
+				const other: TransportId = data.primaryTransport === "cloud" ? "ssh" : "cloud";
+				dropdown.addOption("none", "Stop and say so");
+				dropdown.addOption(other, `Try ${label(other)}`);
+				if (!allowed.includes(other)) dropdown.selectEl.options[1].disabled = true;
+				dropdown.setValue(data.fallbackTransport ?? "none");
+				dropdown.onChange(async (value) => {
+					data.fallbackTransport = value === "none" ? null : (value as TransportId);
+					await this.plugin.saveData(data);
+					this.display();
+				});
+			});
+
+		if (data.primaryTransport === "ssh" || data.fallbackTransport === "ssh") this.renderDevicePairing(containerEl);
+		this.renderCloudConnection(containerEl);
+	}
+
+	/**
+	 * Pairing, which costs a root password once and a key from then on.
+	 *
+	 * The address field is optional on purpose: the cable answers at a fixed address, so somebody who
+	 * has just plugged their tablet in should not have to go and look anything up.
+	 */
+	private renderDevicePairing(containerEl: HTMLElement): void {
+		const ssh = this.plugin.data.ssh;
+
+		if (isPaired(ssh)) {
+			new Setting(containerEl)
+				.setName("Your reMarkable")
+				.setDesc(`Paired with root@${ssh.host} · host key pinned`)
+				.addButton((button) =>
+					// Offered here because it is the action every failure message asks for -- a refused key
+					// and a changed host key both end in "pair again", and both leave the address correct.
+					button.setButtonText("Re-pair").onClick(async () => {
+						// Carried into the form below rather than left in `data.ssh` alone, where it would be
+						// stored and invisible: somebody re-pairing a tablet they reached over Wi-Fi is doing
+						// it *because* it stopped answering, and making them go and find the address again at
+						// that moment is the worst time to ask. The cable's address is the field's default
+						// anyway, so there is nothing to carry for a cable-paired device.
+						this.deviceHost = ssh.host === USB_HOST ? "" : ssh.host;
+						this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
+						await this.plugin.saveData(this.plugin.data);
+						this.display();
+					}),
+				)
+				.addButton((button) =>
+					button.setButtonText("Forget device").onClick(async () => {
+						// The key stays on the tablet: removing it would need the password again, and this
+						// button is what somebody presses *because* they can no longer reach the device.
+						this.deviceHost = "";
+						this.plugin.data.ssh = { ...DEFAULT_SSH_SETTINGS };
+						this.plugin.data.sshHashes = {};
+						await this.plugin.saveData(this.plugin.data);
+						this.display();
+					}),
+				);
+			return;
+		}
+
+		new Setting(containerEl)
+			.setName("Connect device")
+			.setDesc(
+				createFragment((desc: DocumentFragment) => {
+					desc.appendText("Connect the tablet by USB, or give its Wi-Fi address. ");
+					desc.appendText("The root password is on the tablet under Settings → Help → About → ");
+					desc.appendText("Copyrights and licenses. It is used once and never stored.");
+				}),
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder(`Address (default ${USB_HOST})`)
+					// So the field on screen and what a "Pair" would actually use are never two different
+					// things -- which is what an address carried in from "Re-pair", or left over from an
+					// attempt that failed, would otherwise be.
+					.setValue(this.deviceHost)
+					.onChange((value) => {
+						this.deviceHost = value.trim();
+					}),
+			)
+			.addText((text) => {
+				text.inputEl.type = "password";
+				text.setPlaceholder("Root password").onChange((value) => {
+					this.devicePassword = value;
+				});
+			})
+			.addButton((button) =>
+				button
+					.setButtonText("Pair")
+					.setCta()
+					.onClick(async () => {
+						button.setDisabled(true);
+						await this.pairDevice();
+						button.setDisabled(false);
+					}),
+			);
+
+		// Before the attempt, not after it. On a Paper Pro or Paper Pure the answer to "nothing
+		// happens" is a factory reset, and nobody should meet that fact halfway through pairing --
+		// finding it out afterwards is the worst possible moment. Folded away so an rM2 owner, who
+		// needs none of it, is not made to read it.
+		const help = containerEl.createEl("details", { cls: "tagged-sync-pairing-help" });
+		help.createEl("summary", { text: "What your reMarkable needs before this works" });
+		for (const line of pairingGuidance("unknown")) help.createEl("p", { text: line });
+	}
+
+	/** One pairing attempt, and what to say about however it ended. */
+	private async pairDevice(): Promise<void> {
+		const host = this.deviceHost === "" ? null : this.deviceHost;
+		try {
+			const settings = await pairDevice({
+				host,
+				password: this.devicePassword,
+				confirmHostKey: (fingerprint) =>
+					confirmDialog(
+						this.app,
+						"Trust this reMarkable?",
+						`The device identifies itself as ${fingerprint}. This vault will refuse to connect if it ever presents a different key.`,
+						"Trust",
+					),
+				confirmWifi: () =>
+					confirmDialog(
+						this.app,
+						"Allow SSH over Wi-Fi?",
+						"Your reMarkable can keep accepting connections over Wi-Fi, so syncing does not need the cable. " +
+							"It means the tablet listens for SSH on whatever network it joins. Say no to keep it cable-only.",
+						"Allow",
+					),
+				report: (step) => new Notice(step),
+			});
+			this.plugin.data.ssh = settings;
+			await this.plugin.saveData(this.plugin.data);
+			new Notice(`Paired with your reMarkable at ${settings.host}.`);
+		} catch (error) {
+			if (error instanceof PairingRefusedError) {
+				new Notice(error.message);
+				return;
+			}
+			// A tablet that did not answer at all is the case worth a paragraph rather than a line: on a
+			// Paper Pro or Paper Pure the answer is a factory reset, and nobody should meet that fact
+			// halfway through.
+			if (error instanceof DeviceUnreachableError) {
+				// Which tablet this is cannot be known when it did not answer, so the guidance covers both
+				// -- including, out loud, the one whose answer is a factory reset.
+				new Notice(pairingGuidance("unknown").join("\n\n"), 20_000);
+				return;
+			}
+			new Notice(this.plugin.transportError(error, "connect"), 15_000);
+		} finally {
+			// However it went. A root password kept in a settings tab after the attempt that needed it is
+			// one nobody asked to store, and the redraw is what makes the emptied field visible rather
+			// than leaving the box on screen full of a password the next "Pair" would no longer send.
+			this.devicePassword = "";
+			this.display();
+		}
+	}
+
+	/** The cloud account: one-time code in, device token out. Unchanged by the second transport. */
+	private renderCloudConnection(containerEl: HTMLElement): void {
+		const cloudStatus = this.plugin.cloudTransportStatus();
+		const connectionSetting = new Setting(containerEl)
+			// "reMarkable connection" was unambiguous while there was one; beside a paired tablet it reads
+			// as though it might be either. This row is the account, and says so.
+			.setName("reMarkable cloud account")
+			.setDesc(cloudStatus.summary);
+
+		if (cloudStatus.connected) {
 			connectionSetting.addButton((button) =>
 				button.setButtonText("Disconnect").onClick(async () => {
 					await this.plugin.auth.disconnect();
@@ -126,18 +357,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						}),
 				);
 		}
-
-		// Order follows how often a row is touched, not how it was built: what to sync is the setting a
-		// user comes back to, transcription is chosen roughly once, and the links at the end are read
-		// when something has already gone wrong.
-		if (connected) {
-			this.renderTagRouting(containerEl);
-		}
-		this.renderVaultOutput(containerEl);
-		this.renderOcrSettings(containerEl);
-		this.renderAutoSyncSettings(containerEl);
-		this.renderPro(containerEl);
-		this.renderActions(containerEl, connected);
 	}
 
 	/**
@@ -500,14 +719,18 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button.setButtonText("Scan").onClick(async () => {
 					button.setDisabled(true);
+					let session: TransportSession | null = null;
 					try {
-						const sessionToken = await this.plugin.auth.session();
-						const api = openSession(sessionToken);
-						const notebooks = await enumerateNotebookTags(api);
+						// Through the same chain a sync uses, so a vault that configured a fallback gets one
+						// here too rather than only on the job this was written for.
+						session = (await this.plugin.openSource()).session;
+						const notebooks = await enumerateNotebookTags(session.api);
 						this.discoveredTags = collectTagNames(notebooks);
 						new Notice(`Found ${this.discoveredTags.length} tag(s).`);
 					} catch (error) {
 						new Notice(`Failed to discover tags: ${(error as Error).message}`);
+					} finally {
+						await session?.close();
 					}
 					this.display();
 				}),

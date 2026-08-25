@@ -13,7 +13,6 @@ import { normalizeAttachmentsFolder } from "./attachment-writer";
 import { autoSpendBlocked, backgroundConsentGiven, backgroundRunBlocked } from "./auto-sync-gates";
 import { confirmDialog } from "./confirm-modal";
 import { isIntervalSyncDue } from "./auto-sync";
-import { explainError } from "./explain-error";
 import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-check";
 import { createPolarLicenceApi } from "./licence-client";
 import { type Entitlement, entitlementOf } from "./licence-state";
@@ -23,8 +22,19 @@ import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { reTranscribeConfirmation, reTranscribeIsUseful } from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
-import { openSession } from "./remarkable-session";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
+import { CloudTransport } from "./cloud-transport";
+import {
+	type Transport,
+	type TransportId,
+	type TransportSession,
+	type TransportStatus,
+	explainTransportError,
+} from "./transport";
+import type { ErrorContext } from "./explain-error";
+import { failoverNotice, openTransportChain, type OpenedTransport, type TransportChain } from "./transport-chain";
+import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-transport";
+import { reachableHost } from "./ssh-pairing";
 import { reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -58,6 +68,8 @@ const AUTO_SYNC_LAUNCH_DELAY_MS = 4_000;
 export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
+	private cloudTransport!: Transport;
+	private sshTransport!: Transport;
 	readonly licenceApi: LicenceApi = createPolarLicenceApi();
 	/** What the launch delay and the interval backstop run on. Replaced in tests; see `./scheduler`. */
 	scheduler: Scheduler = windowScheduler;
@@ -143,10 +155,83 @@ export default class TaggedSyncPlugin extends Plugin {
 		return ocrBackendEntry(this.data.ocrBackend)?.requiresLicence === true;
 	}
 
+	/** The cloud's own connection state, which the settings tab shows whichever source is selected. */
+	cloudTransportStatus(): TransportStatus {
+		return this.cloudTransport.status();
+	}
+
+	/** One sentence for a failure, worded by whichever source it came from. */
+	transportError(error: unknown, context: ErrorContext): string {
+		return explainTransportError(this.transport(), error, context);
+	}
+
+	/** Both transports, by id. Built once in `onload`; which one runs is decided per call below. */
+	private transportById(id: TransportId): Transport {
+		return id === "ssh" ? this.sshTransport : this.cloudTransport;
+	}
+
+	/**
+	 * Where this vault reads its notes from, after the licence has had its say.
+	 *
+	 * A lapsed licence falls back to the cloud with a message rather than refusing the run -- the same
+	 * choice `resolveOcrBackend` makes for a gated backend, and for the same reason: a buyer whose card
+	 * expired mid-notebook can act on a sentence, not on a sync that stopped working.
+	 */
+	private resolveTransport(): { transport: Transport; downgraded: boolean } {
+		const chosen = this.data.primaryTransport;
+		if (allowedTransports(this.entitlement()).includes(chosen)) {
+			return { transport: this.transportById(chosen), downgraded: false };
+		}
+		return { transport: this.cloudTransport, downgraded: true };
+	}
+
+	/**
+	 * Silent, because it is asked constantly -- every settings row, every pre-flight, every background
+	 * tick. Saying the downgrade here meant a lapsed user got it twice per settings render and twice
+	 * per auto-sync tick, which breaks the rule that a background run never interrupts. Whoever is
+	 * *starting* something a person asked for announces it instead; see {@link openSource}.
+	 */
+	transport(): Transport {
+		return this.resolveTransport().transport;
+	}
+
+	/**
+	 * Opens whichever source answers, and says anything the user is owed about how that went.
+	 *
+	 * Every long job goes through here -- a sync, a re-transcribe, a tag scan -- so the failover a
+	 * vault configured applies to all of them rather than only to the one it was written for.
+	 *
+	 * `announce` is false for background runs: they must never raise a notice (auto-sync spec
+	 * §Failure), and a failover they took silently is still the right outcome.
+	 */
+	async openSource(announce = true): Promise<OpenedTransport> {
+		if (announce && this.resolveTransport().downgraded) {
+			new Notice(`Syncing from ${SSH_TRANSPORT_LABEL} needs Tagged Sync Pro — using the reMarkable cloud.`);
+		}
+		const opened = await openTransportChain(this.transportChain());
+		if (announce && opened.failedOverFrom !== null) {
+			new Notice(failoverNotice(opened.failedOverFrom, opened.transport));
+		}
+		return opened;
+	}
+
+	/** The primary, and what to try when it does not answer (SSH transport spec §7). */
+	private transportChain(): TransportChain {
+		const primary = this.transport();
+		const configured = this.data.fallbackTransport;
+		// Gated the same way as the primary, so a lapsed licence cannot smuggle the Pro transport back
+		// in through the fallback slot -- and silently, because the primary already said it once.
+		const usable =
+			configured !== null && configured !== primary.id && allowedTransports(this.entitlement()).includes(configured);
+		return { primary, fallback: usable ? this.transportById(configured) : null };
+	}
+
 	/** What {@link preflightRun} judges, read off the plugin at the moment it is asked. */
 	private runConditions(): RunConditions {
+		const status = this.transport().status();
 		return {
-			connected: this.auth.isConnected(),
+			connected: status.connected,
+			connectNotice: status.connectNotice,
 			running: this.syncing,
 			backendRequiresLicence: this.backendRequiresLicence(),
 		};
@@ -192,6 +277,18 @@ export default class TaggedSyncPlugin extends Plugin {
 			},
 		};
 		this.auth = new RemarkableAuth(store);
+		this.cloudTransport = new CloudTransport(this.auth);
+		this.sshTransport = new SshTransport({
+			settings: () => this.data.ssh,
+			hashes: () => this.data.sshHashes,
+			saveHashes: async (hashes) => {
+				this.data.sshHashes = hashes;
+				await this.saveData(this.data);
+			},
+			// Only while a run is on screen. The first pairing reads the whole library, which takes long
+			// enough that "starting…" would read as a plugin that has stopped responding.
+			report: (message) => this.setStatus("busy", message),
+		});
 
 		this.addSettingTab(new TaggedSyncSettingTab(this.app, this));
 		// Registered whatever the setting says: it governs whether a sync *writes* margin notes, while a
@@ -420,12 +517,17 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.stopRequested = false;
 		if (!auto) new Notice("Syncing…");
 		this.setStatus("busy", "Tagged Sync: starting…");
+		// Named before the run so the `catch` can word a failure in the primary's terms even when
+		// opening never got far enough to say which source it would have been.
+		let transport = this.transportChain().primary;
+		let session: TransportSession | null = null;
 		try {
-			const sessionToken = await this.auth.session();
-			const api = openSession(sessionToken);
+			const opened = await this.openSource(!auto);
+			transport = opened.transport;
+			session = opened.session;
 			const result = await runSync(
 				{
-					api,
+					api: session.api,
 					// Both configured folder sets resolve to the vault's real casing here, before any
 					// path is derived from them -- see resolveFolderCasing for why (issue #73).
 					tagRouter: new TagRouter(await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap)),
@@ -479,8 +581,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");
-			if (!auto) new Notice(explainError(error, "sync"));
+			if (!auto) new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
+			await session?.close();
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.
@@ -518,14 +621,29 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	private async triggerAutoSync(): Promise<void> {
 		const entry = ocrBackendEntry(this.data.ocrBackend);
-		if (
-			backgroundRunBlocked({
-				enabled: this.data.autoSync.enabled,
-				running: this.syncing,
-				connected: this.auth.isConnected(),
-				backgroundConsent: backgroundConsentGiven(entry, this.data.llmProviders[this.data.ocrBackend] ?? {}),
-			}) !== null
-		) {
+		const blocked = backgroundRunBlocked({
+			enabled: this.data.autoSync.enabled,
+			running: this.syncing,
+			// The primary alone, and deliberately not "any source in the chain". A vault whose primary is
+			// a tablet it never finished pairing has a setup to finish, and a fallback does not rescue
+			// that: `openTransportChain` only goes to the fallback when the primary was *unreachable*, so
+			// letting this through would start a run that fails rather than one that recovers. It is the
+			// same line `preflightRun` draws for a manual sync, which says "Pair with your reMarkable
+			// first" instead of quietly syncing from somewhere else.
+			connected: this.transport().status().connected,
+			reachable: await this.autoSyncSourceReachable(),
+			backgroundConsent: backgroundConsentGiven(entry, this.data.llmProviders[this.data.ocrBackend] ?? {}),
+		});
+		if (blocked !== null) {
+			// The one refusal that says something the user might want to know: their tablet was asleep, so
+			// this run did nothing. Said in the status bar rather than a notice -- a background run must
+			// never interrupt -- and with its own icon, because a cross every night is how a status bar
+			// stops being read.
+			if (blocked === "device-unreachable") {
+				this.setStatus("asleep", "Tagged Sync: reMarkable not reachable", {
+					detail: "The last background sync was skipped because your reMarkable did not answer.",
+				});
+			}
 			return;
 		}
 		// Resolved only now, because resolving is not free: it constructs adapters and can raise a
@@ -542,6 +660,22 @@ export default class TaggedSyncPlugin extends Plugin {
 		} finally {
 			this.syncing = false;
 		}
+	}
+
+	/**
+	 * Is there any point starting a background run?
+	 *
+	 * Only the direct-device transport can answer this cheaply, and only it needs to: the cloud is
+	 * either reachable or the run fails in a second, while a sleeping tablet holds a connection open
+	 * until it times out -- on every tick, all night. A chain with a cloud in it is always worth
+	 * trying, because the fallback is exactly what a sleeping tablet is for.
+	 */
+	private async autoSyncSourceReachable(): Promise<boolean> {
+		const chain = this.transportChain();
+		if (chain.primary.id !== "ssh" || chain.fallback !== null) return true;
+		// The cable counts as reachable too, exactly as it does for a real run: a tablet plugged in
+		// after its Wi-Fi address went stale would otherwise be "asleep" in the background forever.
+		return (await reachableHost(this.data.ssh.host, this.data.ssh.port)) !== null;
 	}
 
 	/** Wiring only: `sync-notices.ts` decides which of the five are said, in what words and in what order. */
@@ -608,12 +742,15 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 		this.stopRequested = false;
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
+		let transport = this.transportChain().primary;
+		let session: TransportSession | null = null;
 		try {
-			const sessionToken = await this.auth.session();
-			const api = openSession(sessionToken);
+			const opened = await this.openSource();
+			transport = opened.transport;
+			session = opened.session;
 			const { updated, index, stopped } = await reTranscribeAll(
 				{
-					api,
+					api: session.api,
 					noteStore: createNoteStore(this.app),
 					ocrBackend: backend,
 					onProgress: (progress) => this.showProgress(progress),
@@ -644,8 +781,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: re-transcribe failed");
-			new Notice(explainError(error, "sync"));
+			new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
+			await session?.close();
 			this.syncing = false;
 			this.stopRequested = false;
 		}

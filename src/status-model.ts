@@ -9,18 +9,23 @@ import type { SyncProgress } from "./sync-engine";
  * Nothing else on screen will correct any of them.
  */
 
-export type SyncStatusState = "busy" | "ok" | "failed" | "stopped";
+export type SyncStatusState = "busy" | "ok" | "failed" | "stopped" | "asleep";
 
 /**
  * Lucide icon per state, rendered through `setIcon()` so it follows the theme rather than shipping a
  * glyph. `stopped` earns its own rather than borrowing one: a check would claim a run that finished
  * and a cross would claim one that broke, and a user-stopped run is neither.
+ *
+ * `asleep` earns one by the same argument. A background sync skipped because the tablet is in a
+ * drawer is not a failure -- painting a cross for it every night is how a status bar stops being
+ * read at all -- and it is not a success either, because nothing was synced.
  */
 export const STATUS_ICONS: Record<SyncStatusState, string> = {
 	busy: "refresh-cw",
 	ok: "check",
 	failed: "x",
 	stopped: "square",
+	asleep: "moon",
 };
 
 /** What a caller asks for. */

@@ -211,3 +211,22 @@
 	font-size: var(--font-smaller);
 	color: var(--text-muted);
 }
+
+/*
+ * The fold-away pairing help. Muted and indented so it reads as a footnote to the row above rather
+ * than as another setting -- an rM1 or rM2 owner needs none of it and should be able to skip it at a
+ * glance, while a Paper Pro owner finds the factory-reset warning before they type a password.
+ */
+.tagged-sync-pairing-help {
+	margin: 0 0 var(--size-4-4) var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.tagged-sync-pairing-help summary {
+	cursor: pointer;
+}
+
+.tagged-sync-pairing-help p {
+	margin: var(--size-4-2) 0 0;
+}

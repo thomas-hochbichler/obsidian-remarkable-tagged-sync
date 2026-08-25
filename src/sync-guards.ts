@@ -20,8 +20,16 @@ export const ALREADY_RUNNING_NOTICE = "A sync is already running.";
 export const NOTHING_SYNCED_NOTICE = "No synced notes to re-transcribe yet.";
 
 export interface RunConditions {
-	/** A device token is stored. Neither job can open a session without one. */
+	/** The source is configured -- a stored device token, or a paired tablet. */
 	readonly connected: boolean;
+	/**
+	 * What to say when it is not, in the words of whichever source is selected.
+	 *
+	 * Carried rather than assumed, because "Connect to reMarkable first." sends someone whose vault
+	 * syncs from the tablet hunting for a one-time code they will never need. Defaulted to the cloud's
+	 * sentence so a caller that predates two sources still reads correctly.
+	 */
+	readonly connectNotice?: string;
 	/** A sync or a re-transcribe holds the lock right now. */
 	readonly running: boolean;
 	/** The selected backend is one only a licence unlocks, so its state is worth re-reading first. */
@@ -38,7 +46,7 @@ export type Preflight =
 	| { readonly start: true; readonly refreshLicence: boolean };
 
 export function preflightRun(conditions: RunConditions): Preflight {
-	if (!conditions.connected) return { start: false, notice: NOT_CONNECTED_NOTICE };
+	if (!conditions.connected) return { start: false, notice: conditions.connectNotice ?? NOT_CONNECTED_NOTICE };
 	if (conditions.running) return { start: false, notice: ALREADY_RUNNING_NOTICE };
 	return { start: true, refreshLicence: conditions.backendRequiresLicence };
 }

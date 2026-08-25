@@ -27,7 +27,7 @@ import { inheritedFolderTagNames, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
-import { mapWithConcurrency } from "./vision-ocr-backend";
+import { mapWithConcurrency } from "./concurrency";
 
 export type SyncRowStatus = "active" | "orphaned";
 

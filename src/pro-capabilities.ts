@@ -1,6 +1,7 @@
 import type { Entitlement } from "./licence-state";
 import { isGated } from "./ocr-resolution";
 import { ocrBackendEntries } from "./ocr-registry";
+import { allowedTransports } from "./ssh-transport";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
 
 /**
@@ -141,6 +142,26 @@ const TAG_MAPPING_CAPABILITY: ProCapability = {
 };
 
 /**
+ * Reading the tablet directly instead of the cloud -- also not a backend, so also written in here.
+ *
+ * `locked` asks the production gate the question the production gate is asked: *may this vault sync
+ * over SSH*. Phrased that way rather than against the tier, so that widening `allowedTransports` to
+ * hand SSH to everyone shows up here as an unlocked capability rather than as nothing at all.
+ */
+const SSH_TRANSPORT_CAPABILITY: ProCapability = {
+	id: "sync-straight-from-the-device",
+	label: "Sync straight from the tablet over USB or Wi-Fi, without the reMarkable cloud",
+	locked: (entitlement) => !allowedTransports(entitlement).includes("ssh"),
+	// The run continues, on the cloud, and says why -- the same shape as a gated backend, and for the
+	// same reason: a lapsed licence must not be a sync that stopped working.
+	whenLocked: "falls-back-to-free",
+	enforcedAt: {
+		site: "src/ssh-transport.ts allowedTransports, called from src/main.ts transport and transportChain",
+		run: (entitlement) => (allowedTransports(entitlement).includes("ssh") ? "allowed" : "falls-back-to-free"),
+	},
+};
+
+/**
  * Every gated capability this build ships.
  *
  * The `filter` is the single most important line here. The obvious form --
@@ -151,7 +172,7 @@ export function proCapabilities(): ProCapability[] {
 	const backends = ocrBackendEntries()
 		.filter((entry) => BACKEND_TIER[entry.id]?.paid)
 		.map(backendCapability);
-	return [...backends, TAG_MAPPING_CAPABILITY];
+	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY];
 }
 
 /**
@@ -175,6 +196,10 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	"src/licence-messages.ts": { reads: 1, why: "Renders the settings-tab status line. Not a gate." },
 	"src/main.ts": { reads: 1, why: "The backend gate, asked through `isGated`. A gate, and it is in the list." },
 	"src/tag-routing-view.ts": { reads: 1, why: "The tag cap's own limit function. A gate, and it is in the list." },
+	"src/ssh-transport.ts": {
+		reads: 1,
+		why: "`allowedTransports`, the direct-device gate. A gate, and it is in the list -- `main.ts` asks it rather than reading the tier itself.",
+	},
 	"src/settings-tab.ts": {
 		reads: 4,
 		why: "3 display lines in the Pro section, plus the live licence re-check before a mapping past the cap. Display, and one re-read of a gate that lives elsewhere.",

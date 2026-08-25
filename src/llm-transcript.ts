@@ -1,7 +1,7 @@
 import { type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import type { RmPage } from "./rm-parser";
 import { layoutText } from "./text-layout";
-import { mapWithConcurrency } from "./vision-ocr-backend";
+import { mapWithConcurrency } from "./concurrency";
 
 /**
  * The transcription prompt shared verbatim by every LLM-vision backend (multi-provider spec §3).

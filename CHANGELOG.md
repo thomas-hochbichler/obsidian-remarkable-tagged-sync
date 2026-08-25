@@ -12,6 +12,32 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Pro: sync straight from your reMarkable, without the reMarkable cloud.** The plugin can now read
+  your tablet directly over USB or Wi-Fi, so a sync no longer depends on a cloud API that reMarkable
+  neither documents nor promises to keep. Settings gained two rows for it: *Sync from*, and what to
+  try when that source is not reachable.
+
+  **Switching between the two costs nothing.** The direct connection computes the same content
+  hashes the cloud does, so a vault that already synced through the cloud keeps its whole index:
+  nothing is re-rendered, nothing is transcribed a second time, and a failover in either direction is
+  invisible in your notes.
+
+  Pairing asks for the root password from your tablet's *Settings → Help → About →
+  Copyrights and licenses* screen. It is used once, to install a key for this vault, and is never
+  stored. The tablet's host key is shown to you and pinned; if it ever changes, the plugin refuses
+  to connect and tells you why rather than reconnecting to something else.
+
+  **On a Paper Pro or Paper Pure this costs a factory reset.** Those devices only allow SSH in
+  Developer Mode, and turning it on erases the tablet — your notes come back from the reMarkable
+  cloud afterwards, but the tablet shows a warning screen at every start from then on. If a tablet
+  does not answer, the plugin spells this out rather than leaving you to find it. reMarkable 1 and 2
+  need none of it; SSH is on by default there.
+
+  Background syncs check whether the tablet is awake before starting, so a sleeping device is a
+  quiet skip rather than a failed sync every night. Desktop only, like the rest of the plugin.
+
 ### Changed
 
 - **You now enter the transcription model yourself; the plugin no longer suggests one.** Every
@@ -27,6 +53,19 @@ workflow publishes the section as the GitHub release body. See
   stop with *"No model is set for this OCR backend — open the plugin settings and enter one."* and
   say so per sync rather than failing quietly. If you had already typed a model, nothing changes for
   you.
+
+- **The status bar now shows how much of the sync is left, not where it is in a list.** It used to
+  read something like `17/74`, which was the position in a walk through every document on your
+  reMarkable — and most of those are skipped without any work at all, so the number raced through
+  sixty in seconds and then sat still for minutes on the one page that was actually being
+  transcribed. Neither number said anything about how long anything would take.
+
+  A sync now counts the pages it is really going to work on before it starts, and fills a bar
+  against that count, next to the name of the notebook it is on. The count is honest: a notebook
+  filed under three tags is written three times, and the bar says so. While the work is being
+  measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
+  so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
+  the full name, the tag, the page within the notebook, and what is happening to it right now.
 
 ### Fixed
 
@@ -125,21 +164,6 @@ workflow publishes the section as the GitHub release body. See
   first did not help: it reappeared where it used to be. A sync now moves such a note into the
   folder the tag currently points at, keeping the note itself and the links to it intact, and a note
   you deleted is recreated in the new folder rather than the old one.
-
-### Changed
-
-- **The status bar now shows how much of the sync is left, not where it is in a list.** It used to
-  read something like `17/74`, which was the position in a walk through every document on your
-  reMarkable — and most of those are skipped without any work at all, so the number raced through
-  sixty in seconds and then sat still for minutes on the one page that was actually being
-  transcribed. Neither number said anything about how long anything would take.
-
-  A sync now counts the pages it is really going to work on before it starts, and fills a bar
-  against that count, next to the name of the notebook it is on. The count is honest: a notebook
-  filed under three tags is written three times, and the bar says so. While the work is being
-  measured the item reads `checking 3 of 12 · Reading List`, naming each notebook as it is reached,
-  so the wait before the bar appears is neither silent nor mistakable for a hang. Hover the item for
-  the full name, the tag, the page within the notebook, and what is happening to it right now.
 
 ## [1.4.4] - 2026-08-23
 

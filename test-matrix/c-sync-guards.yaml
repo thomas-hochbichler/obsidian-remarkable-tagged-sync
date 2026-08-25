@@ -209,3 +209,15 @@
       layer: unit
       file: src/sync-guards.test.ts
       test: "preflightRun > asks for a licence re-read on a backend that needs one"
+
+- feature: C24
+  name: A refusal names the source the vault actually syncs from
+  code: src/sync-guards.ts
+  tier: pro
+  scenarios:
+    - id: C24.1
+      scenario: A vault whose source is the tablet, not yet paired, presses Sync now
+      expect: 'The tablet''s own sentence. "Connect to reMarkable first." would send its owner hunting for a one-time code they will never need -- and the pre-flight is the only place that sentence is ever read'
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > refuses in the words of whichever source the vault syncs from"

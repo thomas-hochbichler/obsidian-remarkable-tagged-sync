@@ -238,3 +238,50 @@
       file: src/licence-client.test.ts
       test: "a licence server that never answers > does not leave a timer running behind a call that answered in time"
 
+
+- feature: A9
+  name: Where the notes come from is a seam, not an assumption
+  code: src/transport.ts
+  tier: free
+  scenarios:
+    - id: A9.1
+      scenario: A vault with a device token, and one without
+      expect: '`connected` follows the stored token exactly. The pre-flight lock reads this synchronously, so it answers "configured" and never "reachable" -- a promise the SSH transport can also keep'
+      layer: unit
+      file: src/transport.test.ts
+      test: "CloudTransport > is connected exactly when a device token is stored"
+
+    - id: A9.2
+      scenario: A pre-flight refuses a run on the cloud transport
+      expect: The sentence the pre-flight already used, now owned by the transport rather than hardwired -- so a second transport can refuse in its own words without this one changing
+      layer: unit
+      file: src/transport.test.ts
+      test: "CloudTransport > refuses a run with the wording the pre-flight already used"
+
+    - id: A9.3
+      scenario: The cloud is offline, versus the cloud refusing the credential
+      expect: 'Only the offline one is `isUnreachable`. Failing over to the other transport on a refused credential would sync happily for weeks while the connection the user has to repair stays broken, and they would never be told'
+      layer: unit
+      file: src/transport.test.ts
+      test: "CloudTransport > fails over on an offline error but never on a refused credential"
+
+    - id: A9.4
+      scenario: A cloud session is opened and closed
+      expect: '`close` resolves. It is a no-op here -- rmapi-js holds no socket -- and it exists so both transports have one shape of call site rather than two'
+      layer: unit
+      file: src/transport.test.ts
+      test: "CloudTransport > closes without needing the session it never opened a socket for"
+
+    - id: A9.5
+      scenario: A failure the transport has its own sentence for
+      expect: The transport's sentence wins. This is what lets "the tablet is asleep" exist without the cloud's paragraph about reverse-engineered APIs being rewritten
+      layer: unit
+      file: src/transport.test.ts
+      test: "explainTransportError > prefers the transport's own wording"
+
+    - id: A9.6
+      scenario: A vault name conflict, which is nobody's transport's fault
+      expect: The neutral sentence. Most failures mean the same thing whichever source the bytes came from, and duplicating those per transport is how two of them drift apart
+      layer: unit
+      file: src/transport.test.ts
+      test: "explainTransportError > falls through to the neutral wording for an error the transport does not claim"

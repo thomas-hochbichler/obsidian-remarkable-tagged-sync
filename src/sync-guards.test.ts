@@ -25,6 +25,15 @@ describe("preflightRun", () => {
 		});
 	});
 
+	it("refuses in the words of whichever source the vault syncs from", () => {
+		// A vault reading from the tablet has no one-time code to fetch, so the cloud's sentence would
+		// send its owner to the wrong screen entirely.
+		expect(preflightRun({ ...READY, connected: false, connectNotice: "Pair with your reMarkable first." })).toEqual({
+			start: false,
+			notice: "Pair with your reMarkable first.",
+		});
+	});
+
 	it("refuses a run while another one holds the lock", () => {
 		expect(preflightRun({ ...READY, running: true })).toEqual({
 			start: false,

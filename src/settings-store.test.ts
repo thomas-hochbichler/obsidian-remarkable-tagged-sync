@@ -105,6 +105,10 @@ describe("migrateSettings", () => {
 	it("keeps a whole working install exactly as it found it", () => {
 		const stored = {
 			deviceToken: "device-token",
+			primaryTransport: "ssh",
+			fallbackTransport: "cloud",
+			ssh: { host: "192.168.1.9", port: 22, privateKey: "PEM", hostKeyFingerprint: "SHA256:abc" },
+			sshHashes: { "doc.content|12|1000": "a".repeat(64) },
 			tagFolderMap: { "#work": "Work" },
 			syncIndex: { version: 4, rows: { "doc/1": { note: "Work/One.md" } } },
 			ocrBackend: "anthropic",
@@ -117,6 +121,20 @@ describe("migrateSettings", () => {
 			licence: { ...NO_LICENCE, key: "k", activationId: "a", validatedAt: "2026-08-01T00:00:00.000Z" },
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);
+	});
+
+	it("never leaves the fallback naming the source the primary resolved to", () => {
+		// The pair has one rule -- the two are never the same -- and it has to survive a primary that
+		// could not be read. Checked against the raw stored value instead, `{"nonsense", "cloud"}`
+		// resolved the primary to "cloud" and kept the fallback, leaving both pointing at the cloud:
+		// a fallback that is a second attempt at what just failed, and a settings picker handed a
+		// value it does not offer.
+		const junk = migrateSettings({ primaryTransport: "nonsense", fallbackTransport: "cloud" }, ENV);
+		expect(junk.primaryTransport).toBe("cloud");
+		expect(junk.fallbackTransport).toBeNull();
+
+		const explicit = migrateSettings({ primaryTransport: "ssh", fallbackTransport: "ssh" }, ENV);
+		expect(explicit.fallbackTransport).toBeNull();
 	});
 
 	it("honours a marginNotes: true written by a 1.1.0 beta", () => {

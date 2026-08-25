@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+// Its own module now -- `device-api` overlaps SFTP round trips with it, and an OCR backend was a
+// strange address for that. The test stays here so the shrink-only allowlist, which is keyed by
+// file and test name, does not have to grow a line to lose one.
+import { mapWithConcurrency } from "./concurrency";
 import {
 	chunk,
 	DEFAULT_MAX_PARALLELISM,
-	mapWithConcurrency,
 	UnavailableOcrBackend,
 	type VisionBatchResult,
 	VisionOcrBackend,

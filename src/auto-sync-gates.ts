@@ -16,6 +16,16 @@ export type AutoSyncSkip =
 	| "auto-sync-off"
 	| "already-running"
 	| "not-connected"
+	/**
+	 * The device this vault syncs from did not answer -- asleep, unplugged, or on another network.
+	 *
+	 * Its own reason rather than `not-connected`, because the two are opposites in the only way that
+	 * matters: `not-connected` is a vault nobody has set up, and this is one that is set up perfectly
+	 * and whose tablet is simply in a drawer. A run refused for this reason is normal and silent, and
+	 * must never be reported as a failed sync -- a nightly "sync failed" for a sleeping tablet trains
+	 * people to ignore the status bar.
+	 */
+	| "device-unreachable"
 	| "no-background-consent"
 	| "no-consent-to-spend";
 
@@ -24,8 +34,14 @@ export interface BackgroundConditions {
 	readonly enabled: boolean;
 	/** A sync or a re-transcribe is in flight. */
 	readonly running: boolean;
-	/** A device token is stored. */
+	/** A device token is stored, or a device is paired. */
 	readonly connected: boolean;
+	/**
+	 * The source answered a cheap probe. `true` for the cloud, which is asked for real or not at all;
+	 * the direct-device transport dials the tablet first, because starting a run for a sleeping
+	 * tablet costs a full connection timeout on every tick.
+	 */
+	readonly reachable: boolean;
 	/** The chosen backend may run unattended at all -- see {@link backgroundConsentGiven}. */
 	readonly backgroundConsent: boolean;
 }
@@ -35,6 +51,7 @@ export function backgroundRunBlocked(conditions: BackgroundConditions): AutoSync
 	if (!conditions.enabled) return "auto-sync-off";
 	if (conditions.running) return "already-running";
 	if (!conditions.connected) return "not-connected";
+	if (!conditions.reachable) return "device-unreachable";
 	if (!conditions.backgroundConsent) return "no-background-consent";
 	return null;
 }

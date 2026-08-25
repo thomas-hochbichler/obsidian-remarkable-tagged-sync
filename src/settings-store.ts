@@ -21,7 +21,10 @@ import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { type LicenceState, NO_LICENCE } from "./licence-state";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import type { BackendSettings } from "./ocr-registry";
+import { DEFAULT_SSH_SETTINGS, type SshSettings } from "./ssh-transport";
+import type { StoredHashes } from "./ssh-hash-cache";
 import { EMPTY_SYNC_INDEX, type SyncIndex } from "./sync-engine";
+import type { TransportId } from "./transport";
 import type { TagFolderMap } from "./tag-router";
 
 /** Opt-in background sync (auto-sync spec §"Settings & data model"). */
@@ -42,6 +45,22 @@ export const DEFAULT_AUTO_SYNC: AutoSyncSettings = {
 
 export interface TaggedSyncData {
 	deviceToken: string | null;
+	/** Where a sync reads from first (SSH transport spec §4). */
+	primaryTransport: TransportId;
+	/**
+	 * What it tries when the primary does not answer, or `null` for "then it failed".
+	 *
+	 * A pair rather than one setting because the two sources are genuinely interchangeable here: they
+	 * emit the same hashes, so falling back costs nothing and re-rendering nothing.
+	 */
+	fallbackTransport: TransportId | null;
+	/** The paired device: address, key, pinned host key. The root password is never among these. */
+	ssh: SshSettings;
+	/**
+	 * `path size mtime` -> sha256 for the device's files. Opaque here; only the SSH transport reads
+	 * inside it. Written back pruned after every run, so it tracks the device rather than growing.
+	 */
+	sshHashes: StoredHashes;
 	tagFolderMap: TagFolderMap;
 	syncIndex: SyncIndex;
 	ocrBackend: OcrBackendId;
@@ -74,6 +93,10 @@ export interface TaggedSyncData {
 /** Read field by field, never handed out whole -- see the `syncIndex` note in `migrateSettings`. */
 export const DEFAULT_DATA: TaggedSyncData = {
 	deviceToken: null,
+	primaryTransport: "cloud",
+	fallbackTransport: null,
+	ssh: DEFAULT_SSH_SETTINGS,
+	sshHashes: {},
 	tagFolderMap: {},
 	syncIndex: EMPTY_SYNC_INDEX,
 	// Placeholder only -- the effective default is platform-derived on load (multi-provider spec §7).
@@ -104,6 +127,10 @@ export interface SettingsEnv {
 	defaultBackend: OcrBackendId;
 }
 
+function isTransportId(value: unknown): value is TransportId {
+	return value === "cloud" || value === "ssh";
+}
+
 /** What `loadData()` may hand back: anything, plus the one key that was renamed. */
 type SavedData = (Partial<TaggedSyncData> & { ocrBackendChoice?: unknown }) | null | undefined;
 
@@ -120,8 +147,26 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 	// "llm-vision"/"tesseract" reset (multi-provider spec §7). The old single `llmVisionApiKey` is
 	// dropped by not carrying it forward -- users re-enter their key once under the per-provider model.
 	const savedBackend = stored?.ocrBackend ?? stored?.ocrBackendChoice;
+	// A file written before the SSH transport existed has neither field, and "cloud, no fallback" is
+	// exactly what such a vault was doing -- so the absent case needs no branch of its own.
+	//
+	// Named before the object because the fallback is checked against it. Comparing against the raw
+	// stored value instead let an unreadable primary through: `{primary: "nonsense", fallback:
+	// "cloud"}` resolved the primary to "cloud" and then kept the fallback, leaving both the same.
+	// The run survived it -- `transportChain` re-checks -- but the settings dropdown was handed a
+	// value it does not offer.
+	const primaryTransport: TransportId = isTransportId(stored?.primaryTransport) ? stored.primaryTransport : "cloud";
 	return {
 		deviceToken: stored?.deviceToken ?? DEFAULT_DATA.deviceToken,
+		primaryTransport,
+		// Never the same as the primary: a fallback to where the run just failed is a second attempt
+		// dressed as a recovery, and it would double every timeout.
+		fallbackTransport:
+			isTransportId(stored?.fallbackTransport) && stored.fallbackTransport !== primaryTransport
+				? stored.fallbackTransport
+				: null,
+		ssh: { ...DEFAULT_SSH_SETTINGS, ...stored?.ssh },
+		sshHashes: stored?.sshHashes ?? {},
 		tagFolderMap: stored?.tagFolderMap ?? {},
 		// A copy, not the constant. `onVaultRename` writes into `data.syncIndex.rows` in place, so
 		// handing a fresh install EMPTY_SYNC_INDEX itself means the next one starts with the last one's

@@ -16,6 +16,16 @@ const REJECTED_RE = /\b401\b|\b403\b|unauthorized|unauthorised|forbidden|invalid
 const VAULT_RE = /already exists|cannot contain/i;
 
 /**
+ * "The other end was not there" -- as opposed to a credential that was refused.
+ *
+ * Exported because the failover decision turns on exactly this distinction: an unreachable source
+ * may be replaced by the secondary transport, a rejected one may not (see `transport-chain`).
+ */
+export function isOfflineError(error: unknown): boolean {
+	return OFFLINE_RE.test(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+}
+
+/**
  * Turns whatever the cloud or the runtime threw into one plain sentence that says what to do next.
  * Users see raw rmapi-js and Electron text otherwise, which explains nothing and reads as a crash.
  *
@@ -23,7 +33,7 @@ const VAULT_RE = /already exists|cannot contain/i;
  * unversioned, so "they changed their service" is a real and recurring cause, and this is the
  * plugin's whole answer to it -- naming it keeps a firmware break from looking like data loss.
  */
-export function explainError(error: unknown, context: ErrorContext): string {
+export function explainError(error: unknown, context: ErrorContext, source = "reMarkable's cloud"): string {
 	const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 
 	if (OFFLINE_RE.test(text)) return "No connection to the reMarkable cloud. Check your internet connection.";
@@ -43,8 +53,12 @@ export function explainError(error: unknown, context: ErrorContext): string {
 		);
 	}
 
+	// The source is named rather than assumed, because the same sentence now has to serve a tablet read
+	// over SSH as well as the cloud -- and it sits mid-sentence so that either name reads as English.
+	// Both causes are named too: the cloud API is reverse-engineered and unversioned, and the on-device
+	// format moves with firmware. Either way the user's move is the same one.
 	return (
-		"reMarkable's cloud answered in a way this plugin did not expect. This can happen when reMarkable " +
-		"changes their service. Check for a plugin update, and report it if it keeps happening."
+		`This plugin did not expect the answer it got from ${source}. This can happen when reMarkable ` +
+		"changes their service or their file format. Check for a plugin update, and report it if it keeps happening."
 	);
 }
