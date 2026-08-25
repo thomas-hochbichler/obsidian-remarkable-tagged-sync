@@ -14,7 +14,7 @@
 
 import type { Content, Entry, RawEntry } from "rmapi-js";
 import type { SyncApi } from "./sync-engine";
-import { mapWithConcurrency } from "./vision-ocr-backend";
+import { mapWithConcurrency } from "./concurrency";
 import { hashBytes, indexEntry, type Sync15Entry } from "./sync15-hash";
 
 /** One file on the device, as a listing reports it. Paths are relative to the xochitl directory. */

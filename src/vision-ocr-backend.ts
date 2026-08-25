@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from "./concurrency";
 import { clusterStrokes } from "./margin-notes";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
@@ -73,20 +74,6 @@ export function chunk<T>(items: T[], size: number): T[][] {
 	const chunks: T[][] = [];
 	for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
 	return chunks;
-}
-
-/** Maps `items` through `fn` with at most `limit` in flight at once, preserving input order. */
-export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
-	const results = new Array<R>(items.length);
-	let next = 0;
-	const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-		while (next < items.length) {
-			const index = next++;
-			results[index] = await fn(items[index], index);
-		}
-	});
-	await Promise.all(workers);
-	return results;
 }
 
 /**
