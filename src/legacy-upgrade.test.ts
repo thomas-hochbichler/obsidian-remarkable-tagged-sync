@@ -11,15 +11,19 @@ import { TagRouter } from "./tag-router";
 
 // The upgrade test: today's engine, run against a vault the **last shipped release** actually wrote.
 //
-// The state in `test-fixtures/legacy-state/` was produced by tag 1.4.2's own build, replayed against
-// the fake device beside it (`npm run freeze-state`, run at that tag). It is not an invented "old"
-// vault: an invented one only proves the current version copes with something we made up, and the
-// assumption about what old looked like is the same assumption that was already wrong once -- issue
-// #10 was an ancient notebook nobody had expected.
+// The state in `test-fixtures/legacy-state/` was produced by a shipped release's own build, replayed
+// against the fake device beside it (`npm run freeze-state`, run right after that release's tag). It
+// is not an invented "old" vault: an invented one only proves the current version copes with
+// something we made up, and the assumption about what old looked like is the same assumption that was
+// already wrong once -- issue #10 was an ancient notebook nobody had expected.
 //
-// Two properties of the frozen state make this exercise the full write path rather than the
-// nothing-to-do path, and both are checked out loud below: its rows carry `renderVersion: 23` where
-// today's is 30, and its mapping fingerprint carries the `2:` prefix where today's is `3:`.
+// **What makes an upgrade do any work belongs to the scenario, not to the fixture** (ticket 23). An
+// unchanged device, an unchanged mapping and an unchanged renderer add up to an upgrade that really
+// does nothing, and `runSync` returns early on exactly that. Each scenario below therefore brings its
+// own reason to run: a renderer that moved (`afterARendererBump`), a re-pointed tag, a deleted note,
+// a row an interrupted sync never wrote. The freeze itself cannot supply one -- it stamps the
+// renderer of the build it froze -- which is why four of these tests used to go red in the very PR
+// that ran it.
 //
 // **Attachment bytes are never asserted.** `pdf-lib` stamps `CreationDate`/`ModDate` from the wall
 // clock into a Flate-compressed object stream, so two renders of the same page differ in content
@@ -42,6 +46,26 @@ function openFrozenVault(): FrozenData {
 	vault = mkdtempSync(join(tmpdir(), "tagged-sync-upgrade-"));
 	cpSync(FROZEN_VAULT, vault, { recursive: true });
 	return JSON.parse(readFileSync(join(vault, DATA_JSON), "utf8")) as FrozenData;
+}
+
+/**
+ * The frozen index as the release *after* the one that wrote it sees it: managed notes rendered by a
+ * renderer older than today's.
+ *
+ * This is what a renderer bump does to a real vault, and it is the reason an upgrade re-renders
+ * anything at all. It is a scenario, not a repair of the fixture: nothing in the vault is touched --
+ * the notes, their block hashes and the attachments stay exactly as the old release wrote them, and
+ * `meta.renderVersion` keeps saying which renderer that was.
+ *
+ * Without it these scenarios would depend on *when* the state was frozen. A freeze stamps today's
+ * `RENDER_VERSION`, so between a tag and the next renderer change the frozen state is not stale, and
+ * every one of them would quietly assert nothing (ticket 23).
+ */
+function afterARendererBump(data: FrozenData): SyncIndex {
+	const rows = Object.fromEntries(
+		Object.entries(data.syncIndex.rows).map(([key, row]) => [key, { ...row, renderVersion: RENDER_VERSION - 1 }]),
+	);
+	return { ...data.syncIndex, rows };
 }
 
 const readNote = (path: string): string => readFileSync(join(vault, path), "utf8");
@@ -153,17 +177,19 @@ afterEach(() => {
 });
 
 describe("the frozen state itself", () => {
-	it("was produced by the previous release, and is stale in the two ways that make it a test", () => {
+	it("was produced by a shipped release, and every row carries the renderer that wrote it", () => {
 		const meta = JSON.parse(readFileSync(join(STATE, "meta.json"), "utf8")) as { version: string; renderVersion: number };
 		const data = openFrozenVault();
 
 		expect(meta.version).not.toBe("");
-		// Stale renders are what force `runSync` past the root-hash gate even though the device has not
-		// moved a byte. Without this the plain upgrade run hits the early return and asserts nothing.
-		expect(meta.renderVersion).toBeLessThan(RENDER_VERSION);
-		expect(Object.values(data.syncIndex.rows).every((row) => (row.renderVersion ?? 0) < RENDER_VERSION)).toBe(true);
-		// And the routing fingerprint's own version moved, which is the second forcing path.
-		expect(data.syncIndex.mappings?.startsWith(`${RENDER_VERSION}`)).not.toBe(true);
+		// Deliberately not `<`. The state is frozen right after a tag, so its renderer is today's until
+		// the next bump -- asserting staleness here made the freeze fail in the PR that ran it, and made
+		// the whole suite depend on when that happened (ticket 23). The scenarios age it themselves.
+		expect(meta.renderVersion).toBeLessThanOrEqual(RENDER_VERSION);
+		// What is worth pinning is that the file and the vault agree: `meta.json` is the only place a
+		// reader can see which renderer produced these notes, and a freeze that wrote one and left the
+		// other would make every scenario below claim the wrong thing about its own starting point.
+		expect(Object.values(data.syncIndex.rows).every((row) => (row.renderVersion ?? 0) === meta.renderVersion)).toBe(true);
 	});
 
 	it("holds the three shapes duplication bugs live in", () => {
@@ -181,13 +207,13 @@ describe("the frozen state itself", () => {
 });
 
 describe("upgrading a vault the last release wrote", () => {
-	it("keeps what the user wrote below the fence, across seven renderer versions", async () => {
+	it("keeps what the user wrote below the fence when the renderer moves under it", async () => {
 		const data = openFrozenVault();
 		const before = data.syncIndex.rows["doc-notes:sync"].notePath;
 		writeNote(before, `${readNote(before)}\n\nMy own thoughts about this notebook.\n`);
 		writeNote("Reading/A note of my own.md", "Nothing to do with the plugin.\n");
 
-		const result = await upgrade(data.syncIndex);
+		const result = await upgrade(afterARendererBump(data));
 
 		expect(result.notesWritten).toBeGreaterThan(0);
 		expect(noteOf(result, "doc-notes:sync")).toContain("My own thoughts about this notebook.");
@@ -201,7 +227,7 @@ describe("upgrading a vault the last release wrote", () => {
 		const edited = data.syncIndex.rows["doc-paper:read"].notePath;
 		writeNote(edited, readNote(edited).replace(FENCE, `A line I typed inside the block.\n\n${FENCE}`));
 
-		const result = await upgrade(data.syncIndex);
+		const result = await upgrade(afterARendererBump(data));
 
 		expect(result.editedNotesSkipped).toBe(1);
 		expect(readNote(edited)).toContain("A line I typed inside the block.");
@@ -248,26 +274,32 @@ describe("upgrading a vault the last release wrote", () => {
 	});
 
 	it("keeps the attachment at its path, and never asserts its bytes", async () => {
-		// `pdf-lib` stamps the wall clock into a compressed stream, so two renders of the same page
-		// differ in content and in length. The path, the existence and the page count are the
-		// assertable facts; a hash here would fail on every run for no reason.
+		// `pdf-lib` stamps the wall clock into a compressed stream, so a hash of the render is not a
+		// fact about the render. The path, the existence and the embed are; the bytes are not compared
+		// in either direction.
+		//
+		// Comparing two renders for *inequality* is the same mistake wearing the other hat, and it was
+		// here until a freshly frozen state exposed it: the stamp only differs once the clock has moved,
+		// so freezing and running in the same second made the two renders identical and the assertion
+		// red. That the file was rewritten is provable without the clock -- put bytes there that no
+		// render produces, and see them gone.
 		const data = openFrozenVault();
 		const attachment = "tagged-sync/attachments/doc-notes.pdf";
-		const beforeBytes = readFileSync(join(vault, attachment));
+		writeFileSync(join(vault, attachment), "not a PDF at all");
 
-		await upgrade(data.syncIndex);
+		await upgrade(afterARendererBump(data));
 
 		const afterBytes = readFileSync(join(vault, attachment));
-		expect(afterBytes.length).toBeGreaterThan(0);
+		expect(afterBytes.subarray(0, 5).toString()).toBe("%PDF-");
 		expect(readNote(data.syncIndex.rows["doc-notes:sync"].notePath)).toContain(`![[${attachment}]]`);
-		// Stated rather than assumed: they really are different bytes, and that is not a change.
-		expect(afterBytes.equals(beforeBytes)).toBe(false);
 	});
 
 	it("finds nothing left to do on a second upgrade, which is what a settled vault looks like", async () => {
 		const data = openFrozenVault();
 
-		const first = await upgrade(data.syncIndex);
+		// The bump is what gives the first run something to do -- without it "nothing left to do" would
+		// be true of both runs and the test would pass on a vault nobody had touched.
+		const first = await upgrade(afterARendererBump(data));
 		const second = await upgrade(first.index);
 
 		expect(second.notesWritten).toBe(0);
@@ -285,7 +317,9 @@ describe("a vault an interrupted sync left behind", () => {
 		const stranded = data.syncIndex.rows["doc-paper:read"].notePath;
 		delete data.syncIndex.rows["doc-paper:read"];
 
-		const result = await upgrade(data.syncIndex);
+		// A row that was never written leaves the *device* unchanged, so the missing row alone does not
+		// open the per-document gate -- the renderer bump is what makes the sync look at the document.
+		const result = await upgrade(afterARendererBump(data));
 
 		const owners = ownership(result.index);
 		expect(owners.unclaimed).toEqual([stranded]);

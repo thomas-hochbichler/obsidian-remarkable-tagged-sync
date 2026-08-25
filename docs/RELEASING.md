@@ -18,7 +18,7 @@ enforce.
 | 5 | Open the PR, wait for green, squash-merge | `gh pr create --title "Release 1.0.6"`, then `gh pr merge --squash --delete-branch` |
 | 6 | Tag the **merged** commit on `main` and push the tag | `git switch main && git pull --ff-only && git tag 1.0.6 && git push origin 1.0.6` |
 | 7 | Wait for the release workflow | it builds, attests, publishes and uploads |
-| 8 | **After** the tag: `npm run freeze-state`, in a PR of its own — see the warning below | rewrites `test-fixtures/legacy-state/` in place |
+| 8 | **After** the tag: `npm run freeze-state`, in a PR of its own | rewrites `test-fixtures/legacy-state/` in place |
 
 Details that matter:
 
@@ -39,21 +39,15 @@ Details that matter:
   is worth knowing before anyone moves it back. It rewrites the reference vault in
   `test-fixtures/legacy-state/` with what the current build leaves behind after a first sync, and
   `src/legacy-upgrade.test.ts` runs today's engine over it — the only way to test an upgrade against
-  a vault nobody invented. That test needs the state to be **stale**: a `renderVersion` below
-  today's is what forces the sync past its early return, so a state frozen from the very build being
-  released asserts nothing, and five of its ten tests say so out loud. Right after the tag the tree
-  is byte-identical to what shipped, which is exactly what "produced by the previous release" means,
-  and the state then goes stale by itself as the renderer moves during the next cycle.
+  a vault nobody invented. Only right after the tag is the tree byte-identical to what shipped, which
+  is what "produced by a release" has to mean for that test to be worth anything.
   It overwrites in place, so retiring the previous state is not a step: git holds it in history,
   where a frozen artefact belongs. The version gate fails the *next* release if this is skipped, and
   names the version it expected.
-- ⚠️ **The step-8 PR itself goes red today, and that is a known open defect, not your mistake.** The
-  freshly frozen state is not stale yet — it carries the renderer version of the build that just
-  shipped — so the five tests that rest on staleness fail until the renderer moves during the next
-  cycle. Do not "fix" it by skipping the freeze or by bumping `RENDER_VERSION`, which would re-render
-  every user's vault for nothing. The repair is to make those four scenarios force the sync path
-  themselves; it is written up, with the table of what each one needs, in
-  `.scratch/test-strategy/issues/23-freeze-state-pr-goes-red.md`.
+- **The script refuses to freeze from an untagged tree**, because nothing downstream could tell:
+  `git tag --points-at HEAD` must list `manifest.json`'s version. Reproducing a shipped build from a
+  tree the tag no longer points at is the one case for `npm run freeze-state -- --anyway`, which says
+  so on the way past.
 - **The tag has no `v` prefix.** `1.0.6`, never `v1.0.6`. The store resolves the tag from the
   manifest version, so a `v`-prefixed tag is simply not found.
 - **Step 5 is not optional.** The version gate runs in CI too, so a wrong number fails on the PR

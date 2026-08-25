@@ -105,34 +105,38 @@ function versionGate(tag) {
 		ok(`versions.json["${v}"] = ${minApp}, matches manifest minAppVersion`);
 	}
 
-	// The frozen legacy state must have been produced by the **previously released** version -- the
-	// one before the version being cut here -- because `src/legacy-upgrade.test.ts` runs today's
-	// engine over a vault that a shipped release actually wrote.
+	// The frozen legacy state must have been produced by a release that actually shipped, and by one
+	// of the last two: `src/legacy-upgrade.test.ts` runs today's engine over a vault a real previous
+	// release wrote, and a state two cycles old stops being the upgrade most users are about to make.
 	//
-	// This rule used to demand *this* version, and freezing was step 2b of the release PR. Those two
-	// gates cannot both be green: a fresh freeze stamps today's `RENDER_VERSION` into the state, and
-	// A8.20 asserts `meta.renderVersion < RENDER_VERSION` -- the staleness that forces `runSync` past
-	// its early return. Cutting 1.5.0 hit it head-on: freeze and five tests go red, skip it and this
-	// gate goes red. Ticket 13 §4 predicted exactly this ("One caveat").
+	// Two values are legitimate, and which one it is says where in the cycle we are:
 	//
-	// So the freeze moved out of the release PR to the first commit *after* the tag, where the tree is
-	// byte-identical to the build that shipped -- which is what "produced by the previous release"
-	// was always supposed to mean. See docs/RELEASING.md step 8.
+	//   the newest key   the freeze ran after that release's tag, as step 8 says -- the normal state
+	//                    of `main` between releases
+	//   the one before   a release PR whose step 8 has not happened yet, because it cannot: the tag
+	//                    does not exist while the PR is open
+	//
+	// The rule used to demand *this* version, with the freeze as step 2b of the release PR, and that
+	// could never be green: a fresh freeze stamps today's `RENDER_VERSION`, which the upgrade test
+	// then had to call stale. Cutting 1.5.0 hit it head-on. The freeze moved after the tag, and the
+	// scenarios stopped depending on the fixture's age (ticket 23) -- both halves were needed.
+	//
+	// A whole cycle with no freeze is what this still catches, one release later and before a tag is
+	// spent on it: at 1.6.0 a state from 1.4.4 matches neither key.
 	//
 	// It sits here rather than in a job of its own because `ci.yml` and `release.yml` both already run
 	// this gate: no new step, no new file to remember, and the failure shows up on the release PR in
-	// under a minute -- before a tag is spent.
+	// under a minute.
 	const legacyState = readJson("test-fixtures/legacy-state/meta.json");
-	// Insertion order is the release order, and `v` is always the last key by the time the gate runs
-	// -- the check above fails first if the key for this version is missing altogether.
+	// Insertion order is release order, and `v` is always the last key by the time the gate runs --
+	// the check above fails first if the key for this version is missing altogether.
 	const releases = Object.keys(versions);
-	const previous = releases[releases.length - 2];
-	if (previous === undefined) ok("test-fixtures/legacy-state has no previous release to be produced by");
-	else if (legacyState.version === previous) ok(`test-fixtures/legacy-state produced by ${legacyState.version}, the release before ${v}`);
+	const accepted = releases.slice(-2);
+	if (accepted.includes(legacyState.version)) ok(`test-fixtures/legacy-state produced by ${legacyState.version}`);
 	else
 		fail(
-			`test-fixtures/legacy-state was produced by ${legacyState.version}, the release before ${v} is ${previous} -- ` +
-				"run `npm run freeze-state` on a tree checked out at that tag, or see docs/RELEASING.md step 8",
+			`test-fixtures/legacy-state was produced by ${legacyState.version}, expected ${accepted.join(" or ")} -- ` +
+				"run `npm run freeze-state` and commit it, see docs/RELEASING.md step 8",
 		);
 
 	// release.yml only. The tag carries no `v` prefix -- the store resolves the tag from the
