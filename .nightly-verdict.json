@@ -1,227 +1,28 @@
 {
 	"schema": 1,
-	"commit": "c5ad752f44fc36b3824e817ffe1c9cb53bfe7df9",
-	"runId": "32688263992",
-	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/32688263992",
+	"commit": "0bbb486a4b4edd9cbda68e84ae524944a72e5518",
+	"runId": "32806783359",
+	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/32806783359",
 	"parts": {
-		"contract": {
+		"ocr": {
 			"status": "unknown",
-			"measuredAt": "2026-08-24T04:00:18.939Z",
+			"measuredAt": "2026-08-25T03:52:49.598Z",
+			"lastMeasuredAt": "2026-08-24T04:00:07.540Z",
 			"detail": {
 				"reason": "job did not report"
 			}
 		},
-		"ocr": {
+		"perf": {
 			"status": "pass",
-			"measuredAt": "2026-08-24T04:00:07.540Z",
-			"lastMeasuredAt": "2026-08-24T04:00:07.540Z",
+			"measuredAt": "2026-08-25T03:52:35.129Z",
+			"lastMeasuredAt": "2026-08-25T03:52:35.129Z",
 			"detail": {
-				"backends": {
-					"openrouter/anthropic/claude-sonnet-5": {
-						"status": "pass",
-						"pages": {
-							"10": {
-								"cer": 0.0023781212841854932,
-								"structure": {}
-							},
-							"11": {
-								"cer": 0.034782608695652174,
-								"structure": {}
-							},
-							"12": {
-								"cer": 0.022408963585434174,
-								"structure": {}
-							},
-							"13": {
-								"cer": 0.18584070796460178,
-								"structure": {}
-							},
-							"14": {
-								"cer": 0.18974358974358974,
-								"structure": {}
-							},
-							"01": {
-								"cer": 0,
-								"structure": {}
-							},
-							"02": {
-								"cer": 0.006,
-								"structure": {}
-							},
-							"03": {
-								"cer": 0.00510204081632653,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"04": {
-								"cer": 0.003205128205128205,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"05": {
-								"cer": 0.03067484662576687,
-								"structure": {
-									"table": "ok"
-								}
-							},
-							"06": {
-								"cer": 0.023809523809523808,
-								"structure": {}
-							},
-							"07": {
-								"cer": 0,
-								"structure": {}
-							},
-							"08": {
-								"cer": 0.3541666666666667,
-								"structure": {}
-							},
-							"09": {
-								"cer": 0,
-								"structure": {}
-							}
-						},
-						"medianCer": 0.006
-					},
-					"openrouter/openai/gpt-4o": {
-						"status": "pass",
-						"pages": {
-							"10": {
-								"cer": 0.011890606420927468,
-								"structure": {}
-							},
-							"11": {
-								"cer": 0.03188405797101449,
-								"structure": {}
-							},
-							"12": {
-								"cer": 0.0392156862745098,
-								"structure": {}
-							},
-							"13": {
-								"cer": 0.14601769911504425,
-								"structure": {}
-							},
-							"14": {
-								"cer": 0.04871794871794872,
-								"structure": {}
-							},
-							"01": {
-								"cer": 0,
-								"structure": {}
-							},
-							"02": {
-								"cer": 0.018,
-								"structure": {}
-							},
-							"03": {
-								"cer": 0.00510204081632653,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"04": {
-								"cer": 0.01282051282051282,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"05": {
-								"cer": 0.03067484662576687,
-								"structure": {
-									"table": "ok"
-								}
-							},
-							"06": {
-								"cer": 0.2857142857142857,
-								"structure": {}
-							},
-							"07": {
-								"cer": 0,
-								"structure": {}
-							},
-							"08": {
-								"cer": 0.3125,
-								"structure": {}
-							},
-							"09": {
-								"cer": 0,
-								"structure": {}
-							}
-						},
-						"medianCer": 0.018
-					},
-					"openrouter/google/gemini-2.5-flash": {
-						"status": "pass",
-						"pages": {
-							"10": {
-								"cer": 0.009512485136741973,
-								"structure": {}
-							},
-							"11": {
-								"cer": 0.043478260869565216,
-								"structure": {}
-							},
-							"12": {
-								"cer": 0.01680672268907563,
-								"structure": {}
-							},
-							"13": {
-								"cer": 0.11504424778761062,
-								"structure": {}
-							},
-							"14": {
-								"cer": 0.19487179487179487,
-								"structure": {}
-							},
-							"01": {
-								"cer": 0,
-								"structure": {}
-							},
-							"02": {
-								"cer": 0.01,
-								"structure": {}
-							},
-							"03": {
-								"cer": 0.02040816326530612,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"04": {
-								"cer": 0,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"05": {
-								"cer": 0.03067484662576687,
-								"structure": {
-									"table": "ok"
-								}
-							},
-							"06": {
-								"cer": 0.07142857142857142,
-								"structure": {}
-							},
-							"07": {
-								"cer": 0.011933174224343675,
-								"structure": {}
-							},
-							"08": {
-								"cer": 0.22916666666666666,
-								"structure": {}
-							},
-							"09": {
-								"cer": 0,
-								"structure": {}
-							}
-						},
-						"medianCer": 0.01680672268907563
-					}
-				}
+				"metrics": {
+					"renderPagesToPdfMs": 371,
+					"rasterizePageMs": 153
+				},
+				"page": "2000 strokes x 50 points",
+				"node": "v22.23.2"
 			}
 		}
 	}
