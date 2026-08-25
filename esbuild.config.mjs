@@ -13,6 +13,12 @@ if you want to view the source, visit the plugin's github repository
 
 const prod = process.argv[2] === "production";
 
+// Bundling `ssh2` costs every user ~730 kB of `main.js` -- 1.5 MB to 2.3 MB -- including free users,
+// whom the licence gate will never let near it. Accepted, and worth writing down rather than
+// discovering later: an Obsidian plugin is one file, so there is no split to defer it into, and a
+// `import()` at the point of use moves nothing out of the download. The alternative is shipping the
+// direct-device transport as a separate plugin, which is a much larger decision than a megabyte.
+//
 // `ssh2` asks for a compiled cipher accelerator inside a `try {} catch {}`. A `.node` file cannot be
 // bundled and must not be shipped, so every request for one is replaced by a module that throws --
 // which is precisely what an absent optional dependency does, and lands in the catch ssh2 has for

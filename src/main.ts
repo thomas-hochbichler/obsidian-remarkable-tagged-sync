@@ -624,6 +624,12 @@ export default class TaggedSyncPlugin extends Plugin {
 		const blocked = backgroundRunBlocked({
 			enabled: this.data.autoSync.enabled,
 			running: this.syncing,
+			// The primary alone, and deliberately not "any source in the chain". A vault whose primary is
+			// a tablet it never finished pairing has a setup to finish, and a fallback does not rescue
+			// that: `openTransportChain` only goes to the fallback when the primary was *unreachable*, so
+			// letting this through would start a run that fails rather than one that recovers. It is the
+			// same line `preflightRun` draws for a manual sync, which says "Pair with your reMarkable
+			// first" instead of quietly syncing from somewhere else.
 			connected: this.transport().status().connected,
 			reachable: await this.autoSyncSourceReachable(),
 			backgroundConsent: backgroundConsentGiven(entry, this.data.llmProviders[this.data.ocrBackend] ?? {}),
