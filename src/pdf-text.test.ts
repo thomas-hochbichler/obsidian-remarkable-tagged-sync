@@ -5,6 +5,7 @@ import {
 	dehyphenate,
 	groupTextLines,
 	loadPdfText,
+	paragraphBounds,
 	quoteForRects,
 	type PdfPageText,
 	type PdfTextLine,
@@ -238,6 +239,63 @@ describe("sentenceAround", () => {
 		const bounds = sentenceAround(numbered, 15, 20);
 
 		expect(numbered.slice(bounds.start, bounds.end)).toBe("See Fig. 2 for the setup.");
+	});
+
+	// The Alice passage `house!” (Which was very likely true.) Down, down, down.` -- closing
+	// punctuation on both sides of a boundary. Getting either side wrong made the sentences of two
+	// runs of one marker stroke overlap without containment, so the merge failed and the digest
+	// printed the parenthetical twice.
+	it("leaves a closing quote with the sentence it ends, not at the start of the next", () => {
+		const quoted = "even if I fell off the top of the house!” (Which was very likely true.) Down, down, down.";
+		const bounds = sentenceAround(quoted, quoted.indexOf("(Which"), quoted.indexOf("true.)") + "true.)".length);
+
+		expect(quoted.slice(bounds.start, bounds.end)).toBe("(Which was very likely true.)");
+	});
+
+	it("ends a sentence at a terminator that sits inside closing punctuation", () => {
+		const parenthetical = "(Which was very likely true.) Down, down, down.";
+		const bounds = sentenceAround(parenthetical, 0, "(Which was very likely true.)".length);
+
+		expect(parenthetical.slice(bounds.start, bounds.end)).toBe("(Which was very likely true.)");
+	});
+
+	it("takes a trailing closing quote into the sentence the range covers", () => {
+		const quoted = "Why would I? “I fell off the house!” (Which was very likely true.)";
+		const bounds = sentenceAround(quoted, quoted.indexOf("“I fell"), quoted.indexOf("house!”") + "house!”".length);
+
+		expect(quoted.slice(bounds.start, bounds.end)).toBe("“I fell off the house!”");
+	});
+});
+
+describe("paragraphBounds", () => {
+	const bookLine = (text: string, y: number, x: number): PdfTextLine => ({ text, x, y, width: 450 - (x - 80), height: 10 });
+	/** Book layout: paragraphs separated by first-line indent, no extra vertical gap anywhere. */
+	const bookPage: PdfPageText = {
+		label: "1",
+		width: 612,
+		height: 792,
+		lines: [
+			bookLine("“Well!” thought Alice to herself, “after such a fall as this, I", 710, 92),
+			bookLine("shall think nothing of tumbling down stairs! How brave they’ll", 697, 80),
+			bookLine("all think me at home!” (Which was very likely true.)", 684, 80),
+			bookLine("Down, down, down. Would the fall never come to an end?", 671, 92),
+		],
+	};
+
+	// Gap-based detection alone reads such a page as one paragraph, and the margin-note clip then
+	// shows the whole page instead of the paragraph the ink sits beside.
+	it("stops at a first-line indent, the way a book separates paragraphs", () => {
+		// A span level with the second line.
+		const bounds = paragraphBounds(bookPage, 708, 698);
+
+		expect(bounds).not.toBeNull();
+		// The paragraph runs from the indented first line to the line before the next indent.
+		expect(bounds!.y + bounds!.height).toBeCloseTo(720, 0);
+		expect(bounds!.y).toBeCloseTo(684, 0);
+	});
+
+	it("returns null for a span that touches no line", () => {
+		expect(paragraphBounds(bookPage, 500, 490)).toBeNull();
 	});
 });
 

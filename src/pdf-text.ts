@@ -480,21 +480,40 @@ function isSentenceEnd(text: string, index: number): boolean {
 	return /^["'”’)\]]*\s+["'“„«(]*\p{Lu}/u.test(rest);
 }
 
-/** Expands a character range to the sentence containing it, or to the text bounds when no boundary is found. */
+/** Closing punctuation that trails a terminator -- `house!”`, `true.)` -- and belongs to the sentence it closes. */
+const SENTENCE_CLOSER = /["'”’)\]]/;
+
+/** The first index past the run of closing punctuation starting at `index`. */
+function pastClosers(text: string, index: number): number {
+	let i = index;
+	while (i < text.length && SENTENCE_CLOSER.test(text[i])) i++;
+	return i;
+}
+
+/**
+ * Expands a character range to the sentence containing it, or to the text bounds when no boundary is
+ * found. Closing punctuation stays with the sentence it ends, on both sides of a boundary: the
+ * sentence after `house!”` starts at the parenthetical, not at the stranded `”` -- and a range that
+ * ends `true.)` ends its sentence there, even though the terminator sits behind the `)`. Without
+ * either, two runs of one marker stroke get overlapping sentences that contain neither the other,
+ * and the merge that would print them once cannot see they belong together.
+ */
 export function sentenceAround(text: string, start: number, end: number): { start: number; end: number } {
 	let from = 0;
 	for (let i = start - 1; i >= 0; i--) {
 		if (isSentenceEnd(text, i)) {
-			from = i + 1;
+			from = Math.min(pastClosers(text, i + 1), start);
 			break;
 		}
 	}
 	while (from < start && /\s/.test(text[from])) from++;
 
 	let to = text.length;
-	for (let i = Math.max(end - 1, from); i < text.length; i++) {
+	let scan = Math.max(end - 1, from);
+	while (scan > from && SENTENCE_CLOSER.test(text[scan])) scan--;
+	for (let i = scan; i < text.length; i++) {
 		if (isSentenceEnd(text, i)) {
-			to = i + 1;
+			to = pastClosers(text, i + 1);
 			break;
 		}
 	}
@@ -534,6 +553,49 @@ function markedRange(line: PdfTextLine, rects: PdfRect[]): { start: number; end:
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(Math.max(value, min), max);
+}
+
+/** A first-line indent has to reach about an em to count -- justified text wobbles less than that. */
+const PARAGRAPH_INDENT_RATIO = 0.8;
+
+/**
+ * Whether `lines[index]` opens a paragraph: it follows a gap or size change (`separated`), or it is
+ * indented against the line above -- a book separates paragraphs by first-line indent alone, with no
+ * vertical gap for the spacing test to see.
+ */
+function opensParagraph(lines: PdfTextLine[], index: number, spacing: number | null): boolean {
+	if (index === 0) return true;
+	const line = lines[index];
+	const above = lines[index - 1];
+	if (separated(above, line, spacing)) return true;
+	return line.x - above.x > PARAGRAPH_INDENT_RATIO * line.height;
+}
+
+/**
+ * The bounding box of the paragraph a vertical span touches: every line the span overlaps, extended
+ * over neighbouring lines until a paragraph break (see `opensParagraph`). Null when the span touches
+ * no line at all. `top` and `bottom` are in the page's own bottom-left frame, top > bottom.
+ */
+export function paragraphBounds(page: PdfPageText, top: number, bottom: number): PdfRect | null {
+	const spacing = bodyLineSpacing(page.lines);
+	const lines = page.lines;
+	let first = -1;
+	let last = -1;
+	lines.forEach((line, index) => {
+		if (line.y >= top || line.y + line.height <= bottom) return;
+		if (first === -1) first = index;
+		last = index;
+	});
+	if (first === -1) return null;
+	while (first > 0 && !opensParagraph(lines, first, spacing)) first--;
+	while (last < lines.length - 1 && !opensParagraph(lines, last + 1, spacing)) last++;
+
+	const members = lines.slice(first, last + 1);
+	const x = Math.min(...members.map((line) => line.x));
+	const right = Math.max(...members.map((line) => line.x + line.width));
+	const y = Math.min(...members.map((line) => line.y));
+	const topEdge = Math.max(...members.map((line) => line.y + line.height));
+	return { x, y, width: right - x, height: topEdge - y };
 }
 
 /**

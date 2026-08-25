@@ -1,5 +1,5 @@
 # golden notebook-with-image
-# render-version 30
+# render-version 31
 # fixture test-fixtures/rmv6/notebook-with-image.rm
 
 ## scene

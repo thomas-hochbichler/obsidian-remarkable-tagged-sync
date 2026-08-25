@@ -1,5 +1,5 @@
 # golden synthetic-runaway-ink
-# render-version 30
+# render-version 31
 # fixture synthetic (test-support/golden/scenes.ts)
 
 ## scene

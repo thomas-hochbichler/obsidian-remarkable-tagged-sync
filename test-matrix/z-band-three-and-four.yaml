@@ -158,6 +158,41 @@
       file: src/pdf-text.test.ts
       test: "loadPdfText > says why in the console, with the error, rather than degrading in silence"
 
+    - id: F3.2
+      scenario: A sentence boundary followed by the previous sentence's closing quote -- `house!” (Which …`
+      expect: The closing quote stays with the sentence it ends; the next sentence starts at the parenthetical, never at a stranded `”`
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "sentenceAround > leaves a closing quote with the sentence it ends, not at the start of the next"
+
+    - id: F3.3
+      scenario: A range ending `true.)` -- the terminator sits behind the closing paren
+      expect: The sentence ends there instead of running on to the next terminator, which used to drag `Down, down, down.` into the parenthetical's quote
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "sentenceAround > ends a sentence at a terminator that sits inside closing punctuation"
+
+    - id: F3.4
+      scenario: A range covering a full quoted exclamation -- `“I fell off the house!”`
+      expect: The trailing closing quote is part of the sentence the range covers
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "sentenceAround > takes a trailing closing quote into the sentence the range covers"
+
+    - id: F3.5
+      scenario: A margin note beside a book page -- paragraphs separated by first-line indent, no vertical gap anywhere
+      expect: The paragraph ends at the next indent. Gap-based detection alone reads the whole page as one paragraph, and the clip then shows the page instead of the passage
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "paragraphBounds > stops at a first-line indent, the way a book separates paragraphs"
+
+    - id: F3.6
+      scenario: A vertical span in the whitespace below the prose
+      expect: Null -- no paragraph, and the caller keeps the ink's own box
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "paragraphBounds > returns null for a span that touches no line"
+
 - feature: A5
   name: Old documents don't break the account -- the assumption the patch rests on
   code: src/remarkable-metadata.ts
@@ -196,3 +231,37 @@
       file: src/licence-state.test.ts
       test: "nextLicenceCall > asks for nothing about a revoked key whose verdict has gone stale"
 
+
+
+- feature: F4
+  name: A highlight quotes the sentence around it -- one entry per passage
+  code: src/digest-pipeline.ts
+  tier: free
+  scenarios:
+    - id: F4.1
+      scenario: One marker stroke across a line break, its second run starting at a parenthetical behind a closing quote
+      expect: The parenthetical prints once, and no entry starts with a stranded `”`. The two runs' sentences used to overlap without containment, so the merge never saw they belong together and the digest printed the passage twice
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > does not print the parenthetical of one marker stroke twice when it crosses the line break"
+
+    - id: F4.2
+      scenario: One marker gesture across a wrapped paragraph -- one run per line on the device, spanning three sentences
+      expect: One entry quoting the whole passage, with one page reference. The junctions carry the wrap shape (upper run to its line's end, lower from its line's start), which is how a gesture is told apart from separate swipes stacked on neighbouring lines
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > prints one marker stroke across several wrapped lines as one entry"
+
+    - id: F4.3
+      scenario: Two wrapped-shape runs on neighbouring lines, drawn in different marker colors
+      expect: Two entries. A colour change is a new gesture, whatever the shapes say
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > does not merge wrapped lines drawn in different colors"
+
+    - id: F4.4
+      scenario: Handwriting beside the last line of a paragraph, its clip requested
+      expect: The stored region spans the whole paragraph plus the ink, so the clip shows what the note is about -- clipped to the ink's own box it showed one line of prose and no context
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest note regions > spans the whole paragraph the handwriting sits beside, so the clip carries its context"

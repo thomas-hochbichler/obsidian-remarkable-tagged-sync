@@ -1,5 +1,5 @@
 # golden weather-station-page1-annotated
-# render-version 30
+# render-version 31
 # fixture test-fixtures/rmv6/weather-station.pdf + weather-station-page1.rm
 
 ## scene
