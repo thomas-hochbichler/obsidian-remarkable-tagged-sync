@@ -12,6 +12,33 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-08-25
+
+### Fixed
+
+- **Deleting a document on your reMarkable now stops it from syncing.** Moving a tagged document
+  to the device's trash only re-parents it; its tags stay in place until the next cloud sync wipes
+  it for good. The plugin kept reading those tags, so the document's notes came back on every sync
+  — even after you had deleted them from the vault by hand. A document in the trash now counts as
+  deleted: its notes are left alone in your vault and their index rows are retired, exactly as if
+  the document had vanished. A document inside a trashed folder counts too. (#91)
+
+- **One highlight is now one digest entry.** A marker stroke drawn across several lines of a book
+  or PDF arrives from the device as one run per line, and the digest used to print it as one entry
+  per sentence it crossed — a four-line highlight became three entries. The runs of one gesture are
+  now rejoined by their shape on the page, so the digest shows the one passage you highlighted,
+  with one page reference. (#92)
+
+- **A quote no longer prints its ending twice behind a stray quotation mark.** Closing punctuation
+  now stays with the sentence it ends, on both sides of a sentence boundary. Before, a highlight
+  ending in a parenthetical could appear twice — once as context, once as its own entry opening
+  with a stranded `”`. (#92)
+
+- **The handwriting clip now shows the paragraph, not just the line.** Opening the picture behind
+  a margin note used to show only the strip of prose level with the ink. The clip now spans the
+  paragraph the note sits beside — including in books, which separate paragraphs by first-line
+  indent rather than by spacing — so the context the note is about is in the picture. (#92)
+
 ## [1.5.0] - 2026-08-25
 
 ### Added
