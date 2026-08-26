@@ -501,12 +501,14 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.addToggle((toggle) => {
 				toggle.setValue(this.plugin.data.frontmatter).setDisabled(!frontmatterUnlocked);
 				toggle.onChange(async (value) => {
+					// A click that changes nothing (see below) must not run a pass.
+					if (value === this.plugin.data.frontmatter) return;
 					// The plugin runs the backfill/cleanup pass and persists only what actually happened, so
-					// the tab re-renders to the outcome instead of assuming the click succeeded. A re-render
-					// rather than setValue: setValue fires this handler again (read out of obsidian-1.13.7's
-					// app.js), which would turn a refused enable into a spurious cleanup pass.
+					// the toggle is set back to the outcome instead of assuming the click succeeded. setValue
+					// fires this handler again (read out of obsidian-1.13.7's app.js); the guard above is
+					// what keeps a refused enable from turning into a spurious cleanup pass.
 					await this.plugin.setFrontmatterEnabled(value);
-					this.display();
+					toggle.setValue(this.plugin.data.frontmatter);
 				});
 			});
 	}
