@@ -1,0 +1,378 @@
+# Frontmatter properties (Pro) -- spec in the PR that introduced it (#96).
+#
+# The feature reverses the "a synced note carries no frontmatter" decision without giving up its
+# reason: the plugin manages exactly its own keys, line by line, and every user line survives
+# byte-for-byte. The rows here split the way the code does -- the pure merge (J1-J3), the two
+# explicit passes (J4), the sync engine's wire (J5), the toggle and its gate (J6), and the device
+# folder path the keys quote (J7).
+
+- feature: J1
+  name: The property block a synced note carries
+  code: src/frontmatter.ts
+  tier: pro
+  scenarios:
+    - id: J1.1
+      scenario: A note without frontmatter gets the block
+      expect: Exactly the spec example's keys in its order -- tags first, then the remarkable-* scalars
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note without frontmatter > writes the block of the spec example, keys in its order"
+    - id: J1.2
+      scenario: The write reports what it now owns
+      expect: The namespaced tags come back for the index row, so a later write or cleanup knows what to remove
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note without frontmatter > hands back the tags it now owns, for the index row"
+    - id: J1.3
+      scenario: A document at the device root
+      expect: No remarkable-folder key at all -- an absent key, not an empty value
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note without frontmatter > writes no folder key for a document at the device root"
+    - id: J1.4
+      scenario: The same fields applied twice
+      expect: Byte-identical content -- re-syncing an unchanged document must not churn the note
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note without frontmatter > is idempotent"
+    - id: J1.5
+      scenario: The user already has frontmatter of their own
+      expect: Every user line is preserved byte-for-byte, comments and odd spacing included
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note the user already gave frontmatter > preserves every user line byte-for-byte, comments and odd spacing included"
+    - id: J1.6
+      scenario: A plugin key was hand-edited or deleted
+      expect: Restored and repaired on the next write -- the keys mirror the device, they are not a place to type
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note the user already gave frontmatter > restores a deleted plugin key and repairs a hand-edited value"
+    - id: J1.7
+      scenario: A document moved to the device root after its folder key was written
+      expect: The stale folder line is removed, not left lying
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note the user already gave frontmatter > removes its folder line once the document moved to the device root"
+    - id: J1.8
+      scenario: A folder name YAML would misread (a colon, say)
+      expect: The value is quoted rather than silently becoming a mapping
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "applyFrontmatter on a note the user already gave frontmatter > quotes a folder YAML would misread"
+    - id: J1.9
+      scenario: Local ISO minute format
+      expect: Zero-padded YYYY-MM-DDTHH:mm -- Dataview-native, and same-day syncs sort
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "value formatting > formats a local minute, zero-padded"
+    - id: J1.10
+      scenario: The device's lastModified, an epoch-milliseconds string
+      expect: Read as the timestamp it is
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "value formatting > reads the device's epoch-milliseconds string"
+    - id: J1.11
+      scenario: lastModified in an unexpected format
+      expect: An ISO string is tolerated; junk yields no key rather than "Invalid Date" in the vault
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "value formatting > tolerates an ISO string and refuses junk instead of writing Invalid Date"
+    - id: J1.12
+      scenario: Device tag names become Obsidian property tags
+      expect: remarkable/<tag>, no '#', spaces bridged, duplicates collapsed, empties dropped
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "value formatting > namespaces device tags the way Obsidian properties want them: no #, no spaces, deduped"
+
+- feature: J2
+  name: The shared tags key -- merged, never owned
+  code: src/frontmatter.ts
+  tier: pro
+  scenarios:
+    - id: J2.1
+      scenario: The user keeps tags of their own in a block list
+      expect: The plugin's tags join the list; the user's entries keep their exact bytes
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the shared tags key > merges its tags into a user block list without touching the user's entries"
+    - id: J2.2
+      scenario: A device tag is gone since the last write
+      expect: Only the tracked plugin entry leaves the list -- user tags are never touched
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the shared tags key > removes only the tags it added itself when they leave the device, never user tags"
+    - id: J2.3
+      scenario: The user wrote tags in the inline [a, b] form
+      expect: The plugin joins and leaves in place, keeping the inline form
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the shared tags key > joins an inline list in place"
+    - id: J2.4
+      scenario: The user wrote a bare scalar tags value
+      expect: Grown into a block list that still holds the user's entry -- the one reformat the merge cannot avoid
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the shared tags key > grows a bare scalar into a list that still holds the user's entry"
+    - id: J2.5
+      scenario: The note already carries the tag the plugin would add
+      expect: No duplicate entry
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the shared tags key > does not duplicate a tag the note already carries"
+- feature: J3
+  name: The per-note cleanup -- what toggle-off does to one file
+  code: src/frontmatter.ts
+  tier: pro
+  scenarios:
+    - id: J3.1
+      scenario: The plugin wrote the whole block
+      expect: The block goes entirely -- the note returns to its frontmatter-free form
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "removeFrontmatter (the toggle-off cleanup) > takes the whole block away when the plugin wrote all of it"
+    - id: J3.2
+      scenario: User lines and user tags share the block
+      expect: Only the plugin's keys and tracked tags leave; the user's block survives verbatim
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "removeFrontmatter (the toggle-off cleanup) > keeps the user's lines and tags, removing only its own"
+    - id: J3.3
+      scenario: A note the plugin never wrote keys into
+      expect: Null -- the caller skips the write, and the file's mtime is not touched for nothing
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "removeFrontmatter (the toggle-off cleanup) > leaves a note that carries nothing of the plugin's alone"
+    - id: J3.4
+      scenario: An inline tags list holding user and plugin entries
+      expect: The plugin's entries leave the brackets; the user's stay
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "removeFrontmatter (the toggle-off cleanup) > clears an inline tags list of exactly its own entries"
+    - id: J3.5
+      scenario: An inline tags list that held only plugin entries
+      expect: 'The emptied key is removed, not left as "tags: []"'
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "removeFrontmatter (the toggle-off cleanup) > drops an inline tags key that held only its own entries"
+    - id: J3.6
+      scenario: A quoted list entry at cleanup
+      expect: Compared by its value, not its quoting -- '"remarkable/x"' and remarkable/x are the same tag
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "removeFrontmatter (the toggle-off cleanup) > reads a double-quoted entry as the tag it quotes"
+
+- feature: J4
+  name: The backfill and cleanup passes over the whole vault
+  code: src/frontmatter-pass.ts
+  tier: pro
+  scenarios:
+    - id: J4.1
+      scenario: Toggle on, with already-synced notes in the vault
+      expect: Every active row's note gets the keys from the device's own metadata, synced from the row's syncedAt, and the row tracks the tags
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter (toggle on) > writes the keys into every already-synced note, from the device's own metadata"
+    - id: J4.2
+      scenario: A document gone from the device listing, a note gone from the vault
+      expect: Skipped and counted -- the pass says how many it could not reach, and touches nothing else about them
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter (toggle on) > skips what it cannot reach -- a document gone from the device, a note gone from the vault -- and says how many"
+    - id: J4.3
+      scenario: One document's content read fails mid-pass
+      expect: That document's rows are skipped; the rest are still written -- one bad read must not abort the vault
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter (toggle on) > skips a document whose content cannot be read, and still writes the rest"
+    - id: J4.4
+      scenario: PDF-backed and EPUB-backed documents in the backfill
+      expect: remarkable-type says pdf and epub respectively
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter (toggle on) > names an annotated PDF a pdf and a book an epub"
+    - id: J4.5
+      scenario: Orphaned rows at backfill time
+      expect: Left alone -- their tag is unmapped, their notes are the user's now, and the device is not even asked
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter (toggle on) > leaves orphaned rows alone -- their tag is unmapped, their notes are the user's now"
+    - id: J4.6
+      scenario: Toggle off, over every note the index knows
+      expect: Keys and tracked tags removed, the tracking forgotten from the rows
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "cleanupFrontmatter (toggle off) > removes the plugin's keys and tracked tags from every note the index knows, and forgets the tracking"
+    - id: J4.7
+      scenario: Cleanup over a vault where the user has their own frontmatter
+      expect: User frontmatter stays; zero notes reported changed when nothing of the plugin's was there
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "cleanupFrontmatter (toggle off) > keeps the user's own frontmatter and reports zero when there was nothing of the plugin's"
+    - id: J4.8
+      scenario: An orphaned row's note still sits in the vault at cleanup
+      expect: Cleaned too -- orphaning stopped the syncing, not the ownership of the keys
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "cleanupFrontmatter (toggle off) > cleans an orphaned row's note too -- it may still sit in the vault"
+
+- feature: J5
+  name: The sync engine writes the keys as it writes the note
+  code: src/sync-engine.ts
+  tier: pro
+  scenarios:
+    - id: J5.1
+      scenario: A tagged notebook in a device folder syncs with the feature on
+      expect: The note carries every document tag plus the selector (namespaced, no '#') and the six remarkable-* keys, and the row tracks the tags
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "frontmatter properties (Pro) > writes the note's device tags and metadata into its frontmatter when the feature is on"
+    - id: J5.2
+      scenario: The frontmatter write and the hand-edit freeze
+      expect: The managed block still hashes to its row -- frontmatter never enters the hash, so writing or editing it cannot freeze the note
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "frontmatter properties (Pro) > does not freeze the note as hand-edited: the managed block still hashes to its row"
+    - id: J5.3
+      scenario: A tag removed on the device, then the notebook re-syncs
+      expect: Exactly the tracked tag leaves the note's list; the selector stays
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "frontmatter properties (Pro) > removes a tag that left the device from the note, and only that one"
+    - id: J5.4
+      scenario: PDF-backed and EPUB-backed documents through the engine
+      expect: remarkable-type says pdf and epub respectively
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "frontmatter properties (Pro) > names an annotated PDF a pdf and a book an epub"
+    - id: J5.5
+      scenario: The shipped default -- the caller says nothing
+      expect: Not a line of frontmatter is written, and no tags are tracked
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "frontmatter properties (Pro) > writes no frontmatter at all when the caller says nothing -- the shipped default"
+
+- feature: J6
+  name: The settings toggle, its passes, and the licence gate
+  code: src/main.ts
+  tier: pro
+  scenarios:
+    - id: J6.0
+      scenario: The gate predicate itself
+      expect: frontmatterAllowed locks free and opens for a trial or a licence -- the one predicate both main.ts and the tab ask
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the gate > locks free and opens for a trial or a licence"
+    - id: J6.1
+      scenario: How the toggle presents on each side of the paywall
+      expect: Free sees "Frontmatter properties (Pro)", visible but disabled -- the house pattern; a trial or licence gets it live
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > offers frontmatter properties locked to a free user and open past the paywall"
+    - id: J6.2
+      scenario: Enabling from the tab without a connection
+      expect: The connect sentence, and the setting does not pretend it is on
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > refuses to enable frontmatter without a connection, and does not pretend it is on"
+    - id: J6.3
+      scenario: The toggle is set back to the value it already shows
+      expect: Nothing runs -- the guard that keeps a refused enable from re-entering as a spurious cleanup
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > treats a click that changes nothing as nothing -- no pass, no notice"
+    - id: J6.4
+      scenario: Disabling from the tab
+      expect: The cleanup pass runs, the tracked tags are forgotten, off is persisted
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > turns frontmatter off through the cleanup pass, forgetting the tracked tags"
+    - id: J6.5
+      scenario: Enabling succeeds
+      expect: The backfill runs, on is persisted, and the notice quotes what was written
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting on > runs the backfill and persists the setting with what the pass did"
+    - id: J6.6
+      scenario: The backfill could not reach everything
+      expect: The notice says how many, and that the next sync picks them up
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting on > says out loud what it could not reach"
+    - id: J6.7
+      scenario: The backfill dies halfway
+      expect: The setting stays on -- every note it missed is picked up when its notebook next syncs -- and the failure is reported
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting on > keeps the setting on when the pass dies halfway -- the next sync picks up what it missed"
+    - id: J6.8
+      scenario: The pass throws something that is not an Error
+      expect: Still reported, never swallowed
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting on > survives a throw that is not an Error, and still reports"
+    - id: J6.9
+      scenario: A licence-gated backend is selected when the toggle is enabled
+      expect: The licence is re-checked first, the same rule every long job follows
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting on > re-checks the licence first when the selected backend is one a licence unlocks"
+    - id: J6.10
+      scenario: Enabling while a sync runs
+      expect: Refused with the running notice; the setting stays off and no pass runs
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting on > is refused while a sync runs, and does not pretend it is on"
+    - id: J6.11
+      scenario: Disabling succeeds
+      expect: The cleanup pass runs, off is persisted, and the notice quotes what was removed
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting off > runs the cleanup pass, persists off, and says what it removed"
+    - id: J6.12
+      scenario: Disabling when nothing was left to remove
+      expect: Still says off -- silence would read as a broken click
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting off > says off even when there was nothing left to remove"
+    - id: J6.13
+      scenario: Disabling while a sync runs
+      expect: Refused -- the pass and the sync must not race over the same notes -- and the setting stays on
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "turning the setting off > is refused while a sync runs, and the setting stays on"
+    - id: J6.14
+      scenario: The licence lapses with the setting still on
+      expect: The engine is handed the feature only while the entitlement allows it -- the sync keeps working, minus the Pro part, and nothing in the vault is touched to say so
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "the licence gate on the sync itself > hands the engine the feature only while the licence allows it"
+
+- feature: J7
+  name: The device folder path the keys quote
+  code: src/remarkable-tags.ts
+  tier: pro
+  scenarios:
+    - id: J7.1
+      scenario: A document nested in device folders
+      expect: The parent chain becomes Work/Projekt X -- outermost folder first
+      layer: unit
+      file: src/remarkable-tags.test.ts
+      test: "folderPathOf > walks the parent chain into a device path, outermost folder first"
+    - id: J7.2
+      scenario: A document at the device root
+      expect: Null -- which J1.3 turns into an absent key
+      layer: unit
+      file: src/remarkable-tags.test.ts
+      test: "folderPathOf > answers null for a document at the root -- no key gets written for it"
+    - id: J7.3
+      scenario: A parent the listing does not carry
+      expect: The walk stops there and keeps the path it saw, rather than failing the document
+      layer: unit
+      file: src/remarkable-tags.test.ts
+      test: "folderPathOf > stops at a parent the listing does not carry, keeping what it saw"
+    - id: J7.4
+      scenario: A malformed parent cycle
+      expect: Stopped, not a hung sync -- the same guard the tag inheritance walk has
+      layer: unit
+      file: src/remarkable-tags.test.ts
+      test: "folderPathOf > is stopped by a malformed parent cycle rather than hanging a sync"
