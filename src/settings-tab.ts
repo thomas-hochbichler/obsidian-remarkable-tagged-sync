@@ -13,6 +13,7 @@ import { isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
 import { confirmDialog } from "./confirm-modal";
 import { explainError } from "./explain-error";
+import { frontmatterAllowed } from "./frontmatter";
 import { activateKey, deactivateHere } from "./licence-check";
 import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft } from "./licence-messages";
 import { startTrial, withoutLicence } from "./licence-state";
@@ -485,6 +486,29 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					await this.plugin.saveData(this.plugin.data);
 				}),
 			);
+
+		// Shown and disabled for free users rather than hidden -- the same rule as the transport
+		// dropdown above: a feature a free user cannot see is one they cannot want.
+		const frontmatterUnlocked = frontmatterAllowed(this.plugin.entitlement());
+		new Setting(containerEl)
+			.setName(frontmatterUnlocked ? "Frontmatter properties" : "Frontmatter properties (Pro)")
+			.setDesc(
+				frontmatterUnlocked
+					? "Write each note's reMarkable tags and metadata (folder, modified, type, …) into its frontmatter, for Dataview and Bases. " +
+							"Turning this on writes the properties into every synced note; turning it off removes them again. Your own frontmatter lines are never touched."
+					: "Write each note's reMarkable tags and metadata into its frontmatter, for Dataview and Bases. Part of Tagged Sync Pro -- see below.",
+			)
+			.addToggle((toggle) => {
+				toggle.setValue(this.plugin.data.frontmatter).setDisabled(!frontmatterUnlocked);
+				toggle.onChange(async (value) => {
+					// The plugin runs the backfill/cleanup pass and persists only what actually happened, so
+					// the tab re-renders to the outcome instead of assuming the click succeeded. A re-render
+					// rather than setValue: setValue fires this handler again (read out of obsidian-1.13.7's
+					// app.js), which would turn a refused enable into a spurious cleanup pass.
+					await this.plugin.setFrontmatterEnabled(value);
+					this.display();
+				});
+			});
 	}
 
 	/**

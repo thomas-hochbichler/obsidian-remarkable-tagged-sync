@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
 import { buildDigest } from "./digest-pipeline";
 import { blockHashOf, extractManagedBlock, type NoteStore } from "./note-builder";
+import { formatLocalMinute } from "./frontmatter";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmLayer, RmPage } from "./rm-parser";
@@ -3496,5 +3497,69 @@ describe("a re-sync that finds fewer highlights", () => {
 
 		expect(result.skipErrors).toEqual([]);
 		expect(result.index.rows[KEY].highlightCount).toBe(0);
+	});
+});
+
+describe("frontmatter properties (Pro)", () => {
+	/** One tagged notebook inside a device folder, carrying a second, unmapped tag. */
+	function taggedNotebook() {
+		return fakeApi({
+			rootHash: "root-1",
+			entries: [
+				collectionEntry({ id: "folder-1", visibleName: "Work" }),
+				documentEntry({
+					id: "doc-1",
+					hash: "hash-1",
+					visibleName: "Notebook",
+					parent: "folder-1",
+					pinned: true,
+					lastModified: String(Date.UTC(2026, 0, 1, 8, 0)),
+					tags: [
+						{ name: "sync", timestamp: 0 },
+						{ name: "projekt x", timestamp: 0 },
+					],
+				}),
+			],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "ha" } },
+		});
+	}
+
+	it("writes the note's device tags and metadata into its frontmatter when the feature is on", async () => {
+		const deps = { ...baseDeps(taggedNotebook(), { sync: "Target" }), frontmatter: true };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const note = await deps.noteStore.read("Target/Notebook.md");
+		// Every document tag plus the selector, namespaced and without '#' -- what keeps
+		// `FROM #remarkable` a universal base query.
+		expect(note).toContain("tags:\n  - remarkable/sync\n  - remarkable/projekt-x\n");
+		expect(note).toContain(`remarkable-modified: ${formatLocalMinute(new Date(Date.UTC(2026, 0, 1, 8, 0)))}\n`);
+		expect(note).toContain(`remarkable-synced: ${formatLocalMinute(new Date(NOW))}\n`);
+		expect(note).toContain("remarkable-folder: Work\n");
+		expect(note).toContain("remarkable-type: notebook\n");
+		expect(note).toContain("remarkable-pinned: true\n");
+		expect(note).toContain("remarkable-uuid: doc-1\n");
+		// The row tracks the tags, so the next write and the cleanup pass remove exactly these.
+		expect(result.index.rows[notebookSyncKey("doc-1", "sync")].frontmatterTags).toEqual(["remarkable/sync", "remarkable/projekt-x"]);
+	});
+
+	it("does not freeze the note as hand-edited: the managed block still hashes to its row", async () => {
+		const deps = { ...baseDeps(taggedNotebook(), { sync: "Target" }), frontmatter: true };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const note = await deps.noteStore.read("Target/Notebook.md");
+		expect(blockHashOf(extractManagedBlock(note!)!)).toBe(result.index.rows[notebookSyncKey("doc-1", "sync")].blockHash);
+	});
+
+	it("writes no frontmatter at all when the caller says nothing -- the shipped default", async () => {
+		const deps = baseDeps(taggedNotebook(), { sync: "Target" });
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const note = await deps.noteStore.read("Target/Notebook.md");
+		expect(note!.startsWith("---")).toBe(false);
+		expect(result.index.rows[notebookSyncKey("doc-1", "sync")].frontmatterTags).toBeUndefined();
 	});
 });

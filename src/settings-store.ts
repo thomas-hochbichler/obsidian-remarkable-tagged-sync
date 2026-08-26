@@ -83,6 +83,12 @@ export interface TaggedSyncData {
 	 */
 	marginNotes: boolean;
 	/**
+	 * Frontmatter properties (Pro), off by default even for buyers: enabling runs a backfill pass
+	 * that touches every synced note, and a plugin update must never do that unasked. The explicit
+	 * click in settings is the consent.
+	 */
+	frontmatter: boolean;
+	/**
 	 * The Pro licence, beside `deviceToken` because that is where this vault's other credential
 	 * already lives. In a synced vault these fields travel to the other machine, which is correct:
 	 * one vault is one activation, wherever it is opened.
@@ -107,6 +113,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	lastSyncAt: null,
 	attachmentsFolder: DEFAULT_ATTACHMENTS_FOLDER,
 	marginNotes: false,
+	frontmatter: false,
 	licence: NO_LICENCE,
 };
 
@@ -185,6 +192,7 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// the embedded PDF instead of storing a picture of it, and the setting they used to say it with
 		// is on screen again to say no with.
 		marginNotes: stored?.marginNotes ?? DEFAULT_DATA.marginNotes,
+		frontmatter: stored?.frontmatter ?? DEFAULT_DATA.frontmatter,
 		// Spread over the default so a `data.json` written by an older version, or one a user has
 		// edited by hand, is missing fields rather than being rejected.
 		licence: { ...NO_LICENCE, ...stored?.licence },

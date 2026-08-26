@@ -1,3 +1,4 @@
+import { frontmatterAllowed } from "./frontmatter";
 import type { Entitlement } from "./licence-state";
 import { isGated } from "./ocr-resolution";
 import { ocrBackendEntries } from "./ocr-registry";
@@ -162,6 +163,27 @@ const SSH_TRANSPORT_CAPABILITY: ProCapability = {
 };
 
 /**
+ * Frontmatter properties -- not a backend either, so written in here.
+ *
+ * `locked` asks the production gate the question production asks it: *may this vault write
+ * frontmatter*. `main.ts` asks it before every sync run and the settings tab asks it to disable
+ * the toggle, so widening `frontmatterAllowed` shows up here as an unlocked capability.
+ */
+const FRONTMATTER_CAPABILITY: ProCapability = {
+	id: "frontmatter-properties",
+	label: "reMarkable tags and metadata written into each note's frontmatter",
+	locked: (entitlement) => !frontmatterAllowed(entitlement),
+	// The settings toggle is shown disabled with the "(Pro)" suffix; nothing runs and it says why
+	// where it sits. A lapsed licence with the setting still on stops writing new keys on the next
+	// sync, leaving what is already in the vault alone.
+	whenLocked: "refused-in-place",
+	enforcedAt: {
+		site: "src/frontmatter.ts frontmatterAllowed, called from src/main.ts runSyncNow and src/settings-tab.ts renderVaultOutput",
+		run: (entitlement) => (frontmatterAllowed(entitlement) ? "allowed" : "refused-in-place"),
+	},
+};
+
+/**
  * Every gated capability this build ships.
  *
  * The `filter` is the single most important line here. The obvious form --
@@ -172,7 +194,7 @@ export function proCapabilities(): ProCapability[] {
 	const backends = ocrBackendEntries()
 		.filter((entry) => BACKEND_TIER[entry.id]?.paid)
 		.map(backendCapability);
-	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY];
+	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY];
 }
 
 /**
@@ -199,6 +221,10 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	"src/ssh-transport.ts": {
 		reads: 1,
 		why: "`allowedTransports`, the direct-device gate. A gate, and it is in the list -- `main.ts` asks it rather than reading the tier itself.",
+	},
+	"src/frontmatter.ts": {
+		reads: 1,
+		why: "`frontmatterAllowed`, the frontmatter-properties gate. A gate, and it is in the list -- `main.ts` and the settings tab ask it rather than reading the tier themselves.",
 	},
 	"src/settings-tab.ts": {
 		reads: 4,

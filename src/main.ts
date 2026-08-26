@@ -35,6 +35,8 @@ import type { ErrorContext } from "./explain-error";
 import { failoverNotice, openTransportChain, type OpenedTransport, type TransportChain } from "./transport-chain";
 import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-transport";
 import { reachableHost } from "./ssh-pairing";
+import { frontmatterAllowed } from "./frontmatter";
+import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -539,6 +541,9 @@ export default class TaggedSyncPlugin extends Plugin {
 					),
 					ocrBackend: backend,
 					marginNotes: this.data.marginNotes,
+					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
+					// touching what is already in the vault -- a sync that keeps working, minus the Pro part.
+					frontmatter: this.data.frontmatter && frontmatterAllowed(this.entitlement()),
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -786,6 +791,69 @@ export default class TaggedSyncPlugin extends Plugin {
 			await session?.close();
 			this.syncing = false;
 			this.stopRequested = false;
+		}
+	}
+
+	/**
+	 * The settings toggle behind Frontmatter properties (Pro). Turning it on runs the one-time
+	 * backfill pass (needs the device listing for tags and metadata, so it takes the run lock and a
+	 * session); turning it off runs the cleanup pass, which is vault-local. Both passes are explicit
+	 * and idempotent -- see `frontmatter-pass.ts`. The toggle is only persisted `true` once the
+	 * backfill could actually start, so "on" never silently means "on, but half the vault has no keys
+	 * because the tablet was unreachable".
+	 */
+	async setFrontmatterEnabled(enabled: boolean): Promise<void> {
+		if (!enabled) {
+			// Vault-local, but still one writer at a time: a sync running right now would race it.
+			if (this.syncing) {
+				new Notice("A sync is running. Try again when it has finished.");
+				return;
+			}
+			this.syncing = true;
+			try {
+				this.data.frontmatter = false;
+				const cleaned = await cleanupFrontmatter(createNoteStore(this.app), this.data.syncIndex);
+				await this.saveData(this.data);
+				new Notice(cleaned === 0 ? "Frontmatter properties are off." : `Frontmatter properties are off. Removed them from ${cleaned} note(s).`);
+			} finally {
+				this.syncing = false;
+			}
+			return;
+		}
+
+		const claim = this.claimRun();
+		if (!claim.start) {
+			new Notice(claim.notice);
+			return;
+		}
+		this.setStatus("busy", "Tagged Sync: writing frontmatter…");
+		let transport = this.transportChain().primary;
+		let session: TransportSession | null = null;
+		try {
+			if (claim.refreshLicence) await this.refreshLicence(false);
+			const opened = await this.openSource();
+			transport = opened.transport;
+			session = opened.session;
+			// Persisted before the pass rather than after: from here on, every note the pass or an
+			// interrupted retry misses is still picked up the next time its notebook syncs.
+			this.data.frontmatter = true;
+			const result = await backfillFrontmatter(session.api, createNoteStore(this.app), this.data.syncIndex);
+			this.setStatus("ok", `Tagged Sync: frontmatter on ${result.written} note(s)`);
+			new Notice(
+				result.skipped === 0
+					? `Frontmatter properties are on. Wrote them into ${result.written} note(s).`
+					: `Frontmatter properties are on. Wrote them into ${result.written} note(s); ${result.skipped} could not be reached and will catch up on their next sync.`,
+			);
+		} catch (error) {
+			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+			this.setStatus("failed", "Tagged Sync: frontmatter backfill failed");
+			new Notice(explainTransportError(transport, error, "sync"));
+		} finally {
+			// Saved either way: the pass mutates index rows as it goes, and an interrupted run must not
+			// strand notes that already carry keys without the rows that say the plugin owns them.
+			await this.saveData(this.data);
+			await session?.close();
+			this.syncing = false;
 		}
 	}
 }

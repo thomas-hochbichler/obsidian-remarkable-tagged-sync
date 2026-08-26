@@ -44,6 +44,26 @@ export function inheritedFolderTagNames(item: Entry, itemsById: ReadonlyMap<stri
 }
 
 /**
+ * The device folder path an item sits in (`Work/Projekt X`), or null for an item at the root.
+ * Walks the same parent chain {@link inheritedFolderTagNames} walks, with the same cycle stop.
+ */
+export function folderPathOf(item: Entry, itemsById: ReadonlyMap<string, Entry>): string | null {
+	const names: string[] = [];
+	const visited = new Set<string>();
+	let parentId = item.parent;
+
+	while (parentId && parentId !== "trash" && !visited.has(parentId)) {
+		visited.add(parentId);
+		const parent = itemsById.get(parentId);
+		if (!parent || parent.type !== "CollectionType") break;
+		names.unshift(parent.visibleName);
+		parentId = parent.parent;
+	}
+
+	return names.length === 0 ? null : names.join("/");
+}
+
+/**
  * Whether an item sits in the device's trash -- directly, or inside a folder that was trashed.
  *
  * Deleting on the device only re-parents into `trash`; the tombstone (`deleted: true`) comes later,
