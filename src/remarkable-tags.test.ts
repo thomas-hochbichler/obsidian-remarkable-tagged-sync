@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Content, Entry } from "rmapi-js";
-import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
+import { collectTagNames, enumerateNotebookTags, folderPathOf } from "./remarkable-tags";
 
 function documentEntry(overrides: Partial<Entry> = {}): Entry {
 	return {
@@ -230,5 +230,37 @@ describe("collectTagNames", () => {
 		]);
 
 		expect(names).toEqual(["journal", "sync", "todo"]);
+	});
+});
+
+describe("folderPathOf", () => {
+	const byId = (items: Entry[]): Map<string, Entry> => new Map(items.map((item) => [item.id, item]));
+
+	it("walks the parent chain into a device path, outermost folder first", () => {
+		const work = collectionEntry({ id: "work", visibleName: "Work" });
+		const project = collectionEntry({ id: "project", visibleName: "Projekt X", parent: "work" });
+		const doc = documentEntry({ parent: "project" });
+
+		expect(folderPathOf(doc, byId([work, project, doc]))).toBe("Work/Projekt X");
+	});
+
+	it("answers null for a document at the root -- no key gets written for it", () => {
+		const doc = documentEntry({ parent: "" });
+		expect(folderPathOf(doc, byId([doc]))).toBeNull();
+	});
+
+	it("stops at a parent the listing does not carry, keeping what it saw", () => {
+		const project = collectionEntry({ id: "project", visibleName: "Projekt X", parent: "gone" });
+		const doc = documentEntry({ parent: "project" });
+
+		expect(folderPathOf(doc, byId([project, doc]))).toBe("Projekt X");
+	});
+
+	it("is stopped by a malformed parent cycle rather than hanging a sync", () => {
+		const a = collectionEntry({ id: "a", visibleName: "A", parent: "b" });
+		const b = collectionEntry({ id: "b", visibleName: "B", parent: "a" });
+		const doc = documentEntry({ parent: "a" });
+
+		expect(folderPathOf(doc, byId([a, b, doc]))).toBe("B/A");
 	});
 });

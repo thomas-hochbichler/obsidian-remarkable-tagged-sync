@@ -3553,6 +3553,53 @@ describe("frontmatter properties (Pro)", () => {
 		expect(blockHashOf(extractManagedBlock(note!)!)).toBe(result.index.rows[notebookSyncKey("doc-1", "sync")].blockHash);
 	});
 
+	it("removes a tag that left the device from the note, and only that one", async () => {
+		const first = { ...baseDeps(taggedNotebook(), { sync: "Target" }), frontmatter: true };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		// The same notebook, minus the second tag: a changed hash reopens it, and the note's tags
+		// follow the device. Only the tracked tag goes -- that is the whole point of tracking.
+		const changed = fakeApi({
+			rootHash: "root-2",
+			entries: [
+				collectionEntry({ id: "folder-1", visibleName: "Work" }),
+				documentEntry({ id: "doc-1", hash: "hash-2", visibleName: "Notebook", parent: "folder-1", tags: [{ name: "sync", timestamp: 0 }] }),
+			],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "ha" } },
+		});
+		const second = { ...baseDeps(changed, { sync: "Target" }), noteStore: first.noteStore, frontmatter: true };
+
+		const result = await runSync(second, synced.index);
+
+		const note = await first.noteStore.read("Target/Notebook.md");
+		expect(note).toContain("tags:\n  - remarkable/sync\n");
+		expect(note).not.toContain("remarkable/projekt-x");
+		expect(result.index.rows[notebookSyncKey("doc-1", "sync")].frontmatterTags).toEqual(["remarkable/sync"]);
+	});
+
+	it("names an annotated PDF a pdf and a book an epub", async () => {
+		const source = await makeSourcePdf([[100, 100]]);
+		const api = fakeApi({
+			rootHash: "root-types",
+			entries: [
+				documentEntry({ id: "doc-pdf", hash: "hash-p", visibleName: "Paper", fileType: "pdf", tags: [{ name: "sync", timestamp: 0 }] }),
+				documentEntry({ id: "doc-epub", hash: "hash-e", visibleName: "Book", fileType: "epub", tags: [{ name: "sync", timestamp: 0 }] }),
+			],
+			contentById: {
+				"doc-pdf": documentContent({ fileType: "pdf", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }),
+				"doc-epub": documentContent({ fileType: "epub", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }),
+			},
+			sourcePdfByDoc: { "doc-pdf": source, "doc-epub": source },
+		});
+		const deps = { ...baseDeps(api, { sync: "Target" }), frontmatter: true };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await deps.noteStore.read("Target/Paper.md")).toContain("remarkable-type: pdf\n");
+		expect(await deps.noteStore.read("Target/Book.md")).toContain("remarkable-type: epub\n");
+	});
+
 	it("writes no frontmatter at all when the caller says nothing -- the shipped default", async () => {
 		const deps = baseDeps(taggedNotebook(), { sync: "Target" });
 

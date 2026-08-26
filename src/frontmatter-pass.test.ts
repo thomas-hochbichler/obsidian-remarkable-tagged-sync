@@ -114,6 +114,44 @@ describe("backfillFrontmatter (toggle on)", () => {
 		expect(index.rows["doc-gone:sync"].frontmatterTags).toBeUndefined();
 	});
 
+	it("skips a document whose content cannot be read, and still writes the rest", async () => {
+		const store = fakeNoteStore({ "Target/Notebook.md": BODY, "Target/Other.md": BODY });
+		const index: SyncIndex = {
+			rootHash: "r",
+			rows: {
+				"doc-1:sync": row({}),
+				"doc-2:sync": row({ syncKey: "doc-2:sync", docId: "doc-2", notePath: "Target/Other.md" }),
+			},
+		};
+		// doc-2 has an entry but no content -- the fake throws, like a cloud read that fails mid-pass.
+		const api = fakeApi([documentEntry(), documentEntry({ id: "doc-2" }), folderEntry()], { "doc-1": {} });
+
+		const result = await backfillFrontmatter(api, store, index);
+
+		expect(result).toEqual({ written: 1, skipped: 1 });
+		expect(store.files["Target/Other.md"]).toBe(BODY);
+	});
+
+	it("names an annotated PDF a pdf and a book an epub", async () => {
+		const store = fakeNoteStore({ "Target/Paper.md": BODY, "Target/Book.md": BODY });
+		const index: SyncIndex = {
+			rootHash: "r",
+			rows: {
+				"doc-pdf:sync": row({ syncKey: "doc-pdf:sync", docId: "doc-pdf", notePath: "Target/Paper.md" }),
+				"doc-epub:sync": row({ syncKey: "doc-epub:sync", docId: "doc-epub", notePath: "Target/Book.md" }),
+			},
+		};
+		const api = fakeApi(
+			[documentEntry({ id: "doc-pdf", fileType: "pdf" }), documentEntry({ id: "doc-epub", fileType: "epub" }), folderEntry()],
+			{ "doc-pdf": { fileType: "pdf" }, "doc-epub": { fileType: "epub" } },
+		);
+
+		await backfillFrontmatter(api, store, index);
+
+		expect(store.files["Target/Paper.md"]).toContain("remarkable-type: pdf\n");
+		expect(store.files["Target/Book.md"]).toContain("remarkable-type: epub\n");
+	});
+
 	it("leaves orphaned rows alone -- their tag is unmapped, their notes are the user's now", async () => {
 		const store = fakeNoteStore({ "Target/Old.md": BODY });
 		const index: SyncIndex = { rootHash: "r", rows: { "doc-1:old": row({ syncKey: "doc-1:old", tag: "old", notePath: "Target/Old.md", status: "orphaned" }) } };

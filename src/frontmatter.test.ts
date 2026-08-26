@@ -144,6 +144,17 @@ describe("removeFrontmatter (the toggle-off cleanup)", () => {
 		const once = applyFrontmatter(existing, fields({ tags: ["remarkable/x"] }), []);
 		expect(removeFrontmatter(once.content, once.ownTags)).toBe(existing);
 	});
+
+	it("drops an inline tags key that held only its own entries", () => {
+		const existing = "---\nrating: 5\ntags: [remarkable/x]\n---\n" + BODY;
+		expect(removeFrontmatter(existing, ["remarkable/x"])).toBe("---\nrating: 5\n---\n" + BODY);
+	});
+
+	it("reads a double-quoted entry as the tag it quotes", () => {
+		const existing = '---\ntags: ["remarkable/x", daily]\n---\n' + BODY;
+		const { content } = applyFrontmatter(existing, fields({ tags: ["remarkable/x"] }), ["remarkable/x"]);
+		expect(content).toContain('tags: ["remarkable/x", daily]\n');
+	});
 });
 
 describe("value formatting", () => {
