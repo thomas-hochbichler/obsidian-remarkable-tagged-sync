@@ -12,6 +12,20 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-26
+
+### Added
+
+- **Frontmatter properties (Pro).** Turn on one switch under *Vault output* and every synced note
+  carries its reMarkable tags and metadata as Obsidian properties: the document's tags — the sync
+  tag included — namespaced under `remarkable/`, plus when it was last modified on the device, when
+  its note was last written, its device folder, whether it is a notebook, PDF or EPUB, whether it
+  is pinned, and its id. Built for queries: every synced note answers `FROM #remarkable` in
+  Dataview, and the README shows a "latest five synced notes" table to start from. The plugin
+  manages only its own lines — frontmatter you write yourself is preserved byte-for-byte.
+  Enabling writes the properties into every already-synced note, so views are complete from day
+  one; disabling removes exactly what the plugin added. Off by default. (#95, #96)
+
 ## [1.5.1] - 2026-08-25
 
 ### Fixed
