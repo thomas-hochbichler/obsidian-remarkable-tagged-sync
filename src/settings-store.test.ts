@@ -118,6 +118,7 @@ describe("migrateSettings", () => {
 			lastSyncAt: "2026-08-01T00:00:00.000Z",
 			attachmentsFolder: "Attachments",
 			marginNotes: true,
+			frontmatter: true,
 			licence: { ...NO_LICENCE, key: "k", activationId: "a", validatedAt: "2026-08-01T00:00:00.000Z" },
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);

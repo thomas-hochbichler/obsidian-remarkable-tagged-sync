@@ -23,7 +23,8 @@ import { getDocumentFiles, type DocumentFiles } from "./page-hash";
 import { type AnnotatedPdfPage, renderAnnotatedPdf, renderPagesToPdf } from "./pdf-renderer";
 import { readEpubBook, type EpubBook } from "./epub-text";
 import { validateSourcePdf } from "./pdf-source";
-import { inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
+import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, type NoteFrontmatter } from "./frontmatter";
+import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
@@ -134,6 +135,12 @@ export interface SyncIndexRow {
 	 * notebook, which has no source PDF, and on rows written before this field existed.
 	 */
 	sourcePageCount?: number;
+	/**
+	 * The entries the plugin added to this note's shared `tags` frontmatter key (Pro frontmatter
+	 * properties). Tracked so the next write -- and the toggle-off cleanup pass -- removes exactly
+	 * these and never a tag the user wrote. Absent when the feature has not written this note.
+	 */
+	frontmatterTags?: string[];
 }
 
 export interface SyncIndex {
@@ -224,6 +231,12 @@ export interface SyncDeps {
 	 * switched off, which is the point (a page's handwriting must not come back as a flat transcript).
 	 */
 	marginNotes?: boolean;
+	/**
+	 * Frontmatter properties (Pro), default **off** like the shipped setting: each written note gets
+	 * the plugin-managed keys of `src/frontmatter.ts`. The caller has already asked the licence gate
+	 * (`frontmatterAllowed`) -- the engine only hears the outcome.
+	 */
+	frontmatter?: boolean;
 	/** Injectable clock -- returns the current time as an ISO string. */
 	now: () => string;
 	onProgress?: (progress: SyncProgress) => void;
@@ -619,7 +632,9 @@ interface UnitParams {
 	source: string;
 	entryHash: string;
 	pageHash: string | null;
-	/** The row this note was last written with, or undefined for a note that did not exist yet. Only the shrink warning reads it. */
+	/** The Pro frontmatter keys this note gets, minus `synced` (stamped at write time) -- or null when the feature is off. */
+	frontmatter: Omit<NoteFrontmatter, "synced"> | null;
+	/** The row this note was last written with, or undefined for a note that did not exist yet. Read by the shrink warning and the frontmatter merge. */
 	previous?: SyncIndexRow;
 	/** Progress tick, one per transcribed page. Per unit, which is why it travels with the params. */
 	onPage?: () => void;
@@ -663,7 +678,7 @@ function shrinkWarning(params: UnitParams, count: number): string | null {
 
 /** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
-	deps: Pick<SyncDeps, "attachmentStore" | "now" | "ocrBackend"> & { attachmentsFolder: string },
+	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend"> & { attachmentsFolder: string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"]; ocrWarnings: string[]; shrink: string | null }> {
@@ -687,6 +702,22 @@ async function writeUnit(
 	};
 	const notePath = await write(fields);
 
+	// After the body write, not inside it: the managed block and its hash know nothing about
+	// frontmatter, so a hand-edited `---` block never freezes the note the way a block edit does.
+	let frontmatterTags: string[] | undefined;
+	if (params.frontmatter !== null) {
+		const written = await deps.noteStore.read(notePath);
+		if (written !== null) {
+			const applied = applyFrontmatter(
+				written,
+				{ ...params.frontmatter, synced: formatLocalMinute(new Date(synced)) },
+				params.previous?.frontmatterTags ?? [],
+			);
+			if (applied.content !== written) await deps.noteStore.write(notePath, applied.content);
+			frontmatterTags = applied.ownTags;
+		}
+	}
+
 	const syncKey =
 		params.pageId === null
 			? notebookSyncKey(params.docId, params.tag)
@@ -708,6 +739,7 @@ async function writeUnit(
 			renderVersion: RENDER_VERSION,
 			blockHash: managedBlockHash(fields),
 			highlightCount,
+			frontmatterTags,
 		},
 		ocr: ocr.status,
 		ocrWarnings: ocr.warnings,
@@ -1213,7 +1245,7 @@ async function scanWorkload(
 export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise<SyncResult> {
 	const { api, tagRouter, now, ocrBackend } = deps;
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
-	const writeDeps = { attachmentStore: deps.attachmentStore, now, attachmentsFolder, ocrBackend };
+	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend };
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 
@@ -1322,6 +1354,23 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// drawn over it (see renderAnnotatedPdf). Notebook tag -> every page; page tag -> just that
 		// page.
 		const pdfBacked = isPdfBacked(content);
+
+		// One base per document; each unit adds its own selector tag and write timestamp. The tags are
+		// the document's -- page tags stay out (spec) -- so a page-tag note still carries at least its
+		// own selector, which is what keeps `FROM #remarkable` universal.
+		const frontmatterBase = deps.frontmatter
+			? {
+					modified: deviceModified(entry.lastModified),
+					folder: folderPathOf(entry, entriesById),
+					type: content.fileType === "epub" ? ("epub" as const) : content.fileType === "pdf" ? ("pdf" as const) : ("notebook" as const),
+					pinned: entry.pinned,
+					uuid: entry.id,
+				}
+			: null;
+		const docTags = [...new Set([...entryAndInheritedTags, ...tagNames(content.tags)])];
+		const unitFrontmatter = (tag: string): Omit<NoteFrontmatter, "synced"> | null =>
+			frontmatterBase === null ? null : { ...frontmatterBase, tags: namespacedTags([...docTags, tag]) };
+
 		const { pages: pageHashes, images: imageFiles, epub: epubFile } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
 		const docPages = orderedPages(content, liveIds, pdfBacked);
@@ -1466,6 +1515,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash: null,
+					frontmatter: unitFrontmatter(tag),
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
@@ -1562,6 +1612,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash,
+					frontmatter: unitFrontmatter(tag),
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},

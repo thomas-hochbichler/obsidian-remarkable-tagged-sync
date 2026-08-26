@@ -23,6 +23,7 @@ import {
 } from "./licence-messages";
 import { NO_LICENCE } from "./licence-state";
 import { DeviceUnreachableError } from "./ssh-connection";
+import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import { PairingRefusedError } from "./ssh-pairing";
 import { isListedBackend, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
 
@@ -554,6 +555,60 @@ describe("vault output", () => {
 		expect(plugin.data.marginNotes).toBe(true);
 		const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> } };
 		expect(saved.syncIndex.rows.a.renderVersion).toBeUndefined();
+	});
+
+	// An active trial -- the cheapest entitlement that unlocks Pro, with no key to fake.
+	const TRIAL = { ...NO_LICENCE, trialStartedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() };
+
+	it("offers frontmatter properties locked to a free user and open past the paywall", async () => {
+		// Shown and disabled rather than hidden -- the transport dropdown's rule, on a toggle.
+		const free = await tabWith();
+		expect(toggle(draw(free.tab), "Frontmatter properties (Pro)").disabled).toBe(true);
+
+		const trial = await tabWith({ licence: TRIAL });
+		expect(toggle(draw(trial.tab), "Frontmatter properties").disabled).toBe(false);
+	});
+
+	it("refuses to enable frontmatter without a connection, and does not pretend it is on", async () => {
+		// The backfill needs the device listing, so an unconnected vault gets the connect sentence --
+		// and the setting must not persist as on when no pass could run.
+		const { plugin, tab } = await tabWith({ licence: TRIAL });
+
+		toggle(draw(tab), "Frontmatter properties").toggle(true);
+		await settle();
+
+		expect(plugin.data.frontmatter).toBe(false);
+		expect(takeNotices()).toEqual([NOT_CONNECTED_NOTICE]);
+	});
+
+	it("treats a click that changes nothing as nothing -- no pass, no notice", async () => {
+		// setValue fires the change handler again in real Obsidian, so setting the toggle back after a
+		// refused enable re-enters the handler with the value it already shows. Without the guard that
+		// re-entry would run a cleanup pass nobody asked for.
+		const { plugin, tab } = await tabWith({ licence: TRIAL });
+
+		toggle(draw(tab), "Frontmatter properties").toggle(false);
+		await settle();
+
+		expect(plugin.data.frontmatter).toBe(false);
+		expect(plugin.saves).toEqual([]);
+		expect(takeNotices()).toEqual([]);
+	});
+
+	it("turns frontmatter off through the cleanup pass, forgetting the tracked tags", async () => {
+		const { plugin, tab } = await tabWith({
+			licence: TRIAL,
+			frontmatter: true,
+			syncIndex: { rows: { a: { notePath: "a.md", status: "active", frontmatterTags: ["remarkable/x"] } } },
+		});
+
+		toggle(draw(tab), "Frontmatter properties").toggle(false);
+		await settle();
+
+		expect(plugin.data.frontmatter).toBe(false);
+		const saved = plugin.saves.at(-1) as { frontmatter: boolean; syncIndex: { rows: Record<string, { frontmatterTags?: string[] }> } };
+		expect(saved.frontmatter).toBe(false);
+		expect(saved.syncIndex.rows.a.frontmatterTags).toBeUndefined();
 	});
 });
 

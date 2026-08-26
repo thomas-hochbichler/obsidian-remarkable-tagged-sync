@@ -303,6 +303,8 @@ Everything described above is free and stays free. Two things are paid:
 - **Unlimited tag mappings.** The free version syncs one tag; Pro syncs as many as you like.
 - **[Syncing without the reMarkable cloud](#syncing-without-the-cloud)** — the plugin reads your
   tablet directly over USB or Wi-Fi.
+- **[Frontmatter properties](#frontmatter-properties-pro)** — each synced note carries its
+  reMarkable tags and metadata as Obsidian properties, for Dataview and Bases queries.
 
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
@@ -495,8 +497,11 @@ it does not — so a document without bookmarks can file a quote under the wrong
   are named once at the end instead of taking a heading each, and a page transcription could not
   read says so where it happened. Notes synced before this keep the transcript they have — run
   **Re-transcribe synced notes** to bring them over.
-- A synced note carries **no frontmatter** — no YAML block at the top. Everything the sync needs to
-  track lives in the plugin's own `data.json`, not in your notes.
+- A synced note carries **no frontmatter** by default — no YAML block at the top. Everything the
+  sync needs to track lives in the plugin's own `data.json`, not in your notes. If you want your
+  notes queryable, [Frontmatter properties](#frontmatter-properties-pro) (Pro) writes the device's
+  tags and metadata into each note's properties — opt-in, and your own frontmatter lines are never
+  touched.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
 - **A page note is named after the page's position in the document at the time it was written.**
@@ -512,6 +517,47 @@ it does not — so a document without bookmarks can file a quote under the wrong
   device, so a mark you removed on the tablet leaves the note too — but a mark that went missing
   without you removing it is worth hearing about while a backup of the note is still recent. The
   notice says how many notes; **Copy diagnostics** in settings says which.
+
+### Frontmatter properties (Pro)
+
+Turn on **Frontmatter properties** in the plugin settings (under *Vault output*) and every synced
+note gets a small block of Obsidian properties, straight from the device:
+
+```yaml
+---
+tags:
+  - remarkable/projekt-x
+remarkable-modified: 2026-08-25T16:20
+remarkable-synced: 2026-08-25T17:02
+remarkable-folder: Work/Projekt X
+remarkable-type: notebook
+remarkable-pinned: true
+remarkable-uuid: aaaa0002-0000-0000-0000-000000000000
+---
+```
+
+Every document tag — the sync tag included — arrives namespaced under `remarkable/`, so each synced
+note answers `FROM #remarkable`. With [Dataview](https://blacksmithgu.github.io/obsidian-dataview/),
+your latest five synced notes are:
+
+````markdown
+```dataview
+TABLE remarkable-synced AS "Synced", remarkable-folder AS "Device folder"
+FROM #remarkable
+SORT remarkable-synced DESC
+LIMIT 5
+```
+````
+
+The same fields drive tag filters (`FROM #remarkable/meeting`), favourites
+(`WHERE remarkable-pinned = true`), grouping by source type, or a "synced this week" view — and
+Obsidian's built-in Bases can query them too.
+
+The plugin manages only its own lines: frontmatter you write yourself is preserved byte-for-byte,
+and the plugin's keys mirror the device (hand edits to them are overwritten on the next sync).
+Turning the setting **on** writes the properties into every already-synced note, so views are
+complete from day one; turning it **off** removes exactly what the plugin added and leaves your
+own frontmatter alone.
 
 ### Writing your own notes
 
