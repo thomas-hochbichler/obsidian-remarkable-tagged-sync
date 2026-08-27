@@ -12,6 +12,10 @@
 Tag a notebook or a PDF on your reMarkable, and it lands in the vault folder you mapped — your
 handwriting transcribed, your highlights quoted.
 
+**Your handwriting never leaves your machine.** Rendering and transcription run on your own
+computer — no upload, no account with us. The plugin is free; Pro is an optional add-on for
+€24 once, no subscription.
+
 ## A notebook you wrote in
 
 The pages as you drew them, embedded in the note, plus a searchable transcript underneath — split
