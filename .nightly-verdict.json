@@ -1,13 +1,13 @@
 {
 	"schema": 1,
-	"commit": "383dcdf87903bc55effe02a66670346d152caa7a",
-	"runId": "33079740911",
-	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/33079740911",
+	"commit": "e10e3c9cf681a14ab549db5c501f1decb5dbee50",
+	"runId": "33183844648",
+	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/33183844648",
 	"parts": {
 		"ocr": {
 			"status": "pass",
-			"measuredAt": "2026-08-27T14:02:22.137Z",
-			"lastMeasuredAt": "2026-08-27T14:02:22.137Z",
+			"measuredAt": "2026-08-28T15:13:55.745Z",
+			"lastMeasuredAt": "2026-08-28T15:13:55.745Z",
 			"detail": {
 				"promptSha": "635b0b92a4432be2",
 				"renderVersion": 31,
@@ -20,11 +20,11 @@
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.043478260869565216,
+								"cer": 0.034782608695652174,
 								"structure": {}
 							},
 							"12": {
-								"cer": 0.01680672268907563,
+								"cer": 0.025210084033613446,
 								"structure": {}
 							},
 							"13": {
@@ -66,11 +66,11 @@
 								"structure": {}
 							},
 							"07": {
-								"cer": 0,
+								"cer": 0.00477326968973747,
 								"structure": {}
 							},
 							"08": {
-								"cer": 0.3541666666666667,
+								"cer": 0.1875,
 								"structure": {}
 							},
 							"09": {
@@ -85,80 +85,11 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.005945303210463734,
-								"structure": {}
-							},
-							"11": {
-								"cer": 0.03768115942028986,
-								"structure": {}
-							},
-							"12": {
-								"cer": 0.022408963585434174,
-								"structure": {}
-							},
-							"13": {
-								"cer": 0.017699115044247787,
-								"structure": {}
-							},
-							"14": {
-								"cer": 0.046153846153846156,
-								"structure": {}
-							},
-							"01": {
-								"cer": 0,
-								"structure": {}
-							},
-							"02": {
-								"cer": 0.032,
-								"structure": {}
-							},
-							"03": {
-								"cer": 0,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"04": {
-								"cer": 0.01282051282051282,
-								"structure": {
-									"list": "ok"
-								}
-							},
-							"05": {
-								"cer": 0.03067484662576687,
-								"structure": {
-									"table": "ok"
-								}
-							},
-							"06": {
-								"cer": 0.20833333333333334,
-								"structure": {}
-							},
-							"07": {
-								"cer": 0.002386634844868735,
-								"structure": {}
-							},
-							"08": {
-								"cer": 0.625,
-								"structure": {}
-							},
-							"09": {
-								"cer": 0,
-								"structure": {}
-							}
-						},
-						"medianCer": 0.017699115044247787,
-						"model": "openai/gpt-4o"
-					},
-					"openrouter/google/gemini-2.5-flash": {
-						"status": "pass",
-						"pages": {
-							"10": {
 								"cer": 0.007134363852556481,
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.05507246376811594,
+								"cer": 0.03188405797101449,
 								"structure": {}
 							},
 							"12": {
@@ -166,19 +97,19 @@
 								"structure": {}
 							},
 							"13": {
-								"cer": 0.11504424778761062,
+								"cer": 0.14601769911504425,
 								"structure": {}
 							},
 							"14": {
-								"cer": 0.19230769230769232,
+								"cer": 0.046153846153846156,
 								"structure": {}
 							},
 							"01": {
-								"cer": 0,
+								"cer": 0.002,
 								"structure": {}
 							},
 							"02": {
-								"cer": 0.024,
+								"cer": 0.018,
 								"structure": {}
 							},
 							"03": {
@@ -188,7 +119,7 @@
 								}
 							},
 							"04": {
-								"cer": 0.00641025641025641,
+								"cer": 0,
 								"structure": {
 									"list": "ok"
 								}
@@ -200,11 +131,11 @@
 								}
 							},
 							"06": {
-								"cer": 0.03571428571428571,
+								"cer": 0.017857142857142856,
 								"structure": {}
 							},
 							"07": {
-								"cer": 0.002386634844868735,
+								"cer": 0,
 								"structure": {}
 							},
 							"08": {
@@ -216,7 +147,76 @@
 								"structure": {}
 							}
 						},
-						"medianCer": 0.024,
+						"medianCer": 0.017857142857142856,
+						"model": "openai/gpt-4o"
+					},
+					"openrouter/google/gemini-2.5-flash": {
+						"status": "pass",
+						"pages": {
+							"10": {
+								"cer": 0.009512485136741973,
+								"structure": {}
+							},
+							"11": {
+								"cer": 0.03768115942028986,
+								"structure": {}
+							},
+							"12": {
+								"cer": 0.014005602240896359,
+								"structure": {}
+							},
+							"13": {
+								"cer": 0.11504424778761062,
+								"structure": {}
+							},
+							"14": {
+								"cer": 0.19743589743589743,
+								"structure": {}
+							},
+							"01": {
+								"cer": 0,
+								"structure": {}
+							},
+							"02": {
+								"cer": 0.01,
+								"structure": {}
+							},
+							"03": {
+								"cer": 0.01020408163265306,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"04": {
+								"cer": 0,
+								"structure": {
+									"list": "ok"
+								}
+							},
+							"05": {
+								"cer": 0.03680981595092025,
+								"structure": {
+									"table": "ok"
+								}
+							},
+							"06": {
+								"cer": 0.047619047619047616,
+								"structure": {}
+							},
+							"07": {
+								"cer": 0.007159904534606206,
+								"structure": {}
+							},
+							"08": {
+								"cer": 0.22916666666666666,
+								"structure": {}
+							},
+							"09": {
+								"cer": 0,
+								"structure": {}
+							}
+						},
+						"medianCer": 0.01020408163265306,
 						"model": "google/gemini-2.5-flash"
 					}
 				}
@@ -224,12 +224,12 @@
 		},
 		"perf": {
 			"status": "pass",
-			"measuredAt": "2026-08-27T13:59:44.319Z",
-			"lastMeasuredAt": "2026-08-27T13:59:44.319Z",
+			"measuredAt": "2026-08-28T15:10:55.111Z",
+			"lastMeasuredAt": "2026-08-28T15:10:55.111Z",
 			"detail": {
 				"metrics": {
-					"renderPagesToPdfMs": 381,
-					"rasterizePageMs": 157
+					"renderPagesToPdfMs": 391,
+					"rasterizePageMs": 156
 				},
 				"page": "2000 strokes x 50 points",
 				"node": "v22.23.2"
