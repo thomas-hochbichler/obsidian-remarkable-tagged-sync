@@ -1,13 +1,13 @@
 {
 	"schema": 1,
-	"commit": "3baf7ea06d968afa46ef30defc61cef387b4eba1",
-	"runId": "33378164434",
-	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/33378164434",
+	"commit": "8c292602c5588595f059ee65f0559adbfaa27e67",
+	"runId": "33487244293",
+	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/33487244293",
 	"parts": {
 		"ocr": {
 			"status": "pass",
-			"measuredAt": "2026-08-31T09:35:13.240Z",
-			"lastMeasuredAt": "2026-08-31T09:35:13.240Z",
+			"measuredAt": "2026-09-01T08:31:43.292Z",
+			"lastMeasuredAt": "2026-09-01T08:31:43.292Z",
 			"detail": {
 				"promptSha": "635b0b92a4432be2",
 				"renderVersion": 31,
@@ -16,15 +16,15 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.007134363852556481,
+								"cer": 0.005945303210463734,
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.034782608695652174,
+								"cer": 0.03768115942028986,
 								"structure": {}
 							},
 							"12": {
-								"cer": 0.014005602240896359,
+								"cer": 0.028011204481792718,
 								"structure": {}
 							},
 							"13": {
@@ -40,7 +40,7 @@
 								"structure": {}
 							},
 							"02": {
-								"cer": 0.006,
+								"cer": 0,
 								"structure": {}
 							},
 							"03": {
@@ -50,7 +50,7 @@
 								}
 							},
 							"04": {
-								"cer": 0.03205128205128205,
+								"cer": 0.009615384615384616,
 								"structure": {
 									"list": "ok"
 								}
@@ -78,22 +78,22 @@
 								"structure": {}
 							}
 						},
-						"medianCer": 0.014005602240896359,
+						"medianCer": 0.009615384615384616,
 						"model": "anthropic/claude-sonnet-5"
 					},
 					"openrouter/openai/gpt-4o": {
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.008323424494649227,
+								"cer": 0.005945303210463734,
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.02608695652173913,
+								"cer": 0.028985507246376812,
 								"structure": {}
 							},
 							"12": {
-								"cer": 0.008403361344537815,
+								"cer": 0.03081232492997199,
 								"structure": {}
 							},
 							"13": {
@@ -119,7 +119,7 @@
 								}
 							},
 							"04": {
-								"cer": 0.01282051282051282,
+								"cer": 0.003205128205128205,
 								"structure": {
 									"list": "ok"
 								}
@@ -131,15 +131,15 @@
 								}
 							},
 							"06": {
-								"cer": 0.27380952380952384,
+								"cer": 0.31547619047619047,
 								"structure": {}
 							},
 							"07": {
-								"cer": 0,
+								"cer": 0.002386634844868735,
 								"structure": {}
 							},
 							"08": {
-								"cer": 0.2916666666666667,
+								"cer": 0.22916666666666666,
 								"structure": {}
 							},
 							"09": {
@@ -147,18 +147,18 @@
 								"structure": {}
 							}
 						},
-						"medianCer": 0.01282051282051282,
+						"medianCer": 0.018,
 						"model": "openai/gpt-4o"
 					},
 					"openrouter/google/gemini-2.5-flash": {
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.01070154577883472,
+								"cer": 0.009512485136741973,
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.07246376811594203,
+								"cer": 0.043478260869565216,
 								"structure": {}
 							},
 							"12": {
@@ -170,7 +170,7 @@
 								"structure": {}
 							},
 							"14": {
-								"cer": 0.19487179487179487,
+								"cer": 0.19743589743589743,
 								"structure": {}
 							},
 							"01": {
@@ -178,7 +178,7 @@
 								"structure": {}
 							},
 							"02": {
-								"cer": 0.008,
+								"cer": 0.01,
 								"structure": {}
 							},
 							"03": {
@@ -188,27 +188,27 @@
 								}
 							},
 							"04": {
-								"cer": 0,
+								"cer": 0.022435897435897436,
 								"structure": {
 									"list": "ok"
 								}
 							},
 							"05": {
-								"cer": 0.03067484662576687,
+								"cer": 0.03680981595092025,
 								"structure": {
 									"table": "ok"
 								}
 							},
 							"06": {
-								"cer": 0.03571428571428571,
+								"cer": 0.041666666666666664,
 								"structure": {}
 							},
 							"07": {
-								"cer": 0.007159904534606206,
+								"cer": 0.014319809069212411,
 								"structure": {}
 							},
 							"08": {
-								"cer": 0.25,
+								"cer": 0.14583333333333334,
 								"structure": {}
 							},
 							"09": {
@@ -216,7 +216,7 @@
 								"structure": {}
 							}
 						},
-						"medianCer": 0.01070154577883472,
+						"medianCer": 0.014319809069212411,
 						"model": "google/gemini-2.5-flash"
 					}
 				}
@@ -224,12 +224,12 @@
 		},
 		"perf": {
 			"status": "pass",
-			"measuredAt": "2026-08-31T09:32:42.195Z",
-			"lastMeasuredAt": "2026-08-31T09:32:42.195Z",
+			"measuredAt": "2026-09-01T08:29:22.579Z",
+			"lastMeasuredAt": "2026-09-01T08:29:22.579Z",
 			"detail": {
 				"metrics": {
-					"renderPagesToPdfMs": 379,
-					"rasterizePageMs": 158
+					"renderPagesToPdfMs": 378,
+					"rasterizePageMs": 143
 				},
 				"page": "2000 strokes x 50 points",
 				"node": "v22.23.2"
