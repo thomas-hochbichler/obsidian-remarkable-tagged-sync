@@ -8,6 +8,7 @@ import {
 	managedBlockHash,
 	moveNote,
 	type NoteFields,
+	parentFolder,
 	type NoteStore,
 	type OcrStatus,
 	readEmbedPath,
@@ -816,6 +817,13 @@ function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, sta
  * re-transcribed and dragged home every moved note on the next full scan (#101). A row without the
  * field is not re-targeted -- the load-time stamp gives every row one.
  *
+ * And only while the note still lies in that folder. A note the user moved out of it was sorted
+ * deliberately, and the sync honoured that on every run since -- a re-target in settings says
+ * where the tag's notes go by default, not that this one belongs there after all. So the moved note
+ * stays put and is overwritten where it lies, the same as before the re-target; a note still in the
+ * old folder follows the mapping. The #101 reporter keeps every synced note outside the mapped
+ * folder, sorted by device hierarchy; one re-target would otherwise pull all of them back.
+ *
  * A row whose tag is no longer mapped at all is not re-targeted, it is gone: that is the orphan path.
  *
  * Trailing slashes are cosmetic, so both sides are trimmed before comparing: the mapping is stored
@@ -826,7 +834,8 @@ function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, sta
 function isRetargeted(row: SyncIndexRow, tagRouter: TagRouter): boolean {
 	if (row.status !== "active" || row.folder === undefined) return false;
 	const folder = tagRouter.resolveFolder(row.tag);
-	return folder !== null && row.folder.replace(/\/+$/, "") !== folder.replace(/\/+$/, "");
+	const written = row.folder.replace(/\/+$/, "");
+	return folder !== null && written !== folder.replace(/\/+$/, "") && parentFolder(row.notePath) === written;
 }
 
 function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRouter, docId: string): boolean {

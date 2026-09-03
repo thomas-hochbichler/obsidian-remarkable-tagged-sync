@@ -286,3 +286,10 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "runSync > edge cases (ticket 11) > does not read a trailing slash dropped from the mapping as a re-target (#101)"
+
+    - id: C8.5
+      scenario: The user moved one of two synced notes out of the mapped folder; then the tag is re-targeted to another folder in settings, nothing else changes
+      expect: Only the note still in the old folder moves to the new one. The moved note stays where the user put it and its row keeps pointing there -- a re-target says where the tag's notes go by default, not that a note the user sorted belongs there after all. Before, every note under the tag was moved, the sorted ones included (#101)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > leaves a note the user moved where it is when the mapping is re-targeted, and moves the one still in the old folder"
