@@ -23,9 +23,9 @@ import type { OcrBackend as OcrBackendId } from "./note-builder";
 import type { BackendSettings } from "./ocr-registry";
 import { DEFAULT_SSH_SETTINGS, type SshSettings } from "./ssh-transport";
 import type { StoredHashes } from "./ssh-hash-cache";
-import { EMPTY_SYNC_INDEX, type SyncIndex } from "./sync-engine";
+import { EMPTY_SYNC_INDEX, type SyncIndex, type SyncIndexRow } from "./sync-engine";
 import type { TransportId } from "./transport";
-import type { TagFolderMap } from "./tag-router";
+import { mappingFingerprint, type TagFolderMap } from "./tag-router";
 
 /** Opt-in background sync (auto-sync spec §"Settings & data model"). */
 export interface AutoSyncSettings {
@@ -146,6 +146,34 @@ type SavedData = (Partial<TaggedSyncData> & { ocrBackendChoice?: unknown }) | nu
  * `null`, a string and an array, produces a complete object -- and **idempotent**, so a file this
  * has already migrated migrates to itself.
  */
+/**
+ * Gives every active row written before `SyncIndexRow.folder` existed the folder its note was
+ * written under, once, so a mapping re-targeted later can be told from a note the user moved (#101).
+ *
+ * The index says which settings it was last synced with. When they are still the current ones,
+ * nothing was re-targeted since, so the note was written under today's mapping -- wherever the
+ * user has moved it since. When they differ, a re-target may be pending, and the old release could
+ * only have written the note under its then-mapping: the path is the witness, and the next sync
+ * moves the note. A user who moved notes *and* re-targeted under the old release has them moved
+ * home one last time on that sync -- the one window in which the index cannot tell.
+ *
+ * Idempotent, and it never touches a row that already carries the field, is not active, or whose
+ * tag is no longer mapped (that row is on the orphan path).
+ */
+export function stampRowFolders(index: SyncIndex, tagFolderMap: TagFolderMap): SyncIndex {
+	const settled = index.mappings === mappingFingerprint(tagFolderMap);
+	const rows: Record<string, SyncIndexRow> = {};
+	for (const [key, row] of Object.entries(index.rows)) {
+		if (row.folder !== undefined || row.status !== "active" || tagFolderMap[row.tag] === undefined) {
+			rows[key] = row;
+			continue;
+		}
+		const cut = row.notePath.lastIndexOf("/");
+		rows[key] = { ...row, folder: settled ? tagFolderMap[row.tag] : cut === -1 ? "" : row.notePath.slice(0, cut) };
+	}
+	return { ...index, rows };
+}
+
 export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncData {
 	// Optional chaining is what makes this total: every non-object input answers `undefined` to every
 	// field, so junk and absence take the same path rather than needing a guard of their own.
@@ -180,7 +208,7 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// rows in it. Production gets away with it -- one plugin instance per Obsidian process, and a
 		// fresh install has no rows to remap -- but a shared mutable default is a hazard whether or not
 		// today's call sites happen to miss it, and under a test runner they do not.
-		syncIndex: stored?.syncIndex ?? { ...EMPTY_SYNC_INDEX, rows: {} },
+		syncIndex: stored?.syncIndex ? stampRowFolders(stored.syncIndex, stored.tagFolderMap ?? {}) : { ...EMPTY_SYNC_INDEX, rows: {} },
 		ocrBackend: env.isKnownBackend(savedBackend) ? (savedBackend as OcrBackendId) : env.defaultBackend,
 		llmProviders: stored?.llmProviders ?? {},
 		ocrUnavailableNoticeShown: stored?.ocrUnavailableNoticeShown ?? false,
