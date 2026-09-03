@@ -122,18 +122,18 @@ function withNewlyTaggedDocument(api: SyncApi): SyncApi {
 	return {
 		...api,
 		listItems: async () => [...(await api.listItems()), entry] as never,
-		getContent: async (id) => (id === "doc-extra" ? (content as never) : api.getContent(id)),
+		getContent: async (id, hash) => (id === "doc-extra" ? (content as never) : api.getContent(id, hash)),
 		raw: {
 			...api.raw,
 			getRootHash: async () => ["root-legacy-state-plus-one-tag", 1, 4] as never,
-			getEntries: async (fileName) =>
+			getEntries: async (fileName, hash) =>
 				fileName === "doc-extra.docSchema"
 					? ({ entries: [{ id: "doc-extra/page-extra.rm", hash: "h-page-extra", type: 0 as const, subfiles: 0, size: 0 }] } as never)
-					: api.raw.getEntries(fileName),
-			getHash: async (fileName) =>
+					: api.raw.getEntries(fileName, hash),
+			getHash: async (fileName, hash) =>
 				fileName === "doc-extra/page-extra.rm"
 					? (new Uint8Array(readFileSync(join(process.cwd(), "test-fixtures", "rmv6", "normal-a-stroke-2-layers.rm"))) as never)
-					: api.raw.getHash(fileName),
+					: api.raw.getHash(fileName, hash),
 		},
 	};
 }
