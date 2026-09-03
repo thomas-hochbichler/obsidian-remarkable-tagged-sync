@@ -248,3 +248,41 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "runSync > documents in the trash > treats a document inside a trashed folder as deleted too"
+
+# C8 -- the level-2 gate, and the one wrong reading of it that cost a user 352 OCR calls per tag
+# change (#101). A note outside the mapped folder used to mean "the mapping was re-targeted"; a
+# note the user moved looks exactly the same from the path. The row now remembers the folder it
+# was written under, and only *that* disagreeing with the settings is a re-target.
+
+- feature: C8
+  name: "Level-2 skip: document unchanged"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C8.1
+      scenario: The user moved two synced notes out of the mapped folder; then a third document gains the same tag on the device
+      expect: One note written, no move, no re-transcription of the two -- their rows keep pointing at where the user put them. Before the fix all three were rewritten and the two were dragged back
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > leaves a note the user moved where it is when another document gains the tag (#101)"
+
+    - id: C8.2
+      scenario: A document lost one of its tags weeks ago (an orphaned row), is unchanged since, and another document gains the tag
+      expect: Not opened -- no content fetched, no note written. Before, any orphaned row reopened its document on every full scan; for a PDF-backed book that is a download, a render and a per-cluster transcription on a metered backend (the Demo vault's Alice, #101)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > does not reopen an unchanged document just because one of its tags was removed long ago (#101)"
+
+    - id: C8.3
+      scenario: A document carrying only a page tag is deleted on the device and restored with the hash it left with
+      expect: Revived. This is what the blanket rule was there for, on the one shape the notebook-tag reconcile check cannot see; the vanish pass now clears the orphaned row's hash so the return fails the hash gate instead
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > still revives a page-tagged document that comes back from the trash with the hash it left with"
+
+    - id: C8.4
+      scenario: The mapping's folder loses its trailing slash in settings -- "Tagged/" becomes "Tagged" -- and nothing else changes anywhere
+      expect: Nothing is fetched, written or moved. The two spellings name one folder; the fingerprint change forces a full scan, but no row may come out of it re-targeted -- the row's `folder` is stored as the user typed the mapping while the load-time stamp's dirname branch never carries a slash, so the re-target compare trims both sides
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > does not read a trailing slash dropped from the mapping as a re-target (#101)"

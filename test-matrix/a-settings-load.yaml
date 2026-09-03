@@ -134,6 +134,27 @@
       file: src/settings-on-load.test.ts
       test: "what the plugin arrives with > drops the single API key the pre-multi-provider version stored"
 
+    - id: A8.28
+      scenario: A 1.6.0 index is loaded whose rows carry no `folder`, and the settings are the ones it was last synced with
+      expect: Each active row gets the folder its tag maps to. Nothing was re-targeted since the last sync, so that is where the note was written -- wherever the user moved it afterwards (#101, the reporter's vault)
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > stamps the folder a pre-1.7 row was written under (#101) > takes the folder from the settings when the index was last synced with them"
+
+    - id: A8.29
+      scenario: A 1.6.0 index is loaded after a mapping was re-targeted under the old release, with no sync in between
+      expect: Each active row gets the folder its note lies in. The old release could only have written it under its then-mapping, so the pending re-target is seen and the next sync moves the note
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > stamps the folder a pre-1.7 row was written under (#101) > takes the folder from the note's own path when the settings changed since the last sync"
+
+    - id: A8.30
+      scenario: The stamp meets a row it must not touch -- an unmapped tag, an orphaned row, a row that already carries a folder
+      expect: Left exactly as found. The stamp is a one-off for rows the old release wrote, not a rule that keeps rewriting them
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > stamps the folder a pre-1.7 row was written under (#101) > leaves a row alone when its tag is no longer mapped, it is not active, or it already carries a folder"
+
 - feature: E12
   name: Unknown or retired backend id migrates
   code: src/settings-store.ts

@@ -5,7 +5,6 @@ import {
 	blockHashOf,
 	extractManagedBlock,
 	type HighlightGroup,
-	isInFolder,
 	managedBlockHash,
 	moveNote,
 	type NoteFields,
@@ -113,6 +112,14 @@ export interface SyncIndexRow {
 	entryHash: string;
 	pageHash: string | null;
 	notePath: string;
+	/**
+	 * The folder the row's tag mapped to when this note was last written -- *not* where the note is
+	 * now. `notePath` follows the user's moves (`remapRows`); this does not. Comparing it with the
+	 * tag's current folder is what tells a mapping re-targeted in settings from a note the user moved
+	 * (#101): only the first changes it. Absent on rows written before it existed; `migrateSettings`
+	 * stamps those once at load.
+	 */
+	folder?: string;
 	status: SyncRowStatus;
 	syncedAt: string;
 	/** The `RENDER_VERSION` this note's attachment was rendered by; absent on rows written before it existed. */
@@ -799,17 +806,27 @@ function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, sta
 }
 
 /**
- * True if this row's note no longer sits in the folder its tag maps to -- the user re-targeted the
- * mapping in settings. Only the mapping fingerprint sees such a change at all (nothing moves on the
- * reMarkable side), so without this the per-document gates would skip the note and it would stay in
- * the old folder forever.
+ * True if this row's tag now maps to a different folder than the one its note was written under --
+ * the user re-targeted the mapping in settings. Only the mapping fingerprint sees such a change at
+ * all (nothing moves on the reMarkable side), so without this the per-document gates would skip the
+ * note and it would stay in the old folder forever.
+ *
+ * Compared against the row's `folder`, never against where the note lies: a note the user moved
+ * out of the mapped folder sits outside it too, and reading that as a re-target re-fetched,
+ * re-transcribed and dragged home every moved note on the next full scan (#101). A row without the
+ * field is not re-targeted -- the load-time stamp gives every row one.
  *
  * A row whose tag is no longer mapped at all is not re-targeted, it is gone: that is the orphan path.
+ *
+ * Trailing slashes are cosmetic, so both sides are trimmed before comparing: the mapping is stored
+ * as the user typed it ("Old/" is legal), while the load-time stamp's dirname branch never produces
+ * one -- compared raw, the two spellings of one folder read as a re-target and re-import the whole
+ * tag, the very thing this predicate exists to prevent.
  */
 function isRetargeted(row: SyncIndexRow, tagRouter: TagRouter): boolean {
-	if (row.status !== "active") return false;
+	if (row.status !== "active" || row.folder === undefined) return false;
 	const folder = tagRouter.resolveFolder(row.tag);
-	return folder !== null && !isInFolder(row.notePath, folder);
+	return folder !== null && row.folder.replace(/\/+$/, "") !== folder.replace(/\/+$/, "");
 }
 
 function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRouter, docId: string): boolean {
@@ -891,23 +908,25 @@ function orphanRow(rows: Record<string, SyncIndexRow>, row: SyncIndexRow): void 
 
 /**
  * Picks the writer for a unit. A rename moves the existing note into `folder`; otherwise write, with
- * `existingPath` (the row's `notePath`) making it an in-place overwrite when a row already exists,
- * and a fresh first-free-path write when it doesn't.
+ * `existingRow`'s `notePath` making it an in-place overwrite when a row already exists, and a fresh
+ * first-free-path write when it doesn't.
  *
- * A note that sits outside `folder` moves as well, even without a rename: the tag kept its name and
- * the *mapping* was re-targeted in settings. Moving keeps the note's identity and its backlinks, and
- * when the note is gone (deleted by hand) `move` is a no-op, so it is simply written where the
- * mapping now says it belongs -- rather than back into the folder it was mapped to last time.
+ * A re-targeted row moves as well, even without a rename: the tag kept its name and the *mapping*
+ * was re-targeted in settings. Moving keeps the note's identity and its backlinks, and when the
+ * note is gone (deleted by hand) `move` is a no-op, so it is simply written where the mapping now
+ * says it belongs -- rather than back into the folder it was mapped to last time. A note the user
+ * merely moved is not re-targeted and is overwritten where it lies (#101).
  */
 function resolveWriter(
 	noteStore: NoteStore,
+	tagRouter: TagRouter,
 	rename: TagRename | null,
 	folder: string,
-	existingPath: string | null,
+	existingRow: SyncIndexRow | undefined,
 ): (fields: NoteFields) => Promise<string> {
 	if (rename) return (fields) => moveNote(noteStore, rename.oldRow.notePath, folder, fields);
-	if (existingPath !== null && !isInFolder(existingPath, folder)) return (fields) => moveNote(noteStore, existingPath, folder, fields);
-	return (fields) => writeNote(noteStore, folder, fields, existingPath);
+	if (existingRow !== undefined && isRetargeted(existingRow, tagRouter)) return (fields) => moveNote(noteStore, existingRow.notePath, folder, fields);
+	return (fields) => writeNote(noteStore, folder, fields, existingRow?.notePath ?? null);
 }
 
 /** Retires the rename's source row once its note has landed at the new syncKey. */
@@ -923,12 +942,13 @@ function entryAndInheritedTagNames(entry: Entry, entriesById: ReadonlyMap<string
 /**
  * The level-2 gate: whether this document has to be opened at all.
  *
- * Also reopen a doc with any orphaned row even on an unchanged hash -- otherwise a doc that
- * reappears after being deleted (whose hash may come back identical) would stay `orphaned`
- * forever. Tradeoff: a doc keeps getting reopened on every sync after any one of its tags was
- * ever orphaned, even if that specific tag never comes back -- orphaned rows aren't pruned, so
- * this can't distinguish "doc came back" from "one old tag never will." Bounded to extra
- * network calls, never incorrect data. Same idea for a note deleted out from under an active row.
+ * An orphaned row on its own is not a reason. It used to be -- so a doc that reappears after being
+ * deleted (whose hash may come back identical) would not stay `orphaned` forever -- but that
+ * reopened every doc that had ever lost a tag on every full scan, and for a PDF-backed doc a reopen
+ * is a download, a render and a per-cluster transcription on a metered backend (#101). The vanish
+ * pass now clears the hash of the rows it orphans, so a doc that comes back fails the hash check
+ * instead; a row orphaned per-tag while its doc was open keeps the current hash and costs nothing.
+ * A note deleted out from under an active row is still a reason: nothing on the device says so.
  */
 async function needsDocumentOpen(
 	noteStore: NoteStore,
@@ -941,7 +961,6 @@ async function needsDocumentOpen(
 	return (
 		hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) ||
 		hasRetargetedRow(rows, tagRouter, entry.id) ||
-		hasRowWithStatus(rows, entry.id, "orphaned") ||
 		hasStaleRender(rows, entry.id) ||
 		(await hasMissingActiveNote(noteStore, rows, entry.id))
 	);
@@ -1452,7 +1471,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			if (shouldStop()) return stopHere();
 			const { tag, rename, existingRow } = unit;
 			const folder = tagRouter.resolveFolder(tag)!;
-			const existingPath = existingRow?.notePath ?? null;
 
 			if (unit.skip === "edited") {
 				editedKeys.add(unit.writtenRow.syncKey);
@@ -1519,10 +1537,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
-				resolveWriter(deps.noteStore, rename, folder, existingPath),
+				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
 			consumeRename(rows, rename);
-			rows[row.syncKey] = row;
+			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
 			bar.finish();
 			// Per unit, not just per document: a document is one tagged notebook *plus* one unit for every
@@ -1616,10 +1634,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
-				resolveWriter(deps.noteStore, rename, folder, existingRow?.notePath ?? null),
+				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
 			consumeRename(rows, rename);
-			rows[row.syncKey] = row;
+			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
 			bar.finish();
 			await checkpoint(); // see the notebook-tag branch
@@ -1657,9 +1675,13 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// orphaned, never auto-deleted (spec §7). A doc in the trash counts as gone, same as one whose
 	// files have vanished. A doc still present but missing a specific tag was already orphaned
 	// above, per-tag, while its content was open.
+	//
+	// The hash goes with it: a doc restored from the trash comes back with the hash it left with,
+	// and the level-2 gate compares against this row -- an empty hash is what makes it reopen the
+	// doc and revive the row, now that an orphaned row alone no longer does (see needsDocumentOpen).
 	const liveDocIds = new Set(documents.map((entry) => entry.id));
 	for (const row of Object.values(rows)) {
-		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
+		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
 	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, skipErrors };

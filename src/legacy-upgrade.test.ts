@@ -1,12 +1,13 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
 import type { NoteStore } from "./note-builder";
 import { OffOcrBackend } from "./off-ocr-backend";
+import { stampRowFolders } from "./settings-store";
 import { legacyDevice, TAG_FOLDER_MAP } from "../scripts/legacy-state/device";
-import { RENDER_VERSION, runSync, type SyncIndex } from "./sync-engine";
+import { RENDER_VERSION, runSync, type SyncApi, type SyncIndex } from "./sync-engine";
 import { TagRouter } from "./tag-router";
 
 // The upgrade test: today's engine, run against a vault the **last shipped release** actually wrote.
@@ -68,6 +69,75 @@ function afterARendererBump(data: FrozenData): SyncIndex {
 	return { ...data.syncIndex, rows };
 }
 
+/**
+ * The frozen index with today's renderer on every row: a vault with nothing stale in it, for the
+ * one scenario whose point is that nothing *but* its own change gets written. The mirror image of
+ * `afterARendererBump`, and needed for the same ticket-23 reason: frozen right after a tag the
+ * state is current and the scenario holds by accident, one renderer bump later everything is stale
+ * and "only the new document is written" fails on rows the scenario never touched.
+ */
+function withTodaysRenderer(data: FrozenData): SyncIndex {
+	const rows = Object.fromEntries(
+		Object.entries(data.syncIndex.rows).map(([key, row]) => [key, { ...row, renderVersion: RENDER_VERSION }]),
+	);
+	return { ...data.syncIndex, rows };
+}
+
+/**
+ * The frozen device with one more document that just gained the already-mapped tag -- issue #101's
+ * step 5. Everything the old release synced is byte-identical (same entry hashes, same pages); only
+ * the root hash and the one new entry differ, exactly what a single tag change looks like.
+ */
+function withNewlyTaggedDocument(api: SyncApi): SyncApi {
+	const entry = {
+		id: "doc-extra",
+		hash: "h-doc-extra",
+		visibleName: "Latecomer",
+		lastModified: "2000",
+		pinned: false,
+		parent: "",
+		type: "DocumentType",
+		fileType: "notebook",
+		lastOpened: "0",
+		tags: [{ name: "sync", timestamp: 0 }],
+	};
+	const content = {
+		coverPageNumber: 0,
+		documentMetadata: {},
+		extraMetadata: {},
+		fileType: "notebook",
+		fontName: "",
+		lineHeight: -1,
+		orientation: "portrait",
+		pageCount: 1,
+		textAlignment: "",
+		textScale: 1,
+		cPages: {
+			lastOpened: { timestamp: "1:1", value: "" },
+			original: { timestamp: "1:1", value: 0 },
+			uuids: null,
+			pages: [{ id: "page-extra", idx: { timestamp: "1:1", value: "a" } }],
+		},
+	};
+	return {
+		...api,
+		listItems: async () => [...(await api.listItems()), entry] as never,
+		getContent: async (id, hash) => (id === "doc-extra" ? (content as never) : api.getContent(id, hash)),
+		raw: {
+			...api.raw,
+			getRootHash: async () => ["root-legacy-state-plus-one-tag", 1, 4] as never,
+			getEntries: async (fileName, hash) =>
+				fileName === "doc-extra.docSchema"
+					? ({ entries: [{ id: "doc-extra/page-extra.rm", hash: "h-page-extra", type: 0 as const, subfiles: 0, size: 0 }] } as never)
+					: api.raw.getEntries(fileName, hash),
+			getHash: async (fileName, hash) =>
+				fileName === "doc-extra/page-extra.rm"
+					? (new Uint8Array(readFileSync(join(process.cwd(), "test-fixtures", "rmv6", "normal-a-stroke-2-layers.rm"))) as never)
+					: api.raw.getHash(fileName, hash),
+		},
+	};
+}
+
 const readNote = (path: string): string => readFileSync(join(vault, path), "utf8");
 
 function writeNote(path: string, content: string): void {
@@ -126,18 +196,24 @@ function fsAttachmentStore(): AttachmentStore {
 	};
 }
 
-/** Today's engine, over the frozen state and the same device it was frozen from. */
-async function upgrade(index: SyncIndex, mapping: Record<string, string> = TAG_FOLDER_MAP) {
+/**
+ * Today's engine, over the frozen state and the same device it was frozen from.
+ *
+ * The index goes through the load-time stamp with the *frozen* settings first, as `main.ts` does
+ * when the new version starts: the old release wrote no `folder` on its rows, and a scenario that
+ * then changes the mapping is the user re-targeting a tag in the new version's settings.
+ */
+async function upgrade(index: SyncIndex, mapping: Record<string, string> = TAG_FOLDER_MAP, api: SyncApi = legacyDevice()) {
 	return runSync(
 		{
-			api: legacyDevice(),
+			api,
 			tagRouter: new TagRouter(mapping),
 			noteStore: fsNoteStore(),
 			attachmentStore: fsAttachmentStore(),
 			ocrBackend: new OffOcrBackend(),
 			now: () => "2026-06-01T00:00:00.000Z",
 		},
-		index,
+		stampRowFolders(index, TAG_FOLDER_MAP),
 	);
 }
 
@@ -245,6 +321,48 @@ describe("upgrading a vault the last release wrote", () => {
 		expect(markdownFiles()).not.toContain(wasAt);
 		// It moved, so the user's paragraph moved with it.
 		expect(readNote(nowAt)).toContain("My own thoughts.");
+		expect(ownership(result.index)).toEqual({ unclaimed: [], doubleClaimed: [] });
+	});
+
+	it("rewrites a note the user moved out of its folder where it lies, instead of dragging it back (#101)", async () => {
+		// The old release wrote no `folder` on its rows, so before the stamp a moved note looked
+		// re-targeted to the new version and every full scan pulled it home and re-transcribed it.
+		// The renderer bump is what makes this upgrade rewrite the note at all.
+		const data = openFrozenVault();
+		const wasAt = data.syncIndex.rows["doc-notes:sync"].notePath;
+		const movedTo = "Projects/Field Notes.md";
+		mkdirSync(join(vault, "Projects"), { recursive: true });
+		renameSync(join(vault, wasAt), join(vault, movedTo));
+		data.syncIndex.rows["doc-notes:sync"] = { ...data.syncIndex.rows["doc-notes:sync"], notePath: movedTo };
+
+		const result = await upgrade(afterARendererBump(data));
+
+		expect(result.index.rows["doc-notes:sync"].notePath).toBe(movedTo);
+		expect(markdownFiles()).toContain(movedTo);
+		expect(markdownFiles()).not.toContain(wasAt);
+		expect(ownership(result.index)).toEqual({ unclaimed: [], doubleClaimed: [] });
+	});
+
+	it("writes only a newly tagged document, and a note the user moved stays put (#101)", async () => {
+		// The reporter's exact sequence, at the upgrade boundary (ticket 02): a vault the old release
+		// wrote, notes moved into folders of their own, then one more document gains the
+		// already-mapped tag on the device. 1.6.0 answered by re-importing all 36 documents and
+		// dragging the moved notes home; the new document is the only thing this sync may write.
+		const data = openFrozenVault();
+		const wasAt = data.syncIndex.rows["doc-notes:sync"].notePath;
+		const movedTo = "Projects/Field Notes.md";
+		mkdirSync(join(vault, "Projects"), { recursive: true });
+		renameSync(join(vault, wasAt), join(vault, movedTo));
+		data.syncIndex.rows["doc-notes:sync"] = { ...data.syncIndex.rows["doc-notes:sync"], notePath: movedTo };
+
+		const result = await upgrade(withTodaysRenderer(data), TAG_FOLDER_MAP, withNewlyTaggedDocument(legacyDevice()));
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.index.rows["doc-extra:sync"].notePath).toBe("Inbox/Latecomer.md");
+		expect(markdownFiles()).toContain("Inbox/Latecomer.md");
+		expect(result.index.rows["doc-notes:sync"].notePath).toBe(movedTo);
+		expect(markdownFiles()).toContain(movedTo);
+		expect(markdownFiles()).not.toContain(wasAt);
 		expect(ownership(result.index)).toEqual({ unclaimed: [], doubleClaimed: [] });
 	});
 

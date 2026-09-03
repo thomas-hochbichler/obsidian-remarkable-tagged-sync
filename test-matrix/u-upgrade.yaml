@@ -56,6 +56,20 @@
       file: src/legacy-upgrade.test.ts
       test: "upgrading a vault the last release wrote > moves a re-mapped note rather than leaving a second copy behind"
 
+    - id: A8.31
+      scenario: A note the old release wrote was moved by the user into a folder of their own; the new version's renderer has moved on
+      expect: The note is rewritten where the user put it, and nothing reappears at the old path. The old release wrote no `folder` on its rows, so before the load-time stamp a moved note looked re-targeted and every full scan dragged it home and re-transcribed it (#101)
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > rewrites a note the user moved out of its folder where it lies, instead of dragging it back (#101)"
+
+    - id: A8.32
+      scenario: A note the old release wrote was moved by the user into a folder of their own; then one more document gains the already-mapped tag on the device
+      expect: Only the new document is written, and the moved note stays put -- the reporter's exact sequence at the upgrade boundary, where the old release re-imported the whole set. The index is given today's renderer first, for the mirror of the ticket-23 reason -- one bump after the freeze everything is legitimately stale, and "only the new document" would fail on rows the scenario never touched
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > writes only a newly tagged document, and a note the user moved stays put (#101)"
+
     - id: A8.25
       scenario: Every index row after the upgrade
       expect: Each points at a file that exists, under the folder its tag maps to

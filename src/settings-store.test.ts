@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_LICENCE } from "./licence-state";
 import { DEFAULT_AUTO_SYNC, DEFAULT_DATA, migrateSettings, type SettingsEnv } from "./settings-store";
+import { mappingFingerprint } from "./tag-router";
 
 // Gap G20 -- settings migration and the state after an upgrade. Every field of `data.json` is read
 // raw and there is no schema version; the two properties that stand in for one are asserted here:
@@ -146,6 +147,71 @@ describe("migrateSettings", () => {
 	it("keeps an attachments folder the user chose, and defaults the rest", () => {
 		expect(migrateSettings({ attachmentsFolder: "Attachments" }, ENV).attachmentsFolder).toBe("Attachments");
 		expect(migrateSettings({}, ENV).attachmentsFolder).toBe("tagged-sync/attachments");
+	});
+
+	describe("stamps the folder a pre-1.7 row was written under (#101)", () => {
+		// Rows written before `folder` existed carry only `notePath`, and that follows the user's moves.
+		// The stamp gives each row the one fact the re-target check needs and the old release never
+		// recorded: which folder the mapping pointed at when the note was written.
+		const row = (notePath: string, tag = "sync", status = "active") => ({
+			syncKey: `doc-1:${tag}`,
+			docId: "doc-1",
+			pageId: null,
+			tag,
+			entryHash: "h1",
+			pageHash: null,
+			notePath,
+			status,
+			syncedAt: "2026-08-01T00:00:00.000Z",
+		});
+
+		it("takes the folder from the settings when the index was last synced with them", () => {
+			// The reporter's vault: 35 notes moved out of the mapped folder, settings untouched since.
+			// The note was written under today's mapping, wherever the user moved it afterwards.
+			const stored = {
+				tagFolderMap: { sync: "Tagged" },
+				syncIndex: { rootHash: "root", mappings: mappingFingerprint({ sync: "Tagged" }), rows: { "doc-1:sync": row("Elsewhere/Alpha.md") } },
+			};
+
+			const data = migrateSettings(stored, ENV);
+
+			expect(data.syncIndex.rows["doc-1:sync"].folder).toBe("Tagged");
+		});
+
+		it("takes the folder from the note's own path when the settings changed since the last sync", () => {
+			// Re-targeted under the old release, not synced since: the old release could only have
+			// written the note under its then-mapping, so the path is the witness, and the upgrade sync
+			// sees the pending re-target and moves the note.
+			const stored = {
+				tagFolderMap: { sync: "New" },
+				syncIndex: { rootHash: "root", mappings: mappingFingerprint({ sync: "Old" }), rows: { "doc-1:sync": row("Old/Alpha.md") } },
+			};
+
+			const data = migrateSettings(stored, ENV);
+
+			expect(data.syncIndex.rows["doc-1:sync"].folder).toBe("Old");
+		});
+
+		it("leaves a row alone when its tag is no longer mapped, it is not active, or it already carries a folder", () => {
+			const stored = {
+				tagFolderMap: { sync: "Tagged" },
+				syncIndex: {
+					rootHash: "root",
+					mappings: mappingFingerprint({ sync: "Tagged" }),
+					rows: {
+						"doc-1:gone": row("Was/Alpha.md", "gone"),
+						"doc-1:sync": { ...row("Elsewhere/Alpha.md"), status: "orphaned" },
+						"doc-2:sync": { ...row("Elsewhere/Beta.md"), syncKey: "doc-2:sync", docId: "doc-2", folder: "Before" },
+					},
+				},
+			};
+
+			const data = migrateSettings(stored, ENV);
+
+			expect(data.syncIndex.rows["doc-1:gone"].folder).toBeUndefined();
+			expect(data.syncIndex.rows["doc-1:sync"].folder).toBeUndefined();
+			expect(data.syncIndex.rows["doc-2:sync"].folder).toBe("Before");
+		});
 	});
 
 	it("does not hand two installs the same syncIndex object", () => {
