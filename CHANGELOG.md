@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-03
+
 ### Fixed
 
 - **Tagging one more document no longer re-imports the rest.** A synced note you had moved out of

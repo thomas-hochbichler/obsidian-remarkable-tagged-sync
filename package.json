@@ -1,6 +1,6 @@
 {
   "name": "remarkable-tagged-sync",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Sync tagged reMarkable notebooks into Obsidian as searchable Markdown notes, routed to folders by tag.",
   "main": "main.js",
   "private": true,
