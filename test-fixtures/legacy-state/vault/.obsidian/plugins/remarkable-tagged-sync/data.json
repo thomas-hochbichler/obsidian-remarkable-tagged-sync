@@ -21,7 +21,8 @@
 				"syncedAt": "2026-01-01T00:00:00.000Z",
 				"renderVersion": 31,
 				"blockHash": "7e2fef62",
-				"highlightCount": 0
+				"highlightCount": 0,
+				"folder": "Inbox"
 			},
 			"doc-notes:work": {
 				"syncKey": "doc-notes:work",
@@ -35,7 +36,8 @@
 				"syncedAt": "2026-01-01T00:00:00.000Z",
 				"renderVersion": 31,
 				"blockHash": "7e2fef62",
-				"highlightCount": 0
+				"highlightCount": 0,
+				"folder": "Work/Notes"
 			},
 			"doc-paper:read": {
 				"syncKey": "doc-paper:read",
@@ -49,7 +51,8 @@
 				"syncedAt": "2026-01-01T00:00:00.000Z",
 				"renderVersion": 31,
 				"blockHash": "94bed6a5",
-				"highlightCount": 0
+				"highlightCount": 0,
+				"folder": "Reading"
 			}
 		}
 	},
