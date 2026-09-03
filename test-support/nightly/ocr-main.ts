@@ -38,11 +38,11 @@ function recordingFetch(statuses: number[]): typeof fetch {
 function loadBaseline(): Record<string, Record<string, BaselineEntry | undefined>> {
 	const path = join(process.cwd(), ".ocr-baseline.json");
 	if (!existsSync(path)) return {};
-	const raw = JSON.parse(readFileSync(path, "utf8")) as { entries?: Record<string, { cer: number }> };
+	const raw = JSON.parse(readFileSync(path, "utf8")) as { entries?: Record<string, { cer: number; spread?: number }> };
 	const byBackend: Record<string, Record<string, BaselineEntry | undefined>> = {};
 	for (const [key, entry] of Object.entries(raw.entries ?? {})) {
 		const cut = key.lastIndexOf("/");
-		(byBackend[key.slice(0, cut)] ??= {})[key.slice(cut + 1)] = { cer: entry.cer };
+		(byBackend[key.slice(0, cut)] ??= {})[key.slice(cut + 1)] = { cer: entry.cer, spread: entry.spread };
 	}
 	return byBackend;
 }

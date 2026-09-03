@@ -1,0 +1,425 @@
+{
+	"comment": "One entry per <backend>/<model>/<page>: the median CER of the last 30 recorded nights. Never edit by hand. Recompute with `node scripts/release-checks.mjs ocr-baseline --write`; a key that falls is absorbed silently, a key that rises is refused unless --accept names it AND the model, the prompt or the render version actually changed -- the only three honest reasons a transcription baseline can get worse.",
+	"entries": {
+		"openrouter/anthropic/claude-sonnet-5/01": {
+			"cer": 0,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/02": {
+			"cer": 0,
+			"spread": 0.006,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/03": {
+			"cer": 0.00510204081632653,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/04": {
+			"cer": 0.009615384615384616,
+			"spread": 0.028846153846153844,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/05": {
+			"cer": 0.03067484662576687,
+			"spread": 0.006134969325153377,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/06": {
+			"cer": 0.023809523809523808,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/07": {
+			"cer": 0,
+			"spread": 0.00477326968973747,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/08": {
+			"cer": 0.1875,
+			"spread": 0.33333333333333337,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/09": {
+			"cer": 0,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/10": {
+			"cer": 0.005945303210463734,
+			"spread": 0.004756242568370987,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/11": {
+			"cer": 0.034782608695652174,
+			"spread": 0.008695652173913042,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/12": {
+			"cer": 0.0196078431372549,
+			"spread": 0.016806722689075633,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/13": {
+			"cer": 0.18584070796460178,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/anthropic/claude-sonnet-5/14": {
+			"cer": 0.18974358974358974,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "anthropic/claude-sonnet-5",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/01": {
+			"cer": 0,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/02": {
+			"cer": 0.01,
+			"spread": 0.016,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/03": {
+			"cer": 0.01020408163265306,
+			"spread": 0.015306122448979593,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/04": {
+			"cer": 0,
+			"spread": 0.022435897435897436,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/05": {
+			"cer": 0.03680981595092025,
+			"spread": 0.018404907975460124,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/06": {
+			"cer": 0.041666666666666664,
+			"spread": 0.047619047619047616,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/07": {
+			"cer": 0.00954653937947494,
+			"spread": 0.01909307875894988,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/08": {
+			"cer": 0.1875,
+			"spread": 0.10416666666666666,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/09": {
+			"cer": 0,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/10": {
+			"cer": 0.009512485136741973,
+			"spread": 0.0047562425683709865,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/11": {
+			"cer": 0.0463768115942029,
+			"spread": 0.049275362318840575,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/12": {
+			"cer": 0.01680672268907563,
+			"spread": 0.011204481792717087,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/13": {
+			"cer": 0.11504424778761062,
+			"spread": 0.039823008849557515,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/google/gemini-2.5-flash/14": {
+			"cer": 0.19487179487179487,
+			"spread": 0.14871794871794872,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "google/gemini-2.5-flash",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/01": {
+			"cer": 0,
+			"spread": 0.012,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/02": {
+			"cer": 0.018,
+			"spread": 0.03,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/03": {
+			"cer": 0.00510204081632653,
+			"spread": 0.01020408163265306,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/04": {
+			"cer": 0.01282051282051282,
+			"spread": 0.016025641025641024,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/05": {
+			"cer": 0.03067484662576687,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/06": {
+			"cer": 0.23214285714285715,
+			"spread": 0.2976190476190476,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/07": {
+			"cer": 0,
+			"spread": 0.00477326968973747,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/08": {
+			"cer": 0.22916666666666666,
+			"spread": 0.39583333333333337,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/09": {
+			"cer": 0,
+			"spread": 0,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/10": {
+			"cer": 0.008323424494649227,
+			"spread": 0.009512485136741973,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/11": {
+			"cer": 0.03188405797101449,
+			"spread": 0.017391304347826087,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/12": {
+			"cer": 0.025210084033613446,
+			"spread": 0.03081232492997199,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/13": {
+			"cer": 0.14601769911504425,
+			"spread": 0.1415929203539823,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		},
+		"openrouter/openai/gpt-4o/14": {
+			"cer": 0.046153846153846156,
+			"spread": 0.002564102564102562,
+			"setAt": "2026-09-03",
+			"nights": 12,
+			"model": "openai/gpt-4o",
+			"promptSha": "635b0b92a4432be2",
+			"renderVersion": 31,
+			"because": "first baseline"
+		}
+	}
+}

@@ -73,6 +73,16 @@ describe("evaluating a backend's night (§5.3)", () => {
 		expect(broken.status).toBe("catastrophe");
 	});
 
+	it("a page whose own baseline recorded a wide spread is not degraded inside twice that spread -- §6.1, noise is not drift", () => {
+		const steady = page("01", "Der Garten hinter dem Haus war lange Zeit sich selbst überlassen.");
+		const short = page("09", "Ask again on Thursday.");
+		const set = [steady, short];
+		const outcomes = new Map([["01", { text: steady.body }], ["09", { text: "Ask again on Tuesday." }]]);
+		// 9.1 % against 4.5 %: degraded under the 2 pp floor alone, pass once the entry says its nights swung by 5 pp.
+		expect(evaluateBackend(set, outcomes, { "01": { cer: 0.02 }, "09": { cer: 0.045, spread: 0.05 } }).status).toBe("pass");
+		expect(evaluateBackend(set, outcomes, { "01": { cer: 0.02 }, "09": { cer: 0.045, spread: 0.01 } }).status).toBe("degraded");
+	});
+
 	it("a key with no baseline is degraded at worst -- a new model cannot block a release on its first night", () => {
 		const run = evaluateBackend([ref], new Map([["01", { text: "Der Garten hinter dem Haus war völlig anders beschrieben als je zuvor gedacht." }]]), {});
 		expect(run.status).toBe("pass");
