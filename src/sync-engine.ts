@@ -5,7 +5,6 @@ import {
 	blockHashOf,
 	extractManagedBlock,
 	type HighlightGroup,
-	isInFolder,
 	managedBlockHash,
 	moveNote,
 	type NoteFields,
@@ -113,6 +112,14 @@ export interface SyncIndexRow {
 	entryHash: string;
 	pageHash: string | null;
 	notePath: string;
+	/**
+	 * The folder the row's tag mapped to when this note was last written -- *not* where the note is
+	 * now. `notePath` follows the user's moves (`remapRows`); this does not. Comparing it with the
+	 * tag's current folder is what tells a mapping re-targeted in settings from a note the user moved
+	 * (#101): only the first changes it. Absent on rows written before it existed; `migrateSettings`
+	 * stamps those once at load.
+	 */
+	folder?: string;
 	status: SyncRowStatus;
 	syncedAt: string;
 	/** The `RENDER_VERSION` this note's attachment was rendered by; absent on rows written before it existed. */
@@ -799,17 +806,22 @@ function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, sta
 }
 
 /**
- * True if this row's note no longer sits in the folder its tag maps to -- the user re-targeted the
- * mapping in settings. Only the mapping fingerprint sees such a change at all (nothing moves on the
- * reMarkable side), so without this the per-document gates would skip the note and it would stay in
- * the old folder forever.
+ * True if this row's tag now maps to a different folder than the one its note was written under --
+ * the user re-targeted the mapping in settings. Only the mapping fingerprint sees such a change at
+ * all (nothing moves on the reMarkable side), so without this the per-document gates would skip the
+ * note and it would stay in the old folder forever.
+ *
+ * Compared against the row's `folder`, never against where the note lies: a note the user moved
+ * out of the mapped folder sits outside it too, and reading that as a re-target re-fetched,
+ * re-transcribed and dragged home every moved note on the next full scan (#101). A row without the
+ * field is not re-targeted -- the load-time stamp gives every row one.
  *
  * A row whose tag is no longer mapped at all is not re-targeted, it is gone: that is the orphan path.
  */
 function isRetargeted(row: SyncIndexRow, tagRouter: TagRouter): boolean {
-	if (row.status !== "active") return false;
+	if (row.status !== "active" || row.folder === undefined) return false;
 	const folder = tagRouter.resolveFolder(row.tag);
-	return folder !== null && !isInFolder(row.notePath, folder);
+	return folder !== null && row.folder !== folder;
 }
 
 function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRouter, docId: string): boolean {
@@ -894,19 +906,21 @@ function orphanRow(rows: Record<string, SyncIndexRow>, row: SyncIndexRow): void 
  * `existingPath` (the row's `notePath`) making it an in-place overwrite when a row already exists,
  * and a fresh first-free-path write when it doesn't.
  *
- * A note that sits outside `folder` moves as well, even without a rename: the tag kept its name and
- * the *mapping* was re-targeted in settings. Moving keeps the note's identity and its backlinks, and
- * when the note is gone (deleted by hand) `move` is a no-op, so it is simply written where the
- * mapping now says it belongs -- rather than back into the folder it was mapped to last time.
+ * A re-targeted row moves as well, even without a rename: the tag kept its name and the *mapping*
+ * was re-targeted in settings. Moving keeps the note's identity and its backlinks, and when the
+ * note is gone (deleted by hand) `move` is a no-op, so it is simply written where the mapping now
+ * says it belongs -- rather than back into the folder it was mapped to last time. A note the user
+ * merely moved is not re-targeted and is overwritten where it lies (#101).
  */
 function resolveWriter(
 	noteStore: NoteStore,
 	rename: TagRename | null,
 	folder: string,
 	existingPath: string | null,
+	retargeted: boolean,
 ): (fields: NoteFields) => Promise<string> {
 	if (rename) return (fields) => moveNote(noteStore, rename.oldRow.notePath, folder, fields);
-	if (existingPath !== null && !isInFolder(existingPath, folder)) return (fields) => moveNote(noteStore, existingPath, folder, fields);
+	if (existingPath !== null && retargeted) return (fields) => moveNote(noteStore, existingPath, folder, fields);
 	return (fields) => writeNote(noteStore, folder, fields, existingPath);
 }
 
@@ -1519,10 +1533,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
-				resolveWriter(deps.noteStore, rename, folder, existingPath),
+				resolveWriter(deps.noteStore, rename, folder, existingPath, existingRow !== undefined && isRetargeted(existingRow, tagRouter)),
 			);
 			consumeRename(rows, rename);
-			rows[row.syncKey] = row;
+			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
 			bar.finish();
 			// Per unit, not just per document: a document is one tagged notebook *plus* one unit for every
@@ -1616,10 +1630,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
-				resolveWriter(deps.noteStore, rename, folder, existingRow?.notePath ?? null),
+				resolveWriter(deps.noteStore, rename, folder, existingRow?.notePath ?? null, existingRow !== undefined && isRetargeted(existingRow, tagRouter)),
 			);
 			consumeRename(rows, rename);
-			rows[row.syncKey] = row;
+			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
 			bar.finish();
 			await checkpoint(); // see the notebook-tag branch

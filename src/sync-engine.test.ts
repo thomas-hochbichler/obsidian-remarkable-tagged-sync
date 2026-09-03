@@ -6,6 +6,7 @@ import type { AttachmentStore } from "./attachment-writer";
 import { buildDigest } from "./digest-pipeline";
 import { blockHashOf, extractManagedBlock, type NoteStore } from "./note-builder";
 import { formatLocalMinute } from "./frontmatter";
+import { remapRows } from "./note-rename";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmLayer, RmPage } from "./rm-parser";
@@ -1730,6 +1731,7 @@ describe("runSync", () => {
 						entryHash: "hash-1",
 						pageHash: null,
 						notePath: "Old/Notebook.md",
+						folder: "Old",
 						status: "active",
 						syncedAt: "2025-12-01T00:00:00.000Z",
 						renderVersion: RENDER_VERSION,
@@ -1766,6 +1768,52 @@ describe("runSync", () => {
 			expect(second.index.rows[pageSyncKey("doc-1", "page-a", "todo")].notePath).toBe("New/Notebook — Page 1.md");
 			expect(deps.noteStore.move).toHaveBeenCalledWith("Old/Notebook — Page 1.md", "New/Notebook — Page 1.md");
 			expect(await deps.noteStore.read("Old/Notebook — Page 1.md")).toBeNull();
+		});
+
+		it("leaves a note the user moved where it is when another document gains the tag (#101)", async () => {
+			// Issue #101: the reporter moved 35 synced notes into folders of their own, then tagged one
+			// more document on the device. Every one of the 35 was re-fetched, re-transcribed and
+			// dragged back into the mapped folder -- 352 metered OCR calls for one tag change. The
+			// re-target check read "note outside the mapped folder" as "the mapping was re-targeted".
+			const contentById = { "doc-1": documentContent({ cPages: cPages(["p1"]) }), "doc-2": documentContent({ cPages: cPages(["p2"]) }), "doc-3": documentContent({ cPages: cPages(["p3"]) }) };
+			const pageHashesByDoc = { "doc-1": { p1: "h-p1" }, "doc-2": { p2: "h-p2" }, "doc-3": { p3: "h-p3" } };
+			const tagged = (id: string, hash: string, name: string) => documentEntry({ id, hash, visibleName: name, tags: [{ name: "sync", timestamp: 0 }] });
+			const before = fakeApi({
+				rootHash: "root-1",
+				entries: [tagged("doc-1", "h1", "Alpha"), tagged("doc-2", "h2", "Beta"), documentEntry({ id: "doc-3", hash: "h3", visibleName: "Gamma" })],
+				contentById,
+				pageHashesByDoc,
+			});
+			const deps = baseDeps(before, { sync: "Tagged" });
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.notesWritten).toBe(2);
+
+			// The user moves both notes; main.ts follows the vault's rename events through remapRows.
+			await deps.noteStore.move("Tagged/Alpha.md", "Elsewhere/Alpha.md");
+			await deps.noteStore.move("Tagged/Beta.md", "Elsewhere/Beta.md");
+			let rows = first.index.rows;
+			rows = remapRows(rows, { kind: "file", from: "Tagged/Alpha.md", to: "Elsewhere/Alpha.md" }) ?? rows;
+			rows = remapRows(rows, { kind: "file", from: "Tagged/Beta.md", to: "Elsewhere/Beta.md" }) ?? rows;
+
+			// Only the third document changed on the device: it gained the tag. Alpha and Beta are
+			// byte-identical to the first run.
+			const after = fakeApi({
+				rootHash: "root-2",
+				entries: [tagged("doc-1", "h1", "Alpha"), tagged("doc-2", "h2", "Beta"), tagged("doc-3", "h3b", "Gamma")],
+				contentById,
+				pageHashesByDoc,
+			});
+			deps.noteStore.write.mockClear();
+			deps.noteStore.move.mockClear();
+			const second = await runSync({ ...deps, api: after }, { ...first.index, rows });
+
+			expect(second.notesWritten).toBe(1);
+			expect(deps.noteStore.write).toHaveBeenCalledTimes(1);
+			expect(deps.noteStore.write).toHaveBeenCalledWith("Tagged/Gamma.md", expect.any(String));
+			expect(deps.noteStore.move).not.toHaveBeenCalled();
+			expect(await deps.noteStore.read("Elsewhere/Alpha.md")).not.toBeNull();
+			expect(await deps.noteStore.read("Elsewhere/Beta.md")).not.toBeNull();
+			expect(second.index.rows[notebookSyncKey("doc-1", "sync")].notePath).toBe("Elsewhere/Alpha.md");
 		});
 
 		it("disambiguates two tags on the same page routed to the same folder, instead of one overwriting the other", async () => {

@@ -248,3 +248,20 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "runSync > documents in the trash > treats a document inside a trashed folder as deleted too"
+
+# C8 -- the level-2 gate, and the one wrong reading of it that cost a user 352 OCR calls per tag
+# change (#101). A note outside the mapped folder used to mean "the mapping was re-targeted"; a
+# note the user moved looks exactly the same from the path. The row now remembers the folder it
+# was written under, and only *that* disagreeing with the settings is a re-target.
+
+- feature: C8
+  name: "Level-2 skip: document unchanged"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C8.1
+      scenario: The user moved two synced notes out of the mapped folder; then a third document gains the same tag on the device
+      expect: One note written, no move, no re-transcription of the two -- their rows keep pointing at where the user put them. Before the fix all three were rewritten and the two were dragged back
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > leaves a note the user moved where it is when another document gains the tag (#101)"
