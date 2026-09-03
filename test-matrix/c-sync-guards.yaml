@@ -279,3 +279,10 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "runSync > edge cases (ticket 11) > still revives a page-tagged document that comes back from the trash with the hash it left with"
+
+    - id: C8.4
+      scenario: The mapping's folder loses its trailing slash in settings -- "Tagged/" becomes "Tagged" -- and nothing else changes anywhere
+      expect: Nothing is fetched, written or moved. The two spellings name one folder; the fingerprint change forces a full scan, but no row may come out of it re-targeted -- the row's `folder` is stored as the user typed the mapping while the load-time stamp's dirname branch never carries a slash, so the re-target compare trims both sides
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > does not read a trailing slash dropped from the mapping as a re-target (#101)"

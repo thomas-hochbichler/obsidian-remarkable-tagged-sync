@@ -817,11 +817,16 @@ function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, sta
  * field is not re-targeted -- the load-time stamp gives every row one.
  *
  * A row whose tag is no longer mapped at all is not re-targeted, it is gone: that is the orphan path.
+ *
+ * Trailing slashes are cosmetic, so both sides are trimmed before comparing: the mapping is stored
+ * as the user typed it ("Old/" is legal), while the load-time stamp's dirname branch never produces
+ * one -- compared raw, the two spellings of one folder read as a re-target and re-import the whole
+ * tag, the very thing this predicate exists to prevent.
  */
 function isRetargeted(row: SyncIndexRow, tagRouter: TagRouter): boolean {
 	if (row.status !== "active" || row.folder === undefined) return false;
 	const folder = tagRouter.resolveFolder(row.tag);
-	return folder !== null && row.folder !== folder;
+	return folder !== null && row.folder.replace(/\/+$/, "") !== folder.replace(/\/+$/, "");
 }
 
 function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRouter, docId: string): boolean {
