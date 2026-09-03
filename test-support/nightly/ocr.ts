@@ -163,10 +163,12 @@ export function evaluateBackend(
 
 		const entry = baseline[page.id];
 		if (entry === undefined) continue;
-		if (cer > 2 * entry.cer && cer - entry.cer >= 0.05) {
+		// Both floors read the spread the baseline recorded (§5.3, §6.1): a 48-character page that swings
+		// 20 pp between nights is not a catastrophe on the night it swings, and its own history says so.
+		const noise = 2 * (entry.spread ?? 0);
+		if (cer > 2 * entry.cer && cer - entry.cer >= Math.max(0.05, noise)) {
 			raise("catastrophe", `page ${page.id}: CER ${(cer * 100).toFixed(1)} % against baseline ${(entry.cer * 100).toFixed(1)} %`);
-		} else if (cer > entry.cer + Math.max(2 * (entry.spread ?? 0), 0.02)) {
-			// §6.1: outside the noise the baseline itself recorded, so page 08's 20 pp night-to-night swing is not drift.
+		} else if (cer > entry.cer + Math.max(0.02, noise)) {
 			raise("degraded", `page ${page.id}: CER ${(cer * 100).toFixed(1)} % above baseline`);
 		}
 	}

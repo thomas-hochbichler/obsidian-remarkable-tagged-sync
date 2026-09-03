@@ -229,10 +229,10 @@
 
     - id: N4.8a
       scenario: A page above the flat 2 pp floor whose own baseline recorded a wide night-to-night spread
-      expect: Pass inside twice that spread, degraded outside it -- §6.1 reads spread so a noisy short page is not reported as drift
+      expect: Neither degraded nor catastrophe inside twice that spread, both outside it -- §5.3 and §6.1 read the recorded spread so a noisy short page is judged against its own history, not a flat constant
       layer: unit
       file: test-support/nightly/ocr.test.ts
-      test: "evaluating a backend's night (§5.3) > a page whose own baseline recorded a wide spread is not degraded inside twice that spread -- §6.1, noise is not drift"
+      test: "evaluating a backend's night (§5.3) > a page whose own baseline recorded a wide spread trips neither floor inside twice that spread -- §5.3 and §6.1, noise is not drift"
 
     - id: N4.9
       scenario: A new model's first night, with a visibly imperfect transcription
