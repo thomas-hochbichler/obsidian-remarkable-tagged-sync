@@ -1776,6 +1776,35 @@ describe("runSync", () => {
 			expect(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath).toBe("New/Notebook.md");
 		});
 
+		it("leaves a note the user moved where it is when the mapping is re-targeted, and moves the one still in the old folder", async () => {
+			// The #101 reporter keeps every synced note outside the mapped folder, sorted by device
+			// hierarchy. Re-targeting the tag in settings must not undo that: the mapping says where the
+			// tag's notes go by default, and a note the user sorted by hand already has its place.
+			const contentById = { "doc-1": documentContent({ cPages: cPages(["p1"]) }), "doc-2": documentContent({ cPages: cPages(["p2"]) }) };
+			const pageHashesByDoc = { "doc-1": { p1: "h-p1" }, "doc-2": { p2: "h-p2" } };
+			const tagged = (id: string, hash: string, name: string) => documentEntry({ id, hash, visibleName: name, tags: [{ name: "sync", timestamp: 0 }] });
+			const api = fakeApi({ rootHash: "root-1", entries: [tagged("doc-1", "h1", "Alpha"), tagged("doc-2", "h2", "Beta")], contentById, pageHashesByDoc });
+			const deps = baseDeps(api, { sync: "Old" });
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.notesWritten).toBe(2);
+
+			// The user moves Alpha out of the mapped folder; main.ts follows the rename through remapRows.
+			await deps.noteStore.move("Old/Alpha.md", "Elsewhere/Alpha.md");
+			const rows = remapRows(first.index.rows, { kind: "file", from: "Old/Alpha.md", to: "Elsewhere/Alpha.md" }) ?? first.index.rows;
+
+			// Nothing changed on the device. Only the mapping now points "sync" at "New".
+			deps.noteStore.write.mockClear();
+			deps.noteStore.move.mockClear();
+			const second = await runSync({ ...deps, tagRouter: new TagRouter({ sync: "New" }) }, { ...first.index, rows });
+
+			expect(deps.noteStore.move).toHaveBeenCalledTimes(1);
+			expect(deps.noteStore.move).toHaveBeenCalledWith("Old/Beta.md", "New/Beta.md");
+			expect(await deps.noteStore.read("Elsewhere/Alpha.md")).not.toBeNull();
+			expect(await deps.noteStore.read("New/Alpha.md")).toBeNull();
+			expect(second.index.rows[notebookSyncKey("doc-1", "sync")].notePath).toBe("Elsewhere/Alpha.md");
+			expect(second.index.rows[notebookSyncKey("doc-2", "sync")].notePath).toBe("New/Beta.md");
+		});
+
 		it("moves a page-level note when its page tag is re-targeted, even though the page itself is unchanged", async () => {
 			const content = documentContent({
 				cPages: cPages(["page-a"]),

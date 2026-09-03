@@ -12,6 +12,14 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Re-targeting a tag's folder no longer pulls back notes you had moved.** Since 1.6.1 a synced
+  note you moved out of its mapped folder stays where you put it -- except when you then changed
+  the tag's folder in settings, which moved every note under that tag into the new folder, the
+  moved ones included. Now only notes still in the old folder follow the mapping; a note you
+  sorted yourself stays there and is updated in place. (#101)
+
 ## [1.6.1] - 2026-09-03
 
 ### Fixed
