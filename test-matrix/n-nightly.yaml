@@ -407,3 +407,50 @@
       layer: unit
       file: test-support/nightly/perf.test.ts
       test: "the perf part > is silent about a faster night -- lowering the reference is the baseline script's reviewed change, never the gate's"
+
+- feature: N9
+  name: The perf baseline and its change discipline
+  code: scripts/perf-baseline.mjs
+  tier: free
+  scenarios:
+    - id: N9.1
+      scenario: A committed verdict is read back as a recorded perf night
+      expect: A measured night yields its two metrics with page and Node provenance; an unknown night or a verdict without a perf part yields nothing
+      layer: unit
+      file: scripts/perf-baseline.test.mjs
+      test: "extracting a perf night from a committed verdict > takes the two metrics from a measured night and refuses an unknown one"
+
+    - id: N9.2
+      scenario: A metric has fewer than five recorded nights
+      expect: No baseline yet -- the same five-night rule as the OCR baseline, for the same reason
+      layer: unit
+      file: scripts/perf-baseline.test.mjs
+      test: "the perf baseline computation (ticket 21) > refuses a first baseline before five recorded nights exist"
+
+    - id: N9.3
+      scenario: The first five nights exist
+      expect: The baseline is their median in ms, carrying spread, night count, the heavy page's name and the Node version the change discipline reads
+      layer: unit
+      file: scripts/perf-baseline.test.mjs
+      test: "the perf baseline computation (ticket 21) > sets the first baseline as the median of the recorded nights, with spread and provenance"
+
+    - id: N9.4
+      scenario: The recorded median fell below the stored baseline
+      expect: Written silently -- a faster renderer is absorbed, the direction the other ratchets allow
+      layer: unit
+      file: scripts/perf-baseline.test.mjs
+      test: "the perf baseline computation (ticket 21) > writes a falling metric silently -- a faster renderer is absorbed, like the other ratchets"
+
+    - id: N9.5
+      scenario: The recorded median rose above the stored baseline, with nothing about the page or the runtime changed
+      expect: Refused without --accept, and refused with it -- a wall-clock regression cannot be made to go away by editing the number
+      layer: unit
+      file: scripts/perf-baseline.test.mjs
+      test: "the perf baseline computation (ticket 21) > refuses a rising metric without --accept, and with --accept while page and node are unchanged"
+
+    - id: N9.6
+      scenario: The Node version on the runner changed and the maintainer accepts the raise with a reason
+      expect: Written, with the reason recorded in the entry -- the one honest kind of raise a fixed runner class can have
+      layer: unit
+      file: scripts/perf-baseline.test.mjs
+      test: "the perf baseline computation (ticket 21) > accepts a raise when the Node version changed and a reason is given"

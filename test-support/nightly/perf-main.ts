@@ -18,7 +18,8 @@ const RUNS = 5;
 function loadBaseline(): PerfBaseline {
 	const path = join(process.cwd(), ".perf-baseline.json");
 	if (!existsSync(path)) return {};
-	return (JSON.parse(readFileSync(path, "utf8")) as { metrics?: PerfBaseline }).metrics ?? {};
+	const entries = (JSON.parse(readFileSync(path, "utf8")) as { entries?: Record<string, { ms: number }> }).entries ?? {};
+	return Object.fromEntries(Object.entries(entries).map(([name, entry]) => [name, entry.ms])) as PerfBaseline;
 }
 
 async function minMs(fn: () => Promise<unknown> | unknown): Promise<number> {

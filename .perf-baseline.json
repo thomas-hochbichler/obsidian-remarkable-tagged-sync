@@ -1,0 +1,23 @@
+{
+	"comment": "One entry per metric: the median wall-clock of the heavy page over the last 30 recorded nights, on the nightly runner class. Never edit by hand. Recompute with `node scripts/release-checks.mjs perf-baseline --write`; a metric that falls is absorbed silently, one that rises is refused unless --accept names it AND the heavy page or the Node version actually changed.",
+	"entries": {
+		"renderPagesToPdfMs": {
+			"ms": 379,
+			"spread": 20,
+			"setAt": "2026-09-03",
+			"nights": 11,
+			"page": "2000 strokes x 50 points",
+			"node": "v22.23.2",
+			"because": "first baseline"
+		},
+		"rasterizePageMs": {
+			"ms": 143,
+			"spread": 17,
+			"setAt": "2026-09-03",
+			"nights": 11,
+			"page": "2000 strokes x 50 points",
+			"node": "v22.23.2",
+			"because": "first baseline"
+		}
+	}
+}
