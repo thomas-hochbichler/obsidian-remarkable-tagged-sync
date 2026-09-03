@@ -1,10 +1,11 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
 import type { NoteStore } from "./note-builder";
 import { OffOcrBackend } from "./off-ocr-backend";
+import { stampRowFolders } from "./settings-store";
 import { legacyDevice, TAG_FOLDER_MAP } from "../scripts/legacy-state/device";
 import { RENDER_VERSION, runSync, type SyncIndex } from "./sync-engine";
 import { TagRouter } from "./tag-router";
@@ -126,7 +127,13 @@ function fsAttachmentStore(): AttachmentStore {
 	};
 }
 
-/** Today's engine, over the frozen state and the same device it was frozen from. */
+/**
+ * Today's engine, over the frozen state and the same device it was frozen from.
+ *
+ * The index goes through the load-time stamp with the *frozen* settings first, as `main.ts` does
+ * when the new version starts: the old release wrote no `folder` on its rows, and a scenario that
+ * then changes the mapping is the user re-targeting a tag in the new version's settings.
+ */
 async function upgrade(index: SyncIndex, mapping: Record<string, string> = TAG_FOLDER_MAP) {
 	return runSync(
 		{
@@ -137,7 +144,7 @@ async function upgrade(index: SyncIndex, mapping: Record<string, string> = TAG_F
 			ocrBackend: new OffOcrBackend(),
 			now: () => "2026-06-01T00:00:00.000Z",
 		},
-		index,
+		stampRowFolders(index, TAG_FOLDER_MAP),
 	);
 }
 
@@ -245,6 +252,25 @@ describe("upgrading a vault the last release wrote", () => {
 		expect(markdownFiles()).not.toContain(wasAt);
 		// It moved, so the user's paragraph moved with it.
 		expect(readNote(nowAt)).toContain("My own thoughts.");
+		expect(ownership(result.index)).toEqual({ unclaimed: [], doubleClaimed: [] });
+	});
+
+	it("rewrites a note the user moved out of its folder where it lies, instead of dragging it back (#101)", async () => {
+		// The old release wrote no `folder` on its rows, so before the stamp a moved note looked
+		// re-targeted to the new version and every full scan pulled it home and re-transcribed it.
+		// The renderer bump is what makes this upgrade rewrite the note at all.
+		const data = openFrozenVault();
+		const wasAt = data.syncIndex.rows["doc-notes:sync"].notePath;
+		const movedTo = "Projects/Field Notes.md";
+		mkdirSync(join(vault, "Projects"), { recursive: true });
+		renameSync(join(vault, wasAt), join(vault, movedTo));
+		data.syncIndex.rows["doc-notes:sync"] = { ...data.syncIndex.rows["doc-notes:sync"], notePath: movedTo };
+
+		const result = await upgrade(afterARendererBump(data));
+
+		expect(result.index.rows["doc-notes:sync"].notePath).toBe(movedTo);
+		expect(markdownFiles()).toContain(movedTo);
+		expect(markdownFiles()).not.toContain(wasAt);
 		expect(ownership(result.index)).toEqual({ unclaimed: [], doubleClaimed: [] });
 	});
 

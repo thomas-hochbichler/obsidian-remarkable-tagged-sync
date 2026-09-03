@@ -56,6 +56,13 @@
       file: src/legacy-upgrade.test.ts
       test: "upgrading a vault the last release wrote > moves a re-mapped note rather than leaving a second copy behind"
 
+    - id: A8.31
+      scenario: A note the old release wrote was moved by the user into a folder of their own; the new version's renderer has moved on
+      expect: The note is rewritten where the user put it, and nothing reappears at the old path. The old release wrote no `folder` on its rows, so before the load-time stamp a moved note looked re-targeted and every full scan dragged it home and re-transcribed it (#101)
+      layer: vault
+      file: src/legacy-upgrade.test.ts
+      test: "upgrading a vault the last release wrote > rewrites a note the user moved out of its folder where it lies, instead of dragging it back (#101)"
+
     - id: A8.25
       scenario: Every index row after the upgrade
       expect: Each points at a file that exists, under the folder its tag maps to
