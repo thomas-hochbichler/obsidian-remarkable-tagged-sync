@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-03
+
 ### Fixed
 
 - **Re-targeting a tag's folder no longer pulls back notes you had moved.** Since 1.6.1 a synced
