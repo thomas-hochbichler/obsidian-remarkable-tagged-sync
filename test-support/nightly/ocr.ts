@@ -68,6 +68,8 @@ export interface BackendRun {
 
 export interface BaselineEntry {
 	cer: number;
+	/** max-min over the nights the baseline was computed from; absent on a hand-built test entry. */
+	spread?: number;
 }
 
 /**
@@ -163,7 +165,8 @@ export function evaluateBackend(
 		if (entry === undefined) continue;
 		if (cer > 2 * entry.cer && cer - entry.cer >= 0.05) {
 			raise("catastrophe", `page ${page.id}: CER ${(cer * 100).toFixed(1)} % against baseline ${(entry.cer * 100).toFixed(1)} %`);
-		} else if (cer > entry.cer + 0.02) {
+		} else if (cer > entry.cer + Math.max(2 * (entry.spread ?? 0), 0.02)) {
+			// §6.1: outside the noise the baseline itself recorded, so page 08's 20 pp night-to-night swing is not drift.
 			raise("degraded", `page ${page.id}: CER ${(cer * 100).toFixed(1)} % above baseline`);
 		}
 	}

@@ -227,6 +227,13 @@
       file: test-support/nightly/ocr.test.ts
       test: "evaluating a backend's night (§5.3) > CER over twice the baseline blocks only together with the 5 pp floor -- one wrong word is Tuesday, not a catastrophe"
 
+    - id: N4.8a
+      scenario: A page above the flat 2 pp floor whose own baseline recorded a wide night-to-night spread
+      expect: Pass inside twice that spread, degraded outside it -- §6.1 reads spread so a noisy short page is not reported as drift
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "evaluating a backend's night (§5.3) > a page whose own baseline recorded a wide spread is not degraded inside twice that spread -- §6.1, noise is not drift"
+
     - id: N4.9
       scenario: A new model's first night, with a visibly imperfect transcription
       expect: Degraded at worst -- a key with no baseline cannot block a release on the night it is added
