@@ -396,10 +396,10 @@ function joinFolder(trimmedFolder: string, name: string): string {
 	return trimmedFolder === "" ? name : `${trimmedFolder}/${name}`;
 }
 
-/** True when `path` already sits directly in `folder` -- i.e. where `writeNote` would have put it. */
-export function isInFolder(path: string, folder: string): boolean {
+/** The folder a vault path sits in -- "" for a root-level path, which has no slash to cut at. */
+export function parentFolder(path: string): string {
 	const cut = path.lastIndexOf("/");
-	return (cut === -1 ? "" : path.slice(0, cut)) === folder.replace(/\/+$/, "");
+	return cut === -1 ? "" : path.slice(0, cut);
 }
 
 /** Writes fields at an already-resolved path -- no collision handling, the caller owns that. */

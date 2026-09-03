@@ -19,7 +19,7 @@
 
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { type LicenceState, NO_LICENCE } from "./licence-state";
-import type { OcrBackend as OcrBackendId } from "./note-builder";
+import { type OcrBackend as OcrBackendId, parentFolder } from "./note-builder";
 import type { BackendSettings } from "./ocr-registry";
 import { DEFAULT_SSH_SETTINGS, type SshSettings } from "./ssh-transport";
 import type { StoredHashes } from "./ssh-hash-cache";
@@ -142,11 +142,6 @@ function isTransportId(value: unknown): value is TransportId {
 type SavedData = (Partial<TaggedSyncData> & { ocrBackendChoice?: unknown }) | null | undefined;
 
 /**
- * Reads a stored `data.json` into the shape the plugin runs on. **Total** -- every input, including
- * `null`, a string and an array, produces a complete object -- and **idempotent**, so a file this
- * has already migrated migrates to itself.
- */
-/**
  * Gives every active row written before `SyncIndexRow.folder` existed the folder its note was
  * written under, once, so a mapping re-targeted later can be told from a note the user moved (#101).
  *
@@ -168,12 +163,16 @@ export function stampRowFolders(index: SyncIndex, tagFolderMap: TagFolderMap): S
 			rows[key] = row;
 			continue;
 		}
-		const cut = row.notePath.lastIndexOf("/");
-		rows[key] = { ...row, folder: settled ? tagFolderMap[row.tag] : cut === -1 ? "" : row.notePath.slice(0, cut) };
+		rows[key] = { ...row, folder: settled ? tagFolderMap[row.tag] : parentFolder(row.notePath) };
 	}
 	return { ...index, rows };
 }
 
+/**
+ * Reads a stored `data.json` into the shape the plugin runs on. **Total** -- every input, including
+ * `null`, a string and an array, produces a complete object -- and **idempotent**, so a file this
+ * has already migrated migrates to itself.
+ */
 export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncData {
 	// Optional chaining is what makes this total: every non-object input answers `undefined` to every
 	// field, so junk and absence take the same path rather than needing a guard of their own.

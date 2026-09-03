@@ -1787,6 +1787,8 @@ describe("runSync", () => {
 			const deps = baseDeps(before, { sync: "Tagged" });
 			const first = await runSync(deps, EMPTY_SYNC_INDEX);
 			expect(first.notesWritten).toBe(2);
+			const transcriptions = () => (deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls.filter((call) => (call[0] as RmPage[]).length > 0).length;
+			expect(transcriptions()).toBe(2);
 
 			// The user moves both notes; main.ts follows the vault's rename events through remapRows.
 			await deps.noteStore.move("Tagged/Alpha.md", "Elsewhere/Alpha.md");
@@ -1808,6 +1810,7 @@ describe("runSync", () => {
 			const second = await runSync({ ...deps, api: after }, { ...first.index, rows });
 
 			expect(second.notesWritten).toBe(1);
+			expect(transcriptions()).toBe(3); // the reporter's 352: only the new document is transcribed
 			expect(deps.noteStore.write).toHaveBeenCalledTimes(1);
 			expect(deps.noteStore.write).toHaveBeenCalledWith("Tagged/Gamma.md", expect.any(String));
 			expect(deps.noteStore.move).not.toHaveBeenCalled();

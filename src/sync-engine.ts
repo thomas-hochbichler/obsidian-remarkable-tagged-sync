@@ -903,8 +903,8 @@ function orphanRow(rows: Record<string, SyncIndexRow>, row: SyncIndexRow): void 
 
 /**
  * Picks the writer for a unit. A rename moves the existing note into `folder`; otherwise write, with
- * `existingPath` (the row's `notePath`) making it an in-place overwrite when a row already exists,
- * and a fresh first-free-path write when it doesn't.
+ * `existingRow`'s `notePath` making it an in-place overwrite when a row already exists, and a fresh
+ * first-free-path write when it doesn't.
  *
  * A re-targeted row moves as well, even without a rename: the tag kept its name and the *mapping*
  * was re-targeted in settings. Moving keeps the note's identity and its backlinks, and when the
@@ -914,14 +914,14 @@ function orphanRow(rows: Record<string, SyncIndexRow>, row: SyncIndexRow): void 
  */
 function resolveWriter(
 	noteStore: NoteStore,
+	tagRouter: TagRouter,
 	rename: TagRename | null,
 	folder: string,
-	existingPath: string | null,
-	retargeted: boolean,
+	existingRow: SyncIndexRow | undefined,
 ): (fields: NoteFields) => Promise<string> {
 	if (rename) return (fields) => moveNote(noteStore, rename.oldRow.notePath, folder, fields);
-	if (existingPath !== null && retargeted) return (fields) => moveNote(noteStore, existingPath, folder, fields);
-	return (fields) => writeNote(noteStore, folder, fields, existingPath);
+	if (existingRow !== undefined && isRetargeted(existingRow, tagRouter)) return (fields) => moveNote(noteStore, existingRow.notePath, folder, fields);
+	return (fields) => writeNote(noteStore, folder, fields, existingRow?.notePath ?? null);
 }
 
 /** Retires the rename's source row once its note has landed at the new syncKey. */
@@ -1466,7 +1466,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			if (shouldStop()) return stopHere();
 			const { tag, rename, existingRow } = unit;
 			const folder = tagRouter.resolveFolder(tag)!;
-			const existingPath = existingRow?.notePath ?? null;
 
 			if (unit.skip === "edited") {
 				editedKeys.add(unit.writtenRow.syncKey);
@@ -1533,7 +1532,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
-				resolveWriter(deps.noteStore, rename, folder, existingPath, existingRow !== undefined && isRetargeted(existingRow, tagRouter)),
+				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = { ...row, folder };
@@ -1630,7 +1629,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
-				resolveWriter(deps.noteStore, rename, folder, existingRow?.notePath ?? null, existingRow !== undefined && isRetargeted(existingRow, tagRouter)),
+				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = { ...row, folder };
