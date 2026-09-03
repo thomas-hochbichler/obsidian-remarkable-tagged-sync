@@ -1816,6 +1816,60 @@ describe("runSync", () => {
 			expect(second.index.rows[notebookSyncKey("doc-1", "sync")].notePath).toBe("Elsewhere/Alpha.md");
 		});
 
+		it("does not reopen an unchanged document just because one of its tags was removed long ago (#101)", async () => {
+			// The Demo vault's Alice: five rows orphaned by tags removed weeks earlier. Every full scan
+			// reopened the book anyway -- downloaded, re-rendered, digest re-transcribed per cluster on a
+			// metered backend -- because "any orphaned row" was read as "may have come back".
+			const pageHashesByDoc = { "doc-1": { "page-a": "h-a" }, "doc-2": { "page-b": "h-b" } };
+			const withPageTag = documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "sync", timestamp: 0, pageId: "page-a" }] });
+			const withoutPageTag = documentContent({ cPages: cPages(["page-a"]) });
+			const two = documentContent({ cPages: cPages(["page-b"]) });
+			const tagged = (id: string, hash: string, name: string) => documentEntry({ id, hash, visibleName: name, tags: [{ name: "sync", timestamp: 0 }] });
+
+			const deps = baseDeps(
+				fakeApi({ rootHash: "root-1", entries: [tagged("doc-1", "h1", "One"), documentEntry({ id: "doc-2", hash: "h2", visibleName: "Two" })], contentById: { "doc-1": withPageTag, "doc-2": two }, pageHashesByDoc }),
+				{ sync: "Tagged" },
+			);
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.notesWritten).toBe(2); // the notebook and its tagged page
+
+			// The page tag is removed on the device: its row is orphaned while the document is open.
+			const removed = fakeApi({ rootHash: "root-2", entries: [tagged("doc-1", "h1b", "One"), documentEntry({ id: "doc-2", hash: "h2", visibleName: "Two" })], contentById: { "doc-1": withoutPageTag, "doc-2": two }, pageHashesByDoc });
+			const second = await runSync({ ...deps, api: removed }, first.index);
+			expect(second.index.rows[pageSyncKey("doc-1", "page-a", "sync")].status).toBe("orphaned");
+
+			// Weeks later the other document gains the tag. doc-1 is byte-identical to the last run.
+			const later = fakeApi({ rootHash: "root-3", entries: [tagged("doc-1", "h1b", "One"), tagged("doc-2", "h2b", "Two")], contentById: { "doc-1": withoutPageTag, "doc-2": two }, pageHashesByDoc });
+			deps.noteStore.write.mockClear();
+			const third = await runSync({ ...deps, api: later }, second.index);
+
+			expect(third.notesWritten).toBe(1);
+			expect(deps.noteStore.write).toHaveBeenCalledTimes(1);
+			expect(deps.noteStore.write).toHaveBeenCalledWith("Tagged/Two.md", expect.any(String));
+			expect(later.getContent).not.toHaveBeenCalledWith("doc-1");
+		});
+
+		it("still revives a page-tagged document that comes back from the trash with the hash it left with", async () => {
+			// The case the blanket "any orphaned row reopens" rule was there for, on the one document
+			// shape the notebook-tag reconcile check cannot see: page tags live in the content, which
+			// is only read once the document is open. The vanish pass clears the row's hash so that
+			// the return fails the hash gate instead.
+			const content = documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }] });
+			const pageHashesByDoc = { "doc-1": { "page-a": "h-a" } };
+			const deps = baseDeps(fakeApi({ rootHash: "root-1", entries: [documentEntry()], contentById: { "doc-1": content }, pageHashesByDoc }), { todo: "Todo" });
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			const key = pageSyncKey("doc-1", "page-a", "todo");
+			expect(first.index.rows[key].status).toBe("active");
+
+			const gone = await runSync({ ...deps, api: fakeApi({ rootHash: "root-2", entries: [] }) }, first.index);
+			expect(gone.index.rows[key].status).toBe("orphaned");
+
+			const back = await runSync({ ...deps, api: fakeApi({ rootHash: "root-3", entries: [documentEntry()], contentById: { "doc-1": content }, pageHashesByDoc }) }, gone.index);
+
+			expect(back.index.rows[key].status).toBe("active");
+			expect(back.notesWritten).toBe(1);
+		});
+
 		it("disambiguates two tags on the same page routed to the same folder, instead of one overwriting the other", async () => {
 			const entry = documentEntry();
 			const content = documentContent({

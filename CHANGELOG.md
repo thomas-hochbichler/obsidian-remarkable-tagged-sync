@@ -18,7 +18,10 @@ workflow publishes the section as the GitHub release body. See
   its mapped folder was mistaken for a mapping you had re-targeted in settings, so the next change
   on the device re-fetched, re-transcribed and moved back every such note -- 352 transcription
   requests for one tag change, on a metered backend. A note you moved now stays where you put it
-  and is updated there; only re-targeting the tag's folder in settings moves it. (#101)
+  and is updated there; only re-targeting the tag's folder in settings moves it. The same change
+  stops a second cause of the same re-import: a document that had lost a tag at some point was
+  reopened on every full scan, and for a PDF or EPUB that meant a fresh transcription of its
+  margin notes each time. (#101)
 
 ## [1.6.0] - 2026-08-26
 

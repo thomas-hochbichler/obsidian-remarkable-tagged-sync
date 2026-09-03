@@ -937,12 +937,13 @@ function entryAndInheritedTagNames(entry: Entry, entriesById: ReadonlyMap<string
 /**
  * The level-2 gate: whether this document has to be opened at all.
  *
- * Also reopen a doc with any orphaned row even on an unchanged hash -- otherwise a doc that
- * reappears after being deleted (whose hash may come back identical) would stay `orphaned`
- * forever. Tradeoff: a doc keeps getting reopened on every sync after any one of its tags was
- * ever orphaned, even if that specific tag never comes back -- orphaned rows aren't pruned, so
- * this can't distinguish "doc came back" from "one old tag never will." Bounded to extra
- * network calls, never incorrect data. Same idea for a note deleted out from under an active row.
+ * An orphaned row on its own is not a reason. It used to be -- so a doc that reappears after being
+ * deleted (whose hash may come back identical) would not stay `orphaned` forever -- but that
+ * reopened every doc that had ever lost a tag on every full scan, and for a PDF-backed doc a reopen
+ * is a download, a render and a per-cluster transcription on a metered backend (#101). The vanish
+ * pass now clears the hash of the rows it orphans, so a doc that comes back fails the hash check
+ * instead; a row orphaned per-tag while its doc was open keeps the current hash and costs nothing.
+ * A note deleted out from under an active row is still a reason: nothing on the device says so.
  */
 async function needsDocumentOpen(
 	noteStore: NoteStore,
@@ -955,7 +956,6 @@ async function needsDocumentOpen(
 	return (
 		hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) ||
 		hasRetargetedRow(rows, tagRouter, entry.id) ||
-		hasRowWithStatus(rows, entry.id, "orphaned") ||
 		hasStaleRender(rows, entry.id) ||
 		(await hasMissingActiveNote(noteStore, rows, entry.id))
 	);
@@ -1671,9 +1671,13 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// orphaned, never auto-deleted (spec §7). A doc in the trash counts as gone, same as one whose
 	// files have vanished. A doc still present but missing a specific tag was already orphaned
 	// above, per-tag, while its content was open.
+	//
+	// The hash goes with it: a doc restored from the trash comes back with the hash it left with,
+	// and the level-2 gate compares against this row -- an empty hash is what makes it reopen the
+	// doc and revive the row, now that an orphaned row alone no longer does (see needsDocumentOpen).
 	const liveDocIds = new Set(documents.map((entry) => entry.id));
 	for (const row of Object.values(rows)) {
-		if (row.status === "active" && !liveDocIds.has(row.docId)) orphanRow(rows, row);
+		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
 	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, skipErrors };

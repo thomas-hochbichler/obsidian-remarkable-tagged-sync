@@ -265,3 +265,17 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "runSync > edge cases (ticket 11) > leaves a note the user moved where it is when another document gains the tag (#101)"
+
+    - id: C8.2
+      scenario: A document lost one of its tags weeks ago (an orphaned row), is unchanged since, and another document gains the tag
+      expect: Not opened -- no content fetched, no note written. Before, any orphaned row reopened its document on every full scan; for a PDF-backed book that is a download, a render and a per-cluster transcription on a metered backend (the Demo vault's Alice, #101)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > does not reopen an unchanged document just because one of its tags was removed long ago (#101)"
+
+    - id: C8.3
+      scenario: A document carrying only a page tag is deleted on the device and restored with the hash it left with
+      expect: Revived. This is what the blanket rule was there for, on the one shape the notebook-tag reconcile check cannot see; the vanish pass now clears the orphaned row's hash so the return fails the hash gate instead
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > edge cases (ticket 11) > still revives a page-tagged document that comes back from the trash with the hash it left with"
