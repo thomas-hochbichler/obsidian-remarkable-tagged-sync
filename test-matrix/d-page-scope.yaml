@@ -1,0 +1,228 @@
+# Issue #115 -- a typed block on one page suppressed transcription of the whole notebook.
+#
+# `isDocumentText` is a per-page predicate that was applied per document, so one typed page sent
+# every page of the notebook into the digest. The handwritten ones produced no digest entry (there
+# is nothing to annotate on a page nobody else wrote) and were never transcribed either, because the
+# digest had "run". Five links, and the last one is what loses the transcript.
+#
+# Fixing the classification alone fixes nothing: the note format returned a digest *instead of* a
+# transcript, so a notebook that needs both had nowhere to put the second. That is why this is three
+# features and not a one-line change.
+
+- feature: D18
+  name: Typed and handwritten pages inside one notebook
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: D18.1
+      scenario: A notebook with one typed page among handwritten ones, and nothing marked on the typed page
+      expect: The handwritten pages are transcribed. The digest builds, renders nothing, and no longer silences them -- this is the reported bug, where the note ended at the embed and the run made zero backend requests
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > transcribes the handwritten pages when the typed page's digest comes out empty"
+
+    - id: D18.2
+      scenario: The typed page itself, once it is no longer transcribed
+      expect: Named on its own footnote line and never sent to a backend -- "no text on page 2" would be false over a page that is nothing but text, and rasterising it to read the words back costs a request for a worse copy (21-28 % CER, #116)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > names the typed page in the transcript rather than transcribing it"
+
+    - id: D18.3
+      scenario: The typed page carries marks, so the digest does have something to show
+      expect: The note carries `## Digest` and `## Transcript` side by side, digest first, and the transcript does not name a page the digest already shows. The exclusivity at `buildManagedBlock` is what made this note impossible
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > carries both sections in one note, digest first"
+
+    - id: D18.4
+      scenario: Every page of the notebook reads as a document, and the digest finds nothing
+      expect: The `## Transcript` heading stays, carrying only the naming line. A heading over one sentence is the price; the case where a reader most needs telling why there is no text is the one where there is nothing else on the page to tell them
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > keeps a Transcript heading for an all-typed notebook, carrying only the naming line"
+
+    - id: D18.5
+      scenario: The digest build throws
+      expect: The whole unit is transcribed, as before. A build that threw covers nothing, and this is the one case where "did the digest run at all" still decides something -- a different question from "the digest ran and found nothing"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > transcribes every page when the digest build throws"
+
+    - id: D18.6
+      scenario: The digest succeeds and the transcription fails, in one unit
+      expect: The unit counts as failed. `digest.ocr ?? ocr` was right while exactly one half ever did work; in a mixed notebook both do, and preferring the digest would report a real failure as its "ok"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > reports the worse of the digest's outcome and the transcript's"
+
+    - id: D18.7
+      scenario: A highlight on a page the digest does not cover, in a notebook that has a digest
+      expect: Folded into the transcript under the page it was made on, as bullets above the transcribed ink -- told apart by form, not by a label. The subsumption rule used to drop it with nothing standing in for it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > folds an uncovered page's highlights into the transcript, under the page they were made on"
+
+    - id: D18.8
+      scenario: A notebook with highlights and no digest at all
+      expect: Its own `## Highlights` section, untouched. Only the quotes a digest would otherwise drop move; `renderHighlights` is not dead code
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > leaves a notebook with no digest its own Highlights section"
+
+    - id: D18.9
+      scenario: The note format is asked for a digest and a transcript at once
+      expect: Both render, digest first -- it is a summary of the document, and that is the place `## Highlights` held above the reader's own text
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "buildNoteContent > carries a digest and a transcript side by side, digest first"
+
+    - id: D18.10
+      scenario: A digest with no transcript beside it
+      expect: Unchanged, byte for byte -- the overwhelming majority of digest notes are annotated PDFs and none of them should move
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "buildNoteContent > renders the digest below the embed, on its own when there is no transcript"
+
+    - id: D18.11
+      scenario: A unit with both a digest and highlights
+      expect: No `## Highlights` section. The digest still subsumes the quotes of the pages it covers; the rest are inside the transcript, and a quote belongs in exactly one place
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "buildNoteContent > drops the Highlights section when a digest is present"
+
+    - id: D18.12
+      scenario: An older note with frontmatter and a free area is rewritten with a digest
+      expect: Frontmatter and free area survive verbatim; the stale transcript goes
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "buildNoteContent > preserves the user's free area and an old note's frontmatter when a digest arrives"
+
+    - id: D18.13
+      scenario: A typed page and a blank page in the same transcript
+      expect: Two footnote lines, not one. A page of typed text is the opposite of a page with no text, and saying "no text" over the first is simply false
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "renderTranscript > names a typed page on a line of its own, apart from the blank ones"
+
+    - id: D18.14
+      scenario: Three consecutive typed pages
+      expect: Collapsed to `Pages 1-3`, the same run-collapsing the blank-page line uses
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "renderTranscript > collapses a run of typed pages the way it collapses blank ones"
+
+    - id: D18.15
+      scenario: A page with both quotes and transcribed ink
+      expect: Quotes first as bullets, then the prose, under one heading
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "renderTranscript > folds a page's quotes in above its transcribed ink"
+
+    - id: D18.16
+      scenario: A page with a quote on it and no ink worth reading
+      expect: It keeps its heading, or the quote has nowhere to sit, and it drops out of the blank-page line, which would otherwise be false printed above a quote
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "renderTranscript > gives a page with a quote and no ink its heading, and leaves it out of the blank-page line"
+
+    - id: D18.17
+      scenario: A digest leaves exactly one page in a multi-page notebook's transcript
+      expect: That page keeps its heading. The "one page needs no heading" shortcut reads the unit's size, not the list's -- reading the list would leave the reader unable to tell which page they are looking at
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "renderTranscript > keeps the page heading when a digest has left only one page in the transcript"
+
+    - id: D18.18
+      scenario: A page-level note, whose filename already carries "- Page 7"
+      expect: Still rendered bare, with no heading -- unchanged
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "renderTranscript > still renders a genuinely single-page unit bare"
+
+    - id: D18.19
+      scenario: A page tag on a page whose text was typed
+      expect: 'No heading (the filename carries the page) and the naming line in place of a transcript: the same rule as inside a notebook, applied to a unit of one page'
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "renderTranscript > names the page of a single-page unit whose text was typed"
+
+- feature: D19
+  name: A unit that would be written with neither a digest nor a transcript
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: D19.1
+      scenario: A unit whose pages plainly had ink on them renders to an empty managed block, over a note that has a transcript
+      expect: 'The write is refused, the run reports it, and the document counts as skipped -- so the end-of-sync notice speaks and the next run reopens the document. Without the refusal the loss is permanent: the device hash has not changed, so nothing ever looks at that document again'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > leaves the previous note standing, reports it, and reopens the document next run"
+
+    - id: D19.2
+      scenario: The same, for a unit that has no note yet
+      expect: The empty note is written and only reported. "Never replace content with nothing", not "never write nothing" -- refusing here would leave a freshly tagged blank notebook with no note at all and a skip notice on every run, forever
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > writes the empty note for a unit that has none yet, and reports it without a notice"
+
+    - id: D19.3
+      scenario: The same, for a page-tagged unit rather than a whole notebook
+      expect: Refused as well. A page tag is its own unit with its own note, and one tagged page is as easy to empty as the notebook note and just as unrecoverable
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > refuses the same way for a page-tagged unit"
+
+    - id: D19.4
+      scenario: Transcription is off
+      expect: Silent. `OffOcrBackend` reports nothing per page and no text, which is "I never looked" -- an embed-only note is what the user asked for
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > says nothing when transcription is off"
+
+    - id: D19.5
+      scenario: The backend is unavailable (Apple Vision on Windows)
+      expect: Its own counter fires and the empty-note line does not. A second flag for a fact that already has a counter and a notice is the one users learn to ignore
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > does not report an empty note a second time when the backend was unavailable"
+
+    - id: D19.6
+      scenario: The three inputs a managed block can render, asked whether any of them becomes a section
+      expect: True only when none does. The predicate lives beside `buildManagedBlock` so one place owns the shape -- two places reasoning about it and drifting apart is how #115 happened
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "isEmptyManagedBlock > is true only when none of the three inputs becomes a section"
+
+- feature: D20
+  name: '"Re-transcribe all notes" repairs a note that carries a digest'
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: D20.1
+      scenario: A notebook note carrying a digest and a transcript
+      expect: The transcript region is rewritten and the digest is left as it was. The blanket refusal on any note with a `## Digest` would have left the command unable to repair the very notes #115 damaged
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeAll > a note that carries a digest > rewrites a notebook's transcript and leaves its digest as it was"
+
+    - id: D20.2
+      scenario: That note has quotes folded into its transcript region
+      expect: They are written back. `updateTranscript` replaces the whole region, so without this the command deletes them permanently -- the exact loss it exists to repair. The scenes it just rendered carry them, so nothing extra is fetched
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeAll > a note that carries a digest > writes a folded quote back rather than deleting it with the region it sits in"
+
+    - id: D20.3
+      scenario: The notebook has a page of typed text
+      expect: Named, not sent to a backend -- the command applies the sync's per-page classification, which makes it cheaper rather than dearer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeAll > a note that carries a digest > names a typed page instead of sending it to the backend"
+
+    - id: D20.4
+      scenario: An annotated PDF's digest note
+      expect: Still refused, byte for byte. Growing a flat transcript into it would put the PDF's handwriting back in the note with margin notes off, which is the leak F20 exists to prevent
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeAll > a note that carries a digest > still refuses an annotated PDF's digest note"

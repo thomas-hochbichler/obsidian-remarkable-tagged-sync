@@ -1,10 +1,11 @@
 import type { DocumentContent, Entry, LegacyDocumentContent, RawRemarkableApi, RemarkableApi } from "rmapi-js";
 import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, writeAttachment } from "./attachment-writer";
-import { buildDigest, type DigestPageInput } from "./digest-pipeline";
+import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipeline";
 import {
 	blockHashOf,
 	extractManagedBlock,
 	type HighlightGroup,
+	isEmptyManagedBlock,
 	managedBlockHash,
 	moveNote,
 	type NoteFields,
@@ -26,7 +27,7 @@ import { validateSourcePdf } from "./pdf-source";
 import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, type NoteFrontmatter } from "./frontmatter";
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
-import { isDocumentText } from "./scene-text";
+import { hasTypedText, isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -234,9 +235,14 @@ export interface SyncDeps {
 	ocrBackend: OcrBackend;
 	/**
 	 * F20's setting, default **off** -- the same default the plugin ships, so a caller that says
-	 * nothing gets the shipped behaviour rather than a second, quieter policy. A PDF unit still runs
-	 * its digest build: that is what keeps `digest.ocr` non-null and so keeps the whole-scene OCR pass
-	 * switched off, which is the point (a page's handwriting must not come back as a flat transcript).
+	 * nothing gets the shipped behaviour rather than a second, quieter policy.
+	 *
+	 * What keeps the promise for an annotated PDF is that **the digest covers every one of its
+	 * pages**, so the whole-scene OCR pass is handed nothing and a page's handwriting cannot come
+	 * back as a flat transcript. It used to be phrased as "the digest ran, so `digest.ocr` is
+	 * non-null", and that gate was wrong for a notebook, whose handwriting is the reason the plugin
+	 * exists rather than a scribble in someone else's margin (issue #115, ticket 02). Restoring it
+	 * would silence every notebook whose digest found nothing.
 	 */
 	marginNotes?: boolean;
 	/**
@@ -495,6 +501,12 @@ export interface OcrPage {
 	pageLabel: number;
 	/** The `#page=` anchor into the embed; `1` for a single-page embed. */
 	embedPage: number;
+	/**
+	 * True for a page whose typed text is a document rather than the reader's own hand
+	 * (`isDocumentText`). Never sent to a backend -- the note names it and points at the embed,
+	 * because the words are already there and reading them back costs a request and a worse copy.
+	 */
+	typed?: boolean;
 }
 
 /**
@@ -580,7 +592,13 @@ interface UnitOcr {
  * is lost either way.
  */
 async function runOcr(backend: OcrBackend, pages: OcrPage[], onPage?: () => void): Promise<UnitOcr> {
-	const sent = pages.filter((page): page is OcrPage & { scene: RmPage } => page.scene !== null);
+	const sent = pages.filter((page): page is OcrPage & { scene: RmPage } => page.scene !== null && page.typed !== true);
+
+	// Nothing to transcribe: the digest covers every page, or every page is typed text, or the unit
+	// has no ink at all. The backend is not called even to be told so -- an unavailable one would
+	// answer "unavailable" to an empty question, and since `unitOcr` became the worse of the digest's
+	// status and this one, that answer would raise a platform notice about a page nobody asked for.
+	if (sent.length === 0) return { status: "skipped", warnings: [], pages: transcriptPages(pages, new Map()), text: "" };
 
 	let result: OcrResult;
 	try {
@@ -605,24 +623,100 @@ async function runOcr(backend: OcrBackend, pages: OcrPage[], onPage?: () => void
 		};
 	}
 
-	const bySent = new Map<OcrPage, OcrPageResult>(sent.map((page, index) => [page, perPage[index]]));
 	return {
 		status: result.status,
 		warnings,
-		// A page that never reached the backend reads as "nothing to read here", which is what it is.
-		pages: pages.map((page) => {
-			const outcome = bySent.get(page);
-			return { pageLabel: page.pageLabel, embedPage: page.embedPage, status: outcome?.status ?? "skipped", text: outcome?.text ?? "" };
-		}),
+		pages: transcriptPages(pages, new Map(sent.map((page, index) => [page, perPage[index]]))),
 		text: result.text,
 	};
+}
+
+/**
+ * The unit's pages as the note renders them, with each backend result zipped back onto its page.
+ *
+ * A page that never reached the backend reads as "nothing to read here", which is what it is -- bar
+ * the typed ones, which are the opposite and say so (see `TranscriptPageStatus`).
+ */
+function transcriptPages(pages: OcrPage[], results: Map<OcrPage, OcrPageResult>): TranscriptPage[] {
+	return pages.map((page) => {
+		const outcome = results.get(page);
+		return {
+			pageLabel: page.pageLabel,
+			embedPage: page.embedPage,
+			status: page.typed === true ? "typed" : (outcome?.status ?? "skipped"),
+			text: outcome?.text ?? "",
+		};
+	});
+}
+
+/**
+ * Whether the device had anything for this unit to say: ink, a highlight, or typed text on any of
+ * its pages.
+ *
+ * The empty-note check needs it, and nothing else does. An empty managed block is not a loss by
+ * itself -- an annotated PDF with no annotations and a notebook that was never written on both
+ * render to the embed and nothing else, and always have. What must not pass silently is an empty
+ * block over pages that plainly had something on them.
+ */
+function hasSomethingToSay(pages: OcrPage[]): boolean {
+	return pages.some(
+		({ scene }) => scene !== null && (hasTypedText(scene) || (scene.highlights ?? []).length > 0 || scene.layers.some((layer) => layer.strokes.length > 0)),
+	);
+}
+
+/**
+ * Which of a unit's pages the transcript is responsible for, and which of its quotes.
+ *
+ * The two halves of a unit are disjoint by construction: the pages handed to the digest, and the
+ * rest. This used to be decided by `digest.ocr === null` -- "did the digest run at all" -- which was
+ * a guard shaped for annotated PDFs and wrong for notebooks, where a digest that ran and found
+ * nothing silenced every page of the document (issue #115, ticket 02).
+ *
+ * Three outcomes per page:
+ *
+ * - the digest never saw it -> transcribe it, as always;
+ * - the digest carries it -> leave it out of the transcript entirely, so the note does not point at
+ *   a page whose quotes are printed right above;
+ * - the digest saw it and produced nothing -> for a notebook that is a page of typed text with no
+ *   marks on it, and the note names it rather than asking a model to read back words that are
+ *   already there. For a PDF it is an unannotated page, dropped exactly as before: transcribing it
+ *   would put its handwriting in the note with margin notes off, which is the F20 leak.
+ *
+ * A build that threw covers nothing, so its unit is transcribed whole rather than left empty. That
+ * is the one case where `digest.ocr === null` still decides something, and it is a different
+ * question from "the digest ran and found nothing".
+ */
+function splitForTranscript(
+	ocrPages: OcrPage[],
+	digestPages: DigestPageInput[] | null,
+	digest: { markdown: string; ocr: OcrStatus | null; covered: number[] },
+	pdfBacked: boolean,
+): { transcribe: OcrPage[]; highlights: (all: HighlightGroup[]) => HighlightGroup[] } {
+	const digested = new Set(digestPages === null ? [] : digestPages.map((page) => page.embedPage));
+	const covered = new Set(digest.covered);
+
+	// The build threw, or none was attempted: nothing is covered -- see the last paragraph above.
+	if (digest.ocr === null) return { transcribe: ocrPages, highlights: () => [] };
+
+	const transcribe = ocrPages.flatMap((page) => {
+		if (!digested.has(page.embedPage)) return [page];
+		if (covered.has(page.embedPage)) return [];
+		return pdfBacked ? [] : [{ ...page, typed: true }];
+	});
+
+	// A quote belongs in exactly one place. A digest subsumes the quotes of the pages it covers, as it
+	// always has; the rest used to be dropped with it and are now folded into the transcript under the
+	// page they were made on (ticket 05). With no digest section they keep their own `## Highlights`.
+	return { transcribe, highlights: (all) => (digest.markdown === "" ? [] : all.filter((group) => !digested.has(group.embedPage))) };
 }
 
 interface UnitParams {
 	/** Finished attachment bytes: a `.rm` render for handwritten docs, the embedded source for PDF-backed ones. */
 	pdfBytes: Uint8Array;
-	/** The unit's pages with their labels -- empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
+	/** The pages the transcript is responsible for -- see `splitForTranscript`. Empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
 	ocrPages: OcrPage[];
+	/** How many pages the whole *unit* has, which a digest can make more than `ocrPages.length`. Decides whether the transcript prints page headings. */
+	unitPages: number;
 	/**
 	 * A transcript to keep instead of producing one, for a unit being rebuilt only because the
 	 * renderer changed. Already rendered -- it was read back out of the note -- so it is written
@@ -631,8 +725,24 @@ interface UnitParams {
 	keepTranscript?: string;
 	/** Render-ready highlighted quotes, grouped by page (empty when the unit has no text highlights). */
 	highlights: HighlightGroup[];
-	/** The `## Digest` body of a PDF-backed unit; "" for every other unit, and for a digest that failed to build. */
+	/**
+	 * The subset of `highlights` that belongs inside the transcript, under the page it was made on:
+	 * the pages a digest does not cover. Empty for a unit with no digest, whose quotes render as
+	 * their own `## Highlights` section instead (ticket 05).
+	 */
+	transcriptHighlights?: HighlightGroup[];
+	/** The `## Digest` body of a unit with document text; "" for every other unit, and for a digest that failed to build. */
 	digest: string;
+	/**
+	 * The digest's own OCR outcome: `undefined` when no digest was attempted for this unit, `null`
+	 * when the build threw. Read by the empty-note check, which must not fire for a unit whose
+	 * emptiness is already explained somewhere else.
+	 */
+	digestOcr?: OcrStatus | null;
+	/** How this unit is named in the run's report -- `"Book" for tag "x"`, or `page 3 of "Book" for tag "x"`. */
+	unit: string;
+	/** Whether the device had anything for this unit to say -- see `hasSomethingToSay`. Read by the empty-note check. */
+	hadContent: boolean;
 	docId: string;
 	pageId: string | null;
 	pageIndex: number | null;
@@ -684,12 +794,80 @@ function shrinkWarning(params: UnitParams, count: number): string | null {
 	return `${unit} now has ${count} highlight${count === 1 ? "" : "s"} where the last sync found ${previous}; the note mirrors the device, so the missing ones are gone from the vault too. On a book, changing the font or the margins makes the device redo its whole conversion, and annotations can be lost with it.`;
 }
 
+/** One unit's write, as far as it got. */
+interface WrittenUnit {
+	row: SyncIndexRow;
+	ocr: OcrResult["status"];
+	ocrWarnings: string[];
+	shrink: string | null;
+}
+
+interface WriteUnitResult {
+	/** Null when the write was refused: the unit rendered to nothing and the note it already has is worth more (see `emptyBlockReport`). */
+	written: WrittenUnit | null;
+	/** The line for `skipErrors` when the block came out empty, refused or not; null on the ordinary path. */
+	emptyBlock: string | null;
+}
+
+/**
+ * Whether the note behind `row` currently has anything in it worth keeping -- any section at all
+ * inside its managed block.
+ *
+ * Costs a vault read, and it is paid only in the branch where the new block came out empty, so the
+ * ordinary path never pays it.
+ */
+async function hasSectionsToLose(noteStore: NoteStore, row: SyncIndexRow | undefined): Promise<boolean> {
+	if (row === undefined) return false;
+	const content = await noteStore.read(row.notePath);
+	if (content === null) return false;
+	return extractManagedBlock(content)?.includes("\n## ") === true;
+}
+
+/**
+ * The report line for a unit that rendered to an empty block, and whether the write should be
+ * refused -- or null when there is nothing to report.
+ *
+ * The block being empty is not the loss. Transcription off writes an embed-only note every time, on
+ * purpose. What must never pass silently is an **unexplained** empty block: the unit asked for
+ * something and got a clean nothing back. Everything that has its own report is excluded here,
+ * because a second flag for the same fact is the one users learn to ignore --
+ *
+ * - the backend was `unavailable` or `failed`: both have their own counter and their own notice, and
+ *   an empty note is the honest result of a backend that is gone;
+ * - the digest build threw: `buildUnitDigest` already pushed the error text;
+ * - the device had nothing to say: an annotated PDF with no annotations and a notebook of blank
+ *   pages both render to the embed and nothing else, and always have (see `hasSomethingToSay`);
+ * - the backend reported nothing at all -- no per-page results and no text. That is transcription
+ *   off, which returns exactly that (`OffOcrBackend`) and is the user asking for an embed-only note;
+ *   it is also what an arity violation degrades to, and that has already warned on its own.
+ *
+ * The refusal is "never replace content with nothing", not "never write nothing". A unit with no
+ * note yet -- or one whose note is already empty -- writes the empty note and only reports it.
+ * Refusing there would leave a freshly tagged, genuinely blank notebook with no note at all, a skip
+ * notice on every run forever, and an OCR call per run spent on a page that has nothing to read.
+ */
+async function emptyBlockReport(
+	noteStore: NoteStore,
+	params: UnitParams,
+	fields: NoteFields,
+	ocrStatus: OcrResult["status"],
+	nothingReported: boolean,
+): Promise<{ line: string; refuse: boolean } | null> {
+	if (!isEmptyManagedBlock(fields) || !params.hadContent) return null;
+	if (params.digestOcr === null || ocrStatus === "unavailable" || ocrStatus === "failed") return null;
+	if (nothingReported) return null;
+
+	return (await hasSectionsToLose(noteStore, params.previous))
+		? { line: `${params.unit} would have been written with neither a digest nor a transcript; the note was left as it was`, refuse: true }
+		: { line: `${params.unit} was written with neither a digest nor a transcript`, refuse: false };
+}
+
 /** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend"> & { attachmentsFolder: string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
-): Promise<{ row: SyncIndexRow; ocr: OcrResult["status"]; ocrWarnings: string[]; shrink: string | null }> {
+): Promise<WriteUnitResult> {
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
 	const ocr: UnitOcr =
 		params.keepTranscript !== undefined
@@ -705,9 +883,16 @@ async function writeUnit(
 		source: params.source,
 		embedPath,
 		highlights: params.highlights,
-		transcript: renderTranscript(embedPath, ocr.pages, ocr.text),
+		transcript: renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: params.transcriptHighlights, unitPages: params.unitPages }),
 		digest: params.digest,
 	};
+
+	// Between building the block and writing it, the only moment both the finished note and the one it
+	// would replace are known. The attachment above is already written and stays: the embed is
+	// correct, and it is what the retry would write again anyway.
+	const empty = await emptyBlockReport(deps.noteStore, params, fields, ocr.status, ocr.pages === null && ocr.text === "");
+	if (empty?.refuse === true) return { written: null, emptyBlock: empty.line };
+
 	const notePath = await write(fields);
 
 	// After the body write, not inside it: the managed block and its hash know nothing about
@@ -734,24 +919,27 @@ async function writeUnit(
 	const highlightCount = params.highlights.reduce((count, group) => count + group.quotes.length, 0);
 
 	return {
-		row: {
-			syncKey,
-			docId: params.docId,
-			pageId: params.pageId,
-			tag: params.tag,
-			entryHash: params.entryHash,
-			pageHash: params.pageHash,
-			notePath,
-			status: "active",
-			syncedAt: synced,
-			renderVersion: RENDER_VERSION,
-			blockHash: managedBlockHash(fields),
-			highlightCount,
-			frontmatterTags,
+		emptyBlock: empty?.line ?? null,
+		written: {
+			row: {
+				syncKey,
+				docId: params.docId,
+				pageId: params.pageId,
+				tag: params.tag,
+				entryHash: params.entryHash,
+				pageHash: params.pageHash,
+				notePath,
+				status: "active",
+				syncedAt: synced,
+				renderVersion: RENDER_VERSION,
+				blockHash: managedBlockHash(fields),
+				highlightCount,
+				frontmatterTags,
+			},
+			ocr: ocr.status,
+			ocrWarnings: ocr.warnings,
+			shrink: shrinkWarning(params, highlightCount),
 		},
-		ocr: ocr.status,
-		ocrWarnings: ocr.warnings,
-		shrink: shrinkWarning(params, highlightCount),
 	};
 }
 
@@ -1295,9 +1483,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	let unavailableOcrUnits = 0;
 	let failedOcrUnits = 0;
 	let editedNotesSkipped = 0;
-	// Rows whose note was left alone this round. Their entryHash must NOT be bumped, or the next sync's
-	// level-2 check would skip the whole document and the user would never hear about it again.
-	const editedKeys = new Set<string>();
+	// Rows whose note was deliberately left alone this round -- the user edited inside its managed
+	// block, or the unit rendered to nothing and the note it has is worth more. Their entryHash must
+	// NOT be bumped, or the next sync's level-2 check would skip the whole document and the user would
+	// never hear about it again.
+	const untouchedKeys = new Set<string>();
 	const skippedDocIds = new Set<string>();
 	const skipErrors: string[] = [];
 	let shrunkNotes = 0;
@@ -1444,7 +1634,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			pageId: string | null,
 			pages: DigestPageInput[],
 			unit: string,
-		): Promise<{ markdown: string; ocr: OcrStatus | null }> => {
+		): Promise<{ markdown: string; ocr: OcrStatus | null; covered: number[] }> => {
 			try {
 				const build = await buildDigest(
 					// The tick comes from the pipeline's page loop rather than from the backend: it
@@ -1460,11 +1650,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					},
 				);
 				skipErrors.push(...build.warnings);
-				return { markdown: build.markdown, ocr: build.ocr };
+				return { markdown: build.markdown, ocr: build.ocr, covered: build.covered };
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to build the digest for ${unit}, the note keeps its highlights`, error);
 				skipErrors.push(`failed to build the digest for ${unit}: ${errorText(error)}`);
-				return { markdown: "", ocr: null };
+				return { markdown: "", ocr: null, covered: [] };
 			}
 		};
 
@@ -1482,7 +1672,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const folder = tagRouter.resolveFolder(tag)!;
 
 			if (unit.skip === "edited") {
-				editedKeys.add(unit.writtenRow.syncKey);
+				untouchedKeys.add(unit.writtenRow.syncKey);
 				editedNotesSkipped++;
 				continue;
 			}
@@ -1506,9 +1696,15 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
-					digestPages = scenes.some(isDocumentText)
-						? scenes.map((scene, i) => ({ pageId: pageOrder[i], sourceIndex: i, embedPage: i + 1, scene }))
-						: null;
+					// Per page, not per document. `scenes.some(isDocumentText)` here is issue #115: one typed
+					// page made every page of the notebook a digest page, and the handwriting on the rest was
+					// neither digested (there are no marks on someone else's text to digest) nor transcribed
+					// (the digest had "run"). The predicate itself is per page and always was.
+					const documentPages = scenes.map((scene, i) => ({ scene, index: i })).filter(({ scene }) => isDocumentText(scene));
+					digestPages =
+						documentPages.length > 0
+							? documentPages.map(({ scene, index }) => ({ pageId: pageOrder[index], sourceIndex: index, embedPage: index + 1, scene }))
+							: null;
 				}
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to render "${entry.visibleName}" for tag "${tag}", skipping`, error);
@@ -1521,20 +1717,23 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 			bar.step("transcribing");
 
-			const digest = digestPages
-				? await buildUnitDigest(null, digestPages, `"${entry.visibleName}" for tag "${tag}"`)
-				: { markdown: "", ocr: null };
+			const unitName = `"${entry.visibleName}" for tag "${tag}"`;
+			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName) : { markdown: "", ocr: null, covered: [] };
+			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
-			const { row, ocr, ocrWarnings, shrink } = await writeUnit(
+			const { written, emptyBlock } = await writeUnit(
 				writeDeps,
 				{
-					// An empty page list makes `runOcr` return `skipped` without spawning anything -- the
-					// digest already transcribed this unit, cluster by cluster.
-					ocrPages: digest.ocr === null ? ocrPages : [],
+					ocrPages: split.transcribe,
+					unitPages: ocrPages.length,
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.entryHash === entry.hash, ocrPages),
 					pdfBytes,
 					highlights,
+					transcriptHighlights: split.highlights(highlights),
 					digest: digest.markdown,
+					digestOcr: digestPages === null ? undefined : digest.ocr,
+					unit: unitName,
+					hadContent: hasSomethingToSay(ocrPages),
 					docId: entry.id,
 					pageId: null,
 					pageIndex: null,
@@ -1548,6 +1747,17 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
+			if (emptyBlock !== null) skipErrors.push(emptyBlock);
+			if (written === null) {
+				// Refused, so nothing was written. The row keeps its old entry hash and render version,
+				// which is what reopens the document on the next run: whatever fixes the bug behind the
+				// empty block then repairs the note by itself. See the render failure above.
+				untouchedKeys.add(notebookSyncKey(entry.id, tag));
+				skippedDocIds.add(entry.id);
+				bar.finish();
+				continue;
+			}
+			const { row, ocr, ocrWarnings, shrink } = written;
 			consumeRename(rows, rename);
 			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
@@ -1559,9 +1769,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// document. The write costs milliseconds against a unit that just spent a render and an OCR
 			// pass, and only units that actually produced a note get here, so the cost tracks the work.
 			await checkpoint();
-			// The digest's own outcome when it produced one, so the platform notice still fires for a
-			// user whose margin notes could not be transcribed here.
-			const unitOcr = digest.ocr ?? ocr;
+			// The worse of the two halves, not whichever ran: since #115 a mixed notebook has both a
+			// digest and a transcript, and preferring the digest's status would report a failed
+			// transcription as the digest's "skipped" and under-count a real failure (ticket 02).
+			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]);
 			// A page the backend lost while the rest of the unit read fine: the note is written and the
 			// unit counts as ok, so this line is the only trace the loss leaves anywhere.
 			skipErrors.push(...ocrWarnings);
@@ -1579,7 +1790,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const pageHash = pageContentHash(unit.pageId);
 
 			if (unit.skip === "edited") {
-				editedKeys.add(unit.writtenRow.syncKey);
+				untouchedKeys.add(unit.writtenRow.syncKey);
 				editedNotesSkipped++;
 				continue;
 			}
@@ -1619,19 +1830,23 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 			bar.step("transcribing");
 
-			const digest = digestPages
-				? await buildUnitDigest(unit.pageId, digestPages, `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`)
-				: { markdown: "", ocr: null };
+			const unitName = `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`;
+			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName) : { markdown: "", ocr: null, covered: [] };
+			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
-			const { row, ocr, ocrWarnings, shrink } = await writeUnit(
+			const { written, emptyBlock } = await writeUnit(
 				writeDeps,
 				{
-					// See the notebook-tag branch: a built digest has already transcribed this unit.
-					ocrPages: digest.ocr === null ? ocrPages : [],
+					ocrPages: split.transcribe,
+					unitPages: ocrPages.length,
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.pageHash === pageHash, ocrPages),
 					pdfBytes,
 					highlights,
+					transcriptHighlights: split.highlights(highlights),
 					digest: digest.markdown,
+					digestOcr: digestPages === null ? undefined : digest.ocr,
+					unit: unitName,
+					hadContent: hasSomethingToSay(ocrPages),
 					docId: entry.id,
 					pageId: unit.pageId,
 					pageIndex: pageIndex > 0 ? pageIndex : null,
@@ -1645,12 +1860,21 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
+			if (emptyBlock !== null) skipErrors.push(emptyBlock);
+			if (written === null) {
+				// See the notebook-tag branch.
+				untouchedKeys.add(pageSyncKey(entry.id, unit.pageId, tag));
+				skippedDocIds.add(entry.id);
+				bar.finish();
+				continue;
+			}
+			const { row, ocr, ocrWarnings, shrink } = written;
 			consumeRename(rows, rename);
 			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
 			bar.finish();
 			await checkpoint(); // see the notebook-tag branch
-			const unitOcr = digest.ocr ?? ocr;
+			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]); // see the notebook-tag branch
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
 			skipErrors.push(...ocrWarnings);
 			if (shrink !== null) {
@@ -1664,7 +1888,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// Bump entryHash on any of this doc's rows we didn't touch this round (e.g. a page-tag row
 		// whose page was unchanged), so a future sync's level-2 check compares against the current hash.
 		for (const row of Object.values(rows)) {
-			if (row.docId === entry.id && row.entryHash !== entry.hash && !editedKeys.has(row.syncKey)) {
+			if (row.docId === entry.id && row.entryHash !== entry.hash && !untouchedKeys.has(row.syncKey)) {
 				rows[row.syncKey] = { ...row, entryHash: entry.hash };
 			}
 		}
@@ -1713,20 +1937,29 @@ export interface ReTranscribeDeps {
 	saveIndex?: (index: SyncIndex) => Promise<void>;
 }
 
-/** The OCR input for one already-synced unit, labelled: annotation scenes for a PDF-backed doc, every live page's scene otherwise. */
+/**
+ * The OCR input for one already-synced unit, labelled: annotation scenes for a PDF-backed doc, every
+ * live page's scene otherwise.
+ *
+ * A notebook's pages are classified the way the sync classifies them, so a page of typed text is
+ * named rather than sent -- which makes the command cheaper, not dearer (ticket 06). It differs from
+ * the sync in one place it cannot help: the sync leaves out a typed page the digest carries, and
+ * this path builds no digest, so it names every typed page. The cost is one footnote line on a note
+ * that already has a `## Digest` explaining those pages; the next full sync writes it properly.
+ */
 async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, pdfBacked: boolean): Promise<OcrPage[] | null> {
 	if (row.pageId === null) {
-		return pdfBacked
-			? annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes))
-			: notebookOcrPages(await Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id)))));
+		if (pdfBacked) return annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes));
+		const scenes = await Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id))));
+		return notebookOcrPages(scenes).map((page, index) => ({ ...page, typed: isDocumentText(scenes[index]) }));
 	}
 	const pageIndex = docPages.findIndex((candidate) => candidate.id === row.pageId);
 	if (pageIndex === -1) return null; // the tagged page no longer exists on the device
 	// A single-page embed, so the `#page=` anchor is 1 -- matching the page-tag branch of `runSync`.
 	const labels = { pageLabel: pageIndex + 1, embedPage: 1 };
-	return pdfBacked
-		? [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }]
-		: [{ scene: await renderPage(api, docId, row.pageId, pageHashes.get(row.pageId)), ...labels }];
+	if (pdfBacked) return [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }];
+	const scene = await renderPage(api, docId, row.pageId, pageHashes.get(row.pageId));
+	return [{ scene, ...labels, typed: isDocumentText(scene) }];
 }
 
 /**
@@ -1845,6 +2078,11 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			// `ocrPagesForRow` renders every page it returns, so this really is the rendering step and
 			// not, as it looks, a pure OCR path.
 			bar.start(reTranscribeSteps(row, docPages), entry.visibleName, row.tag, "rendering");
+			// Read before rendering rather than after. What the note already carries is what decides
+			// whether a transcript may grow beside a digest, and which quotes have to be written back
+			// with it -- both needed before the transcript is built, not after (ticket 06).
+			const noteContent = (await noteStore.read(row.notePath)) ?? "";
+			const noteHasDigest = extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
 			let ocrPages: OcrPage[] | null;
 			try {
 				ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
@@ -1864,9 +2102,20 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
 			// written by a much older version) falls back to the unlabelled transcript rather than
 			// emitting links that go nowhere.
-			const embedPath = readEmbedPath((await noteStore.read(row.notePath)) ?? "");
-			const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, ocr.pages, ocr.text);
-			if (!(await updateTranscript(noteStore, row.notePath, transcript))) {
+			const embedPath = readEmbedPath(noteContent);
+			// `updateTranscript` replaces the whole transcript region, so a quote the sync folded into it
+			// is deleted unless this path writes it back -- permanently, which is the exact loss this
+			// command exists to repair. It costs nothing: the scenes were rendered a moment ago and carry
+			// their own highlights (ticket 05).
+			const folded =
+				noteHasDigest && !pdfBacked
+					? collectHighlights(ocrPages.map((page) => ({ pageLabel: page.pageLabel, embedPage: page.embedPage, highlights: page.typed === true ? [] : (page.scene?.highlights ?? []) })))
+					: [];
+			const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: folded, unitPages: ocrPages.length });
+			// A notebook note may carry both sections since #115, and refusing it here would leave the
+			// command unable to repair the notes the bug damaged. A PDF keeps the refusal: growing a flat
+			// transcript into its digest note is the F20 leak (see `SyncDeps.marginNotes`).
+			if (!(await updateTranscript(noteStore, row.notePath, transcript, { allowDigest: !pdfBacked }))) {
 				bar.finish();
 				continue;
 			}
