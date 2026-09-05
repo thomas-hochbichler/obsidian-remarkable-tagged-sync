@@ -8,7 +8,7 @@ import { UnavailableOcrBackend } from "./vision-ocr-backend";
 // other half: that the shipped command asks these and does what the answers say.
 
 const backend = (id: string, metered = false): OcrBackend =>
-	({ id, metered, recognize: async () => ({ status: "ok", pages: null, text: "", confidence: null }) }) as OcrBackend;
+	({ id, metered, fingerprint: "test-backend", recognize: async () => ({ status: "ok", pages: null, text: "", confidence: null }) }) as OcrBackend;
 
 /** A registry entry that either declares a gap on this machine, or does not. */
 const entry = (id: string, unavailable: string | null = null): OcrBackendEntry =>

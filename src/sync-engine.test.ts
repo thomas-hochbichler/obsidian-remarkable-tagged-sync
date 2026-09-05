@@ -250,6 +250,7 @@ function fakeOcrBackend(result: Omit<OcrResult, "pages"> & { pages?: OcrPageResu
 	return {
 		id: "vision",
 		metered: false,
+		fingerprint: "test-backend",
 		// Honours the same empty-list contract every real backend has (`vision-ocr-backend.ts:90`):
 		// nothing in, `skipped` out, no work done. The sync engine leans on it to keep a PDF unit from
 		// being transcribed a second time over its whole scene, and a fake that answered anyway would
@@ -263,6 +264,7 @@ function perPageOcrBackend(text = "handwriting"): OcrBackend {
 	return {
 		id: "vision",
 		metered: false,
+		fingerprint: "test-backend",
 		recognize: vi.fn(
 			async (pages: RmPage[]): Promise<OcrResult> => ({
 				status: pages.length === 0 ? "skipped" : "ok",
@@ -279,6 +281,7 @@ function emptyPerPageOcrBackend(): OcrBackend {
 	return {
 		id: "vision",
 		metered: false,
+		fingerprint: "test-backend",
 		recognize: vi.fn(
 			async (pages: RmPage[]): Promise<OcrResult> => ({
 				status: "ok",
@@ -292,12 +295,12 @@ function emptyPerPageOcrBackend(): OcrBackend {
 
 /** Apple Vision on Windows: the backend never looked at a page, so it has nothing per page to say. */
 function unavailableOcrBackend(): OcrBackend {
-	return { id: "vision", metered: false, recognize: vi.fn(async (): Promise<OcrResult> => ({ status: "unavailable", pages: null, text: "", confidence: null })) };
+	return { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn(async (): Promise<OcrResult> => ({ status: "unavailable", pages: null, text: "", confidence: null })) };
 }
 
 /** A backend that is available and still produces nothing -- the case that used to vanish into console.warn. */
 function throwingOcrBackend(): OcrBackend {
-	return { id: "vision", metered: false, recognize: vi.fn().mockRejectedValue(new Error("vision blew up")) };
+	return { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn().mockRejectedValue(new Error("vision blew up")) };
 }
 
 function baseDeps(api: SyncApi, tagFolderMap: Record<string, string>) {
@@ -335,6 +338,7 @@ function overTickingOcrBackend(ticksPerPage: number): OcrBackend {
 	return {
 		id: "vision",
 		metered: false,
+		fingerprint: "test-backend",
 		recognize: vi.fn(async (pages: RmPage[], onPage?: () => void): Promise<OcrResult> => {
 			for (const _page of pages) for (let i = 0; i < ticksPerPage; i++) onPage?.();
 			return { status: "ok", pages: pages.map(() => ({ status: "ok" as const, text: "x" })), text: "x", confidence: null };
@@ -347,6 +351,7 @@ function tickingOcrBackend(): OcrBackend {
 	return {
 		id: "vision",
 		metered: false,
+		fingerprint: "test-backend",
 		recognize: vi.fn(async (pages: RmPage[], onPage?: () => void): Promise<OcrResult> => {
 			for (const _page of pages) onPage?.();
 			return { status: "ok", pages: pages.map(() => ({ status: "ok" as const, text: "x" })), text: "x", confidence: null };
@@ -1454,7 +1459,7 @@ describe("runSync", () => {
 			contentById: { "doc-1": content },
 			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
 		});
-		const throwingBackend: OcrBackend = { id: "vision", metered: false, recognize: vi.fn().mockRejectedValue(new Error("boom")) };
+		const throwingBackend: OcrBackend = { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn().mockRejectedValue(new Error("boom")) };
 		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: throwingBackend };
 
 		const result = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -2854,7 +2859,7 @@ describe("reTranscribeAll", () => {
 		const noteStore = fakeNoteStore();
 		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
 
-		const newBackend: OcrBackend = { id: "vision", metered: false, recognize: vi.fn().mockResolvedValue({ status: "ok", text: "fresh", confidence: null }) };
+		const newBackend: OcrBackend = { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn().mockResolvedValue({ status: "ok", text: "fresh", confidence: null }) };
 		const stopped = await reTranscribeAll({ api, noteStore, ocrBackend: newBackend, shouldStop: () => true }, first.index);
 
 		expect(stopped.stopped).toBe(true);
@@ -2873,7 +2878,7 @@ describe("reTranscribeAll", () => {
 		const notePath = "Target/Notebook.md";
 		expect((await noteStore.read(notePath))!).toContain("old garbage");
 
-		const newBackend: OcrBackend = { id: "vision", metered: false, recognize: vi.fn().mockResolvedValue({ status: "ok", text: "fresh vision text", confidence: null }) };
+		const newBackend: OcrBackend = { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn().mockResolvedValue({ status: "ok", text: "fresh vision text", confidence: null }) };
 		const { updated } = await reTranscribeAll({ api, noteStore, ocrBackend: newBackend }, first.index);
 
 		expect(updated).toBe(1);
@@ -3805,6 +3810,7 @@ describe("page-anchored transcripts", () => {
 		return {
 			id: "vision",
 			metered: false,
+			fingerprint: "test-backend",
 			recognize: vi.fn(async (input: RmPage[]): Promise<OcrResult> => {
 				const given = pages.slice(0, input.length);
 				return {
@@ -3868,6 +3874,7 @@ describe("page-anchored transcripts", () => {
 		const backend: OcrBackend = {
 			id: "vision",
 			metered: false,
+			fingerprint: "test-backend",
 			recognize: vi.fn(async (): Promise<OcrResult> => ({ status: "ok", pages: [{ status: "ok", text: "only one" }], text: "only one", confidence: null })),
 		};
 		const deps = { ...baseDeps(notebookOf(3, "root-anchored-arity"), { sync: "Target" }), ocrBackend: backend };
@@ -4231,5 +4238,289 @@ describe("frontmatter properties (Pro)", () => {
 		const note = await deps.noteStore.read("Target/Notebook.md");
 		expect(note!.startsWith("---")).toBe(false);
 		expect(result.index.rows[notebookSyncKey("doc-1", "sync")].frontmatterTags).toBeUndefined();
+	});
+});
+
+describe("transcribing only the pages that changed (issue #117)", () => {
+	const KEY = notebookSyncKey("doc-1", "sync");
+	const NOTE = "Target/Notebook.md";
+
+	/**
+	 * A notebook whose per-page `.rm` hashes are given explicitly -- the two levels of change detection
+	 * the store sits between: the document's `hash`, and each page's own.
+	 */
+	function notebook(rootHash: string, hash: string, pages: Record<string, string>) {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(Object.keys(pages)) }) },
+			pageHashesByDoc: { "doc-1": pages },
+		});
+	}
+
+	const THREE = { "page-a": "h-a", "page-b": "h-b", "page-c": "h-c" };
+
+	/**
+	 * A backend whose every page reads differently, so a note can be asked *which run* each of its
+	 * pages came from. `perPageOcrBackend` cannot answer that: every page it ever produces is the same
+	 * string, so a store that reused the wrong page would look exactly like one that reused the right
+	 * one.
+	 */
+	function countingOcrBackend(fingerprint = "test-backend", prefix = "read"): OcrBackend & { reads: number } {
+		const backend = {
+			id: "vision" as const,
+			metered: false,
+			fingerprint,
+			reads: 0,
+			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => {
+				const results = pages.map(() => ({ status: "ok" as const, text: `${prefix}-${++backend.reads}` }));
+				return { status: pages.length === 0 ? "skipped" : "ok", pages: results, text: results.map((result) => result.text).join("\n\n"), confidence: null };
+			}),
+		};
+		return backend;
+	}
+
+	/** How many pages reached the backend on a run, across every call it made. */
+	const pagesSent = (backend: OcrBackend) => (backend.recognize as ReturnType<typeof vi.fn>).mock.calls.reduce((sum, call) => sum + (call[0] as RmPage[]).length, 0);
+
+	/** Syncs a fresh three-page notebook and hands back everything a second run needs. */
+	async function firstSync(rootHash: string) {
+		const backend = countingOcrBackend();
+		const deps = { ...baseDeps(notebook(rootHash, "hash-1", THREE), { sync: "Target" }), ocrBackend: backend };
+		return { deps, synced: await runSync(deps, EMPTY_SYNC_INDEX), backend };
+	}
+
+	/** The second run: one page edited, the rest untouched, against the note the first run wrote. */
+	function nextSync(first: Awaited<ReturnType<typeof firstSync>>, rootHash: string, backend: OcrBackend, pages: Record<string, string> = { ...THREE, "page-b": "h-b-edited" }) {
+		return {
+			...baseDeps(notebook(rootHash, "hash-2", pages), { sync: "Target" }),
+			noteStore: first.deps.noteStore,
+			ocrBackend: backend,
+		};
+	}
+
+	// The reporter's measurement, inverted: editing one page of an eleven-page notebook produced
+	// eleven requests. One page changed, so one page is read.
+	it("sends only the changed page to the backend on the next sync", async () => {
+		const first = await firstSync("root-117-a");
+		expect(pagesSent(first.backend)).toBe(3);
+
+		const second = countingOcrBackend();
+		const result = await runSync(nextSync(first, "root-117-a2", second), first.synced.index);
+
+		expect(pagesSent(second)).toBe(1);
+		expect(result.reusedPageTranscriptions).toBe(2);
+		expect(result.pageTranscriptionsConsidered).toBe(3);
+	});
+
+	// The pages that were not read must still be in the note, under the same headings, with the same
+	// words. A store that skipped the request and dropped the text would pass the count above.
+	it("keeps the unchanged pages' own text in the rewritten note", async () => {
+		const first = await firstSync("root-117-b");
+		await runSync(nextSync(first, "root-117-b2", countingOcrBackend("test-backend", "fresh")), first.synced.index);
+
+		const note = (await first.deps.noteStore.read(NOTE))!;
+		expect(note).toMatch(/\|Page 1\]\]\n\nread-1/); // untouched, still the first run's words
+		expect(note).toMatch(/\|Page 2\]\]\n\nfresh-1/); // the edited page, read this run
+		expect(note).toMatch(/\|Page 3\]\]\n\nread-3/); // untouched
+	});
+
+	// The reason the store keeps each page's *label* rather than its position: the note anchors by
+	// ordinal, so inserting a page renumbers every heading below it. Reading the old text back by the
+	// new ordinal would hand page 4 the text of page 3 -- silently, because both are plausible
+	// handwriting.
+	it("does not misattribute stored text when a page is inserted above it", async () => {
+		const first = await firstSync("root-117-c");
+		const second = countingOcrBackend("test-backend", "fresh");
+		await runSync(nextSync(first, "root-117-c2", second, { "page-a": "h-a", "page-b": "h-b", "page-new": "h-new", "page-c": "h-c" }), first.synced.index);
+
+		expect(pagesSent(second)).toBe(1);
+		const note = (await first.deps.noteStore.read(NOTE))!;
+		expect(note).toMatch(/\|Page 3\]\]\n\nfresh-1/); // the inserted page, read this run
+		expect(note).toMatch(/\|Page 4\]\]\n\nread-3/); // what used to be page 3, unread and unmoved
+	});
+
+	// The reporter's own worry, and the part he called the hardest: the Model field is free text and
+	// people do switch. One note carrying two models' readings is the outcome this prevents.
+	it("reads the whole notebook again when the model has changed", async () => {
+		const first = await firstSync("root-117-d");
+		const second = countingOcrBackend("ollama|http://localhost:11434|gemma3:4b");
+		const result = await runSync(nextSync(first, "root-117-d2", second), first.synced.index);
+
+		expect(pagesSent(second)).toBe(3);
+		expect(result.reusedPageTranscriptions).toBe(0);
+	});
+
+	// Not a new hazard but a repair. Before the store, a changed notebook synced against a backend that
+	// was down was rewritten with `renderTranscript(…, null, "")` -- no `## Transcript` section at all,
+	// and `emptyBlockReport` deliberately does not refuse that for `unavailable`. The transcript was
+	// simply gone because Ollama was not running.
+	it("keeps the stored pages when the backend is unavailable, instead of emptying the transcript", async () => {
+		const first = await firstSync("root-117-e");
+		await runSync(nextSync(first, "root-117-e2", unavailableOcrBackend()), first.synced.index);
+
+		const note = (await first.deps.noteStore.read(NOTE))!;
+		expect(note).toContain("## Transcript");
+		expect(note).toContain("read-1");
+		expect(note).toContain("read-3");
+		// The page that *was* asked for says so, rather than passing as a page with nothing on it.
+		expect(note).toContain("Could not read this page");
+	});
+
+	// #116's truncation is a page that comes back `ok` and is quietly incomplete -- exactly what the
+	// tie-breaker refuses to freeze. Rare, and self-healing on the next clean run.
+	it("stores nothing from a run the backend warned about", async () => {
+		const warning: OcrBackend = {
+			id: "vision",
+			metered: false,
+			fingerprint: "test-backend",
+			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => ({
+				status: "ok",
+				pages: pages.map(() => ({ status: "ok" as const, text: "possibly truncated" })),
+				text: "possibly truncated",
+				confidence: null,
+				warnings: ["a page's answer was cut off"],
+			})),
+		};
+		const deps = { ...baseDeps(notebook("root-117-f", "hash-1", THREE), { sync: "Target" }), ocrBackend: warning };
+		const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(synced.index.rows[KEY].transcribedPages).toBeUndefined();
+	});
+
+	// Ticket 04's easy-to-miss half. Without it the user pays twice -- once for the command, and again
+	// on the next sync of every notebook it touched -- which would make the command dearer than it was
+	// before the store existed.
+	it("leaves a store behind Re-transcribe all notes, so the next sync does not read it all again", async () => {
+		const first = await firstSync("root-117-g");
+		const after = countingOcrBackend();
+		const retranscribed = await reTranscribeAll({ api: notebook("root-117-g", "hash-1", THREE), noteStore: first.deps.noteStore, ocrBackend: after }, first.synced.index);
+
+		expect(pagesSent(after)).toBe(3); // the command reads everything, store or no store
+		expect(retranscribed.index.rows[KEY].transcribedPages).toHaveLength(3);
+
+		const third = countingOcrBackend();
+		await runSync(nextSync(first, "root-117-g2", third), retranscribed.index);
+		expect(pagesSent(third)).toBe(1);
+	});
+
+	// A document can change without any of its pages changing -- a page deleted, a title edited, a tag
+	// added. The backend is then not called at all, and `runOcr` must still report the unit as `ok`
+	// rather than `skipped`: the note it wrote is full of transcript, and `skipped` would mean the
+	// opposite of what happened.
+	it("calls the backend not at all when the document changed but none of its pages did", async () => {
+		const first = await firstSync("root-117-i");
+		const second = countingOcrBackend();
+		await runSync(nextSync(first, "root-117-i2", second, THREE), first.synced.index);
+
+		expect(pagesSent(second)).toBe(0);
+		const note = (await first.deps.noteStore.read(NOTE))!;
+		expect(note).toMatch(/\|Page 1\]\]\n\nread-1/);
+		expect(note).toMatch(/\|Page 3\]\]\n\nread-3/);
+	});
+
+	// Why the store keeps a quote count at all (ticket 01). A handwritten page of a notebook that also
+	// has a digest carries its highlights folded into the transcript, as bullets above the text (#115
+	// ticket 05). Reading that page back without dropping exactly those bullets would grow a quote into
+	// the transcript on every sync -- so the count has to travel with the page, not be re-derived under
+	// a digest coverage that may since have moved.
+	it("remembers how many quotes were folded in above a page, and drops exactly those on reuse", async () => {
+		const api = notebook("root-117-m", "hash-1", THREE);
+		api.raw.getHash.mockImplementation(async (path: string) => (path.includes("page-c") ? HIGHLIGHTED_PAGE_BYTES : PAGE_BYTES));
+		// Page 1 reads as a document, so the unit gets a digest -- which is what makes page 3's quotes
+		// fold into the transcript instead of standing in their own `## Highlights` section.
+		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1] });
+
+		const backend = countingOcrBackend();
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: backend };
+		const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const page3 = synced.index.rows[KEY].transcribedPages!.find((page) => page.label === 3)!;
+		expect(page3.quotes).toBeGreaterThan(0);
+
+		// Reused on the next sync: the note must come back with the same words, and not with a quote
+		// bullet promoted into the transcript.
+		const before = (await deps.noteStore.read(NOTE))!;
+		const secondApi = notebook("root-117-m2", "hash-2", { ...THREE, "page-b": "h-b-edited" });
+		secondApi.raw.getHash.mockImplementation(async (path: string) => (path.includes("page-c") ? HIGHLIGHTED_PAGE_BYTES : PAGE_BYTES));
+		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1] });
+		await runSync({ ...baseDeps(secondApi, { sync: "Target" }), noteStore: deps.noteStore, ocrBackend: countingOcrBackend("test-backend", "fresh") }, synced.index);
+
+		const after = (await deps.noteStore.read(NOTE))!;
+		const section = (note: string) => note.slice(note.indexOf("|Page 3]]"));
+		expect(section(after)).toBe(section(before));
+	});
+
+	// The text lives in the note, so a note that is gone takes the store's usefulness with it. Fail-soft
+	// into transcribing, exactly as `reusableTranscript` does for the same reason -- never an empty
+	// transcript written over a real one.
+	it("reads every page again when the note it stored the text in has gone", async () => {
+		const first = await firstSync("root-117-l");
+		await first.deps.noteStore.move(NOTE, "Target/Moved by hand.md");
+
+		const second = countingOcrBackend();
+		await runSync(nextSync(first, "root-117-l2", second), first.synced.index);
+
+		expect(pagesSent(second)).toBe(3);
+	});
+
+	/** Marks a row's render as out of date, which is the one thing `RENDER_VERSION` exists to say. */
+	const staleRender = (index: SyncIndex): SyncIndex => ({ ...index, rows: { [KEY]: { ...index.rows[KEY], renderVersion: RENDER_VERSION - 1 } } });
+
+	// `reusableTranscript`'s carve-out, now per page: placing anchored ink changes what the OCR
+	// rasterizer sees, so after a renderer change such a page is worth re-reading. These fixture pages
+	// are all anchored, so all three go back to the backend -- the store does not paper over a bump.
+	it("re-reads a page carrying placed anchors when the renderer has changed under it", async () => {
+		const first = await firstSync("root-117-j");
+		const second = countingOcrBackend();
+		await runSync(nextSync(first, "root-117-j2", second), staleRender(first.synced.index));
+
+		expect(pagesSent(second)).toBe(3);
+	});
+
+	// A rebuild triggered by the renderer alone runs no OCR at all: `reusableTranscript` hands the
+	// note's own transcript back through `keepTranscript`. There is no fingerprint to stamp and no page
+	// result to store -- so the store must be carried through untouched rather than cleared, or every
+	// notebook in the vault would owe a full catch-up round for a change that read nothing (ticket 03).
+	it("carries the store through a rebuild that only the renderer triggered", async () => {
+		// Pages with nothing placed on them: the case `reusableTranscript` was written for, and the only
+		// one where a render bump alone keeps the transcript.
+		const api = notebook("root-117-k", "hash-1", THREE);
+		api.raw.getHash.mockResolvedValue(UNANCHORED_PAGE_BYTES);
+		const backend = countingOcrBackend();
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: backend };
+		const first = { deps, synced: await runSync(deps, EMPTY_SYNC_INDEX), backend };
+
+		const rebuildApi = notebook("root-117-k", "hash-1", THREE);
+		rebuildApi.raw.getHash.mockResolvedValue(UNANCHORED_PAGE_BYTES);
+		const rebuild = countingOcrBackend();
+		const rebuilt = await runSync({ ...baseDeps(rebuildApi, { sync: "Target" }), noteStore: deps.noteStore, ocrBackend: rebuild }, staleRender(first.synced.index));
+
+		expect(pagesSent(rebuild)).toBe(0); // nothing read
+		expect(rebuilt.index.rows[KEY].transcribedPages).toHaveLength(3); // and nothing forgotten
+
+		const thirdApi = notebook("root-117-k2", "hash-2", { ...THREE, "page-b": "h-b-edited" });
+		thirdApi.raw.getHash.mockResolvedValue(UNANCHORED_PAGE_BYTES);
+		const third = countingOcrBackend();
+		await runSync({ ...baseDeps(thirdApi, { sync: "Target" }), noteStore: deps.noteStore, ocrBackend: third }, rebuilt.index);
+		expect(pagesSent(third)).toBe(1);
+	});
+
+	// The one-round catch-up: an index written before this feature has no store, so the notebook's next
+	// change reads it whole -- the run it was going to pay for in full anyway -- and is cheap after.
+	it("reads a notebook whole once when its row predates the store", async () => {
+		const first = await firstSync("root-117-h");
+		const legacy: SyncIndex = {
+			...first.synced.index,
+			rows: { [KEY]: { ...first.synced.index.rows[KEY], transcribedPages: undefined, transcribedWith: undefined } },
+		};
+
+		const second = countingOcrBackend();
+		const result = await runSync(nextSync(first, "root-117-h2", second), legacy);
+
+		expect(pagesSent(second)).toBe(3);
+		expect(result.index.rows[KEY].transcribedPages).toHaveLength(3);
 	});
 });

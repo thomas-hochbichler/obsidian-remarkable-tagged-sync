@@ -71,6 +71,21 @@ export interface OcrBackend {
 	 */
 	readonly metered: boolean;
 	/**
+	 * Everything about this adapter that changes how a page reads, as one opaque string: the backend,
+	 * the model, and the endpoint it reaches them at. The per-page transcript store keys on it, so a
+	 * user who switches model gets their notes read again instead of one note carrying two models'
+	 * readings (issue #117).
+	 *
+	 * **Never a credential.** An API key identifies the user, not the reading, and this string is
+	 * hashed into every row of `data.json`.
+	 *
+	 * Declared per adapter rather than assembled by the caller, for the same reason `metered` is: only
+	 * the adapter knows which of its options reach the model. An adapter that cannot describe itself
+	 * exactly should return a constant -- the store then keeps text across a change it could not see,
+	 * which is a known limitation of that backend rather than a bug in the store.
+	 */
+	readonly fingerprint: string;
+	/**
 	 * `onPage` is called once per page whose transcription is finished, in *completion* order rather
 	 * than input order: a backend that runs pages concurrently reports them as they land. Driving the
 	 * progress bar is all it is for, so it carries no page identity -- and a backend that cannot say

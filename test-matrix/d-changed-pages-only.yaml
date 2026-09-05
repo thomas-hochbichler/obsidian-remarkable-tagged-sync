@@ -1,0 +1,260 @@
+# Group D -- Issue #117: transcribe only the pages that changed inside a notebook that changed.
+#
+# Document-level change detection was already right after #101; this is the level below it. The
+# reporter measured one edit to an 11-page notebook producing 11 transcription requests, and ~6.5
+# minutes of a laptop GPU for one page added to a 100-page notebook.
+#
+# The design is split in two on purpose: the **identity** lives in the index row (hashes only, so
+# `data.json` does not grow with the vault's OCR text, which `checkpoint()` rewrites after every
+# document) and the **text** stays in the note, which already holds it one `### ...|Page N]]` section
+# per page. D21 is the reader for that; D22 is what the sync does with it.
+#
+# The tie-breaker every row here is decided under: a wrong transcript is undetectable, permanent, and
+# lands in the user's own notes, while a wasted request costs seconds. Anything short of certainty
+# reads the page again.
+
+- feature: D21
+  name: The per-page transcript store's reader
+  code: src/transcript-store.ts
+  tier: free
+  scenarios:
+    - id: D21.1
+      scenario: A multi-page transcript region is read back
+      expect: Each `### [[...|Page N]]` section is returned under the ordinal its heading names -- the ordinal is what the note anchors by, and the only handle into it
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "transcriptSections > splits the region back into the page ordinals its headings name"
+
+    - id: D21.2
+      scenario: The region ends with the collapsed "no text on pages" and "pages are typed text" footnotes
+      expect: Both are trimmed off the tail rather than read as the last page's words. They describe the unit and merely follow whichever section is last; refusing every section they follow would make the store useless, because most notebooks have a blank page
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "transcriptSections > trims the no-text and typed-text footnotes off the last page rather than reading them as its text"
+
+    - id: D21.3
+      scenario: The note carries a flat transcript written before transcripts were page-anchored
+      expect: Nothing is found, so nothing is reused -- the unit is read again whole
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "transcriptSections > finds nothing in a region that was written without page headings"
+
+    - id: D21.4
+      scenario: A page section holding only transcribed text
+      expect: The body is returned as-is
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "pageText > returns the body of a page that carries only transcribed text"
+
+    - id: D21.5
+      scenario: A page whose highlight quotes were folded in above its text (#115 ticket 05)
+      expect: The stored quote count drops exactly the bullet block and keeps the text. This is why the count is stored rather than re-derived -- folding only happens when the unit has a digest, and coverage can move between syncs
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "pageText > drops the folded-in quote bullets and keeps the transcribed text"
+
+    - id: D21.6
+      scenario: A page with folded quotes whose transcript runs to several paragraphs
+      expect: Only the bullet block goes; every paragraph of the transcript survives
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "pageText > keeps a multi-paragraph transcript whole once the quotes are dropped"
+
+    - id: D21.7
+      scenario: Quotes were promised by the stored count but the section has no break after them
+      expect: Refused. The split cannot be trusted, and a wrong split is the one outcome worth refusing over
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "pageText > refuses a section whose quotes were promised but have no break after them"
+
+    - id: D21.8
+      scenario: A section that turns out to hold a failed page's callout, or a stray footnote
+      expect: Refused. Neither can be a stored page's text -- a failed page is never stored and the footnotes are trimmed -- so meeting one means the split went wrong
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "pageText > refuses a failed page's callout and a stray footnote"
+
+    - id: D21.9
+      scenario: A section that parses to nothing
+      expect: Refused, so an empty transcript is never written over a real one -- the rule `reusableTranscript` already holds at unit level
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "pageText > refuses an empty body rather than storing silence over a real transcript"
+
+    - id: D21.10
+      scenario: A stored page whose `.rm` hash has not moved
+      expect: Its text is reusable
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > keeps a page whose hash has not moved"
+
+    - id: D21.11
+      scenario: A stored page whose `.rm` hash has moved
+      expect: Not reusable -- this is the whole point, and the level-3 signal spec §7 already defines
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > drops a page whose hash has moved"
+
+    - id: D21.12
+      scenario: A page whose ordinal has shifted because another page was inserted above it
+      expect: Its text is found under the ordinal it was **written** with, not the one it has now. Storing the label rather than the array position is what makes insertion, deletion and reordering the same lookup
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > finds a page's text under the ordinal it was written with, not the one it has now"
+
+    - id: D21.13
+      scenario: The user switched backend or model since the note was written
+      expect: Nothing is reusable. The reporter named this as the part to think about hardest -- the Model field is free text and people do switch, and one note holding two models' readings is the failure
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > keeps nothing when the backend or model has changed"
+
+    - id: D21.14
+      scenario: A page carrying typed text or placed anchors, after a RENDER_VERSION bump
+      expect: Not reusable. `reusableTranscript`'s existing carve-out, moved from the unit to the page -- placing anchored ink changes what the rasterizer sees. The unit-level check vetoes a whole notebook over one such page; this costs that page alone
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > keeps nothing for a page whose render is no longer the one the note embeds"
+
+    - id: D21.15
+      scenario: A row with no store yet, or a note that could not be read
+      expect: Nothing is reusable -- fail-soft into transcribing, as `reusableTranscript` already is
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > keeps nothing for a row that has no store yet, or a note it could not read"
+
+    - id: D21.16a
+      scenario: A stored page whose section no longer parses to transcript text
+      expect: Not reusable. The store says the page was read and the note disagrees, so something has gone wrong between them -- the page is read again rather than handed a callout as its transcript
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > keeps nothing for a stored page whose section no longer parses to text"
+
+    - id: D21.16
+      scenario: A stored page whose heading is no longer in the note
+      expect: Nothing is reusable for it
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "reusableTranscripts > keeps nothing for a stored page whose heading is gone from the note"
+
+    - id: D21.17
+      scenario: Two models of the same provider at the same endpoint
+      expect: Different fingerprints, so switching model discards the store
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "transcriptFingerprint > separates two models of the same provider"
+
+    - id: D21.18
+      scenario: The same backend across two runs
+      expect: The same fingerprint. A run that changed nothing must not pay for the whole notebook again -- an unstable fingerprint would disable the feature silently
+      layer: unit
+      file: src/transcript-store.test.ts
+      test: "transcriptFingerprint > is stable across runs for an unchanged backend"
+
+- feature: D22
+  name: Only the changed pages of a changed notebook are transcribed
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: D22.1
+      scenario: One page of a three-page notebook is edited and the notebook re-synced
+      expect: One page reaches the backend, not three. The reporter's measurement inverted
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > sends only the changed page to the backend on the next sync"
+
+    - id: D22.2
+      scenario: The note is rewritten after a partial re-transcription
+      expect: The unread pages still carry their own words, under their own headings. A store that skipped the request and dropped the text would pass D22.1 and fail here
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > keeps the unchanged pages' own text in the rewritten note"
+
+    - id: D22.3
+      scenario: A page is inserted in the middle of the notebook on the device
+      expect: Only the new page is read, and every page below it keeps its own text rather than inheriting its neighbour's. Reading back by the current ordinal would misattribute silently -- both are plausible handwriting
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > does not misattribute stored text when a page is inserted above it"
+
+    - id: D22.4
+      scenario: The user changed the model, then edited one page
+      expect: The whole notebook is read again, so the note is never a mix of two models' readings
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > reads the whole notebook again when the model has changed"
+
+    - id: D22.5
+      scenario: A changed notebook is synced while the backend is unavailable
+      expect: The stored pages stay in the note. Before the store this **deleted** the transcript -- `renderTranscript(..., null, "")` writes no section and `emptyBlockReport` deliberately does not refuse that for `unavailable` -- so a transcript was lost because Ollama was not running. The page that was asked for says it could not be read
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > keeps the stored pages when the backend is unavailable, instead of emptying the transcript"
+
+    - id: D22.6
+      scenario: The backend returns a warning alongside its pages
+      expect: Nothing is stored this round. #116's truncation is a page that comes back `ok` and is quietly incomplete, which is what the tie-breaker refuses to freeze; warnings are unit-level, so there is no storing around them
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > stores nothing from a run the backend warned about"
+
+    - id: D22.7
+      scenario: The Re-transcribe all notes command is run, then the notebook changes
+      expect: The command reads every page regardless of the store, and leaves a store behind it, so the next sync reads one page. Without the second half the user pays twice and the command is dearer than before the store existed
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > leaves a store behind Re-transcribe all notes, so the next sync does not read it all again"
+
+    - id: D22.9
+      scenario: The document changed but none of its pages did -- a page deleted, a title edited, a tag added
+      expect: The backend is not called at all, and the unit still reports `ok` rather than `skipped`. The note it wrote is full of transcript, so `skipped` would mean the opposite of what happened, and would move the end-of-sync counters
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > calls the backend not at all when the document changed but none of its pages did"
+
+    - id: D22.10
+      scenario: A handwritten page carrying highlights, in a notebook that also has a digest
+      expect: The stored quote count is what the note was written with, and reusing the page drops exactly those bullets. Re-deriving the count instead would promote a quote into the transcript whenever digest coverage moved
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > remembers how many quotes were folded in above a page, and drops exactly those on reuse"
+
+    - id: D22.11
+      scenario: The note holding the stored text has been moved or deleted by hand
+      expect: Every page is read again. The text lives in the note, so a missing note takes the store's usefulness with it -- fail-soft into transcribing, never an empty transcript over a real one
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > reads every page again when the note it stored the text in has gone"
+
+    - id: D22.12
+      scenario: RENDER_VERSION was bumped, and the notebook's pages carry placed anchors
+      expect: All of them go back to the backend. The store must not paper over a renderer change on the pages the bump exists for
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > re-reads a page carrying placed anchors when the renderer has changed under it"
+
+    - id: D22.13
+      scenario: RENDER_VERSION was bumped and nothing on the pages is placed, so `reusableTranscript` keeps the whole transcript
+      expect: No OCR runs and the store is carried through untouched. Clearing it would make every notebook in the vault owe a full catch-up round for a change that read nothing
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > carries the store through a rebuild that only the renderer triggered"
+
+    - id: D22.8
+      scenario: A row written before this feature existed
+      expect: One full catch-up round, then cheap. The same shape `renderVersion` and `blockHash` use -- and it costs nothing extra, because the run that reads the notebook whole is the run that was going to do so anyway
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > reads a notebook whole once when its row predates the store"
+
+- feature: D23
+  name: Diagnostics says how much the store answered
+  code: src/diagnostics.ts
+  tier: free
+  scenarios:
+    - id: D23.1
+      scenario: A bug report is copied after a sync that reused most of its pages
+      expect: The block carries a "Reused page transcriptions" line reading 99 of 100. Not a notice -- a skipped page is the feature working, and a line that fires on every successful sync is one people stop reading -- but it is the first thing to check behind a report that an edited page's transcript did not update
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > reports how much of the transcription the per-page store answered"

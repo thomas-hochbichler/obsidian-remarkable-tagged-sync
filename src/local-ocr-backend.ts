@@ -4,6 +4,7 @@
 // without a 5.5 GB model; `local-ocr-runtime.ts` is the half that spawns `llama-mtmd-cli`.
 
 import { splitAtTypedText } from "./llm-transcript";
+import { MODEL_ARTEFACTS } from "./local-model-artefacts";
 import { recordPageDuration } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
 import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
@@ -95,6 +96,12 @@ export class LocalOcrBackend implements OcrBackend {
 	readonly id = "local" as const;
 	/** Costs no money by construction: it never leaves the machine. */
 	readonly metered = false;
+	/**
+	 * The pinned weights' own hash. Exact, and it needs no settings to read: "the plugin version is
+	 * the model version" (`local-model-artefacts.ts`) -- there is no update channel, so a new model is
+	 * a release that ships a new constant, and the transcript store discards itself when it does.
+	 */
+	readonly fingerprint = `local:${MODEL_ARTEFACTS[0].sha256}`;
 	private readonly runPage: LocalPageRunner;
 	private readonly settings: BackendSettings;
 	private readonly onRuntimeFailure: (message: string) => void;

@@ -227,6 +227,14 @@ function insertTypedText(read: ReadLines, page: RmPage): void {
 export class VisionOcrBackend implements OcrBackend {
 	readonly id = "vision" as const;
 	readonly metered = false;
+	/**
+	 * A constant, because there is nothing else honest to put here: the model belongs to the OS and is
+	 * not addressable from the plugin -- `visionRevision` is chosen per request and deliberately never
+	 * pinned (see the class docstring). So a macOS upgrade can change what Vision reads without the
+	 * transcript store noticing. Accepted rather than papered over with the OS version, which changes
+	 * for a hundred reasons that are not this one; OCR drift is issue #100's question, not the store's.
+	 */
+	readonly fingerprint = "vision";
 	private readonly runBatch: VisionBatchRunner;
 	private readonly probe: () => Promise<boolean>;
 	private readonly batchSize: number;
@@ -329,6 +337,8 @@ export class VisionOcrBackend implements OcrBackend {
 export class UnavailableOcrBackend implements OcrBackend {
 	/** Transcribes nothing, so it can never spend — even when `id` names a metered cloud provider. */
 	readonly metered = false;
+	/** Transcribes nothing, so it stores nothing; the string only has to be stable. */
+	readonly fingerprint = "unavailable";
 
 	constructor(readonly id: OcrBackendId) {}
 

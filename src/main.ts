@@ -112,6 +112,12 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * the whole diagnosis -- but it is not state the plugin should carry around in `data.json`.
 	 */
 	lastSyncError: string | null = null;
+	/**
+	 * How much of the last sync's transcription the per-page store answered (issue #117), for "Copy
+	 * diagnostics". Session state like `lastSyncError`, not persisted: it describes a run, and a figure
+	 * from a run three weeks ago would be read as this one's.
+	 */
+	lastPageTranscriptions: { reused: number; total: number } | null = null;
 	private autoSyncLaunchTimer: number | null = null;
 	private autoSyncIntervalTimer: number | null = null;
 
@@ -576,6 +582,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// there. A clean run clears any stale error, so diagnostics reflects the latest sync. A stop
 			// is not itself an error and contributes nothing here; only what the partial run hit does.
 			this.lastSyncError = result.skipErrors.length > 0 ? result.skipErrors.join("\n") : null;
+			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
 
 			this.applyStatus(outcomeStatus(result));
 			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten: result.notesWritten, background: auto });

@@ -17,6 +17,16 @@ export interface DiagnosticsInput {
 	 * signal that a note is missing something.
 	 */
 	unreadableInkRegions: number;
+	/**
+	 * Pages the last sync kept the transcript of rather than reading again, out of the pages it wrote
+	 * a transcript for (issue #117), or null before a sync has run under this feature.
+	 *
+	 * Here rather than in a notice: a skipped page is the feature working, and a line that fires on
+	 * every successful sync is one people stop reading. But it is the first thing to check when
+	 * someone reports "I edited a page and the transcript did not update", and this saves that
+	 * exchange.
+	 */
+	reusedPageTranscriptions: { reused: number; total: number } | null;
 	mappedTagCount: number;
 	lastSyncAt: string | null;
 	/** Raw text of the last failure, or null. Two error messages end with "see the developer console", which most users have never opened. */
@@ -41,6 +51,7 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
 		`OCR backend: ${input.backend}`,
 		`Vision revision: ${input.visionRevision ?? "not run here"}`,
 		`Unreadable ink regions: ${input.unreadableInkRegions}`,
+		`Reused page transcriptions: ${input.reusedPageTranscriptions === null ? "not measured yet" : `${input.reusedPageTranscriptions.reused} of ${input.reusedPageTranscriptions.total}`}`,
 		`Mapped tags: ${input.mappedTagCount}`,
 		`Last sync: ${input.lastSyncAt ?? "never"}`,
 		`Last error: ${input.lastSyncError ?? "none"}`,
