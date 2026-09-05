@@ -4524,3 +4524,144 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		expect(result.index.rows[KEY].transcribedPages).toHaveLength(3);
 	});
 });
+
+describe("frontmatter page keys (Pro, #107)", () => {
+	/** Three live pages: a notebook tag on the document, a page tag on the second page. */
+	function threePages(rootHash = "root-1", hash = "hash-1") {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: {
+				"doc-1": documentContent({
+					cPages: cPages(["page-a", "page-b", "page-c"]),
+					pageTags: [{ name: "todo", timestamp: 0, pageId: "page-b" }],
+				}),
+			},
+			pageHashesByDoc: { "doc-1": { "page-a": "ha", "page-b": "hb", "page-c": "hc" } },
+		});
+	}
+
+	it("counts the pages of the note, not of the document", async () => {
+		const deps = { ...baseDeps(threePages(), { sync: "Target", todo: "Pages" }), frontmatter: true };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		// The cost signal is what *this note* costs: a notebook-tag note is transcribed page by page,
+		// a page-tag note is one request. Reporting the document total on both would tell the page
+		// note it costs three pages of work for one page of handwriting.
+		const notebook = await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath);
+		const page = await deps.noteStore.read(result.index.rows[pageSyncKey("doc-1", "page-b", "todo")].notePath);
+		expect(notebook).toContain("remarkable-pages: 3\n");
+		expect(page).toContain("remarkable-pages: 1\n");
+	});
+
+	it("writes a page note's position in the document, and none on a notebook note", async () => {
+		const deps = { ...baseDeps(threePages(), { sync: "Target", todo: "Pages" }), frontmatter: true };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const notebook = await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath);
+		const page = await deps.noteStore.read(result.index.rows[pageSyncKey("doc-1", "page-b", "todo")].notePath);
+		expect(page).toContain("remarkable-page: 2\n");
+		// A notebook note covers pages 1..3, so it has no current page -- and that absence is what a
+		// vault view filters on to get the page notes alone.
+		expect(notebook).not.toContain("remarkable-page:");
+	});
+});
+
+describe("remarkable-uuid and remarkable-note-id are a contract (Pro, #109)", () => {
+	function ids() {
+		let minted = 0;
+		return () => `note-${++minted}`;
+	}
+
+	function taggedPages(tags: { name: string; timestamp: number }[], rootHash = "root-1", hash = "hash-1") {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, tags })],
+			contentById: {
+				"doc-1": documentContent({
+					cPages: cPages(["page-a", "page-b"]),
+					pageTags: [{ name: "todo", timestamp: 0, pageId: "page-b" }],
+				}),
+			},
+			pageHashesByDoc: { "doc-1": { "page-a": "ha", "page-b": "hb" } },
+		});
+	}
+
+	it("gives every written note both keys, whichever tag granularity produced it", async () => {
+		const deps = { ...baseDeps(taggedPages([{ name: "sync", timestamp: 0 }]), { sync: "Target", todo: "Pages" }), frontmatter: true, newNoteId: ids() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		for (const key of [notebookSyncKey("doc-1", "sync"), pageSyncKey("doc-1", "page-b", "todo")]) {
+			const note = await deps.noteStore.read(result.index.rows[key].notePath);
+			// The document's id, shared by every note made from it -- and this note's own, which is not.
+			expect(note).toContain("remarkable-uuid: doc-1\n");
+			expect(note).toContain(`remarkable-note-id: ${result.index.rows[key].noteId}\n`);
+		}
+	});
+
+	it("changes neither value when the same document is synced again", async () => {
+		const first = { ...baseDeps(taggedPages([{ name: "sync", timestamp: 0 }]), { sync: "Target", todo: "Pages" }), frontmatter: true, newNoteId: ids() };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const key = notebookSyncKey("doc-1", "sync");
+		const before = synced.index.rows[key].noteId;
+
+		// A changed hash reopens the document and rewrites the note: the write that could regenerate.
+		const second = {
+			...baseDeps(taggedPages([{ name: "sync", timestamp: 0 }], "root-2", "hash-2"), { sync: "Target", todo: "Pages" }),
+			noteStore: first.noteStore,
+			frontmatter: true,
+			// Deliberately not the first run's generator: a regenerated id has to be *visible* as one,
+			// or the assertion passes on a mint that happened to repeat.
+			newNoteId: () => "regenerated",
+		};
+		const result = await runSync(second, synced.index);
+
+		expect(result.index.rows[key].noteId).toBe(before);
+		expect(await first.noteStore.read(result.index.rows[key].notePath)).toContain(`remarkable-note-id: ${before}\n`);
+	});
+
+	it("keeps the note's id when its mapped tag is renamed", async () => {
+		const first = { ...baseDeps(taggedPages([{ name: "sync", timestamp: 0 }]), { sync: "Target" }), frontmatter: true, newNoteId: ids() };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const before = synced.index.rows[notebookSyncKey("doc-1", "sync")].noteId;
+
+		// "sync" -> "other" is a clean 1:1 swap, which diffUnitTags reads as a rename: the row moves to
+		// a new syncKey and the old one is deleted. An id derived from that key would change here --
+		// which is exactly the silent break the contract exists to prevent.
+		const second = {
+			...baseDeps(taggedPages([{ name: "other", timestamp: 0 }], "root-2", "hash-2"), { sync: "Target", other: "Elsewhere" }),
+			noteStore: first.noteStore,
+			frontmatter: true,
+			newNoteId: () => "regenerated",
+		};
+		const result = await runSync(second, synced.index);
+
+		const moved = result.index.rows[notebookSyncKey("doc-1", "other")];
+		expect(moved.noteId).toBe(before);
+		expect(await first.noteStore.read(moved.notePath)).toContain(`remarkable-note-id: ${before}\n`);
+	});
+
+	it("gives the two notes of a two-tag document the same uuid and different ids", async () => {
+		const api = taggedPages([
+			{ name: "sync", timestamp: 0 },
+			{ name: "archive", timestamp: 0 },
+		]);
+		const deps = { ...baseDeps(api, { sync: "Target", archive: "Archive" }), frontmatter: true, newNoteId: ids() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const one = result.index.rows[notebookSyncKey("doc-1", "sync")];
+		const other = result.index.rows[notebookSyncKey("doc-1", "archive")];
+		const notes = [await deps.noteStore.read(one.notePath), await deps.noteStore.read(other.notePath)];
+		// Same document, so the same uuid -- which is precisely why the uuid cannot be the per-note
+		// identity, and why the note id is minted rather than derived from the document and page.
+		expect(notes[0]).toContain("remarkable-uuid: doc-1\n");
+		expect(notes[1]).toContain("remarkable-uuid: doc-1\n");
+		expect(one.noteId).not.toBe(other.noteId);
+		expect(notes[0]).toContain(`remarkable-note-id: ${one.noteId}\n`);
+		expect(notes[1]).toContain(`remarkable-note-id: ${other.noteId}\n`);
+	});
+});

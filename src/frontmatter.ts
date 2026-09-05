@@ -21,9 +21,41 @@ export interface NoteFrontmatter {
 	/** Device folder path (`Work/Projekt X`), or null for a document at the root -- no key is written. */
 	folder: string | null;
 	type: "notebook" | "pdf" | "epub";
+	/**
+	 * How many pages this *note* covers -- every live page for a notebook-tag note, 1 for a page-tag
+	 * note. The cost signal issue #107 asked for: a transcription backend is billed one request per
+	 * page of the note, so this is what sorting by "expensive first" before a large sync has to read.
+	 * Null when it cannot be told from the document's content alone (a legacy `pages[]` document that
+	 * is not PDF-backed, during the backfill pass) -- no key is written, and the next real sync of
+	 * that document fills it in.
+	 */
+	pages: number | null;
+	/**
+	 * Which page of the document this note is, 1-based -- the same ordinal the transcript prints as
+	 * `pageLabel`. Written on page-tag notes only: a notebook-tag note covers pages 1..n and has no
+	 * current page, so it gets no key. That absence doubles as the vault-side filter for "page notes
+	 * only".
+	 */
+	page: number | null;
 	pinned: boolean;
 	/** The document's id, for stable identity and debugging. */
 	uuid: string;
+	/**
+	 * This note's own id. The promise made about it is in the README, under "Frontmatter properties
+	 * (Pro)" -> "Identity: what you can key automation on"; what pins the promise is the
+	 * `remarkable-uuid and remarkable-note-id are a contract` describe in `src/sync-engine.test.ts`.
+	 * Change either of those and you are changing a contract users key automation on.
+	 *
+	 * `uuid` above is the *document*, so several notes share it: one document routed by two mapped
+	 * tags produces two notes, and a page-tag note carries its notebook's id. Automation that asks
+	 * "is this note mine to touch" needs a per-note identity, and this is it (issue #109).
+	 *
+	 * Minted once per index row and then carried forward, never recomputed. Deriving it would be
+	 * wrong in both obvious forms: the row's `syncKey` contains the tag and is deleted outright when
+	 * a mapped tag is renamed, and `docId:pageId` collides between the two notes of a
+	 * two-mapped-tags document.
+	 */
+	noteId: string;
 }
 
 /**
@@ -41,8 +73,11 @@ const MANAGED_KEYS = [
 	"remarkable-synced",
 	"remarkable-folder",
 	"remarkable-type",
+	"remarkable-pages",
+	"remarkable-page",
 	"remarkable-pinned",
 	"remarkable-uuid",
+	"remarkable-note-id",
 ] as const;
 
 // Same shape note-builder matches: a leading `---` block closed by `---` on its own line.
@@ -99,8 +134,11 @@ function scalarValues(frontmatter: NoteFrontmatter): Record<(typeof MANAGED_KEYS
 		"remarkable-synced": frontmatter.synced,
 		"remarkable-folder": frontmatter.folder === null ? null : yamlValue(frontmatter.folder),
 		"remarkable-type": frontmatter.type,
+		"remarkable-pages": frontmatter.pages === null ? null : String(frontmatter.pages),
+		"remarkable-page": frontmatter.page === null ? null : String(frontmatter.page),
 		"remarkable-pinned": String(frontmatter.pinned),
 		"remarkable-uuid": frontmatter.uuid,
+		"remarkable-note-id": frontmatter.noteId,
 	};
 }
 

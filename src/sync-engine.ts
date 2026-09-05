@@ -164,6 +164,28 @@ export interface SyncIndexRow {
 	transcribedPages?: StoredPage[];
 	/** `transcriptFingerprint` when `transcribedPages` was written; a mismatch discards all of them. */
 	transcribedWith?: string;
+	/**
+	 * This note's own identity, written out as `remarkable-note-id` -- see `NoteFrontmatter.noteId`
+	 * for why it is minted rather than derived. Minted on the first write of the row and carried
+	 * forward by every later write, including the one that moves the row to a new `syncKey` because
+	 * its mapped tag was renamed: that write reads `writtenRow`, which is the rename's source.
+	 *
+	 * Absent on rows written before this field existed; the backfill pass mints one for those.
+	 */
+	noteId?: string;
+	/**
+	 * The `FRONTMATTER_KEYS_VERSION` this note's frontmatter was last written under -- the per-row
+	 * stamp that drives the one-time pass when the managed key set grows.
+	 *
+	 * Per row rather than one flag on the index, because `backfillFrontmatter` reports a row it could
+	 * not reach as `skipped` -- including a note the user deleted, whose row stays active forever. A
+	 * single flag would then never be set and the pass would run on every sync; a per-row stamp lets
+	 * that one row keep retrying while every other row is finished for good.
+	 *
+	 * Absent on rows written before frontmatter properties existed, and on rows written while the
+	 * feature was off -- both of which the toggle-on backfill covers anyway.
+	 */
+	frontmatterVersion?: number;
 }
 
 export interface SyncIndex {
@@ -267,6 +289,11 @@ export interface SyncDeps {
 	frontmatter?: boolean;
 	/** Injectable clock -- returns the current time as an ISO string. */
 	now: () => string;
+	/**
+	 * Mints a note's `remarkable-note-id`. Injectable for the same reason `now` is: a test that pins
+	 * the identity contract has to be able to say which id it expects. Defaults to `crypto.randomUUID`.
+	 */
+	newNoteId?: () => string;
 	onProgress?: (progress: SyncProgress) => void;
 	/**
 	 * Persists the index mid-run: after every note written, and again at the end of each document to
@@ -499,6 +526,24 @@ function orderedPages(doc: DocumentContent | LegacyDocumentContent, liveIds: Rea
 	// A legacy `pages[]` doc records no source mapping at all, so nothing here can be called added on
 	// the device -- the position *is* the mapping, for every page alike.
 	return filtered.map((id, i) => ({ id, sourceIndex: i, appended: false }));
+}
+
+/**
+ * The page ids of `doc` as far as its *content* can tell, or null when the document's file listing
+ * is needed to answer it.
+ *
+ * For everything with a `cPages` list -- every document the current device format produces -- the
+ * order is in the content and nothing else is required. A legacy `pages[]` document that is not
+ * PDF-backed is the exception: `orderedPages` filters it against the live file ids, so counting from
+ * the content alone would include pages the note does not contain. Callers that have no listing (the
+ * frontmatter backfill) write no page keys for those and let the document's next real sync fill them
+ * in.
+ */
+export function contentPageOrder(doc: DocumentContent | LegacyDocumentContent): string[] | null {
+	const pdfBacked = isPdfBacked(doc);
+	const modern = (doc.cPages?.pages ?? []).length > 0;
+	if (!modern && !pdfBacked) return null;
+	return orderedPages(doc, new Set(), pdfBacked).map((page) => page.id);
 }
 
 /** Renders one handwritten page, or a blank page when it has no `.rm` file yet (`pageHash` undefined) -- a real, still-live page the user simply never drew on. */
@@ -847,8 +892,8 @@ interface UnitParams {
 	source: string;
 	entryHash: string;
 	pageHash: string | null;
-	/** The Pro frontmatter keys this note gets, minus `synced` (stamped at write time) -- or null when the feature is off. */
-	frontmatter: Omit<NoteFrontmatter, "synced"> | null;
+	/** The Pro frontmatter keys this note gets, minus the two `writeUnit` stamps -- `synced` (the write's own clock) and `noteId` (carried from `previous`, or minted here) -- or null when the feature is off. */
+	frontmatter: Omit<NoteFrontmatter, "synced" | "noteId"> | null;
 	/** The row this note was last written with, or undefined for a note that did not exist yet. Read by the shrink warning and the frontmatter merge. */
 	previous?: SyncIndexRow;
 	/** Progress tick, one per transcribed page. Per unit, which is why it travels with the params. */
@@ -1013,7 +1058,7 @@ function storedPages(readPages: { id: string; label: number }[], hashOf: (pageId
 
 /** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
-	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend"> & { attachmentsFolder: string },
+	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend"> & { attachmentsFolder: string; newNoteId: () => string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<WriteUnitResult> {
@@ -1050,19 +1095,29 @@ async function writeUnit(
 
 	const notePath = await write(fields);
 
+	// Carried from the row this write replaces -- which is the rename's source row when a mapped tag
+	// was renamed, so the note keeps its identity across that too -- and only minted for a note that
+	// has never had one. Minted even with the feature off: it costs an index field, and a note that
+	// gets its keys later is then already the note it was.
+	const noteId = params.previous?.noteId ?? deps.newNoteId();
+
 	// After the body write, not inside it: the managed block and its hash know nothing about
 	// frontmatter, so a hand-edited `---` block never freezes the note the way a block edit does.
 	let frontmatterTags: string[] | undefined;
+	let frontmatterVersion: number | undefined;
 	if (params.frontmatter !== null) {
 		const written = await deps.noteStore.read(notePath);
 		if (written !== null) {
 			const applied = applyFrontmatter(
 				written,
-				{ ...params.frontmatter, synced: formatLocalMinute(new Date(synced)) },
+				{ ...params.frontmatter, synced: formatLocalMinute(new Date(synced)), noteId },
 				params.previous?.frontmatterTags ?? [],
 			);
 			if (applied.content !== written) await deps.noteStore.write(notePath, applied.content);
 			frontmatterTags = applied.ownTags;
+			// Stamped only where the keys were actually written: a row stamped with the feature off
+			// would tell the backfill pass it is current when its note carries nothing.
+			frontmatterVersion = FRONTMATTER_KEYS_VERSION;
 		}
 	}
 
@@ -1092,6 +1147,8 @@ async function writeUnit(
 				highlightCount,
 				frontmatterTags,
 				...store,
+				noteId,
+				frontmatterVersion,
 			},
 			ocr: ocr.status,
 			ocrWarnings: ocr.warnings,
@@ -1185,6 +1242,26 @@ function isRetargeted(row: SyncIndexRow, tagRouter: TagRouter): boolean {
 
 function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRouter, docId: string): boolean {
 	return Object.values(rows).some((row) => row.docId === docId && isRetargeted(row, tagRouter));
+}
+
+/**
+ * The managed frontmatter key set's version. Bumped when a key is added or its value changes
+ * meaning, so already-written notes are brought up to date by one pass instead of waiting for a
+ * document to change -- which, for a vault that has settled, never happens (document-level change
+ * detection leaves an unchanged document unopened).
+ *
+ * 2: `remarkable-pages`, `remarkable-page` (#107) and `remarkable-note-id` (#109).
+ */
+export const FRONTMATTER_KEYS_VERSION = 2;
+
+/**
+ * True if this note's frontmatter predates the current key set, and so needs one backfill write.
+ *
+ * Read by the caller that runs the one-time pass at the end of a sync (`main.ts`), not by the engine
+ * itself: the pass module imports the engine, so the engine cannot call it back.
+ */
+export function isStaleFrontmatter(row: SyncIndexRow): boolean {
+	return row.status === "active" && (row.frontmatterVersion ?? 0) < FRONTMATTER_KEYS_VERSION;
 }
 
 /** True if this note was rendered by an older renderer, and so needs re-rendering even though the device side hasn't changed. */
@@ -1618,7 +1695,8 @@ async function scanWorkload(
 export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise<SyncResult> {
 	const { api, tagRouter, now, ocrBackend } = deps;
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
-	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend };
+	const newNoteId = deps.newNoteId ?? (() => crypto.randomUUID());
+	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, newNoteId };
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 
@@ -1751,8 +1829,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				}
 			: null;
 		const docTags = [...new Set([...entryAndInheritedTags, ...tagNames(content.tags)])];
-		const unitFrontmatter = (tag: string): Omit<NoteFrontmatter, "synced"> | null =>
-			frontmatterBase === null ? null : { ...frontmatterBase, tags: namespacedTags([...docTags, tag]) };
 
 		const { pages: pageHashes, images: imageFiles, epub: epubFile } = await getDocumentFiles(api, entry.id, entry.hash);
 		const liveIds = new Set(pageHashes.keys());
@@ -1773,6 +1849,21 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		}
 		const pageOrder = docPages.map((page) => page.id);
 		const pageRefById = new Map(docPages.map((page) => [page.id, page]));
+
+		// Defined here rather than beside `frontmatterBase`, because the page keys are per *unit* and
+		// need `docPages`: a notebook-tag note covers every live page, a page-tag note exactly one, and
+		// that difference is the whole point of `remarkable-pages` as a cost signal (#107). A page-tag
+		// unit whose page has since gone from the device still costs one page and simply has no
+		// position, so `page` falls back to absent rather than to 0.
+		const unitFrontmatter = (tag: string, pageId: string | null): Omit<NoteFrontmatter, "synced" | "noteId"> | null =>
+			frontmatterBase === null
+				? null
+				: {
+						...frontmatterBase,
+						tags: namespacedTags([...docTags, tag]),
+						pages: pageId === null ? docPages.length : 1,
+						page: pageId === null ? null : pageOrder.indexOf(pageId) + 1 || null,
+					};
 
 		// Fetched once per doc, only if some unit actually needs it (a doc may open just to orphan rows).
 		let sourcePdf: Promise<Uint8Array> | null = null;
@@ -1922,7 +2013,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash: null,
-					frontmatter: unitFrontmatter(tag),
+					frontmatter: unitFrontmatter(tag, null),
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
@@ -2034,7 +2125,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					source: entry.visibleName,
 					entryHash: entry.hash,
 					pageHash,
-					frontmatter: unitFrontmatter(tag),
+					frontmatter: unitFrontmatter(tag, unit.pageId),
 					previous: unit.writtenRow,
 					onPage: bar.page,
 				},
