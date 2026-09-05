@@ -81,6 +81,14 @@ export interface DigestBuild {
 	 * that Vision could not run.
 	 */
 	ocr: OcrStatus;
+	/**
+	 * The `embedPage` of every page that produced an entry -- what the digest actually carries.
+	 *
+	 * The caller hands in pages and gets back markdown, which is not enough to answer "is page 4 in
+	 * the note?". Since #115 it has to be: a notebook's typed pages are named in its transcript
+	 * unless the digest already shows them, and a page the digest kept would then be pointed at twice.
+	 */
+	covered: number[];
 }
 
 /**
@@ -194,7 +202,7 @@ interface BuildState {
  * Ordered this way because the counters it feeds drive a *notice* -- the user needs to hear the
  * worst thing that happened, not the commonest.
  */
-function worstOcrStatus(statuses: OcrStatus[]): OcrStatus {
+export function worstOcrStatus(statuses: OcrStatus[]): OcrStatus {
 	for (const status of ["unavailable", "failed", "ok"] as const) {
 		if (statuses.includes(status)) return status;
 	}
@@ -895,6 +903,7 @@ export async function buildDigest(
 		markdown: renderDigest(embedPath, digestPages),
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
+		covered: digestPages.map((page) => page.embedPage),
 	};
 }
 

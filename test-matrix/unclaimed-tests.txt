@@ -478,11 +478,9 @@ src/note-builder.test.ts :: buildNoteContent > leaves an already-synced note's o
 src/note-builder.test.ts :: buildNoteContent > omits the Highlights section entirely when there are no highlights
 src/note-builder.test.ts :: buildNoteContent > omits the Transcript section entirely when there is no transcript (backend off or nothing found)
 src/note-builder.test.ts :: buildNoteContent > points a page-level note's heading at the sole embedded page while labelling it with the notebook position
-src/note-builder.test.ts :: buildNoteContent > preserves the user's free area and an old note's frontmatter when a digest replaces the transcript
 src/note-builder.test.ts :: buildNoteContent > preserves the user's free-area content below the fence on re-write
 src/note-builder.test.ts :: buildNoteContent > puts the same callout on a digest note
 src/note-builder.test.ts :: buildNoteContent > renders a per-page heading above the transcript, linking into the embedded page
-src/note-builder.test.ts :: buildNoteContent > renders the digest below the embed, replacing both the Highlights and the Transcript section
 src/note-builder.test.ts :: buildNoteContent > replaces the managed block's OCR text on re-write, not append
 src/note-builder.test.ts :: deriveBaseName > appends the page index for a page-level note
 src/note-builder.test.ts :: deriveBaseName > sanitizes illegal characters in the notebook name

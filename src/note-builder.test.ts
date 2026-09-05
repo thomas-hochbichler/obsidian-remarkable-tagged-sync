@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	buildNoteContent,
 	deriveBaseName,
+	isEmptyManagedBlock,
 	moveNote,
 	renderTranscript,
 	sanitizeFilenamePart,
@@ -279,30 +280,42 @@ describe("buildNoteContent", () => {
 		expect(content).toContain("![[tagged-sync/attachments/doc-1.pdf]]\n\n<!-- tagged-sync:end -->");
 	});
 
-	it("renders the digest below the embed, replacing both the Highlights and the Transcript section", () => {
+	it("renders the digest below the embed, on its own when there is no transcript", () => {
 		const digest = "\n### Allgemeine Prinzipien\n\nA ==marked== sentence. · [[tagged-sync/attachments/doc-1.pdf#page=2|p. 2]] ^hl-9f21c4";
 
-		const content = buildNoteContent(
-			baseFields({
-				digest,
-				transcript: "Some OCR text",
-				highlights: [{ pageLabel: 2, embedPage: 2, quotes: ["A marked sentence."] }],
-			}),
-			null,
-		);
+		const content = buildNoteContent(baseFields({ digest, transcript: "" }), null);
 
 		expect(content).toContain(`![[tagged-sync/attachments/doc-1.pdf]]\n\n## Digest\n${digest}\n<!-- tagged-sync:end -->`);
 		expect(content).not.toContain("## Transcript");
-		expect(content).not.toContain("## Highlights");
-		expect(content).not.toContain("Some OCR text");
 	});
 
-	it("preserves the user's free area and an old note's frontmatter when a digest replaces the transcript", () => {
+	// The digest still subsumes the highlights -- of the pages it covers. The rest are folded into the
+	// transcript by `renderTranscript`, so `## Highlights` never appears beside a digest.
+	it("drops the Highlights section when a digest is present", () => {
+		const content = buildNoteContent(
+			baseFields({ digest: "\n### Prinzipien\n\nA ==marked== sentence.", highlights: [{ pageLabel: 2, embedPage: 2, quotes: ["A marked sentence."] }] }),
+			null,
+		);
+
+		expect(content).not.toContain("## Highlights");
+	});
+
+	// Issue #115: classifying typed text per page rather than per document puts both kinds of page in
+	// one notebook, so the note has to be able to hold both sections. It used to hold whichever it
+	// rendered first, and dropped the other -- which is the data loss #115 reported.
+	it("carries a digest and a transcript side by side, digest first", () => {
+		const content = buildNoteContent(baseFields({ digest: "\n### Prinzipien\n\nA ==marked== sentence.", transcript: "Some OCR text" }), null);
+
+		expect(content).toContain("## Digest\n\n### Prinzipien\n\nA ==marked== sentence.\n\n## Transcript\nSome OCR text\n<!-- tagged-sync:end -->");
+		expect(content.indexOf("## Digest")).toBeLessThan(content.indexOf("## Transcript"));
+	});
+
+	it("preserves the user's free area and an old note's frontmatter when a digest arrives", () => {
 		const oldNote =
 			"---\ncssclass: mine\n---\n" +
 			"<!-- tagged-sync:begin — do not edit inside this block -->\n![[old.pdf]]\n\n## Transcript\nold text\n<!-- tagged-sync:end -->\n\nmy notes\n";
 
-		const rewritten = buildNoteContent(baseFields({ digest: "\n> [!note] on this page\n> A margin note. ^nt-4c8a17" }), oldNote);
+		const rewritten = buildNoteContent(baseFields({ digest: "\n> [!note] on this page\n> A margin note. ^nt-4c8a17", transcript: "" }), oldNote);
 
 		expect(rewritten).toContain("---\ncssclass: mine\n---\n");
 		expect(rewritten).toContain("## Digest\n\n> [!note] on this page\n> A margin note. ^nt-4c8a17\n<!-- tagged-sync:end -->");
@@ -535,6 +548,17 @@ describe("updateTranscript", () => {
 	});
 });
 
+describe("isEmptyManagedBlock", () => {
+	// The negation of `buildManagedBlock`'s sections, kept beside it so one place owns the question
+	// "does this render to anything?" -- the sync engine asking it a second way is how #115 happened.
+	it("is true only when none of the three inputs becomes a section", () => {
+		expect(isEmptyManagedBlock(baseFields({ transcript: "", digest: "", highlights: [] }))).toBe(true);
+		expect(isEmptyManagedBlock(baseFields({ transcript: "some text", digest: "", highlights: [] }))).toBe(false);
+		expect(isEmptyManagedBlock(baseFields({ transcript: "", digest: "\n### Page 1\n", highlights: [] }))).toBe(false);
+		expect(isEmptyManagedBlock(baseFields({ transcript: "", digest: "", highlights: [{ pageLabel: 1, embedPage: 1, quotes: ["a quote"] }] }))).toBe(false);
+	});
+});
+
 describe("renderTranscript", () => {
 	const EMBED = "Attachments/Meeting Notes 2026.pdf";
 
@@ -594,6 +618,66 @@ describe("renderTranscript", () => {
 		expect(renderTranscript(EMBED, [{ pageLabel: 7, embedPage: 1, status: "ok", text: "just this" }], "unused")).toBe("just this");
 		expect(renderTranscript(EMBED, [{ pageLabel: 7, embedPage: 1, status: "skipped", text: "" }], "unused")).toBe("");
 		expect(renderTranscript(EMBED, [{ pageLabel: 7, embedPage: 1, status: "failed", text: "" }], "unused")).toBe("> [!warning] Could not read this page");
+	});
+
+	// Issue #115: a page of typed text is not transcribed and is not blank, and "No text on page 2"
+	// printed over a page that is nothing but text would be false.
+	it("names a typed page on a line of its own, apart from the blank ones", () => {
+		const rendered = renderTranscript(EMBED, [page(1, "ok", "first"), page(2, "typed"), page(3, "skipped")], "unused");
+
+		expect(rendered).toContain("*Page 2 is typed text — see the embedded page.*");
+		expect(rendered).toContain("*No text on page 3.*");
+		expect(rendered).not.toContain("pages 2");
+	});
+
+	it("collapses a run of typed pages the way it collapses blank ones", () => {
+		const pages = [page(1, "typed"), page(2, "typed"), page(3, "typed"), page(4, "ok", "handwriting")];
+
+		expect(renderTranscript(EMBED, pages, "unused")).toContain("*Pages 1–3 are typed text — see the embedded pages.*");
+	});
+
+	// Ticket 05: the digest carries the quotes of the pages it covers, and the rest sit under the page
+	// they were made on. Told apart by their form -- bullets are the device's own words, a paragraph is
+	// what was read off the ink -- rather than by a label that would be noise on every ordinary page.
+	it("folds a page's quotes in above its transcribed ink", () => {
+		const rendered = renderTranscript(EMBED, [page(1, "ok", "first"), page(2, "ok", "Anna fragt nach dem Termin")], "unused", {
+			highlights: [{ pageLabel: 2, embedPage: 2, quotes: ["Budget: 12.000 €"] }],
+		});
+
+		expect(rendered).toContain(`### [[${EMBED}#page=2|Page 2]]\n\n- Budget: 12.000 €\n\nAnna fragt nach dem Termin`);
+		expect(rendered).not.toContain("## Highlights");
+	});
+
+	// The quote has to sit somewhere, and "no text on page 2" would be false printed above one.
+	it("gives a page with a quote and no ink its heading, and leaves it out of the blank-page line", () => {
+		const rendered = renderTranscript(EMBED, [page(1, "ok", "first"), page(2, "skipped"), page(3, "skipped")], "unused", {
+			highlights: [{ pageLabel: 2, embedPage: 2, quotes: ["A marked sentence."] }],
+		});
+
+		expect(rendered).toContain(`### [[${EMBED}#page=2|Page 2]]\n\n- A marked sentence.`);
+		expect(rendered).toContain("*No text on page 3.*");
+		expect(rendered).not.toContain("pages 2");
+	});
+
+	// A digest takes pages out of the list, so the list is no longer the unit's size. Reading it off
+	// the list would drop the heading of the one page left in a notebook whose other four are digested,
+	// and leave the reader unable to tell which page they are looking at.
+	it("keeps the page heading when a digest has left only one page in the transcript", () => {
+		const rendered = renderTranscript(EMBED, [page(5, "ok", "the last page")], "unused", { unitPages: 5 });
+
+		expect(rendered).toBe(`### [[${EMBED}#page=5|Page 5]]\n\nthe last page`);
+	});
+
+	// A page tag on a page of typed text: no heading (the filename carries the page), and the naming
+	// line instead of a transcript nobody asked a model to guess at.
+	it("names the page of a single-page unit whose text was typed", () => {
+		expect(renderTranscript(EMBED, [{ pageLabel: 7, embedPage: 1, status: "typed", text: "" }], "unused")).toBe(
+			"*Page 7 is typed text — see the embedded page.*",
+		);
+	});
+
+	it("still renders a genuinely single-page unit bare", () => {
+		expect(renderTranscript(EMBED, [page(1, "ok", "just this")], "unused", { unitPages: 1 })).toBe("just this");
 	});
 
 	// `off`, an unavailable backend, and any arity violation the sync engine refused to trust.
