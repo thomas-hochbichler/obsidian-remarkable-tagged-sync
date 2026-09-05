@@ -19,8 +19,11 @@ function fields(overrides: Partial<NoteFrontmatter> = {}): NoteFrontmatter {
 		synced: "2026-08-25T17:02",
 		folder: "Work/Projekt X",
 		type: "notebook",
+		pages: 12,
+		page: null,
 		pinned: true,
 		uuid: "aaaa0002-0000-0000-0000-000000000000",
+		noteId: "n0000001",
 		...overrides,
 	};
 }
@@ -38,8 +41,10 @@ describe("applyFrontmatter on a note without frontmatter", () => {
 				"remarkable-synced: 2026-08-25T17:02\n" +
 				"remarkable-folder: Work/Projekt X\n" +
 				"remarkable-type: notebook\n" +
+				"remarkable-pages: 12\n" +
 				"remarkable-pinned: true\n" +
 				"remarkable-uuid: aaaa0002-0000-0000-0000-000000000000\n" +
+				"remarkable-note-id: n0000001\n" +
 				"---\n" +
 				BODY,
 		);
