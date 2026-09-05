@@ -1942,10 +1942,8 @@ export interface ReTranscribeDeps {
  * live page's scene otherwise.
  *
  * A notebook's pages are classified the way the sync classifies them, so a page of typed text is
- * named rather than sent -- which makes the command cheaper, not dearer (ticket 06). It differs from
- * the sync in one place it cannot help: the sync leaves out a typed page the digest carries, and
- * this path builds no digest, so it names every typed page. The cost is one footnote line on a note
- * that already has a `## Digest` explaining those pages; the next full sync writes it properly.
+ * named rather than sent -- which makes the command cheaper, not dearer (ticket 06). Whether such a
+ * page is *named* is the caller's call, because it depends on what the note already carries.
  */
 async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, pdfBacked: boolean): Promise<OcrPage[] | null> {
 	if (row.pageId === null) {
@@ -2097,7 +2095,16 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			}
 			bar.step("transcribing");
 
-			const ocr = await runOcr(ocrBackend, ocrPages, bar.page);
+			// A typed page the note's digest already carries must not be named a second time -- the
+			// entries for it are printed right above, and "see the embedded page" beside them reads as a
+			// contradiction. This path builds no digest, so the note it just read is what answers "is
+			// this page in there?". Without a digest nothing carries those pages and the naming line is
+			// the whole point, so they stay in and are named. (The one case this gets wrong is a typed
+			// page the digest saw and found nothing on: the sync names it and this does not. A missing
+			// footnote under a `## Digest` that already explains those pages, and the next full sync
+			// writes it.)
+			const transcribePages = noteHasDigest ? ocrPages.filter((page) => page.typed !== true) : ocrPages;
+			const ocr = await runOcr(ocrBackend, transcribePages, bar.page);
 			// The per-page headings link into the note's own embed, which this path knows only from the
 			// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
 			// written by a much older version) falls back to the unlabelled transcript rather than

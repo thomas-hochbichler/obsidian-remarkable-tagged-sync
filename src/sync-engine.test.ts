@@ -2920,8 +2920,10 @@ describe("reTranscribeAll", () => {
 		});
 
 		// The command classifies per page exactly as the sync does, which makes it cheaper rather than
-		// dearer: a page of typed text is named, and never sent to a backend that would guess at it.
-		it("names a typed page instead of sending it to the backend", async () => {
+		// dearer: a page of typed text is never sent to a backend that would guess at words the note
+		// already shows. Nor is it named here -- the digest above carries it, and "see the embedded
+		// page" printed under its own entries reads as a contradiction.
+		it("neither sends nor names a typed page the digest already carries", async () => {
 			const { api, noteStore, index, notePath } = await syncedMixedNotebook("root-06-typed");
 
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
@@ -2929,7 +2931,24 @@ describe("reTranscribeAll", () => {
 			await reTranscribeAll({ api, noteStore, ocrBackend: backend }, index);
 
 			expect((backend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[])).toHaveLength(1);
-			expect((await noteStore.read(notePath))!).toContain("*Page 1 is typed text — see the embedded page.*");
+			expect((await noteStore.read(notePath))!).not.toContain("is typed text");
+		});
+
+		// The reported shape: a typed page with nothing marked on it, so no digest was written at all.
+		// Nothing else in the note accounts for that page, and the naming line is the whole point.
+		it("names a typed page when the note has no digest to carry it", async () => {
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [] });
+			const api = twoPageNotebook("root-06-nodigest");
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
+			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+			const notePath = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+			expect((await deps.noteStore.read(notePath))!).not.toContain("## Digest");
+
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("after") }, synced.index);
+
+			expect((await deps.noteStore.read(notePath))!).toContain("*Page 1 is typed text — see the embedded page.*");
 		});
 
 		// The refusal that stays. Growing a flat transcript into an annotated PDF's digest note would

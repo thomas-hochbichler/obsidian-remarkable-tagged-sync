@@ -214,13 +214,20 @@
       test: "reTranscribeAll > a note that carries a digest > writes a folded quote back rather than deleting it with the region it sits in"
 
     - id: D20.3
-      scenario: The notebook has a page of typed text
-      expect: Named, not sent to a backend -- the command applies the sync's per-page classification, which makes it cheaper rather than dearer
+      scenario: The notebook has a page of typed text and a digest that carries it
+      expect: 'Neither sent nor named. Not sent, because reading back words the note already shows costs a request for a worse copy; not named, because "see the embedded page" printed under that page''s own digest entries reads as a contradiction'
       layer: engine
       file: src/sync-engine.test.ts
-      test: "reTranscribeAll > a note that carries a digest > names a typed page instead of sending it to the backend"
+      test: "reTranscribeAll > a note that carries a digest > neither sends nor names a typed page the digest already carries"
 
     - id: D20.4
+      scenario: A typed page with nothing marked on it, so the note has no digest at all -- the shape #115 reported
+      expect: Named. Nothing else in the note accounts for that page, and the naming line is the whole point of the repair
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeAll > a note that carries a digest > names a typed page when the note has no digest to carry it"
+
+    - id: D20.5
       scenario: An annotated PDF's digest note
       expect: Still refused, byte for byte. Growing a flat transcript into it would put the PDF's handwriting back in the note with margin notes off, which is the leak F20 exists to prevent
       layer: engine
