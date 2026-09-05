@@ -184,11 +184,12 @@ body can still be edited.
 
 The website lives in its own repository, but `https://taggedsync.com/faq` answers questions about
 *this* plugin at *one* version, so a release can make it wrong. Nothing bumps it for you. Read the
-changelog you just wrote and check three things:
+changelog you just wrote and check two things:
 
-- **The page stamp** — `src/pages/faq.astro` says "Answers describe Tagged Sync `<version>` ·
-  `<month>`". It is hand-written.
-- **`softwareVersion`** in `src/components/SiteSchema.astro` — the same number, a second time.
+- **The version and the month** — `describes` in `src/site.ts`, one line. The stamp under the FAQ
+  heading and `softwareVersion` in the schema on the home page both read it. The month says when
+  the answers were last checked against this README; it is not a build date and never moves on its
+  own.
 - **The README deep links.** Every answer in `src/data/faq.ts` may carry one `readme.anchor`, and
   each has to match a heading in this README. Renaming a heading here breaks a link there and
   nothing says so — ten anchors today, and this line is the only check they get.
