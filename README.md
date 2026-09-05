@@ -294,6 +294,11 @@ strokes. The plugin treats it accordingly:
   you highlight or underline on it arrives as a [digest](#annotated-pdfs), quotes, sections, block
   IDs and all. A typed line or two inside a handwritten page stays part of the transcript instead;
   the plugin tells the two apart by how the text is set, not by guessing.
+- **Page by page, not notebook by notebook.** One such page does not make the whole notebook a
+  document. Its handwritten pages are still transcribed, and the note then carries a `## Digest` and
+  a `## Transcript` together. A typed page the digest has nothing to show for is named in the
+  transcript — *Page 4 is typed text — see the embedded page.* — rather than read back by a
+  transcription backend, since its words are already legible in the embedded page above.
 - **Such a page needs no transcription at all.** Its digest is read from the file, exactly as a
   marked-up PDF's is, so it arrives on Windows and Linux with no transcription backend set up.
 - **Highlights on typed text** reach your vault like any other highlight.
@@ -491,7 +496,8 @@ it does not — so a document without bookmarks can file a quote under the wrong
   quote callout per page, if you highlighted anything on the tablet), then the `## Transcript`. If
   transcription is off, fails, or finds nothing, the note is still created with the render and no
   `## Transcript` section — the render is never lost. An annotated PDF gets a
-  [`## Digest`](#annotated-pdfs) instead.
+  [`## Digest`](#annotated-pdfs) instead, and a notebook with
+  [typed pages](#typed-text-and-the-type-folio) among handwritten ones can carry both.
 - **[Typed text](#typed-text-and-the-type-folio) is taken from the file, never transcribed**, and
   joins the transcript of the page it is on — at the position it sits at with Apple Vision, at the
   end of the page with the other backends. A typed page that reads like a document gets the digest

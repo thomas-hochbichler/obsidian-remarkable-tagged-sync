@@ -12,6 +12,29 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **A page of typed text no longer silences the rest of the notebook.** One page carrying typed
+  text -- an article the "Read on reMarkable" extension sent over, a page written with the Type
+  Folio -- made the whole notebook count as a document to annotate. Its handwritten pages were then
+  neither summarised (there is nothing to annotate on a page nobody else wrote) nor transcribed, so
+  the note arrived with the page images and no text at all. Each page is now judged on its own: the
+  typed ones go to the digest, the handwritten ones are transcribed, and a note can carry a
+  `## Digest` and a `## Transcript` side by side. A typed page that the digest has nothing to show
+  for is named in the transcript -- `*Page 4 is typed text — see the embedded page.*` -- rather than
+  read back by a model, since the words are already legible in the embedded page above. Highlights
+  made on a page the digest does not cover are folded into the transcript under that page instead of
+  being dropped. (#115)
+
+  **Notes already written this way are not repaired automatically.** Nothing changed on the tablet,
+  so a sync has no reason to look at them again. Run **Re-transcribe all notes** from the command
+  palette to bring their text back. Note that the command re-transcribes *every* synced note in the
+  vault, not only the damaged ones -- on a metered backend that costs a full pass.
+
+- **A note is never replaced by an empty one.** If a sync would write a note with neither a summary
+  nor a transcript over one that has them, it now leaves the old note alone, says so in the run's
+  report, and reopens the document on the next sync instead of recording it as done.
+
 ## [1.6.2] - 2026-09-03
 
 ### Fixed

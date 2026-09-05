@@ -4,7 +4,7 @@ import type { Content, CPages, DocumentContent, Entry, Metadata } from "rmapi-js
 import { describe, expect, it, vi } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
 import { buildDigest } from "./digest-pipeline";
-import { blockHashOf, extractManagedBlock, type NoteStore } from "./note-builder";
+import { blockHashOf, extractManagedBlock, type NoteStore, type OcrStatus } from "./note-builder";
 import { formatLocalMinute } from "./frontmatter";
 import { remapRows } from "./note-rename";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
@@ -256,6 +256,43 @@ function fakeOcrBackend(result: Omit<OcrResult, "pages"> & { pages?: OcrPageResu
 		// hide exactly the regression these tests are here to catch.
 		recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => (pages.length === 0 ? { status: "skipped", pages: [], text: "", confidence: null } : full)),
 	};
+}
+
+/** A backend that answers per page, as every shipped one does -- which is what page-anchors a transcript. */
+function perPageOcrBackend(text = "handwriting"): OcrBackend {
+	return {
+		id: "vision",
+		metered: false,
+		recognize: vi.fn(
+			async (pages: RmPage[]): Promise<OcrResult> => ({
+				status: pages.length === 0 ? "skipped" : "ok",
+				pages: pages.map(() => ({ status: "ok" as const, text })),
+				text: pages.map(() => text).join("\n\n"),
+				confidence: null,
+			}),
+		),
+	};
+}
+
+/** A backend that reads every page it is handed and finds nothing on any of them -- per page, as a shipped one answers. */
+function emptyPerPageOcrBackend(): OcrBackend {
+	return {
+		id: "vision",
+		metered: false,
+		recognize: vi.fn(
+			async (pages: RmPage[]): Promise<OcrResult> => ({
+				status: "ok",
+				pages: pages.map(() => ({ status: "skipped" as const, text: "" })),
+				text: "",
+				confidence: null,
+			}),
+		),
+	};
+}
+
+/** Apple Vision on Windows: the backend never looked at a page, so it has nothing per page to say. */
+function unavailableOcrBackend(): OcrBackend {
+	return { id: "vision", metered: false, recognize: vi.fn(async (): Promise<OcrResult> => ({ status: "unavailable", pages: null, text: "", confidence: null })) };
 }
 
 /** A backend that is available and still produces nothing -- the case that used to vanish into console.warn. */
@@ -2122,8 +2159,10 @@ describe("runSync", () => {
 
 			await runSync(deps, EMPTY_SYNC_INDEX);
 
-			// No `.rm` scenes -> nothing to transcribe.
-			expect((deps.ocrBackend.recognize as ReturnType<typeof vi.fn>).mock.calls[0][0]).toEqual([]);
+			// No `.rm` scenes -> nothing to transcribe, and the backend is not called even to be told so:
+			// an unavailable one would answer "unavailable" to an empty question, and the unit's status is
+			// now the worse of the digest's and the transcript's rather than the digest's alone.
+			expect(deps.ocrBackend.recognize).not.toHaveBeenCalled();
 		});
 	});
 
@@ -2441,6 +2480,287 @@ describe("runSync", () => {
 	});
 });
 
+/**
+ * Issue #115: a typed block on one page suppressed transcription of the whole notebook.
+ *
+ * `isDocumentText` is per page and was applied per document, so one typed page sent every page into
+ * the digest; the handwritten ones produced no digest entry (there is nothing to annotate) and were
+ * never transcribed either, because the digest had "run". The result was a note carrying the embed
+ * and nothing else -- and zero backend requests, which is what the reporter measured.
+ *
+ * `buildDigest` is staged here rather than driven through a fixture. What these tests are about is
+ * which pages the engine hands it, what it does with the pages it kept back, and what it writes when
+ * the digest comes back empty -- none of which is a property of any `.rm` file.
+ */
+describe("a notebook with typed and handwritten pages (issue #115)", () => {
+	/** Classifies the notebook's pages in order: `typedPages(false, true, false)` is a typed page 2. */
+	function typedPages(...isDocument: boolean[]): void {
+		for (const answer of isDocument) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
+	}
+
+	function threePageNotebook(rootHash: string, hash = "hash-1") {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a", "page-b", "page-c"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a", "page-b": "hash-b", "page-c": "hash-c" } },
+		});
+	}
+
+	/** What `buildDigest` came back with, in the shape the engine reads. */
+	function digestBuild(markdown: string, covered: number[], ocr: OcrStatus = "skipped") {
+		return { markdown, warnings: [], ocr, covered };
+	}
+
+	const lastWrite = (deps: { noteStore: { write: ReturnType<typeof vi.fn> } }) => deps.noteStore.write.mock.calls.at(-1)![1] as string;
+	const scenesSent = (backend: OcrBackend) => (backend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[]);
+
+	// The reported case, end to end: one typed page with nothing marked on it. The digest builds and
+	// renders nothing, and before this the note ended there -- with the two handwritten pages lost.
+	it("transcribes the handwritten pages when the typed page's digest comes out empty", async () => {
+		typedPages(false, true, false);
+		vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", []));
+		const deps = { ...baseDeps(threePageNotebook("root-115-empty"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const written = lastWrite(deps);
+		expect(written).toContain("## Transcript");
+		expect(written).toContain("|Page 1]]\n\nhandwriting");
+		expect(written).toContain("|Page 3]]\n\nhandwriting");
+		expect(written).not.toContain("## Digest");
+	});
+
+	// Not transcribed and not blank: "No text on page 2" would be false printed over a page that is
+	// nothing but text, and rasterising it to read the words back costs a request for a worse copy.
+	it("names the typed page in the transcript rather than transcribing it", async () => {
+		typedPages(false, true, false);
+		vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", []));
+		const deps = { ...baseDeps(threePageNotebook("root-115-named"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(lastWrite(deps)).toContain("*Page 2 is typed text — see the embedded page.*");
+		expect(lastWrite(deps)).not.toContain("No text on page 2");
+		expect(scenesSent(deps.ocrBackend)).toHaveLength(2);
+	});
+
+	// The format wall this map existed to break: `buildManagedBlock` returned a digest *instead of* a
+	// transcript, so a notebook that needs both used to lose one of them.
+	it("carries both sections in one note, digest first", async () => {
+		typedPages(false, true, false);
+		vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("\n### Prinzipien\n\nA ==marked== sentence.", [2], "ok"));
+		const deps = { ...baseDeps(threePageNotebook("root-115-both"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const written = lastWrite(deps);
+		expect(written).toContain("## Digest");
+		expect(written).toContain("## Transcript");
+		expect(written.indexOf("## Digest")).toBeLessThan(written.indexOf("## Transcript"));
+		// The digest carries page 2, so the transcript does not point at it a second time.
+		expect(written).not.toContain("Page 2 is typed text");
+	});
+
+	// A heading over one sentence is the price. The case where a reader most needs to be told why
+	// there is no text is exactly the one where there is nothing else on the page to tell them.
+	it("keeps a Transcript heading for an all-typed notebook, carrying only the naming line", async () => {
+		typedPages(true, true, true);
+		vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", []));
+		const deps = { ...baseDeps(threePageNotebook("root-115-alltyped"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(lastWrite(deps)).toContain("## Transcript\n*Pages 1–3 are typed text — see the embedded pages.*");
+		expect(scenesSent(deps.ocrBackend)).toHaveLength(0);
+	});
+
+	// The one case where "did the digest run at all" still decides something: a build that threw
+	// covers nothing, so the unit is transcribed whole rather than left with an empty note.
+	it("transcribes every page when the digest build throws", async () => {
+		typedPages(false, true, false);
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
+		const deps = { ...baseDeps(threePageNotebook("root-115-threw"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(scenesSent(deps.ocrBackend)).toHaveLength(3);
+		expect(lastWrite(deps)).toContain("## Transcript");
+		expect(result.skipErrors).toContainEqual(expect.stringContaining("failed to build the digest"));
+	});
+
+	// `digest.ocr ?? ocr` was right while exactly one half of a unit ever did work. In a mixed
+	// notebook both do, and preferring the digest would report a failed transcription as its "ok".
+	it("reports the worse of the digest's outcome and the transcript's", async () => {
+		typedPages(false, true, false);
+		vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("\n### Prinzipien\n\nx", [2], "ok"));
+		const deps = { ...baseDeps(threePageNotebook("root-115-worse"), { sync: "Target" }), ocrBackend: throwingOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.failedOcrUnits).toBe(1);
+	});
+
+	// Ticket 05. The device only makes a highlight where there is machine text under it, so this is a
+	// short typed block on an otherwise handwritten page -- under the threshold, and therefore not a
+	// digest page. Its quotes used to go down with the subsumption rule.
+	it("folds an uncovered page's highlights into the transcript, under the page they were made on", async () => {
+		typedPages(false, true, false);
+		vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("\n### Prinzipien\n\nx", [2], "ok"));
+		const api = threePageNotebook("root-115-quotes");
+		api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-c") ? HIGHLIGHTED_PAGE_BYTES : PAGE_BYTES));
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const written = lastWrite(deps);
+		const page3 = written.slice(written.indexOf("|Page 3]]"));
+		// Quotes above the prose, and told apart by their form rather than by a label: the device's own
+		// words are bullets, what was read off the ink is a paragraph.
+		expect(page3.indexOf("\n- ")).toBeLessThan(page3.indexOf("handwriting"));
+		expect(written).not.toContain("## Highlights");
+	});
+
+	it("leaves a notebook with no digest its own Highlights section", async () => {
+		typedPages(false, false, false);
+		const api = threePageNotebook("root-115-nodigest");
+		api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-c") ? HIGHLIGHTED_PAGE_BYTES : PAGE_BYTES));
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(lastWrite(deps)).toContain("## Highlights");
+		expect(lastWrite(deps)).not.toContain("## Digest");
+	});
+});
+
+/**
+ * Ticket 04: the net under the two routes tickets 01 and 02 closed.
+ *
+ * A unit written with neither a digest nor a transcript cannot pass silently, and the loss is
+ * permanent without this: the device hash has not changed, so the next sync skips the document and
+ * the page that vanished is never looked at again.
+ */
+describe("a unit that would be written with neither section", () => {
+	function onePageNotebook(rootHash: string, hash: string) {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+	}
+	const KEY = notebookSyncKey("doc-1", "sync");
+	const EMPTY_LINE = "neither a digest nor a transcript";
+
+	// The refusal is what makes the loss non-permanent as well as visible: a skipped document records
+	// no new entry hash, so whatever fixes the underlying bug repairs the note by itself next run.
+	it("leaves the previous note standing, reports it, and reopens the document next run", async () => {
+		const first = { ...baseDeps(onePageNotebook("root-04-a", "hash-1"), { sync: "Target" }), ocrBackend: perPageOcrBackend("real text") };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const path = synced.index.rows[KEY].notePath;
+		expect(await first.noteStore.read(path)).toContain("real text");
+
+		const second = {
+			...baseDeps(onePageNotebook("root-04-a2", "hash-2"), { sync: "Target" }),
+			noteStore: first.noteStore,
+			ocrBackend: emptyPerPageOcrBackend(),
+		};
+		const result = await runSync(second, synced.index);
+
+		expect(await first.noteStore.read(path)).toContain("real text");
+		expect(result.notesWritten).toBe(0);
+		// The counter, not just the line: `documentsSkipped` is the one part of the result that speaks
+		// on screen without being asked. A bare `skipErrors` entry reaches "Copy diagnostics" and
+		// nothing else.
+		expect(result.documentsSkipped).toBe(1);
+		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
+		expect(result.index.rows[KEY].entryHash).toBe("hash-1");
+	});
+
+	// A page tag is its own unit, with its own note, and the same refusal has to hold there: one
+	// tagged page of a notebook is as easy to empty as the notebook note, and just as unrecoverable.
+	it("refuses the same way for a page-tagged unit", async () => {
+		function onePageTag(rootHash: string, hash: string, pageHash: string) {
+			return fakeApi({
+				rootHash,
+				entries: [documentEntry({ hash, visibleName: "Notebook", tags: [] })],
+				contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }] }) },
+				pageHashesByDoc: { "doc-1": { "page-a": pageHash } },
+			});
+		}
+		const first = { ...baseDeps(onePageTag("root-04-e", "hash-1", "page-hash-1"), { todo: "Target" }), ocrBackend: perPageOcrBackend("real text") };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const path = synced.index.rows[pageSyncKey("doc-1", "page-a", "todo")].notePath;
+		expect(await first.noteStore.read(path)).toContain("real text");
+
+		const second = {
+			...baseDeps(onePageTag("root-04-e2", "hash-2", "page-hash-2"), { todo: "Target" }),
+			noteStore: first.noteStore,
+			ocrBackend: emptyPerPageOcrBackend(),
+		};
+		const result = await runSync(second, synced.index);
+
+		expect(await first.noteStore.read(path)).toContain("real text");
+		expect(result.documentsSkipped).toBe(1);
+		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
+	});
+
+	// "Never replace content with nothing", not "never write nothing". Refusing here would leave a
+	// freshly tagged blank notebook with no note at all and a skip notice on every run, forever.
+	it("writes the empty note for a unit that has none yet, and reports it without a notice", async () => {
+		const deps = { ...baseDeps(onePageNotebook("root-04-b", "hash-1"), { sync: "Target" }), ocrBackend: emptyPerPageOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.documentsSkipped).toBe(0);
+		expect(result.skipErrors).toContainEqual(expect.stringContaining(`was written with ${EMPTY_LINE}`));
+	});
+
+	// The instance ticket 04 names: a one-page unit over a page that was never drawn on. It is not
+	// silent because it is empty -- transcription was on, the backend was asked, and the note came back
+	// with nothing in it, which is the shape the net exists to catch. It is written and not refused
+	// because there is nothing there to lose.
+	it("writes and reports a unit over a page that was never drawn on", async () => {
+		const blankPage = fakeApi({
+			rootHash: "root-04-f",
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": {} }, // no `.rm` file: a live page the user never wrote on
+		});
+		const deps = { ...baseDeps(blankPage, { sync: "Target" }), ocrBackend: emptyPerPageOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.documentsSkipped).toBe(0);
+		expect(result.skipErrors).toContainEqual(expect.stringContaining(`was written with ${EMPTY_LINE}`));
+	});
+
+	// `OffOcrBackend` returns no per-page results and no text, which is exactly "I never looked".
+	// An embed-only note is then what the user asked for, and it has to stay silent.
+	it("says nothing when transcription is off", async () => {
+		const deps = { ...baseDeps(onePageNotebook("root-04-c", "hash-1"), { sync: "Target" }), ocrBackend: fakeOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.skipErrors).not.toContainEqual(expect.stringContaining(EMPTY_LINE));
+	});
+
+	// A second flag for a fact that already has its own counter and its own notice is the one users
+	// learn to ignore.
+	it("does not report an empty note a second time when the backend was unavailable", async () => {
+		const deps = { ...baseDeps(onePageNotebook("root-04-d", "hash-1"), { sync: "Target" }), ocrBackend: unavailableOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.unavailableOcrUnits).toBe(1);
+		expect(result.skipErrors).not.toContainEqual(expect.stringContaining(EMPTY_LINE));
+	});
+});
+
 describe("reTranscribeAll", () => {
 	function notebookApi() {
 		return fakeApi({
@@ -2563,6 +2883,147 @@ describe("reTranscribeAll", () => {
 		expect(content).not.toContain("old garbage");
 		// The embed is untouched.
 		expect(content).toContain("![[");
+	});
+
+	/**
+	 * Ticket 06. Since #115 a notebook's note legitimately carries a digest *and* a transcript, so the
+	 * blanket "leave any note with a digest alone" would have left this command unable to repair the
+	 * very notes the bug damaged. The relaxation is per caller and per row kind, not global.
+	 */
+	describe("a note that carries a digest", () => {
+		function twoPageNotebook(rootHash: string) {
+			return fakeApi({
+				rootHash,
+				entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+				contentById: { "doc-1": documentContent({ cPages: cPages(["page-a", "page-b"]) }) },
+				pageHashesByDoc: { "doc-1": { "page-a": "hash-a", "page-b": "hash-b" } },
+			});
+		}
+
+		/**
+		 * One digest entry for one page, in the shape `renderDigest` writes it -- the trailing `#page=`
+		 * link included, because that link is how the re-transcribe path reads back which pages the
+		 * digest carries (`readDigestPages`).
+		 */
+		function digestBody(embedPage: number): string {
+			return `\n### Prinzipien\n\nA ==marked== sentence. · [[tagged-sync/attachments/doc-1.pdf#page=${embedPage}|p. ${embedPage}]]`;
+		}
+
+		/** A mixed notebook, synced: page 1 typed and in the digest, page 2 handwritten and transcribed. */
+		async function syncedMixedNotebook(rootHash: string, pageBBytes = PAGE_BYTES) {
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
+			const api = twoPageNotebook(rootHash);
+			api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-b") ? pageBBytes : PAGE_BYTES));
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
+			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+			return { api, noteStore: deps.noteStore, index: synced.index, notePath: synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath };
+		}
+
+		it("rewrites a notebook's transcript and leaves its digest as it was", async () => {
+			const { api, noteStore, index, notePath } = await syncedMixedNotebook("root-06-notebook");
+			expect((await noteStore.read(notePath))!).toContain("before");
+
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			const { updated } = await reTranscribeAll({ api, noteStore, ocrBackend: perPageOcrBackend("after") }, index);
+
+			const note = (await noteStore.read(notePath))!;
+			expect(updated).toBe(1);
+			expect(note).toContain("## Digest\n\n### Prinzipien");
+			expect(note).toContain("after");
+			expect(note).not.toContain("before");
+		});
+
+		// `updateTranscript` replaces the whole transcript region, so a quote folded into it by the sync
+		// is deleted unless this path writes it back -- permanently, which is the loss this command is
+		// meant to repair rather than cause.
+		it("writes a folded quote back rather than deleting it with the region it sits in", async () => {
+			const { api, noteStore, index, notePath } = await syncedMixedNotebook("root-06-quotes", HIGHLIGHTED_PAGE_BYTES);
+			const quoted = (await noteStore.read(notePath))!.split("\n").filter((line) => line.startsWith("- "));
+			expect(quoted.length).toBeGreaterThan(0);
+
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			await reTranscribeAll({ api, noteStore, ocrBackend: perPageOcrBackend("after") }, index);
+
+			expect((await noteStore.read(notePath))!.split("\n").filter((line) => line.startsWith("- "))).toEqual(quoted);
+		});
+
+		// The command classifies per page exactly as the sync does, which makes it cheaper rather than
+		// dearer: a page of typed text is never sent to a backend that would guess at words the note
+		// already shows. Nor is it named here -- the digest above carries it, and "see the embedded
+		// page" printed under its own entries reads as a contradiction.
+		it("neither sends nor names a typed page the digest already carries", async () => {
+			const { api, noteStore, index, notePath } = await syncedMixedNotebook("root-06-typed");
+
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			const backend = perPageOcrBackend("after");
+			await reTranscribeAll({ api, noteStore, ocrBackend: backend }, index);
+
+			expect((backend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[])).toHaveLength(1);
+			expect((await noteStore.read(notePath))!).not.toContain("is typed text");
+		});
+
+		// The reported shape: a typed page with nothing marked on it, so no digest was written at all.
+		// Nothing else in the note accounts for that page, and the naming line is the whole point.
+		it("names a typed page when the note has no digest to carry it", async () => {
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [] });
+			const api = twoPageNotebook("root-06-nodigest");
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
+			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+			const notePath = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+			expect((await deps.noteStore.read(notePath))!).not.toContain("## Digest");
+
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
+			await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("after") }, synced.index);
+
+			expect((await deps.noteStore.read(notePath))!).toContain("*Page 1 is typed text — see the embedded page.*");
+		});
+
+		// The third of `splitForTranscript`'s three outcomes, which the note has to be read to tell from
+		// the second: the digest saw this page and produced nothing for it, so nothing above accounts
+		// for it and the sync names it. Filtering every typed page out because the note has *a* digest
+		// dropped it instead, and the two paths then disagreed about the same notebook (ticket 06).
+		it("names a typed page the note's digest saw and found nothing on", async () => {
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
+			const api = twoPageNotebook("root-06-uncovered");
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
+			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+			const notePath = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+			expect((await deps.noteStore.read(notePath))!).toContain("*Page 2 is typed text — see the embedded page.*");
+
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
+			const backend = perPageOcrBackend("after");
+			await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: backend }, synced.index);
+
+			const note = (await deps.noteStore.read(notePath))!;
+			expect(note).toContain("*Page 2 is typed text — see the embedded page.*");
+			expect(note).not.toContain("*Page 1 is typed text");
+			expect(backend.recognize).not.toHaveBeenCalled();
+		});
+
+		// The refusal that stays. Growing a flat transcript into an annotated PDF's digest note would
+		// put its handwriting back in the note with margin notes off -- the leak F20 exists to prevent.
+		it("still refuses an annotated PDF's digest note", async () => {
+			const api = fakeApi({
+				rootHash: "root-06-pdf",
+				entries: [documentEntry({ fileType: "pdf", visibleName: "Book", tags: [{ name: "sync", timestamp: 0 }] })],
+				contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }) },
+				sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100]]) },
+				pageHashesByDoc: { "doc-1": { p0: "anno-hash" } },
+			});
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+			const notePath = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+			const before = (await deps.noteStore.read(notePath))!;
+			expect(before).toContain("## Digest");
+
+			const { updated } = await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("leaked") }, synced.index);
+
+			expect(updated).toBe(0);
+			expect(await deps.noteStore.read(notePath)).toBe(before);
+		});
 	});
 
 	it("leaves a note untouched when its document is gone from the device", async () => {

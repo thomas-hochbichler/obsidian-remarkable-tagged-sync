@@ -97,6 +97,9 @@ const TRANSCRIPT_RE = new RegExp(`(## Transcript\\n)[\\s\\S]*?(\\n${FENCE_END})`
 const TRANSCRIPT_BODY_RE = new RegExp(`## Transcript\\n([\\s\\S]*?)\\n${FENCE_END}`);
 // The whole section including its leading newline -- for removing it when a transcript goes away.
 const TRANSCRIPT_SECTION_RE = new RegExp(`\\n## Transcript\\n[\\s\\S]*?\\n${FENCE_END}`);
+// The digest body inside the managed block: everything between the "## Digest" heading and whatever
+// ends the section -- the transcript heading that may follow it, or the closing fence.
+const DIGEST_BODY_RE = new RegExp(`## Digest\\n([\\s\\S]*?)\\n(?:## |${FENCE_END})`);
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n?/;
 // The whole note is the plugin's, and Reading View has to say so: the fence markers are HTML
 // comments and render as nothing, so a reader saw no line between what a sync rewrites and what it
@@ -177,32 +180,69 @@ export function deriveBaseName(notebookName: string, pageIndex: number | null): 
  * 04): a page of them read as a stack of boxes, in the same vault and often the same folder as a
  * digest that no longer has any. The bullets stay, though -- these quotes are fragments, not
  * sentences (median 49 characters over the fixture, up to nine on one page), and a list is the
- * honest form for a list of fragments. This section is a fallback surface: a digest subsumes it, so
- * it is reached only by a notebook with highlighted typed text or a PDF whose digest build failed.
+ * honest form for a list of fragments. This section is a fallback surface, reached only by a unit
+ * with no digest: where there is one, the digest carries the quotes of the pages it covers and
+ * `renderTranscript` folds the rest in under the page they were made on (issue #115, ticket 05).
  */
 function renderHighlights(embedPath: string, groups: HighlightGroup[]): string {
 	if (groups.length === 0) return "";
-	const sections = groups.map((group) => {
-		const heading = `### [[${embedPath}#page=${group.embedPage}|Page ${group.pageLabel}]]`;
-		const bullets = group.quotes.map((quote) => `- ${quote}`).join("\n");
-		return `${heading}\n\n${bullets}`;
-	});
-	return `\n## Highlights\n\n${sections.join("\n\n")}\n`;
+	const sections = groups.map((group) => `${pageHeading(embedPath, group.embedPage, group.pageLabel)}\n\n${quoteBullets(group.quotes)}`);
+	return `## Highlights\n\n${sections.join("\n\n")}`;
+}
+
+/** The one link vocabulary both sections use: a `###` heading linking into the embedded page. */
+function pageHeading(embedPath: string, embedPage: number, pageLabel: number): string {
+	return `### [[${embedPath}#page=${embedPage}|Page ${pageLabel}]]`;
+}
+
+/** Quotes as a bullet list -- the honest form for a list of fragments; see `renderHighlights`. */
+function quoteBullets(quotes: string[]): string {
+	return quotes.map((quote) => `- ${quote}`).join("\n");
 }
 
 /**
+ * What became of one page, from the transcript's point of view. The backend's own three outcomes,
+ * plus one the backend never sees: a page whose typed text went to the digest instead.
+ *
+ * `"typed"` is not transcribed and not blank, and the note has to say so in its own words -- calling
+ * it `"skipped"` would print "No text on page 4" over a page that is nothing but text.
+ */
+export type TranscriptPageStatus = OcrPageStatus | "typed";
+
+/**
  * One page of a unit, ready to render: its labels, what became of it, and its text. One entry per
- * page the *unit* covers -- including pages that never reached a backend -- so the summary line can
- * name them.
+ * page the transcript speaks about -- including pages that never reached a backend -- so the summary
+ * lines can name them.
+ *
+ * A page the digest carries is *absent* rather than listed: it is already in the note, under
+ * `## Digest`, and naming it here as well would tell the reader to go and look at a page whose
+ * quotes are printed right above (issue #115, ticket 01).
  */
 export interface TranscriptPage {
 	/** The notebook page ordinal a human reads. */
 	pageLabel: number;
 	/** The `#page=` anchor into the embed; `1` for a single-page embed. */
 	embedPage: number;
-	status: OcrPageStatus;
+	status: TranscriptPageStatus;
 	/** The page's transcript. Empty unless `status` is "ok". */
 	text: string;
+}
+
+/** The parts of a transcript that only some units have. Optional so the common call stays three arguments. */
+export interface TranscriptExtras {
+	/**
+	 * Quotes to print under their own page heading, above that page's transcribed ink, merged by
+	 * `pageLabel`. Empty for a unit whose highlights render as their own `## Highlights` section --
+	 * a quote belongs in exactly one of the two (issue #115, ticket 05).
+	 */
+	highlights?: HighlightGroup[];
+	/**
+	 * How many pages the *unit* covers, when that is more than `pages.length`. A digest takes pages
+	 * out of the list, so the "one page needs no heading" shortcut below cannot read the unit's size
+	 * off the list any more: a 5-page notebook with 4 pages in its digest would drop the heading of
+	 * the one page left and leave the reader unable to tell which page it was.
+	 */
+	unitPages?: number;
 }
 
 /** Consecutive labels collapse to `a–b` from three up; a pair stays two entries, which reads no worse and is shorter. */
@@ -234,46 +274,120 @@ function collapseRuns(labels: number[]): string[] {
  * A page that *failed* keeps its heading and says so: a failure is actionable (re-sync, switch
  * backend) where a blank page is not, and it is left out of the summary line rather than named twice.
  *
+ * A page of **typed text** gets a second footnote line of its own (issue #115). It is neither read
+ * nor blank: the digest took it, and its words are legible in the embed above, so the note points
+ * there rather than having a model guess at text that is already text.
+ *
+ * `extras.highlights` are quotes the digest is not carrying, printed as bullets above the page's own
+ * transcribed ink. The two are told apart by their form -- the device's exact words are a list of
+ * fragments, what was read off the ink is a paragraph -- rather than by a label under every heading,
+ * which would be noise on the common page that has only one of them.
+ *
  * `pages === null` means the backend had nothing per-page to say (`off`, unavailable, or an arity
  * violation `runOcr` refused to trust). The unlabelled text is returned as-is -- exactly what the
  * note looked like before transcripts were page-anchored.
  */
-export function renderTranscript(embedPath: string, pages: TranscriptPage[] | null, fallbackText: string): string {
+export function renderTranscript(embedPath: string, pages: TranscriptPage[] | null, fallbackText: string, extras: TranscriptExtras = {}): string {
 	if (pages === null) return fallbackText;
+
 	// A unit covering one page needs no heading: `deriveBaseName` already put "— Page 7" in the
-	// filename and the highlight callout repeats it, so a third would be noise.
-	if (pages.length <= 1) {
+	// filename, so a heading repeating it would be noise.
+	if ((extras.unitPages ?? pages.length) <= 1) {
 		const page = pages[0];
-		if (page === undefined || page.status === "skipped") return "";
-		return page.status === "ok" ? page.text : FAILED_PAGE_CALLOUT;
+		if (page === undefined) return "";
+		// No quotes folded in here, and none are lost: a page note's digest covers its one page, so it
+		// never leaves an uncovered highlight behind (ticket 05).
+		return pageBody(page, [], typedTextLine([page.pageLabel])).join("\n\n");
 	}
 
+	const quotesByLabel = new Map((extras.highlights ?? []).map((group) => [group.pageLabel, group.quotes]));
 	const sections: string[] = [];
 	const noText: number[] = [];
+	const typed: number[] = [];
 	for (const page of pages) {
-		if (page.status === "skipped") {
-			noText.push(page.pageLabel);
+		const quotes = quotesByLabel.get(page.pageLabel) ?? [];
+		// A page with a quote on it keeps its heading whatever became of its ink: the quote has to sit
+		// somewhere, and "no text on page 2" would be false printed above one.
+		if (quotes.length === 0 && (page.status === "skipped" || page.status === "typed")) {
+			(page.status === "typed" ? typed : noText).push(page.pageLabel);
 			continue;
 		}
-		const heading = `### [[${embedPath}#page=${page.embedPage}|Page ${page.pageLabel}]]`;
-		sections.push(`${heading}\n\n${page.status === "ok" ? page.text : FAILED_PAGE_CALLOUT}`);
+		const body = pageBody(page, quotes, typedTextLine([page.pageLabel]));
+		sections.push(`${pageHeading(embedPath, page.embedPage, page.pageLabel)}\n\n${body.join("\n\n")}`);
 	}
 
+	// Footnotes rather than headlines, after the last page: on an ordinary notebook most pages are
+	// blank, and a callout would shout every time. Two lines and not one, because a page of typed text
+	// is the opposite of a page with no text -- see `TranscriptPageStatus`.
 	if (noText.length > 0) {
 		const parts = collapseRuns(noText);
 		sections.push(noText.length === 1 ? `*No text on page ${parts[0]}.*` : `*No text on pages ${parts.join(", ")}.*`);
 	}
+	if (typed.length > 0) sections.push(typedTextLine(typed));
 	return sections.join("\n\n");
 }
 
+/**
+ * The line that stands in for a page of typed text: the digest either carried it or found nothing on
+ * it, and either way the words are readable in the embed directly above.
+ *
+ * Not transcribed, deliberately. Rasterising a page that is already text and asking a model to read
+ * it back costs one request per page and returns a worse copy of what is right there (measured at
+ * 21-28 % CER on the local backends in issue #116).
+ */
+function typedTextLine(labels: number[]): string {
+	const parts = collapseRuns(labels);
+	return labels.length === 1
+		? `*Page ${parts[0]} is typed text — see the embedded page.*`
+		: `*Pages ${parts.join(", ")} are typed text — see the embedded pages.*`;
+}
+
+/** One page's rendered parts, quotes first: the device's own words above whatever was read off the ink. */
+function pageBody(page: TranscriptPage, quotes: string[], typedLine: string): string[] {
+	const parts: string[] = [];
+	if (quotes.length > 0) parts.push(quoteBullets(quotes));
+	if (page.status === "ok") parts.push(page.text);
+	else if (page.status === "failed") parts.push(FAILED_PAGE_CALLOUT);
+	else if (page.status === "typed") parts.push(typedLine);
+	return parts;
+}
+
+/**
+ * The note's managed block: the ownership callout, the embed, and up to two sections.
+ *
+ * A digest no longer stands in for the transcript. Classifying typed text per page rather than per
+ * document (issue #115) puts both kinds of page inside one notebook, and a note that can hold only
+ * one of the two sections drops whichever it is not -- which is the data loss #115 reported.
+ *
+ * The digest comes first: it is a summary of the document, and that is the place `## Highlights`
+ * held above the reader's own text. It still subsumes the highlights, but only of the pages it
+ * covers -- the rest are folded into the transcript by `renderTranscript`, so a unit with a digest
+ * never renders a `## Highlights` section of its own (ticket 05).
+ */
 function buildManagedBlock(fields: NoteFields): string {
 	const embed = `${OWNERSHIP_CALLOUT}\n\n![[${fields.embedPath}]]\n`;
-	// A digest is the one section: it subsumes the highlights and stands in for the transcript.
-	if (fields.digest !== "") return `${embed}\n## Digest\n${fields.digest}\n${FENCE_END}`;
+	const sections = [
+		fields.digest === "" ? renderHighlights(fields.embedPath, fields.highlights) : `## Digest\n${fields.digest}`,
+		// No transcript (backend off/unavailable, or OCR found nothing) -> no empty heading in the note.
+		fields.transcript === "" ? "" : `## Transcript\n${fields.transcript}`,
+	].filter((section) => section !== "");
 
-	// No transcript (backend off/unavailable, or OCR found nothing) -> no empty heading in the note.
-	const transcriptSection = fields.transcript === "" ? "" : `\n## Transcript\n${fields.transcript}`;
-	return `${embed}${renderHighlights(fields.embedPath, fields.highlights)}${transcriptSection}\n${FENCE_END}`;
+	return `${embed}${sections.map((section) => `\n${section}`).join("\n")}\n${FENCE_END}`;
+}
+
+/**
+ * True for a unit whose managed block would be the ownership callout and the embed and nothing else.
+ *
+ * The negation of `buildManagedBlock`'s sections, and it lives here so that one place owns the
+ * question "does this render to anything?". Asking it in the sync engine would mean re-deriving
+ * which of the three inputs becomes a section -- two places reasoning about the same shape and
+ * drifting apart is how #115 happened.
+ *
+ * An empty block is not a loss by itself: it is also what an ordinary note looks like with
+ * transcription off. What the caller does about it is `writeUnit`'s business (ticket 04).
+ */
+export function isEmptyManagedBlock(fields: NoteFields): boolean {
+	return fields.digest === "" && fields.highlights.length === 0 && fields.transcript === "";
 }
 
 /**
@@ -462,6 +576,21 @@ export function readTranscript(content: string): string | null {
 }
 
 /**
+ * The embed pages a note's `## Digest` carries, in the order they appear.
+ *
+ * The note's copy of what `buildDigest` reported as `covered`, for the re-transcribe path, which
+ * holds a note and its pages but builds no digest and so has no other way to tell a page the digest
+ * carries from one it saw and found nothing on. Reading it off the note is exact rather than close:
+ * `renderDigest` gives every page it carries at least one `#page=` link into the embed -- in the
+ * entry, or in the heading when the entry has no section -- and a page with no entry contributes
+ * nothing at all.
+ */
+export function readDigestPages(content: string): number[] {
+	const body = content.match(DIGEST_BODY_RE)?.[1] ?? "";
+	return [...body.matchAll(/#page=(\d+)\|/g)].map((match) => Number(match[1]));
+}
+
+/**
  * The embed a managed note points at, or null when it has none.
  *
  * For the re-transcribe path, which holds a note and its pages but not the sync's attachment folder,
@@ -478,13 +607,17 @@ export function readEmbedPath(content: string): string | null {
  * written without one, and removed when a transcript goes away -- an empty "## Transcript" heading
  * never ships. Returns false (a no-op) if the note is gone, has no managed block, or nothing changes.
  *
- * A digest note is left alone: re-transcribe rewrites the transcript region only, while a digest is
- * regenerated as a whole by a full sync -- so a partial rewrite here could only damage it.
+ * A digest note is left alone unless the caller says otherwise. The refusal exists for annotated
+ * PDFs: with margin notes off, growing a transcript into such a note would put the handwriting back
+ * as a flat blob, which is the leak the setting is there to prevent (see `SyncDeps.marginNotes`).
+ * A notebook is the opposite case -- since #115 its note legitimately carries both sections, and
+ * refusing there would leave "Re-transcribe all notes" unable to repair the very notes the bug
+ * damaged. So the caller, which knows which of the two it holds, decides (ticket 06).
  */
-export async function updateTranscript(store: NoteStore, path: string, transcript: string): Promise<boolean> {
+export async function updateTranscript(store: NoteStore, path: string, transcript: string, options: { allowDigest?: boolean } = {}): Promise<boolean> {
 	const content = await store.read(path);
 	if (content === null) return false;
-	if (extractManagedBlock(content)?.includes("\n## Digest\n")) return false;
+	if (!options.allowDigest && extractManagedBlock(content)?.includes("\n## Digest\n")) return false;
 
 	let newContent: string;
 	if (TRANSCRIPT_RE.test(content)) {
