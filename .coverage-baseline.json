@@ -147,8 +147,8 @@
 			"branches": 0
 		},
 		"src/local-model-runtime.ts": {
-			"lines": 36,
-			"branches": 14
+			"lines": 45,
+			"branches": 15
 		},
 		"src/local-model-settings.ts": {
 			"lines": 0,
@@ -167,8 +167,8 @@
 			"branches": 25
 		},
 		"src/local-register.ts": {
-			"lines": 100,
-			"branches": 88
+			"lines": 104,
+			"branches": 90
 		},
 		"src/localhost-providers.ts": {
 			"lines": 0,
