@@ -483,9 +483,9 @@ function disabledTests() {
 // in nightly-verdict.mjs so they can be unit-tested: every one of them is about what happens when
 // the measurement did NOT arrive, and those paths never run on a good day.
 //
-// NOT wired into release.yml yet, deliberately. No nightly has ever run, so the file does not
-// exist, and a gate that blocks every release from the day it lands is the failure this rollout
-// is ordered to avoid. It gets wired in the commit where the first real verdict is committed.
+// Wired into release.yml since #112, and deliberately not before: a gate that blocks every release
+// from the day it lands is the failure this rollout was ordered to avoid, so it waited until real
+// verdicts were being committed and the floors had been revised against their spread.
 //
 // It also never runs in ci.yml -- a stale verdict would turn `main` red for a reason no commit
 // caused -- and never on a beta, because a beta is very often the fix for whatever made the
