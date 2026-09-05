@@ -17,7 +17,7 @@ import {
 	type ProviderMeta,
 	resolveProviderEndpoint,
 } from "./localhost-providers";
-import { detectLocalhostVisionCapability, type VisionVerdict } from "./localhost-vision-detect";
+import { detectLocalhostVisionCapability, type ModelCapabilities, type VisionVerdict } from "./localhost-vision-detect";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { OpenAiCompatOcrBackend } from "./openai-compat-ocr-backend";
@@ -40,10 +40,17 @@ const NOTE_CONTRACT = "Structure depends on the model you load — a capable vis
  * served by Ollama or LM Studio -- different quantisation, sampling and image preprocessing -- and
  * measuring those was ruled out of scope. So the caveat is permanent, not a placeholder, and the
  * model field ships empty rather than seeding a number we cannot stand behind.
+ *
+ * The **size** sentence was added for #116, where a reporter running a 4B variant read the 7.6 % as a
+ * property of the family. It lives here rather than in the live callout below because nothing can
+ * detect it: the probe can say what a model does, never how far it sits from the one we measured.
+ * We name our own reach and borrow no number for the smaller builds -- #116 carries measurements for
+ * those, beside the caveats their own author put on them.
  */
 const MODEL_RECOMMENDATION =
 	"Qwen2.5-VL-7B is the model we measured — about three times more accurate than Apple Vision when run " +
-	"directly, though through a local server the result may differ.";
+	"directly, though through a local server the result may differ. That number is the 7B build: a smaller " +
+	"variant of the same family is a different model, and we have measured none.";
 
 /**
  * Background-sync consent (spec §3.2), which Pro's own Ollama and LM Studio entries do **not** ask
@@ -70,7 +77,7 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 	// concept and nothing here is metered.
 	if (meta.id === "custom" && !baseURL) return new UnavailableOcrBackend("custom");
 
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model });
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic });
 }
 
 /**
@@ -81,6 +88,8 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 const ERROR_COLOR = "var(--text-error)";
 /** Back to the theme's own colour -- for the states that are not a warning at all. */
 const NO_COLOR = "";
+/** The thinking line's tone, and `partial`'s: a warning, never an error -- see {@link thinkingSentence}. */
+const WARNING_COLOR = "var(--text-warning)";
 
 function paintCallout(el: HTMLElement, text: string, color: string): void {
 	el.setText(text);
@@ -88,32 +97,73 @@ function paintCallout(el: HTMLElement, text: string, color: string): void {
 }
 
 /**
- * Renders a verdict into the settings callout. Same tone scale as Pro's, with one string rewritten:
- * `unreachable` on a server the user runs is not a network mystery, it is almost always "the app is
- * not running" -- the most likely failure this backend has, and the one they can fix in seconds
- * (spec §5.1).
+ * One line of the callout. Two facts want two lines and two colours (#116), and `setText` on the
+ * callout itself can only carry one -- so a verdict paints child divs, while the transient states
+ * above stay on `paintCallout` and its single `setText`.
  */
-function renderVisionVerdict(el: HTMLElement, verdict: VisionVerdict, model: string, meta: ProviderMeta, baseURL: string): void {
-	const set = (text: string, color: string) => paintCallout(el, text, color);
+function paintLine(el: HTMLElement, text: string, color: string): void {
+	const line = el.createDiv();
+	line.setText(text);
+	line.style.color = color;
+}
+
+/**
+ * Renders one probe's answer into the settings callout: what the model can see, and whether it
+ * reasons before answering.
+ *
+ * Same tone scale as Pro's, with one string rewritten: `unreachable` on a server the user runs is not
+ * a network mystery, it is almost always "the app is not running" -- the most likely failure this
+ * backend has, and the one they can fix in seconds (spec §5.1).
+ */
+function renderCapabilities(el: HTMLElement, caps: ModelCapabilities, model: string, meta: ProviderMeta, baseURL: string): void {
+	el.empty();
+	// Painted per line from here on, so the container's own colour must not linger from a previous
+	// single-line state (`Checking…`, the empty-model message).
+	el.style.color = NO_COLOR;
+
+	const vision = visionSentence(caps.vision, model, meta, baseURL);
+	if (vision) paintLine(el, vision.text, vision.color);
+
+	// Suppressed when nothing will transcribe anyway: `unsupported` means the model must be replaced,
+	// and "it also reasons before answering" is advice about a model that is already going.
+	if (caps.thinking === "on" && caps.vision !== "unsupported") paintLine(el, thinkingSentence(model), WARNING_COLOR);
+}
+
+/**
+ * The thinking line. `--text-warning`, the same tone as `partial`, and not `--text-error`: error is
+ * reserved for "transcription will fail", and a reasoning model transcribes -- slowly, and sometimes
+ * a page short. Overstating it would make the one red string in this pane mean two different things.
+ *
+ * It names the lever, because it has to stand alone for someone who never reads an issue: `-instruct`
+ * is the one reliable naming signal there is. It is worthless as a positive marker -- of the models
+ * that reason by default, only 4 % say so in their name -- but as a negative one it held on every
+ * model measured: 0 of 31 ids carrying `instruct` reasoned unasked.
+ */
+function thinkingSentence(model: string): string {
+	return (
+		`⚠ "${model}" reasons before answering — expect much slower syncs, and pages left out when an ` +
+		`answer runs too long. A model that doesn't reason (often the "-instruct" build) avoids both.`
+	);
+}
+
+/** The vision half, or `null` where there is nothing to say about it (`none`: no probe was made). */
+function visionSentence(verdict: VisionVerdict, model: string, meta: ProviderMeta, baseURL: string): { text: string; color: string } | null {
 	switch (verdict) {
 		case "none":
-			set("", "");
-			return;
+			return null;
 		case "supported":
-			set(`✓ "${model}" supports image input.`, "var(--text-success)");
-			return;
+			return { text: `✓ "${model}" supports image input.`, color: "var(--text-success)" };
 		case "unsupported":
-			set(`⚠ ${meta.label} reports "${model}" has no image input — transcription will fail. Pick a vision model.`, "var(--text-error)");
-			return;
+			return {
+				text: `⚠ ${meta.label} reports "${model}" has no image input — transcription will fail. Pick a vision model.`,
+				color: ERROR_COLOR,
+			};
 		case "partial":
-			set(`Couldn't confirm "${model}" accepts images — make sure it's a vision model.`, "var(--text-warning)");
-			return;
+			return { text: `Couldn't confirm "${model}" accepts images — make sure it's a vision model.`, color: WARNING_COLOR };
 		case "unconfirmed-name":
-			set(`"${model}" doesn't look like a vision model. If it can't see images, transcription will fail.`, "var(--text-warning)");
-			return;
+			return { text: `"${model}" doesn't look like a vision model. If it can't see images, transcription will fail.`, color: WARNING_COLOR };
 		case "unreachable":
-			set(unreachableMessage(meta, baseURL), "var(--text-warning)");
-			return;
+			return { text: unreachableMessage(meta, baseURL), color: WARNING_COLOR };
 	}
 }
 
@@ -164,8 +214,8 @@ function scheduleVisionCheck(meta: ProviderMeta, cfg: LlmProviderConfig): void {
 	paintCallout(el, `Checking "${model}"…`, NO_COLOR);
 	visionCheckTimer = window.setTimeout(() => {
 		void (async () => {
-			const verdict = await detectLocalhostVisionCapability({ provider: meta.id as LocalhostProviderId, model, baseURL, apiKey });
-			if (visionWarningEl === el) renderVisionVerdict(el, verdict, model, meta, baseURL);
+			const caps = await detectLocalhostVisionCapability({ provider: meta.id as LocalhostProviderId, model, baseURL, apiKey });
+			if (visionWarningEl === el) renderCapabilities(el, caps, model, meta, baseURL);
 		})();
 	}, 500);
 }
@@ -183,7 +233,7 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 		.setName("Model")
 		.setDesc("The vision model to transcribe with — whichever one you loaded.")
 		.addText((text) => {
-			text.setPlaceholder("e.g. qwen2.5vl").setValue(cfg.model ?? "");
+			text.setPlaceholder("e.g. qwen2.5vl:7b").setValue(cfg.model ?? "");
 			text.onChange(async (value) => {
 				cfg.model = value || undefined;
 				await save();

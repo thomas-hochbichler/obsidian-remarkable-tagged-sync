@@ -6,6 +6,20 @@ describe("PROVIDERS metadata", () => {
 		expect(Object.keys(PROVIDERS)).toEqual(["anthropic", "openai", "gemini", "openrouter", "ollama", "lmstudio", "custom"]);
 	});
 
+	/**
+	 * Which providers pin `temperature: 0` (#116). A wrong entry here is not a cosmetic slip: on the
+	 * current Claude generation a non-default temperature is a 400 on **every** request, thinking or
+	 * not, so flipping a cloud provider to `true` would lose whole syncs rather than degrade a hint.
+	 * The three servers the user runs themselves take it, and take it there.
+	 */
+	it("pins the temperature only on the servers the user runs", () => {
+		const pinned = Object.entries(PROVIDERS)
+			.filter(([, meta]) => meta.deterministic)
+			.map(([id]) => id);
+
+		expect(pinned).toEqual(["ollama", "lmstudio", "custom"]);
+	});
+
 	it("keeps each entry's key matched to its own id", () => {
 		for (const [id, meta] of Object.entries(PROVIDERS)) expect(meta.id).toBe(id);
 	});

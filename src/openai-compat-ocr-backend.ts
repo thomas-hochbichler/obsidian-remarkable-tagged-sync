@@ -1,6 +1,15 @@
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import { type OcrBackend, type OcrResult } from "./ocr-backend";
-import { fetchWithRetry, type LlmPageOutcome, sanitizeTranscript, type Sleep, TRANSCRIPTION_PROMPT, transcribePages } from "./llm-transcript";
+import {
+	fetchWithRetry,
+	isUnreachable,
+	type LlmPageOutcome,
+	refusalDetail,
+	sanitizeTranscript,
+	type Sleep,
+	TRANSCRIPTION_PROMPT,
+	transcribePages,
+} from "./llm-transcript";
 import { rasterizePage } from "./page-rasterizer";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage } from "./rm-parser";
@@ -15,6 +24,12 @@ export interface OpenAiCompatOcrOptions {
 	apiKey?: string | null;
 	/** Optional provider attribution headers (e.g. OpenRouter's `X-Title`). */
 	extraHeaders?: Record<string, string>;
+	/**
+	 * Send `temperature: 0` (#116). Comes from `ProviderMeta.deterministic`, which is where the reason
+	 * per provider is written down -- true for the servers the user runs, false for every cloud one,
+	 * because nine current Claude models answer a non-default temperature with a 400.
+	 */
+	deterministic?: boolean;
 	fetchFn?: typeof fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
@@ -62,12 +77,20 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly model: string;
 	private readonly apiKey: string | null;
 	private readonly extraHeaders: Record<string, string>;
+	private readonly deterministic: boolean;
 	private readonly fetchFn: typeof fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
 	private unreachable = false;
 	/** The first refusal the server explained, as `<status>: <message>` -- see `recognize`. */
 	private refusal: string | null = null;
+	/**
+	 * How many pages were dropped because the answer ran past what the model may return -- see
+	 * `recognize`. Counted rather than flagged, and counted separately from `failedPages`: that number
+	 * is every failed page whatever the cause, including a thrown parse error that sets no flag at all,
+	 * so reporting it as truncations would over-claim.
+	 */
+	private truncated = 0;
 
 	constructor(options: OpenAiCompatOcrOptions) {
 		this.id = options.id;
@@ -76,6 +99,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.model = options.model;
 		this.apiKey = options.apiKey ?? null;
 		this.extraHeaders = options.extraHeaders ?? {};
+		this.deterministic = options.deterministic ?? false;
 		// Reads as the global fetch and is not one: esbuild's `inject` rewrites this free identifier to
 		// the CORS-free requestUrl shim inside the bundle. `src/fetch-shim.ts` names this exact pattern
 		// -- "the OCR backends' `fetchFn ?? fetch` defaults" -- as one of the two it exists for. The
@@ -89,6 +113,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
 		this.refusal = null;
+		this.truncated = 0;
 
 		// An empty model field is a misconfiguration, and sending it anyway is worse than refusing:
 		// LM Studio answers `"model": ""` with whatever happens to be loaded -- so the note would carry
@@ -112,9 +137,14 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			// most likely failure and the one the user fixes in seconds. Otherwise the server's own words
 			// go through unchanged: "No models loaded" is a sentence we could not have written for it,
 			// and inventing one for a 404 or a bad key is still not done here.
+			// Truncation goes last, and stays last: someone whose server died should read that rather than
+			// a model recommendation. Both causes above are systemic -- the whole unit is lost for one
+			// reason -- while truncation is a property of particular pages, so it is the right thing to be
+			// displaced by a bigger failure that is also true.
 			(failedPages) => {
 				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages)} not transcribed. Is it running?`;
 				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages)} not transcribed.`;
+				if (this.truncated > 0) return truncationWarning(this.truncated);
 				return null;
 			},
 			onPage,
@@ -137,13 +167,17 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 
 			// Still no max_tokens: the spec's request body omits it (§3.1), and providers differ on the
 			// ceiling. Truncation is caught below via `finish_reason` instead of being capped here.
+			//
+			// `temperature` is spread in rather than always sent, so the cloud providers keep receiving
+			// exactly `{ model, messages }` -- see `deterministic` in the options, and `ProviderMeta` for
+			// which providers set it and why.
 			const response = await fetchWithRetry(
 				this.fetchFn,
 				chatCompletionsUrl(this.baseURL),
 				{
 					method: "POST",
 					headers,
-					body: JSON.stringify({ model: this.model, messages: [{ role: "user", content }] }),
+					body: JSON.stringify({ model: this.model, messages: [{ role: "user", content }], ...(this.deterministic ? { temperature: 0 } : {}) }),
 				},
 				this.sleepFn,
 			);
@@ -151,7 +185,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			if (!response.ok) {
 				// First refusal wins: with four pages in flight they are the same refusal anyway, and the
 				// first one is the one whose status the user saw the run stop on.
-				this.refusal ??= `${response.status}${await errorMessage(response)}`;
+				this.refusal ??= `${response.status}${await refusalDetail(response)}`;
 				console.warn(`Tagged Sync: ${this.id} OCR request failed with status ${response.status}`);
 				return { kind: "failed" };
 			}
@@ -160,6 +194,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			// A truncated page is `failed`, not `ok`: half a page read as a whole one is a silent,
 			// permanent loss, because the next sync skips a document whose device hash is unchanged.
 			if (body.choices?.[0]?.finish_reason === "length") {
+				this.truncated++;
 				console.warn(`Tagged Sync: ${this.id} OCR response was truncated, marking the page failed`);
 				return { kind: "failed" };
 			}
@@ -173,37 +208,24 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	}
 }
 
+/**
+ * The one sentence a user sees when pages were dropped for running too long (#116).
+ *
+ * Four things it must carry, and each is there for a reason a shorter sentence loses: the cause in
+ * the user's terms rather than `finish_reason`; that the page was **left out** on purpose, so it does
+ * not read as a plugin bug; the lever, which has to stand alone for someone who never opened
+ * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
+ * hash is unchanged, so "Re-transcribe all notes" is the repair.
+ */
+function truncationWarning(pages: number): string {
+	return (
+		`${pageCount(pages)} left out because the model's answer ran past what it may return — ` +
+		`this happens with models that reason before answering. A later sync will not pick them up on its own: ` +
+		`switch to a model that doesn't reason, then run "Re-transcribe all notes".`
+	);
+}
+
 /** "1 page was" / "3 pages were", so the warnings above read as sentences. */
 function pageCount(pages: number): string {
 	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
-}
-
-/**
- * The `: <message>` half of a refusal, or "" when the server sent none.
- *
- * Two shapes, because both are in the wild: OpenAI's `{error: {message}}`, which LM Studio and
- * Ollama follow, and a bare `{error: "..."}` string. Anything else -- HTML, an empty body, a parse
- * failure -- leaves the status to speak alone rather than putting a stringified object in a note.
- */
-async function errorMessage(response: Response): Promise<string> {
-	try {
-		const body = (await response.json()) as { error?: string | { message?: string } };
-		const message = typeof body.error === "string" ? body.error : body.error?.message;
-		return message ? `: ${message}` : "";
-	} catch {
-		return "";
-	}
-}
-
-/**
- * Whether a thrown request error means *nothing answered at that address*, as opposed to answering
- * badly. Matched on the text because Electron's fetch exposes no stable typed error -- the same
- * reason `explain-error.ts` matches strings for the reMarkable cloud.
- *
- * Deliberately loose in the harmless direction: a false positive says "is it running?" about a server
- * that is, which costs a wrong hint. A false negative restores the silence this exists to end.
- */
-function isUnreachable(error: unknown): boolean {
-	const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-	return /econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up/i.test(text);
 }

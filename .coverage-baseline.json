@@ -7,8 +7,8 @@
 			"branches": 1
 		},
 		"pro/llm-register.ts": {
-			"lines": 22,
-			"branches": 25
+			"lines": 16,
+			"branches": 24
 		},
 		"pro/llm-transcript.ts": {
 			"lines": 0,
@@ -175,12 +175,12 @@
 			"branches": 0
 		},
 		"src/localhost-register.ts": {
-			"lines": 59,
-			"branches": 38
+			"lines": 17,
+			"branches": 20
 		},
 		"src/localhost-vision-detect.ts": {
 			"lines": 1,
-			"branches": 6
+			"branches": 5
 		},
 		"src/main.ts": {
 			"lines": 31,
@@ -223,8 +223,8 @@
 			"branches": 0
 		},
 		"src/openai-compat-ocr-backend.ts": {
-			"lines": 1,
-			"branches": 2
+			"lines": 0,
+			"branches": 1
 		},
 		"src/page-hash.ts": {
 			"lines": 0,

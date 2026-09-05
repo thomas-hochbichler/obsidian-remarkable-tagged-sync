@@ -277,3 +277,36 @@ export async function transcribePages(
 		...(warning ? { warnings: [warning] } : {}),
 	};
 }
+
+/**
+ * The `: <message>` half of a refusal, or "" when the server sent none.
+ *
+ * Here rather than in one backend because both of them report refusals since #116, and a second copy
+ * of a rule about response shapes is a rule that drifts.
+ *
+ * Two shapes, because both are in the wild: OpenAI's `{error: {message}}`, which LM Studio and
+ * Ollama follow, and a bare `{error: "..."}` string. Anything else -- HTML, an empty body, a parse
+ * failure -- leaves the status to speak alone rather than putting a stringified object in a note.
+ */
+export async function refusalDetail(response: Response): Promise<string> {
+	try {
+		const body = (await response.json()) as { error?: string | { message?: string } };
+		const message = typeof body.error === "string" ? body.error : body.error?.message;
+		return message ? `: ${message}` : "";
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * Whether a thrown request error means *nothing answered at that address*, as opposed to answering
+ * badly. Matched on the text because Electron's fetch exposes no stable typed error -- the same
+ * reason `explain-error.ts` matches strings for the reMarkable cloud.
+ *
+ * Deliberately loose in the harmless direction: a false positive says "is it running?" about a server
+ * that is, which costs a wrong hint. A false negative restores the silence this exists to end.
+ */
+export function isUnreachable(error: unknown): boolean {
+	const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+	return /econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up/i.test(text);
+}

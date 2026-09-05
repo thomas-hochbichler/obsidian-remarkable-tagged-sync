@@ -39,6 +39,12 @@ export type LlmProviderId = "anthropic" | "openai" | "gemini" | "openrouter" | "
  * does not pretend to -- the model id is the user's to enter, and an empty one is refused with a
  * sentence naming what to do (`OpenAiCompatOcrBackend.recognize`, `AnthropicOcrBackend.recognize`)
  * rather than sent. This is the rule the free build already applied to the localhost providers.
+ *
+ * **No cloud provider is `deterministic`** (#116). `temperature: 0` is refused outright by nine
+ * current Claude models -- 400 on every request, "regardless of whether thinking is used" -- and
+ * OpenAI's reasoning models carry the same restriction. An allowlist of the models that still accept
+ * it would age faster than any list in this repo and fail harder: a wrong entry costs a whole sync,
+ * not a missing hint. The three servers the user runs themselves take it, and take it there.
  */
 const CLOUD_PROVIDERS = {
 	anthropic: {
@@ -51,6 +57,7 @@ const CLOUD_PROVIDERS = {
 		defaultModel: "",
 		key: "required",
 		visionReach: "none",
+		deterministic: false,
 	},
 	openai: {
 		id: "openai",
@@ -62,6 +69,7 @@ const CLOUD_PROVIDERS = {
 		defaultModel: "",
 		key: "required",
 		visionReach: "heuristic",
+		deterministic: false,
 	},
 	gemini: {
 		id: "gemini",
@@ -73,6 +81,7 @@ const CLOUD_PROVIDERS = {
 		defaultModel: "",
 		key: "required",
 		visionReach: "partial",
+		deterministic: false,
 	},
 	openrouter: {
 		id: "openrouter",
@@ -84,6 +93,7 @@ const CLOUD_PROVIDERS = {
 		defaultModel: "",
 		key: "required",
 		visionReach: "reported",
+		deterministic: false,
 	},
 } as const satisfies Record<"anthropic" | "openai" | "gemini" | "openrouter", ProviderMeta>;
 

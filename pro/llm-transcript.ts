@@ -18,6 +18,8 @@
 
 export {
 	fetchWithRetry,
+	isUnreachable,
+	refusalDetail,
 	LLM_MAX_PARALLELISM,
 	sanitizeTranscript,
 	transcribePages,

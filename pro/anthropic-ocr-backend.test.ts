@@ -171,7 +171,15 @@ describe("AnthropicOcrBackend", () => {
 
 		const result = await backend.recognize([page()]);
 
-		expect(result).toEqual({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null });
+		// The refusal reaches the end-of-sync report since #116; before that this backend reported
+		// nothing for any cause, so a bad key looked exactly like a page with nothing on it.
+		expect(result).toEqual({
+			status: "failed",
+			pages: [{ status: "failed", text: "" }],
+			text: "",
+			confidence: null,
+			warnings: ["Anthropic answered 401: unauthorized — 1 page was not transcribed."],
+		});
 	});
 
 	it("reports failed and never throws when the request itself fails", async () => {
@@ -180,7 +188,13 @@ describe("AnthropicOcrBackend", () => {
 
 		const result = await backend.recognize([page()]);
 
-		expect(result).toEqual({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null });
+		expect(result).toEqual({
+			status: "failed",
+			pages: [{ status: "failed", text: "" }],
+			text: "",
+			confidence: null,
+			warnings: ["Could not reach Anthropic — 1 page was not transcribed. Is this machine online?"],
+		});
 	});
 
 	// The prompt tells the model to output nothing for a page with no legible text, so an empty
@@ -251,5 +265,90 @@ describe("AnthropicOcrBackend", () => {
 describe("metered", () => {
 	it("always bills, so a background sync needs explicit consent", () => {
 		expect(new AnthropicOcrBackend({ apiKey: "key", fetchFn: fetchMock }).metered).toBe(true);
+	});
+});
+
+/**
+ * What this backend never had (#116 ticket 03): a warnings callback. `transcribePages` was called
+ * with two arguments, so nothing it could learn about a run ever reached the end-of-sync report or
+ * "Copy diagnostics" -- and `unitStatus` calls a unit `ok` as soon as one page reads, so a notebook
+ * that lost three pages out of five was completely silent.
+ */
+describe("AnthropicOcrBackend reporting", () => {
+	beforeEach(() => fetchMock.mockReset());
+
+	function truncated(): Response {
+		return jsonResponse(200, { content: [{ type: "text", text: "half a page" }], stop_reason: "max_tokens" });
+	}
+
+	it("reports pages dropped for truncation, and names the lever this provider actually has", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { content: [{ type: "text", text: "read fine" }] })).mockResolvedValueOnce(truncated());
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-opus-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page(), page()]);
+
+		expect(result.status).toBe("ok");
+		// On this generation thinking cannot be switched off, so the way out is a different model --
+		// never a different setting, which is why the sentence differs from the other adapter's.
+		expect(result.warnings?.[0]).toBe(
+			"1 page was left out because the model's answer ran past what it may return — Claude models reason before answering, " +
+				'and those tokens count against the same limit. A later sync will not pick them up on its own: switch to a model that ' +
+				'doesn\'t reason, then run "Re-transcribe all notes".',
+		);
+	});
+
+	/** Same order as the OpenAI-compatible adapter's: the systemic causes displace the per-page one. */
+	it("lets a dead host displace the truncation sentence", async () => {
+		fetchMock.mockRejectedValueOnce(new Error("fetch failed")).mockResolvedValueOnce(truncated());
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-opus-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page(), page()]);
+
+		expect(result.warnings?.[0]).toContain("Could not reach Anthropic");
+	});
+
+	/**
+	 * The chain says nothing rather than guessing. A page can fail for a reason none of the three
+	 * causes recognises -- a body that will not parse, say -- and inventing a sentence for it is how a
+	 * report starts telling users things that are not true. The generic notice still fires for a unit
+	 * that produced nothing at all.
+	 */
+	it("stays silent when a page failed for a reason it cannot name", async () => {
+		fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => { throw new Error("not json"); } } as unknown as Response);
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.status).toBe("failed");
+		expect(result.warnings).toBeUndefined();
+	});
+
+	/**
+	 * Pre-existing and unrelated to #116, but on the one line the ticket already rewrote: every other
+	 * backend honours `recognize(pages, onPage?)`, and this one dropped the argument, so the progress
+	 * bar never ticked per page here.
+	 */
+	it("ticks the progress callback once per page", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "text" }] }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+		let ticks = 0;
+
+		await backend.recognize([page(), page(), page()], () => ticks++);
+
+		expect(ticks).toBe(3);
+	});
+
+	/**
+	 * The ceiling is a runaway guard, not a budget. Anthropic's API requires `max_tokens`, so unlike
+	 * the OpenAI-compatible path this one cannot omit it -- and at 4096 an adaptive thinking pass ate
+	 * the room a transcript needed. The densest page in the corpus is about 320 output tokens.
+	 */
+	it("asks for a ceiling that leaves room for a thinking pass", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "text" }] }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		await backend.recognize([page()]);
+
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_tokens).toBe(16_384);
 	});
 });

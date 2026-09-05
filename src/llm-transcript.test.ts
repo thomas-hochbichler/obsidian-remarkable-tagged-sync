@@ -3,7 +3,7 @@
 // need coverage in the suite that actually gates this repo.
 
 import { describe, expect, it, vi } from "vitest";
-import { LLM_MAX_PARALLELISM, sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT, transcribePages } from "./llm-transcript";
+import { isUnreachable, LLM_MAX_PARALLELISM, refusalDetail, sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT, transcribePages } from "./llm-transcript";
 import type { RmPage } from "./rm-parser";
 import { layoutText } from "./text-layout";
 
@@ -237,5 +237,55 @@ describe("how many requests are in flight at once", () => {
 		const { DEFAULT_MAX_PARALLELISM } = await import("./vision-ocr-backend");
 
 		expect(LLM_MAX_PARALLELISM).not.toBe(DEFAULT_MAX_PARALLELISM);
+	});
+});
+
+/**
+ * The two helpers that turn a failed request into a sentence. They moved here from the
+ * OpenAI-compatible backend when the Anthropic one gained the same three-cause chain (#116): both
+ * report refusals now, and a second copy of a rule about response shapes is a rule that drifts.
+ */
+describe("refusalDetail", () => {
+	const errorBody = (body: unknown): Response => ({ json: async () => body }) as unknown as Response;
+
+	it("reads OpenAI's nested error message, which LM Studio and Ollama follow", async () => {
+		expect(await refusalDetail(errorBody({ error: { message: "No models loaded" } }))).toBe(": No models loaded");
+	});
+
+	it("reads a bare string error, which is also in the wild", async () => {
+		expect(await refusalDetail(errorBody({ error: "unauthorized" }))).toBe(": unauthorized");
+	});
+
+	/** The status speaks alone rather than putting a stringified object into a note. */
+	it("says nothing for a body it does not recognise", async () => {
+		expect(await refusalDetail(errorBody({ detail: "nope" }))).toBe("");
+	});
+
+	it("says nothing when the body is not JSON at all", async () => {
+		const html = { json: async () => { throw new Error("<html>"); } } as unknown as Response;
+
+		expect(await refusalDetail(html)).toBe("");
+	});
+});
+
+describe("isUnreachable", () => {
+	/**
+	 * Matched on the text because Electron's fetch exposes no stable typed error, and deliberately
+	 * loose in the harmless direction: a false positive says "is it running?" about a server that is,
+	 * which costs a wrong hint. A false negative restores the silence this exists to end.
+	 */
+	it("recognises the ways a dead address announces itself", () => {
+		for (const message of ["connect ECONNREFUSED 127.0.0.1:11434", "fetch failed", "socket hang up", "getaddrinfo ENOTFOUND box.local"]) {
+			expect(isUnreachable(new Error(message)), message).toBe(true);
+		}
+	});
+
+	it("does not call a server that answered badly unreachable", () => {
+		expect(isUnreachable(new Error("Unexpected token < in JSON"))).toBe(false);
+	});
+
+	it("handles something thrown that is not an Error at all", () => {
+		expect(isUnreachable("ECONNRESET")).toBe(true);
+		expect(isUnreachable({ nope: true })).toBe(false);
 	});
 });
