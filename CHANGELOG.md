@@ -34,6 +34,26 @@ workflow publishes the section as the GitHub release body. See
 
 ### Changed
 
+- **Only the pages you changed are transcribed again.** Adding one page to a long notebook used to
+  read the whole notebook back, every time -- so the cost of capturing one new meeting grew with how
+  long you had been keeping the notebook. One measured case: a single page added to a 100-page
+  notebook was around six and a half minutes of a laptop GPU, for one page of new handwriting. Now a
+  page whose ink has not moved keeps the text it already has, and only the pages you actually wrote
+  on go to the transcription backend.
+
+  **Changing the backend or the model discards what was kept**, so a note is never a mix of two
+  models reading it. So does a plugin release that ships a new local model or changes how pages are
+  read. To read everything again on purpose, use **Re-transcribe all notes** -- it still reads every
+  page, and now leaves the saved text behind it, so the sync after it is quick.
+
+  **The first sync of each notebook after this update still reads it whole, once.** Nothing was
+  saved before now, so there is nothing to keep yet -- and that run is the one that used to read the
+  whole notebook anyway. Every sync of that notebook after it is the cheap one. (#117)
+
+  One thing this repairs on the way: a notebook synced while the transcription backend was
+  unreachable used to come back with its transcript *removed*. The pages that were already read stay
+  in the note now, and the page that could not be reached says so.
+
 - **Transcripts from a local server are now reproducible.** Requests to Ollama, LM Studio and a
   custom OpenAI-compatible server carry `temperature: 0`, which is the sampling the plugin's own
   measured 7.6 % character error was taken at, and what the built-in local model has always used. The

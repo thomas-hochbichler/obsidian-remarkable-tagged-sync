@@ -29,6 +29,7 @@ import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, ty
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
+import { type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint } from "./transcript-store";
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -151,6 +152,18 @@ export interface SyncIndexRow {
 	 * these and never a tag the user wrote. Absent when the feature has not written this note.
 	 */
 	frontmatterTags?: string[];
+	/**
+	 * The pages this note's transcript was written from, so the next sync reads only the ones whose
+	 * ink moved (issue #117). Hashes only -- the text stays in the note, because this row is rewritten
+	 * into `data.json` after every document. See `transcript-store.ts`.
+	 *
+	 * Absent on rows written before it existed: those take one full transcription round on their
+	 * notebook's next change -- the same one-round catch-up `renderVersion` and `blockHash` rely on,
+	 * and it costs nothing extra, because that run transcribed the whole notebook anyway.
+	 */
+	transcribedPages?: StoredPage[];
+	/** `transcriptFingerprint` when `transcribedPages` was written; a mismatch discards all of them. */
+	transcribedWith?: string;
 }
 
 export interface SyncIndex {
@@ -310,6 +323,19 @@ export interface SyncResult {
 	 */
 	relaidDocuments: number;
 	/**
+	 * Pages this run kept the transcript of instead of reading again (issue #117). Not a notice --
+	 * a skipped page is the feature working, and a line that fires on every successful sync is one
+	 * people learn to ignore. It goes in "Copy diagnostics", where it answers the one question this
+	 * feature will be asked: "I edited a page and the transcript did not update."
+	 */
+	reusedPageTranscriptions: number;
+	/**
+	 * Notebook pages this run had a transcript to produce for at all -- the denominator the line above
+	 * is only readable against. "Reused 99" says nothing; "99 of 100" says the feature worked, and
+	 * "0 of 100" says it did not.
+	 */
+	pageTranscriptionsConsidered: number;
+	/**
 	 * The raw error text behind each skip, one entry per skipped unit, for "Copy diagnostics" -- the
 	 * console.warn alone left diagnostics reporting "Last error: none" after a partially-failed sync.
 	 * Also carries a digest build's non-fatal warnings: those cost a sentence or an anchor rather than
@@ -370,6 +396,40 @@ async function reusableTranscript(
 	if (pages.some(({ scene }) => scene !== null && (scene.text || scene.layers.some((layer) => layer.placement === "applied")))) return undefined;
 	const content = await noteStore.read(row.notePath);
 	return content === null ? undefined : (readTranscript(content) ?? undefined);
+}
+
+/**
+ * The pages of one notebook unit that may keep the text they already have, by page id (issue #117).
+ *
+ * The store's own rules live in `transcript-store.ts`; what this adds is the two things only the sync
+ * knows: the page's current hash, and whether the render it was read from is still the render the
+ * note embeds.
+ *
+ * That second one is `reusableTranscript`'s carve-out, moved from the unit to the page. Placing
+ * anchored ink changes what the OCR rasterizer sees, so a page whose parse *did* place something is
+ * worth re-reading after a `RENDER_VERSION` bump -- and so is a page carrying typed text. Everything
+ * else keeps what it has. Where the unit-level check vetoes a whole notebook over one such page, this
+ * costs that page alone.
+ */
+async function reusablePageTranscripts(
+	noteStore: NoteStore,
+	row: SyncIndexRow | undefined,
+	fingerprint: string,
+	pageContentHash: (pageId: string) => string,
+	pages: OcrPage[],
+): Promise<ReadonlyMap<string, string>> {
+	if (row === undefined || row.transcribedPages === undefined || row.transcribedWith === undefined) return new Map();
+	const renderCurrent = row.renderVersion === RENDER_VERSION;
+	const candidates: ReuseCandidate[] = pages
+		.filter((page): page is OcrPage & { id: string } => page.id !== undefined)
+		.map((page) => ({
+			id: page.id,
+			hash: pageContentHash(page.id),
+			renderSafe: renderCurrent || !(page.scene?.text || page.scene?.layers.some((layer) => layer.placement === "applied")),
+		}));
+
+	const content = await noteStore.read(row.notePath);
+	return reusableTranscripts({ with: row.transcribedWith, pages: row.transcribedPages }, fingerprint, content && readTranscript(content), candidates);
 }
 
 /** Raw error text for `SyncResult.skipErrors` -- the same shape main.ts records for a whole-sync failure. */
@@ -508,6 +568,15 @@ export interface OcrPage {
 	 * because the words are already there and reading them back costs a request and a worse copy.
 	 */
 	typed?: boolean;
+	/**
+	 * The page's own id on the device, for the per-page transcript store (issue #117). Set on the
+	 * notebook paths, which are the only ones the store covers; absent for a PDF-backed unit's
+	 * annotation pages.
+	 *
+	 * Carried rather than recovered from the array position afterwards. `annotationOcrPages` above
+	 * documents what positional page identity cost the last time it was relied on.
+	 */
+	id?: string;
 }
 
 /**
@@ -526,8 +595,8 @@ function annotationOcrPages(pages: AnnotatedPdfPage[]): OcrPage[] {
 }
 
 /** Every page of a notebook unit, which always has a scene -- `renderPage` returns a blank one for a page never drawn on. */
-function notebookOcrPages(scenes: RmPage[]): OcrPage[] {
-	return scenes.map((scene, index) => ({ scene, pageLabel: index + 1, embedPage: index + 1 }));
+function notebookOcrPages(scenes: RmPage[], pageIds: readonly string[]): OcrPage[] {
+	return scenes.map((scene, index) => ({ scene, pageLabel: index + 1, embedPage: index + 1, id: pageIds[index] }));
 }
 
 /** One page's highlights plus the labels its callout needs -- the collection input, one entry per page in document order (a page with no highlights is still passed, and simply yields no group). */
@@ -580,6 +649,13 @@ interface UnitOcr {
 	pages: TranscriptPage[] | null;
 	/** The unlabelled whole-unit transcript -- the fallback when `pages` is null. */
 	text: string;
+	/**
+	 * The pages that came back `ok` and are therefore worth storing, with the id the store keys on and
+	 * the ordinal their heading was written under (issue #117). Carried out of here rather than
+	 * re-derived by the caller, because pairing `pages[i]` with `ocrPages[i]` after the fact is the
+	 * positional coupling ticket 04 refused.
+	 */
+	readPages: { id: string; label: number }[];
 }
 
 /**
@@ -592,44 +668,81 @@ interface UnitOcr {
  * kept: attaching a transcript to the wrong page is worse than an honest unlabelled blob, and no text
  * is lost either way.
  */
-async function runOcr(backend: OcrBackend, pages: OcrPage[], onPage?: () => void): Promise<UnitOcr> {
-	const sent = pages.filter((page): page is OcrPage & { scene: RmPage } => page.scene !== null && page.typed !== true);
+async function runOcr(backend: OcrBackend, pages: OcrPage[], onPage?: () => void, reused: ReadonlyMap<string, string> = new Map()): Promise<UnitOcr> {
+	// A reused page is one the store already holds text for (issue #117). It never reaches the
+	// backend, and it enters the results as `ok` -- ticket 05: the unit's status describes the *note*,
+	// not this round's request, or a 100-page notebook whose one new page failed would report as a
+	// failed note.
+	const kept = new Map<OcrPage, OcrPageResult>();
+	for (const page of pages) {
+		const text = page.id === undefined ? undefined : reused.get(page.id);
+		if (text !== undefined) kept.set(page, { status: "ok", text });
+	}
+	const sent = pages.filter((page): page is OcrPage & { scene: RmPage } => page.scene !== null && page.typed !== true && !kept.has(page));
 
 	// Nothing to transcribe: the digest covers every page, or every page is typed text, or the unit
-	// has no ink at all. The backend is not called even to be told so -- an unavailable one would
-	// answer "unavailable" to an empty question, and since `unitOcr` became the worse of the digest's
-	// status and this one, that answer would raise a platform notice about a page nobody asked for.
-	if (sent.length === 0) return { status: "skipped", warnings: [], pages: transcriptPages(pages, new Map()), text: "" };
+	// has no ink at all, or the store already holds every page. The backend is not called even to be
+	// told so -- an unavailable one would answer "unavailable" to an empty question, and since
+	// `unitOcr` became the worse of the digest's status and this one, that answer would raise a
+	// platform notice about a page nobody asked for.
+	if (sent.length === 0) {
+		return { status: kept.size > 0 ? "ok" : "skipped", warnings: [], pages: transcriptPages(pages, kept), text: joinPageText(pages, kept), readPages: storablePages(pages, kept) };
+	}
 
 	let result: OcrResult;
 	try {
 		result = await backend.recognize(sent.map((page) => page.scene), onPage);
 	} catch (error) {
 		console.warn(`Tagged Sync: OCR backend "${backend.id}" failed, note will ship with render only`, error);
-		return { status: "failed", warnings: [], pages: null, text: "" };
+		return degraded("failed", [], pages, kept, sent);
 	}
 
 	const warnings = result.warnings ?? [];
 	// `?? null` and not `=== null`: an omitted field says the same thing a null one does -- this
 	// backend has nothing per-page to report -- and the guard exists precisely not to trust the answer.
 	const perPage = result.pages ?? null;
-	if (perPage === null) return { status: result.status, warnings, pages: null, text: result.text };
+	if (perPage === null) return degraded(result.status, warnings, pages, kept, sent, result.text);
 	if (perPage.length !== sent.length) {
 		console.warn(`Tagged Sync: OCR backend "${backend.id}" returned ${perPage.length} page result(s) for ${sent.length} page(s); transcript will not be page-anchored`);
-		return {
-			status: result.status,
-			warnings: [...warnings, `the "${backend.id}" backend returned ${perPage.length} page result(s) for ${sent.length} page(s), so the transcript could not be split by page`],
-			pages: null,
-			text: result.text,
-		};
+		const arity = `the "${backend.id}" backend returned ${perPage.length} page result(s) for ${sent.length} page(s), so the transcript could not be split by page`;
+		return degraded(result.status, [...warnings, arity], pages, kept, sent, result.text);
 	}
 
-	return {
-		status: result.status,
-		warnings,
-		pages: transcriptPages(pages, new Map(sent.map((page, index) => [page, perPage[index]]))),
-		text: result.text,
-	};
+	for (const [index, page] of sent.entries()) kept.set(page, perPage[index]);
+	return { status: result.status, warnings, pages: transcriptPages(pages, kept), text: result.text, readPages: storablePages(pages, kept) };
+}
+
+/**
+ * The outcome when the backend produced nothing this round can be split by page -- it threw, it is
+ * unavailable, or it broke the arity contract.
+ *
+ * With no reused pages this is exactly what it always was: `pages: null`, and the note falls back to
+ * the unlabelled text. With reused pages it must not be, because that would **delete** text the store
+ * still holds: `renderTranscript(…, null, "")` returns "" and the note is rewritten without its
+ * `## Transcript` section, which `emptyBlockReport` deliberately does not refuse for `unavailable`.
+ * So the kept pages are rendered and the pages that were sent say they could not be read -- which is
+ * what happened to them (ticket 05).
+ */
+function degraded(status: OcrResult["status"], warnings: string[], pages: OcrPage[], kept: Map<OcrPage, OcrPageResult>, sent: OcrPage[], text = ""): UnitOcr {
+	if (kept.size === 0) return { status, warnings, pages: null, text, readPages: [] };
+	for (const page of sent) kept.set(page, { status: "failed", text: "" });
+	return { status, warnings, pages: transcriptPages(pages, kept), text: joinPageText(pages, kept), readPages: storablePages(pages, kept) };
+}
+
+/**
+ * The pages worth remembering: read successfully, and carrying an id to remember them by. A page with
+ * no id is a PDF-backed unit's annotation page, which the store does not cover.
+ */
+function storablePages(pages: OcrPage[], results: ReadonlyMap<OcrPage, OcrPageResult>): { id: string; label: number }[] {
+	return pages.flatMap((page) => (page.id !== undefined && results.get(page)?.status === "ok" ? [{ id: page.id, label: page.pageLabel }] : []));
+}
+
+/** The unlabelled whole-unit transcript, assembled from per-page results in page order. */
+function joinPageText(pages: OcrPage[], results: ReadonlyMap<OcrPage, OcrPageResult>): string {
+	return pages
+		.map((page) => results.get(page)?.text ?? "")
+		.filter((text) => text !== "")
+		.join("\n\n");
 }
 
 /**
@@ -716,7 +829,7 @@ interface UnitParams {
 	 * the pages a digest does not cover. Empty for a unit with no digest, whose quotes render as
 	 * their own `## Highlights` section instead (ticket 05).
 	 */
-	transcriptHighlights?: HighlightGroup[];
+	transcriptHighlights: HighlightGroup[];
 	/** The `## Digest` body of a unit with document text; "" for every other unit, and for a digest that failed to build. */
 	digest: string;
 	/**
@@ -740,6 +853,19 @@ interface UnitParams {
 	previous?: SyncIndexRow;
 	/** Progress tick, one per transcribed page. Per unit, which is why it travels with the params. */
 	onPage?: () => void;
+	/**
+	 * Page id -> the text that page may keep instead of being read again (issue #117), already judged
+	 * by `reusableTranscripts`. Empty or absent means transcribe everything, which is what every path
+	 * but the notebook one passes.
+	 */
+	reused?: ReadonlyMap<string, string>;
+	/**
+	 * `pageContentHash` for every live page, so the row can record what it stored each page under.
+	 * Absent for the units the store does not cover.
+	 */
+	pageContentHash?: (pageId: string) => string;
+	/** `transcriptFingerprint` of the backend this run, stamped on whatever the row stores. */
+	transcriptFingerprint?: string;
 }
 
 /**
@@ -844,6 +970,47 @@ async function emptyBlockReport(
 		: { line: `${params.unit} was written with neither a digest nor a transcript`, refuse: false };
 }
 
+/**
+ * What this write leaves in the row for the *next* sync to read pages back from (issue #117), as the
+ * two fields to spread onto it.
+ *
+ * Four outcomes, and three of them store nothing:
+ *
+ * - **the unit is not one the store covers** -- no fingerprint was passed (a PDF-backed unit, a
+ *   page-tag note), or the note has a single page and so carries no per-page headings to read back;
+ * - **no OCR ran** (`keepTranscript`): the previous row's store is carried through untouched. Nothing
+ *   was re-read, the device is unchanged, and the transcript was written back verbatim with its
+ *   headings intact -- so what the old row said is still true, including *which backend* said it;
+ * - **the backend warned**: nothing is stored this round. #116's truncation is a page that comes back
+ *   `ok` and is quietly incomplete, which is exactly the shape ticket 02's tie-breaker refuses to
+ *   freeze. Warnings are unit-level, so there is no way to store around them; they are also rare, and
+ *   the unit gets a store again on its next clean run;
+ * - **otherwise**: the pages read successfully, each under the hash and the heading ordinal it was
+ *   written with, plus the count of quotes folded in above it so the next parse can drop them.
+ */
+function transcriptStoreFor(params: UnitParams, ocr: UnitOcr, transcriptHighlights: HighlightGroup[]): Pick<SyncIndexRow, "transcribedPages" | "transcribedWith"> {
+	if (params.transcriptFingerprint === undefined || params.pageContentHash === undefined || params.unitPages <= 1) return {};
+	if (params.keepTranscript !== undefined) {
+		return { transcribedPages: params.previous?.transcribedPages, transcribedWith: params.previous?.transcribedWith };
+	}
+	if (ocr.warnings.length > 0) return {};
+
+	return { transcribedPages: storedPages(ocr.readPages, params.pageContentHash, transcriptHighlights), transcribedWith: params.transcriptFingerprint };
+}
+
+/**
+ * The pages a row remembers: what was read, under the hash it was read at and the ordinal its heading
+ * was written under, plus how many quotes were folded in above it.
+ *
+ * Shared by the sync and by `reTranscribeAll` on purpose -- they write the same store, and the next
+ * sync cannot tell which of them wrote it. Two copies of this arithmetic would be two chances for the
+ * quote count to disagree with the note, and a wrong count silently shifts a page's text by a line.
+ */
+function storedPages(readPages: { id: string; label: number }[], hashOf: (pageId: string) => string, folded: HighlightGroup[]): StoredPage[] {
+	const quotesByLabel = new Map(folded.map((group) => [group.pageLabel, group.quotes.length]));
+	return readPages.map((page) => ({ id: page.id, hash: hashOf(page.id), label: page.label, quotes: quotesByLabel.get(page.label) ?? 0 }));
+}
+
 /** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend"> & { attachmentsFolder: string },
@@ -853,10 +1020,16 @@ async function writeUnit(
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
 	const ocr: UnitOcr =
 		params.keepTranscript !== undefined
-			? { status: "ok", warnings: [], pages: null, text: params.keepTranscript }
-			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage);
+			? // No OCR ran, so there is no fingerprint to stamp and nothing to store. A render-bump-only
+				// rebuild therefore leaves the store as it was, and the notebook's next real change does
+				// its one catch-up round (ticket 03).
+				{ status: "ok", warnings: [], pages: null, text: params.keepTranscript, readPages: [] }
+			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage, params.reused);
 
 	const synced = deps.now();
+	// The quotes folded into the transcript: the note is rendered from them, and the store records how
+	// many of them sat above each page so the next parse can drop exactly those.
+	const transcriptHighlights = params.transcriptHighlights;
 	const fields: NoteFields = {
 		docId: params.docId,
 		pageId: params.pageId,
@@ -865,7 +1038,7 @@ async function writeUnit(
 		source: params.source,
 		embedPath,
 		highlights: params.highlights,
-		transcript: renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: params.transcriptHighlights, unitPages: params.unitPages }),
+		transcript: renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: transcriptHighlights, unitPages: params.unitPages }),
 		digest: params.digest,
 	};
 
@@ -899,6 +1072,7 @@ async function writeUnit(
 			: pageSyncKey(params.docId, params.pageId, params.tag);
 
 	const highlightCount = params.highlights.reduce((count, group) => count + group.quotes.length, 0);
+	const store = transcriptStoreFor(params, ocr, transcriptHighlights);
 
 	return {
 		emptyBlock: empty?.line ?? null,
@@ -917,6 +1091,7 @@ async function writeUnit(
 				blockHash: managedBlockHash(fields),
 				highlightCount,
 				frontmatterTags,
+				...store,
 			},
 			ocr: ocr.status,
 			ocrWarnings: ocr.warnings,
@@ -1457,7 +1632,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, skipErrors: [] };
+		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -1474,6 +1649,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const skipErrors: string[] = [];
 	let shrunkNotes = 0;
 	let relaidDocuments = 0;
+	// Pages this run did not have to read again, for the diagnostics line. The characteristic bug
+	// report for issue #117 is "I edited a page and the transcript did not update", and this is what
+	// answers it without a round of questions.
+	let reusedPageTranscriptions = 0;
+	let pageTranscriptionsConsidered = 0;
+	const transcriptKey = transcriptFingerprint(ocrBackend.fingerprint);
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -1501,6 +1682,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			documentsSkipped: skippedDocIds.size,
 			shrunkNotes,
 			relaidDocuments,
+			reusedPageTranscriptions,
+			pageTranscriptionsConsidered,
 			skipErrors,
 		};
 	};
@@ -1674,7 +1857,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					digestPages = composite.map((page, i) => ({ pageId: docPages[i].id, sourceIndex: page.sourceIndex, embedPage: i + 1, scene: page.annotations, appended: docPages[i].appended }));
 				} else {
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
-					ocrPages = notebookOcrPages(scenes);
+					ocrPages = notebookOcrPages(scenes, pageOrder);
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
@@ -1702,12 +1885,29 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const unitName = `"${entry.visibleName}" for tag "${tag}"`;
 			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName) : { markdown: "", ocr: null, covered: [] };
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
+			// Only for a notebook: a PDF-backed unit's pages carry no id, and its transcript is the
+			// digest's business (issue #117 is scoped to the notebook transcription path). `considered`
+			// rides along rather than being counted separately, so the denominator can never come to
+			// describe a different set of units than the numerator.
+			const store = pdfBacked
+				? { reused: new Map<string, string>(), considered: 0, hashOf: undefined, key: undefined }
+				: {
+						reused: await reusablePageTranscripts(deps.noteStore, unit.writtenRow, transcriptKey, pageContentHash, split.transcribe),
+						considered: split.transcribe.length,
+						hashOf: pageContentHash,
+						key: transcriptKey,
+					};
+			reusedPageTranscriptions += store.reused.size;
+			pageTranscriptionsConsidered += store.considered;
 
 			const { written, emptyBlock } = await writeUnit(
 				writeDeps,
 				{
 					ocrPages: split.transcribe,
 					unitPages: ocrPages.length,
+					reused: store.reused,
+					pageContentHash: store.hashOf,
+					transcriptFingerprint: store.key,
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.entryHash === entry.hash, ocrPages),
 					pdfBytes,
 					highlights,
@@ -1897,7 +2097,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, skipErrors };
+	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors };
 }
 
 export interface ReTranscribeDeps {
@@ -1929,7 +2129,7 @@ async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, do
 	if (row.pageId === null) {
 		if (pdfBacked) return annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes));
 		const scenes = await Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id))));
-		return notebookOcrPages(scenes).map((page, index) => ({ ...page, typed: isDocumentText(scenes[index]) }));
+		return notebookOcrPages(scenes, docPages.map((page) => page.id)).map((page, index) => ({ ...page, typed: isDocumentText(scenes[index]) }));
 	}
 	const pageIndex = docPages.findIndex((candidate) => candidate.id === row.pageId);
 	if (pageIndex === -1) return null; // the tagged page no longer exists on the device
@@ -2108,8 +2308,25 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			updated++;
 			bar.finish();
 
+			// The store the *sync* will read next (issue #117, ticket 04). Without it the user pays
+			// twice: once for this command, and again on the next sync of every notebook it touched --
+			// which would make "Re-transcribe all notes" dearer than it was before the store existed.
+			// `renderVersion` is deliberately not touched: this rewrites a transcript, not an
+			// attachment, so a row whose render is stale keeps saying so and its typed and anchored
+			// pages are re-read on the next sync (ticket 02's per-page carve-out).
+			const store =
+				row.pageId === null && !pdfBacked && ocrPages.length > 1 && ocr.warnings.length === 0
+					? {
+							// A page's own `.rm` hash, the same key the sync stores under. Asserted rather
+							// than defaulted: only pages the backend read reach `readPages`, and a page
+							// with no `.rm` file was never drawn on, so it is never one of them.
+							transcribedPages: storedPages(ocr.readPages, (pageId) => pageHashes.get(pageId)!, folded),
+							transcribedWith: transcriptFingerprint(ocrBackend.fingerprint),
+						}
+					: {};
+
 			const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
-			if (block !== null) rows[row.syncKey] = { ...row, blockHash: blockHashOf(block) };
+			if (block !== null) rows[row.syncKey] = { ...row, blockHash: blockHashOf(block), ...store };
 			// Per note, for the same reason the sync checkpoints per unit: the note on disk and the hash
 			// that describes it must not be allowed to drift apart across an interruption.
 			await checkpoint();

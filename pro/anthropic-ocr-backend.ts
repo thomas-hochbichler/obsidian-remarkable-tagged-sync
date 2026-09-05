@@ -71,6 +71,8 @@ interface AnthropicResponse {
 export class AnthropicOcrBackend implements OcrBackend {
 	readonly id = "anthropic" as const;
 	readonly metered = true;
+	/** Provider and model. Not the API key: it identifies the user, not the reading (see `OcrBackend`). */
+	readonly fingerprint: string;
 	private readonly apiKey: string;
 	private readonly model: string;
 	private readonly fetchFn: typeof fetch;
@@ -85,6 +87,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	constructor(options: AnthropicOcrOptions) {
 		this.apiKey = options.apiKey;
 		this.model = options.model ?? "";
+		this.fingerprint = `anthropic|${this.model}`;
 		this.fetchFn = options.fetchFn ?? fetch;
 		this.sleepFn = options.sleepFn;
 	}

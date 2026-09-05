@@ -28,6 +28,7 @@ function fakeOcr(...results: (string | Omit<OcrResult, "pages">)[]): OcrBackend 
 	return {
 		id: "vision",
 		metered: false,
+		fingerprint: "test-backend",
 		recognize: async () => {
 			const result = results[call++] ?? "";
 			return typeof result === "string" ? { status: "ok", pages: null, text: result, confidence: null } : { pages: null, ...result };
@@ -36,7 +37,7 @@ function fakeOcr(...results: (string | Omit<OcrResult, "pages">)[]): OcrBackend 
 }
 
 function throwingOcr(): OcrBackend {
-	return { id: "vision", metered: false, recognize: () => Promise.reject(new Error("vision is not installed")) };
+	return { id: "vision", metered: false, fingerprint: "test-backend", recognize: () => Promise.reject(new Error("vision is not installed")) };
 }
 
 function fakeTextDocument(pages: Record<number, PdfPageText>, headings: PdfHeading[] = []): PdfTextDocument {
@@ -886,7 +887,7 @@ describe("buildDigest margin blocks", () => {
 
 describe("buildDigest resilience", () => {
 	it("keeps every margin note when OCR is off or unavailable, leaving the highlights alone", async () => {
-		const off: OcrBackend = { id: "off", metered: false, recognize: async () => ({ status: "unavailable", pages: null, text: "", confidence: null }) };
+		const off: OcrBackend = { id: "off", metered: false, fingerprint: "test-backend", recognize: async () => ({ status: "unavailable", pages: null, text: "", confidence: null }) };
 
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: off });
 
@@ -963,7 +964,7 @@ describe("buildDigest on pen marks", () => {
 
 		await build([fixturePage(underlinedScene())], {
 			loadText: async () => fixtureTextDocument(),
-			ocrBackend: { id: "vision", metered: false, recognize },
+			ocrBackend: { id: "vision", metered: false, fingerprint: "test-backend", recognize },
 		});
 
 		expect(recognize).not.toHaveBeenCalled();
@@ -1053,7 +1054,7 @@ describe("buildDigest on a page added on the device", () => {
 	it("transcribes the whole page as one entry instead of one note per line", async () => {
 		const ocr = vi.fn().mockResolvedValue({ status: "ok", text: "first line\nsecond line", confidence: null });
 
-		const result = await build([appendedPage()], { ocrBackend: { id: "vision", metered: false, recognize: ocr } });
+		const result = await build([appendedPage()], { ocrBackend: { id: "vision", metered: false, fingerprint: "test-backend", recognize: ocr } });
 
 		// One OCR call for the page, where the margin-note path makes one per cluster.
 		expect(ocr).toHaveBeenCalledTimes(1);
@@ -1099,7 +1100,7 @@ describe("buildDigest on a page added on the device", () => {
 	it("drops it entirely with handwritten notes off, like every other handwriting on the page", async () => {
 		const ocr = vi.fn();
 
-		const result = await build([appendedPage()], { marginNotes: false, ocrBackend: { id: "vision", metered: false, recognize: ocr } });
+		const result = await build([appendedPage()], { marginNotes: false, ocrBackend: { id: "vision", metered: false, fingerprint: "test-backend", recognize: ocr } });
 
 		expect(result.markdown).toBe("");
 		expect(ocr).not.toHaveBeenCalled();

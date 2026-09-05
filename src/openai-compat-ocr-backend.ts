@@ -73,6 +73,13 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	readonly id: OcrBackendId;
 	/** Only the cloud providers bill per page; Ollama, LM Studio and a self-hosted `custom` are free. */
 	readonly metered: boolean;
+	/**
+	 * Provider, endpoint and model -- the three things that change what comes back. The API key is
+	 * deliberately absent: it says who is asking, not what is read, and this ends up in `data.json`.
+	 * The endpoint is in because a `custom` provider pointed at a different server is a different
+	 * reader even when the model string matches.
+	 */
+	readonly fingerprint: string;
 	private readonly baseURL: string;
 	private readonly model: string;
 	private readonly apiKey: string | null;
@@ -97,6 +104,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.metered = !FREE_PROVIDER_IDS.has(options.id);
 		this.baseURL = options.baseURL;
 		this.model = options.model;
+		this.fingerprint = `${options.id}|${options.baseURL}|${options.model}`;
 		this.apiKey = options.apiKey ?? null;
 		this.extraHeaders = options.extraHeaders ?? {};
 		this.deterministic = options.deterministic ?? false;

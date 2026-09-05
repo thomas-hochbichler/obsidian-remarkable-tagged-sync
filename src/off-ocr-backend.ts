@@ -16,6 +16,9 @@ const SKIPPED: OcrResult = { status: "skipped", pages: null, text: "", confidenc
 export class OffOcrBackend implements OcrBackend {
 	readonly id = "off" as const;
 	readonly metered = false;
+	// Never reaches the transcript store anyway: `pages: null` means there are no per-page results to
+	// keep. Present because the interface asks every adapter the question.
+	readonly fingerprint = "off";
 
 	async recognize(_pages: RmPage[]): Promise<OcrResult> {
 		return SKIPPED;

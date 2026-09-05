@@ -9,6 +9,7 @@ const BASE = {
 	backend: "vision",
 	visionRevision: 3,
 	unreadableInkRegions: 0,
+	reusedPageTranscriptions: { reused: 0, total: 0 },
 	mappedTagCount: 1,
 	lastSyncAt: "2026-07-24T09:00:00.000Z",
 	lastSyncError: null,
@@ -25,6 +26,12 @@ describe("buildDiagnostics", () => {
 		expect(text).toContain("Mapped tags: 1");
 		expect(text).toContain("Vision revision: 3");
 		expect(text).toContain("Unreadable ink regions: 0");
+		expect(text).toContain("Reused page transcriptions: 0 of 0");
+	});
+
+	/** The first question behind "I edited a page and the transcript did not update" (issue #117). */
+	it("reports how much of the transcription the per-page store answered", () => {
+		expect(buildDiagnostics({ ...BASE, reusedPageTranscriptions: { reused: 99, total: 100 } })).toContain("Reused page transcriptions: 99 of 100");
 	});
 
 	/** The revision is the OS's choice, never ours -- so "which one ran" is a fact only the machine has. */
@@ -37,9 +44,10 @@ describe("buildDiagnostics", () => {
 	});
 
 	it("says so plainly when there is nothing to report, rather than printing null", () => {
-		const text = buildDiagnostics({ ...BASE, lastSyncAt: null, lastSyncError: null });
+		const text = buildDiagnostics({ ...BASE, lastSyncAt: null, lastSyncError: null, reusedPageTranscriptions: null });
 		expect(text).toContain("Last sync: never");
 		expect(text).toContain("Last error: none");
+		expect(text).toContain("Reused page transcriptions: not measured yet");
 		expect(text).not.toContain("null");
 	});
 });

@@ -552,6 +552,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							backend: this.plugin.data.ocrBackend,
 							visionRevision: visionRunStats.revision,
 							unreadableInkRegions: visionRunStats.unreadableInkRegions,
+							reusedPageTranscriptions: this.plugin.lastPageTranscriptions,
 							mappedTagCount: Object.keys(this.plugin.data.tagFolderMap).length,
 							lastSyncAt: this.plugin.data.lastSyncAt,
 							lastSyncError: this.plugin.lastSyncError,
