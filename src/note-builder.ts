@@ -97,6 +97,9 @@ const TRANSCRIPT_RE = new RegExp(`(## Transcript\\n)[\\s\\S]*?(\\n${FENCE_END})`
 const TRANSCRIPT_BODY_RE = new RegExp(`## Transcript\\n([\\s\\S]*?)\\n${FENCE_END}`);
 // The whole section including its leading newline -- for removing it when a transcript goes away.
 const TRANSCRIPT_SECTION_RE = new RegExp(`\\n## Transcript\\n[\\s\\S]*?\\n${FENCE_END}`);
+// The digest body inside the managed block: everything between the "## Digest" heading and whatever
+// ends the section -- the transcript heading that may follow it, or the closing fence.
+const DIGEST_BODY_RE = new RegExp(`## Digest\\n([\\s\\S]*?)\\n(?:## |${FENCE_END})`);
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n?/;
 // The whole note is the plugin's, and Reading View has to say so: the fence markers are HTML
 // comments and render as nothing, so a reader saw no line between what a sync rewrites and what it
@@ -570,6 +573,21 @@ export async function moveNote(store: NoteStore, fromPath: string, toFolder: str
  */
 export function readTranscript(content: string): string | null {
 	return content.match(TRANSCRIPT_BODY_RE)?.[1] ?? null;
+}
+
+/**
+ * The embed pages a note's `## Digest` carries, in the order they appear.
+ *
+ * The note's copy of what `buildDigest` reported as `covered`, for the re-transcribe path, which
+ * holds a note and its pages but builds no digest and so has no other way to tell a page the digest
+ * carries from one it saw and found nothing on. Reading it off the note is exact rather than close:
+ * `renderDigest` gives every page it carries at least one `#page=` link into the embed -- in the
+ * entry, or in the heading when the entry has no section -- and a page with no entry contributes
+ * nothing at all.
+ */
+export function readDigestPages(content: string): number[] {
+	const body = content.match(DIGEST_BODY_RE)?.[1] ?? "";
+	return [...body.matchAll(/#page=(\d+)\|/g)].map((match) => Number(match[1]));
 }
 
 /**

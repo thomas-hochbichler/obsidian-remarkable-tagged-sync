@@ -2718,6 +2718,26 @@ describe("a unit that would be written with neither section", () => {
 		expect(result.skipErrors).toContainEqual(expect.stringContaining(`was written with ${EMPTY_LINE}`));
 	});
 
+	// The instance ticket 04 names: a one-page unit over a page that was never drawn on. It is not
+	// silent because it is empty -- transcription was on, the backend was asked, and the note came back
+	// with nothing in it, which is the shape the net exists to catch. It is written and not refused
+	// because there is nothing there to lose.
+	it("writes and reports a unit over a page that was never drawn on", async () => {
+		const blankPage = fakeApi({
+			rootHash: "root-04-f",
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": {} }, // no `.rm` file: a live page the user never wrote on
+		});
+		const deps = { ...baseDeps(blankPage, { sync: "Target" }), ocrBackend: emptyPerPageOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.documentsSkipped).toBe(0);
+		expect(result.skipErrors).toContainEqual(expect.stringContaining(`was written with ${EMPTY_LINE}`));
+	});
+
 	// `OffOcrBackend` returns no per-page results and no text, which is exactly "I never looked".
 	// An embed-only note is then what the user asked for, and it has to stay silent.
 	it("says nothing when transcription is off", async () => {
@@ -2880,10 +2900,19 @@ describe("reTranscribeAll", () => {
 			});
 		}
 
+		/**
+		 * One digest entry for one page, in the shape `renderDigest` writes it -- the trailing `#page=`
+		 * link included, because that link is how the re-transcribe path reads back which pages the
+		 * digest carries (`readDigestPages`).
+		 */
+		function digestBody(embedPage: number): string {
+			return `\n### Prinzipien\n\nA ==marked== sentence. · [[tagged-sync/attachments/doc-1.pdf#page=${embedPage}|p. ${embedPage}]]`;
+		}
+
 		/** A mixed notebook, synced: page 1 typed and in the digest, page 2 handwritten and transcribed. */
 		async function syncedMixedNotebook(rootHash: string, pageBBytes = PAGE_BYTES) {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "\n### Prinzipien\n\nA ==marked== sentence.", warnings: [], ocr: "ok", covered: [1] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
 			const api = twoPageNotebook(rootHash);
 			api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-b") ? pageBBytes : PAGE_BYTES));
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
@@ -2949,6 +2978,29 @@ describe("reTranscribeAll", () => {
 			await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("after") }, synced.index);
 
 			expect((await deps.noteStore.read(notePath))!).toContain("*Page 1 is typed text — see the embedded page.*");
+		});
+
+		// The third of `splitForTranscript`'s three outcomes, which the note has to be read to tell from
+		// the second: the digest saw this page and produced nothing for it, so nothing above accounts
+		// for it and the sync names it. Filtering every typed page out because the note has *a* digest
+		// dropped it instead, and the two paths then disagreed about the same notebook (ticket 06).
+		it("names a typed page the note's digest saw and found nothing on", async () => {
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
+			const api = twoPageNotebook("root-06-uncovered");
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
+			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+			const notePath = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+			expect((await deps.noteStore.read(notePath))!).toContain("*Page 2 is typed text — see the embedded page.*");
+
+			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
+			const backend = perPageOcrBackend("after");
+			await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: backend }, synced.index);
+
+			const note = (await deps.noteStore.read(notePath))!;
+			expect(note).toContain("*Page 2 is typed text — see the embedded page.*");
+			expect(note).not.toContain("*Page 1 is typed text");
+			expect(backend.recognize).not.toHaveBeenCalled();
 		});
 
 		// The refusal that stays. Growing a flat transcript into an annotated PDF's digest note would

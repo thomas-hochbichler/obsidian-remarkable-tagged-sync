@@ -174,20 +174,27 @@
       test: "a unit that would be written with neither section > refuses the same way for a page-tagged unit"
 
     - id: D19.4
+      scenario: A one-page unit over a page that was never drawn on
+      expect: The empty note is written and reported. Transcription was on and the backend was asked, so the empty block has no explanation anywhere else -- and there is nothing in the note to lose, so it is not refused. The instance ticket 04 names
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > writes and reports a unit over a page that was never drawn on"
+
+    - id: D19.5
       scenario: Transcription is off
       expect: Silent. `OffOcrBackend` reports nothing per page and no text, which is "I never looked" -- an embed-only note is what the user asked for
       layer: engine
       file: src/sync-engine.test.ts
       test: "a unit that would be written with neither section > says nothing when transcription is off"
 
-    - id: D19.5
+    - id: D19.6
       scenario: The backend is unavailable (Apple Vision on Windows)
       expect: Its own counter fires and the empty-note line does not. A second flag for a fact that already has a counter and a notice is the one users learn to ignore
       layer: engine
       file: src/sync-engine.test.ts
       test: "a unit that would be written with neither section > does not report an empty note a second time when the backend was unavailable"
 
-    - id: D19.6
+    - id: D19.7
       scenario: The three inputs a managed block can render, asked whether any of them becomes a section
       expect: True only when none does. The predicate lives beside `buildManagedBlock` so one place owns the shape -- two places reasoning about it and drifting apart is how #115 happened
       layer: unit
@@ -228,6 +235,13 @@
       test: "reTranscribeAll > a note that carries a digest > names a typed page when the note has no digest to carry it"
 
     - id: D20.5
+      scenario: The notebook has a page of typed text that the digest saw and produced nothing for
+      expect: Named, exactly as a sync names it. Nothing above accounts for that page, and only the note can tell this from the page the digest carries -- every digest entry links into the embed, so the pages it carries are the ones it names
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeAll > a note that carries a digest > names a typed page the note's digest saw and found nothing on"
+
+    - id: D20.6
       scenario: An annotated PDF's digest note
       expect: Still refused, byte for byte. Growing a flat transcript into it would put the PDF's handwriting back in the note with margin notes off, which is the leak F20 exists to prevent
       layer: engine

@@ -12,6 +12,7 @@ import {
 	parentFolder,
 	type NoteStore,
 	type OcrStatus,
+	readDigestPages,
 	readEmbedPath,
 	readTranscript,
 	renderTranscript,
@@ -27,7 +28,7 @@ import { validateSourcePdf } from "./pdf-source";
 import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, type NoteFrontmatter } from "./frontmatter";
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
-import { hasTypedText, isDocumentText } from "./scene-text";
+import { isDocumentText } from "./scene-text";
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -650,21 +651,6 @@ function transcriptPages(pages: OcrPage[], results: Map<OcrPage, OcrPageResult>)
 }
 
 /**
- * Whether the device had anything for this unit to say: ink, a highlight, or typed text on any of
- * its pages.
- *
- * The empty-note check needs it, and nothing else does. An empty managed block is not a loss by
- * itself -- an annotated PDF with no annotations and a notebook that was never written on both
- * render to the embed and nothing else, and always have. What must not pass silently is an empty
- * block over pages that plainly had something on them.
- */
-function hasSomethingToSay(pages: OcrPage[]): boolean {
-	return pages.some(
-		({ scene }) => scene !== null && (hasTypedText(scene) || (scene.highlights ?? []).length > 0 || scene.layers.some((layer) => layer.strokes.length > 0)),
-	);
-}
-
-/**
  * Which of a unit's pages the transcript is responsible for, and which of its quotes.
  *
  * The two halves of a unit are disjoint by construction: the pages handed to the digest, and the
@@ -741,8 +727,6 @@ interface UnitParams {
 	digestOcr?: OcrStatus | null;
 	/** How this unit is named in the run's report -- `"Book" for tag "x"`, or `page 3 of "Book" for tag "x"`. */
 	unit: string;
-	/** Whether the device had anything for this unit to say -- see `hasSomethingToSay`. Read by the empty-note check. */
-	hadContent: boolean;
 	docId: string;
 	pageId: string | null;
 	pageIndex: number | null;
@@ -835,8 +819,6 @@ async function hasSectionsToLose(noteStore: NoteStore, row: SyncIndexRow | undef
  * - the backend was `unavailable` or `failed`: both have their own counter and their own notice, and
  *   an empty note is the honest result of a backend that is gone;
  * - the digest build threw: `buildUnitDigest` already pushed the error text;
- * - the device had nothing to say: an annotated PDF with no annotations and a notebook of blank
- *   pages both render to the embed and nothing else, and always have (see `hasSomethingToSay`);
  * - the backend reported nothing at all -- no per-page results and no text. That is transcription
  *   off, which returns exactly that (`OffOcrBackend`) and is the user asking for an embed-only note;
  *   it is also what an arity violation degrades to, and that has already warned on its own.
@@ -853,7 +835,7 @@ async function emptyBlockReport(
 	ocrStatus: OcrResult["status"],
 	nothingReported: boolean,
 ): Promise<{ line: string; refuse: boolean } | null> {
-	if (!isEmptyManagedBlock(fields) || !params.hadContent) return null;
+	if (!isEmptyManagedBlock(fields)) return null;
 	if (params.digestOcr === null || ocrStatus === "unavailable" || ocrStatus === "failed") return null;
 	if (nothingReported) return null;
 
@@ -1733,7 +1715,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					digest: digest.markdown,
 					digestOcr: digestPages === null ? undefined : digest.ocr,
 					unit: unitName,
-					hadContent: hasSomethingToSay(ocrPages),
 					docId: entry.id,
 					pageId: null,
 					pageIndex: null,
@@ -1846,7 +1827,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					digest: digest.markdown,
 					digestOcr: digestPages === null ? undefined : digest.ocr,
 					unit: unitName,
-					hadContent: hasSomethingToSay(ocrPages),
 					docId: entry.id,
 					pageId: unit.pageId,
 					pageIndex: pageIndex > 0 ? pageIndex : null,
@@ -2095,15 +2075,14 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			}
 			bar.step("transcribing");
 
-			// A typed page the note's digest already carries must not be named a second time -- the
-			// entries for it are printed right above, and "see the embedded page" beside them reads as a
-			// contradiction. This path builds no digest, so the note it just read is what answers "is
-			// this page in there?". Without a digest nothing carries those pages and the naming line is
-			// the whole point, so they stay in and are named. (The one case this gets wrong is a typed
-			// page the digest saw and found nothing on: the sync names it and this does not. A missing
-			// footnote under a `## Digest` that already explains those pages, and the next full sync
-			// writes it.)
-			const transcribePages = noteHasDigest ? ocrPages.filter((page) => page.typed !== true) : ocrPages;
+			// `splitForTranscript`'s three-way split, read back off the note. A typed page the digest
+			// covers is left out of the transcript entirely -- its entries are printed right above, and
+			// "see the embedded page" beside them reads as a contradiction -- while one the digest saw
+			// and found nothing on is named, exactly as a sync names it. This path builds no digest, so
+			// the note it just read is the only record of which page is which; `readDigestPages` is that
+			// record. A note with no digest covers nothing, so all of its typed pages are named.
+			const covered = new Set(readDigestPages(noteContent));
+			const transcribePages = ocrPages.filter((page) => page.typed !== true || !covered.has(page.embedPage));
 			const ocr = await runOcr(ocrBackend, transcribePages, bar.page);
 			// The per-page headings link into the note's own embed, which this path knows only from the
 			// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
