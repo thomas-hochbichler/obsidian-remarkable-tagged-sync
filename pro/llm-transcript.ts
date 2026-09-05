@@ -22,7 +22,6 @@ export {
 	sanitizeTranscript,
 	transcribePages,
 	TRANSCRIPTION_PROMPT,
-	typedText,
 	type LlmPageOutcome,
 	type Sleep,
 } from "../src/llm-transcript";

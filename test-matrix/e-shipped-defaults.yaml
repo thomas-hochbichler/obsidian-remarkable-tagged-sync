@@ -80,6 +80,60 @@
       file: src/llm-transcript.test.ts
       test: "how many requests are in flight at once > is not Vision's cap, and must not become it"
 
+- feature: E23
+  name: Where a page's typed text lands in its transcript
+  code: src/llm-transcript.ts
+  tier: free + Pro
+  scenarios:
+    - id: E23.1
+      scenario: A page with no typed text on it
+      expect: One scene and one request, exactly as before. The split must not make an ordinary page cost more than it did
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText > leaves a page with no typed text as one scene, so it stays one request"
+
+    - id: E23.2
+      scenario: Handwriting above a typed block and handwriting below it -- the reported shape
+      expect: Ink, then the typed lines, then ink. The block used to be appended after the model's answer for the whole page, so the writing that followed it read back in the middle
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText > puts a typed block between the ink above it and the ink below it"
+
+    - id: E23.3
+      scenario: All of the page's ink is below the typed block
+      expect: The block first, in one request. Appending was simply the wrong order here, and reading it right costs nothing
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText > puts the typed block first when all of the ink is below it"
+
+    - id: E23.4
+      scenario: A stroke spans the typed text -- a box drawn round it, an arrow across it
+      expect: It goes whole into the slot its *middle* is in -- an edge would file a stroke that merely starts above the text above it. The wrong half is a far smaller wrong than the two half-glyphs a cut through the raster would hand the model
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText > assigns a stroke that spans the typed text by its middle, rather than cutting it"
+
+    - id: E23.5
+      scenario: More runs of ink between typed lines than the request cap allows
+      expect: One scene and an appended block -- what every page did before this existed. A page nobody imagined must not quietly cost ten requests
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText > falls back to one scene and an appended block past the request cap"
+
+    - id: E23.6
+      scenario: One part of a split page fails while the others would read
+      expect: 'The whole page is `failed`, and the parts after it are not requested. One status per page is what `OcrPageResult` has always given it; assembling the rest would need either a backend emitting note markup or a second status per page, for a case that is nearly always systemic'
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "transcribePages over a page in parts > fails the whole page when a part fails, and does not ask for the parts after it"
+
+    - id: E23.7
+      scenario: A page that cost two requests instead of one
+      expect: The progress bar ticks once for it. The bar's total is counted structurally from the document's live pages, so a page that suddenly counts twice strands it short -- the trap ticket 06 of #115 recorded
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "transcribePages over a page in parts > ticks the progress bar once for a page it sent twice"
+
 - feature: G14
   name: Shrunk-highlight warning
   code: src/sync-engine.ts
