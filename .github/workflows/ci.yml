@@ -36,7 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Needed by the git identity gate below, which reads the authors of the pushed commits.
+          # Needed by the git identity gate below, which reads the authors of the commits this
+          # branch adds to `main`.
           fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -89,17 +90,24 @@ jobs:
               || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           EXPECTED: thomas@hochbichler.com
-          BEFORE: ${{ github.event.before }}
-          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ -n "$BASE" ]; then
-            range="$BASE..HEAD"
-          elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
-               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            range="$BEFORE..HEAD"
+          # What this branch ADDS to `main` -- which is the set of commits it has to answer for, on
+          # a push and on a pull request alike. It used to be "what this push added", and that was
+          # not the same question. Merging `main` into a branch makes `main`'s own history newly
+          # reachable from the tip, so `before..HEAD` handed the gate a nightly chore commit --
+          # authored by github-actions[bot], accepted on `main`, where this gate stands down -- and
+          # turned a branch red for a merge it did not write (PR #112, 2026-09-05).
+          #
+          # It also closes two holes the old ranges left. A commit an earlier push already carried
+          # was never looked at again, so a wrong address survived any later push; and the
+          # first-push fallback `HEAD~0..HEAD` is an empty range, so the case it was written for --
+          # a brand new branch -- was the one case that checked nothing at all.
+          if git fetch --no-tags --quiet origin main && git rev-parse --verify --quiet FETCH_HEAD >/dev/null; then
+            range="FETCH_HEAD..HEAD"
           else
-            # First push of a branch, or a force-push whose old tip is gone. Check the tip only.
-            range="HEAD~0..HEAD"
+            # `main` is out of reach (a fork's first sync, a network blip). The tip is still worth
+            # checking, and checking one commit beats checking none.
+            range="-1"
           fi
           echo "checking authors in $range"
           bad=0
@@ -111,7 +119,7 @@ jobs:
               echo "  FAIL  $email is not $EXPECTED"
               bad=1
             fi
-          done < <(git log --format='%ae' "$range" 2>/dev/null || git log -1 --format='%ae')
+          done < <(git log --format='%ae' $range)
           if [ "$bad" = "1" ]; then
             echo "::error::A commit carries the wrong author email. Set it locally: git config user.email $EXPECTED"
             exit 1
