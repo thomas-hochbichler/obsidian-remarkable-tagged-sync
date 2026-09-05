@@ -11,6 +11,8 @@
 //   node scripts/release-checks.mjs badges                  # same run, writes the shields files
 //   node scripts/release-checks.mjs disabled
 //   node scripts/release-checks.mjs nightly
+//   node scripts/release-checks.mjs ocr-baseline [--write] [--accept <key> --because "<why>"]
+//   node scripts/release-checks.mjs perf-baseline [--write] [--accept <metric> --because "<why>"]
 //
 // `.mjs`, not `.ts`, on purpose: `npm run build` runs `tsc` over `scripts/` too, so a broken
 // `.ts` gate script could block a release.
@@ -22,6 +24,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { judgeVerdict, STALE_HOURS } from "./nightly-verdict.mjs";
 import { computeBaseline, nightFromVerdict } from "./ocr-baseline.mjs";
+import { computePerfBaseline, perfNightFromVerdict } from "./perf-baseline.mjs";
 
 // npm's own form for a tree that is not under one licence: `src/` is Apache-2.0, `pro/` is PolyForm
 // Strict 1.0.0, and paid commercial use is granted separately. PolyForm Strict has no settled SPDX
@@ -513,16 +516,17 @@ function nightlyGate() {
 // .ocr-baseline.json. See that file's header for the change discipline.
 
 const OCR_BASELINE = ".ocr-baseline.json";
+const PERF_BASELINE = ".perf-baseline.json";
 
-/** The verdict file at every commit that touched it on this branch, newest first. */
-function recordedNights() {
+/** The verdict file at every commit that touched it on this branch, newest first, read through `extract`. */
+function recordedNights(extract = nightFromVerdict) {
 	const shas = execFileSync("git", ["log", "--format=%H", "--", NIGHTLY_VERDICT], { encoding: "utf8" })
 		.split("\n")
 		.filter((sha) => sha !== "");
 	const nights = [];
 	for (const sha of shas) {
 		try {
-			const night = nightFromVerdict(JSON.parse(execFileSync("git", ["show", `${sha}:${NIGHTLY_VERDICT}`], { encoding: "utf8" })));
+			const night = extract(JSON.parse(execFileSync("git", ["show", `${sha}:${NIGHTLY_VERDICT}`], { encoding: "utf8" })));
 			if (night !== null) nights.push(night);
 		} catch {
 			// An unparseable historical revision is simply not a recorded night.
@@ -577,6 +581,54 @@ function ocrBaseline(write, accepts, because) {
 	finish("ocr baseline");
 }
 
+// The perf twin: same record, same discipline, two metrics instead of forty-two keys. Rules in
+// perf-baseline.mjs (tested there).
+function perfBaseline(write, accepts, because) {
+	let existing = {};
+	try {
+		existing = readJson(PERF_BASELINE).entries ?? {};
+	} catch (e) {
+		if (e.code !== "ENOENT") {
+			console.error(`${PERF_BASELINE} will not parse: ${e.message}`);
+			process.exit(1);
+		}
+	}
+
+	const nights = recordedNights(perfNightFromVerdict);
+	const { entries, refused, skipped, changed } = computePerfBaseline({
+		nights,
+		existing,
+		accepts,
+		because,
+		today: new Date().toISOString().slice(0, 10),
+	});
+
+	console.log(`perf baseline: ${nights.length} recorded night(s) in the history of ${NIGHTLY_VERDICT}\n`);
+	for (const line of skipped) console.log(`  wait  ${line}`);
+	for (const line of changed) ok(line);
+	for (const line of refused) fail(line);
+	if (changed.length === 0 && refused.length === 0) console.log("  ok    nothing to change");
+
+	if (write && problems.length === 0 && changed.length > 0) {
+		writeFileSync(
+			PERF_BASELINE,
+			`${JSON.stringify(
+				{
+					comment:
+						"One entry per metric: the median wall-clock of the heavy page over the last 30 recorded nights, on the nightly runner class. Never edit by hand. Recompute with `node scripts/release-checks.mjs perf-baseline --write`; a metric that falls is absorbed silently, one that rises is refused unless --accept names it AND the heavy page or the Node version actually changed.",
+					entries,
+				},
+				null,
+				"\t",
+			)}\n`,
+		);
+		console.log(`\nwrote ${PERF_BASELINE}`);
+	} else if (!write && changed.length > 0) {
+		console.log("\ndry run -- pass --write to apply");
+	}
+	finish("perf baseline");
+}
+
 // --- dispatch ---------------------------------------------------------------------------------
 
 const [command, ...rest] = process.argv.slice(2);
@@ -615,7 +667,10 @@ switch (command) {
 	case "ocr-baseline":
 		ocrBaseline(rest.includes("--write"), flag("--accept") === undefined ? [] : [flag("--accept")], flag("--because") ?? "");
 		break;
+	case "perf-baseline":
+		perfBaseline(rest.includes("--write"), flag("--accept") === undefined ? [] : [flag("--accept")], flag("--because") ?? "");
+		break;
 	default:
-		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly|ocr-baseline> [...]");
+		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly|ocr-baseline|perf-baseline> [...]");
 		process.exit(2);
 }

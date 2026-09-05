@@ -74,6 +74,15 @@ jobs:
       - name: Lint ratchet
         run: node scripts/release-checks.mjs lint
 
+      # --- gate 4b: the nightly verdict -------------------------------------------------------
+      #
+      # A file read (ticket 14 §4). Fails on a missing or stale verdict, on a part that is
+      # `catastrophe`, or on one that has been `unknown` for 72 hours -- the default is fail, and
+      # "pass" has to be written by a night that measured. Stable only: betas are usually the repair
+      # for whatever turned the nightly red, so beta-release.yml deliberately does not run this.
+      - name: Nightly verdict
+        run: node scripts/release-checks.mjs nightly
+
       # --- gate 5: types and tests -------------------------------------------------------------
       - name: Typecheck
         run: npx tsc -noEmit -skipLibCheck
