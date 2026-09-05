@@ -14,6 +14,24 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **A synced note now says how many pages it covers, and what that costs.** With *Frontmatter
+  properties* on, each note carries `remarkable-pages`: the pages of *that note* -- all of them for a
+  note made from a notebook tag, one for a note made from a page tag. It is also the cost signal, since
+  a transcription backend is asked once per page, so sorting a Dataview or Bases view by it shows which
+  notebooks are the expensive ones before you start a large sync. A page note additionally says which
+  page it is, as `remarkable-page`; a notebook note covers pages 1 to n and carries no such key, which
+  makes the key itself the filter for "page notes only". (#107)
+
+- **`remarkable-note-id`: an identity you can key automation on.** `remarkable-uuid` is the *document*
+  on your tablet, and two notes made from one document share it -- so it was never a per-note identity,
+  and a script using it as one could touch notes it should not. Every synced note now also carries its
+  own id. Neither field is ever changed or regenerated once a note has it: not when the document syncs
+  again, not when you rename the mapped tag, not when you move the note. The README says exactly what
+  the two promise, and what the one case they do not cover is. (#109)
+
+  Existing notes pick both up by themselves: the first sync after updating brings them to the new
+  property set, with nothing to toggle.
+
 - **Settings now says when a model reasons before answering.** Some vision models -- Ollama's default
   `qwen3-vl` tag among them -- think through an answer before writing it. They transcribe far more
   slowly, and a long enough answer runs past what the model may return, which drops that page. The

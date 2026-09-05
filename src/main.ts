@@ -37,7 +37,7 @@ import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-tran
 import { reachableHost } from "./ssh-pairing";
 import { frontmatterAllowed } from "./frontmatter";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
-import { reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
+import { isStaleFrontmatter, reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
@@ -523,6 +523,9 @@ export default class TaggedSyncPlugin extends Plugin {
 		// opening never got far enough to say which source it would have been.
 		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
+		// Asked once and reused below: the run and the key-set pass that follows it have to agree on
+		// whether the feature is on, and re-asking a licence gate mid-run could answer differently.
+		const frontmatterOn = this.data.frontmatter && frontmatterAllowed(this.entitlement());
 		try {
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
@@ -543,7 +546,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					marginNotes: this.data.marginNotes,
 					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
 					// touching what is already in the vault -- a sync that keeps working, minus the Pro part.
-					frontmatter: this.data.frontmatter && frontmatterAllowed(this.entitlement()),
+					frontmatter: frontmatterOn,
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -562,6 +565,23 @@ export default class TaggedSyncPlugin extends Plugin {
 			const speak = !auto || result.stopped;
 
 			this.data.syncIndex = result.index;
+
+			// The one-time pass that brings already-written notes up to the current managed key set
+			// (#107, #109). Without it a vault that has settled would never receive a new key at all:
+			// document-level change detection leaves an unchanged document unopened, so its note is
+			// never rewritten.
+			//
+			// At the end of the run, because every row the run itself wrote is already stamped and the
+			// filter then skips it -- and because a row whose document has left the device was orphaned
+			// moments ago and is no longer chased. Costs nothing on a vault that is current: with no
+			// stale row the pass returns before it lists anything.
+			//
+			// Not on a stopped run: the user asked for the run to end, and an unstamped row simply waits
+			// for the next sync. Runs in a background sync too, otherwise anyone who only ever
+			// auto-syncs would stay without the new keys for good.
+			if (frontmatterOn && !result.stopped) {
+				await backfillFrontmatter(session.api, createNoteStore(this.app), this.data.syncIndex, { select: isStaleFrontmatter });
+			}
 			// Deliberately not stamped on a stopped run. `isIntervalSyncDue` counts from the last
 			// *completed* sync, so stamping here would push the next auto-sync out by a full interval as
 			// if the work had been done -- and leave "last synced" claiming a run that never finished.
