@@ -52,6 +52,8 @@ Details that matter:
   manifest version, so a `v`-prefixed tag is simply not found.
 - **Step 5 is not optional.** The version gate runs in CI too, so a wrong number fails on the PR
   in seconds — before you spend a tag on it.
+- **The eight steps end at this repository.** The website dates itself to a version and answers
+  questions about it, so a release leaves work over there too — see *After the release* below.
 
 ## What the pipeline does for you
 
@@ -177,6 +179,22 @@ body can still be edited.
   requests switched off.
 - The automated checker **re-reads the repository** each time, so every round of reviewer fixes
   needs a **new release**. Version numbers get spent fast; that is normal.
+
+## After the release — the FAQ on the website
+
+The website lives in its own repository, but `https://taggedsync.com/faq` answers questions about
+*this* plugin at *one* version, so a release can make it wrong. Nothing bumps it for you. Read the
+changelog you just wrote and check three things:
+
+- **The page stamp** — `src/pages/faq.astro` says "Answers describe Tagged Sync `<version>` ·
+  `<month>`". It is hand-written.
+- **`softwareVersion`** in `src/components/SiteSchema.astro` — the same number, a second time.
+- **The README deep links.** Every answer in `src/data/faq.ts` may carry one `readme.anchor`, and
+  each has to match a heading in this README. Renaming a heading here breaks a link there and
+  nothing says so — ten anchors today, and this line is the only check they get.
+
+Then ask whether any answer is now wrong. A changed limit is the usual case: the answers describe
+what the plugin does, not what it is called.
 
 ## Local development
 
