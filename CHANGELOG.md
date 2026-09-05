@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-05
+
 ### Fixed
 
 - **A page of typed text no longer silences the rest of the notebook.** One page carrying typed
