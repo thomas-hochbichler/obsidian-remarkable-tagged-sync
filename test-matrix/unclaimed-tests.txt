@@ -280,8 +280,6 @@ src/llm-transcript.test.ts :: sanitizeTranscript > never touches a real code blo
 src/llm-transcript.test.ts :: sanitizeTranscript > strips a tight preamble line
 src/llm-transcript.test.ts :: sanitizeTranscript > survives an empty response
 src/llm-transcript.test.ts :: sanitizeTranscript > unwraps an outer markdown fence
-src/llm-transcript.test.ts :: typedText > returns the typed text of each page
-src/llm-transcript.test.ts :: typedText > skips pages with no typed text
 src/local-model-card.test.ts :: consent (§7.2) > asks for background consent here, where the estimate is already on screen
 src/local-model-card.test.ts :: consent (§7.2) > names both downloads, the engine as its own cost
 src/local-model-card.test.ts :: consent (§7.2) > says the download is checked before anything runs

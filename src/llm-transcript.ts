@@ -1,5 +1,5 @@
 import { type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
-import type { RmPage } from "./rm-parser";
+import type { RmPage, RmStroke } from "./rm-parser";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -23,27 +23,94 @@ export const TRANSCRIPTION_PROMPT =
 	"paragraphs. Output only the transcript text -- no commentary, preamble, code fences, or page " +
 	"labels. If the page has no legible text, output nothing.";
 
+/** One part of a page in reading order: ink to transcribe, or typed text to place exactly as it is. */
+export type PagePart = { kind: "ink"; scene: RmPage } | { kind: "typed"; text: string };
+
 /**
- * The text the user typed on these pages, which no page image carries: the rasterizer draws ink, and
- * the raster is all a vision model is handed. Without this it is missing from the note entirely, and
- * it must not go through transcription either -- it is already exact.
+ * How many requests one page may cost. Past it the page is transcribed whole and its typed text
+ * appended, which is what every page did before this existed.
  *
- * Appended per page rather than placed within one. A single response covers every page at once and
- * says nothing about where its lines sat, so there is no position to splice against. The local Vision
- * backend reads one page at a time and gets each line's box, and does place it.
+ * Three, because typed text is rare (72 of the 80 corpus pages carry none) and two blocks on one
+ * page rarer still. The cap is not protecting against a shape anyone has produced; it is there so a
+ * page nobody imagined cannot quietly cost ten requests.
  */
-export function typedText(pages: RmPage[]): string {
-	return pages
-		.map((page) =>
-			page.text
-				? layoutText(page.text)
-						.lines.map((line) => line.text)
-						.filter((line) => line.trim() !== "")
-						.join("\n")
-				: "",
-		)
-		.filter((page) => page !== "")
-		.join("\n\n");
+const MAX_INK_PARTS = 3;
+
+/** The vertical middle of a stroke, which is the slot it belongs to even where it spans two. */
+function strokeMiddleY(stroke: RmStroke): number {
+	let min = Number.POSITIVE_INFINITY;
+	let max = Number.NEGATIVE_INFINITY;
+	for (const point of stroke.points) {
+		min = Math.min(min, point.y);
+		max = Math.max(max, point.y);
+	}
+	return (min + max) / 2;
+}
+
+/** The page with only the given strokes on it, and no typed text -- a scene that is this ink and nothing else. */
+function inkOnly(page: RmPage, keep: ReadonlySet<RmStroke>): RmPage {
+	return {
+		...page,
+		text: undefined,
+		layers: page.layers.map((layer) => ({ ...layer, strokes: layer.strokes.filter((stroke) => keep.has(stroke)) })),
+	};
+}
+
+/**
+ * A page in reading order: its ink split where the typed text sits between it, and the typed lines
+ * in their place.
+ *
+ * Typed text is on no page image at all -- the rasterizer draws ink -- so without it the words are
+ * missing from the note entirely, and it must not go through transcription either, being exact
+ * already. That much was always true. What was not is *where* it lands: it used to be appended after
+ * the model's answer for the page, so a page with handwriting above and below a typed block read
+ * back with the block last and the writing that followed it in the middle.
+ *
+ * The answer carries no positions, so nothing in it can be spliced against. The ink can be split
+ * before it is ever sent, though, and the device does record where every stroke and every typed line
+ * sits. So each stroke is placed in the slot between the typed baselines it falls between, and each
+ * run of ink becomes a scene of its own.
+ *
+ * Strokes are assigned, never cut. A stroke that spans the typed text -- a box drawn around it, an
+ * arrow across it -- goes whole into the slot its middle is in. That is the wrong half for it, and a
+ * far smaller wrong than the two half-glyphs a cut through the raster would hand the model.
+ *
+ * `VisionOcrBackend` needs none of this and does not use it: Apple Vision reports a box per line, so
+ * it places typed lines by height directly (`insertTypedText`).
+ */
+export function splitAtTypedText(page: RmPage): PagePart[] {
+	const lines = page.text ? layoutText(page.text).lines.filter((line) => line.text.trim() !== "") : [];
+	const whole: PagePart[] = [{ kind: "ink", scene: page }];
+	if (lines.length === 0) return whole;
+
+	// Slot i holds the strokes above typed line i; the last slot holds what is below them all.
+	const slots: Set<RmStroke>[] = Array.from({ length: lines.length + 1 }, () => new Set());
+	for (const layer of page.layers) {
+		for (const stroke of layer.strokes) {
+			const middle = strokeMiddleY(stroke);
+			let slot = 0;
+			while (slot < lines.length && lines[slot].yPx < middle) slot++;
+			slots[slot].add(stroke);
+		}
+	}
+
+	const parts: PagePart[] = [];
+	let pending: string[] = [];
+	for (let i = 0; i <= lines.length; i++) {
+		if (slots[i].size > 0) {
+			if (pending.length > 0) parts.push({ kind: "typed", text: pending.join("\n") });
+			pending = [];
+			parts.push({ kind: "ink", scene: inkOnly(page, slots[i]) });
+		}
+		if (i < lines.length) pending.push(lines[i].text);
+	}
+	if (pending.length > 0) parts.push({ kind: "typed", text: pending.join("\n") });
+
+	const inkParts = parts.filter((part) => part.kind === "ink").length;
+	// A page of typed text with no ink on it at all: one part, nothing to send, and the caller's loop
+	// produces the typed lines without a request. The cap is about the other end.
+	if (inkParts > MAX_INK_PARTS) return [...whole, { kind: "typed", text: lines.map((line) => line.text).join("\n") }];
+	return parts;
 }
 
 /**
@@ -153,8 +220,14 @@ export async function fetchWithRetry(fetchFn: typeof fetch, url: string, init: R
  * length, so a single multi-image call can *ask* for a boundary but never guarantee one. The cost of
  * asking per page is small: image tokens are identical either way and only the prompt repeats.
  *
- * Typed text is appended **per page** here, which is where it belonged all along -- the adapters used
- * to append the whole unit's typed text after the last page's handwriting.
+ * Typed text is placed **within** the page rather than appended after it, by splitting the ink where
+ * the typed lines sit and sending each run of it as a scene of its own (`splitAtTypedText`). A page
+ * with no typed text on it is one part and one request, exactly as before.
+ *
+ * A part that fails fails its page, and the parts after it are not requested. The page carries one
+ * status, as it always has, and a backend that just refused is not worth asking twice -- a failure
+ * here is nearly always systemic (server gone, key wrong, model refusing), and then every part of
+ * every page fails anyway.
  *
  * `warnings` carries whatever the caller collected while the pages ran. It is the only channel that
  * reaches the end-of-sync report and "Copy diagnostics"; a `console.warn` reaches a console the user
@@ -167,12 +240,26 @@ export async function transcribePages(
 	onPage?: () => void,
 ): Promise<OcrResult> {
 	const pageResults = await mapWithConcurrency(pages, LLM_MAX_PARALLELISM, async (page, index): Promise<OcrPageResult> => {
-		const outcome = await run(page, index);
-		// Before the outcome is inspected: a page that failed is as finished as one that read, and the
-		// progress bar counts pages that are over, not pages that succeeded.
+		const read: string[] = [];
+		let failed = false;
+		for (const part of splitAtTypedText(page)) {
+			if (part.kind === "typed") {
+				read.push(part.text);
+				continue;
+			}
+			const outcome = await run(part.scene, index);
+			if (outcome.kind === "failed") {
+				failed = true;
+				break;
+			}
+			if (outcome.text !== "") read.push(outcome.text);
+		}
+		// After the whole page, not after each part: a page that failed is as finished as one that
+		// read, and the progress bar counts pages that are over -- one tick per page, whatever a page
+		// cost in requests.
 		onPage?.();
-		if (outcome.kind === "failed") return { status: "failed", text: "" };
-		const text = [outcome.text, typedText([page])].filter((part) => part !== "").join("\n\n");
+		if (failed) return { status: "failed", text: "" };
+		const text = read.join("\n\n");
 		return text.length > 0 ? { status: "ok", text } : { status: "skipped", text: "" };
 	});
 

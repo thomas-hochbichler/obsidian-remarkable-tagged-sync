@@ -3,7 +3,7 @@
 // Everything that decides what a unit's transcript and status become lives here and is testable
 // without a 5.5 GB model; `local-ocr-runtime.ts` is the half that spawns `llama-mtmd-cli`.
 
-import { typedText } from "./llm-transcript";
+import { splitAtTypedText } from "./llm-transcript";
 import { recordPageDuration } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
 import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
@@ -121,33 +121,51 @@ export class LocalOcrBackend implements OcrBackend {
 		const pageResults: OcrPageResult[] = [];
 		const warnings: string[] = [];
 		for (const [index, page] of pages.entries()) {
-			const outcome = await this.runPage(encodeGrayscalePng(rasterizePage(page)));
+			// Typed text is not on the image -- the rasterizer draws ink -- and it must not go through the
+			// model either, being exact already. `splitAtTypedText` says where it belongs among the ink,
+			// and hands back the runs of ink to read as scenes of their own; a page with none is one part
+			// and one invocation, as every page was before.
+			const read: string[] = [];
+			let pageFailed = false;
 
-			if (outcome.kind === "runtime-broken") {
-				this.runtimeBroken = true;
-				this.onRuntimeFailure(outcome.message);
-				// Nothing already read is kept, and `pages` stays null rather than reporting the prefix:
-				// the sync skips a document whose device-side hash is unchanged, so half a transcript
-				// written now is half a transcript forever (§8.1).
-				return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`] };
+			for (const part of splitAtTypedText(page)) {
+				if (part.kind === "typed") {
+					read.push(part.text);
+					continue;
+				}
+				const outcome = await this.runPage(encodeGrayscalePng(rasterizePage(part.scene)));
+
+				if (outcome.kind === "runtime-broken") {
+					this.runtimeBroken = true;
+					this.onRuntimeFailure(outcome.message);
+					// Nothing already read is kept, and `pages` stays null rather than reporting the prefix:
+					// the sync skips a document whose device-side hash is unchanged, so half a transcript
+					// written now is half a transcript forever (§8.1).
+					return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`] };
+				}
+				if (outcome.kind === "page-failed") {
+					// Vision keeps the other pages and says nothing; this backend keeps them and says so,
+					// because under §8.1 a silently lost page is a permanently lost one. The warning stays
+					// alongside the per-page status: one feeds "Copy diagnostics", the other feeds the note.
+					warnings.push(`page ${index + 1} could not be transcribed: ${outcome.message}`);
+					pageFailed = true;
+					break;
+				}
+
+				recordPageDuration(this.settings, outcome.durationMs);
+				if (outcome.text.trim() !== "") read.push(outcome.text.trim());
 			}
-			// A page that failed is still a page that is over, so the bar moves on it too -- only the
-			// runtime-broken exit above skips the tick, and it abandons the whole unit anyway.
+
+			// A page that failed is still a page that is over, so the bar moves on it too -- once per
+			// page, whatever it cost in invocations. Only the runtime-broken exit above skips the tick,
+			// and it abandons the whole unit anyway.
 			onPage?.();
-			if (outcome.kind === "page-failed") {
-				// Vision keeps the other pages and says nothing; this backend keeps them and says so,
-				// because under §8.1 a silently lost page is a permanently lost one. The warning stays
-				// alongside the per-page status: one feeds "Copy diagnostics", the other feeds the note.
-				warnings.push(`page ${index + 1} could not be transcribed: ${outcome.message}`);
+			if (pageFailed) {
 				pageResults.push({ status: "failed", text: "" });
 				continue;
 			}
 
-			recordPageDuration(this.settings, outcome.durationMs);
-			// Typed text is not on the image -- the rasterizer draws ink -- and it must not go through
-			// the model either, being exact already. Appended per page: one image per invocation means
-			// there is no line box to splice it against, which is the one thing Vision can do here.
-			const pageTranscript = [outcome.text.trim(), typedText([page])].filter((part) => part !== "").join("\n\n");
+			const pageTranscript = read.join("\n\n");
 			pageResults.push(pageTranscript !== "" ? { status: "ok", text: pageTranscript } : { status: "skipped", text: "" });
 		}
 

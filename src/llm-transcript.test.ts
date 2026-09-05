@@ -2,14 +2,33 @@
 // `npm test` does not run. The free build's local model backend now depends on all three, so they
 // need coverage in the suite that actually gates this repo.
 
-import { describe, expect, it } from "vitest";
-import { LLM_MAX_PARALLELISM, sanitizeTranscript, TRANSCRIPTION_PROMPT, transcribePages, typedText } from "./llm-transcript";
+import { describe, expect, it, vi } from "vitest";
+import { LLM_MAX_PARALLELISM, sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT, transcribePages } from "./llm-transcript";
 import type { RmPage } from "./rm-parser";
+import { layoutText } from "./text-layout";
 
 function pageWithText(text: string | null): RmPage {
 	return {
 		layers: [],
 		...(text === null ? {} : { text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text, deleted: 0 }], styles: new Map() } }),
+	} as unknown as RmPage;
+}
+
+/** The baselines `layoutText` gives this text, so a test can place a stroke above or below one. */
+function baselines(text: string): number[] {
+	return layoutText(pageWithText(text).text!).lines.filter((line) => line.text.trim() !== "").map((line) => line.yPx);
+}
+
+/** One stroke, flat, at the given height -- enough for `splitAtTypedText`, which reads y and nothing else. */
+function strokeAt(y: number, id: string) {
+	return { layerId: "l", id, timestamp: "1", penType: 0, color: 0, brushSize: 2, points: [{ x: 0, y }, { x: 10, y }] };
+}
+
+/** A page whose typed text sits between the given strokes, in the frame `layoutText` lays lines out in. */
+function pageWithInkAndText(text: string, strokeYs: number[]): RmPage {
+	return {
+		...pageWithText(text),
+		layers: [{ id: "l", name: null, strokes: strokeYs.map((y, i) => strokeAt(y, `s${i}`)) }],
 	} as unknown as RmPage;
 }
 
@@ -86,19 +105,104 @@ describe("sanitizeTranscript", () => {
 	});
 });
 
-describe("typedText", () => {
-	/**
-	 * Text the user typed on the device is not on the page image at all -- the rasterizer draws ink --
-	 * and it must not go through the model either, being exact already.
-	 */
-	it("returns the typed text of each page", () => {
-		expect(typedText([pageWithText("one"), pageWithText("two")])).toBe("one\n\ntwo");
+/**
+ * Text the user typed on the device is not on the page image at all -- the rasterizer draws ink --
+ * and it must not go through the model either, being exact already. Where it lands is what these
+ * pin: it used to be appended after the model's answer, so a page with handwriting above and below
+ * a typed block read back with the block last.
+ */
+describe("splitAtTypedText", () => {
+	function typedOf(parts: ReturnType<typeof splitAtTypedText>): string[] {
+		return parts.map((part) => (part.kind === "typed" ? part.text : "<ink>"));
+	}
+
+	it("leaves a page with no typed text as one scene, so it stays one request", () => {
+		const parts = splitAtTypedText(pageWithInkAndText("", [100]));
+
+		expect(typedOf(parts)).toEqual(["<ink>"]);
+		expect(parts[0].kind === "ink" && parts[0].scene.layers[0].strokes).toHaveLength(1);
 	});
 
-	it("skips pages with no typed text", () => {
-		expect(typedText([pageWithText(null), pageWithText("only this"), pageWithText(null)])).toBe("only this");
-		expect(typedText([pageWithText(null)])).toBe("");
-		expect(typedText([])).toBe("");
+	// The reported shape (115 Test, 2026-09-05): "END OF PAGE 1" written under the typed block came
+	// back in the middle of page 1, because the block was appended after the whole page's answer.
+	it("puts a typed block between the ink above it and the ink below it", () => {
+		const [line] = baselines("typed line");
+		const parts = splitAtTypedText(pageWithInkAndText("typed line", [line - 50, line + 50]));
+
+		expect(typedOf(parts)).toEqual(["<ink>", "typed line", "<ink>"]);
+		const above = parts[0].kind === "ink" ? parts[0].scene.layers[0].strokes : [];
+		const below = parts[2].kind === "ink" ? parts[2].scene.layers[0].strokes : [];
+		expect(above.map((s) => s.id)).toEqual(["s0"]);
+		expect(below.map((s) => s.id)).toEqual(["s1"]);
+	});
+
+	// One request, and the order the page reads in -- the append this replaces put it the other way.
+	it("puts the typed block first when all of the ink is below it", () => {
+		const parts = splitAtTypedText(pageWithInkAndText("typed line", [baselines("typed line")[0] + 50]));
+
+		expect(typedOf(parts)).toEqual(["typed line", "<ink>"]);
+	});
+
+	// A stroke that spans the typed text -- a box drawn round it, an arrow across it -- goes whole
+	// into the slot its *middle* is in. Wrong half, never two half-glyphs. The stroke here starts above
+	// the typed line and runs well past it, so an edge would file it above and the middle files it
+	// below; that is the difference this pins.
+	it("assigns a stroke that spans the typed text by its middle, rather than cutting it", () => {
+		const [line] = baselines("typed line");
+		const spanning = { layerId: "l", id: "span", timestamp: "1", penType: 0, color: 0, brushSize: 2, points: [{ x: 0, y: line - 20 }, { x: 0, y: line + 200 }] };
+		const page = {
+			...pageWithText("typed line"),
+			layers: [{ id: "l", name: null, strokes: [strokeAt(line - 100, "above"), spanning] }],
+		} as unknown as RmPage;
+
+		const parts = splitAtTypedText(page);
+
+		expect(parts.map((part) => (part.kind === "typed" ? part.text : "<ink>"))).toEqual(["<ink>", "typed line", "<ink>"]);
+		const above = parts[0].kind === "ink" ? parts[0].scene.layers[0].strokes : [];
+		const below = parts[2].kind === "ink" ? parts[2].scene.layers[0].strokes : [];
+		expect(above.map((stroke) => stroke.id)).toEqual(["above"]);
+		expect(below.map((stroke) => stroke.id)).toEqual(["span"]);
+	});
+
+	// Past the cap the page is transcribed whole and its typed text appended -- what every page did
+	// before this existed. A page nobody imagined must not quietly cost ten requests.
+	it("falls back to one scene and an appended block past the request cap", () => {
+		// Four runs of ink around four typed lines, so five parts would be five requests.
+		const text = "a\nb\nc\nd";
+		const lines = baselines(text);
+		const parts = splitAtTypedText(pageWithInkAndText(text, lines.map((y, i) => (i === 0 ? y - 50 : (lines[i - 1] + y) / 2))));
+
+		expect(parts.filter((part) => part.kind === "ink")).toHaveLength(1);
+		expect(typedOf(parts)).toEqual(["<ink>", text]);
+	});
+});
+
+describe("transcribePages over a page in parts", () => {
+	// The page carries one status, as `OcrPageResult` and `unitStatus` have always given it. Assembling
+	// what did read would mean either a backend emitting note markup or a second status per page, and a
+	// failure here is nearly always systemic -- the next part would fail too.
+	it("fails the whole page when a part fails, and does not ask for the parts after it", async () => {
+		const [line] = baselines("typed line");
+		const page = pageWithInkAndText("typed line", [line - 50, line + 50]);
+		const run = vi.fn().mockResolvedValue({ kind: "failed" });
+
+		const result = await transcribePages([page], run);
+
+		expect(result.pages).toEqual([{ status: "failed", text: "" }]);
+		expect(run).toHaveBeenCalledTimes(1);
+	});
+
+	// One tick per page, whatever the page cost in requests -- the bar's total is counted structurally
+	// from the document's live pages, and a page that suddenly counts twice strands it short.
+	it("ticks the progress bar once for a page it sent twice", async () => {
+		const [line] = baselines("typed line");
+		const page = pageWithInkAndText("typed line", [line - 50, line + 50]);
+		const onPage = vi.fn();
+
+		const result = await transcribePages([page], async () => ({ kind: "ok", text: "ink" }), undefined, onPage);
+
+		expect(onPage).toHaveBeenCalledTimes(1);
+		expect(result.pages?.[0].text).toBe("ink\n\ntyped line\n\nink");
 	});
 });
 

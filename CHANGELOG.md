@@ -12,6 +12,15 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Typed text now sits where you typed it, not at the end of the page.** On a page with handwriting
+  above *and* below a block of typed text, the block was appended after everything the transcription
+  backend read, so the line you wrote under it came back in the middle. The page's ink is now split
+  where the typed lines sit and read in parts, and the transcript follows the page: handwriting,
+  typed block, handwriting. A page with no typed text on it still costs exactly one request. Apple
+  Vision was never affected -- it knows where each line sits and has always placed them.
+
 ## [1.6.3] - 2026-09-05
 
 ### Fixed
