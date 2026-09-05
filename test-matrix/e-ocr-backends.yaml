@@ -26,6 +26,58 @@
       file: pro/llm-register.test.ts
       test: "the live vision-capability callout > drops a verdict that comes back after the pane was drawn again"
 
+    - id: E8.4
+      scenario: "The named model reasons before answering, and can see images"
+      expect: "Two lines, two facts, two colours -- the vision tick in green above the thinking warning in amber. A reasoning model transcribes, slowly, so the warning tone is `partial`'s and not the red reserved for \"transcription will fail\""
+      layer: vault
+      file: pro/llm-register.test.ts
+      test: "the thinking line in the callout > says both facts, on their own lines and in their own colours"
+
+    - id: E8.5
+      scenario: "The model reasons AND the provider reports it cannot see images"
+      expect: "Only the image-input line. The urgent half keeps the field: a model that cannot see must be replaced anyway, so advice about its reasoning is advice about a model that is already going"
+      layer: vault
+      file: pro/llm-register.test.ts
+      test: "the thinking line in the callout > drops the thinking line when the model cannot see images at all"
+
+    - id: E8.6
+      scenario: "The provider answers that the model does not reason, or cannot answer at all"
+      expect: "Nothing. Only a positive from an authoritative source writes a line -- the pane never claims a model does not reason, because absence of a flag is absence of evidence"
+      layer: vault
+      file: pro/llm-register.test.ts
+      test: "the thinking line in the callout > says nothing when the answer is unknown, and never that a model does not reason"
+
+    - id: E8.7
+      scenario: "An Anthropic model that reasons by default, on a provider with no vision probe at all"
+      expect: "The thinking line alone, and no \"Checking…\" before it since nothing is being requested. `visionReach: \"none\"` used to blank the callout and return, which left the one provider shipping reasoning models by default as the one provider guaranteed to stay silent"
+      layer: vault
+      file: pro/llm-register.test.ts
+      test: "the thinking line in the callout > warns for Anthropic, which has no vision line and no request to wait for"
+
+    - id: E8.8
+      scenario: "The same two facts in the free build's own settings pane"
+      tier: free
+      expect: "The same two lines, one clause apart: nothing here is metered, so no mention of a bill, and the lever named is the `-instruct` build -- the one naming convention that held on every model measured"
+      layer: vault
+      file: src/localhost-register.test.ts
+      test: "the thinking line in the localhost callout > says both facts, and points at the build that does not reason"
+
+    - id: E8.9
+      scenario: "A free-build model that reasons and cannot see images"
+      tier: free
+      expect: "Only the image-input line, as in E8.5 -- the two panes must not drift"
+      layer: vault
+      file: src/localhost-register.test.ts
+      test: "the thinking line in the localhost callout > keeps the field for the urgent half when the model cannot see images"
+
+    - id: E8.10
+      scenario: "A free-build model the server reports as not reasoning"
+      tier: free
+      expect: "The vision line alone. An authoritative negative is still silence in the pane; it exists so a test can tell it from never having asked"
+      layer: vault
+      file: src/localhost-register.test.ts
+      test: "the thinking line in the localhost callout > stays quiet about a model that does not reason"
+
 - feature: E19
   name: The model id is the user's to supply, and no provider seeds one
   code: pro/ocr-providers.ts
@@ -77,3 +129,308 @@
       layer: unit
       file: pro/anthropic-ocr-backend.test.ts
       test: "AnthropicOcrBackend > treats a whitespace-only model as unset"
+
+- feature: E24
+  name: Whether the chosen model reasons before answering
+  code: src/localhost-vision-detect.ts
+  tier: free
+  scenarios:
+    - id: E24.1
+      scenario: "An Ollama model whose capability array carries \"thinking\" is named in settings"
+      expect: "The probe reads it out of the array it already fetched for vision -- one request, both answers. On Ollama the support flag IS the default flag: the server turns thinking on whenever the request omits `think`, and this plugin never sends it"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > reads Ollama's thinking capability out of the same array as vision, in the same request"
+
+    - id: E24.2
+      scenario: "An Ollama model without the capability"
+      expect: "An authoritative \"off\", not \"unknown\" -- the same array the server itself reasons about said so. Keeping the two apart is what lets a test tell a working probe from a silent one"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > calls a model without the capability an authoritative no, not an unknown"
+
+    - id: E24.3
+      scenario: "An LM Studio model whose v1 entry reports `reasoning.default: \"on\"`"
+      expect: "Warned. Two requests for this one provider -- v0 keeps the vision half, v1 answers the thinking half -- because LM Studio is the only provider where the two facts live on two endpoints. v0's own capability array carries `[\"tool_use\"]` and nothing else"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > reads LM Studio's reasoning default off /api/v1/models, which /api/v0/models cannot answer"
+
+    - id: E24.4
+      scenario: "An LM Studio model whose reasoning default is \"off\""
+      expect: "An authoritative \"off\", and nothing rendered -- the same distinction as E24.2"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > reads a reasoning default of off as off"
+
+    - id: E24.5
+      scenario: "LM Studio is older than 0.4.0, so `/api/v1/models` is not a route it knows"
+      expect: "Thinking \"unknown\" and the vision verdict untouched. The version floor is invisible to a status check -- this server answers an unknown path with HTTP 200 and an error body -- so the absence of a `models` array is the check, and a wrong guess costs a missing line rather than the working half"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > stays silent, and keeps the vision verdict, on an LM Studio too old to have the v1 endpoint"
+
+    - id: E24.6
+      scenario: "The thinking request throws while the vision one answers"
+      expect: "The vision verdict survives. The added half is allowed to fall silent and nothing else"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > keeps the vision verdict when only the thinking request fails"
+
+    - id: E24.7
+      scenario: "The model is not in LM Studio's listing at all (a typo, or never downloaded)"
+      expect: "Unknown. There is no reasoning config to read, and a name is not guessed from"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > says unknown for a model LM Studio does not list"
+
+    - id: E24.8
+      scenario: "A custom OpenAI-compatible endpoint"
+      expect: "Unknown for the thinking half, and silence in the pane. Absence of a flag is absence of evidence -- we never write \"this model does not reason\""
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > says unknown for a custom endpoint, which has no flag to query for either half"
+
+    - id: E24.9
+      scenario: "An Anthropic model that reasons by default is named in settings"
+      tier: pro
+      expect: "Warned, with no request at all. `/v1/models` reports a support flag that is true for every current Claude model including the ones defaulting off, so the answer comes from Anthropic's own table -- and this provider makes no probe to hang a request on"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > anthropic (a list, not a probe) > warns for a model that reasons unasked, with no network call at all"
+
+    - id: E24.10
+      scenario: "An Anthropic model id carrying a date suffix, which is the normal shape"
+      tier: pro
+      expect: "Matched on the family prefix, so `claude-sonnet-5-20260214` warns like `claude-sonnet-5`"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > anthropic (a list, not a probe) > matches the dated ids that are the normal shape"
+
+    - id: E24.11
+      scenario: "An Anthropic model that is not on the list (an older generation, or one released since)"
+      tier: pro
+      expect: "Unknown, and silent. The list says which models reason; it does not claim to know every model Anthropic serves, so it ages into a missing warning rather than a wrong one"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > anthropic (a list, not a probe) > stays silent for a model that is not on the list"
+
+    - id: E24.12
+      scenario: "An OpenRouter model whose catalog entry says `default_enabled: true`"
+      tier: pro
+      expect: "Warned, out of the model list the vision check already fetched -- `default_enabled` is documented as exactly the question this asks: what happens when the client does not set it"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > openrouter (reported on the entry already fetched) > warns when the catalog says reasoning is on by default, in the request vision already made"
+
+    - id: E24.13
+      scenario: "An OpenRouter model whose reasoning is `mandatory`"
+      tier: pro
+      expect: "Warned. This is the state no other provider reports at all -- reasoning that cannot be switched off"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > openrouter (reported on the entry already fetched) > warns when reasoning is mandatory"
+
+    - id: E24.14
+      scenario: "An OpenRouter model documented as reasoning off by default"
+      tier: pro
+      expect: "An authoritative \"off\", and nothing rendered"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > openrouter (reported on the entry already fetched) > is quiet when the catalog documents reasoning as off by default"
+
+    - id: E24.15
+      scenario: "An OpenRouter entry with no `reasoning` object at all"
+      tier: pro
+      expect: "Read as a model that does not reason -- 126 of the catalog's 431 entries were in this state when it was measured"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > openrouter (reported on the entry already fetched) > treats a model with no reasoning object as one that does not reason"
+
+    - id: E24.16
+      scenario: "An OpenRouter entry carrying `{mandatory: false}` and no documented default"
+      tier: pro
+      expect: "Unknown, and silent. The catalog says reasoning exists and does not say what happens unasked, which is not the same as saying it does not happen"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > openrouter (reported on the entry already fetched) > says unknown when reasoning exists but no default is documented"
+
+    - id: E24.17
+      scenario: "A Gemini model"
+      tier: pro
+      expect: "Unknown. Gemini reports that a model supports thinking, never what it does when the request stays silent -- and only the second is worth a warning"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > says unknown for Gemini, which reports support but never the default"
+
+    - id: E24.18
+      scenario: "A custom endpoint reached through the paid build"
+      tier: pro
+      expect: "Unknown for both halves of the answer, exactly as in the free build"
+      layer: unit
+      file: pro/ocr-vision-detect.test.ts
+      test: "detectVisionCapability, the thinking half > says unknown for a custom endpoint, which has no flag to query for either half"
+
+    - id: E24.19
+      scenario: "The v1 listing answers with an error status -- a build that 404s the route, or a token without permission"
+      expect: "Unknown, and silent. This is the ordinary failure the version floor does not cover"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > says unknown when the v1 listing answers with an error status"
+
+    - id: E24.20
+      scenario: "The model listing itself answers with an error status"
+      expect: "Unreachable for the vision half, which for a server the user runs reads as \"the app is not running\" -- the most likely failure this backend has"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, the thinking half > says unreachable when the model listing answers with an error status"
+
+- feature: E25
+  name: Pages dropped for truncation reach the end-of-sync report
+  code: src/openai-compat-ocr-backend.ts
+  tier: free
+  scenarios:
+    - id: E25.1
+      scenario: "Two pages of three come back truncated, one reads fine"
+      expect: "The unit is still `ok` -- suppressing a transcript that did arrive is the worse trade -- and the report names the count, the cause in the user's terms, the lever, and that the loss does not heal itself. `unitStatus` is why nothing else can say it: a unit is `ok` as soon as one page reads, so `failedOcrUnits` never counts this"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > names the count, the cause, the lever and the repair"
+
+    - id: E25.2
+      scenario: "One page truncates and another fails for a reason no flag records (a body that will not parse)"
+      expect: "The sentence counts truncations only. `failedPages` is every failed page whatever the cause, so using it would report a parse failure as a page that ran too long"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > counts truncations, not every failed page"
+
+    - id: E25.3
+      scenario: "The server dies mid-unit and a page also truncates"
+      expect: "The unreachable sentence wins. First-match-wins, systemic before per-page: someone whose server stopped should read that, not a model recommendation"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > is displaced by a server that is not running"
+
+    - id: E25.4
+      scenario: "A page truncates on the native Anthropic backend"
+      tier: pro
+      expect: "Reported, with the lever this provider actually has -- on the current Claude generation thinking cannot be switched off, so the way out is a different model rather than a different setting. This backend passed no warnings callback at all before, so every cause was silent"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend reporting > reports pages dropped for truncation, and names the lever this provider actually has"
+
+    - id: E25.5
+      scenario: "Anthropic cannot be reached and a page also truncates"
+      tier: pro
+      expect: "The same order as the OpenAI-compatible adapter's. The two chains must not drift"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend reporting > lets a dead host displace the truncation sentence"
+
+    - id: E25.6
+      scenario: "A rejected key on the Anthropic backend"
+      tier: pro
+      expect: "The refusal reaches the report, in the server's own words. Before this it reported nothing, so a bad key looked exactly like a page with nothing on it"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > reports failed when the API responds with a non-ok status"
+
+    - id: E25.7
+      scenario: "Three pages are transcribed by the Anthropic backend"
+      tier: pro
+      expect: "The progress callback ticks once per page. Every other backend honours `recognize(pages, onPage?)`; this one dropped the argument, so its progress bar never moved per page"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend reporting > ticks the progress callback once per page"
+
+    - id: E25.8
+      scenario: "A page is sent to Anthropic, whose API requires `max_tokens`"
+      tier: pro
+      expect: "A ceiling that is a runaway guard rather than a budget. The densest page in the corpus is about 320 output tokens, and a reasoning pass counts against the same limit -- at 4096 it ate the room a transcript needed"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend reporting > asks for a ceiling that leaves room for a thinking pass"
+
+    - id: E25.9
+      scenario: "A page fails on the Anthropic backend for a reason none of the three causes recognises"
+      tier: pro
+      expect: "Nothing is said. Inventing a sentence for a cause we did not identify is how a report starts telling users things that are not true -- the generic notice still fires for a unit that produced nothing at all"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend reporting > stays silent when a page failed for a reason it cannot name"
+
+    - id: E25.10
+      scenario: "A server explains its refusal in OpenAI's nested shape, which LM Studio and Ollama follow"
+      expect: "The server's own words go through unchanged -- \"No models loaded\" is a sentence we could not have written for it"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "refusalDetail > reads OpenAI's nested error message, which LM Studio and Ollama follow"
+
+    - id: E25.11
+      scenario: "A server explains its refusal as a bare string, which is also in the wild"
+      expect: "Read too. Both shapes exist, and a note must not carry a stringified object because one of them was assumed"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "refusalDetail > reads a bare string error, which is also in the wild"
+
+    - id: E25.12
+      scenario: "The error body is a shape nobody here recognises"
+      expect: "The status speaks alone"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "refusalDetail > says nothing for a body it does not recognise"
+
+    - id: E25.13
+      scenario: "The error body is HTML, or empty, or otherwise not JSON"
+      expect: "The status speaks alone, and nothing throws on the way there"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "refusalDetail > says nothing when the body is not JSON at all"
+
+    - id: E25.14
+      scenario: "A request throws with one of the many spellings of nothing answered at that address"
+      expect: "Recognised, so the report leads with \"is it running?\" rather than a model recommendation. Matched on the text because Electron's fetch exposes no stable typed error"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "isUnreachable > recognises the ways a dead address announces itself"
+
+    - id: E25.15
+      scenario: "A server answered, badly -- a body that will not parse"
+      expect: "Not called unreachable. Deliberately loose in the harmless direction, but not this loose: a wrong \"is it running?\" about a running server is a wrong hint"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "isUnreachable > does not call a server that answered badly unreachable"
+
+    - id: E25.16
+      scenario: "Something that is not an Error at all is thrown"
+      expect: "Still answered, from its string form, rather than throwing inside the failure path"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "isUnreachable > handles something thrown that is not an Error at all"
+
+- feature: E26
+  name: Deterministic sampling on the servers the user runs
+  code: src/openai-compat-ocr-backend.ts
+  tier: free
+  scenarios:
+    - id: E26.1
+      scenario: "A page goes to Ollama, LM Studio, or a custom OpenAI-compatible server"
+      expect: "The request carries `temperature: 0`, so the same page reads the same way twice. It is also the sampling the plugin's own measured 7.6 % CER was taken at, and what the built-in local model has run since it shipped"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "deterministic sampling > pins the temperature for a server the user runs"
+
+    - id: E26.2
+      scenario: "A page goes to a cloud provider through the same adapter"
+      expect: "The body stays exactly `{model, messages}`. Nine current Claude models answer a non-default temperature with a 400 on every request, thinking or not, and OpenAI's reasoning models carry the same restriction -- so a blanket pin would lose whole syncs to fix a cosmetic difference"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "deterministic sampling > sends no temperature at all to a cloud provider"
+
+    - id: E26.3
+      scenario: "The provider table is read to decide who gets the field"
+      tier: pro
+      expect: "Exactly the three servers the user runs. Declared per provider rather than checked at the call site, because one adapter serves both halves of the table and a wrong entry here costs a whole sync rather than a hint"
+      layer: unit
+      file: pro/ocr-providers.test.ts
+      test: "PROVIDERS metadata > pins the temperature only on the servers the user runs"

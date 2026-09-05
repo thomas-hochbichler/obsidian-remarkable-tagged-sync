@@ -40,6 +40,21 @@ export interface ProviderMeta {
 	readonly defaultModel: string;
 	readonly key: "required" | "optional" | "none";
 	readonly visionReach: VisionReach;
+	/**
+	 * Whether requests to this provider pin `temperature: 0` (#116).
+	 *
+	 * True for the three servers the user runs themselves, and false for every cloud provider --
+	 * which is a restriction, not a preference. Anthropic returns 400 for a non-default `temperature`
+	 * on nine current models "regardless of whether thinking is used", and OpenAI's reasoning models
+	 * carry the same restriction, so a blanket pin would lose whole syncs to fix a note that reads
+	 * slightly differently each time. On a local server nothing refuses it, the llama.cpp lineage
+	 * accepts it universally, and it is the sampling configuration our own 7.6 % CER was measured at
+	 * (`src/local-ocr-runtime.ts` runs `--temp 0`).
+	 *
+	 * Declared per provider rather than checked at the call site because one adapter serves both
+	 * halves of the table, and the cloud half must keep sending `{ model, messages }` unchanged.
+	 */
+	readonly deterministic: boolean;
 	/** Optional attribution headers (OpenRouter); merged into the request as-is. */
 	readonly extraHeaders?: Record<string, string>;
 }
@@ -67,6 +82,7 @@ export const LOCALHOST_PROVIDERS = {
 		defaultModel: "",
 		key: "optional",
 		visionReach: "reported",
+		deterministic: true,
 	},
 	lmstudio: {
 		id: "lmstudio",
@@ -78,6 +94,7 @@ export const LOCALHOST_PROVIDERS = {
 		defaultModel: "",
 		key: "none",
 		visionReach: "reported",
+		deterministic: true,
 	},
 	custom: {
 		id: "custom",
@@ -89,6 +106,7 @@ export const LOCALHOST_PROVIDERS = {
 		defaultModel: "",
 		key: "optional",
 		visionReach: "heuristic",
+		deterministic: true,
 	},
 } as const satisfies Record<LocalhostProviderId, ProviderMeta>;
 

@@ -241,8 +241,19 @@ the one route that works everywhere**, including Windows on x64 and Linux.
 Which model you use is your choice. For what it is worth: **I measured Qwen2.5-VL-7B at 7.6 %
 character error** — about three times more accurate than Apple Vision on the same pages — but I
 measured it running the model directly, not through one of these servers, so treat it as a starting
-point rather than a promise. A text-only model cannot read a page image at all; settings checks the
-model you name and says so when it can.
+point rather than a promise. That number is the **7B** build: a smaller variant of the same family is
+a different model, and I have measured none of them. [Issue #116](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/116)
+carries a user's own measurements of the smaller ones, with the caveats they put on them.
+
+Two things settings will tell you about the model you name, where the server can be asked. A
+**text-only model** cannot read a page image at all. And a model that **reasons before answering**
+transcribes far more slowly and can lose a page: the answer runs past what the model may return, and
+that page is left out rather than saved half-read. If that happens, the sync says so at the end —
+switch to a model that does not reason (often the `-instruct` build of the same family) and run
+**Re-transcribe all notes**, because a later sync will not pick those pages up on its own.
+
+The reasoning hint needs **Ollama**, **OpenRouter**, or **LM Studio 0.4.0 or newer**; other servers
+expose nothing to read it from, and then settings says nothing rather than guessing.
 
 If the server is not running, settings says so, and a sync that hits it leaves the notes with their
 render and reports it at the end rather than failing quietly.

@@ -12,6 +12,34 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Settings now says when a model reasons before answering.** Some vision models -- Ollama's default
+  `qwen3-vl` tag among them -- think through an answer before writing it. They transcribe far more
+  slowly, and a long enough answer runs past what the model may return, which drops that page. The
+  live check under the model field now says so on a second line, wherever the provider will answer
+  the question: Ollama and LM Studio (0.4.0 or newer) locally, OpenRouter and Anthropic in the paid
+  build. It is a hint, never a block -- the model is your choice. Where a provider reports nothing,
+  settings stays quiet rather than guessing. (#116)
+
+- **A page dropped for running too long is now reported at the end of the sync.** It was dropped
+  before too -- half a page read as a whole one is a permanent loss -- but only a console message
+  said so, and a notebook that lost three pages out of five looked like a clean sync. The report now
+  names how many pages were left out, why, and that they will not come back on their own: switch to
+  a model that does not reason and run "Re-transcribe all notes". (#116)
+
+  The Anthropic backend reported *nothing* until now -- not this, not a dead connection, not a
+  rejected key. It has the same three-part report as every other backend, and its page ceiling has
+  been raised from 4096 to 16384 tokens so a reasoning pass stops eating the room a transcript needs.
+
+### Changed
+
+- **Transcripts from a local server are now reproducible.** Requests to Ollama, LM Studio and a
+  custom OpenAI-compatible server carry `temperature: 0`, which is the sampling the plugin's own
+  measured 7.6 % character error was taken at, and what the built-in local model has always used. The
+  same page now reads the same way twice. Cloud providers are deliberately left alone: several
+  current models reject a non-default temperature outright. (#116)
+
 ### Fixed
 
 - **Typed text now sits where you typed it, not at the end of the page.** On a page with handwriting

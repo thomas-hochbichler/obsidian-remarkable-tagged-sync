@@ -370,3 +370,91 @@ describe("a missing model", () => {
 		expect((await backend.recognize([])).status).toBe("skipped");
 	});
 });
+
+/**
+ * `temperature: 0` on the servers the user runs (#116). The reporter asked for reproducible
+ * transcripts, and the repo already pins determinism where it controls the runtime --
+ * `src/local-ocr-runtime.ts` has run `--temp 0` since it shipped. This extends that rule to the
+ * backends where we control the request but not the process.
+ */
+describe("deterministic sampling", () => {
+	beforeEach(() => fetchMock.mockReset());
+
+	it("pins the temperature for a server the user runs", async () => {
+		fetchMock.mockResolvedValue(chatResponse("text"));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:7b", fetchFn: fetchMock, deterministic: true });
+
+		await backend.recognize([page()]);
+
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body).temperature).toBe(0);
+	});
+
+	/**
+	 * The cloud half must keep receiving exactly `{ model, messages }`. Nine current Claude models
+	 * answer a non-default temperature with a 400 on every request, thinking or not, and OpenAI's
+	 * reasoning models carry the same restriction -- so sending it there would lose whole syncs to fix
+	 * a note that reads slightly differently each time.
+	 */
+	it("sends no temperature at all to a cloud provider", async () => {
+		fetchMock.mockResolvedValue(chatResponse("text"));
+		const backend = new OpenAiCompatOcrBackend({ id: "openrouter", baseURL: "http://x/v1", model: "m", fetchFn: fetchMock });
+
+		await backend.recognize([page()]);
+
+		expect(Object.keys(JSON.parse(fetchMock.mock.calls[0][1].body))).toEqual(["model", "messages"]);
+	});
+});
+
+/**
+ * The silence #116 was filed about (its third thread). A truncated page is dropped -- deliberately,
+ * because half a page read as a whole one is a permanent loss -- but `unitStatus` calls a unit `ok`
+ * as soon as any page reads, so `failedOcrUnits` never counts it and the end-of-sync report said
+ * nothing at all. The reporter's "a page simply vanishes" was the literal behaviour.
+ */
+describe("reporting pages dropped for truncation", () => {
+	beforeEach(() => fetchMock.mockReset());
+
+	function truncated(): Response {
+		return jsonResponse(200, { choices: [{ message: { role: "assistant", content: "half a page" }, finish_reason: "length" }] });
+	}
+
+	it("names the count, the cause, the lever and the repair", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("read fine")).mockResolvedValueOnce(truncated()).mockResolvedValueOnce(truncated());
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page(), page(), page()]);
+
+		// Still `ok`: one page read, and suppressing a transcript that arrived would be the worse trade.
+		expect(result.status).toBe("ok");
+		expect(result.warnings).toEqual([
+			"2 pages were left out because the model's answer ran past what it may return — this happens with models that reason " +
+				'before answering. A later sync will not pick them up on its own: switch to a model that doesn\'t reason, then run "Re-transcribe all notes".',
+		]);
+	});
+
+	/**
+	 * Its own counter, not `failedPages`. That number is every failed page whatever the cause, and one
+	 * of those causes is silent: an error `isUnreachable` does not recognise sets no flag at all. Three
+	 * truncations plus one parse failure must not be reported as four pages that ran too long.
+	 */
+	it("counts truncations, not every failed page", async () => {
+		fetchMock
+			.mockResolvedValueOnce(truncated())
+			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => { throw new Error("not json"); } } as unknown as Response);
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page(), page()]);
+
+		expect(result.warnings?.[0]).toContain("1 page was left out");
+	});
+
+	/** A systemic failure displaces it: someone whose server died should read that, not a model tip. */
+	it("is displaced by a server that is not running", async () => {
+		fetchMock.mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:11434")).mockResolvedValueOnce(truncated());
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page(), page()]);
+
+		expect(result.warnings?.[0]).toContain("Could not reach the server");
+	});
+});
