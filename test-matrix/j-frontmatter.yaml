@@ -376,3 +376,105 @@
       layer: unit
       file: src/remarkable-tags.test.ts
       test: "folderPathOf > is stopped by a malformed parent cycle rather than hanging a sync"
+
+- feature: J8
+  name: The page keys -- what this note costs, and which page it is
+  code: src/frontmatter.ts
+  tier: pro
+  scenarios:
+    - id: J8.1
+      scenario: A three-page notebook with a notebook tag and a page tag
+      expect: remarkable-pages counts this note -- 3 for the notebook note, 1 for the page note, never the document total on both
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "frontmatter page keys (Pro, #107) > counts the pages of the note, not of the document"
+    - id: J8.2
+      scenario: Which page of the document a note is
+      expect: remarkable-page on the page note only; a notebook note covers 1..n and gets no key at all
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "frontmatter page keys (Pro, #107) > writes a page note's position in the document, and none on a notebook note"
+    - id: J8.3
+      scenario: The same two rows during the backfill pass
+      expect: The pass reads the count from the document's content -- same numbers as the sync writes
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the page keys (#107) > counts the pages of the note: every page for a notebook row, one for a page row"
+    - id: J8.4
+      scenario: A page row's position during the backfill pass
+      expect: Its 1-based position; the notebook row keeps no page key
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the page keys (#107) > writes a page row's position in the document, and none for a notebook row"
+    - id: J8.5
+      scenario: A legacy pages[] document that is not PDF-backed, in the pass
+      expect: Both page keys absent -- the live pages need the file listing the pass does not fetch, and a too-high count is worse than none
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the page keys (#107) > leaves both page keys out for a legacy document whose page list needs the file listing"
+    - id: J8.6
+      scenario: A page row whose tagged page was deleted on the device
+      expect: One page of cost still, and no position -- an absent key rather than a 0
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the page keys (#107) > still counts one page for a page row whose page has gone from the device, and gives it no position"
+
+- feature: J9
+  name: remarkable-uuid and remarkable-note-id as a contract
+  code: src/frontmatter.ts
+  tier: pro
+  scenarios:
+    - id: J9.1
+      scenario: Notes produced by a notebook tag and by a page tag
+      expect: Both carry the document uuid and their own note id -- the presence half of the contract
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "remarkable-uuid and remarkable-note-id are a contract (Pro, #109) > gives every written note both keys, whichever tag granularity produced it"
+    - id: J9.2
+      scenario: The same document synced a second time
+      expect: Neither value moves -- an identity automation keys on is never regenerated
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "remarkable-uuid and remarkable-note-id are a contract (Pro, #109) > changes neither value when the same document is synced again"
+    - id: J9.3
+      scenario: The mapped tag is renamed, so the row moves to a new syncKey
+      expect: "The note id survives the move. This is the trap: an id derived from the syncKey would silently change here, which is the failure #109 was filed about"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "remarkable-uuid and remarkable-note-id are a contract (Pro, #109) > keeps the note's id when its mapped tag is renamed"
+    - id: J9.4
+      scenario: One document routed by two mapped tags
+      expect: Same remarkable-uuid, different remarkable-note-id -- why the uuid cannot be the per-note identity, and why docId:pageId would collide
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "remarkable-uuid and remarkable-note-id are a contract (Pro, #109) > gives the two notes of a two-tag document the same uuid and different ids"
+    - id: J9.5
+      scenario: The backfill pass over a row that has no id yet, run twice
+      expect: Minted once and then left alone -- an idempotent pass, and the note is not rewritten on the second run
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the note identity (#109) > mints an id for a row that has none, and leaves it alone on a second run"
+    - id: J9.6
+      scenario: PDF-backed and EPUB-backed rows in the pass
+      expect: Both carry the identity keys, so the contract is not a notebook-only promise
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the page keys (#107) > names an annotated PDF and a book by their type while carrying the identity keys"
+
+- feature: J10
+  name: The one-time key-set pass
+  code: src/frontmatter-pass.ts
+  tier: pro
+  scenarios:
+    - id: J10.1
+      scenario: A vault holding rows from before the key set grew
+      expect: Only the rows behind the stamp are written; a row already at the current version is not touched again
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the note identity (#109) > stamps the key-set version, so the one-time pass does not run over the same row twice"
+    - id: J10.2
+      scenario: Toggle-off after the pass has run
+      expect: The stamp is forgotten so a later toggle-on rewrites, but the note id stays -- re-enabling gives a note the identity it had
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "backfillFrontmatter and the note identity (#109) > forgets the key-set stamp on cleanup but keeps the note's identity"

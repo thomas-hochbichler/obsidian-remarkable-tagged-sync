@@ -552,10 +552,24 @@ remarkable-modified: 2026-08-25T16:20
 remarkable-synced: 2026-08-25T17:02
 remarkable-folder: Work/Projekt X
 remarkable-type: notebook
+remarkable-pages: 12
 remarkable-pinned: true
 remarkable-uuid: aaaa0002-0000-0000-0000-000000000000
+remarkable-note-id: 3f9a1c04-0000-0000-0000-000000000000
 ---
 ```
+
+`remarkable-pages` is how many pages **this note** covers, which is also what it costs to
+transcribe: a backend is asked once per page. Sorting by it before a large sync tells you which
+notebooks are the expensive ones. A note made from a page tag covers one page, and says which one:
+
+```yaml
+remarkable-pages: 1
+remarkable-page: 7
+```
+
+A note made from a notebook tag covers pages 1 to *n* and so carries no `remarkable-page` at all —
+which makes the key itself the filter for "page notes only".
 
 Every document tag — the sync tag included — arrives namespaced under `remarkable/`, so each synced
 note answers `FROM #remarkable`. With [Dataview](https://blacksmithgu.github.io/obsidian-dataview/),
@@ -578,7 +592,25 @@ The plugin manages only its own lines: frontmatter you write yourself is preserv
 and the plugin's keys mirror the device (hand edits to them are overwritten on the next sync).
 Turning the setting **on** writes the properties into every already-synced note, so views are
 complete from day one; turning it **off** removes exactly what the plugin added and leaves your
-own frontmatter alone.
+own frontmatter alone. When a plugin update adds a property, one sync brings your existing notes
+up to date — you do not have to toggle anything.
+
+#### Identity: what you can key automation on
+
+Two of these fields are meant to be relied on by scripts, so here is exactly what they promise.
+
+- **`remarkable-uuid` is the *document* on your reMarkable.** Several notes can carry the same one:
+  a document routed by two mapped tags produces two notes, and a page note carries its notebook's
+  id. It is the document's identity, not the note's.
+- **`remarkable-note-id` is this one note.** No two notes share it.
+
+While **Frontmatter properties** is on, every note the plugin writes carries both. Neither is ever
+changed or regenerated for a note that already has one — not when the document is synced again, not
+when you rename the mapped tag, and not when you move the note somewhere else in your vault.
+
+One limit, so it does not surprise you: a note whose tag mapping you removed is no longer written by
+the plugin, and keeps whatever it had at its last write. It is not given the keys after the fact.
+Automation that looks for them will pass such a note by — which is the safe direction to fail in.
 
 ### Writing your own notes
 
