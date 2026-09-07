@@ -129,6 +129,13 @@ jobs:
             exit 0
           fi
           git commit -m "$subject"
+          # `docs/ocr-series.csv` is a projection of this file's history, so it can only be
+          # regenerated once tonight's verdict is in that history -- hence after the commit,
+          # amended into it rather than added as a second one. They are one measurement, and a
+          # night that produced two commits would put a gap in the curve between them.
+          node scripts/ocr-series.mjs > docs/ocr-series.csv
+          git add docs/ocr-series.csv
+          git commit --amend --no-edit
           # A push race with the maintainer retries, then fails loudly -- a silently dropped
           # verdict is a stale verdict.
           pushed=""
