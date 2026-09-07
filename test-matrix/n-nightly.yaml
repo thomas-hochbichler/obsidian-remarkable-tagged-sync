@@ -454,3 +454,36 @@
       layer: unit
       file: scripts/perf-baseline.test.mjs
       test: "the perf baseline computation (ticket 21) > accepts a raise when the Node version changed and a reason is given"
+
+- feature: N10
+  name: The published series
+  code: scripts/ocr-series.mjs
+  tier: free
+  scenarios:
+    - id: N10.1
+      scenario: A night whose OCR part never produced backends sits in the history
+      expect: No rows -- an unmeasured night is not a night of zeros, and writing them would invent data
+      layer: unit
+      file: scripts/ocr-series.test.mjs
+      test: "the published series > skips a night that produced no backends -- an unmeasured night is not a night of zeros"
+
+    - id: N10.2
+      scenario: The same verdict was committed twice, as an amend or a re-run leaves it
+      expect: The run's pages appear once -- the CSV is a projection of the history, not a log of it
+      layer: unit
+      file: scripts/ocr-series.test.mjs
+      test: "the published series > contributes a run's pages once, however often the verdict was committed"
+
+    - id: N10.3
+      scenario: A page carries a six-decimal CER and two structure verdicts; another failed outright
+      expect: The fraction as measured (rounding is the reader's choice), the problem in place of the number, structure flattened to kind:state
+      layer: unit
+      file: scripts/ocr-series.test.mjs
+      test: "the published series > writes the fraction as measured, names a problem in place of a number, and flattens the structure verdicts"
+
+    - id: N10.4
+      scenario: A row is written for a page of the reference set
+      expect: Its trait comes from the reference filename, and promptSha and renderVersion ride along -- without them a CER jump cannot be told from a model regression
+      layer: unit
+      file: scripts/ocr-series.test.mjs
+      test: "the published series > names each page's trait from the reference filenames, and carries the two fields that separate a jump from a regression"
