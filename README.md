@@ -115,7 +115,7 @@ Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 
 Two limits, so you know them up front:
 
-- **The free version syncs one tag.** You map one reMarkable tag to one vault folder. You can
+- **The plugin syncs one tag.** You map one reMarkable tag to one vault folder. You can
   change or remove that mapping at any time. Syncing more than one tag is what
   [Tagged Sync Pro](#tagged-sync-pro) is for — €24 once, with a 14-day trial. Everything else in
   this README works without payment, [cloud transcription](#tagged-sync-pro) aside.
@@ -320,7 +320,7 @@ Everything described above is free and stays free. Two things are paid:
 
 - **Cloud transcription** — Anthropic, OpenAI, Google and OpenRouter as transcription backends, with
   your own API key and [a model you name yourself](#handwriting-transcription).
-- **Unlimited tag mappings.** The free version syncs one tag; Pro syncs as many as you like.
+- **Unlimited tag mappings.** The plugin syncs one tag; Pro syncs as many as you like.
 - **[Syncing without the reMarkable cloud](#syncing-without-the-cloud)** — the plugin reads your
   tablet directly over USB or Wi-Fi.
 - **[Frontmatter properties](#frontmatter-properties-pro)** — each synced note carries its
