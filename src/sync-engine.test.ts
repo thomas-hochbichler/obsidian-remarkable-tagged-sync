@@ -3167,6 +3167,80 @@ describe("reTranscribeNote", () => {
 		expect(confirm).not.toHaveBeenCalled();
 		expect(backend.recognize).not.toHaveBeenCalled();
 	});
+
+	// The index said active and the device disagrees. Two places in the code, one sentence for the
+	// user -- and the free half of it, since the listing is the first thing this path asks for.
+	it("says the notebook is gone when the document has left the account", async () => {
+		const api = twoPageNotebook("root-c21-absent");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
+		const before = (await noteStore.read(first.index.rows[KEY].notePath))!;
+
+		const backend = perPageOcrBackend("never");
+		const { outcome, index } = await reTranscribeNote({ api: fakeApi({ rootHash: "root-2", entries: [] }), noteStore, ocrBackend: backend }, first.index.rows[KEY], first.index);
+
+		expect(outcome).toBe("not-on-device");
+		expect(backend.recognize).not.toHaveBeenCalled();
+		expect(index).toBe(first.index); // nothing to save, so nothing new to save
+		expect(await noteStore.read(first.index.rows[KEY].notePath)).toBe(before);
+	});
+
+	it("stops before it fetches anything, and again while the dialog was open", async () => {
+		// Two polls, and the second one earns its place: a dialog can sit open for minutes, and a stop
+		// pressed in that time must not be answered by a run that starts anyway.
+		const api = twoPageNotebook("root-c21-stop");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
+
+		const early = perPageOcrBackend("never");
+		expect((await reTranscribeNote({ api, noteStore, ocrBackend: early, shouldStop: () => true }, first.index.rows[KEY], first.index)).outcome).toBe("stopped");
+		expect(early.recognize).not.toHaveBeenCalled();
+
+		const late = perPageOcrBackend("never");
+		const stopWhileAsking = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+		const { outcome } = await reTranscribeNote({ api, noteStore, ocrBackend: late, shouldStop: stopWhileAsking, confirm: async () => true }, first.index.rows[KEY], first.index);
+
+		expect(outcome).toBe("stopped");
+		expect(late.recognize).not.toHaveBeenCalled();
+	});
+
+	// The backend found nothing, so `updateTranscript` removed the whole section and reported success.
+	// The behaviour is the whole-vault command's and does not change here; what changes is that the
+	// caller can now say it out loud instead of reporting a plain success over a note that lost its text.
+	it("reports an empty result as its own outcome, not as a plain success", async () => {
+		const api = twoPageNotebook("root-c21-empty");
+		const noteStore = fakeNoteStore();
+		const first = await runSync(
+			{ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: perPageOcrBackend("old words") },
+			EMPTY_SYNC_INDEX,
+		);
+		const notePath = first.index.rows[KEY].notePath;
+		expect((await noteStore.read(notePath))!).toContain("old words");
+
+		const silent = fakeOcrBackend({ status: "ok", text: "", confidence: null });
+		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: silent, confirm: async () => true }, first.index.rows[KEY], first.index);
+
+		expect(outcome).toBe("emptied");
+		expect((await noteStore.read(notePath))!).not.toContain("## Transcript");
+		// Still a write, so the refreshed hash still has to reach the caller.
+		expect(index.rows[KEY].blockHash).not.toBe(first.index.rows[KEY].blockHash);
+	});
+
+	it("says a note with no fence has nowhere to write into", async () => {
+		// The user broke the managed block, or a much older version wrote the note. Nothing can be
+		// repaired there, and the sentence has to say which of the refusals this is.
+		const api = twoPageNotebook("root-c21-nofence");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
+		const notePath = first.index.rows[KEY].notePath;
+		await noteStore.write(notePath, "# My own words, and no fence left\n");
+
+		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: perPageOcrBackend("fresh") }, first.index.rows[KEY], first.index);
+
+		expect(outcome).toBe("no-transcript-section");
+		expect(index).toBe(first.index);
+		expect(await noteStore.read(notePath)).toBe("# My own words, and no fence left\n");
+	});
 });
 
 describe("collectHighlights", () => {

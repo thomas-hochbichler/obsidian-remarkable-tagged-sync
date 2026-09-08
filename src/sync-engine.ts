@@ -2565,9 +2565,10 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	// success over a note nothing was written to would be a lie, so the error reaches the caller and
 	// is explained as any other transport failure is.
 	if (outcome.kind === "fetch-failed") throw outcome.error;
-	// `no-pages` is a page-tagged row whose page has gone from the device: the same sentence as a
-	// document that has gone, because from the note's side it is the same loss.
-	if (outcome.kind !== "written") return unchanged(outcome.kind === "no-pages" ? "not-on-device" : "no-transcript-section");
+	// `no-pages` cannot arrive here: it means a page-tagged row whose page is gone, which is the same
+	// fact as `pageCount === 0` and was refused above. So the only refusal left is `updateTranscript`
+	// finding nowhere to write.
+	if (outcome.kind !== "written") return unchanged("no-transcript-section");
 	return {
 		outcome: outcome.empty ? "emptied" : "written",
 		index: outcome.row === null ? index : { ...index, rows: { ...index.rows, [row.syncKey]: outcome.row } },

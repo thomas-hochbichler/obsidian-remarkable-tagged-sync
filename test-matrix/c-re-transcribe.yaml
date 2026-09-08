@@ -328,6 +328,83 @@
       file: src/sync-engine.test.ts
       test: "reTranscribeNote > refuses a tagged page that is gone from its document without asking about it first"
 
+    - id: C21.22
+      scenario: The document has left the account between the last sync and now
+      expect: The notebook-gone sentence, from the listing rather than the index -- and the index handed back unchanged, since there is nothing to save
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > says the notebook is gone when the document has left the account"
+
+    - id: C21.23
+      scenario: Stop is pressed before the fetch, and again while the dialog sits open
+      expect: Both polls answer. The second earns its place because a dialog can sit open for minutes, and a stop pressed in that time must not be answered by a run that starts anyway
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > stops before it fetches anything, and again while the dialog was open"
+
+    - id: C21.24
+      scenario: The backend returns no text at all
+      expect: Its own outcome, not a plain success -- `updateTranscript` removes the whole section, so a note just lost its text and the user has to be told. The refreshed hash still reaches the caller
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > reports an empty result as its own outcome, not as a plain success"
+
+    - id: C21.25
+      scenario: The note has no managed fence left to write into
+      expect: The sentence that says which refusal this is, and the note left byte-for-byte as the user left it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > says a note with no fence has nowhere to write into"
+
+    - id: C21.26
+      scenario: The vault is not connected to reMarkable
+      expect: The missing connection is named and nothing is opened -- the same guard, and the same order, as the whole-vault command
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > names the missing connection instead of opening anything"
+
+    - id: C21.27
+      scenario: A sync is already holding the index
+      expect: Refused. Two writers on one index interleave rows and strand the loser's notes in the vault with no row describing them
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > refuses while a sync holds the index"
+
+    - id: C21.28
+      scenario: The run is stopped
+      expect: It says nothing was changed, rather than reporting success over a note it never reached
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > says a stopped run changed nothing, rather than reporting success over it"
+
+    - id: C21.29
+      scenario: The device stops answering mid-run, with an `Error` and with a bare string
+      expect: Explained by the same sentence every other long job uses, and the run lock released. The ninth outcome -- not of the run, of the transport -- and the failure record must not read "undefined" for something thrown that was never an `Error`
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > explains a device that stopped answering, and releases the lock"
+
+    - id: C21.30
+      scenario: The assembled dialog is answered no
+      expect: Nothing said and nothing saved. The only outcome with no sentence, because the user has just said it themselves
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > says nothing and writes nothing when the dialog is answered no"
+
+    - id: C21.31
+      scenario: The selected backend is one only a licence unlocks
+      expect: The licence is re-read before the backend is resolved. Never a second gate -- it cannot refuse the run -- but a card that expired mid-notebook has to be seen before the run bills a subscription that is no longer there
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > re-reads a lapsed licence before it spends anything on the run"
+
+    - id: C21.32
+      scenario: The palette invokes the command rather than only asking whether to show it
+      expect: The run starts. `checkCallback(false)` is the other half of the callback C21.1-C21.3 ask with `true`, and without this nothing says the two are wired together
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > is what the palette actually runs, and not only what it shows"
+
 - feature: E18
   name: Re-transcribe cost caveat
   code: src/re-transcribe-prompt.ts
