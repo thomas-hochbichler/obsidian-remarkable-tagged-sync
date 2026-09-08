@@ -6,8 +6,17 @@ import type { RmPage, RmPoint, RmStroke } from "./rm-parser";
 // no pt conversion needed for OCR input.
 const PAGE_WIDTH_PX = 1404;
 const PAGE_HEIGHT_PX = 1872;
-/** Bounds the bitmap a corrupt coordinate can ask for, well past any real page's ink. */
-const MAX_RASTER_PX = 6000;
+/**
+ * Bounds the bitmap a corrupt coordinate can ask for, well past any real page's ink.
+ *
+ * Two ceilings and not one, because the two axes are not the same shape of thing. A page is never
+ * wider than the device screen -- there is no sideways scrolling -- while a notebook page *is*
+ * scrolled taller than a screen as a matter of course, and `pdf-renderer.ts` has grown its sheet to
+ * `MAX_CANVAS_PX` for exactly that since the page it draws would otherwise lose more than half its
+ * height. This is the same ceiling on the OCR side of the same page.
+ */
+const MAX_RASTER_WIDTH_PX = 6000;
+const MAX_RASTER_HEIGHT_PX = 20000;
 const DEFAULT_STROKE_WIDTH_PX = 2;
 const MAX_STROKE_RADIUS_PX = 50; // caps a corrupt/outlier width value from blowing up fillDisc's cost
 /** The unit the device records a point's drawn width in -- quarter-pixels, as `pdf-renderer.ts` reads it. */
@@ -15,6 +24,16 @@ const POINT_WIDTH_PER_PX = 4;
 // Generous margin beyond the page for a stroke's legitimate off-page tail, while bounding the
 // distance/step-count blowup that occurs on corrupt point data (observed: coordinates ~1e38).
 const COORDINATE_MARGIN_PX = 4000;
+/**
+ * How far down a page's ink may reach before it is read as corrupt data rather than as writing.
+ *
+ * Against the page height plus the margin above -- 5 872 px -- it is not a guard at all but a crop:
+ * a notebook page scrolls, and a scrolled page's writing sits wherever the user scrolled to. A page
+ * of five notes measured 7 267 px to its last stroke, so the two lowest were folded flat onto the
+ * bitmap's bottom edge and read back as nothing, while the PDF beside them in the same note drew
+ * them correctly -- `inkCanvas` had already been given the same page and grown for it.
+ */
+const MAX_SCENE_Y_PX = MAX_RASTER_HEIGHT_PX;
 
 /** The scene box a page's bitmap covers: its top-left corner in scene coordinates, and its size in px. */
 export interface InkBounds {
@@ -39,7 +58,7 @@ function clamp(value: number, min: number, max: number): number {
 function clampPoint(point: RmPoint): { x: number; y: number } {
 	return {
 		x: clamp(point.x, -COORDINATE_MARGIN_PX, PAGE_WIDTH_PX + COORDINATE_MARGIN_PX),
-		y: clamp(point.y, -COORDINATE_MARGIN_PX, PAGE_HEIGHT_PX + COORDINATE_MARGIN_PX),
+		y: clamp(point.y, -COORDINATE_MARGIN_PX, MAX_SCENE_Y_PX),
 	};
 }
 
@@ -158,8 +177,8 @@ export function inkBounds(page: RmPage): InkBounds | null {
 	return {
 		minX: minX - pad,
 		minY: minY - pad,
-		width: Math.min(Math.ceil(maxX - minX + 2 * pad) || 1, MAX_RASTER_PX),
-		height: Math.min(Math.ceil(maxY - minY + 2 * pad) || 1, MAX_RASTER_PX),
+		width: Math.min(Math.ceil(maxX - minX + 2 * pad) || 1, MAX_RASTER_WIDTH_PX),
+		height: Math.min(Math.ceil(maxY - minY + 2 * pad) || 1, MAX_RASTER_HEIGHT_PX),
 	};
 }
 

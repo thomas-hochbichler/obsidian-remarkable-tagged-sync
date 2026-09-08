@@ -199,7 +199,55 @@ describe("rasterizePage", () => {
 		expect(image.height).toBeLessThan(10_000);
 		expect(image.pixels).toHaveLength(image.width * image.height);
 	});
+
+	it("draws the writing on a page scrolled far below the screen, where the clamp used to fold it onto the bottom edge", () => {
+		// A notebook page scrolls, so its writing sits wherever the user scrolled to. The page this was
+		// found on ran 7 267 px to its last stroke: everything past the page height plus the coordinate
+		// margin (5 872 px) was pressed flat against the bitmap's last row and read back as nothing,
+		// while the PDF in the same note drew it, because `inkCanvas` grows for exactly this page.
+		const scrolledPage: RmPage = {
+			formatVersion: 6,
+			layers: [
+				{
+					id: "layer-1",
+					name: null,
+					strokes: [
+						stroke("stroke-1", [
+							{ x: -500, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+							{ x: -400, y: 200, speed: 0, width: 0, direction: 0, pressure: 0 },
+						]),
+						stroke("stroke-2", [
+							{ x: -500, y: 7200, speed: 0, width: 0, direction: 0, pressure: 0 },
+							{ x: -400, y: 7200, speed: 0, width: 0, direction: 0, pressure: 0 },
+						]),
+					],
+				},
+			],
+		};
+
+		const image = rasterizePage(scrolledPage);
+
+		const darkRows: number[] = [];
+		for (let y = 0; y < image.height; y++) {
+			for (let x = 0; x < image.width; x++) {
+				if (image.pixels[y * image.width + x] < 255) {
+					darkRows.push(y);
+					break;
+				}
+			}
+		}
+		// The two lines stay 7 000 px apart, which is where they were written -- not 5 700, which is
+		// where the ceiling was.
+		expect(image.height).toBeGreaterThan(7_000);
+		expect(Math.min(...darkRows)).toBeLessThan(100);
+		expect(Math.max(...darkRows)).toBeGreaterThan(6_900);
+	});
 });
+
+/** A pen stroke through the given points, at the device's default width. */
+function stroke(id: string, points: RmPage["layers"][number]["strokes"][number]["points"]): RmPage["layers"][number]["strokes"][number] {
+	return { layerId: "layer-1", id, timestamp: "0001", penType: 0, color: 0, brushSize: 2, points };
+}
 
 // Gap G36. `inkBounds` is exported because it is the frame anything reading an OCR result back has to
 // work in -- an observation's box is normalised against this bitmap, so mapping one onto the scene
@@ -253,7 +301,9 @@ describe("inkBounds", () => {
 		)!;
 
 		expect(bounds.width).toBeLessThanOrEqual(6000);
-		expect(bounds.height).toBeLessThanOrEqual(6000);
+		// Taller than it is wide, and deliberately: a page scrolls down and never sideways, so the
+		// height carries `pdf-renderer`'s own ceiling for a self-sized sheet.
+		expect(bounds.height).toBeLessThanOrEqual(20_000);
 	});
 
 	it("gives a single point a bitmap of at least one pixel, not of none", () => {

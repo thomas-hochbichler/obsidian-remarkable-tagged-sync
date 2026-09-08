@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnthropicOcrBackend } from "./anthropic-ocr-backend";
+import { OCR_REQUEST_TIMEOUT_MS } from "./llm-transcript";
 import type { RmPage } from "../src/rm-parser";
 
 const fetchMock = vi.fn();
@@ -206,6 +207,26 @@ describe("AnthropicOcrBackend", () => {
 		const result = await backend.recognize([page()]);
 
 		expect(result).toEqual({ status: "skipped", pages: [{ status: "skipped", text: "" }], text: "", confidence: null });
+	});
+
+	// The OpenAI-compatible adapter's case, from the other side of the same `fetchWithRetry`: a local
+	// model was still generating forty minutes into a page, and nothing bounded the wait. An endpoint
+	// that answers nothing is reachable, so this must not read as "Is this machine online?".
+	it("fails a page Anthropic never answers for, instead of waiting on it forever", async () => {
+		vi.useFakeTimers();
+		try {
+			fetchMock.mockReturnValue(new Promise<Response>(() => {}));
+			const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+			const running = backend.recognize([page()]);
+			await vi.advanceTimersByTimeAsync(OCR_REQUEST_TIMEOUT_MS);
+			const result = await running;
+
+			expect(result.pages).toEqual([{ status: "failed", text: "" }]);
+			expect(result.warnings?.[0]).toContain("did not answer in 10 minutes");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	// A truncated page used to come back `ok` over a transcript that stopped mid-sentence, and the

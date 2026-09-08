@@ -19,6 +19,8 @@
 export {
 	fetchWithRetry,
 	isUnreachable,
+	OCR_REQUEST_TIMEOUT_MS,
+	OcrTimeoutError,
 	refusalDetail,
 	LLM_MAX_PARALLELISM,
 	sanitizeTranscript,
