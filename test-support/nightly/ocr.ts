@@ -76,6 +76,12 @@ export interface BaselineEntry {
  * Reads the committed ground-truth pages. Rejects an empty body -- the CER denominator must be
  * positive -- and requires the fourteen ids to be exactly 01…14 so a page cannot fall out silently.
  */
+/**
+ * How many pages the committed set has. Named rather than inline so adding one is a single edit, and
+ * checked rather than counted: a page whose file went missing must fail the run, not shrink the set.
+ */
+export const REFERENCE_PAGES = 15;
+
 export function loadReferencePages(dir: string): ReferencePage[] {
 	const files = readdirSync(dir).filter((name) => name.endsWith(".md")).sort();
 	const pages = files.map((name) => {
@@ -96,7 +102,7 @@ export function loadReferencePages(dir: string): ReferencePage[] {
 		return { id, trait, body, alternates };
 	});
 	const ids = pages.map((page) => page.id).join(",");
-	const expected = Array.from({ length: 14 }, (_, i) => String(i + 1).padStart(2, "0")).join(",");
+	const expected = Array.from({ length: REFERENCE_PAGES }, (_, i) => String(i + 1).padStart(2, "0")).join(",");
 	if (ids !== expected) throw new Error(`reference pages are ${ids || "(none)"}, expected ${expected}`);
 	return pages;
 }

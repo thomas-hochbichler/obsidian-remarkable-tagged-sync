@@ -173,10 +173,10 @@
   scenarios:
     - id: N4.1
       scenario: The committed reference set is loaded
-      expect: Exactly pages 01 through 14, in order, none empty -- a page cannot fall out silently
+      expect: Exactly pages 01 through `REFERENCE_PAGES`, in order, none empty -- a page cannot fall out silently
       layer: unit
       file: test-support/nightly/ocr.test.ts
-      test: "loading the reference pages > loads the committed fourteen with their ids in order"
+      test: "loading the reference pages > loads the committed set with their ids in order"
 
     - id: N4.2
       scenario: A provider rejects our request with a 400

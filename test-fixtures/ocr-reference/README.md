@@ -1,13 +1,13 @@
 # OCR reference set
 
-Fourteen handwritten pages and their ground truth, for measuring transcription quality per trait.
+Fifteen handwritten pages and their ground truth, for measuring transcription quality per trait.
 The nightly OCR job renders each scene, sends it through a backend, and reports a character error
 rate per page — so "tables got worse" is a finding, where a single average would say nothing.
 
 ## Provenance
 
-Written by the maintainer on a reMarkable Paper Pro on 2026-08-23, from templates authored for
-exactly this purpose. Every text is invented and deliberately harmless: no real person, employer,
+Written by the maintainer on a reMarkable Paper Pro on 2026-08-23 (pages 01-14) and 2026-09-08
+(page 15), from templates authored for exactly this purpose. Every text is invented and deliberately harmless: no real person, employer,
 ticket or system appears anywhere. The pages were fetched straight from the device's cloud storage
 as raw `.rm` scenes — nothing here is generated, because the set exists to measure the reading of
 real handwriting.
@@ -43,6 +43,7 @@ carefully, 02 rushed — so the gap between their error rates measures legibilit
 | 12 | umlauts, ß, typographic quotes, dashes |
 | 13 | struck-through corrections (ground truth is the corrected text) |
 | 14 | main text plus margin notes |
+| 15 | a scrolled page -- ink over four screen heights, wide blank bands between blocks |
 
 ## The ground truth records what is on the page
 
@@ -50,6 +51,14 @@ Three words came out differently than the template during writing and were adopt
 truth on 2026-08-23, so the measurement compares against what is really there: page 03 "paar"
 (lower case), page 04 "Mourning", page 07 "main Thread" (lower case). Struck-through words on
 page 13 count as not written; only the corrections appear in its ground truth.
+
+Page 15 was added on 2026-09-08, after a scrolled page was found to be transcribed with its lower
+half missing (#136). It is the only page whose ink runs past a screen -- 852 x 7469 px, where the
+other fourteen reach 2.08 times their own width at most -- and it is what any future change to how a
+tall page is sent has to be measured against. Two words came out differently than the template and
+were adopted into the ground truth on the same day: "Thuesday" and "Decide". Its five blocks sit
+about 1 500 px apart, except "Weather", written directly under the block above on purpose: a
+splitting rule that cuts at ordinary line spacing would show up there.
 
 The comparison rules the nightly applies (NFC on both sides, whitespace and list-marker
 normalisation, single line breaks inside a paragraph collapsed) are documented with the nightly

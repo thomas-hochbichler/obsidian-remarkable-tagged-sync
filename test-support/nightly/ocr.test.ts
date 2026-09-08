@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { classifyFailure, evaluateBackend, loadReferencePages, mergeBackendStatuses, type ReferencePage } from "./ocr";
+import { classifyFailure, evaluateBackend, loadReferencePages, mergeBackendStatuses, REFERENCE_PAGES, type ReferencePage } from "./ocr";
 
 const PAGES_DIR = join(process.cwd(), "test-fixtures", "ocr-reference", "pages");
 
@@ -9,9 +9,9 @@ function page(id: string, body: string): ReferencePage {
 }
 
 describe("loading the reference pages", () => {
-	it("loads the committed fourteen with their ids in order", () => {
+	it("loads the committed set with their ids in order", () => {
 		const pages = loadReferencePages(PAGES_DIR);
-		expect(pages.map((p) => p.id)).toEqual(Array.from({ length: 14 }, (_, i) => String(i + 1).padStart(2, "0")));
+		expect(pages.map((p) => p.id)).toEqual(Array.from({ length: REFERENCE_PAGES }, (_, i) => String(i + 1).padStart(2, "0")));
 		expect(pages.every((p) => p.body.length > 0)).toBe(true);
 		// Page 06 declares its LaTeX rendering as an accept alternate (ticket 14 §2.3), authored
 		// before the first baseline; blank lines inside the block must survive the frontmatter.
