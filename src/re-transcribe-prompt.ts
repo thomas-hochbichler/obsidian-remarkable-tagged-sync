@@ -1,4 +1,5 @@
 import type { OcrBackend } from "./ocr-backend";
+import type { ReTranscribeNoteOutcome } from "./sync-engine";
 import type { OcrBackendEntry } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
@@ -65,6 +66,83 @@ export function reTranscribeConfirmation(cost: ReTranscribeCost): string {
 		`Re-transcribe ${cost.unitCount} synced note(s) with the "${cost.backendId}" backend? ` +
 		"Transcripts are now split by page, so you can tell which page a line came from. " +
 		"Handwriting is also read more accurately than it used to be, and typed text is transcribed too. " +
-		`This re-fetches each notebook from reMarkable${costCaveat}${cost.timeCaveat}.`
+		`This re-fetches each notebook from reMarkable${costCaveat}${cost.timeCaveat}. ` +
+		// Last, after everything the decision is made on. The user this sentence is for is standing in
+		// front of a dialog about to spend a whole vault's worth of pages to repair one note -- which
+		// is exactly the moment the cheaper route is worth naming (selective-re-transcribe spec §9.1).
+		'To repair a single note, use "Re-transcribe this note" instead.'
 	);
+}
+
+/**
+ * The two refusals a one-note run can reach before the device is ever asked (spec §6.3). Exported as
+ * constants because the tests assert on the sentence a user reads, not on a code.
+ */
+export const NOTE_NOT_SYNCED_NOTICE = "This note isn't synced from reMarkable.";
+export const NOTEBOOK_GONE_NOTICE = "The notebook for this note is no longer on your reMarkable.";
+
+export interface ReTranscribeNoteQuestion {
+	/** The note's own name. A warning about losing words has to say which words. */
+	readonly noteName: string;
+	/** The pages this run will send: the whole notebook for a notebook note, one for a tagged page. */
+	readonly pageCount: number;
+	readonly backendId: string;
+	/** True only of a backend that spends money per page. Read off the resolved adapter, not the id. */
+	readonly metered: boolean;
+	/** The user has corrected this note inside the managed block; see `isBlockEdited`. */
+	readonly handEdited: boolean;
+}
+
+/**
+ * What one note's re-transcribe asks before it starts -- and `null` where it asks nothing, which is
+ * the ordinary case: a free backend on a note nobody has touched simply runs.
+ *
+ * There is no standing confirmation here, unlike the whole-vault command, because that dialog's
+ * justification is the size of the run and it does not survive the drop to one note. What earns a
+ * dialog at N=1 is a different fact: the command says "this note" while the work is the whole
+ * notebook. So the page count is the point -- a warning without a number is one users learn to click
+ * through (spec §6.1).
+ *
+ * Both clauses in one dialog, never two in sequence: they are two facts about one decision.
+ */
+export function reTranscribeNoteConfirmation(question: ReTranscribeNoteQuestion): string | null {
+	const clauses: string[] = [];
+	// First, because it is the one that cannot be undone. The whole-vault command overwrites hand
+	// edits without asking, covered by its own dialog; at N=1 the warning can name the note and say
+	// what is lost, and that precision is the whole point of the command (spec §6.2).
+	if (question.handEdited) {
+		clauses.push(`You have corrected the transcript in "${question.noteName}" by hand. Re-transcribing replaces it, and those words cannot be brought back.`);
+	}
+	if (question.metered) {
+		clauses.push(`This re-reads ${question.pageCount} page(s) of the notebook and sends them to the "${question.backendId}" backend, using your API quota.`);
+	}
+	return clauses.length === 0 ? null : clauses.join(" ");
+}
+
+/**
+ * The one sentence each outcome earns, written here rather than in the engine because every other
+ * user-facing string of this feature lives in this file (spec §5.5).
+ *
+ * `cancelled` has none: the user has just said no themselves, and reading it back to them is noise.
+ * `emptied` is not an error -- the write succeeded and removed the section, which is what an empty
+ * OCR result has always done. It is simply said out loud now, instead of being reported as success
+ * over a note that just lost its text (spec §6.3).
+ */
+export function reTranscribeNoteNotice(outcome: ReTranscribeNoteOutcome, noteName: string): string | null {
+	switch (outcome) {
+		case "written":
+			return `Re-transcribed "${noteName}".`;
+		case "emptied":
+			return "No text was found. The transcript has been removed.";
+		case "not-on-device":
+			return NOTEBOOK_GONE_NOTICE;
+		case "pdf-digest":
+			return "Margin notes on a PDF are kept as a digest, not as a transcript. Nothing was changed.";
+		case "no-transcript-section":
+			return "This note has no transcript section to write into.";
+		case "stopped":
+			return "Re-transcribe stopped. Nothing was changed.";
+		case "cancelled":
+			return null;
+	}
 }
