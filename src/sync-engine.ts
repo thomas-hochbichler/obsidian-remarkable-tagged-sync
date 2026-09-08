@@ -2291,6 +2291,119 @@ async function scanReTranscribe(
 	return { total: steps.reduce((sum, count) => sum + count, 0), unreadable, stopped };
 }
 
+/** One document's facts, gathered once by the caller and shared by every row that lives in it. */
+interface ReTranscribeDoc {
+	readonly entry: Entry;
+	readonly pdfBacked: boolean;
+	readonly docPages: DocPageRef[];
+	readonly pageHashes: Map<string, string>;
+}
+
+/**
+ * How one row's re-transcribe ended.
+ *
+ * `written` carries the row the caller has to store, and `null` there is not an error: it is a note
+ * that came back from the write without a managed block at all. `empty` is written too -- the backend
+ * returned nothing and `updateTranscript` removed the whole section -- and it is a separate fact
+ * because at N=1 the user is told about it (spec §6.3).
+ */
+type ReTranscribeRowOutcome =
+	| { kind: "written"; row: SyncIndexRow | null; empty: boolean }
+	/** The tagged page is gone from the device, so there is nothing left to transcribe. */
+	| { kind: "no-pages" }
+	/** Fetching or rendering the pages failed. The error is carried, for a caller that cannot skip it. */
+	| { kind: "fetch-failed"; error: unknown }
+	/** `updateTranscript` refused: a PDF-backed note carrying a digest, or no fence to write into. */
+	| { kind: "not-written" };
+
+/**
+ * Re-transcribing exactly one already-synced row: render its pages, run OCR, rewrite just its
+ * transcript, and hand back the row with the refreshed `blockHash` and per-page store.
+ *
+ * Extracted so both commands run the same body -- `reTranscribeAll` per row of every document,
+ * `reTranscribeNote` once. Everything about a *run* stays with the caller (the listing, the pre-scan,
+ * the checkpoint, the stop poll), because that is precisely where the two commands differ and hiding
+ * the difference inside here would make this function lie about what it serves (selective-re-transcribe
+ * spec §5.1).
+ */
+async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: ReTranscribeDoc, noteContent: string, bar: ProgressTicker): Promise<ReTranscribeRowOutcome> {
+	const { api, noteStore, ocrBackend } = deps;
+	const { entry, pdfBacked, docPages, pageHashes } = doc;
+	// `ocrPagesForRow` renders every page it returns, so this really is the rendering step and
+	// not, as it looks, a pure OCR path.
+	bar.start(reTranscribeSteps(row, docPages), entry.visibleName, row.tag, "rendering");
+	const noteHasDigest = extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
+	let ocrPages: OcrPage[] | null;
+	try {
+		ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
+	} catch (error) {
+		console.warn(`Tagged Sync: failed to re-fetch "${entry.visibleName}" for re-transcribe, skipping`, error);
+		bar.finish(); // counted before it failed; the bar must still reach its total
+		return { kind: "fetch-failed", error };
+	}
+	if (ocrPages === null) {
+		bar.finish();
+		return { kind: "no-pages" };
+	}
+	bar.step("transcribing");
+
+	// `splitForTranscript`'s three-way split, read back off the note. A typed page the digest
+	// covers is left out of the transcript entirely -- its entries are printed right above, and
+	// "see the embedded page" beside them reads as a contradiction -- while one the digest saw
+	// and found nothing on is named, exactly as a sync names it. This path builds no digest, so
+	// the note it just read is the only record of which page is which; `readDigestPages` is that
+	// record. A note with no digest covers nothing, so all of its typed pages are named.
+	const covered = new Set(readDigestPages(noteContent));
+	const transcribePages = ocrPages.filter((page) => page.typed !== true || !covered.has(page.embedPage));
+	const ocr = await runOcr(ocrBackend, transcribePages, bar.page);
+	// The per-page headings link into the note's own embed, which this path knows only from the
+	// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
+	// written by a much older version) falls back to the unlabelled transcript rather than
+	// emitting links that go nowhere.
+	const embedPath = readEmbedPath(noteContent);
+	// `updateTranscript` replaces the whole transcript region, so a quote the sync folded into it
+	// is deleted unless this path writes it back -- permanently, which is the exact loss this
+	// command exists to repair. It costs nothing: the scenes were rendered a moment ago and carry
+	// their own highlights (ticket 05).
+	const folded =
+		noteHasDigest && !pdfBacked
+			? collectHighlights(ocrPages.map((page) => ({ pageLabel: page.pageLabel, embedPage: page.embedPage, highlights: page.typed === true ? [] : (page.scene?.highlights ?? []) })))
+			: [];
+	const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: folded, unitPages: ocrPages.length });
+	// A notebook note may carry both sections since #115, and refusing it here would leave the
+	// command unable to repair the notes the bug damaged. A PDF keeps the refusal: growing a flat
+	// transcript into its digest note is the F20 leak (see `SyncDeps.marginNotes`). The one-note
+	// command never arrives here with that pair -- it bails before any page is rendered (§5.4).
+	if (!(await updateTranscript(noteStore, row.notePath, transcript, { allowDigest: !pdfBacked }))) {
+		bar.finish();
+		return { kind: "not-written" };
+	}
+	bar.finish();
+
+	// The store the *sync* will read next (issue #117, ticket 04). Without it the user pays
+	// twice: once for this command, and again on the next sync of every notebook it touched --
+	// which would make "Re-transcribe all notes" dearer than it was before the store existed.
+	// `renderVersion` is deliberately not touched: this rewrites a transcript, not an
+	// attachment, so a row whose render is stale keeps saying so and its typed and anchored
+	// pages are re-read on the next sync (ticket 02's per-page carve-out).
+	//
+	// Every term here is about the row and none about the run, so both commands store on the same
+	// terms by construction (selective-re-transcribe spec §5.6).
+	const store =
+		row.pageId === null && !pdfBacked && ocrPages.length > 1 && ocr.warnings.length === 0
+			? {
+					// A page's own `.rm` hash, the same key the sync stores under. Asserted rather
+					// than defaulted: only pages the backend read reach `readPages`, and a page
+					// with no `.rm` file was never drawn on, so it is never one of them.
+					transcribedPages: storedPages(ocr.readPages, (pageId) => pageHashes.get(pageId)!, folded),
+					transcribedWith: transcriptFingerprint(ocrBackend.fingerprint),
+				}
+			: {};
+
+	const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
+	return { kind: "written", empty: transcript === "", row: block === null ? null : { ...row, blockHash: blockHashOf(block), ...store } };
+}
+
 /**
  * Re-runs OCR over every active note and rewrites just its transcript (spec §8.4). Re-fetches each
  * doc's current content once and re-derives the same OCR input the sync would produce, so a note's
@@ -2298,7 +2411,7 @@ async function scanReTranscribe(
  * transcript from an earlier backend. The embed and the user's free area are never touched.
  */
 export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex): Promise<{ updated: number; index: SyncIndex; stopped: boolean }> {
-	const { api, noteStore, ocrBackend } = deps;
+	const { api, noteStore } = deps;
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 	// Re-transcribing rewrites the managed block, so every refreshed row needs its `blockHash` updated
@@ -2344,84 +2457,120 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 		for (const row of rowsByDoc.get(docId)!) {
 			if (shouldStop()) return stopHere();
-			// `ocrPagesForRow` renders every page it returns, so this really is the rendering step and
-			// not, as it looks, a pure OCR path.
-			bar.start(reTranscribeSteps(row, docPages), entry.visibleName, row.tag, "rendering");
 			// Read before rendering rather than after. What the note already carries is what decides
 			// whether a transcript may grow beside a digest, and which quotes have to be written back
 			// with it -- both needed before the transcript is built, not after (ticket 06).
 			const noteContent = (await noteStore.read(row.notePath)) ?? "";
-			const noteHasDigest = extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
-			let ocrPages: OcrPage[] | null;
-			try {
-				ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
-			} catch (error) {
-				console.warn(`Tagged Sync: failed to re-fetch "${entry.visibleName}" for re-transcribe, skipping`, error);
-				bar.finish(); // counted before it failed; the bar must still reach its total
-				continue;
-			}
-			if (ocrPages === null) {
-				bar.finish();
-				continue;
-			}
-			bar.step("transcribing");
-
-			// `splitForTranscript`'s three-way split, read back off the note. A typed page the digest
-			// covers is left out of the transcript entirely -- its entries are printed right above, and
-			// "see the embedded page" beside them reads as a contradiction -- while one the digest saw
-			// and found nothing on is named, exactly as a sync names it. This path builds no digest, so
-			// the note it just read is the only record of which page is which; `readDigestPages` is that
-			// record. A note with no digest covers nothing, so all of its typed pages are named.
-			const covered = new Set(readDigestPages(noteContent));
-			const transcribePages = ocrPages.filter((page) => page.typed !== true || !covered.has(page.embedPage));
-			const ocr = await runOcr(ocrBackend, transcribePages, bar.page);
-			// The per-page headings link into the note's own embed, which this path knows only from the
-			// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
-			// written by a much older version) falls back to the unlabelled transcript rather than
-			// emitting links that go nowhere.
-			const embedPath = readEmbedPath(noteContent);
-			// `updateTranscript` replaces the whole transcript region, so a quote the sync folded into it
-			// is deleted unless this path writes it back -- permanently, which is the exact loss this
-			// command exists to repair. It costs nothing: the scenes were rendered a moment ago and carry
-			// their own highlights (ticket 05).
-			const folded =
-				noteHasDigest && !pdfBacked
-					? collectHighlights(ocrPages.map((page) => ({ pageLabel: page.pageLabel, embedPage: page.embedPage, highlights: page.typed === true ? [] : (page.scene?.highlights ?? []) })))
-					: [];
-			const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: folded, unitPages: ocrPages.length });
-			// A notebook note may carry both sections since #115, and refusing it here would leave the
-			// command unable to repair the notes the bug damaged. A PDF keeps the refusal: growing a flat
-			// transcript into its digest note is the F20 leak (see `SyncDeps.marginNotes`).
-			if (!(await updateTranscript(noteStore, row.notePath, transcript, { allowDigest: !pdfBacked }))) {
-				bar.finish();
-				continue;
-			}
+			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes }, noteContent, bar);
+			if (outcome.kind !== "written") continue;
 			updated++;
-			bar.finish();
-
-			// The store the *sync* will read next (issue #117, ticket 04). Without it the user pays
-			// twice: once for this command, and again on the next sync of every notebook it touched --
-			// which would make "Re-transcribe all notes" dearer than it was before the store existed.
-			// `renderVersion` is deliberately not touched: this rewrites a transcript, not an
-			// attachment, so a row whose render is stale keeps saying so and its typed and anchored
-			// pages are re-read on the next sync (ticket 02's per-page carve-out).
-			const store =
-				row.pageId === null && !pdfBacked && ocrPages.length > 1 && ocr.warnings.length === 0
-					? {
-							// A page's own `.rm` hash, the same key the sync stores under. Asserted rather
-							// than defaulted: only pages the backend read reach `readPages`, and a page
-							// with no `.rm` file was never drawn on, so it is never one of them.
-							transcribedPages: storedPages(ocr.readPages, (pageId) => pageHashes.get(pageId)!, folded),
-							transcribedWith: transcriptFingerprint(ocrBackend.fingerprint),
-						}
-					: {};
-
-			const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
-			if (block !== null) rows[row.syncKey] = { ...row, blockHash: blockHashOf(block), ...store };
+			if (outcome.row !== null) rows[row.syncKey] = outcome.row;
 			// Per note, for the same reason the sync checkpoints per unit: the note on disk and the hash
 			// that describes it must not be allowed to drift apart across an interruption.
 			await checkpoint();
 		}
 	}
 	return { updated, index: { ...index, rows }, stopped: false };
+}
+
+/**
+ * What one note's re-transcribe ended as, in the caller's terms rather than the engine's. The
+ * sentence for each lives in the UI layer, where every other user-facing string of this feature
+ * already does (selective-re-transcribe spec §5.5, §6.3).
+ */
+export type ReTranscribeNoteOutcome =
+	/** Rewritten, with text in it. */
+	| "written"
+	/** Rewritten with nothing: the backend found no text, so the whole Transcript section is gone. */
+	| "emptied"
+	/** The document is not in the account's listing any more, or the tagged page is gone from it. */
+	| "not-on-device"
+	/** A PDF-backed note carrying a digest -- refused before a single page was rendered. */
+	| "pdf-digest"
+	/** The note has no transcript region and no fence to grow one in. */
+	| "no-transcript-section"
+	/** The dialog was answered no. Nothing is said about this one; the user just said it. */
+	| "cancelled"
+	/** The stop was requested before the pages were rendered. */
+	| "stopped";
+
+/**
+ * `saveIndex` is omitted rather than ignored: one document is one save, so this path keeps no
+ * checkpoint of its own and the caller saves the index it gets back. Declaring a dependency it
+ * silently drops would let a future caller pass one and believe in checkpoints that never happen.
+ */
+export interface ReTranscribeNoteDeps extends Omit<ReTranscribeDeps, "saveIndex"> {
+	/**
+	 * The one dialog, asked after the document is on the table and before anything is rendered -- so
+	 * it can quote the exact page count, and so a "no" costs nothing (spec §4, step 9).
+	 *
+	 * The engine asks; the caller decides whether there is anything worth asking about and words it.
+	 * Left out, the run simply happens, which is what a free backend on an untouched note does.
+	 */
+	confirm?: (question: { pageCount: number; handEdited: boolean }) => Promise<boolean>;
+}
+
+/**
+ * Re-runs OCR over exactly one already-synced note and rewrites just its transcript.
+ *
+ * The same body as `reTranscribeAll` per row (see `reTranscribeRow`), with the run around it dropped
+ * to what one note needs: no row grouping, no pre-scan -- it would fetch the content and page hashes
+ * purely to size a bar holding one document, and the run then fetches them again -- and no per-document
+ * checkpoint, since one document is one save and the caller does it once. `listItems` stays: a seventh
+ * `SyncApi` method would have to be built on both transports and every double, and there is no
+ * measurement behind it yet (spec §5.2, §5.3).
+ */
+export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncIndexRow, index: SyncIndex): Promise<{ outcome: ReTranscribeNoteOutcome; index: SyncIndex }> {
+	const { api, noteStore } = deps;
+	const report = deps.onProgress ?? (() => {});
+	const shouldStop = deps.shouldStop ?? (() => false);
+	const unchanged = (outcome: ReTranscribeNoteOutcome): { outcome: ReTranscribeNoteOutcome; index: SyncIndex } => ({ outcome, index });
+
+	const entries = await api.listItems();
+	// The index said the row is active a moment ago; this is the device saying the same thing. Two
+	// places in the code, one sentence for the user.
+	const entry = entries.find((candidate) => candidate.type === "DocumentType" && candidate.id === row.docId);
+	if (entry === undefined) return unchanged("not-on-device");
+	if (shouldStop()) return unchanged("stopped");
+
+	const content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+	const pdfBacked = isPdfBacked(content);
+	const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
+	const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
+	// Read before rendering rather than after, for the reason `reTranscribeAll` reads it there: what
+	// the note already carries decides whether a transcript may grow beside a digest at all.
+	const noteContent = (await noteStore.read(row.notePath)) ?? "";
+
+	// The free bail (spec §5.4). `updateTranscript` refuses this pair anyway, but only after every
+	// page has been rendered and sent -- so on a metered backend the user would pay for a guaranteed
+	// no. Both facts are already known here, so the refusal is moved in front of the money.
+	if (pdfBacked && extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true) return unchanged("pdf-digest");
+
+	// The pages this run will actually send, which is both what the bar counts and what the dialog
+	// quotes -- one number, so the warning cannot promise a different cost than the run has.
+	const pageCount = reTranscribeSteps(row, docPages);
+	// Nothing left to send: a page-tagged row whose page has gone from the device, while the document
+	// it lived in is still listed. Refused here rather than after the dialog, because nothing may be
+	// asked that is about to be refused anyway -- and "0 page(s)" is not a question (spec §4).
+	if (pageCount === 0) return unchanged("not-on-device");
+	if (deps.confirm !== undefined) {
+		const handEdited = await isBlockEdited(noteStore, row);
+		if (!(await deps.confirm({ pageCount, handEdited }))) return unchanged("cancelled");
+	}
+	// The dialog may have sat open for a while, and stopping is still allowed while it did.
+	if (shouldStop()) return unchanged("stopped");
+
+	const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes }, noteContent, progressTicker(report, pageCount));
+	// A whole-vault run logs this and moves to the next note. There is no next note here, and a silent
+	// success over a note nothing was written to would be a lie, so the error reaches the caller and
+	// is explained as any other transport failure is.
+	if (outcome.kind === "fetch-failed") throw outcome.error;
+	// `no-pages` cannot arrive here: it means a page-tagged row whose page is gone, which is the same
+	// fact as `pageCount === 0` and was refused above. So the only refusal left is `updateTranscript`
+	// finding nowhere to write.
+	if (outcome.kind !== "written") return unchanged("no-transcript-section");
+	return {
+		outcome: outcome.empty ? "emptied" : "written",
+		index: outcome.row === null ? index : { ...index, rows: { ...index.rows, [row.syncKey]: outcome.row } },
+	};
 }

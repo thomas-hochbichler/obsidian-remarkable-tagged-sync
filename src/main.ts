@@ -17,10 +17,17 @@ import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-ch
 import { createPolarLicenceApi } from "./licence-client";
 import { type Entitlement, entitlementOf } from "./licence-state";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import { remapRows } from "./note-rename";
+import { remapRows, rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
-import { reTranscribeConfirmation, reTranscribeIsUseful } from "./re-transcribe-prompt";
+import {
+	NOTE_NOT_SYNCED_NOTICE,
+	NOTEBOOK_GONE_NOTICE,
+	reTranscribeConfirmation,
+	reTranscribeIsUseful,
+	reTranscribeNoteConfirmation,
+	reTranscribeNoteNotice,
+} from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { CloudTransport } from "./cloud-transport";
@@ -37,7 +44,7 @@ import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-tran
 import { reachableHost } from "./ssh-pairing";
 import { frontmatterAllowed } from "./frontmatter";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
-import { isStaleFrontmatter, reTranscribeAll, runSync, type SyncProgress } from "./sync-engine";
+import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
@@ -316,6 +323,28 @@ export default class TaggedSyncPlugin extends Plugin {
 			checkCallback: (checking) => {
 				if (!this.isSyncing()) return false;
 				if (!checking) this.requestStop();
+				return true;
+			},
+		});
+		this.addCommand({
+			id: "re-transcribe-note",
+			name: "Re-transcribe this note",
+			// Two decisions only, because `checkCallback` is synchronous and runs on every keystroke in
+			// the palette: the backend, exactly as `re-transcribe-all` asks it, and whether there is a
+			// Markdown file on screen at all. **No index lookup here** -- that would be a scan per
+			// keystroke, and it would put the decision in two places that can drift apart.
+			//
+			// So this command is visible on every Markdown file, including notes the plugin has never
+			// touched, and it says no at run time instead (spec §2.2). Configuration hides a command;
+			// the file on screen earns a sentence, because a command that is merely missing teaches
+			// nobody anything -- a user cannot tell a typo from a broken plugin from an unsynced note.
+			// The one exception is having no file open at all: "this note" then has no referent.
+			checkCallback: (checking) => {
+				const backend = this.resolveOcrBackend(true);
+				if (!reTranscribeIsUseful(backend, ocrBackendEntry(backend.id))) return false;
+				const file = this.app.workspace.getActiveFile();
+				if (file === null || file.extension !== "md") return false;
+				if (!checking) void this.reTranscribeNote(file);
 				return true;
 			},
 		});
@@ -810,6 +839,99 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
 				new Notice(`Re-transcribed ${updated} note(s).`);
 			}
+		} catch (error) {
+			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+			this.setStatus("failed", "Tagged Sync: re-transcribe failed");
+			new Notice(explainTransportError(transport, error, "sync"));
+		} finally {
+			await session?.close();
+			this.syncing = false;
+			this.stopRequested = false;
+		}
+	}
+
+	/**
+	 * Re-runs OCR over the one note on screen and rewrites just its transcript
+	 * (selective-re-transcribe spec §4). Repairing one bad transcript used to cost a whole-vault run.
+	 *
+	 * The order of the steps is the design: every free check runs before every expensive one, so no
+	 * refusal ever costs money and nothing is asked that is about to be refused anyway. The index
+	 * lookup and the row's status are free and come first; the lock and the device come next; the
+	 * dialog comes last, once the page count is known and can be quoted.
+	 */
+	async reTranscribeNote(file: TFile): Promise<void> {
+		// With its status, not filtered to `active`: filtering would make a notebook the user deleted
+		// from the device indistinguishable from a note that was never synced, and give it the wrong
+		// sentence (spec §3).
+		const row = rowForNotePath(this.data.syncIndex.rows, file.path);
+		if (row === undefined) {
+			new Notice(NOTE_NOT_SYNCED_NOTICE);
+			return;
+		}
+		if (row.status !== "active") {
+			new Notice(NOTEBOOK_GONE_NOTICE);
+			return;
+		}
+
+		// Pre-flight and the lock in one step, as `syncNow` takes them: the dialog here comes after the
+		// device has been asked, so there is no window between deciding and claiming.
+		const claim = this.claimRun();
+		if (!claim.start) {
+			new Notice(claim.notice);
+			return;
+		}
+		this.stopRequested = false;
+		// The full status bar, exactly as a sync: a run that holds the global lock while showing
+		// nothing globally sends the user hunting for a run they cannot see (spec §6.4).
+		this.setStatus("busy", "Tagged Sync: re-transcribing…");
+		let transport = this.transportChain().primary;
+		let session: TransportSession | null = null;
+		try {
+			if (claim.refreshLicence) await this.refreshLicence(false);
+			const backend = this.resolveOcrBackend();
+			const opened = await this.openSource();
+			transport = opened.transport;
+			session = opened.session;
+			const { outcome, index } = await reTranscribeNote(
+				{
+					api: session.api,
+					noteStore: createNoteStore(this.app),
+					ocrBackend: backend,
+					onProgress: (progress) => this.showProgress(progress),
+					shouldStop: () => this.stopRequested,
+					confirm: async ({ pageCount, handEdited }) => {
+						const question = reTranscribeNoteConfirmation({
+							noteName: file.basename,
+							pageCount,
+							backendId: backend.id,
+							// Off the resolved adapter, not the chosen id: a paid backend that fell back to
+							// a free one spends nothing.
+							metered: backend.metered,
+							handEdited,
+						});
+						// Nothing worth asking: a free backend on a note nobody has touched just runs.
+						return question === null || (await confirmDialog(this.app, "Re-transcribe this note", question, "Re-transcribe"));
+					},
+				},
+				row,
+				this.data.syncIndex,
+			);
+			// The two outcomes that rewrote the note. Everything else left it exactly as it was.
+			const rewrote = outcome === "written" || outcome === "emptied";
+			if (rewrote) {
+				// Carries the refreshed block hash -- without saving, the next sync would read this
+				// re-transcribe as a hand edit and refuse to touch the note again. One document is one
+				// save, which is why the engine keeps no checkpoint of its own.
+				this.data.syncIndex = index;
+				await this.saveData(this.data);
+			}
+			const notice = reTranscribeNoteNotice(outcome, file.basename);
+			if (notice !== null) new Notice(notice);
+			// Every outcome leaves a final status: the bar was set to busy above, and a refusal that
+			// left it there would spin over a run that is long over.
+			if (outcome === "stopped") this.setStatus("stopped", "Tagged Sync: stopped · nothing changed");
+			else if (rewrote) this.setStatus("ok", `Tagged Sync: re-transcribed "${file.basename}"`);
+			else this.setStatus("ok", "Tagged Sync: nothing changed");
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: re-transcribe failed");

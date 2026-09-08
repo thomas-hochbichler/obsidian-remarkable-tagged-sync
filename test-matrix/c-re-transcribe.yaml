@@ -176,6 +176,235 @@
       layer: unit
       file: src/re-transcribe-prompt.test.ts
       test: "reTranscribeConfirmation > states what changed about transcripts, because that is the fact that decides the answer"
+- feature: C21
+  name: Re-transcribe this note -- the command surface
+  code: src/main.ts, src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C21.1
+      scenario: No Markdown file is open
+      expect: Hidden. The one file-reason that hides anyway -- "this note" has no referent, and a notice would read the screen back to somebody who can see there is no editor
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: 'whether the one-note command is offered > is hidden when nothing is open, because "this note" then has no referent'
+
+    - id: C21.2
+      scenario: A Markdown file is open that the plugin never synced
+      expect: Visible, and it refuses with `isn't synced`. This is the rule most likely to be "fixed" back into a hide by somebody who reads `re-transcribe-all` first -- a command that is merely missing teaches nothing
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the one-note command is offered > is offered on a note that was never synced, and refuses it out loud"
+
+    - id: C21.3
+      scenario: Transcription is off
+      expect: Hidden, like `re-transcribe-all` -- the cause is configuration, which the open note cannot change
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the one-note command is offered > is hidden with transcription switched off, exactly as the whole-vault command is"
+
+    - id: C21.4
+      scenario: The open note's row is `orphaned`
+      expect: Refused with the notebook-gone sentence, not the not-synced one. Pins the lookup returning the row *with its status* -- filtering to `active` would collapse two different facts into one wrong sentence
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "which row the open note belongs to > names the notebook rather than the sync when the row is orphaned"
+
+    - id: C21.5
+      scenario: Two rows name the path, one `active`, one `orphaned`
+      expect: The active one is used. Pins the collision resolution against `note-rename.test.ts`, which ships that pair
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "which row the open note belongs to > uses the active row where an orphan names the same file"
+
+    - id: C21.6
+      scenario: Metered backend, note nobody has edited
+      expect: One dialog, carrying the notebook's page count. A warning without a number is one users learn to click through
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the one-note run asks before it starts > asks once on a metered backend, and quotes the notebook's page count"
+
+    - id: C21.7
+      scenario: Free backend, note nobody has edited
+      expect: No dialog at all -- there is no standing confirmation, because the whole-vault dialog's justification is the size of the run
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the one-note run asks before it starts > asks nothing at all on a free backend and a note nobody has touched"
+
+    - id: C21.8
+      scenario: Metered backend, hand-edited note
+      expect: One dialog carrying both clauses, not two in sequence -- they are two facts about one decision
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the one-note run asks before it starts > asks once carrying both clauses for a hand-edited note on a metered backend, not twice"
+
+    - id: C21.9
+      scenario: PDF-backed note carrying a digest
+      expect: Refused before `runOcr` is reached, and the assertion is that the backend was never called. The point of the early bail is the money, not the message -- `updateTranscript` refuses this pair anyway, but only after every page has been paid for
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > refuses an annotated PDF's digest note before the backend is asked for a single page"
+
+    - id: C21.10
+      scenario: A successful one-note run
+      expect: One index handed back with the refreshed `blockHash` and `transcribedPages` on the same terms as the whole-vault run. There is no checkpoint to assert on -- `ReTranscribeNoteDeps` omits `saveIndex`, so the type forbids one, and the single save is the caller's (C21.18)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > hands back one index carrying the refreshed block hash and the page store"
+
+    - id: C21.11
+      scenario: A free backend and a note nobody has edited
+      expect: No question at all. A dialog with nothing in it is what teaches people to click through the ones that mean something
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > asks nothing where there is nothing to ask"
+
+    - id: C21.12
+      scenario: A metered backend, note untouched
+      expect: The page count and the quota clause, and nothing about hand edits. The command says "this note" while the work is the whole notebook, and without the number that gap is invisible
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > carries the page count where a page costs money"
+
+    - id: C21.13
+      scenario: A free backend, note corrected by hand
+      expect: The note is named and what is lost is said; no word about money, since a cost warning on a free backend teaches the reader to skip the one that means it
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > names the note and what is lost where the block was edited by hand"
+
+    - id: C21.14
+      scenario: Both are true at once
+      expect: One string carrying both, the irreversible one first. Two dialogs in sequence would be two decisions about one run, and the second would be answered without being read
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > puts both facts in one dialog, the one that cannot be undone first"
+
+    - id: C21.15
+      scenario: Each outcome that says something is worded
+      expect: Six outcomes, six distinct sentences. Two sharing one would tell a user whose PDF was refused the same thing as one whose notebook is gone
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteNotice > gives every outcome that says anything its own sentence"
+
+    - id: C21.16
+      scenario: The dialog was answered no
+      expect: Nothing is said. Reading a refusal back to the person who just made it is noise
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteNotice > says nothing back to a user who has just said no"
+
+    - id: C21.17
+      scenario: The whole-vault confirmation is built
+      expect: It ends by pointing at the one-note command. The route is untouched; only this sentence is added, and it reaches the user this effort exists for at the moment they are about to pay for the old way
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > points at the one-note command, since that is the cheaper route to the same repair"
+
+    - id: C21.18
+      scenario: A run that rewrote the note
+      expect: "`saveData` exactly once, over the index the engine handed back. It carries the refreshed block hash -- without it the next sync reads the plugin's own rewrite as a hand edit and never touches that note again"
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what a finished one-note run leaves behind > saves the index the engine handed back, exactly once"
+
+    - id: C21.19
+      scenario: A run that refused
+      expect: No save at all. A refusal must not rewrite `data.json` -- a file Obsidian Sync is watching -- to record that nothing happened
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what a finished one-note run leaves behind > saves nothing where the run wrote nothing"
+
+    - id: C21.20
+      scenario: The dialog's page count is produced
+      expect: It is the document's own live pages, read from the content just fetched. A number the user cannot check against the notebook in front of them is one they learn to click through
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > quotes the document's own live pages to the dialog, not a number of its own"
+
+    - id: C21.21
+      scenario: A page-tagged row whose page is gone, in a document still on the device
+      expect: Refused without a dialog. The index says active and the listing agrees, so nothing earlier catches it -- and asking about "0 page(s)" before refusing is exactly the dialog the order of the run exists to prevent
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > refuses a tagged page that is gone from its document without asking about it first"
+
+    - id: C21.22
+      scenario: The document has left the account between the last sync and now
+      expect: The notebook-gone sentence, from the listing rather than the index -- and the index handed back unchanged, since there is nothing to save
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > says the notebook is gone when the document has left the account"
+
+    - id: C21.23
+      scenario: Stop is pressed before the fetch, and again while the dialog sits open
+      expect: Both polls answer. The second earns its place because a dialog can sit open for minutes, and a stop pressed in that time must not be answered by a run that starts anyway
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > stops before it fetches anything, and again while the dialog was open"
+
+    - id: C21.24
+      scenario: The backend returns no text at all
+      expect: Its own outcome, not a plain success -- `updateTranscript` removes the whole section, so a note just lost its text and the user has to be told. The refreshed hash still reaches the caller
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > reports an empty result as its own outcome, not as a plain success"
+
+    - id: C21.25
+      scenario: The note has no managed fence left to write into
+      expect: The sentence that says which refusal this is, and the note left byte-for-byte as the user left it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > says a note with no fence has nowhere to write into"
+
+    - id: C21.26
+      scenario: The vault is not connected to reMarkable
+      expect: The missing connection is named and nothing is opened -- the same guard, and the same order, as the whole-vault command
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > names the missing connection instead of opening anything"
+
+    - id: C21.27
+      scenario: A sync is already holding the index
+      expect: Refused. Two writers on one index interleave rows and strand the loser's notes in the vault with no row describing them
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > refuses while a sync holds the index"
+
+    - id: C21.28
+      scenario: The run is stopped
+      expect: It says nothing was changed, rather than reporting success over a note it never reached
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > says a stopped run changed nothing, rather than reporting success over it"
+
+    - id: C21.29
+      scenario: The device stops answering mid-run, with an `Error` and with a bare string
+      expect: Explained by the same sentence every other long job uses, and the run lock released. The ninth outcome -- not of the run, of the transport -- and the failure record must not read "undefined" for something thrown that was never an `Error`
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > explains a device that stopped answering, and releases the lock"
+
+    - id: C21.30
+      scenario: The assembled dialog is answered no
+      expect: Nothing said and nothing saved. The only outcome with no sentence, because the user has just said it themselves
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > says nothing and writes nothing when the dialog is answered no"
+
+    - id: C21.31
+      scenario: The selected backend is one only a licence unlocks
+      expect: The licence is re-read before the backend is resolved. Never a second gate -- it cannot refuse the run -- but a card that expired mid-notebook has to be seen before the run bills a subscription that is no longer there
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > re-reads a lapsed licence before it spends anything on the run"
+
+    - id: C21.32
+      scenario: The palette invokes the command rather than only asking whether to show it
+      expect: The run starts. `checkCallback(false)` is the other half of the callback C21.1-C21.3 ask with `true`, and without this nothing says the two are wired together
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the one-note run's own refusals and failures > is what the palette actually runs, and not only what it shows"
+
 - feature: E18
   name: Re-transcribe cost caveat
   code: src/re-transcribe-prompt.ts

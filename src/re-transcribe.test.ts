@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../test-stubs/fake-clock";
-import { type ButtonComponent, type Command, FakeApp, Platform, type Modal, modalLog, type Setting, takeModals, takeNotices, takeSettings } from "../test-stubs/fake-obsidian";
+import { type ButtonComponent, type Command, FakeApp, Platform, type Modal, modalLog, type Setting, takeModals, takeNotices, takeSettings, TFile } from "../test-stubs/fake-obsidian";
 import { NO_LICENCE } from "./licence-state";
 import { registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
@@ -37,6 +37,21 @@ vi.mock("./vision-ocr-runtime", async (importOriginal) => {
 	};
 });
 
+/** The one-note engine, stubbed at the same seam: what it was handed, and what it answers. */
+const noteEngine = vi.hoisted(() => ({
+	calls: 0,
+	row: null as unknown,
+	/** What the engine hands `confirm`. The dialog `main.ts` assembles is made of exactly these two. */
+	question: { pageCount: 12, handEdited: false },
+	outcome: "written",
+	/** The answer the dialog gave, or null where `main.ts` never opened one. */
+	answer: null as boolean | null,
+	/** The index the engine hands back, where a test needs to tell it from the one it was given. */
+	returned: null as unknown,
+	/** A device that stops answering mid-run. The engine lets that reach the caller (spec §13). */
+	fails: null as unknown,
+}));
+
 const engine = vi.hoisted(() => ({
 	updated: 0,
 	stopped: false,
@@ -66,6 +81,27 @@ vi.mock("./sync-engine", async (importOriginal) => {
 		reTranscribeAll: async (_deps: unknown, index: unknown) => {
 			engine.calls++;
 			return { updated: engine.updated, index, stopped: engine.stopped };
+		},
+		reTranscribeNote: async (
+			deps: {
+				confirm?: (question: { pageCount: number; handEdited: boolean }) => Promise<boolean>;
+				onProgress?: (progress: unknown) => void;
+				shouldStop?: () => boolean;
+			},
+			row: unknown,
+			index: unknown,
+		) => {
+			noteEngine.calls++;
+			noteEngine.row = row;
+			if (noteEngine.fails !== null) throw noteEngine.fails;
+			// The real engine polls the stop and reports progress; a stub that never did would leave
+			// both wirings unexercised, which is exactly where a status bar quietly stops updating.
+			deps.shouldStop?.();
+			deps.onProgress?.({ phase: "working", done: 1, total: 1, document: "Notebook", tag: "sync", step: "transcribing", unitDone: 1, unitTotal: 1 });
+			// The engine asks; `main.ts` decides whether there is anything worth asking about and words
+			// it. Answering here is how a test sees which of the two it did.
+			noteEngine.answer = deps.confirm === undefined ? null : await deps.confirm(noteEngine.question);
+			return { outcome: noteEngine.answer === false ? "cancelled" : noteEngine.outcome, index: noteEngine.returned ?? index };
 		},
 	};
 });
@@ -103,6 +139,15 @@ registerOcrBackend({
 	requiresLicence: false,
 	needsBackgroundConsent: false,
 	create: () => null,
+});
+// One only a licence unlocks, so a run over it re-reads the licence before it starts.
+registerOcrBackend({
+	id: "test-licenced",
+	label: "Test licenced",
+	metered: true,
+	requiresLicence: true,
+	needsBackgroundConsent: false,
+	create: () => ({ id: "test-licenced", metered: true, transcribe: async () => "" }) as never,
 });
 // One that spends money per page, and says how long it takes.
 registerOcrBackend({
@@ -176,6 +221,17 @@ function dialog(): { modal: Modal; title: string; body: string; cancel: ButtonCo
 	};
 }
 
+/** Opens a note: creates the file and puts it on screen, which is what `getActiveFile()` answers. */
+async function openNote(plugin: Plugin, path: string): Promise<TFile> {
+	const file = (await plugin.app.vault.create(path, "")) as TFile;
+	plugin.app.workspace.activeFile = file;
+	return file;
+}
+
+/** Running the one-note command, the way the other tests run the whole-vault one. */
+const reTranscribeNote = (plugin: Plugin, file: TFile): Promise<void> =>
+	(plugin as unknown as { reTranscribeNote(file: TFile): Promise<void> }).reTranscribeNote(file);
+
 /** Lets an `onClick` promise chain finish -- the fake's `click()` cannot await it. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -185,6 +241,13 @@ beforeEach(() => {
 	engine.stopped = false;
 	engine.calls = 0;
 	engine.release = null;
+	noteEngine.calls = 0;
+	noteEngine.row = null;
+	noteEngine.question = { pageCount: 12, handEdited: false };
+	noteEngine.outcome = "written";
+	noteEngine.answer = null;
+	noteEngine.returned = null;
+	noteEngine.fails = null;
 	Platform.isDesktop = false;
 	modalLog.length = 0;
 	takeNotices();
@@ -463,5 +526,268 @@ describe("the dialog the status bar opens", () => {
 		await settle();
 		expect(takeModals()).toEqual([]);
 		await finish();
+	});
+});
+
+// C21 -- "Re-transcribe this note". The rule the visibility follows is the part most likely to be
+// "fixed" back by somebody who reads `re-transcribe-all` first: a refusal is hidden when its cause is
+// the plugin's *configuration*, and visible with a notice when its cause is the file on screen. A
+// command that is merely missing teaches nothing -- the user cannot tell a typo from a broken plugin
+// from an unsynced note.
+
+describe("whether the one-note command is offered", () => {
+	it("is hidden when nothing is open, because \"this note\" then has no referent", async () => {
+		// The one file-reason that hides anyway. A notice here would read the screen back to somebody
+		// who can see there is no editor.
+		const plugin = await pluginWith();
+
+		expect(offered(plugin, "re-transcribe-note")).toBe(false);
+	});
+
+	it("is offered on a note that was never synced, and refuses it out loud", async () => {
+		// Visible, and in perhaps half of all invocations it only says no. That is the accepted cost of
+		// the rule: the open file is something the user can act on -- open another note, sync first --
+		// but only if they are told.
+		const plugin = await pluginWith();
+		const file = await openNote(plugin, "never-synced.md");
+
+		expect(offered(plugin, "re-transcribe-note")).toBe(true);
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeNotices()).toEqual(["This note isn't synced from reMarkable."]);
+		expect(noteEngine.calls).toBe(0);
+	});
+
+	it("is hidden with transcription switched off, exactly as the whole-vault command is", async () => {
+		// Configuration, not the file: the user has to go to settings, and `re-transcribe-all` is
+		// hidden at the same moment, so the feature is consistently absent rather than half-present.
+		const plugin = await pluginWith({ ocrBackend: "off" });
+		await openNote(plugin, "n0.md");
+
+		expect(offered(plugin, "re-transcribe-note")).toBe(false);
+		expect(offered(plugin, "re-transcribe-all")).toBe(false);
+	});
+});
+
+describe("which row the open note belongs to", () => {
+	it("names the notebook rather than the sync when the row is orphaned", async () => {
+		// Filtering the lookup to `active` rows would collapse two different facts: a notebook deleted
+		// from the device would become indistinguishable from a note that was never synced, and would
+		// get the wrong sentence. So the lookup returns the row *with its status*.
+		const plugin = await pluginWith({ syncIndex: { rows: { a: { notePath: "gone.md", status: "orphaned", blockHash: "h" } } } });
+		const file = await openNote(plugin, "gone.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeNotices()).toEqual(["The notebook for this note is no longer on your reMarkable."]);
+		expect(noteEngine.calls).toBe(0);
+	});
+
+	it("uses the active row where an orphan names the same file", async () => {
+		// Active beside orphaned on one path is shipped and pinned (`note-rename.test.ts`). Two
+		// *active* rows on one path is not reachable, so preferring the active one settles the
+		// collision without a new rule.
+		const plugin = await pluginWith({
+			syncIndex: {
+				rows: {
+					old: { syncKey: "old", notePath: "n.md", status: "orphaned", blockHash: "h" },
+					now: { syncKey: "now", notePath: "n.md", status: "active", blockHash: "h" },
+				},
+			},
+		});
+		const file = await openNote(plugin, "n.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(noteEngine.calls).toBe(1);
+		expect(noteEngine.row).toMatchObject({ syncKey: "now", status: "active" });
+	});
+});
+
+describe("what the one-note run asks before it starts", () => {
+	it("asks once on a metered backend, and quotes the notebook's page count", async () => {
+		// The number is the point. A warning without one ("this may use your API quota") is a warning
+		// users learn to click through; the command says "this note" while the work is 47 pages.
+		noteEngine.question = { pageCount: 47, handEdited: false };
+		const plugin = await pluginWith({ ocrBackend: "test-paid" });
+		const file = await openNote(plugin, "n0.md");
+		const done = reTranscribeNote(plugin, file);
+		await settle();
+		const asked = dialog();
+
+		expect(asked.title).toBe("Re-transcribe this note");
+		expect(asked.body).toContain("47 page(s)");
+		expect(asked.body).toContain("API quota");
+		expect(asked.confirm.text).toBe("Re-transcribe");
+
+		asked.confirm.click();
+		await done;
+
+		expect(noteEngine.answer).toBe(true);
+	});
+
+	it("asks nothing at all on a free backend and a note nobody has touched", async () => {
+		// No standing confirmation: the whole-vault dialog's justification is the size of the run, and
+		// it does not survive the drop to one note.
+		const plugin = await pluginWith({ ocrBackend: "test-free" });
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeModals()).toEqual([]);
+		expect(noteEngine.answer).toBe(true);
+		expect(takeNotices()).toEqual(['Re-transcribed "n0".']);
+	});
+
+	it("asks once carrying both clauses for a hand-edited note on a metered backend, not twice", async () => {
+		// Two facts about one decision. Two dialogs in sequence would be two decisions about one run,
+		// and the second one would be answered without reading it.
+		noteEngine.question = { pageCount: 3, handEdited: true };
+		const plugin = await pluginWith({ ocrBackend: "test-paid" });
+		const file = await openNote(plugin, "n0.md");
+		const done = reTranscribeNote(plugin, file);
+		await settle();
+		const asked = dialog(); // asserts there is exactly one
+
+		expect(asked.body).toContain('corrected the transcript in "n0" by hand');
+		expect(asked.body).toContain("API quota");
+
+		asked.confirm.click();
+		await done;
+	});
+});
+
+describe("what a finished one-note run leaves behind", () => {
+	it("saves the index the engine handed back, exactly once", async () => {
+		// The engine keeps no checkpoint for one document, so this is the only save there is -- and it
+		// carries the refreshed block hash. Without it the next sync reads the plugin's own rewrite as
+		// a hand edit and refuses to touch that note ever again.
+		const refreshed = { rows: { a: { notePath: "n0.md", status: "active", blockHash: "refreshed" } } };
+		noteEngine.returned = refreshed;
+		const plugin = await pluginWith({ ocrBackend: "test-free" });
+		const saveData = vi.spyOn(plugin as unknown as { saveData(data: unknown): Promise<void> }, "saveData");
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(saveData).toHaveBeenCalledTimes(1);
+		expect(plugin.data.syncIndex).toBe(refreshed);
+	});
+
+	it("saves nothing where the run wrote nothing", async () => {
+		// A refusal must not rewrite `data.json` -- a file Obsidian Sync is watching -- to record that
+		// nothing happened.
+		noteEngine.outcome = "pdf-digest";
+		const plugin = await pluginWith({ ocrBackend: "test-free" });
+		const saveData = vi.spyOn(plugin as unknown as { saveData(data: unknown): Promise<void> }, "saveData");
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(saveData).not.toHaveBeenCalled();
+		expect(takeNotices()).toEqual(["Margin notes on a PDF are kept as a digest, not as a transcript. Nothing was changed."]);
+	});
+});
+
+describe("the one-note run's own refusals and failures", () => {
+	it("names the missing connection instead of opening anything", async () => {
+		// Same guard as the whole-vault command, and the same reason it runs before everything else:
+        // being refused is better than being asked to confirm a run that was never going to happen.
+		const plugin = await pluginWith({ deviceToken: null });
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeNotices()).toEqual([NOT_CONNECTED_NOTICE]);
+		expect(noteEngine.calls).toBe(0);
+	});
+
+	it("refuses while a sync holds the index", async () => {
+		const plugin = await pluginWith();
+		const file = await openNote(plugin, "n0.md");
+		const finish = await syncInFlight(plugin);
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeNotices()).toContain(ALREADY_RUNNING_NOTICE);
+		expect(noteEngine.calls).toBe(0);
+		await finish();
+	});
+
+	it("says a stopped run changed nothing, rather than reporting success over it", async () => {
+		noteEngine.outcome = "stopped";
+		const plugin = await pluginWith();
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeNotices()).toEqual(["Re-transcribe stopped. Nothing was changed."]);
+	});
+
+	it("explains a device that stopped answering, and releases the lock", async () => {
+		// The ninth outcome, which the spec's table does not list because it is not an outcome of the
+		// run: it is the transport, explained by the same sentence every other long job uses. What
+		// matters is that it is said at all, and that the run lock does not survive it.
+		noteEngine.fails = new Error("connection lost");
+		const plugin = await pluginWith();
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeNotices()).not.toEqual([]);
+		expect(plugin.isSyncing()).toBe(false);
+
+		// Not everything thrown is an `Error` -- a rejected fetch can carry a string -- and the failure
+		// record must not read "undefined: undefined" when it does.
+		noteEngine.fails = "socket closed";
+		await reTranscribeNote(plugin, await openNote(plugin, "n1.md"));
+
+		expect(takeNotices()).not.toEqual([]);
+		expect((plugin as unknown as { lastSyncError: string }).lastSyncError).toBe("socket closed");
+	});
+
+	it("says nothing and writes nothing when the dialog is answered no", async () => {
+		// The only outcome with no sentence: the user has just said no themselves, and reading it back
+		// to them is noise. Nothing may reach the note or `data.json` either.
+		noteEngine.question = { pageCount: 9, handEdited: true };
+		const plugin = await pluginWith({ ocrBackend: "test-paid" });
+		const saveData = vi.spyOn(plugin as unknown as { saveData(data: unknown): Promise<void> }, "saveData");
+		const file = await openNote(plugin, "n0.md");
+		const done = reTranscribeNote(plugin, file);
+		await settle();
+
+		dialog().cancel.click();
+		await done;
+
+		expect(takeNotices()).toEqual([]);
+		expect(saveData).not.toHaveBeenCalled();
+	});
+
+	it("re-reads a lapsed licence before it spends anything on the run", async () => {
+		// The licence is not a second gate -- it never refuses the run -- but a card that expired
+		// mid-notebook has to be seen *before* the backend is resolved, or the run bills a subscription
+		// that is no longer there.
+		const plugin = await pluginWith({ ocrBackend: "test-licenced" });
+		const refreshLicence = vi.spyOn(plugin, "refreshLicence");
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(refreshLicence).toHaveBeenCalledTimes(1);
+		expect(noteEngine.calls).toBe(1);
+	});
+
+	it("is what the palette actually runs, and not only what it shows", async () => {
+		// `checkCallback(false)` is the invocation half of the same callback the palette asks with
+		// `true`. Everything else here reaches the method directly, so without this nothing says the
+		// command in the palette is wired to it at all.
+		const plugin = await pluginWith();
+		await openNote(plugin, "n0.md");
+
+		command(plugin, "re-transcribe-note").checkCallback?.(false);
+		await settle();
+
+		expect(noteEngine.calls).toBe(1);
 	});
 });

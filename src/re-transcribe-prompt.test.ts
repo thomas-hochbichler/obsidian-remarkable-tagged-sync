@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { OcrBackend } from "./ocr-backend";
 import type { OcrBackendEntry } from "./ocr-registry";
-import { reTranscribeConfirmation, reTranscribeIsUseful } from "./re-transcribe-prompt";
+import { reTranscribeConfirmation, reTranscribeIsUseful, reTranscribeNoteConfirmation, reTranscribeNoteNotice } from "./re-transcribe-prompt";
+import type { ReTranscribeNoteOutcome } from "./sync-engine";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 // The two decisions in front of a run that rewrites every synced note. `re-transcribe.test.ts` is the
@@ -93,6 +94,16 @@ describe("reTranscribeConfirmation", () => {
 		);
 	});
 
+	it("points at the one-note command, since that is the cheaper route to the same repair", () => {
+		// The route stays; only the wording of its dialog changes. This sentence reaches the user this
+		// whole effort exists for -- one bad transcript -- at the moment they are about to pay for the
+		// whole vault to fix it.
+		const said = reTranscribeConfirmation(free);
+
+		expect(said).toContain('use "Re-transcribe this note" instead');
+		expect(said.endsWith('use "Re-transcribe this note" instead.')).toBe(true);
+	});
+
 	it("states what changed about transcripts, because that is the fact that decides the answer", () => {
 		// Notes synced before the improvements keep the transcript they earned until this command runs.
 		// Without the sentence, the dialog only lists costs and the reason to say yes is missing.
@@ -101,5 +112,69 @@ describe("reTranscribeConfirmation", () => {
 		expect(said).toContain("split by page");
 		expect(said).toContain("read more accurately");
 		expect(said).toContain("typed text is transcribed too");
+	});
+});
+
+// The one-note command's own strings. `re-transcribe.test.ts` is the other half: that the shipped
+// command assembles these and shows them.
+
+describe("reTranscribeNoteConfirmation", () => {
+	const clean = { noteName: "Meeting 12.3", pageCount: 47, backendId: "anthropic", metered: false, handEdited: false };
+
+	it("asks nothing where there is nothing to ask", () => {
+		// The ordinary case, and the reason there is no standing confirmation: a free backend on a note
+		// nobody has touched has no fact to put in front of the user, and a dialog with nothing in it
+		// is what teaches people to click through the ones that mean something.
+		expect(reTranscribeNoteConfirmation(clean)).toBeNull();
+	});
+
+	it("carries the page count where a page costs money", () => {
+		const said = reTranscribeNoteConfirmation({ ...clean, metered: true })!;
+
+		expect(said).toContain("47 page(s)");
+		expect(said).toContain("API quota");
+		// The command says "this note"; the work is the whole notebook. Without the number that gap is
+		// invisible.
+		expect(said).not.toContain("by hand");
+	});
+
+	it("names the note and what is lost where the block was edited by hand", () => {
+		const said = reTranscribeNoteConfirmation({ ...clean, handEdited: true })!;
+
+		expect(said).toContain('"Meeting 12.3"');
+		expect(said).toContain("cannot be brought back");
+		// A free backend spends nothing, and a cost warning here would teach the reader to skip the one
+		// that means it.
+		expect(said).not.toMatch(/quota|API/i);
+	});
+
+	it("puts both facts in one dialog, the one that cannot be undone first", () => {
+		// Two dialogs in sequence would be two decisions about one run, and the second would be
+		// answered without being read.
+		const said = reTranscribeNoteConfirmation({ ...clean, metered: true, handEdited: true })!;
+
+		expect(said).toContain("by hand");
+		expect(said).toContain("API quota");
+		expect(said.indexOf("by hand")).toBeLessThan(said.indexOf("API quota"));
+	});
+});
+
+describe("reTranscribeNoteNotice", () => {
+	const outcomes: ReTranscribeNoteOutcome[] = ["written", "emptied", "not-on-device", "pdf-digest", "no-transcript-section", "stopped"];
+
+	it("gives every outcome that says anything its own sentence", () => {
+		// Six outcomes, six distinct sentences. Two outcomes sharing one would tell a user whose PDF
+		// was refused the same thing as one whose notebook is gone.
+		const said = outcomes.map((outcome) => reTranscribeNoteNotice(outcome, "Meeting 12.3"));
+
+		expect(said.every((sentence) => sentence !== null && sentence !== "")).toBe(true);
+		expect(new Set(said).size).toBe(outcomes.length);
+		expect(reTranscribeNoteNotice("written", "Meeting 12.3")).toBe('Re-transcribed "Meeting 12.3".');
+		// The deletion an empty result performs, said out loud rather than reported as plain success.
+		expect(reTranscribeNoteNotice("emptied", "Meeting 12.3")).toContain("has been removed");
+	});
+
+	it("says nothing back to a user who has just said no", () => {
+		expect(reTranscribeNoteNotice("cancelled", "Meeting 12.3")).toBeNull();
 	});
 });

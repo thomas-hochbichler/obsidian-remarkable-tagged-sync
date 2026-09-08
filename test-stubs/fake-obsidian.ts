@@ -700,6 +700,12 @@ export class FakeApp {
 		layoutReady: false,
 		/** Callbacks handed over before the workspace was ready, still waiting. */
 		pending: [] as (() => void)[],
+		/**
+		 * The note on screen. Obsidian answers this from the active leaf; here a test opens a note by
+		 * setting it, and the plugin reads it through `getActiveFile()` exactly as it does in Obsidian.
+		 */
+		activeFile: null as TFile | null,
+		getActiveFile: (): TFile | null => this.workspace.activeFile,
 		onLayoutReady: (cb: () => void): void => {
 			if (this.workspace.layoutReady) cb();
 			else this.workspace.pending.push(cb);

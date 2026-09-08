@@ -57,3 +57,23 @@ export function remapRows<Row extends { readonly notePath: string }>(
 	}
 	return moved ? next : null;
 }
+
+/**
+ * The row that names `notePath`, with its status, or `undefined` where none does.
+ *
+ * Beside `remapRows` because it is the other direction of the same one link: `notePath` is all that
+ * ties a file in the vault to the row describing it, and this reads it back.
+ *
+ * The status comes back rather than being filtered on. A note whose notebook was deleted from the
+ * device and a note that was never synced are two different sentences, and filtering to `active`
+ * here would collapse them into one wrong one. Where an orphan and an active row name one file --
+ * reachable, and pinned above -- the active one wins; two *active* rows on one path is not
+ * reachable, since `resolveFreePath` suffixes on collision.
+ */
+export function rowForNotePath<Row extends { readonly notePath: string; readonly status: string }>(
+	rows: Record<string, Row>,
+	notePath: string,
+): Row | undefined {
+	const named = Object.values(rows).filter((row) => row.notePath === notePath);
+	return named.find((row) => row.status === "active") ?? named[0];
+}
