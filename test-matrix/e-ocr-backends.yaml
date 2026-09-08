@@ -420,6 +420,14 @@
       file: src/openai-compat-ocr-backend.test.ts
       test: "OpenAiCompatOcrBackend > fails a page the server never answers for, instead of waiting on it forever"
 
+    - id: E27.2
+      scenario: The same silence from Anthropic, which shares the request path
+      expect: The page fails after the same ten minutes and says so without asking whether the machine is online. The two adapters' warning chains must not drift, and an endpoint that answers nothing is reachable
+      layer: unit
+      tier: pro
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > fails a page Anthropic never answers for, instead of waiting on it forever"
+
 - feature: E26
   name: Deterministic sampling on the servers the user runs
   code: src/openai-compat-ocr-backend.ts
