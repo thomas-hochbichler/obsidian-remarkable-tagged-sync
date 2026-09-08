@@ -167,6 +167,56 @@ const MAX_ATTEMPTS = 3;
 /** Backoff when the provider rate-limits without saying for how long. */
 const RETRY_BASE_MS = 1000;
 
+/**
+ * How long one request may run before the page it is reading is failed instead.
+ *
+ * There was no bound at all, and a local model showed what that costs: a scrolled page rasterizes
+ * 325 x 7082 px, and `google/gemma-4-12b` in LM Studio answered it in 102 s with no `temperature`
+ * and never answered it at all with the `temperature: 0` every localhost provider sends. `lms ps`
+ * reported the model `GENERATING` after 40 minutes, the socket stayed open, the status bar stayed on
+ * the notebook, and nothing was written or said. A run cannot be left to end that way.
+ *
+ * Ten minutes, which is a runaway bound and not a page budget: the slowest page anyone has measured
+ * took a sixth of it, and the request also waits out whatever the server has queued ahead of it --
+ * four are sent at a time and a local server answers one at a time. So it is far too long to be a
+ * timeout in the usual sense, and that is the point. Failing a page that would have answered is the
+ * one outcome worse than waiting.
+ *
+ * The request itself is not cancelled: inside the bundle `fetch` is Obsidian's `requestUrl`, which
+ * takes no signal. The model keeps generating until it stops on its own; what this bounds is how
+ * long the *sync* waits for it.
+ */
+export const OCR_REQUEST_TIMEOUT_MS = 600_000;
+
+/** Thrown when a request passes {@link OCR_REQUEST_TIMEOUT_MS}, so the page fails as a page. */
+export class OcrTimeoutError extends Error {
+	constructor() {
+		super(`the request went unanswered for ${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes`);
+		this.name = "OcrTimeoutError";
+	}
+}
+
+/**
+ * The request, or an {@link OcrTimeoutError} -- whichever comes first.
+ *
+ * On its own timer rather than on the injected `sleep`, which is the backoff clock: a test that
+ * hands in an instant sleep to skip a `Retry-After` wait would otherwise time out every request it
+ * makes. The timer is cleared as soon as the request settles, so only a request that really is
+ * hanging keeps one alive.
+ *
+ * Bare `setTimeout` and not `realSleep`'s `window.setTimeout`, which is what the two lint warnings
+ * this earns are about: there is no DOM in a delay, and every suite runs on Node, where `window` does
+ * not exist and this function runs on every request a test makes. The warnings are carried in the
+ * ratchet baseline rather than silenced, exactly as the `fetch` defaults above are.
+ */
+function withTimeout(request: Promise<Response>): Promise<Response> {
+	let timer: ReturnType<typeof setTimeout>;
+	const expiry = new Promise<never>((_resolve, reject) => {
+		timer = setTimeout(() => reject(new OcrTimeoutError()), OCR_REQUEST_TIMEOUT_MS);
+	});
+	return Promise.race([request, expiry]).finally(() => clearTimeout(timer));
+}
+
 /** What one page's request came back as, before typed text and the note's page labels are added. */
 export type LlmPageOutcome = { kind: "ok"; text: string } | { kind: "failed" };
 
@@ -203,10 +253,10 @@ function retryDelay(response: Response, attempt: number, now: number): number {
  * about, and a failed page is already a graceful, visible outcome rather than a lost note.
  */
 export async function fetchWithRetry(fetchFn: typeof fetch, url: string, init: RequestInit, sleep: Sleep = realSleep): Promise<Response> {
-	let response = await fetchFn(url, init);
+	let response = await withTimeout(fetchFn(url, init));
 	for (let attempt = 1; attempt < MAX_ATTEMPTS && response.status === 429; attempt++) {
 		await sleep(retryDelay(response, attempt, Date.now()));
-		response = await fetchFn(url, init);
+		response = await withTimeout(fetchFn(url, init));
 	}
 	return response;
 }

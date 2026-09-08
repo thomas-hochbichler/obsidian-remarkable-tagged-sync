@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { OCR_REQUEST_TIMEOUT_MS } from "./llm-transcript";
 import { OpenAiCompatOcrBackend } from "./openai-compat-ocr-backend";
 import type { RmPage } from "./rm-parser";
 
@@ -199,6 +200,29 @@ describe("OpenAiCompatOcrBackend", () => {
 
 		expect((await backend.recognize([page()])).pages).toEqual([{ status: "failed", text: "" }]);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	// Found in the Demo vault: a page scrolled far past one screen rasterizes 325 x 7082 px, and LM
+	// Studio's model was still `GENERATING` forty minutes later. Nothing bounded the wait, so the run
+	// never ended and never said anything -- disabling the plugin was the only way out.
+	it("fails a page the server never answers for, instead of waiting on it forever", async () => {
+		vi.useFakeTimers();
+		try {
+			fetchMock.mockReturnValue(new Promise<Response>(() => {}));
+			const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "m", fetchFn: fetchMock });
+
+			const running = backend.recognize([page()]);
+			await vi.advanceTimersByTimeAsync(OCR_REQUEST_TIMEOUT_MS);
+			const result = await running;
+
+			expect(result.pages).toEqual([{ status: "failed", text: "" }]);
+			// Named as what it is: the server is running and reachable, so "Is it running?" would send the
+			// user after the wrong thing.
+			expect(result.warnings?.[0]).toContain("did not answer in 10 minutes");
+			expect(result.warnings?.[0]).toContain("http://localhost:1234/v1");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	// A 502 or 503 is transient too and is still not retried: each added code is another failure mode

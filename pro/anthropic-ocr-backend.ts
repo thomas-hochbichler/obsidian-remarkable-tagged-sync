@@ -3,6 +3,8 @@ import {
 	fetchWithRetry,
 	isUnreachable,
 	type LlmPageOutcome,
+	OCR_REQUEST_TIMEOUT_MS,
+	OcrTimeoutError,
 	refusalDetail,
 	sanitizeTranscript,
 	type Sleep,
@@ -83,6 +85,8 @@ export class AnthropicOcrBackend implements OcrBackend {
 	private refusal: string | null = null;
 	/** How many pages were dropped because the answer ran past `max_tokens` -- see `recognize`. */
 	private truncated = 0;
+	/** How many pages were dropped because the endpoint never answered -- see `recognize`. */
+	private timedOut = 0;
 
 	constructor(options: AnthropicOcrOptions) {
 		this.apiKey = options.apiKey;
@@ -97,6 +101,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 		this.unreachable = false;
 		this.refusal = null;
 		this.truncated = 0;
+		this.timedOut = 0;
 
 		// Same refusal as the OpenAI-compatible adapter, for the same reason: Anthropic answers an
 		// empty `model` with a bare 400, which reaches the note as "Could not read this page" and
@@ -122,6 +127,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 			(failedPages) => {
 				if (this.unreachable) return `Could not reach Anthropic — ${pageCount(failedPages)} not transcribed. Is this machine online?`;
 				if (this.refusal) return `Anthropic answered ${this.refusal} — ${pageCount(failedPages)} not transcribed.`;
+				if (this.timedOut > 0) return timeoutWarning(this.timedOut);
 				if (this.truncated > 0) return truncationWarning(this.truncated);
 				return null;
 			},
@@ -185,7 +191,10 @@ export class AnthropicOcrBackend implements OcrBackend {
 				),
 			};
 		} catch (error) {
-			if (isUnreachable(error)) this.unreachable = true;
+			// An endpoint that answers nothing for ten minutes is reachable, so it is counted apart from
+			// `unreachable` -- the same split the OpenAI-compatible adapter makes, for the same reason.
+			if (error instanceof OcrTimeoutError) this.timedOut++;
+			else if (isUnreachable(error)) this.unreachable = true;
 			console.warn("Tagged Sync: anthropic OCR failed, note will ship with render only", error);
 			return { kind: "failed" };
 		}
@@ -196,6 +205,14 @@ export class AnthropicOcrBackend implements OcrBackend {
 /** "1 page was" / "3 pages were", so the warnings above read as sentences. */
 function pageCount(pages: number): string {
 	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
+}
+
+/** The sentence a page that went unanswered puts in the report -- the adapter's, wearing this endpoint's name. */
+function timeoutWarning(pages: number): string {
+	return (
+		`${pageCount(pages)} left out because Anthropic did not answer in ${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ` +
+		`A later sync will not pick them up on their own: run "Re-transcribe all notes" once it answers again.`
+	);
 }
 
 /**

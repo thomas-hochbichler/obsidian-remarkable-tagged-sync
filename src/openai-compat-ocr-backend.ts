@@ -4,6 +4,8 @@ import {
 	fetchWithRetry,
 	isUnreachable,
 	type LlmPageOutcome,
+	OCR_REQUEST_TIMEOUT_MS,
+	OcrTimeoutError,
 	refusalDetail,
 	sanitizeTranscript,
 	type Sleep,
@@ -98,6 +100,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	 * so reporting it as truncations would over-claim.
 	 */
 	private truncated = 0;
+	/** How many pages were dropped because the server never answered -- see `recognize`. */
+	private timedOut = 0;
 
 	constructor(options: OpenAiCompatOcrOptions) {
 		this.id = options.id;
@@ -122,6 +126,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.unreachable = false;
 		this.refusal = null;
 		this.truncated = 0;
+		this.timedOut = 0;
 
 		// An empty model field is a misconfiguration, and sending it anyway is worse than refusing:
 		// LM Studio answers `"model": ""` with whatever happens to be loaded -- so the note would carry
@@ -152,6 +157,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			(failedPages) => {
 				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages)} not transcribed. Is it running?`;
 				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages)} not transcribed.`;
+				if (this.timedOut > 0) return timeoutWarning(this.timedOut, this.baseURL);
 				if (this.truncated > 0) return truncationWarning(this.truncated);
 				return null;
 			},
@@ -209,7 +215,11 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 
 			return { kind: "ok", text: sanitizeTranscript(body.choices?.[0]?.message?.content ?? "") };
 		} catch (error) {
-			if (isUnreachable(error)) this.unreachable = true;
+			// A server that answers nothing for ten minutes is running and reachable, so it is counted on
+			// its own rather than folded into `unreachable` -- "Is it running?" is the wrong thing to ask
+			// somebody watching their model generate.
+			if (error instanceof OcrTimeoutError) this.timedOut++;
+			else if (isUnreachable(error)) this.unreachable = true;
 			console.warn(`Tagged Sync: ${this.id} OCR failed, note will ship with render only`, error);
 			return { kind: "failed" };
 		}
@@ -225,6 +235,22 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
  * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
  * hash is unchanged, so "Re-transcribe all notes" is the repair.
  */
+/**
+ * The sentence a run that waited out {@link OCR_REQUEST_TIMEOUT_MS} puts in the report.
+ *
+ * It names the tall-page shape because that is the one that has produced it: a page scrolled far
+ * past a screen becomes one very tall image, and a local model given greedy decoding did not finish
+ * reading it at all. The advice is what the user can actually do about it today.
+ */
+function timeoutWarning(pages: number, baseURL: string): string {
+	return (
+		`${pageCount(pages)} left out because the server at ${baseURL} did not answer in ` +
+		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. A page scrolled far past one screen is sent as one very ` +
+		`tall image, which a local model can take a long time over, or never finish. A later sync will not pick it up on ` +
+		`its own: try a different model, then run "Re-transcribe all notes".`
+	);
+}
+
 function truncationWarning(pages: number): string {
 	return (
 		`${pageCount(pages)} left out because the model's answer ran past what it may return — ` +
