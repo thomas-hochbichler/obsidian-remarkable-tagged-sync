@@ -67,6 +67,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Managed local model — one click, checked hashes](#local-model-optional-opt-in) | ✓ | ✓ |
 | [Cloud transcription with your own API key](#tagged-sync-pro) | — | ✓ |
 | [Re-transcribe notes you already synced](#re-transcribing) | ✓ | ✓ |
+| [Repair one note without re-running the whole vault](#re-transcribing) | ✓ | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
@@ -177,14 +178,26 @@ than triggering a redundant run.
 
 ### Re-transcribing
 
-To refresh transcripts on notes you already synced, run **Tagged Sync for reMarkable: Re-transcribe
-all synced notes**. It re-fetches each notebook and rewrites only the transcript region, leaving
-your own notes and the embedded render untouched. It asks for confirmation first.
+Two commands, depending on how much you want re-read.
 
-This is also the way to fill in a transcript that never arrived — a note synced while the local
-model was still downloading, or while its engine was missing, keeps its render and no text, and
-nothing refills it on its own. Re-transcribing does. With the local model selected the
-confirmation tells you how long it will take on your machine, measured from your own pages.
+**Tagged Sync for reMarkable: Re-transcribe this note** re-reads just the note you have open. Use it
+to repair a single garbled transcript: on a paid backend it tells you how many pages that notebook
+is before it sends any of them, and if you have corrected that note by hand it asks first, because
+re-transcribing replaces what you wrote there. It says no in three cases — the open note was never
+synced from reMarkable, its notebook is no longer on your tablet, or it is a PDF whose margin notes
+are [kept as a digest](#annotated-pdfs) rather than as a transcript.
+
+**Tagged Sync for reMarkable: Re-transcribe all synced notes** does the same for every synced note in
+the vault. That is the one to run after switching backends. It asks for confirmation first.
+
+Both re-fetch the notebook and rewrite only the transcript region, leaving your own notes and the
+embedded render untouched.
+
+Re-transcribing is also the way to fill in a transcript that never arrived — a note synced while
+the local model was still downloading, or while its engine was missing, keeps its render and no
+text, and nothing refills it on its own. Re-transcribing does. With the local model selected, the
+whole-vault confirmation tells you how long the run will take on your machine, measured from your
+own pages.
 
 ## Handwriting transcription
 
@@ -250,7 +263,7 @@ Two things settings will tell you about the model you name, where the server can
 transcribes far more slowly and can lose a page: the answer runs past what the model may return, and
 that page is left out rather than saved half-read. If that happens, the sync says so at the end —
 switch to a model that does not reason (often the `-instruct` build of the same family) and run
-**Re-transcribe all notes**, because a later sync will not pick those pages up on its own.
+**Re-transcribe all synced notes**, because a later sync will not pick those pages up on its own.
 
 The reasoning hint needs **Ollama**, **OpenRouter**, or **LM Studio 0.4.0 or newer**; other servers
 expose nothing to read it from, and then settings says nothing rather than guessing.
@@ -517,7 +530,7 @@ it does not — so a document without bookmarks can file a quote under the wrong
   into that page of the embedded PDF, so a long notebook stays navigable. Pages with nothing to read
   are named once at the end instead of taking a heading each, and a page transcription could not
   read says so where it happened. Notes synced before this keep the transcript they have — run
-  **Re-transcribe synced notes** to bring them over.
+  **Re-transcribe all synced notes** to bring them over.
 - A synced note carries **no frontmatter** by default — no YAML block at the top. Everything the
   sync needs to track lives in the plugin's own `data.json`, not in your notes. If you want your
   notes queryable, [Frontmatter properties](#frontmatter-properties-pro) (Pro) writes the device's

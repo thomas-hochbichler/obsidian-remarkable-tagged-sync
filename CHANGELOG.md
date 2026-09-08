@@ -14,6 +14,13 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **One bad transcript no longer costs a whole-vault run.** A new command, *Re-transcribe this note*,
+  re-reads just the note you have open. Because it works on one note, it can be more careful than the
+  whole-vault command: it names the notebook's page count before spending anything on a metered
+  backend, it asks first if you have corrected that note by hand, and it refuses a PDF whose margin
+  notes are kept as a digest before any page is read rather than after. The old *Re-transcribe all
+  synced notes* is unchanged and still there for a backend switch.
+
 - **A synced note now says how many pages it covers, and what that costs.** With *Frontmatter
   properties* on, each note carries `remarkable-pages`: the pages of *that note* -- all of them for a
   note made from a notebook tag, one for a note made from a page tag. It is also the cost signal, since
