@@ -52,7 +52,9 @@ export interface TranscriptStore {
  * of its pages. **With the store and no version** it would reach none of them, ever: the pages are
  * unchanged, so they are never read again. This hands that control back.
  */
-export const TRANSCRIPT_VERSION = 1;
+// 2: the rasterizer stopped cropping a scrolled page at 5 872 px, so a page whose writing sits below
+// that was stored with the bottom of it missing.
+export const TRANSCRIPT_VERSION = 2;
 
 /** The opaque string a row stores, and compares against on the next sync. */
 export function transcriptFingerprint(backendFingerprint: string): string {

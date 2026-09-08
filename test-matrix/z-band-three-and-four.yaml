@@ -67,7 +67,7 @@
 
     - id: D6.3
       scenario: A coordinate a billion points off the page -- one wrong exponent in bytes off a device
-      expect: The bitmap is bounded. `MAX_RASTER_PX` 6000 -> 1e9 passed all 996 tests, and what it stands between is an allocation that takes the app down
+      expect: The bitmap is bounded, 6000 across and 20000 down -- what it stands between is an allocation that takes the app down. Two ceilings because a page scrolls down and never sideways
       layer: unit
       file: src/page-rasterizer.test.ts
       test: "inkBounds > never asks for a bitmap larger than a raster can be, whatever the file says"
@@ -78,6 +78,13 @@
       layer: unit
       file: src/page-rasterizer.test.ts
       test: "inkBounds > gives a single point a bitmap of at least one pixel, not of none"
+
+    - id: D6.5
+      scenario: A notebook page scrolled far below the screen -- ink 7 267 px down, past the 5 872 px the clamp allowed
+      expect: Drawn where it was written. Folded onto the bitmap's bottom edge it came back as nothing, so the note lost the two lowest notes on the page while the PDF beside it drew them correctly
+      layer: unit
+      file: src/page-rasterizer.test.ts
+      test: "rasterizePage > draws the writing on a page scrolled far below the screen, where the clamp used to fold it onto the bottom edge"
 
 
 - feature: F1
