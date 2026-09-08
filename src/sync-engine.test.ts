@@ -20,6 +20,7 @@ import {
 	RENDER_VERSION,
 	renderNotes,
 	reTranscribeAll,
+	reTranscribeNote,
 	runSync,
 	type SyncApi,
 	type SyncIndex,
@@ -3067,6 +3068,72 @@ describe("reTranscribeAll", () => {
 
 		expect(updated).toBe(0);
 		expect(newBackend.recognize).not.toHaveBeenCalled();
+	});
+});
+
+// C21 -- re-transcribing one note. The run around the shared body is what differs from the
+// whole-vault command, and these are the two places where the difference is worth money: the refusal
+// that now happens before any page is rendered, and the index the caller saves exactly once.
+describe("reTranscribeNote", () => {
+	const KEY = notebookSyncKey("doc-1", "sync");
+
+	function twoPageNotebook(rootHash: string) {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a", "page-b"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a", "page-b": "hash-b" } },
+		});
+	}
+
+	// The point of the early bail is the money, not the message: `updateTranscript` refuses this pair
+	// anyway, but only after every page has been rendered and sent, so on a metered backend the user
+	// paid for a guaranteed no. The assertion is therefore on the backend, not on the outcome name.
+	it("refuses an annotated PDF's digest note before the backend is asked for a single page", async () => {
+		const api = fakeApi({
+			rootHash: "root-c21-pdf",
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Book", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p0: "anno-hash" } },
+		});
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+		const synced = await runSync(deps, EMPTY_SYNC_INDEX);
+		const notePath = synced.index.rows[KEY].notePath;
+		const before = (await deps.noteStore.read(notePath))!;
+		expect(before).toContain("## Digest");
+
+		const backend = perPageOcrBackend("leaked");
+		const { outcome } = await reTranscribeNote({ api, noteStore: deps.noteStore, ocrBackend: backend }, synced.index.rows[KEY], synced.index);
+
+		expect(outcome).toBe("pdf-digest");
+		expect(backend.recognize).not.toHaveBeenCalled();
+		expect(await deps.noteStore.read(notePath)).toBe(before);
+	});
+
+	// One document is one save, so the engine keeps no checkpoint of its own and the caller saves the
+	// index it gets back. The store rides along on the row's own terms, which is what makes the two
+	// commands leave the same thing behind for the next sync (issue #117).
+	it("hands back one index carrying the refreshed block hash and the page store, and checkpoints nothing", async () => {
+		const api = twoPageNotebook("root-c21-note");
+		const noteStore = fakeNoteStore();
+		const first = await runSync(
+			{ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: fakeOcrBackend({ status: "ok", text: "old garbage", confidence: null }) },
+			EMPTY_SYNC_INDEX,
+		);
+		const saveIndex = vi.fn();
+
+		// Per page, because the store keys text to a page's own `.rm` hash: only a backend that answers
+		// per page produces the `readPages` it is built from.
+		const newBackend = perPageOcrBackend("fresh text");
+		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: newBackend, saveIndex }, first.index.rows[KEY], first.index);
+
+		expect(outcome).toBe("written");
+		expect(saveIndex).not.toHaveBeenCalled();
+		expect(index.rows[KEY].blockHash).not.toBe(first.index.rows[KEY].blockHash);
+		expect(index.rows[KEY].transcribedPages).toHaveLength(2);
+		expect(index.rows[KEY].transcribedWith).toBeDefined();
+		expect((await noteStore.read(index.rows[KEY].notePath))!).toContain("fresh text");
 	});
 });
 

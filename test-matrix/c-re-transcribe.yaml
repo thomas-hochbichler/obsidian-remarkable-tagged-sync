@@ -176,6 +176,81 @@
       layer: unit
       file: src/re-transcribe-prompt.test.ts
       test: "reTranscribeConfirmation > states what changed about transcripts, because that is the fact that decides the answer"
+- feature: C21
+  name: Re-transcribe this note -- the command surface
+  code: src/main.ts, src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C21.1
+      scenario: No Markdown file is open
+      expect: Hidden. The one file-reason that hides anyway -- "this note" has no referent, and a notice would read the screen back to somebody who can see there is no editor
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: 'whether the one-note command is offered > is hidden when nothing is open, because "this note" then has no referent'
+
+    - id: C21.2
+      scenario: A Markdown file is open that the plugin never synced
+      expect: Visible, and it refuses with `isn't synced`. This is the rule most likely to be "fixed" back into a hide by somebody who reads `re-transcribe-all` first -- a command that is merely missing teaches nothing
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the one-note command is offered > is offered on a note that was never synced, and refuses it out loud"
+
+    - id: C21.3
+      scenario: Transcription is off
+      expect: Hidden, like `re-transcribe-all` -- the cause is configuration, which the open note cannot change
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "whether the one-note command is offered > is hidden with transcription switched off, exactly as the whole-vault command is"
+
+    - id: C21.4
+      scenario: The open note's row is `orphaned`
+      expect: Refused with the notebook-gone sentence, not the not-synced one. Pins the lookup returning the row *with its status* -- filtering to `active` would collapse two different facts into one wrong sentence
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "which row the open note belongs to > names the notebook rather than the sync when the row is orphaned"
+
+    - id: C21.5
+      scenario: Two rows name the path, one `active`, one `orphaned`
+      expect: The active one is used. Pins the collision resolution against `note-rename.test.ts`, which ships that pair
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "which row the open note belongs to > uses the active row where an orphan names the same file"
+
+    - id: C21.6
+      scenario: Metered backend, note nobody has edited
+      expect: One dialog, carrying the notebook's page count. A warning without a number is one users learn to click through
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the one-note run asks before it starts > asks once on a metered backend, and quotes the notebook's page count"
+
+    - id: C21.7
+      scenario: Free backend, note nobody has edited
+      expect: No dialog at all -- there is no standing confirmation, because the whole-vault dialog's justification is the size of the run
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the one-note run asks before it starts > asks nothing at all on a free backend and a note nobody has touched"
+
+    - id: C21.8
+      scenario: Metered backend, hand-edited note
+      expect: One dialog carrying both clauses, not two in sequence -- they are two facts about one decision
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what the one-note run asks before it starts > asks once carrying both clauses for a hand-edited note on a metered backend, not twice"
+
+    - id: C21.9
+      scenario: PDF-backed note carrying a digest
+      expect: Refused before `runOcr` is reached, and the assertion is that the backend was never called. The point of the early bail is the money, not the message -- `updateTranscript` refuses this pair anyway, but only after every page has been paid for
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > refuses an annotated PDF's digest note before the backend is asked for a single page"
+
+    - id: C21.10
+      scenario: A successful one-note run
+      expect: One index handed back with the refreshed `blockHash` and `transcribedPages` on the same terms as the whole-vault run, and no checkpoint of its own -- one document is one save, and the caller makes it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > hands back one index carrying the refreshed block hash and the page store, and checkpoints nothing"
+
 - feature: E18
   name: Re-transcribe cost caveat
   code: src/re-transcribe-prompt.ts
