@@ -46,6 +46,8 @@ const noteEngine = vi.hoisted(() => ({
 	outcome: "written",
 	/** The answer the dialog gave, or null where `main.ts` never opened one. */
 	answer: null as boolean | null,
+	/** The index the engine hands back, where a test needs to tell it from the one it was given. */
+	returned: null as unknown,
 }));
 
 const engine = vi.hoisted(() => ({
@@ -84,7 +86,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 			// The engine asks; `main.ts` decides whether there is anything worth asking about and words
 			// it. Answering here is how a test sees which of the two it did.
 			noteEngine.answer = deps.confirm === undefined ? null : await deps.confirm(noteEngine.question);
-			return { outcome: noteEngine.answer === false ? "cancelled" : noteEngine.outcome, index };
+			return { outcome: noteEngine.answer === false ? "cancelled" : noteEngine.outcome, index: noteEngine.returned ?? index };
 		},
 	};
 });
@@ -220,6 +222,7 @@ beforeEach(() => {
 	noteEngine.question = { pageCount: 12, handEdited: false };
 	noteEngine.outcome = "written";
 	noteEngine.answer = null;
+	noteEngine.returned = null;
 	Platform.isDesktop = false;
 	modalLog.length = 0;
 	takeNotices();
@@ -627,5 +630,37 @@ describe("what the one-note run asks before it starts", () => {
 
 		asked.confirm.click();
 		await done;
+	});
+});
+
+describe("what a finished one-note run leaves behind", () => {
+	it("saves the index the engine handed back, exactly once", async () => {
+		// The engine keeps no checkpoint for one document, so this is the only save there is -- and it
+		// carries the refreshed block hash. Without it the next sync reads the plugin's own rewrite as
+		// a hand edit and refuses to touch that note ever again.
+		const refreshed = { rows: { a: { notePath: "n0.md", status: "active", blockHash: "refreshed" } } };
+		noteEngine.returned = refreshed;
+		const plugin = await pluginWith({ ocrBackend: "test-free" });
+		const saveData = vi.spyOn(plugin as unknown as { saveData(data: unknown): Promise<void> }, "saveData");
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(saveData).toHaveBeenCalledTimes(1);
+		expect(plugin.data.syncIndex).toBe(refreshed);
+	});
+
+	it("saves nothing where the run wrote nothing", async () => {
+		// A refusal must not rewrite `data.json` -- a file Obsidian Sync is watching -- to record that
+		// nothing happened.
+		noteEngine.outcome = "pdf-digest";
+		const plugin = await pluginWith({ ocrBackend: "test-free" });
+		const saveData = vi.spyOn(plugin as unknown as { saveData(data: unknown): Promise<void> }, "saveData");
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(saveData).not.toHaveBeenCalled();
+		expect(takeNotices()).toEqual(["Margin notes on a PDF are kept as a digest, not as a transcript. Nothing was changed."]);
 	});
 });

@@ -3111,29 +3111,61 @@ describe("reTranscribeNote", () => {
 		expect(await deps.noteStore.read(notePath)).toBe(before);
 	});
 
-	// One document is one save, so the engine keeps no checkpoint of its own and the caller saves the
-	// index it gets back. The store rides along on the row's own terms, which is what makes the two
-	// commands leave the same thing behind for the next sync (issue #117).
-	it("hands back one index carrying the refreshed block hash and the page store, and checkpoints nothing", async () => {
+	// One document is one save, so this path keeps no checkpoint of its own -- `ReTranscribeNoteDeps`
+	// omits `saveIndex` outright, so there is nothing left to assert about it here and the "saved
+	// once" belongs to the caller. The store rides along on the row's own terms, which is what makes
+	// the two commands leave the same thing behind for the next sync (issue #117).
+	it("hands back one index carrying the refreshed block hash and the page store", async () => {
 		const api = twoPageNotebook("root-c21-note");
 		const noteStore = fakeNoteStore();
 		const first = await runSync(
 			{ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: fakeOcrBackend({ status: "ok", text: "old garbage", confidence: null }) },
 			EMPTY_SYNC_INDEX,
 		);
-		const saveIndex = vi.fn();
-
 		// Per page, because the store keys text to a page's own `.rm` hash: only a backend that answers
 		// per page produces the `readPages` it is built from.
 		const newBackend = perPageOcrBackend("fresh text");
-		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: newBackend, saveIndex }, first.index.rows[KEY], first.index);
+		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: newBackend }, first.index.rows[KEY], first.index);
 
 		expect(outcome).toBe("written");
-		expect(saveIndex).not.toHaveBeenCalled();
 		expect(index.rows[KEY].blockHash).not.toBe(first.index.rows[KEY].blockHash);
 		expect(index.rows[KEY].transcribedPages).toHaveLength(2);
 		expect(index.rows[KEY].transcribedWith).toBeDefined();
 		expect((await noteStore.read(index.rows[KEY].notePath))!).toContain("fresh text");
+	});
+
+	// The number in the dialog is the number of pages the run is about to send, taken from the
+	// document itself. A warning users can check against the notebook in front of them is one they
+	// read; a hard-coded or guessed figure is one they learn to click through.
+	it("quotes the document's own live pages to the dialog, not a number of its own", async () => {
+		const api = twoPageNotebook("root-c21-count");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
+		const confirm = vi.fn(async () => false);
+
+		const backend = perPageOcrBackend("never");
+		const { outcome } = await reTranscribeNote({ api, noteStore, ocrBackend: backend, confirm }, first.index.rows[KEY], first.index);
+
+		expect(confirm).toHaveBeenCalledWith({ pageCount: 2, handEdited: false });
+		expect(outcome).toBe("cancelled");
+		expect(backend.recognize).not.toHaveBeenCalled();
+	});
+
+	// A page-tagged row whose page has gone, inside a document that is still on the device: the index
+	// says active and the listing agrees, so nothing before this catches it. Asking about "0 page(s)"
+	// and then refusing is exactly the dialog the order of the run exists to prevent.
+	it("refuses a tagged page that is gone from its document without asking about it first", async () => {
+		const api = twoPageNotebook("root-c21-gone");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
+		const confirm = vi.fn(async () => true);
+
+		const backend = perPageOcrBackend("never");
+		const { outcome } = await reTranscribeNote({ api, noteStore, ocrBackend: backend, confirm }, { ...first.index.rows[KEY], pageId: "page-that-left" }, first.index);
+
+		expect(outcome).toBe("not-on-device");
+		expect(confirm).not.toHaveBeenCalled();
+		expect(backend.recognize).not.toHaveBeenCalled();
 	});
 });
 

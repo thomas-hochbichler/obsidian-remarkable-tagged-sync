@@ -246,10 +246,87 @@
 
     - id: C21.10
       scenario: A successful one-note run
-      expect: One index handed back with the refreshed `blockHash` and `transcribedPages` on the same terms as the whole-vault run, and no checkpoint of its own -- one document is one save, and the caller makes it
+      expect: One index handed back with the refreshed `blockHash` and `transcribedPages` on the same terms as the whole-vault run. There is no checkpoint to assert on -- `ReTranscribeNoteDeps` omits `saveIndex`, so the type forbids one, and the single save is the caller's (C21.18)
       layer: engine
       file: src/sync-engine.test.ts
-      test: "reTranscribeNote > hands back one index carrying the refreshed block hash and the page store, and checkpoints nothing"
+      test: "reTranscribeNote > hands back one index carrying the refreshed block hash and the page store"
+
+    - id: C21.11
+      scenario: A free backend and a note nobody has edited
+      expect: No question at all. A dialog with nothing in it is what teaches people to click through the ones that mean something
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > asks nothing where there is nothing to ask"
+
+    - id: C21.12
+      scenario: A metered backend, note untouched
+      expect: The page count and the quota clause, and nothing about hand edits. The command says "this note" while the work is the whole notebook, and without the number that gap is invisible
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > carries the page count where a page costs money"
+
+    - id: C21.13
+      scenario: A free backend, note corrected by hand
+      expect: The note is named and what is lost is said; no word about money, since a cost warning on a free backend teaches the reader to skip the one that means it
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > names the note and what is lost where the block was edited by hand"
+
+    - id: C21.14
+      scenario: Both are true at once
+      expect: One string carrying both, the irreversible one first. Two dialogs in sequence would be two decisions about one run, and the second would be answered without being read
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteConfirmation > puts both facts in one dialog, the one that cannot be undone first"
+
+    - id: C21.15
+      scenario: Each outcome that says something is worded
+      expect: Six outcomes, six distinct sentences. Two sharing one would tell a user whose PDF was refused the same thing as one whose notebook is gone
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteNotice > gives every outcome that says anything its own sentence"
+
+    - id: C21.16
+      scenario: The dialog was answered no
+      expect: Nothing is said. Reading a refusal back to the person who just made it is noise
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteNotice > says nothing back to a user who has just said no"
+
+    - id: C21.17
+      scenario: The whole-vault confirmation is built
+      expect: It ends by pointing at the one-note command. The route is untouched; only this sentence is added, and it reaches the user this effort exists for at the moment they are about to pay for the old way
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeConfirmation > points at the one-note command, since that is the cheaper route to the same repair"
+
+    - id: C21.18
+      scenario: A run that rewrote the note
+      expect: "`saveData` exactly once, over the index the engine handed back. It carries the refreshed block hash -- without it the next sync reads the plugin's own rewrite as a hand edit and never touches that note again"
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what a finished one-note run leaves behind > saves the index the engine handed back, exactly once"
+
+    - id: C21.19
+      scenario: A run that refused
+      expect: No save at all. A refusal must not rewrite `data.json` -- a file Obsidian Sync is watching -- to record that nothing happened
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what a finished one-note run leaves behind > saves nothing where the run wrote nothing"
+
+    - id: C21.20
+      scenario: The dialog's page count is produced
+      expect: It is the document's own live pages, read from the content just fetched. A number the user cannot check against the notebook in front of them is one they learn to click through
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > quotes the document's own live pages to the dialog, not a number of its own"
+
+    - id: C21.21
+      scenario: A page-tagged row whose page is gone, in a document still on the device
+      expect: Refused without a dialog. The index says active and the listing agrees, so nothing earlier catches it -- and asking about "0 page(s)" before refusing is exactly the dialog the order of the run exists to prevent
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > refuses a tagged page that is gone from its document without asking about it first"
 
 - feature: E18
   name: Re-transcribe cost caveat

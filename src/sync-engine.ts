@@ -2494,7 +2494,12 @@ export type ReTranscribeNoteOutcome =
 	/** The stop was requested before the pages were rendered. */
 	| "stopped";
 
-export interface ReTranscribeNoteDeps extends ReTranscribeDeps {
+/**
+ * `saveIndex` is omitted rather than ignored: one document is one save, so this path keeps no
+ * checkpoint of its own and the caller saves the index it gets back. Declaring a dependency it
+ * silently drops would let a future caller pass one and believe in checkpoints that never happen.
+ */
+export interface ReTranscribeNoteDeps extends Omit<ReTranscribeDeps, "saveIndex"> {
 	/**
 	 * The one dialog, asked after the document is on the table and before anything is rendered -- so
 	 * it can quote the exact page count, and so a "no" costs nothing (spec §4, step 9).
@@ -2514,8 +2519,6 @@ export interface ReTranscribeNoteDeps extends ReTranscribeDeps {
  * checkpoint, since one document is one save and the caller does it once. `listItems` stays: a seventh
  * `SyncApi` method would have to be built on both transports and every double, and there is no
  * measurement behind it yet (spec §5.2, §5.3).
- *
- * `saveIndex` from the shared deps is unused here on purpose; the caller saves the index it gets back.
  */
 export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncIndexRow, index: SyncIndex): Promise<{ outcome: ReTranscribeNoteOutcome; index: SyncIndex }> {
 	const { api, noteStore } = deps;
@@ -2546,6 +2549,10 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	// The pages this run will actually send, which is both what the bar counts and what the dialog
 	// quotes -- one number, so the warning cannot promise a different cost than the run has.
 	const pageCount = reTranscribeSteps(row, docPages);
+	// Nothing left to send: a page-tagged row whose page has gone from the device, while the document
+	// it lived in is still listed. Refused here rather than after the dialog, because nothing may be
+	// asked that is about to be refused anyway -- and "0 page(s)" is not a question (spec §4).
+	if (pageCount === 0) return unchanged("not-on-device");
 	if (deps.confirm !== undefined) {
 		const handEdited = await isBlockEdited(noteStore, row);
 		if (!(await deps.confirm({ pageCount, handEdited }))) return unchanged("cancelled");

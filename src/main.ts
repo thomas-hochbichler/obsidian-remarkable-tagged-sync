@@ -17,7 +17,7 @@ import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-ch
 import { createPolarLicenceApi } from "./licence-client";
 import { type Entitlement, entitlementOf } from "./licence-state";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import { remapRows } from "./note-rename";
+import { remapRows, rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import {
@@ -860,13 +860,10 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * dialog comes last, once the page count is known and can be quoted.
 	 */
 	async reTranscribeNote(file: TFile): Promise<void> {
-		const candidates = Object.values(this.data.syncIndex.rows).filter((row) => row.notePath === file.path);
-		// The row with its status, not a filter to `active`: filtering here would make a notebook the
-		// user deleted from the device indistinguishable from a note that was never synced, and give it
-		// the wrong sentence. Two *active* rows on one path is not reachable (`resolveFreePath`
-		// suffixes on collision); active beside orphaned is shipped and pinned, and preferring the
-		// active one settles that without a new rule (spec §3).
-		const row = candidates.find((candidate) => candidate.status === "active") ?? candidates[0];
+		// With its status, not filtered to `active`: filtering would make a notebook the user deleted
+		// from the device indistinguishable from a note that was never synced, and give it the wrong
+		// sentence (spec §3).
+		const row = rowForNotePath(this.data.syncIndex.rows, file.path);
 		if (row === undefined) {
 			new Notice(NOTE_NOT_SYNCED_NOTICE);
 			return;
@@ -919,7 +916,9 @@ export default class TaggedSyncPlugin extends Plugin {
 				row,
 				this.data.syncIndex,
 			);
-			if (outcome === "written" || outcome === "emptied") {
+			// The two outcomes that rewrote the note. Everything else left it exactly as it was.
+			const rewrote = outcome === "written" || outcome === "emptied";
+			if (rewrote) {
 				// Carries the refreshed block hash -- without saving, the next sync would read this
 				// re-transcribe as a hand edit and refuse to touch the note again. One document is one
 				// save, which is why the engine keeps no checkpoint of its own.
@@ -931,7 +930,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Every outcome leaves a final status: the bar was set to busy above, and a refusal that
 			// left it there would spin over a run that is long over.
 			if (outcome === "stopped") this.setStatus("stopped", "Tagged Sync: stopped · nothing changed");
-			else if (outcome === "written" || outcome === "emptied") this.setStatus("ok", `Tagged Sync: re-transcribed "${file.basename}"`);
+			else if (rewrote) this.setStatus("ok", `Tagged Sync: re-transcribed "${file.basename}"`);
 			else this.setStatus("ok", "Tagged Sync: nothing changed");
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);

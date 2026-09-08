@@ -19,7 +19,7 @@ workflow publishes the section as the GitHub release body. See
   whole-vault command: it names the notebook's page count before spending anything on a metered
   backend, it asks first if you have corrected that note by hand, and it refuses a PDF whose margin
   notes are kept as a digest before any page is read rather than after. The old *Re-transcribe all
-  synced notes* is unchanged and still there for a backend switch.
+  synced notes* is unchanged and still there for a backend switch. (#135)
 
 - **A synced note now says how many pages it covers, and what that costs.** With *Frontmatter
   properties* on, each note carries `remarkable-pages`: the pages of *that note* -- all of them for a
