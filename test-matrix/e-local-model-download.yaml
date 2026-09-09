@@ -241,3 +241,18 @@
       layer: unit
       file: src/local-model-gate.test.ts
       test: "the floor follows the generation > keeps the shipped floors when no generation is named"
+
+    - id: E29.16
+      scenario: A generation whose memory floor was measured at a pinned context
+      expect: It pins that context in the invocation too, and the floor still covers peak + 4 GiB. Without `-c` llama.cpp sizes the KV cache from the model's own declared context, and Qwen3-VL-8B declares one big enough to take the peak from 7.99 GB to **42.82 GB** -- for byte-identical output on all fifteen pages. A floor derived from the pinned figure beside an invocation that does not pin it would invite a 16 GB Mac to start a 42 GB job
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the context every generation runs at > pins one wherever the floor was measured with it pinned"
+
+    - id: E29.17
+      scenario: The generation every existing install is already running
+      expect: Its invocation is untouched. Pinning a context would change what it is asked and with it the 4.32 % it measured, which is not a side effect a second model may have
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the context every generation runs at > leaves the older generation's invocation exactly as it shipped"
+

@@ -75,6 +75,17 @@ export interface ModelGeneration {
 	 * that swaps.
 	 */
 	floorGb: Readonly<Record<LocalModelPlatform, number>>;
+	/**
+	 * `-c` for `llama-mtmd-cli`, or null to let llama.cpp size the KV cache from the model's own
+	 * declared context.
+	 *
+	 * Null was the only behaviour until 2026-09-09, and it is a trap on a modern model. Measured on
+	 * this corpus: Qwen3-VL-8B declares a context large enough that the cache alone takes the peak to
+	 * **42.82 GB**. Pinned at 8192 the same fifteen pages come back **byte-identical** at **7.99 GB**
+	 * and 27 % faster -- one page never needs more, since the whole prompt is one image plus at most
+	 * `MAX_TOKENS` of answer.
+	 */
+	contextTokens: number | null;
 }
 
 /**
@@ -102,12 +113,15 @@ const QWEN3_VL_8B: ModelGeneration = {
 		},
 	],
 	measured: { medianCer: 0.0179, on: "2026-09-09" },
-	peakRssBytes: 8_912_896_000,
-	// 8.30 GiB + 4 GiB -> 12.30, which rounds up to 16 GB. **This opens the backend to 16 GB Macs**,
+	peakRssBytes: 8_579_448_832,
+	// **Only true with `contextTokens` pinned.** Unpinned this model peaks at 42.82 GB, and the floor
+	// below would invite a 16 GB Mac to start it.
+	// 7.99 GiB + 4 GiB -> 11.99, which rounds up to 16 GB. **This opens the backend to 16 GB Macs**,
 	// which the 7B's own arithmetic shut out. Windows keeps 24 GB and is deliberately not derived: the
 	// only Windows figure anyone has measured is the 7B's, on a CPU-only path, and scaling it by a
 	// ratio would be inventing a measurement rather than making one.
 	floorGb: { darwin: 16, win32: 24 },
+	contextTokens: 8192,
 };
 
 /**
@@ -140,6 +154,10 @@ const QWEN25_VL_7B: ModelGeneration = {
 	// macOS to 24 on that basis would newly exclude 18 GB Macs that are running this model today, and
 	// whether the floor should move is an open question, not a side effect of adding a second model.
 	floorGb: { darwin: 18, win32: 24 },
+	// Deliberately unpinned, which is what every existing install has been running. Its 15.09 GB peak
+	// would very likely fall with a `-c` too, but that changes the invocation of a model we are moving
+	// away from -- and with it the 4.32 % it measured. See ticket 16.
+	contextTokens: null,
 };
 
 /** Newest first. The order is the preference, and `chooseGeneration` is the only thing that reads it. */

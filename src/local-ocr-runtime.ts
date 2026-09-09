@@ -6,6 +6,7 @@
 import { Platform } from "obsidian";
 import { sanitizeTranscript, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
+import type { ModelGeneration } from "./local-model-artefacts";
 import { readLocalModelState, readLock, releaseLock, resolveLocalModel, writeLock } from "./local-model-runtime";
 import { isTranscriptionInProgress, LOCK_HEARTBEAT_MS, type LocalModelPaths } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
@@ -83,7 +84,7 @@ async function repairQuarantine(executable: string): Promise<void> {
 }
 
 /** The invocation of §3.3, with one image per process and per-page results. */
-function pageArgs(paths: LocalModelPaths, imageFile: string): string[] {
+function pageArgs(paths: LocalModelPaths, imageFile: string, generation: ModelGeneration): string[] {
 	return [
 		"-m",
 		paths.modelFile,
@@ -99,6 +100,11 @@ function pageArgs(paths: LocalModelPaths, imageFile: string): string[] {
 		TEMPERATURE,
 		"--seed",
 		SEED,
+		// Sizes the KV cache. Without it llama.cpp reads the model's own declared context, and a modern
+		// vision model declares one big enough to be ruinous: Qwen3-VL-8B peaks at 42.82 GB unpinned
+		// against 7.99 GB at 8192, for byte-identical output on all fifteen reference pages. One page is
+		// one image plus at most `MAX_TOKENS` of answer, so nothing here ever needs more.
+		...(generation.contextTokens === null ? [] : ["-c", String(generation.contextTokens)]),
 	];
 }
 
@@ -109,7 +115,7 @@ function pageArgs(paths: LocalModelPaths, imageFile: string): string[] {
  * and can exit 0 with nothing on stdout (ticket 08 §6), and a page can legitimately hold no legible
  * text -- so the transcript is read from stdout alone and an empty one is an empty page.
  */
-function createRunner(paths: LocalModelPaths): LocalPageRunner {
+function createRunner(paths: LocalModelPaths, generation: ModelGeneration): LocalPageRunner {
 	const fs = nodeRequire("fs");
 	const os = nodeRequire("os");
 	const path = nodeRequire("path");
@@ -131,12 +137,12 @@ function createRunner(paths: LocalModelPaths): LocalPageRunner {
 		try {
 			fs.writeFileSync(imageFile, image);
 			const startedAt = Date.now();
-			let run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile));
+			let run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile, generation));
 
 			if (run.code === SIGKILL_EXIT_CODE && !quarantineRepairAttempted && process.platform === "darwin") {
 				quarantineRepairAttempted = true;
 				await repairQuarantine(paths.runtimeExecutable);
-				run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile));
+				run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile, generation));
 			}
 
 			const outcome = classifyRun({ ...run, executablePresent: fs.existsSync(paths.runtimeExecutable) });
@@ -194,5 +200,5 @@ export function createLocalOcrBackend(
 	const { paths, generation } = resolved;
 	if (readLocalModelState(paths, Date.now(), generation) !== "ready") return null;
 	if (isLocalModelBusy(paths)) return null;
-	return new LocalOcrBackend({ runPage: createRunner(paths), settings, onRuntimeFailure, generation });
+	return new LocalOcrBackend({ runPage: createRunner(paths, generation), settings, onRuntimeFailure, generation });
 }

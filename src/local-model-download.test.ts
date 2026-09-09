@@ -411,3 +411,25 @@ describe("withNetworkRetry", () => {
 		expect(h.state.attempts).toBe(1);
 	});
 });
+
+/**
+ * The KV cache is sized from `-c`, and without it llama.cpp reads the model's own declared context.
+ * Qwen3-VL-8B declares one big enough to take the peak to 42.82 GB -- against 7.99 GB at 8192, for
+ * byte-identical output on all fifteen reference pages. A floor derived from the pinned figure and an
+ * invocation that does not pin it is the worst pair available: it invites a 16 GB Mac to start a 42 GB
+ * job.
+ */
+describe("the context every generation runs at", () => {
+	it("pins one wherever the floor was measured with it pinned", () => {
+		const newest = MODEL_GENERATIONS[0];
+		expect(newest.contextTokens).toBe(8192);
+		// The floor is peak + 4 GiB rounded to a shipping size, and it only holds at that context.
+		expect(newest.peakRssBytes + 4 * 1024 ** 3).toBeLessThan(newest.floorGb.darwin * 1024 ** 3);
+	});
+
+	// Unchanged for the model every existing install is running: pinning a context would change its
+	// invocation, and with it the figure it measured.
+	it("leaves the older generation's invocation exactly as it shipped", () => {
+		expect(MODEL_GENERATIONS[1].contextTokens).toBeNull();
+	});
+});
