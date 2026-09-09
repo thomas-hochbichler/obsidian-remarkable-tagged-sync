@@ -302,6 +302,13 @@
       file: scripts/nightly-merge.test.mjs
       test: "the commit subject > carries the perf number too, so the render cost has its own drift curve in the log"
 
+    - id: N5.7
+      scenario: A night that measured the Apple Vision part
+      expect: The commit subject carries its median CER as well. Vision's model ships inside macOS and picks its own request revision, so it is the one backend that can change with nothing changed in this repo -- the drift belongs where `git log --oneline` shows it without opening a file
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "the commit subject > carries the Vision median too, since the OS can move it with nothing changed here"
+
 - feature: N6
   name: The OCR baseline and its change discipline
   code: scripts/ocr-baseline.mjs
@@ -487,3 +494,29 @@
       layer: unit
       file: scripts/ocr-series.test.mjs
       test: "the published series > names each page's trait from the reference filenames, and carries the two fields that separate a jump from a regression"
+
+    - id: N10.5
+      scenario: A page measured from 2026-09-09 carries its request envelope; a page from any night before it does not
+      expect: The pinned endpoint, who served it, the token counts and the upstream cost ride into the CSV, and an older row leaves them empty rather than inventing them. Unpinned routing moved one model's median CER by 1.40 points between two providers of the same weights, and `prompt_tokens` was the only field that said why -- fewer tokens means the model was shown a smaller image
+      layer: unit
+      file: scripts/ocr-series.test.mjs
+      test: "the published series > carries the request envelope, and leaves it empty for every night measured before it existed"
+
+- feature: N11
+  name: Every measured backend names the endpoint it was measured on
+  code: test-support/nightly/ocr.ts
+  tier: free
+  scenarios:
+    - id: N11.1
+      scenario: A backend is added to the nightly without pinning an endpoint
+      expect: Caught here, because nowhere else can. An unpinned entry reads like an ordinary line until the night OpenRouter routes it elsewhere, and then its published number moves for a reason nothing recorded -- measured at 1.40 points of median CER between two providers of one model, against the 1.60 %-2.53 % the table spans between different models
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "NIGHTLY_BACKENDS > pins an endpoint for every backend"
+
+    - id: N11.2
+      scenario: Two entries are added for the same model, or a key drifts from the model it names
+      expect: Refused. The baseline key is the route, so a duplicated or mistyped key would silently hand one backend another's thirty-night history -- the failure the whole keying scheme exists to prevent
+      layer: unit
+      file: test-support/nightly/ocr.test.ts
+      test: "NIGHTLY_BACKENDS > keys every backend by its route, so no entry can inherit another's baseline"

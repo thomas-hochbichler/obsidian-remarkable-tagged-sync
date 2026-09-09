@@ -16,6 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "matrix": "node scripts/matrix-link.mjs",
     "nightly:ocr": "esbuild test-support/nightly/ocr-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-ocr.cjs && node /tmp/tagged-sync-nightly-ocr.cjs",
+    "nightly:vision": "esbuild test-support/nightly/vision-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-vision.cjs && node /tmp/tagged-sync-nightly-vision.cjs",
     "nightly:perf": "esbuild test-support/nightly/perf-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-perf.cjs && node /tmp/tagged-sync-nightly-perf.cjs",
     "ocr:curve": "node scripts/ocr-curve.mjs",
     "goldens:update": "esbuild test-support/golden/update-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-goldens-update.cjs && node /tmp/tagged-sync-goldens-update.cjs",

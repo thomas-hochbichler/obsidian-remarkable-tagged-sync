@@ -1,8 +1,9 @@
 # The nightly measurement (ticket 14): what changed out there while nothing changed in here.
 #
-# Measuring jobs and one merge. `ocr` sends the fourteen committed reference pages through the
-# live cloud backends and scores them as character error rate; `perf` times the heavy synthetic
-# page on this fixed runner class (ticket 21). A `contract` half was planned and deliberately
+# Measuring jobs and one merge. `ocr` sends the fifteen committed reference pages through the
+# live cloud backends and scores them as character error rate; `vision` sends the same pages through
+# Apple's own OCR on a pinned macOS runner; `perf` times the heavy synthetic page on this fixed
+# runner class (ticket 21). A `contract` half was planned and deliberately
 # dropped 2026-08-24 -- measuring the live reMarkable and Polar APIs nightly needs a throwaway
 # account and a test licence key as CI secrets, and that cost was ruled out.
 # `verdict` merges whatever parts reported into `.nightly-verdict.json` and commits
@@ -71,6 +72,43 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # Apple Vision on the same fifteen pages: the OCR backend most users already have, and the one the
+  # plugin falls back to with no key at all. Measured 17.4 % median CER against the cloud's 1.6 %,
+  # which is a number the accuracy page owes its readers.
+  #
+  # `macos-26` is pinned and must stay pinned. Vision's model ships inside the OS and is not
+  # addressable from the plugin -- `VNRecognizeTextRequest` picks its own revision -- so `macos-latest`
+  # would move a published number on GitHub's schedule with nothing changed in this repo. When the
+  # runner class is retired, bumping this line is a measurement change: expect the revision recorded
+  # in the part to move with it, and read the baseline diff as a real event rather than noise.
+  #
+  # No secrets and no network: Vision runs locally through `osascript`. macOS runners are free and
+  # unlimited on public repositories, so the third measuring job costs only wall clock.
+  vision:
+    if: github.repository == 'thomas-hochbichler/obsidian-remarkable-tagged-sync'
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read the reference pages with Apple Vision
+        run: npm run nightly:vision
+      - name: Write the run summary
+        if: always()
+        run: |
+          if [ -f nightly-parts/vision.json ]; then
+            node scripts/nightly-summary.mjs nightly-parts/vision.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep the part for the verdict job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: part-vision
+          path: nightly-parts/vision.json
+
   # The perf half (ticket 21): the heavy synthetic page timed on this fixed runner class. No
   # secrets, no network -- its own job so no other step's work leaks into the timing.
   perf:
@@ -94,7 +132,7 @@ jobs:
 
   verdict:
     if: always() && github.repository == 'thomas-hochbichler/obsidian-remarkable-tagged-sync'
-    needs: [ocr, perf]
+    needs: [ocr, perf, vision]
     runs-on: ubuntu-latest
     # For NIGHTLY_DEPLOY_KEY: main's ruleset requires pull requests, and the GitHub Actions app
     # cannot be a bypass actor on a personal repo -- a deploy key can. The key is scoped to this
@@ -116,6 +154,11 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: part-perf
+          path: nightly-parts
+        continue-on-error: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: part-vision
           path: nightly-parts
         continue-on-error: true
       - name: Merge the parts and commit the verdict
@@ -153,7 +196,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          for part in ocr perf; do
+          for part in ocr perf vision; do
             status=$(node -e "console.log(JSON.parse(require('fs').readFileSync('.nightly-verdict.json','utf8')).parts.$part.status)")
             title="[nightly] $part"
             number=$(gh issue list --state open --search "in:title \"$title\"" --json number,title --jq ".[] | select(.title==\"$title\") | .number" | head -1)

@@ -7,7 +7,7 @@
 // backend classes apply `sanitizeTranscript` themselves), and the image sent is the shipped
 // rasterizer's own output. No parallel request-building code exists here.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { characterErrorRate, normalizeForCer, structureObservation } from "../cer";
 
@@ -31,12 +31,47 @@ export interface NightlyBackendSpec {
 	key: string;
 	/** The model id as the carrying provider names it. */
 	model: string;
+	/**
+	 * The OpenRouter **endpoint tag** to pin -- provider and serving precision in one string, e.g.
+	 * `deepinfra/fp8`. Sent as `provider.only` with `allow_fallbacks: false`, so a route that cannot
+	 * serve it answers 404 rather than quietly serving something else: a request that succeeded was
+	 * served by exactly this endpoint, which is why the tag can be recorded as provenance even though
+	 * the response body does not echo it.
+	 *
+	 * Not optional, and not merely `quantizations`. Measured 2026-09-09 on this corpus
+	 * (`.scratch/local-ocr-accuracy/spec.md` §8.3): two providers of *one* model, same prompt and same
+	 * PNG, differ by **1.40 points of median CER** -- nearly the whole 1.60 %-2.53 % spread the
+	 * published table shows between different models. The cause is not precision (fp4 against fp8, fed
+	 * provably identical image tokens, is indistinguishable); it is that providers resize the image
+	 * differently. Unpinned, a router's choice can move a published row further than changing the model.
+	 */
+	provider: string;
 }
 
+/**
+ * The three incumbents keep their `key`, and therefore their baselines and their place in the
+ * published series, even though pinning the endpoint changes what is measured. The alternative --
+ * folding the endpoint into the key -- would fork seventeen nights of history the accuracy page
+ * cites. The endpoint travels as data instead: it is on every page's envelope from now on, so a
+ * future change is visible in the series rather than hidden in it, and §3.2's change discipline
+ * treats a routing change as a fourth honest reason a baseline may move.
+ */
 export const NIGHTLY_BACKENDS: NightlyBackendSpec[] = [
-	{ key: "openrouter/anthropic/claude-sonnet-5", model: "anthropic/claude-sonnet-5" },
-	{ key: "openrouter/openai/gpt-4o", model: "openai/gpt-4o" },
-	{ key: "openrouter/google/gemini-2.5-flash", model: "google/gemini-2.5-flash" },
+	// Incumbents. Each had several routes to be picked from: Sonnet six (Anthropic, Azure, Bedrock,
+	// Vertex), 4o two, Flash six. First-party in each case, so the pin also drops the resellers.
+	{ key: "openrouter/anthropic/claude-sonnet-5", model: "anthropic/claude-sonnet-5", provider: "anthropic" },
+	{ key: "openrouter/openai/gpt-4o", model: "openai/gpt-4o", provider: "openai" },
+	{ key: "openrouter/google/gemini-2.5-flash", model: "google/gemini-2.5-flash", provider: "google-ai-studio" },
+	// Added 2026-09-09 (spec §2.1): the three cloud models chosen for what their accuracy costs.
+	{ key: "openrouter/google/gemini-3.1-flash-lite", model: "google/gemini-3.1-flash-lite", provider: "google-ai-studio" },
+	{ key: "openrouter/qwen/qwen3-vl-235b-a22b-instruct", model: "qwen/qwen3-vl-235b-a22b-instruct", provider: "deepinfra/fp8" },
+	{ key: "openrouter/google/gemma-4-31b-it", model: "google/gemma-4-31b-it", provider: "deepinfra/fp8" },
+	// Open weights, hosted (spec §2.2): the 32 and 64 GB tiers, measured through the same corpus so a
+	// reader can compare the model they could run against the ones they would rent. Neither is what a
+	// laptop runs -- `qwen3-vl-8b` has no 4-bit route at all -- so both are upper bounds, and §3.4
+	// step 2 still owes the local pair that says by how much.
+	{ key: "openrouter/qwen/qwen3-vl-8b-instruct", model: "qwen/qwen3-vl-8b-instruct", provider: "parasail/bf16" },
+	{ key: "openrouter/qwen/qwen3.6-35b-a3b", model: "qwen/qwen3.6-35b-a3b", provider: "darkbloom/fp4" },
 ];
 
 export interface ReferencePage {
@@ -48,12 +83,35 @@ export interface ReferencePage {
 	alternates: string[];
 }
 
+/**
+ * What one page's request asked for and was billed, read back off the response (spec §3.2).
+ *
+ * Recorded because all three of these move the CER and none of them used to be written down. The
+ * `endpoint` is the tag we pinned rather than one the response carries -- OpenRouter echoes only the
+ * provider's display name -- and `allow_fallbacks: false` is what makes that honest: any other route
+ * would have been a 404, not a substitution.
+ *
+ * `promptTokens` is the cheapest drift detector on the page: a night where a backend's prompt tokens
+ * move is a night where the model was shown a different image, and it costs nothing to notice.
+ */
+export interface PageEnvelope {
+	endpoint: string;
+	servedBy: string | null;
+	promptTokens: number | null;
+	completionTokens: number | null;
+	/** Non-zero means the model thought before answering, which we asked it not to. */
+	reasoningTokens: number | null;
+	cost: number | null;
+}
+
 /** One measured page for one backend. */
 export interface PageMeasurement {
 	cer: number | null;
 	structure: Record<string, string>;
 	/** Set when the page could not be measured; mirrors ticket 14 §4.4 / §5.3. */
 	problem?: "empty-output" | "abort" | "unavailable";
+	/** Absent for a page whose request never returned a usable body, and for every night before 2026-09-09. */
+	envelope?: PageEnvelope;
 }
 
 export type BackendStatus = "pass" | "degraded" | "unknown" | "catastrophe";
@@ -81,6 +139,24 @@ export interface BaselineEntry {
  * checked rather than counted: a page whose file went missing must fail the run, not shrink the set.
  */
 export const REFERENCE_PAGES = 15;
+
+/**
+ * `.ocr-baseline.json` regrouped by backend: `{ "openrouter/openai/gpt-4o": { "05": { cer, spread } } }`.
+ *
+ * Lives here rather than beside one CLI because two of them read it now -- the cloud half and the
+ * Apple Vision half, which runs on a different runner and shares the same discipline. An absent file
+ * is an empty baseline, which is what a first night has.
+ */
+export function loadBaseline(path: string): Record<string, Record<string, BaselineEntry | undefined>> {
+	if (!existsSync(path)) return {};
+	const raw = JSON.parse(readFileSync(path, "utf8")) as { entries?: Record<string, { cer: number; spread?: number }> };
+	const byBackend: Record<string, Record<string, BaselineEntry | undefined>> = {};
+	for (const [key, entry] of Object.entries(raw.entries ?? {})) {
+		const cut = key.lastIndexOf("/");
+		(byBackend[key.slice(0, cut)] ??= {})[key.slice(cut + 1)] = { cer: entry.cer, spread: entry.spread };
+	}
+	return byBackend;
+}
 
 export function loadReferencePages(dir: string): ReferencePage[] {
 	const files = readdirSync(dir).filter((name) => name.endsWith(".md")).sort();

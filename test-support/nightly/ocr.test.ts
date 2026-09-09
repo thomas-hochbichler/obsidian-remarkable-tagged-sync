@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { classifyFailure, evaluateBackend, loadReferencePages, mergeBackendStatuses, REFERENCE_PAGES, type ReferencePage } from "./ocr";
+import { classifyFailure, evaluateBackend, loadReferencePages, mergeBackendStatuses, NIGHTLY_BACKENDS, REFERENCE_PAGES, type ReferencePage } from "./ocr";
 
 const PAGES_DIR = join(process.cwd(), "test-fixtures", "ocr-reference", "pages");
 
@@ -124,5 +124,20 @@ describe("merging backend statuses into the part", () => {
 		expect(mergeBackendStatuses({ a: pass, b: pass })).toBe("pass");
 		expect(mergeBackendStatuses({ a: pass, b: { ...pass, status: "unknown" } })).toBe("unknown");
 		expect(mergeBackendStatuses({ a: { ...pass, status: "catastrophe" }, b: { ...pass, status: "unknown" } })).toBe("catastrophe");
+	});
+});
+
+// A backend added without a pinned endpoint is a backend whose number can move because a router
+// chose differently, and nothing in the series would say so -- measured at 1.40 points of median CER
+// between two providers of one model (spec §8.3). This is the only place that can catch it, because
+// the omission reads as an ordinary line until the night it matters.
+describe("NIGHTLY_BACKENDS", () => {
+	it("pins an endpoint for every backend", () => {
+		expect(NIGHTLY_BACKENDS.filter((spec) => !spec.provider)).toEqual([]);
+	});
+
+	it("keys every backend by its route, so no entry can inherit another's baseline", () => {
+		expect(new Set(NIGHTLY_BACKENDS.map((spec) => spec.key)).size).toBe(NIGHTLY_BACKENDS.length);
+		expect(NIGHTLY_BACKENDS.every((spec) => spec.key === `openrouter/${spec.model}`)).toBe(true);
 	});
 });

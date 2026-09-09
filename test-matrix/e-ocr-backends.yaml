@@ -428,6 +428,18 @@
       file: pro/anthropic-ocr-backend.test.ts
       test: "AnthropicOcrBackend > fails a page Anthropic never answers for, instead of waiting on it forever"
 
+- feature: E28
+  name: The rate-limit backoff runs where the code actually runs
+  code: src/llm-transcript.ts
+  tier: free
+  scenarios:
+    - id: E28.1
+      scenario: A provider answers 429 and the caller injected no `sleepFn` -- the nightly, and anything else driving this adapter from Node
+      expect: The page waits out the backoff and is asked again. `realSleep` reached for `window.setTimeout`, which exists in Obsidian and not on Node, so the first 429 threw `ReferenceError` inside the retry and the page was lost and then reported as a provider outage. Every other retry test injects a sleep, which is exactly why nothing caught it -- this one must not
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > waits out a rate limit with its own default sleep, off Obsidian"
+
 - feature: E26
   name: Deterministic sampling on the servers the user runs
   code: src/openai-compat-ocr-backend.ts

@@ -29,6 +29,17 @@ export const COLUMNS = [
 	"backend_status",
 	"prompt_sha",
 	"render_version",
+	// The envelope (spec §3.2), recorded from 2026-09-09 and empty for every night before it. All
+	// four change what was measured or what it cost, and none of them used to be written down:
+	// unpinned routing alone moved one model's median CER by 1.40 points between two providers, and
+	// `prompt_tokens` is what makes that visible without a second measurement -- a night where a
+	// backend's prompt tokens move is a night where the model was shown a different image.
+	"endpoint",
+	"served_by",
+	"prompt_tokens",
+	"completion_tokens",
+	"reasoning_tokens",
+	"cost",
 ];
 
 /**
@@ -49,7 +60,7 @@ export function traitsFromFilenames(filenames) {
  * `verdicts` is [{ verdict, ... }] newest first or oldest first, it does not matter: rows come
  * back sorted by measurement time, and a run measured twice contributes its pages once.
  *
- * A night whose OCR part never produced backends -- `unknown`, the shape commit 7319d9e left --
+ * A night whose measuring part never produced backends -- `unknown`, the shape commit 7319d9e left --
  * contributes no rows at all. It is not a night of zeros; it is a night with no measurement,
  * and writing zeros for it would be inventing data.
  */
@@ -57,35 +68,48 @@ export function toRows(verdicts, traits) {
 	const seen = new Set();
 	const rows = [];
 	for (const verdict of verdicts) {
-		const part = verdict?.parts?.ocr;
-		const backends = part?.detail?.backends;
-		if (!part?.measuredAt || !backends) continue;
-		for (const [backend, result] of Object.entries(backends)) {
-			for (const [page, measurement] of Object.entries(result.pages ?? {})) {
-				const key = `${part.measuredAt}|${backend}|${page}`;
-				if (seen.has(key)) continue;
-				seen.add(key);
-				rows.push({
-					measured_at: part.measuredAt,
-					run_id: verdict.runId ?? "",
-					backend,
-					page,
-					trait: traits[page] ?? "",
-					// The fraction as measured, not a rounded percentage: rounding is the reader's
-					// choice, and a page that reads 0.0011 is not a page that reads 0.1 %.
-					cer: typeof measurement.cer === "number" ? measurement.cer.toFixed(6) : "",
-					problem: measurement.problem ?? "",
-					// `kind:state`, joined by ";" so no field ever needs quoting.
-					structure: Object.entries(measurement.structure ?? {})
-						.map(([kind, state]) => `${kind}:${state}`)
-						.join(";"),
-					backend_status: result.status ?? "",
-					// Both of these change what was measured. A CER jump that lines up with a
-					// render version bump is not a model regression, and without these columns
-					// nobody reading the series can tell the two apart.
-					prompt_sha: part.detail?.promptSha ?? "",
-					render_version: part.detail?.renderVersion ?? "",
-				});
+		// Both measuring parts that produce backends: the cloud half, and Apple Vision from its own
+		// runner. One CSV, because the question the series answers -- how does this backend read this
+		// page -- does not change with which job asked it, and a reader comparing the default they
+		// already have against the ones they would pay for should not have to join two files.
+		for (const partName of ["ocr", "vision"]) {
+			const part = verdict?.parts?.[partName];
+			const backends = part?.detail?.backends;
+			if (!part?.measuredAt || !backends) continue;
+			for (const [backend, result] of Object.entries(backends)) {
+				for (const [page, measurement] of Object.entries(result.pages ?? {})) {
+					const key = `${part.measuredAt}|${backend}|${page}`;
+					if (seen.has(key)) continue;
+					seen.add(key);
+					rows.push({
+						measured_at: part.measuredAt,
+						run_id: verdict.runId ?? "",
+						backend,
+						page,
+						trait: traits[page] ?? "",
+						// The fraction as measured, not a rounded percentage: rounding is the reader's
+						// choice, and a page that reads 0.0011 is not a page that reads 0.1 %.
+						cer: typeof measurement.cer === "number" ? measurement.cer.toFixed(6) : "",
+						problem: measurement.problem ?? "",
+						// `kind:state`, joined by ";" so no field ever needs quoting.
+						structure: Object.entries(measurement.structure ?? {})
+							.map(([kind, state]) => `${kind}:${state}`)
+							.join(";"),
+						backend_status: result.status ?? "",
+						// Both of these change what was measured. A CER jump that lines up with a
+						// render version bump is not a model regression, and without these columns
+						// nobody reading the series can tell the two apart.
+						prompt_sha: part.detail?.promptSha ?? "",
+						render_version: part.detail?.renderVersion ?? "",
+						endpoint: measurement.envelope?.endpoint ?? "",
+						served_by: measurement.envelope?.servedBy ?? "",
+						prompt_tokens: measurement.envelope?.promptTokens ?? "",
+						completion_tokens: measurement.envelope?.completionTokens ?? "",
+						reasoning_tokens: measurement.envelope?.reasoningTokens ?? "",
+						// As billed, not rounded to cents: a page costs fractions of one.
+						cost: typeof measurement.envelope?.cost === "number" ? measurement.envelope.cost.toFixed(8) : "",
+					});
+				}
 			}
 		}
 	}

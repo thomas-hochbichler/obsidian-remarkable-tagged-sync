@@ -56,7 +56,7 @@ describe("the commit subject", () => {
 			now: NOW,
 			run: RUN,
 		});
-		expect(commitSubject(verdict)).toBe("chore(nightly): ocr pass (median CER 3.9 %) · perf unknown [skip ci]");
+		expect(commitSubject(verdict)).toBe("chore(nightly): ocr pass (median CER 3.9 %) · perf unknown · vision unknown [skip ci]");
 	});
 
 	it("carries the perf number too, so the render cost has its own drift curve in the log", () => {
@@ -68,6 +68,21 @@ describe("the commit subject", () => {
 			now: NOW,
 			run: RUN,
 		});
-		expect(commitSubject(verdict)).toBe("chore(nightly): ocr unknown · perf pass (render 210 ms) [skip ci]");
+		expect(commitSubject(verdict)).toBe("chore(nightly): ocr unknown · perf pass (render 210 ms) · vision unknown [skip ci]");
+	});
+
+	// Vision reads a median CER like the cloud backends do, and it goes in the subject for the same
+	// reason: the OS moves the model underneath us on its own schedule, so the drift belongs where
+	// `git log --oneline` shows it without opening a file.
+	it("carries the Vision median too, since the OS can move it with nothing changed here", () => {
+		const verdict = mergeParts({
+			parts: {
+				vision: { status: "pass", measuredAt: NOW, detail: { backends: { "vision/apple": { status: "pass", pages: {}, medianCer: 0.174 } } } },
+			},
+			previous: null,
+			now: NOW,
+			run: RUN,
+		});
+		expect(commitSubject(verdict)).toBe("chore(nightly): ocr unknown · perf unknown · vision pass (median CER 17.4 %) [skip ci]");
 	});
 });

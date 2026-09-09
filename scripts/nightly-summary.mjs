@@ -8,8 +8,8 @@ import { existsSync, readFileSync } from "node:fs";
 
 const pct = (cer) => (typeof cer === "number" ? `${(cer * 100).toFixed(1)} %` : "—");
 
-export function renderSummary(part, baselineEntries) {
-	const lines = [`## OCR — ${part.status}`, ""];
+export function renderSummary(part, baselineEntries, title = "OCR") {
+	const lines = [`## ${title} — ${part.status}`, ""];
 	for (const [backendKey, backend] of Object.entries(part.detail?.backends ?? {})) {
 		lines.push(`### ${backendKey} — ${backend.status}${backend.reason ? ` (${backend.reason})` : ""}`, "");
 		const pages = Object.entries(backend.pages ?? {});
@@ -33,7 +33,10 @@ export function renderSummary(part, baselineEntries) {
 
 const invokedDirectly = process.argv[1]?.endsWith("nightly-summary.mjs") ?? false;
 if (invokedDirectly) {
-	const part = JSON.parse(readFileSync("nightly-parts/ocr.json", "utf8"));
+	// The Vision job renders the same table from its own part; the shape is identical and only the
+	// heading differs, so one renderer serves both.
+	const path = process.argv[2] ?? "nightly-parts/ocr.json";
+	const part = JSON.parse(readFileSync(path, "utf8"));
 	const baseline = existsSync(".ocr-baseline.json") ? (JSON.parse(readFileSync(".ocr-baseline.json", "utf8")).entries ?? {}) : {};
-	console.log(renderSummary(part, baseline));
+	console.log(renderSummary(part, baseline, path.includes("vision") ? "Apple Vision" : "OCR"));
 }
