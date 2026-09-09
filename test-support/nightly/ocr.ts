@@ -7,7 +7,7 @@
 // backend classes apply `sanitizeTranscript` themselves), and the image sent is the shipped
 // rasterizer's own output. No parallel request-building code exists here.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { characterErrorRate, normalizeForCer, structureObservation } from "../cer";
 
@@ -139,6 +139,24 @@ export interface BaselineEntry {
  * checked rather than counted: a page whose file went missing must fail the run, not shrink the set.
  */
 export const REFERENCE_PAGES = 15;
+
+/**
+ * `.ocr-baseline.json` regrouped by backend: `{ "openrouter/openai/gpt-4o": { "05": { cer, spread } } }`.
+ *
+ * Lives here rather than beside one CLI because two of them read it now -- the cloud half and the
+ * Apple Vision half, which runs on a different runner and shares the same discipline. An absent file
+ * is an empty baseline, which is what a first night has.
+ */
+export function loadBaseline(path: string): Record<string, Record<string, BaselineEntry | undefined>> {
+	if (!existsSync(path)) return {};
+	const raw = JSON.parse(readFileSync(path, "utf8")) as { entries?: Record<string, { cer: number; spread?: number }> };
+	const byBackend: Record<string, Record<string, BaselineEntry | undefined>> = {};
+	for (const [key, entry] of Object.entries(raw.entries ?? {})) {
+		const cut = key.lastIndexOf("/");
+		(byBackend[key.slice(0, cut)] ??= {})[key.slice(cut + 1)] = { cer: entry.cer, spread: entry.spread };
+	}
+	return byBackend;
+}
 
 export function loadReferencePages(dir: string): ReferencePage[] {
 	const files = readdirSync(dir).filter((name) => name.endsWith(".md")).sort();

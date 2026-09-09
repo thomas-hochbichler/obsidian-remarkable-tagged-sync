@@ -262,3 +262,10 @@
       layer: unit
       file: scripts/bundled-scripts.test.mjs
       test: "the scripts that bundle > resolves every import of inspect:doc"
+
+    - id: R4.8
+      scenario: The nightly's Apple Vision entry point
+      expect: The same, and it reaches further into `src/` than the OCR one -- the Vision backend pulls in the rasterizer, the margin-note clustering and the text layout, and it is the only entry point that mutates the `obsidian` stub's `Platform` to reach a macOS-only path
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of nightly:vision"

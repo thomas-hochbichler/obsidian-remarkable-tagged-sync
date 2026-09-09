@@ -302,6 +302,13 @@
       file: scripts/nightly-merge.test.mjs
       test: "the commit subject > carries the perf number too, so the render cost has its own drift curve in the log"
 
+    - id: N5.7
+      scenario: A night that measured the Apple Vision part
+      expect: The commit subject carries its median CER as well. Vision's model ships inside macOS and picks its own request revision, so it is the one backend that can change with nothing changed in this repo -- the drift belongs where `git log --oneline` shows it without opening a file
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "the commit subject > carries the Vision median too, since the OS can move it with nothing changed here"
+
 - feature: N6
   name: The OCR baseline and its change discipline
   code: scripts/ocr-baseline.mjs

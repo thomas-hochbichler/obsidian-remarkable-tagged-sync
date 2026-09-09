@@ -12,6 +12,7 @@ const verdict = (parts) => ({
 	parts: {
 		ocr: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
 		perf: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
+		vision: { status: "pass", measuredAt: hoursAgo(9), detail: {} },
 		...parts,
 	},
 });
@@ -20,7 +21,7 @@ describe("judgeVerdict", () => {
 	it("lets a release through when every part of last night measured and passed", () => {
 		const { problems, notes } = judgeVerdict(verdict(), NOW);
 		expect(problems).toEqual([]);
-		expect(notes).toEqual(["ocr: pass, measured 9 h ago", "perf: pass, measured 9 h ago"]);
+		expect(notes).toEqual(["ocr: pass, measured 9 h ago", "perf: pass, measured 9 h ago", "vision: pass, measured 9 h ago"]);
 	});
 
 	it("blocks the release when a part found the world broken", () => {

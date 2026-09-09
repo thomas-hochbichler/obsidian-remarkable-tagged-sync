@@ -29,7 +29,13 @@ export const STALE_HOURS = 72;
 // `contract` was deliberately dropped 2026-08-24: measuring the live reMarkable and Polar APIs
 // nightly needs a throwaway account and a test licence key held as CI secrets, and the user ruled
 // that cost out. If it ever returns, it returns as its own effort, not by re-adding a name here.
-export const PARTS = ["ocr", "perf"];
+// `vision` joined on 2026-09-09: Apple Vision is the OCR backend most users already have, and it had
+// never been measured on the published corpus. Its own part rather than a backend inside `ocr`,
+// because it is its own job on its own runner class -- a dead Vision job should read as "the Vision
+// job did not report", not as "the OCR measurement is unknown". A verdict written before that date
+// has no `vision` part, and the gate will say so until the first night that measures one; that is
+// the correct reading -- run `gh workflow run nightly.yml` rather than backfilling a measurement.
+export const PARTS = ["ocr", "perf", "vision"];
 const TOP_KEYS = ["schema", "commit", "runId", "runUrl", "parts"];
 const PART_KEYS = ["status", "measuredAt", "lastMeasuredAt", "detail"];
 const STATUSES = ["pass", "degraded", "unknown", "catastrophe"];

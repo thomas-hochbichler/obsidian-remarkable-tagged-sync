@@ -7,7 +7,7 @@
 // `nightly-parts/artifacts/` for the run's artifact upload; they never enter the part file.
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
 import { OpenAiCompatOcrBackend } from "../../src/openai-compat-ocr-backend";
@@ -20,6 +20,7 @@ import {
 	NIGHTLY_BACKENDS,
 	type NightlyBackendSpec,
 	type PageEnvelope,
+	loadBaseline,
 	evaluateBackend,
 	loadReferencePages,
 	mergeBackendStatuses,
@@ -79,23 +80,11 @@ function pinningFetch(spec: NightlyBackendSpec, statuses: number[], envelopes: P
 	};
 }
 
-function loadBaseline(): Record<string, Record<string, BaselineEntry | undefined>> {
-	const path = join(process.cwd(), ".ocr-baseline.json");
-	if (!existsSync(path)) return {};
-	const raw = JSON.parse(readFileSync(path, "utf8")) as { entries?: Record<string, { cer: number; spread?: number }> };
-	const byBackend: Record<string, Record<string, BaselineEntry | undefined>> = {};
-	for (const [key, entry] of Object.entries(raw.entries ?? {})) {
-		const cut = key.lastIndexOf("/");
-		(byBackend[key.slice(0, cut)] ??= {})[key.slice(cut + 1)] = { cer: entry.cer, spread: entry.spread };
-	}
-	return byBackend;
-}
-
 async function main() {
 	const pages = loadReferencePages(join(FIXTURES, "pages"));
 	const sceneFiles = readdirSync(join(FIXTURES, "scenes")).filter((name) => name.endsWith(".rm")).sort();
 	const scenes = new Map(sceneFiles.map((name) => [name.slice(0, 2), parseRmV6(readFileSync(join(FIXTURES, "scenes", name)))]));
-	const baseline = loadBaseline();
+	const baseline = loadBaseline(join(process.cwd(), ".ocr-baseline.json"));
 	const apiKey = process.env.OPENROUTER_API_KEY ?? "";
 
 	mkdirSync(join(OUT_DIR, "artifacts"), { recursive: true });

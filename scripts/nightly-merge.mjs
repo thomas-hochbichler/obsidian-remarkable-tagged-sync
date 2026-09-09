@@ -41,7 +41,7 @@ export function mergeParts({ parts, previous, now, run }) {
 	return { schema: 1, commit: run.commit, runId: run.runId, runUrl: run.runUrl, parts: merged };
 }
 
-/** `chore(nightly): ocr pass (median CER 3.9 %) · perf pass (render 210 ms) [skip ci]` */
+/** `chore(nightly): ocr pass (median CER 3.9 %) · perf pass (render 210 ms) · vision pass (median CER 17.4 %) [skip ci]` */
 export function commitSubject(verdict) {
 	const pieces = PARTS.map((name) => {
 		const part = verdict.parts[name];
@@ -52,7 +52,7 @@ export function commitSubject(verdict) {
 			.sort((a, b) => a - b);
 		const median = medians.length === 0 ? null : medians[Math.floor((medians.length - 1) / 2)];
 		let number = "";
-		if (name === "ocr" && median !== null) number = ` (median CER ${(median * 100).toFixed(1)} %)`;
+		if ((name === "ocr" || name === "vision") && median !== null) number = ` (median CER ${(median * 100).toFixed(1)} %)`;
 		const renderMs = part.detail?.metrics?.renderPagesToPdfMs;
 		if (name === "perf" && typeof renderMs === "number") number = ` (render ${Math.round(renderMs)} ms)`;
 		return `${name} ${part.status}${number}`;
