@@ -186,8 +186,8 @@
       test: "classifying a failed page (§4.4) > treats a 400 as an abort -- our request shape was rejected, a real break"
 
     - id: N4.3
-      scenario: A provider answers 401, 402, 429 or 5xx
-      expect: Unavailable -- not evidence the plugin is broken, so unknown and never blocking on its own
+      scenario: A provider answers 401, 402, 404, 429 or 5xx
+      expect: Unavailable -- not evidence the plugin is broken, so unknown and never blocking on its own. 404 belongs here since the endpoints were pinned, because OpenRouter answers a pinned endpoint it cannot currently route to with `No allowed providers are available` -- that is capacity, not a broken request -- `deepinfra/fp8` was listed among the model's endpoints before and after the night it refused. A permanently wrong tag answers 404 too and does not need to be told apart, because a backend that never measures is caught by the second clock rather than by calling one outage a catastrophe
       layer: unit
       file: test-support/nightly/ocr.test.ts
       test: "classifying a failed page (§4.4) > treats auth, quota and server trouble as unavailable -- the provider could not answer tonight"

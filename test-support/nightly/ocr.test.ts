@@ -28,7 +28,7 @@ describe("classifying a failed page (§4.4)", () => {
 	});
 
 	it("treats auth, quota and server trouble as unavailable -- the provider could not answer tonight", () => {
-		for (const status of [401, 402, 429, 500, 503]) {
+		for (const status of [401, 402, 404, 429, 500, 503]) {
 			expect(classifyFailure([status]).problem).toBe("unavailable");
 		}
 	});

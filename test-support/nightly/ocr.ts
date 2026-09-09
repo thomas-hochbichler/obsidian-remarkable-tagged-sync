@@ -65,7 +65,13 @@ export const NIGHTLY_BACKENDS: NightlyBackendSpec[] = [
 	// Added 2026-09-09 (spec §2.1): the three cloud models chosen for what their accuracy costs.
 	{ key: "openrouter/google/gemini-3.1-flash-lite", model: "google/gemini-3.1-flash-lite", provider: "google-ai-studio" },
 	{ key: "openrouter/qwen/qwen3-vl-235b-a22b-instruct", model: "qwen/qwen3-vl-235b-a22b-instruct", provider: "deepinfra/fp8" },
-	{ key: "openrouter/google/gemma-4-31b-it", model: "google/gemma-4-31b-it", provider: "deepinfra/fp8" },
+	// `chutes/fp4` rather than DeepInfra: both of DeepInfra's gemma routes have refused this workload
+	// within one day -- fp4 rate-limits every image request ("temporarily rate-limited upstream"; text
+	// goes through), and fp8 answered `404 No allowed providers` on the first pinned night while still
+	// being listed among the model's endpoints. Chutes completed all fifteen pages twice. Nothing is
+	// lost by taking fp4 here: fed provably identical image tokens, fp4 against fp8 is six ties, three
+	// and four over thirteen pages -- indistinguishable but for one page (spec §8.3).
+	{ key: "openrouter/google/gemma-4-31b-it", model: "google/gemma-4-31b-it", provider: "chutes/fp4" },
 	// Open weights, hosted (spec §2.2): the 32 and 64 GB tiers, measured through the same corpus so a
 	// reader can compare the model they could run against the ones they would rent. Neither is what a
 	// laptop runs -- `qwen3-vl-8b` has no 4-bit route at all -- so both are upper bounds, and §3.4
@@ -190,7 +196,15 @@ export function loadReferencePages(dir: string): ReferencePage[] {
 export function classifyFailure(httpStatuses: number[]): { problem: "abort" | "unavailable"; reason: string } {
 	const aborting = httpStatuses.find((status) => status === 400);
 	if (aborting !== undefined) return { problem: "abort", reason: "HTTP 400 -- our request shape was rejected" };
-	const transient = httpStatuses.find((status) => status === 401 || status === 402 || status === 429 || status >= 500);
+	// 404 joined this list on 2026-09-09, the first night the endpoints were pinned. OpenRouter answers
+	// a pinned endpoint it cannot currently route to with `404 No allowed providers are available`, and
+	// that is capacity, not a broken request: `deepinfra/fp8` was listed among the model's endpoints
+	// before and after the night it refused. Without it here a 404 fell through to "network error",
+	// the most misleading label available -- nothing about the network was wrong. A tag that is simply
+	// wrong answers 404 too and is *not* distinguishable from here; it does not need to be, because a
+	// backend that never measures is caught by the second clock (§5.2, three nights) rather than by
+	// calling one night's outage a catastrophe.
+	const transient = httpStatuses.find((status) => status === 401 || status === 402 || status === 404 || status === 429 || status >= 500);
 	if (transient !== undefined) return { problem: "unavailable", reason: `HTTP ${transient}` };
 	// No HTTP status recorded at all: the fetch itself failed, or a 200 body would not parse. The
 	// first is transient; the second is an envelope change. Without a status we cannot tell them
