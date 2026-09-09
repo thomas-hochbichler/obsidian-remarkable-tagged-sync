@@ -202,6 +202,30 @@ describe("OpenAiCompatOcrBackend", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
+	// Constructed WITHOUT `sleepFn`, which is the whole point: every other retry test injects one, so
+	// the default was never executed and nobody noticed it reached for `window.setTimeout`. On Node
+	// -- the nightly, and every suite -- that threw on the first 429, and the page was lost and
+	// reported as a provider outage instead of being retried.
+	it("waits out a rate limit with its own default sleep, off Obsidian", async () => {
+		vi.useFakeTimers();
+		try {
+			const rateLimited = { ...jsonResponse(429, {}), headers: { get: () => null } } as unknown as Response;
+			fetchMock.mockResolvedValueOnce(rateLimited);
+			fetchMock.mockResolvedValue(chatResponse("read on the second ask"));
+			const backend = new OpenAiCompatOcrBackend({ id: "openrouter", baseURL: "http://x/v1", apiKey: "k", model: "m", fetchFn: fetchMock });
+
+			const running = backend.recognize([page()]);
+			// The first backoff, with no `Retry-After` to honour: RETRY_BASE_MS * 2^0.
+			await vi.advanceTimersByTimeAsync(1_000);
+			const result = await running;
+
+			expect(result.pages).toEqual([{ status: "ok", text: "read on the second ask" }]);
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	// Found in the Demo vault: a page scrolled far past one screen rasterizes 325 x 7082 px, and LM
 	// Studio's model was still `GENERATING` forty minutes later. Nothing bounded the wait, so the run
 	// never ended and never said anything -- disabling the plugin was the only way out.

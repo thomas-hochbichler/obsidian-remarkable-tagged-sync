@@ -223,7 +223,15 @@ export type LlmPageOutcome = { kind: "ok"; text: string } | { kind: "failed" };
 /** Injectable so a test does not actually wait out a backoff. */
 export type Sleep = (ms: number) => Promise<void>;
 
-const realSleep: Sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+/**
+ * Bare `setTimeout`, for the reason `withTimeout` below gives at length: there is no DOM in a delay,
+ * and this file runs on Node as well as in Obsidian. `window.setTimeout` here threw
+ * `ReferenceError: window is not defined` in the nightly on the first 429 of every run, so the
+ * backoff this default exists for had never once executed outside a test that replaced it. Found
+ * 2026-09-09 while measuring precision through this adapter: eleven of fifteen rate-limited pages
+ * were lost rather than retried, and reported as "the provider could not answer" instead.
+ */
+const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * `Retry-After` in ms, in both forms the HTTP spec allows (delta-seconds and a date), or the
