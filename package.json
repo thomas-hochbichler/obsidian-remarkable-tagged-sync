@@ -19,6 +19,7 @@
     "nightly:vision": "esbuild test-support/nightly/vision-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-vision.cjs && node /tmp/tagged-sync-nightly-vision.cjs",
     "nightly:perf": "esbuild test-support/nightly/perf-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-perf.cjs && node /tmp/tagged-sync-nightly-perf.cjs",
     "ocr:curve": "node scripts/ocr-curve.mjs",
+    "images:update": "esbuild test-support/reference-images/update-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-images-update.cjs && node /tmp/tagged-sync-images-update.cjs",
     "goldens:update": "esbuild test-support/golden/update-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-goldens-update.cjs && node /tmp/tagged-sync-goldens-update.cjs",
     "freeze-state": "esbuild scripts/legacy-state/freeze.ts --bundle --platform=node --format=esm --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --outfile=/tmp/tagged-sync-freeze-state.mjs && node /tmp/tagged-sync-freeze-state.mjs"
   },

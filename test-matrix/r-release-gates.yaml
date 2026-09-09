@@ -210,6 +210,32 @@
 # The scripts nothing else runs. `tsc` does not see them as bundles, no test imports them, and the
 # only things that reach them are a scheduled nightly and a maintainer with a question -- so a broken
 # one reports nothing rather than failing. That is how the 2026-08-25 night came back `unknown`.
+- feature: R11
+  name: The published input matches the measured one
+  code: test-support/reference-images/render.ts
+  tier: free
+  scenarios:
+    - id: R11.1
+      scenario: The rasterizer or the PNG encoder changes and the committed reference images are not regenerated
+      expect: Caught on the next commit, naming the page and how many pixels moved. The images are the *input* every published CER describes -- a stale one shows a stranger a page that was never sent to anything, which is the silent drift `renderVersion` exists to catch. Pixels are compared rather than file bytes -- the encoding is a build detail a zlib version could change on its own, while the pixels are the claim
+      layer: unit
+      file: test-support/reference-images/reference-images.test.ts
+      test: "reference images > are the images the backends were given"
+
+    - id: R11.2
+      scenario: The same raster is encoded twice
+      expect: Byte-identical, so a diff in a committed image is always a change and never noise -- the same property the render goldens rest on
+      layer: unit
+      file: test-support/reference-images/reference-images.test.ts
+      test: "reference images > encodes the same image byte-identically twice, so a diff is always a change and never noise"
+
+    - id: R11.3
+      scenario: Fifteen full-resolution page images are committed to a repository users clone
+      expect: Under 2 MB in total. `src/png-encoder.ts` writes uncompressed deflate blocks on purpose -- it hand-rolls the format rather than pulling a compression dependency into the plugin -- and these fifteen pages come to 20 MB that way, in every clone and again in the history on every rasterizer change. A build script has `node:zlib`, so they are written with real deflate at 0.30 MB and the same pixels
+      layer: unit
+      file: test-support/reference-images/reference-images.test.ts
+      test: "reference images > stays small enough to live in the repo"
+
 - feature: R4
   name: The scripts that bundle still bundle
   code: package.json
@@ -269,3 +295,10 @@
       layer: unit
       file: scripts/bundled-scripts.test.mjs
       test: "the scripts that bundle > resolves every import of nightly:vision"
+
+    - id: R4.9
+      scenario: The reference-image generator
+      expect: The same. It is run only when the drawing changes, which is the moment its output is published as the input every number on the accuracy page describes
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of images:update"
