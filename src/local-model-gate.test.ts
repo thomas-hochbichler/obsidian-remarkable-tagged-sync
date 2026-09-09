@@ -106,3 +106,23 @@ describe("the three strings (§4.3, §6.2)", () => {
 		for (const value of strings) expect(value.startsWith("Local model — ")).toBe(true);
 	});
 });
+
+/**
+ * The floors move with the model (ticket 20). Two generations ship and their working sets differ by
+ * nearly a factor of two, so one constant would either shut a 16 GB Mac out of a model it runs
+ * comfortably or let one start a model that swaps.
+ */
+describe("the floor follows the generation", () => {
+	const mac = (gb: number) => ({ platform: "darwin", arch: "arm64", totalMemoryBytes: gb * 1024 ** 3 });
+
+	it("offers a 16 GB Mac the newer model, which the older model's floor shut out", () => {
+		expect(localModelBlock(mac(16), { darwin: 16, win32: 24 })).toBeNull();
+		expect(localModelBlock(mac(16), { darwin: 18, win32: 24 })).toEqual({ kind: "memory", floorGb: 18, actualGb: 16 });
+	});
+
+	// Unchanged behaviour for anyone already running the model that shipped first.
+	it("keeps the shipped floors when no generation is named", () => {
+		expect(localModelBlock(mac(18))).toBeNull();
+		expect(localModelBlock(mac(16))).toEqual({ kind: "memory", floorGb: 18, actualGb: 16 });
+	});
+});

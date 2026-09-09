@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MODEL_GENERATIONS } from "./local-model-artefacts";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
 import { ENOUGH_PAGES_TO_MEASURE, readLocalModelSettings } from "./local-model-settings";
 import type { RmPage } from "./rm-parser";
@@ -35,7 +36,7 @@ function textOutcome(text: string, durationMs = 14_900): LocalPageOutcome {
 
 function backendOver(outcomes: LocalPageOutcome[], blob: Record<string, unknown> = {}) {
 	const runPage = vi.fn(async () => outcomes.shift() ?? textOutcome(""));
-	return { backend: new LocalOcrBackend({ runPage, settings: blob }), runPage, blob };
+	return { backend: new LocalOcrBackend({ runPage, settings: blob , generation: MODEL_GENERATIONS[0] }), runPage, blob };
 }
 
 describe("LocalOcrBackend", () => {
@@ -67,7 +68,7 @@ describe("LocalOcrBackend", () => {
 			inFlight--;
 			return textOutcome("x");
 		});
-		const backend = new LocalOcrBackend({ runPage, settings: {} });
+		const backend = new LocalOcrBackend({ runPage, settings: {}, generation: MODEL_GENERATIONS[0] });
 
 		await backend.recognize([page(), page(), page()]);
 		expect(runPage).toHaveBeenCalledTimes(3);

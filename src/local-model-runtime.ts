@@ -6,17 +6,23 @@
 
 import { Platform } from "obsidian";
 import {
+	chooseGeneration,
+	holdsGeneration,
+	MODEL_GENERATIONS,
+	type ModelDirectoryFacts,
+	type ModelGeneration,
+} from "./local-model-artefacts";
+import {
 	deriveLocalModelState,
 	formatLock,
 	localModelPaths,
-	MMPROJ_BYTES,
 	MMPROJ_FILE,
-	MODEL_BYTES,
 	MODEL_FILE,
 	parseLock,
 	PART_SUFFIX,
 	type LocalModelPaths,
 	type LocalModelPlatform,
+	type ExpectedModelBytes,
 	type LocalModelSnapshot,
 	type LocalModelState,
 } from "./local-model-store";
@@ -43,8 +49,8 @@ export function localModelPlatform(): LocalModelPlatform | null {
 	return platform === "darwin" || platform === "win32" ? platform : null;
 }
 
-/** The paths for this machine, or null where the backend is not offered. */
-export function resolveLocalModelPaths(pluginId: string): LocalModelPaths | null {
+/** The paths for one named model directory on this machine, or null where the backend is not offered. */
+function pathsFor(pluginId: string, modelDir: string): LocalModelPaths | null {
 	const platform = localModelPlatform();
 	if (!platform) return null;
 	const os = nodeRequire("os");
@@ -53,8 +59,35 @@ export function resolveLocalModelPaths(pluginId: string): LocalModelPaths | null
 		home: os.homedir(),
 		localAppData: process.env.LOCALAPPDATA,
 		pluginId,
+		modelDir,
 		join: (...parts) => path.join(...parts),
 	});
+}
+
+/**
+ * Which model this install uses and where its files are (ticket 20).
+ *
+ * Two passes over the same root, and the first one is unavoidable: the directories can only be listed
+ * once a path into `models/` exists, so the newest generation supplies a provisional path, the
+ * directories decide, and the answer is rebuilt around the winner. The provisional generation is
+ * never returned -- it is scaffolding for a `dirname`.
+ */
+export function resolveLocalModel(pluginId: string): { paths: LocalModelPaths; generation: ModelGeneration } | null {
+	const provisional = pathsFor(pluginId, MODEL_GENERATIONS[0].dir);
+	if (!provisional) return null;
+	const generation = chooseGeneration(readModelDirectories(provisional));
+	const paths = pathsFor(pluginId, generation.dir);
+	return paths ? { paths, generation } : null;
+}
+
+/** The paths one named generation would use, whether or not it is installed -- where an update lands. */
+export function pathsForGeneration(pluginId: string, generation: ModelGeneration): LocalModelPaths | null {
+	return pathsFor(pluginId, generation.dir);
+}
+
+/** The paths for the generation this install resolved to, or null where the backend is not offered. */
+export function resolveLocalModelPaths(pluginId: string): LocalModelPaths | null {
+	return resolveLocalModel(pluginId)?.paths ?? null;
 }
 
 /** Byte size, or null when the file is not there. Any other error is also "not usable", by design. */
@@ -125,9 +158,8 @@ export function readLocalModelSnapshot(paths: LocalModelPaths): LocalModelSnapsh
 	};
 }
 
-/** One model directory beside the pinned one, described by what it holds. */
-export interface ModelDirectoryEntry {
-	name: string;
+/** One model directory, described by what it holds. `complete` means it would still transcribe. */
+export interface ModelDirectoryEntry extends ModelDirectoryFacts {
 	hasPart: boolean;
 	complete: boolean;
 }
@@ -154,10 +186,17 @@ export function readModelDirectories(paths: LocalModelPaths): ModelDirectoryEntr
 	}
 	return names.map((name) => {
 		const directory = path.join(modelsRoot, name);
-		return {
+		const facts: ModelDirectoryFacts = {
 			name,
+			modelBytes: sizeOf(path.join(directory, MODEL_FILE)),
+			mmprojBytes: sizeOf(path.join(directory, MMPROJ_FILE)),
+		};
+		return {
+			...facts,
 			hasPart: exists(path.join(directory, MODEL_FILE + PART_SUFFIX)) || exists(path.join(directory, MMPROJ_FILE + PART_SUFFIX)),
-			complete: sizeOf(path.join(directory, MODEL_FILE)) === MODEL_BYTES && sizeOf(path.join(directory, MMPROJ_FILE)) === MMPROJ_BYTES,
+			// Against every generation this build knows, not against one pinned pair: a complete copy of
+			// the older model still transcribes, and calling it incomplete is what would delete it.
+			complete: MODEL_GENERATIONS.some((generation) => holdsGeneration(facts, generation)),
 		};
 	});
 }
@@ -183,6 +222,6 @@ export function machineFacts(): { platform: string; arch: string; totalMemoryByt
  * the engine, a user clearing space -- has to be noticed, and a remembered "ready" is precisely what
  * would hide it.
  */
-export function readLocalModelState(paths: LocalModelPaths, nowMs: number): LocalModelState {
-	return deriveLocalModelState(readLocalModelSnapshot(paths), nowMs);
+export function readLocalModelState(paths: LocalModelPaths, nowMs: number, expected: ExpectedModelBytes): LocalModelState {
+	return deriveLocalModelState(readLocalModelSnapshot(paths), nowMs, expected);
 }

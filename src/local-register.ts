@@ -7,7 +7,7 @@
 // place that knows they belong to each other.
 
 import { Notice, Platform, Setting } from "obsidian";
-import { BACKGROUND_CONSENT_DESC, cardCopy, deleteConfirmation, type LocalCardState } from "./local-model-card";
+import { BACKGROUND_CONSENT_DESC, cardCopy, deleteConfirmation, type LocalCardState, type NewerModelOffer } from "./local-model-card";
 import { planCleanup } from "./local-model-download";
 import { localModelBlock, localModelUnavailableLabel, NOT_READY_LABEL } from "./local-model-gate";
 import {
@@ -24,10 +24,13 @@ import {
 	readLocalModelSnapshot,
 	readModelDirectories,
 	removeModelDirectory,
+	pathsForGeneration,
+	resolveLocalModel,
 	resolveLocalModelPaths,
 } from "./local-model-runtime";
 import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent } from "./local-model-settings";
-import { deriveLocalModelState, type LocalModelPaths, MODEL_DIR } from "./local-model-store";
+import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
+import { type ModelGeneration, MODEL_GENERATIONS, newerGeneration, totalDownloadBytes } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
 import { type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
@@ -57,10 +60,18 @@ export function noteLocalRuntimeFailure(message: string): void {
 	runtimeFailure = message;
 }
 
-/** Why this machine cannot run the model, or null. Null on a machine where node is not available. */
+/**
+ * Why this machine cannot run the model, or null. Null on a machine where node is not available.
+ *
+ * Judged against the floors of the generation this install would actually use: an install holding the
+ * 7B is asked whether it can run the 7B, and a machine with nothing installed is asked about the model
+ * a fresh install gets. Using one constant here would shut a 16 GB Mac out of a model measured at
+ * 8.3 GB because a different, larger model needs 18.
+ */
 function blockForThisMachine(): ReturnType<typeof localModelBlock> {
 	const machine = machineFacts();
-	return machine ? localModelBlock(machine) : { kind: "architecture" };
+	if (!machine) return { kind: "architecture" };
+	return localModelBlock(machine, (resolveLocalModel(PLUGIN_ID)?.generation ?? MODEL_GENERATIONS[0]).floorGb);
 }
 
 /** True where the backend could actually run, which is what decides whether it gets a card at all. */
@@ -74,7 +85,7 @@ function machineCanRun(): boolean {
  * Never cached: a model deleted or truncated by something outside the plugin has to be noticed, and a
  * remembered "ready" is precisely what would hide it.
  */
-function currentCardState(paths: LocalModelPaths): LocalCardState {
+function currentCardState(paths: LocalModelPaths, generation: ModelGeneration): LocalCardState {
 	const inFlight = download?.progress();
 	if (inFlight) {
 		switch (inFlight.phase) {
@@ -105,7 +116,7 @@ function currentCardState(paths: LocalModelPaths): LocalCardState {
 	}
 
 	const snapshot = readLocalModelSnapshot(paths);
-	const state = deriveLocalModelState(snapshot, Date.now());
+	const state = deriveLocalModelState(snapshot, Date.now(), generation);
 	switch (state) {
 		case "corrupt":
 			return { kind: "corrupt" };
@@ -117,31 +128,47 @@ function currentCardState(paths: LocalModelPaths): LocalCardState {
 		case "verifying":
 			return { kind: "verifying" };
 		case "removed":
-			return { kind: "removed" };
+			return { kind: "removed", modelBytes: generation.modelBytes + generation.mmprojBytes };
 		case "ready":
-			return runtimeFailure ? { kind: "runtime-failed", message: runtimeFailure } : { kind: "ready" };
+			if (runtimeFailure) return { kind: "runtime-failed", message: runtimeFailure };
+			// The offer, and only an offer: a working model is never displaced by a newer one without the
+			// user pressing the button (ticket 20).
+			return { kind: "ready", newer: newerOffer(generation) };
 		case "absent":
-			return supersededModelPresent(paths) ? { kind: "update-available" } : { kind: "absent" };
+			// Unreachable while a complete older model is present -- `chooseGeneration` would have picked
+			// it and this would read `ready`. What is left is a genuine fresh install.
+			return { kind: "absent" };
 	}
 }
 
 /**
- * Whether a complete model of a *superseded* version is sitting beside the pinned one.
+ * What to say about a newer model, when the one in use is not the newest.
  *
- * That is what "update available" means here: the plugin version is the model version (§5.2), so an
- * update is a release that ships new constants next to a model that still works and is still the
- * fallback if the new download fails.
+ * Both figures come from the generation records, so the card quotes what *these* files measured on the
+ * fifteen public reference pages rather than a claim from a model card.
  */
-function supersededModelPresent(paths: LocalModelPaths): boolean {
-	const plan = planCleanup(readModelDirectories(paths), MODEL_DIR);
-	// A partial of a version this build can no longer finish is provably useless and goes now; a
-	// complete one is what makes this an update rather than a fresh install.
+function newerOffer(inUse: ModelGeneration): NewerModelOffer | null {
+	const newer = newerGeneration(inUse);
+	const platform = localModelPlatform();
+	if (!newer || !platform) return null;
+	return {
+		label: newer.label,
+		downloadBytes: totalDownloadBytes(platform, newer),
+		medianCer: newer.measured.medianCer,
+		currentMedianCer: inUse.measured.medianCer,
+	};
+}
+
+/** Deletes the partials of a model this build can no longer finish; leaves anything complete alone. */
+function sweepUnfinishedDirectories(paths: LocalModelPaths, inUse: ModelGeneration): void {
+	const plan = planCleanup(readModelDirectories(paths), inUse.dir);
+	// Provably useless: no URL in this build could finish it. A *complete* directory is never touched
+	// here -- it is either the model in use or the one the user can fall back to.
 	for (const name of plan.deleteSilently) removeModelDirectory(paths, name);
-	return plan.offerToDelete.length > 0;
 }
 
 /** Starts (or restarts) the download and re-renders as it moves. */
-function beginDownload(paths: LocalModelPaths, rerender: () => void): void {
+function beginDownload(paths: LocalModelPaths, rerender: () => void, generation: ModelGeneration = MODEL_GENERATIONS[0]): void {
 	const platform = localModelPlatform();
 	if (!platform) return;
 	if (isLocalModelBusy(paths)) {
@@ -153,18 +180,25 @@ function beginDownload(paths: LocalModelPaths, rerender: () => void): void {
 		return;
 	}
 	runtimeFailure = null;
-	download = startLocalModelDownload(paths, platform, rerender);
+	download = startLocalModelDownload(paths, platform, rerender, generation);
 	void download.finished.then(() => rerender());
 	rerender();
 }
 
 /** Renders the setup card: the state, its copy, its buttons, and the consent checkbox where it belongs. */
 function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, rerender: () => void): void {
-	const paths = resolveLocalModelPaths(PLUGIN_ID);
+	const resolved = resolveLocalModel(PLUGIN_ID);
 	const platform = localModelPlatform();
-	if (!paths || !platform) return;
+	if (!resolved || !platform) return;
+	const { paths, generation } = resolved;
+	// A partial of a model no build can finish any more is provably useless; anything complete is left
+	// exactly where it is, whether it is the model in use or the one to fall back to.
+	sweepUnfinishedDirectories(paths, generation);
 
-	const state = currentCardState(paths);
+	const state = currentCardState(paths, generation);
+	// Where the newer model would land, resolved once so the update button does not have to.
+	const newer = newerGeneration(generation);
+	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
 	// A ready model has nothing left to set up: the backend is selectable, so the dropdown is where it
 	// belongs now. Its speed, its misread caveat and its delete button are about a backend in use, and
 	// beside a different selected backend they only add a screenful. Every other state stays -- an
@@ -202,9 +236,13 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 					switch (action.id) {
 						case "download":
 						case "resume":
-						case "update":
 						case "retry-runtime":
-							beginDownload(paths, rerender);
+							beginDownload(paths, rerender, generation);
+							break;
+						// The one action that writes into a *different* directory than the one in use: the
+						// newer model installs beside the working one, which is what makes it an offer.
+						case "update":
+							beginDownload(newerPaths ?? paths, rerender, newerGeneration(generation) ?? generation);
 							break;
 						case "cancel":
 							download?.cancel();
@@ -282,10 +320,10 @@ if (offeredOnThisPlatform()) {
 				const platform = Platform.isDesktop ? (require("os") as typeof import("os")).platform() : "";
 				return localModelUnavailableLabel(block, platform);
 			}
-			const paths = resolveLocalModelPaths(PLUGIN_ID);
-			if (!paths) return null;
-			const snapshot = readLocalModelSnapshot(paths);
-			if (deriveLocalModelState(snapshot, Date.now()) === "ready" && !runtimeFailure) return null;
+			const resolved = resolveLocalModel(PLUGIN_ID);
+			if (!resolved) return null;
+			const snapshot = readLocalModelSnapshot(resolved.paths);
+			if (deriveLocalModelState(snapshot, Date.now(), resolved.generation) === "ready" && !runtimeFailure) return null;
 			// The one lifecycle string: the card below says which of the five reasons it is.
 			return NOT_READY_LABEL;
 		},

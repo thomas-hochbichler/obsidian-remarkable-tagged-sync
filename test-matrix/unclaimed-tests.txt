@@ -328,9 +328,7 @@ src/local-model-download.test.ts :: planResume > resumes from the byte after the
 src/local-model-download.test.ts :: planResume > starts from zero when nothing is on disk
 src/local-model-download.test.ts :: planResume > throws away a part that is longer than the pinned size
 src/local-model-download.test.ts :: the pinned table > pins a full-length SHA-256 and an absolute URL for every artefact
-src/local-model-download.test.ts :: the pinned table > resolves the model at a commit revision rather than a branch
 src/local-model-download.test.ts :: the pinned table > ships one Windows artefact, arm64 and CPU
-src/local-model-download.test.ts :: the pinned table > totals the 5.5 GB the consent copy quotes
 src/local-model-download.test.ts :: verificationOutcome > accepts a file whose hash matches
 src/local-model-download.test.ts :: verificationOutcome > gives up permanently after the second
 src/local-model-download.test.ts :: verificationOutcome > re-downloads once after the first mismatch

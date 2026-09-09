@@ -6,7 +6,7 @@
 import { Platform } from "obsidian";
 import { sanitizeTranscript, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
-import { readLocalModelState, readLock, releaseLock, resolveLocalModelPaths, writeLock } from "./local-model-runtime";
+import { readLocalModelState, readLock, releaseLock, resolveLocalModel, writeLock } from "./local-model-runtime";
 import { isTranscriptionInProgress, LOCK_HEARTBEAT_MS, type LocalModelPaths } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
 
@@ -189,9 +189,10 @@ export function createLocalOcrBackend(
 	settings: BackendSettings,
 	onRuntimeFailure?: (message: string) => void,
 ): LocalOcrBackend | null {
-	const paths = resolveLocalModelPaths(pluginId);
-	if (!paths) return null;
-	if (readLocalModelState(paths, Date.now()) !== "ready") return null;
+	const resolved = resolveLocalModel(pluginId);
+	if (!resolved) return null;
+	const { paths, generation } = resolved;
+	if (readLocalModelState(paths, Date.now(), generation) !== "ready") return null;
 	if (isLocalModelBusy(paths)) return null;
-	return new LocalOcrBackend({ runPage: createRunner(paths), settings, onRuntimeFailure });
+	return new LocalOcrBackend({ runPage: createRunner(paths), settings, onRuntimeFailure, generation });
 }

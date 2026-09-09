@@ -51,9 +51,21 @@ vi.mock("./local-model-artefacts", async (importOriginal) => {
 	const mmprojBody = Buffer.from("mmproj-bytes");
 	return {
 		...actual,
-		MODEL_ARTEFACTS: [
-			{ url: "https://example.test/model.gguf", fileName: "model.gguf", bytes: modelBody.length, sha256: hash(modelBody) },
-			{ url: "https://example.test/mmproj.gguf", fileName: "mmproj.gguf", bytes: mmprojBody.length, sha256: hash(mmprojBody) },
+		// One tiny generation stands in for the two that ship: the download path takes the generation as
+		// an argument now, and it is the argument's artefacts it fetches.
+		MODEL_GENERATIONS: [
+			{
+				dir: "test-generation",
+				label: "Test model",
+				modelBytes: modelBody.length,
+				mmprojBytes: mmprojBody.length,
+				artefacts: [
+					{ url: "https://example.test/model.gguf", fileName: "model.gguf", bytes: modelBody.length, sha256: hash(modelBody) },
+					{ url: "https://example.test/mmproj.gguf", fileName: "mmproj.gguf", bytes: mmprojBody.length, sha256: hash(mmprojBody) },
+				],
+				measured: { medianCer: 0.01, on: "2026-09-09" },
+				peakRssBytes: 1_000,
+			},
 		],
 		RUNTIME_ARTEFACTS: {
 			darwin: {

@@ -12,7 +12,6 @@
 /** The pinned artefact names. Both carry their version, so an update lands beside its predecessor. */
 export const RUNTIME_DIR_MACOS = "llama-b10295-macos-arm64";
 export const RUNTIME_DIR_WINDOWS = "llama-b10295-win-cpu-arm64";
-export const MODEL_DIR = "qwen2.5-vl-7b-instruct-q4_k_m";
 
 /** The executable the backend spawns, per platform. */
 export const RUNTIME_EXECUTABLE_MACOS = "llama-mtmd-cli";
@@ -38,12 +37,18 @@ export const PART_SUFFIX = ".part";
 export const LOCK_FILE = ".lock";
 
 /**
- * The pinned sizes, from spec §5.2. The readiness check is a size check plus the marker and **never a
+ * The sizes the two files must have. The readiness check is a size check plus the marker and **never a
  * re-hash**: hashing 5.5 GB at every plugin load is not acceptable, and comparing sizes still catches
  * the two things that actually happen -- a file deleted, and a file truncated.
+ *
+ * Passed in rather than a constant since two model generations ship (ticket 20): the sizes belong to
+ * whichever one this install resolved to, and a constant here would have declared a perfectly good
+ * older model truncated.
  */
-export const MODEL_BYTES = 4_683_072_032;
-export const MMPROJ_BYTES = 853_119_712;
+export interface ExpectedModelBytes {
+	modelBytes: number;
+	mmprojBytes: number;
+}
 
 /** How often the holder rewrites `.lock` while it holds it. */
 export const LOCK_HEARTBEAT_MS = 10_000;
@@ -104,9 +109,9 @@ export type LocalModelPlatform = "darwin" | "win32";
  */
 export function localModelPaths(
 	platform: LocalModelPlatform,
-	options: { home: string; localAppData?: string; pluginId: string; join: (...parts: string[]) => string },
+	options: { home: string; localAppData?: string; pluginId: string; modelDir: string; join: (...parts: string[]) => string },
 ): LocalModelPaths {
-	const { home, localAppData, pluginId, join } = options;
+	const { home, localAppData, pluginId, modelDir: modelDirName, join } = options;
 	const root =
 		platform === "darwin"
 			? join(home, "Library", "Application Support", pluginId)
@@ -115,7 +120,7 @@ export function localModelPaths(
 				join(localAppData && localAppData !== "" ? localAppData : join(home, "AppData", "Local"), pluginId);
 
 	const runtimeDir = join(root, "bin", platform === "darwin" ? RUNTIME_DIR_MACOS : RUNTIME_DIR_WINDOWS);
-	const modelDir = join(root, "models", MODEL_DIR);
+	const modelDir = join(root, "models", modelDirName);
 	return {
 		root,
 		runtimeDir,
@@ -168,7 +173,7 @@ export function isLockFresh(lockHeldAtMs: number | null, nowMs: number): boolean
  * the 12 MB engine was taken -- by antivirus, most likely -- and telling those two apart is what lets
  * the card say "the 5.5 GB model is untouched" instead of "start over".
  */
-export function deriveLocalModelState(snapshot: LocalModelSnapshot, nowMs: number): LocalModelState {
+export function deriveLocalModelState(snapshot: LocalModelSnapshot, nowMs: number, expected: ExpectedModelBytes): LocalModelState {
 	if (snapshot.corruptMarked) return "corrupt";
 	if (snapshot.partPresent) return isLockFresh(snapshot.lockHeldAtMs, nowMs) ? "downloading" : "partial";
 
@@ -176,7 +181,7 @@ export function deriveLocalModelState(snapshot: LocalModelSnapshot, nowMs: numbe
 	if (!complete) return "absent";
 	if (!snapshot.verifiedPresent) return "verifying";
 	// Size, not hash: the check runs on every plugin load, and it still catches deletion and truncation.
-	if (snapshot.modelBytes !== MODEL_BYTES || snapshot.mmprojBytes !== MMPROJ_BYTES) return "absent";
+	if (snapshot.modelBytes !== expected.modelBytes || snapshot.mmprojBytes !== expected.mmprojBytes) return "absent";
 	if (!snapshot.runtimeExecutablePresent) return "removed";
 	return "ready";
 }

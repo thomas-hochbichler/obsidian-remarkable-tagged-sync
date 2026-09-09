@@ -10,6 +10,9 @@ import {
 } from "./local-model-card";
 import { ENOUGH_PAGES_TO_MEASURE, recordPageDuration } from "./local-model-settings";
 
+/** A newer model on offer, as `local-register.ts` builds it from the generation records. */
+const OFFER = { label: "Qwen3-VL-8B-Instruct", downloadBytes: 6_186_814_624, medianCer: 0.0179, currentMedianCer: 0.0432 };
+
 const EVERY_STATE: LocalCardState[] = [
 	{ kind: "absent" },
 	{ kind: "downloading", receivedBytes: 2_000_000_000, totalBytes: 5_536_191_744 },
@@ -18,10 +21,10 @@ const EVERY_STATE: LocalCardState[] = [
 	{ kind: "out-of-disk", shortfallBytes: 2_100_000_000 },
 	{ kind: "network-lost", message: "the connection timed out" },
 	{ kind: "foreign-download", percent: 62 },
-	{ kind: "ready" },
-	{ kind: "update-available" },
+	{ kind: "ready", newer: null },
+	{ kind: "ready", newer: OFFER },
 	{ kind: "corrupt" },
-	{ kind: "removed" },
+	{ kind: "removed", modelBytes: 5_536_191_744 },
 	{ kind: "runtime-failed", message: "the engine exited with 1" },
 ];
 
@@ -74,7 +77,8 @@ describe("consent (§7.2)", () => {
 	const text = copy.paragraphs.join(" ");
 
 	it("names both downloads, the engine as its own cost", () => {
-		expect(text).toContain("5.5 GB");
+		// The button a fresh install presses, so it quotes the model that install would get.
+		expect(text).toContain("6.2 GB");
 		// The binary is named rather than hidden inside "the model": §10 accepted a residual store risk
 		// because the hygiene is visible.
 		expect(text).toContain("12 MB");
@@ -125,21 +129,21 @@ describe("the quality line (§7.4)", () => {
 	 * fluent, so check them.
 	 */
 	it("keeps only the check-it sentence once the model is ready", () => {
-		expect(copyFor({ kind: "ready" }).paragraphs).toContain(QUALITY_LINE_SHORT);
+		expect(copyFor({ kind: "ready", newer: null }).paragraphs).toContain(QUALITY_LINE_SHORT);
 		expect(QUALITY_LINE_SHORT).toContain("check anything that matters against the handwriting");
 	});
 });
 
 describe("the speed line (§7.3)", () => {
 	it("quotes the derived figure before this machine has run a page", () => {
-		expect(copyFor({ kind: "ready" }).paragraphs[0]).toContain("15 seconds a page on a fast Mac");
+		expect(copyFor({ kind: "ready", newer: null }).paragraphs[0]).toContain("15 seconds a page on a fast Mac");
 	});
 
 	it("quotes this machine's own once it has", () => {
 		const settings = {};
 		for (let i = 0; i < ENOUGH_PAGES_TO_MEASURE; i++) recordPageDuration(settings, 11_000);
 
-		expect(copyFor({ kind: "ready" }, settings).paragraphs[0]).toContain("11 seconds a page on this machine");
+		expect(copyFor({ kind: "ready", newer: null }, settings).paragraphs[0]).toContain("11 seconds a page on this machine");
 	});
 
 	it("never claims a Windows figure was measured", () => {
@@ -163,7 +167,7 @@ describe("the states that carry a decided sentence", () => {
 	 * reassurance is that the expensive half is safe.
 	 */
 	it("tells a user whose engine was deleted that the model survived", () => {
-		const copy = copyFor({ kind: "removed" });
+		const copy = copyFor({ kind: "removed", modelBytes: 5_536_191_744 });
 		const text = copy.paragraphs.join(" ");
 
 		expect(text).toContain("antivirus");
@@ -174,7 +178,31 @@ describe("the states that carry a decided sentence", () => {
 	});
 
 	it("warns that an update does not redo existing transcripts", () => {
-		expect(copyFor({ kind: "update-available" }).paragraphs.join(" ")).toContain("are not redone");
+		expect(copyFor({ kind: "ready", newer: OFFER }).paragraphs.join(" ")).toContain("are not redone");
+	});
+
+	/**
+	 * The whole of ticket 20 in one assertion: a working model keeps working and the better one is an
+	 * offer. A card that reached for the download itself would be the plugin deciding to spend two
+	 * hours and 6.2 GB of someone's disk on a plugin update they did not ask for.
+	 */
+	it("offers a newer model beside a ready one, with both error rates and no push", () => {
+		const copy = copyFor({ kind: "ready", newer: OFFER });
+		const text = copy.paragraphs.join(" ");
+
+		expect(copy.heading).toBe("Local model — ready");
+		expect(text).toContain("1.8 % character error against your 4.3 %");
+		expect(text).toContain("6.2 GB");
+		expect(text).toContain("keeps working");
+		expect(copy.actions.map((a) => a.id)).toEqual(["update", "delete"]);
+		expect(copy.actions[0].label).toContain("Qwen3-VL-8B-Instruct");
+	});
+
+	it("says nothing about a newer model when there is not one", () => {
+		const copy = copyFor({ kind: "ready", newer: null });
+
+		expect(copy.actions.map((a) => a.id)).toEqual(["delete"]);
+		expect(copy.paragraphs.join(" ")).not.toContain("character error against");
 	});
 
 	// The number is the fact the answer turns on, so the button carries it rather than the prose.
