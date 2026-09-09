@@ -1,30 +1,31 @@
 {
 	"schema": 1,
-	"commit": "0e2abef17ec730bfb267963a69a93f21aa4e352a",
-	"runId": "34275682698",
-	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/34275682698",
+	"commit": "9d331e54f4cd81bb800f574ca12a5e9058b60c21",
+	"runId": "34326676764",
+	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/34326676764",
 	"parts": {
 		"ocr": {
-			"status": "pass",
-			"measuredAt": "2026-09-08T20:38:05.205Z",
-			"lastMeasuredAt": "2026-09-08T20:38:05.205Z",
+			"status": "catastrophe",
+			"measuredAt": "2026-09-09T08:02:27.425Z",
+			"lastMeasuredAt": "2026-09-09T08:02:27.425Z",
 			"detail": {
 				"promptSha": "635b0b92a4432be2",
 				"renderVersion": 31,
 				"backends": {
 					"openrouter/anthropic/claude-sonnet-5": {
-						"status": "pass",
+						"status": "degraded",
+						"reason": "page 11: CER 5.5 % above baseline",
 						"pages": {
 							"10": {
-								"cer": 0.0035671819262782403,
+								"cer": 0.007134363852556481,
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.034782608695652174,
+								"cer": 0.05507246376811594,
 								"structure": {}
 							},
 							"12": {
-								"cer": 0.0196078431372549,
+								"cer": 0.01680672268907563,
 								"structure": {}
 							},
 							"13": {
@@ -36,7 +37,7 @@
 								"structure": {}
 							},
 							"15": {
-								"cer": 0.11295681063122924,
+								"cer": 0.18272425249169436,
 								"structure": {}
 							},
 							"01": {
@@ -60,7 +61,7 @@
 								}
 							},
 							"05": {
-								"cer": 0.03067484662576687,
+								"cer": 0.012269938650306749,
 								"structure": {
 									"table": "ok"
 								}
@@ -70,11 +71,11 @@
 								"structure": {}
 							},
 							"07": {
-								"cer": 0,
+								"cer": 0.00477326968973747,
 								"structure": {}
 							},
 							"08": {
-								"cer": 0.375,
+								"cer": 0.3541666666666667,
 								"structure": {}
 							},
 							"09": {
@@ -82,26 +83,26 @@
 								"structure": {}
 							}
 						},
-						"medianCer": 0.0196078431372549,
+						"medianCer": 0.012269938650306749,
 						"model": "anthropic/claude-sonnet-5"
 					},
 					"openrouter/openai/gpt-4o": {
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.0011890606420927466,
+								"cer": 0.01070154577883472,
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.02608695652173913,
+								"cer": 0.034782608695652174,
 								"structure": {}
 							},
 							"12": {
-								"cer": 0.03081232492997199,
+								"cer": 0.0196078431372549,
 								"structure": {}
 							},
 							"13": {
-								"cer": 0.008849557522123894,
+								"cer": 0.14601769911504425,
 								"structure": {}
 							},
 							"14": {
@@ -109,15 +110,15 @@
 								"structure": {}
 							},
 							"15": {
-								"cer": 0.3953488372093023,
+								"cer": 0.4318936877076412,
 								"structure": {}
 							},
 							"01": {
-								"cer": 0,
+								"cer": 0.012,
 								"structure": {}
 							},
 							"02": {
-								"cer": 0.018,
+								"cer": 0.02,
 								"structure": {}
 							},
 							"03": {
@@ -139,7 +140,7 @@
 								}
 							},
 							"06": {
-								"cer": 0.2857142857142857,
+								"cer": 0.3273809523809524,
 								"structure": {}
 							},
 							"07": {
@@ -147,7 +148,7 @@
 								"structure": {}
 							},
 							"08": {
-								"cer": 0.2708333333333333,
+								"cer": 0.20833333333333334,
 								"structure": {}
 							},
 							"09": {
@@ -155,26 +156,27 @@
 								"structure": {}
 							}
 						},
-						"medianCer": 0.018,
+						"medianCer": 0.02,
 						"model": "openai/gpt-4o"
 					},
 					"openrouter/google/gemini-2.5-flash": {
-						"status": "pass",
+						"status": "catastrophe",
+						"reason": "page 03: CER 6.1 % against baseline 1.0 %",
 						"pages": {
 							"10": {
-								"cer": 0.01070154577883472,
+								"cer": 0.005945303210463734,
 								"structure": {}
 							},
 							"11": {
-								"cer": 0.034782608695652174,
+								"cer": 0.05217391304347826,
 								"structure": {}
 							},
 							"12": {
-								"cer": 0.01680672268907563,
+								"cer": 0.028011204481792718,
 								"structure": {}
 							},
 							"13": {
-								"cer": 0.12389380530973451,
+								"cer": 0.02654867256637168,
 								"structure": {}
 							},
 							"14": {
@@ -186,27 +188,27 @@
 								"structure": {}
 							},
 							"01": {
-								"cer": 0,
+								"cer": 0.008,
 								"structure": {}
 							},
 							"02": {
-								"cer": 0.01,
+								"cer": 0.008,
 								"structure": {}
 							},
 							"03": {
-								"cer": 0.03571428571428571,
+								"cer": 0.061224489795918366,
 								"structure": {
 									"list": "ok"
 								}
 							},
 							"04": {
-								"cer": 0,
+								"cer": 0.009615384615384616,
 								"structure": {
 									"list": "ok"
 								}
 							},
 							"05": {
-								"cer": 0.0736196319018405,
+								"cer": 0.04294478527607362,
 								"structure": {
 									"table": "ok"
 								}
@@ -216,11 +218,11 @@
 								"structure": {}
 							},
 							"07": {
-								"cer": 0.011933174224343675,
+								"cer": 0.007159904534606206,
 								"structure": {}
 							},
 							"08": {
-								"cer": 0.1875,
+								"cer": 0.22916666666666666,
 								"structure": {}
 							},
 							"09": {
@@ -228,7 +230,7 @@
 								"structure": {}
 							}
 						},
-						"medianCer": 0.034782608695652174,
+						"medianCer": 0.028011204481792718,
 						"model": "google/gemini-2.5-flash"
 					}
 				}
@@ -236,12 +238,12 @@
 		},
 		"perf": {
 			"status": "pass",
-			"measuredAt": "2026-09-08T20:35:48.917Z",
-			"lastMeasuredAt": "2026-09-08T20:35:48.917Z",
+			"measuredAt": "2026-09-09T07:59:42.228Z",
+			"lastMeasuredAt": "2026-09-09T07:59:42.228Z",
 			"detail": {
 				"metrics": {
-					"renderPagesToPdfMs": 375,
-					"rasterizePageMs": 142
+					"renderPagesToPdfMs": 378,
+					"rasterizePageMs": 156
 				},
 				"page": "2000 strokes x 50 points",
 				"node": "v22.23.2"
