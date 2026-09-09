@@ -29,6 +29,17 @@ export const COLUMNS = [
 	"backend_status",
 	"prompt_sha",
 	"render_version",
+	// The envelope (spec §3.2), recorded from 2026-09-09 and empty for every night before it. All
+	// four change what was measured or what it cost, and none of them used to be written down:
+	// unpinned routing alone moved one model's median CER by 1.40 points between two providers, and
+	// `prompt_tokens` is what makes that visible without a second measurement -- a night where a
+	// backend's prompt tokens move is a night where the model was shown a different image.
+	"endpoint",
+	"served_by",
+	"prompt_tokens",
+	"completion_tokens",
+	"reasoning_tokens",
+	"cost",
 ];
 
 /**
@@ -85,6 +96,13 @@ export function toRows(verdicts, traits) {
 					// nobody reading the series can tell the two apart.
 					prompt_sha: part.detail?.promptSha ?? "",
 					render_version: part.detail?.renderVersion ?? "",
+					endpoint: measurement.envelope?.endpoint ?? "",
+					served_by: measurement.envelope?.servedBy ?? "",
+					prompt_tokens: measurement.envelope?.promptTokens ?? "",
+					completion_tokens: measurement.envelope?.completionTokens ?? "",
+					reasoning_tokens: measurement.envelope?.reasoningTokens ?? "",
+					// As billed, not rounded to cents: a page costs fractions of one.
+					cost: typeof measurement.envelope?.cost === "number" ? measurement.envelope.cost.toFixed(8) : "",
 				});
 			}
 		}

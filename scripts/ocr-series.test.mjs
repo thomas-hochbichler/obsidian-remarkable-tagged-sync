@@ -29,6 +29,17 @@ describe("the published series", () => {
 		expect(rows[1]).toMatchObject({ page: "13", cer: "", problem: "empty-output" });
 	});
 
+	// Recorded from 2026-09-09. The endpoint and the token counts are what make a routing change
+	// visible in the series instead of hidden in it: unpinned, two providers of one model differed by
+	// 1.40 points of median CER, and the prompt-token count was the only thing that said why.
+	it("carries the request envelope, and leaves it empty for every night measured before it existed", () => {
+		const withEnvelope = { cer: 0.02, envelope: { endpoint: "deepinfra/fp8", servedBy: "DeepInfra", promptTokens: 373, completionTokens: 126, reasoningTokens: 0, cost: 0.000196 } };
+		const rows = toRows([night("2026-08-20T03:00:00Z", { "01": withEnvelope, "13": { cer: 0.18 } })], traits);
+
+		expect(rows[0]).toMatchObject({ endpoint: "deepinfra/fp8", served_by: "DeepInfra", prompt_tokens: 373, reasoning_tokens: 0, cost: "0.00019600" });
+		expect(rows[1]).toMatchObject({ endpoint: "", served_by: "", prompt_tokens: "", reasoning_tokens: "", cost: "" });
+	});
+
 	it("names each page's trait from the reference filenames, and carries the two fields that separate a jump from a regression", () => {
 		const [row] = toRows([night("2026-08-20T03:00:00Z", { "13": { cer: 0.18 } })], traits);
 		expect(row).toMatchObject({ trait: "corrections", prompt_sha: "abc123", render_version: 31 });
