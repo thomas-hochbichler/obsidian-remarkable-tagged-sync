@@ -252,9 +252,10 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 			// this card cannot actually see a second vault. It never could, and it said so anyway: a
 			// download left running by a previous plugin instance shows up here identically, and a user
 			// with one vault open was told about a vault that did not exist. The heading now says only
-			// what the disk shows, and the paragraph names both ways it happens.
+			// what the disk shows -- that a download is running -- and the paragraph names both ways it
+			// can be one this vault did not start.
 			return {
-				heading: `Downloading elsewhere — ${state.percent} %`,
+				heading: `Downloading… — ${state.percent} %`,
 				paragraphs: [
 					"Another vault is fetching it — or this one was, before the plugin last reloaded. The model is shared, so this vault will use it as soon as the download finishes.",
 				],
