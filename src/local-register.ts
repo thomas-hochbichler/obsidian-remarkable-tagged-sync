@@ -264,7 +264,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 						candidate.dir,
 						// Same unit as the card's Memory line: this divided by 1024³ while the card divided by
 						// 10⁹, so one screen said 2.9 GB and 3.1 GB of the same figure.
-						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${formatBytes(candidate.peakRssBytes)}${
+						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${formatBytes(candidate.peakRssBytes)} memory${
 							candidate === byRule ? " (default)" : ""
 						}`,
 					);
