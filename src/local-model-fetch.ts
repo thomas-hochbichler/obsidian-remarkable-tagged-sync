@@ -13,7 +13,7 @@
 //      stopped.
 
 import { Platform } from "obsidian";
-import { MODEL_GENERATIONS, type ModelGeneration, RUNTIME_ARTEFACTS, type PinnedArtefact, totalDownloadBytes } from "./local-model-artefacts";
+import { type ModelGeneration, RUNTIME_ARTEFACTS, type PinnedArtefact, totalDownloadBytes } from "./local-model-artefacts";
 import {
 	freeSpaceShortfall,
 	planRangeResponse,
@@ -335,9 +335,9 @@ export function startLocalModelDownload(
 	paths: LocalModelPaths,
 	platform: LocalModelPlatform,
 	onChange: () => void,
-	// Defaults to the newest, which is what both callers want: a fresh install fetches the newest, and
-	// an existing install pressing "get the newer model" is asking for exactly that one.
-	generation: ModelGeneration = MODEL_GENERATIONS[0],
+	// Required, with no default: two generations ship and "whichever is newest" is exactly the guess
+	// that would write the wrong weights into a directory named after the other one.
+	generation: ModelGeneration,
 ): DownloadHandle {
 	const fs = nodeRequire("fs");
 	const path = nodeRequire("path");
@@ -446,7 +446,7 @@ export function startLocalModelDownload(
 export function foreignDownloadPercent(
 	paths: LocalModelPaths,
 	platform: LocalModelPlatform,
-	generation: ModelGeneration = MODEL_GENERATIONS[0],
+	generation: ModelGeneration,
 ): number | null {
 	const fs = nodeRequire("fs");
 	const path = nodeRequire("path");

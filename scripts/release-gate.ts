@@ -77,7 +77,7 @@ async function ensureModel(): Promise<void> {
 		if (line === lastLine) return;
 		lastLine = line;
 		console.log(line);
-	});
+	}, generation);
 
 	const outcome = await handle.finished;
 	if (outcome.phase !== "done") throw new Error(`download failed: ${JSON.stringify(outcome)}`);

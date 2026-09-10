@@ -230,9 +230,8 @@ async function download(paths: LocalModelPaths, platform: "darwin" | "win32" = "
 	installTar(paths);
 	// Called both ways on purpose: the default is what a fresh install takes, and the explicit argument
 	// is what "get the newer model" passes when it writes into a directory that is not the one in use.
-	const handle = generation === undefined
-		? startLocalModelDownload(paths, platform, () => undefined)
-		: startLocalModelDownload(paths, platform, () => undefined, generation as never);
+	const { MODEL_GENERATIONS } = await import("./local-model-artefacts");
+	const handle = startLocalModelDownload(paths, platform, () => undefined, (generation ?? MODEL_GENERATIONS[0]) as never);
 	return { handle, outcome: await handle.finished };
 }
 
@@ -241,8 +240,7 @@ describe("a download that runs to the end", () => {
 		const paths = pathsIn(root);
 		serveEverything();
 
-		const { MODEL_GENERATIONS } = await import("./local-model-artefacts");
-		const { outcome } = await download(paths, "darwin", MODEL_GENERATIONS[0]);
+		const { outcome } = await download(paths);
 
 		expect(outcome).toEqual({ phase: "done" });
 		expect(fs.readFileSync(paths.modelFile)).toEqual(MODEL_BODY);
@@ -447,11 +445,12 @@ describe("cancelling mid-stream", () => {
 		serve("https://example.test/mmproj.gguf", { status: 200, body: MMPROJ_BODY });
 
 		const { startLocalModelDownload } = await import("./local-model-fetch");
+		const { MODEL_GENERATIONS } = await import("./local-model-artefacts");
 		installTar(paths);
 		const handle = startLocalModelDownload(paths, "darwin", () => {
 			// Cancel the moment the engine is done and the model has started arriving.
 			if (fs.existsSync(paths.runtimeExecutable)) handle.cancel();
-		});
+		}, MODEL_GENERATIONS[0]);
 		const outcome = await handle.finished;
 
 		expect(outcome).toEqual({ phase: "failed", failure: { kind: "cancelled" } });

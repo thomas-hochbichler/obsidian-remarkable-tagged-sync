@@ -122,7 +122,7 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, p
 			return { kind: "corrupt" };
 		case "downloading":
 			// Someone holds the lock and it is not us, so this vault reads the same growing file.
-			return { kind: "foreign-download", percent: foreignDownloadPercent(paths, localModelPlatform() ?? "darwin") ?? 0 };
+			return { kind: "foreign-download", percent: foreignDownloadPercent(paths, localModelPlatform() ?? "darwin", generation) ?? 0 };
 		case "partial":
 			return { kind: "paused", onDiskBytes: partialBytes(paths) };
 		case "verifying":
@@ -158,12 +158,7 @@ function sweepUnfinishedDirectories(paths: LocalModelPaths, inUse: ModelGenerati
  * the *current* model's lock. Passing the target to the guard would have made it answer about an empty
  * directory and always say no.
  */
-function beginDownload(
-	into: LocalModelPaths,
-	rerender: () => void,
-	generation: ModelGeneration = MODEL_GENERATIONS[0],
-	busyPaths: LocalModelPaths = into,
-): void {
+function beginDownload(into: LocalModelPaths, rerender: () => void, generation: ModelGeneration, busyPaths: LocalModelPaths): void {
 	const paths = into;
 	const platform = localModelPlatform();
 	if (!platform) return;
@@ -233,7 +228,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 						case "download":
 						case "resume":
 						case "retry-runtime":
-							beginDownload(paths, rerender, generation);
+							beginDownload(paths, rerender, generation, paths);
 							break;
 						// The one action that writes into a *different* directory than the one in use: the
 						// newer model installs beside the working one, which is what makes it an offer.
