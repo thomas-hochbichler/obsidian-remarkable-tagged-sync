@@ -46,7 +46,7 @@ registerOcrBackend({
 		set: (settings, value) => {
 			settings.backgroundConsent = value;
 		},
-		description: "Let it run in the background.",
+		description: () => "Let it run in the background.",
 	},
 });
 

@@ -132,7 +132,7 @@ registerOcrBackend(
 			set: (settings, value) => {
 				settings.ok = value;
 			},
-			description: consented.description,
+			description: () => consented.description,
 		},
 	}),
 );

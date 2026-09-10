@@ -696,7 +696,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			const blob = (this.plugin.data.llmProviders[selected.id] ??= {});
 			new Setting(containerEl)
 				.setName(BACKGROUND_CONSENT_NAME)
-				.setDesc(consent.description)
+				.setDesc(consent.description(blob))
 				.addToggle((toggle) =>
 					toggle.setValue(consent.get(blob)).onChange(async (value) => {
 						consent.set(blob, value);

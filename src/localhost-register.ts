@@ -302,7 +302,7 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 			set: (settings, value) => {
 				(settings as LocalhostSettings).backgroundConsent = value;
 			},
-			description: BACKGROUND_CONSENT_DESC,
+			description: () => BACKGROUND_CONSENT_DESC,
 		},
 		// No `unavailableLabel`: it can run anywhere. A server that is not running is a run-time
 		// failure, not a property of the machine -- see spec §5 for where that is said instead.

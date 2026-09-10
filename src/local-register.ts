@@ -452,7 +452,8 @@ if (offeredOnThisPlatform()) {
 		backgroundConsent: {
 			get: (settings) => readLocalModelSettings(settings).backgroundConsent,
 			set: (settings, value) => setBackgroundConsent(settings, value),
-			description: backgroundConsentDesc(resolveLocalModel(PLUGIN_ID)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
+			description: (settings) =>
+				backgroundConsentDesc(resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
 		},
 	});
 }

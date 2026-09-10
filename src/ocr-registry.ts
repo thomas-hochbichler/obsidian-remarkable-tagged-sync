@@ -146,8 +146,13 @@ export interface OcrBackendEntry {
 	backgroundConsent?: {
 		get(settings: BackendSettings): boolean;
 		set(settings: BackendSettings, value: boolean): void;
-		/** The row's description under *Automatic sync* — the canonical control for this consent. */
-		readonly description: string;
+		/**
+		 * The row's description under *Automatic sync* — the canonical control for this consent. Read
+		 * with the blob, because the sentence may quote what the blob decides: the downloaded model's
+		 * memory figure follows the model the user picked, and a string fixed at registration went on
+		 * quoting the previous model's figure until the next reload.
+		 */
+		description(settings: BackendSettings): string;
 	};
 }
 
