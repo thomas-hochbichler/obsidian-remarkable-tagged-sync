@@ -417,7 +417,7 @@
       test: "chooseGeneration against the machine > offers only a model that is both better and runnable"
 
     - id: E31.7
-      scenario: The user picks a model, then picks "decide for me"
+      scenario: The user picks a model, then picks the default entry again
       expect: The name is written, and then the key is removed rather than set to an empty string -- `data.json` keeps no key that means nothing
       layer: unit
       file: src/local-model-settings.test.ts

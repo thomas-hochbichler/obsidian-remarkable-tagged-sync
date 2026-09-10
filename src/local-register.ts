@@ -249,29 +249,35 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// dropdown listing one option is a question with one answer.
 	const choices = runnableGenerations(context);
 	if (state.kind === "ready" && choices.length > 1) {
+		// What the rule picks with no preference stored. It used to be its own entry, "Decide for me
+		// (Qwen3-VL-8B)", above an entry for the same model -- two rows for one choice, and the reader
+		// asked why the 8B was listed twice. Now the rule's pick is marked on the entry it names, and
+		// choosing that entry stores nothing, exactly as the old entry did.
+		const byRule = resolveLocalModel(PLUGIN_ID, null)?.generation ?? generation;
 		new Setting(card)
 			.setName("Model")
 			.setDesc(
-				`Character error on fifteen reference pages, and the memory used while a page is read. Lower is better. ${
+				`Character error on fifteen reference pages, and the memory used while a page is read. Lower is better. The memory is measured, not read off the name: a smaller model can hold more. ${
 					MODEL_GENERATIONS.filter((candidate) => !choices.includes(candidate))
 						.map((candidate) => `${candidate.label} needs ${candidate.floorGb[context.platform]} GB and is not offered here.`)
 						.join(" ")
 				}`.trim(),
 			)
 			.addDropdown((dropdown) => {
-				dropdown.addOption("", `Decide for me (${generation.label})`);
 				for (const candidate of choices) {
 					dropdown.addOption(
 						candidate.dir,
-						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${(candidate.peakRssBytes / 1024 ** 3).toFixed(1)} GB`,
+						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${(candidate.peakRssBytes / 1024 ** 3).toFixed(1)} GB${
+							candidate === byRule ? " (default)" : ""
+						}`,
 					);
 				}
-				dropdown.setValue(context.preferred ?? "");
+				dropdown.setValue(context.preferred ?? byRule.dir);
 				dropdown.onChange(async (value) => {
-					// Empty means "decide for me", which is a cleared preference rather than a stored empty
-					// string -- `readLocalModelSettings` treats both alike, and not writing one keeps
-					// `data.json` free of a key that means nothing.
-					setPreferredModelDir(ctx.settings, value === "" ? null : value);
+					// The default is a cleared preference rather than a stored one -- `readLocalModelSettings`
+					// treats both alike, and not writing a key keeps `data.json` free of one that means
+					// nothing. It also keeps the rule in charge on another machine, where its pick may differ.
+					setPreferredModelDir(ctx.settings, value === byRule.dir ? null : value);
 					await ctx.save();
 					rerender();
 				});
