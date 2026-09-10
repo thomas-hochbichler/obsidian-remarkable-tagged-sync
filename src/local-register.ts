@@ -37,7 +37,7 @@ import { type BackendSettings, type BackendSettingsContext, registerOcrBackend }
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 export const LOCAL_BACKEND_ID = "local";
-const LOCAL_BACKEND_LABEL = "Local model (on your machine)";
+const LOCAL_BACKEND_LABEL = "Downloaded model (managed by this plugin)";
 
 /**
  * The plugin id, which is the directory name under Application Support / LOCALAPPDATA.
