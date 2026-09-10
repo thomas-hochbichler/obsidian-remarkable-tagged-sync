@@ -147,7 +147,8 @@ export function splitTallInk(page: RmPage): RmPage[] {
 		.flatMap((layer) => layer.strokes)
 		.map((stroke) => ({ stroke, ...strokeBand(stroke) }))
 		.sort((a, b) => a.top - b.top);
-	if (banded.length === 0) return [page];
+	// No `banded.length === 0` guard: `inkBounds` returns null unless a stroke has points, and that
+	// case already returned above.
 
 	// Every blank band wider than a line's spacing is a cut. `reach` is the lowest ink so far, not the
 	// previous stroke's: a long stroke drawn early must not let a later one look isolated.

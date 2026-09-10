@@ -355,3 +355,30 @@ describe("splitTallInk", () => {
 		expect(pieces[0].layers[0].strokes.map((s) => s.id)).toEqual(["long", "inside"]);
 	});
 });
+
+describe("splitTallInk on the pages that have no shape to judge", () => {
+	function pageOf(strokes: RmStroke[]): RmPage {
+		return { formatVersion: 6, layers: [{ id: "l", name: null, strokes }] } as unknown as RmPage;
+	}
+	function block(y: number, id: string): RmStroke {
+		return { layerId: "l", id, timestamp: "1", penType: 0, color: 0, brushSize: 2, points: [{ x: 0, y }, { x: 800, y: y + 40 }] } as unknown as RmStroke;
+	}
+
+	// A typed-only page, or one whose layers are empty. There is no frame to measure, so there is
+	// nothing to cut and nothing to decide.
+	it("leaves a page with no ink on it alone", () => {
+		const page = pageOf([]);
+
+		expect(splitTallInk(page)).toEqual([page]);
+	});
+
+	// The cap is about cost, not about shape: a page nobody imagined must not quietly become twenty
+	// requests. Read whole is exactly what it did before any of this, so it is never a regression --
+	// only a page that was going to read badly reads badly still.
+	it("sends a page needing more pieces than the cap allows as one image", () => {
+		const strokes = Array.from({ length: 7 }, (_, i) => block(i * 3000, `b${i}`));
+
+		expect(splitTallInk(pageOf(strokes)).length).toBeGreaterThan(6);
+		expect(splitAtTypedText(pageOf(strokes))).toHaveLength(1);
+	});
+});
