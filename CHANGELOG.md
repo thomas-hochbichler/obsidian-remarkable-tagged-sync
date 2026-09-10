@@ -12,7 +12,20 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-10
+
 ### Added
+
+- **A better model to read your handwriting on your own machine, and nothing taken away if you
+  already have one.** A new install now downloads Qwen3-VL-8B, which reads the fifteen public
+  reference pages at 1.8 % character error against the previous model's 4.3 % -- and does it in 8 GB of
+  memory rather than 15, so it is offered on Macs with 16 GB, which the old model's memory requirement
+  shut out entirely. If you already downloaded the old model, **it keeps working and nothing replaces
+  it behind your back**: the settings screen shows you the newer one with both error rates beside each
+  other and the download size, and fetches it only if you press the button. The old model stays on disk
+  afterwards as the way back, and there is a button to remove it when you no longer want the 5.5 GB.
+  Notes you have already transcribed are not re-read; *Re-transcribe all synced notes* is there if you
+  want them redone with the better model. (#143)
 
 - **A Mac with 8 GB of memory can now read handwriting locally.** Until now those machines had Apple's
   built-in recognition and nothing else. A third model, Qwen3-VL-2B, reads the fifteen public reference
@@ -29,40 +42,6 @@ workflow publishes the section as the GitHub release body. See
   machine can run. Your choice is remembered, and it is a preference rather than a fact — if the model
   it names is deleted or you move to a smaller machine, the plugin decides again instead of stopping.
   (#145)
-
-### Changed
-
-- **Whether a scrolled page is cut before reading is now decided per model.** Cutting a very tall page
-  at its blank bands helps most backends enormously — GPT-4o goes from 39.5 % character error to
-  4.0 % — but it is not universal: a model that handles a tall image natively reads it *better* whole,
-  and one was measured going the other way, from 1.0 % to 10.6 %. Both models the plugin ships still
-  cut, which is what their measurements say; the setting exists so a model that should not is not made
-  to. (#145)
-
-- **A page you scrolled is now read in pieces, and comes back far better.** A scrolled page is one very
-  tall image -- one in the reference set is 852 by 7469 pixels -- and every transcription backend
-  shrinks an image before reading it, so the writing arrived at a fraction of the size it needs to be
-  legible and the model guessed. The page is now cut where there is no ink, at the blank bands between
-  blocks of writing, and each piece is read on its own. Measured on that page: GPT-4o went from 50.2 %
-  character error to 4.3 %, Claude from 11.3 % to 8.3 %, Gemini from 3.7 % to 1.3 %, and the local
-  model from 4.3 % to 1.0 %. Every backend improved and none got worse. **Ordinary pages are untouched**
-  -- the cut only applies to a page whose writing runs more than three times its own width, which the
-  widest ordinary page in the reference set does not approach. No stroke is ever divided, so nothing is
-  cut through the middle of a letter, and a page that would need more than six pieces is read whole as
-  before. On a metered backend a cut page costs one request per piece. (#144)
-
-### Added
-
-- **A better model to read your handwriting on your own machine, and nothing taken away if you
-  already have one.** A new install now downloads Qwen3-VL-8B, which reads the fifteen public
-  reference pages at 1.8 % character error against the previous model's 4.3 % -- and does it in 8 GB of
-  memory rather than 15, so it is offered on Macs with 16 GB, which the old model's memory requirement
-  shut out entirely. If you already downloaded the old model, **it keeps working and nothing replaces
-  it behind your back**: the settings screen shows you the newer one with both error rates beside each
-  other and the download size, and fetches it only if you press the button. The old model stays on disk
-  afterwards as the way back, and there is a button to remove it when you no longer want the 5.5 GB.
-  Notes you have already transcribed are not re-read; *Re-transcribe all synced notes* is there if you
-  want them redone with the better model. (#143)
 
 - **One bad transcript no longer costs a whole-vault run.** A new command, *Re-transcribe this note*,
   re-reads just the note you have open. Because it works on one note, it can be more careful than the
@@ -108,6 +87,25 @@ workflow publishes the section as the GitHub release body. See
   been raised from 4096 to 16384 tokens so a reasoning pass stops eating the room a transcript needs.
 
 ### Changed
+
+- **A page you scrolled is now read in pieces, and comes back far better.** A scrolled page is one very
+  tall image -- one in the reference set is 852 by 7469 pixels -- and every transcription backend
+  shrinks an image before reading it, so the writing arrived at a fraction of the size it needs to be
+  legible and the model guessed. The page is now cut where there is no ink, at the blank bands between
+  blocks of writing, and each piece is read on its own. Measured on that page: GPT-4o went from 50.2 %
+  character error to 4.3 %, Claude from 11.3 % to 8.3 %, Gemini from 3.7 % to 1.3 %, and the local
+  model from 4.3 % to 1.0 %. Every backend improved and none got worse. **Ordinary pages are untouched**
+  -- the cut only applies to a page whose writing runs more than three times its own width, which the
+  widest ordinary page in the reference set does not approach. No stroke is ever divided, so nothing is
+  cut through the middle of a letter, and a page that would need more than six pieces is read whole as
+  before. On a metered backend a cut page costs one request per piece. (#144)
+
+- **Whether a scrolled page is cut before reading is now decided per model.** Cutting a very tall page
+  at its blank bands helps most backends enormously — GPT-4o goes from 39.5 % character error to
+  4.0 % — but it is not universal: a model that handles a tall image natively reads it *better* whole,
+  and one was measured going the other way, from 1.0 % to 10.6 %. Both models the plugin ships still
+  cut, which is what their measurements say; the setting exists so a model that should not is not made
+  to. (#145)
 
 - **Only the pages you changed are transcribed again.** Adding one page to a long notebook used to
   read the whole notebook back, every time -- so the cost of capturing one new meeting grew with how
