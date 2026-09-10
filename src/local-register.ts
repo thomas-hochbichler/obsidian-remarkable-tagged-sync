@@ -55,6 +55,14 @@ let download: DownloadHandle | null = null;
 /** A runtime that failed to start this session (§5.5: session-scoped, not a property of the directory). */
 let runtimeFailure: string | null = null;
 
+/**
+ * Redraws the most recently rendered card, in place. Module state like `download` because it has to
+ * outlive one render: the download keeps calling back long after the settings page that started it
+ * has been redrawn, and a redraw bound to that first render would draw into an element the page no
+ * longer shows.
+ */
+let redrawCard: () => void = () => undefined;
+
 /** Records a runtime failure so the card can explain it, rather than showing a healthy "ready". */
 export function noteLocalRuntimeFailure(message: string): void {
 	runtimeFailure = message;
@@ -410,10 +418,16 @@ if (offeredOnThisPlatform()) {
 		 */
 		renderSetup: machineCanRun()
 			? (containerEl, ctx) => {
-					renderCard(containerEl, ctx, () => {
-						containerEl.empty();
-						renderCard(containerEl, ctx, () => undefined);
-					});
+					// The card gets an element of its own, so a redraw empties the card and nothing else.
+					// `containerEl` is the whole settings page: emptying *that* on a progress tick left the
+					// user with a lone card and no settings, and the redrawn card's own redraw was a no-op,
+					// so the tick after it moved nothing.
+					const host = containerEl.createDiv();
+					redrawCard = () => {
+						host.empty();
+						renderCard(host, ctx, () => redrawCard());
+					};
+					renderCard(host, ctx, () => redrawCard());
 				}
 			: undefined,
 
