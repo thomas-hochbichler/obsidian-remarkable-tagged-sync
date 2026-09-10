@@ -168,30 +168,30 @@
       test: "the backend dropdown > keeps the macOS floor out of the description"
 
 - feature: E13
-  name: Note-contract hint
+  name: Note-contract sentence in the Backend row
   code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: E13.1
-      scenario: Apple Vision cannot run on this machine and the selected backend has no contract of its own
-      expect: Nothing is said about Vision's flat-text ceiling -- naming the limit of a backend this system does not offer reads as a limit of whatever was picked
+      scenario: Apple Vision is the selected backend
+      expect: Its promise, then both clauses -- the flat-text ceiling, and where to go for structured Markdown -- as one description of the row
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the sentence under the dropdown > says nothing about Apple Vision's ceiling on a machine that cannot run Apple Vision"
+      test: "the transcript sentence in the Backend row > names Apple Vision's ceiling only while Apple Vision is the selected backend"
 
     - id: E13.2
-      scenario: Apple Vision is a real option here
-      expect: Both clauses -- the ceiling, and where to go for structured Markdown
+      scenario: A backend with no contract of its own is selected, on a machine where Apple Vision runs
+      expect: The promise alone. The ceiling used to be the fallback for every such backend, so a reader who had already chosen an LLM backend was told to choose an LLM backend
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the sentence under the dropdown > names the ceiling where Apple Vision is a real option"
+      test: "the transcript sentence in the Backend row > says nothing about Apple Vision under a backend that has no contract of its own"
 
     - id: E13.3
       scenario: The selected backend declares its own note contract
-      expect: It replaces the generic sentence rather than joining it -- Vision's ceiling is simply not true of the notes this user is about to get
+      expect: Appended to the row's promise as its second sentence, never a loose line under the row -- on its own it read as a footnote with nothing to belong to
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the sentence under the dropdown > lets the selected backend's own contract replace it, rather than join it"
+      test: "the transcript sentence in the Backend row > appends the selected backend's own contract to its promise, as one description"
 
 - feature: E14
   name: Per-backend settings and setup cards

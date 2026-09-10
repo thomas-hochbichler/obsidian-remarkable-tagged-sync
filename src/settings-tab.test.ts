@@ -716,37 +716,34 @@ describe("the backend dropdown", () => {
 	});
 });
 
-describe("the sentence under the dropdown", () => {
-	function note(drawn: Drawn[]): string | undefined {
-		return drawn.find((item): item is Extract<Drawn, { kind: "note" }> => item.kind === "note" && item.cls === "tagged-sync-note")
-			?.text;
-	}
+describe("the transcript sentence in the Backend row", () => {
+	const desc = (drawn: Drawn[]) => row(drawn, "Backend").desc;
 
-	it("says nothing about Apple Vision's ceiling on a machine that cannot run Apple Vision", async () => {
-		// Naming the limit of a backend this system does not offer is noise, and it reads as a limit of
-		// whatever the user *did* pick.
-		machine.visionAvailable = false;
-		const { tab } = await tabWith({ ocrBackend: "off" });
-
-		expect(note(draw(tab))).toBe("Choose an LLM backend for structured Markdown.");
-	});
-
-	it("names the ceiling where Apple Vision is a real option", async () => {
+	it("names Apple Vision's ceiling only while Apple Vision is the selected backend", async () => {
 		machine.visionAvailable = true;
-		const { tab } = await tabWith({ ocrBackend: "off" });
+		const { tab } = await tabWith({ ocrBackend: "vision" });
 
-		expect(note(draw(tab))).toBe(
-			"Apple Vision: flat text only, no headings or tables. Choose an LLM backend for structured Markdown.",
+		expect(desc(draw(tab))).toBe(
+			"Runs on your Mac — no account, no key, no network. Transcripts are flat text, no headings or tables. Choose an LLM backend for structured Markdown.",
 		);
 	});
 
-	it("lets the selected backend's own contract replace it, rather than join it", async () => {
-		// With another backend chosen, Vision's flat-text ceiling is not what the user's notes will look
-		// like -- and claiming parity with the cloud providers would be wrong the other way.
+	it("says nothing about Apple Vision under a backend that has no contract of its own", async () => {
+		// The ceiling used to be the fallback sentence for every backend without a contract, so a reader
+		// who had already chosen an LLM backend was told to choose an LLM backend.
+		machine.visionAvailable = true;
+		const { tab } = await tabWith({ ocrBackend: "test-plain" });
+
+		expect(desc(draw(tab))).toBe("Runs on hardware you own — no account and no key.");
+	});
+
+	it("appends the selected backend's own contract to its promise, as one description", async () => {
+		// One row, not a loose line under it: on its own the sentence read as a footnote with nothing to
+		// belong to.
 		machine.visionAvailable = true;
 		const { tab } = await tabWith({ ocrBackend: "test-contract" });
 
-		expect(note(draw(tab))).toBe(CONTRACT);
+		expect(desc(draw(tab))).toBe(`Runs on hardware you own — no account and no key. ${CONTRACT}`);
 	});
 });
 

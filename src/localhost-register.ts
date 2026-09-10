@@ -30,7 +30,7 @@ import { UnavailableOcrBackend } from "./vision-ocr-backend";
  * loaded. Apple Vision's flat-text limit is a property of Vision; this backend's is a property of a
  * choice we did not make.
  */
-const NOTE_CONTRACT = "Structure depends on the model you load — a capable vision model returns headings and lists, a weak one flat text.";
+const NOTE_CONTRACT = "Transcript structure depends on the model you load — a capable vision model returns headings and lists, a weak one flat text.";
 
 /**
  * The model recommendation, and the exact extent of what stands behind it (spec §4.3).

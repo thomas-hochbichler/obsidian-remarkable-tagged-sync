@@ -590,6 +590,19 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		// The row then says nothing rather than guessing which promise an unknown backend makes.
 		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
 
+		// What the transcripts of the *selected* backend will look like (structure-preserving-ocr spec
+		// §3.2), as the second sentence of the row rather than a loose line under it: on its own it
+		// read as a footnote with nothing to belong to. Vision's flat-text ceiling is named only while
+		// Vision is chosen -- it used to be the fallback for every backend without a contract of its
+		// own, so a reader on LM Studio was told to "choose an LLM backend".
+		const contract =
+			selected?.noteContract ??
+			(selected?.id === "vision"
+				? ["Transcripts are flat text, no headings or tables.", hasAlternativeBackends(ocrBackendEntries()) ? "Choose an LLM backend for structured Markdown." : ""]
+						.filter(Boolean)
+						.join(" ")
+				: "");
+
 		new Setting(containerEl)
 			.setName("Backend")
 			// The promise of the backend that is *selected*. The three cases are three different
@@ -597,7 +610,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			// which left a reader on LM Studio reading about Apple Vision and about cloud providers.
 			// Where Vision cannot run, the dropdown option itself carries the macOS floor, so that is
 			// not repeated here either.
-			.setDesc(selected ? backendPromise(selected) : "")
+			.setDesc(selected ? [backendPromise(selected), contract].filter(Boolean).join(" ") : "")
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {
 					// A backend whose gap its own setup card is already explaining is hidden rather than
@@ -620,26 +633,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.display();
 				});
 			});
-
-		// Flat-text ceiling hint (structure-preserving-ocr spec §3.2): the moment the user picks a
-		// backend is where the Apple-Vision structure limit earns its place. Off macOS, Vision is not
-		// selectable at all, so its ceiling is noise -- say nothing rather than name a limit of a
-		// backend this system cannot run.
-		//
-		// The selected backend's own contract wins where it has one: with the local model chosen,
-		// Vision's flat-text ceiling is no longer what the user's notes will look like, and claiming
-		// parity with the cloud providers would be wrong in the other direction -- the single table in
-		// the corpus came back as 24 bullets.
-		const selectedContract = ocrBackendEntry(this.plugin.data.ocrBackend)?.noteContract;
-		const hint =
-			selectedContract ??
-			[
-				visionPlatformSupported() ? "Apple Vision: flat text only, no headings or tables." : "",
-				hasAlternativeBackends(ocrBackendEntries()) ? "Choose an LLM backend for structured Markdown." : "",
-			]
-				.filter(Boolean)
-				.join(" ");
-		if (hint) containerEl.createDiv({ cls: "tagged-sync-note", text: hint });
 
 		// One context shape for both hooks, so a backend's rows and its card get the same powers.
 		const selectedAsksConsent = this.selectedBackendAsksBackgroundConsent();

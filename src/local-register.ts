@@ -49,7 +49,7 @@ const LOCAL_BACKEND_LABEL = "Local model (on your machine)";
 const PLUGIN_ID = "remarkable-tagged-sync";
 
 /** What the note-contract hint says while this backend is selected (§7.6). */
-export const LOCAL_NOTE_CONTRACT = "Local model: headings and lists, as written on the page. Tables are transcribed as plain lines.";
+export const LOCAL_NOTE_CONTRACT = "Transcripts keep headings and lists as written on the page; tables come out as plain lines.";
 
 /** The download in flight for this Obsidian session, if any. Never persisted; §5.5 forbids it. */
 let download: DownloadHandle | null = null;
