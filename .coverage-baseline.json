@@ -1,6 +1,6 @@
 {
-	"comment": "Never-worse ratchet over ABSOLUTE uncovered lines and branches, per file. It fails when a file's uncovered count rises above the number here; it never asserts a percentage, because no percentage in this repo means what it looks like -- at 71.2 % line coverage, roughly 41 of 70 deliberate mutations of production code survived all 996 tests, both Pro gates among them. A file that is not listed counts as 0 uncovered, so a new file arrives with its tests or it arrives red. Moving tested code between files can raise one entry while lowering another: that is the case to re-baseline for. Re-measure with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`, in the SAME commit as the change that needs it, so review sees both. THE NUMBERS ARE PLATFORM-DEPENDENT AND THE GATE RUNS ON LINUX. `--write` records what the machine it ran on measured, and a Mac covers more of the platform-branching files (src/local-register.ts, src/local-model-runtime.ts, src/vision-ocr-runtime.ts) than ubuntu-latest does -- so a baseline written on a Mac can fail CI on files nobody touched. It first did on 2026-08-19, the day src/entry.ts entered the measurement and brought those files with it. When CI reports a file as less covered and a local run does not, raise that entry by the delta CI printed: the floor has to be the platform that enforces it. A `--write` on a Mac will offer to LOWER those same three entries again -- that offer is the flaw, not an improvement; leave them where CI put them.",
-	"measured": "2026-09-05",
+	"comment": "Never-worse ratchet over ABSOLUTE uncovered lines and branches, per file. It fails when a file's uncovered count rises above the number here; it never asserts a percentage, because no percentage in this repo means what it looks like -- at 71.2 % line coverage, roughly 41 of 70 deliberate mutations of production code survived all 996 tests, both Pro gates among them. A file that is not listed counts as 0 uncovered, so a new file arrives with its tests or it arrives red. Moving tested code between files can raise one entry while lowering another: that is the case to re-baseline for. Re-measure with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`, in the SAME commit as the change that needs it, so review sees both. THE NUMBERS ARE PLATFORM-DEPENDENT AND THE GATE RUNS ON LINUX. `--write` records what the machine it ran on measured, and a Mac covers more of the platform-branching files (src/local-register.ts, src/local-model-runtime.ts, src/vision-ocr-runtime.ts) than ubuntu-latest does -- so a baseline written on a Mac can fail CI on files nobody touched. It first did on 2026-08-19, the day src/entry.ts entered the measurement and brought those files with it. When CI reports a file as less covered and a local run does not, raise that entry by the delta CI printed: the floor has to be the platform that enforces it. A `--write` on a Mac will offer to LOWER those same three entries again -- that offer is the flaw, not an improvement; leave them where CI put them. Raised for two files on 2026-09-10, by hand and from CI's own numbers rather than with --write (a Mac run lowers the platform files and turns CI red). Ticket 20 gave the plugin two model generations, and the code that grew is plumbing in the two files that are plumbing by design: src/local-model-runtime.ts +3 lines/+3 branches for `pathsFor`, `resolveLocalModel` and `pathsForGeneration`, which need a real home directory and a real `models/` to run at all; and src/local-register.ts +8/+8 for the wiring that resolves the generation, sweeps unfinishable partials and routes the update button at the newer model's directory. Everything in that change which DECIDES was extracted into pure modules and tested instead -- `chooseGeneration`, `newerModelOffer`, `pageArgs`, the per-generation memory floors, seventeen new matrix rows (E29.1-E29.17) -- and three default arguments were made required, which removed their branches outright. What is left is `a ? b(x) : null` in a file whose whole job is to hand the pure layer its arguments, and wrapping that in a testable seam would be an abstraction for single-use code, which CLAUDE.md §2 forbids. Lower these two whenever the node layer genuinely shrinks.",
+	"measured": "2026-09-10",
 	"files": {
 		"pro/anthropic-ocr-backend.ts": {
 			"lines": 0,
@@ -147,8 +147,8 @@
 			"branches": 0
 		},
 		"src/local-model-runtime.ts": {
-			"lines": 45,
-			"branches": 15
+			"lines": 48,
+			"branches": 18
 		},
 		"src/local-model-settings.ts": {
 			"lines": 0,
@@ -167,8 +167,8 @@
 			"branches": 25
 		},
 		"src/local-register.ts": {
-			"lines": 104,
-			"branches": 90
+			"lines": 112,
+			"branches": 98
 		},
 		"src/localhost-providers.ts": {
 			"lines": 0,
