@@ -298,3 +298,71 @@
       file: src/local-model-card.test.ts
       test: "newerModelOffer > sizes the download per platform"
 
+- feature: E31
+  name: The model is chosen by what the machine can run, and by the user
+  code: src/local-model-artefacts.ts
+  tier: free
+  scenarios:
+    - id: E31.1
+      scenario: A machine whose memory clears one generation's floor and not another's
+      expect: Never a model it cannot run, whatever is on disk and whatever was asked for. "Newest wins" only looked right while both generations had the same floor -- the moment one is offered on a smaller machine, that rule hands it a model its own memory gate then refuses, and the install shows a card for a backend that cannot start
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > never returns a model this machine cannot run"
+
+    - id: E31.2
+      scenario: The order the choice is made in
+      expect: By accuracy, not by age or size. That is what the choice is about; memory and download size are its costs, and a cost belongs beside the thing it buys rather than in the ordering
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > sorts by accuracy rather than by age or size"
+
+    - id: E31.3
+      scenario: A user who picked the smaller model on a machine that could run the larger
+      expect: Their choice stands. They had a reason -- speed, memory pressure while other things run, disk -- and a plugin update must not quietly move them back
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > honours a choice the user made"
+
+    - id: E31.4
+      scenario: A stored choice naming a model that is no longer installed
+      expect: Ignored, and the rule decides again. The name outlives the file it points at, and a preference must never be able to stop transcription -- everything else in this subsystem is derived from disk on every load for exactly that reason
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > ignores a choice whose model is not installed"
+
+    - id: E31.5
+      scenario: A stored choice naming a model this machine no longer has the memory for
+      expect: Ignored the same way. A machine can shrink -- a different Mac, a different vault -- and the choice is a preference rather than a fact
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > ignores a choice this machine has outgrown"
+
+    - id: E31.6
+      scenario: What to offer beside the model in use
+      expect: Only a model that is both more accurate and runnable here. On a machine too small for the best one there may still be a better one than the reader has; on one already running the best there is nothing to say, and offering a model its own gate would refuse is worse than offering nothing
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > offers only a model that is both better and runnable"
+
+    - id: E31.7
+      scenario: The user picks a model, then picks "decide for me"
+      expect: The name is written, and then the key is removed rather than set to an empty string -- `data.json` keeps no key that means nothing
+      layer: unit
+      file: src/local-model-settings.test.ts
+      test: "setPreferredModelDir > clears the choice rather than storing an empty one"
+
+    - id: E31.8
+      scenario: The user picks a model
+      expect: Recorded in the backend's own settings blob, beside the background-sync consent, which is where a user preference already lives
+      layer: unit
+      file: src/local-model-settings.test.ts
+      test: "setPreferredModelDir > records the model the user picked"
+
+    - id: E31.9
+      scenario: A machine with too little memory for any model at all
+      expect: The least demanding one is still named. `localModelBlock` refuses the backend long before this arm is reached in the product, but a chooser that could return nothing would hand every caller an undefined generation to dereference
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > still names a model on a machine that can run none of them"
+

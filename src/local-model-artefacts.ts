@@ -86,6 +86,16 @@ export interface ModelGeneration {
 	 * `MAX_TOKENS` of answer.
 	 */
 	contextTokens: number | null;
+	/**
+	 * Whether a page far taller than it is wide is cut at its blank bands before this model reads it
+	 * (`splitTallInk`).
+	 *
+	 * Per model because it is not universally right, which was measured only after it shipped. On the
+	 * reference set's scrolled page: Qwen2.5-VL-7B **4.32 % -> 1.00 %**, GPT-4o **39.53 % -> 3.99 %** --
+	 * and Qwen3-VL-2B **1.00 % -> 10.63 %**, the other way and by a lot. Splitting helps a model that
+	 * shrinks a tall image before reading it and hurts one that handles the shape natively.
+	 */
+	splitsTallPages: boolean;
 }
 
 /**
@@ -122,6 +132,12 @@ const QWEN3_VL_8B: ModelGeneration = {
 	// ratio would be inventing a measurement rather than making one.
 	floorGb: { darwin: 16, win32: 24 },
 	contextTokens: 8192,
+	// **On, deliberately, although this is the one model measured to lose by it** -- 1.00 % whole
+	// against 1.33 % cut on page 15, with the median unchanged. A third of a point on one page is a
+	// known and bounded cost; reading a tall page whole is unbounded in the other direction, and the
+	// tallest page anyone has measured is the 8.77x one in the reference set. Trading a measured
+	// 0.33 pp for the behaviour of a page nobody has written yet is the wrong way round.
+	splitsTallPages: true,
 };
 
 /**
@@ -158,6 +174,9 @@ const QWEN25_VL_7B: ModelGeneration = {
 	// would very likely fall with a `-c` too, but that changes the invocation of a model we are moving
 	// away from -- and with it the 4.32 % it measured. See ticket 16.
 	contextTokens: null,
+	// The model splitting was built for: 4.32 % whole against 1.00 % cut, and its peak drops from
+	// 15.09 GB to 13.22 GB with it, which is what keeps the 18 GB floor honest.
+	splitsTallPages: true,
 };
 
 /** Newest first. The order is the preference, and `chooseGeneration` is the only thing that reads it. */
@@ -175,27 +194,62 @@ export function holdsGeneration(entry: ModelDirectoryFacts, generation: ModelGen
 	return entry.name === generation.dir && entry.modelBytes === generation.modelBytes && entry.mmprojBytes === generation.mmprojBytes;
 }
 
-/**
- * Which model this install uses: **the newest generation already on disk, and only otherwise the
- * newest one there is.**
- *
- * The order matters more than it looks. Preferring what is installed is what keeps a plugin update
- * from stopping transcription: an install holding the 7B keeps reading pages with it, and the newer
- * model is offered rather than required. Preferring the newest when nothing is installed is what
- * gives a fresh install the better model without asking it to choose between two names it cannot
- * judge.
- *
- * A download in flight is not considered here at all -- the settings card shows it from the download
- * itself -- so a half-fetched 8B never displaces a working 7B.
- */
-export function chooseGeneration(present: readonly ModelDirectoryFacts[]): ModelGeneration {
-	return MODEL_GENERATIONS.find((generation) => present.some((entry) => holdsGeneration(entry, generation))) ?? MODEL_GENERATIONS[0];
+/** What the choice needs to know about the machine and about the user, beyond what is on disk. */
+export interface ChoiceContext {
+	platform: LocalModelPlatform;
+	totalMemoryBytes: number;
+	/** The directory the user picked in settings, if they picked one. A preference, never a fact. */
+	preferred?: string | null;
 }
 
-/** The generation after the one in use, when there is one worth offering. */
-export function newerGeneration(inUse: ModelGeneration): ModelGeneration | null {
-	const at = MODEL_GENERATIONS.indexOf(inUse);
-	return at > 0 ? MODEL_GENERATIONS[0] : null;
+/** The thresholds sit one GiB under nominal: a machine sold as 16 GB reports roughly 15.6 GiB. */
+function fits(generation: ModelGeneration, context: ChoiceContext): boolean {
+	return context.totalMemoryBytes >= (generation.floorGb[context.platform] - 1) * 1024 ** 3;
+}
+
+/** Every generation this machine has the memory for, most accurate first. */
+export function runnableGenerations(context: ChoiceContext): ModelGeneration[] {
+	return MODEL_GENERATIONS.filter((generation) => fits(generation, context)).sort((a, b) => a.measured.medianCer - b.measured.medianCer);
+}
+
+/**
+ * Which model this install uses, in three steps.
+ *
+ * 1. **What the user picked**, if they picked one and it is installed and this machine can run it. A
+ *    reader who chose the small model on a large Mac had a reason, and a plugin update must not
+ *    quietly move them back.
+ * 2. **The most accurate model already on disk.** Preferring what is installed is what keeps a plugin
+ *    update from stopping transcription: an install holding the 7B goes on reading pages with it, and
+ *    a better model is offered rather than required.
+ * 3. **The most accurate this machine can run**, for a fresh install -- which is not the same as the
+ *    newest. The list is a size ladder, not a timeline: an 8 GB Mac cannot run the largest model at
+ *    all, and handing it one whose own memory gate then refuses it is how "newest wins" fails.
+ *
+ * Accuracy is the sort key throughout because that is what the choice is *about*. Memory and download
+ * size are its costs, and a cost belongs beside the thing it buys rather than in the ordering.
+ *
+ * A download in flight is not considered here -- the settings card shows it from the download itself --
+ * so a half-fetched model never displaces a working one.
+ */
+export function chooseGeneration(present: readonly ModelDirectoryFacts[], context: ChoiceContext): ModelGeneration {
+	const installed = (generation: ModelGeneration) => present.some((entry) => holdsGeneration(entry, generation));
+	const runnable = runnableGenerations(context);
+
+	const picked = runnable.find((generation) => generation.dir === context.preferred && installed(generation));
+	// Nothing here may return a generation this machine cannot run, so every arm reads from `runnable`
+	// and the last resort is the least demanding model rather than the best one.
+	return picked ?? runnable.find(installed) ?? runnable[0] ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
+}
+
+/**
+ * A model worth offering beside the one in use: more accurate, and one this machine can actually run.
+ *
+ * Not "the newest". On a machine that cannot run the most accurate model there may still be a better
+ * one than the reader has, and on one that already runs the best there is nothing to say.
+ */
+export function betterGeneration(inUse: ModelGeneration, context: ChoiceContext): ModelGeneration | null {
+	const best = runnableGenerations(context)[0];
+	return best !== undefined && best.measured.medianCer < inUse.measured.medianCer ? best : null;
 }
 
 /** llama.cpp release b10295 (2026-08-06T12:56:29Z). */

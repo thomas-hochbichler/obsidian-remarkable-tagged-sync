@@ -249,7 +249,7 @@ describe("newerModelOffer", () => {
 	const [newest, older] = MODEL_GENERATIONS;
 
 	it("quotes both error rates and the real download size", () => {
-		const offer = newerModelOffer(older, "darwin");
+		const offer = newerModelOffer(older, { platform: "darwin", totalMemoryBytes: 64 * 1024 ** 3 });
 
 		expect(offer).toMatchObject({ label: newest.label, medianCer: newest.measured.medianCer, currentMedianCer: older.measured.medianCer });
 		// The runtime archive rides along, so the figure is what the user actually waits for.
@@ -257,11 +257,11 @@ describe("newerModelOffer", () => {
 	});
 
 	it("offers nothing to an install already on the newest model", () => {
-		expect(newerModelOffer(newest, "darwin")).toBeNull();
+		expect(newerModelOffer(newest, { platform: "darwin", totalMemoryBytes: 64 * 1024 ** 3 })).toBeNull();
 	});
 
 	// Windows fetches a different runtime archive, so the size it is promised has to be its own.
 	it("sizes the download per platform", () => {
-		expect(newerModelOffer(older, "win32")?.downloadBytes).not.toBe(newerModelOffer(older, "darwin")?.downloadBytes);
+		expect(newerModelOffer(older, { platform: "win32", totalMemoryBytes: 64 * 1024 ** 3 })?.downloadBytes).not.toBe(newerModelOffer(older, { platform: "darwin", totalMemoryBytes: 64 * 1024 ** 3 })?.downloadBytes);
 	});
 });

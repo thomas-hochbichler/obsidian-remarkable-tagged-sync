@@ -188,6 +188,27 @@
       file: src/llm-transcript.test.ts
       test: "splitTallInk on the pages that have no shape to judge > sends a page needing more pieces than the cap allows as one image"
 
+    - id: E30.8
+      scenario: A model that reads a tall image natively, rather than shrinking it first
+      expect: The page goes whole. Splitting is a property of the model rather than of the page -- measured on the reference set's scrolled page it takes GPT-4o from 39.53 % to 3.99 % and Qwen2.5-VL-7B from 4.32 % to 1.00 %, and Qwen3-VL-2B from 1.00 % to **10.63 %** the other way
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText, for a model that reads a tall image natively > sends the page whole when the model says not to cut it"
+
+    - id: E30.9
+      scenario: A caller that says nothing about splitting -- every cloud backend, and both models that ship today
+      expect: The page is cut. The default is the case that is right for everything currently measured, so a backend added without thinking about it gets the behaviour that helps rather than the one that does not
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText, for a model that reads a tall image natively > cuts by default, which is what every cloud backend and both shipped models want"
+
+    - id: E30.10
+      scenario: A page with typed text between two runs of ink, for a model that does not split for height
+      expect: Still split at the typed text. The two splits compose and are independent -- typed text is not on the page image at all and must be placed among the ink whatever the model thinks about tall images
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText, for a model that reads a tall image natively > still splits at the typed text when it is not splitting for height"
+
 - feature: G14
   name: Shrunk-highlight warning
   code: src/sync-engine.ts

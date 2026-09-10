@@ -12,7 +12,24 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **You can pick which local model runs, and the plugin picks well if you do not.** Where more than one
+  model fits your machine, the settings screen lists them by how well each read the fifteen public
+  reference pages, with the memory each uses while a page is read, and any model your Mac is too small
+  for is named with the reason. Leave it on *Decide for me* and you get the most accurate one your
+  machine can run. Your choice is remembered, and it is a preference rather than a fact — if the model
+  it names is deleted or you move to a smaller machine, the plugin decides again instead of stopping.
+  (#145)
+
 ### Changed
+
+- **Whether a scrolled page is cut before reading is now decided per model.** Cutting a very tall page
+  at its blank bands helps most backends enormously — GPT-4o goes from 39.5 % character error to
+  4.0 % — but it is not universal: a model that handles a tall image natively reads it *better* whole,
+  and one was measured going the other way, from 1.0 % to 10.6 %. Both models the plugin ships still
+  cut, which is what their measurements say; the setting exists so a model that should not is not made
+  to. (#145)
 
 - **A page you scrolled is now read in pieces, and comes back far better.** A scrolled page is one very
   tall image -- one in the reference set is 852 by 7469 pixels -- and every transcription backend

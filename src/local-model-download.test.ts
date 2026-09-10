@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseGeneration, holdsGeneration, MODEL_GENERATIONS, newerGeneration, RUNTIME_ARTEFACTS, totalDownloadBytes } from "./local-model-artefacts";
+import { betterGeneration, chooseGeneration, holdsGeneration, MODEL_GENERATIONS, RUNTIME_ARTEFACTS, runnableGenerations, totalDownloadBytes } from "./local-model-artefacts";
 import {
 	formatBytes,
 	freeSpaceShortfall,
@@ -241,28 +241,30 @@ describe("chooseGeneration", () => {
 	const older = MODEL_GENERATIONS[1];
 	const newest = MODEL_GENERATIONS[0];
 	const complete = (g: (typeof MODEL_GENERATIONS)[number]) => ({ name: g.dir, modelBytes: g.modelBytes, mmprojBytes: g.mmprojBytes });
+	/** A machine large enough for every generation, so these tests are about the disk and not the RAM. */
+	const big = { platform: "darwin" as const, totalMemoryBytes: 64 * 1024 ** 3 };
 
 	it("keeps the model an existing install already has, rather than declaring it out of date", () => {
-		expect(chooseGeneration([complete(older)])).toBe(older);
+		expect(chooseGeneration([complete(older)], big)).toBe(older);
 	});
 
 	it("gives a fresh install the newest model", () => {
-		expect(chooseGeneration([])).toBe(newest);
+		expect(chooseGeneration([], big)).toBe(newest);
 	});
 
 	it("prefers the newest of the models actually on disk", () => {
-		expect(chooseGeneration([complete(older), complete(newest)])).toBe(newest);
+		expect(chooseGeneration([complete(older), complete(newest)], big)).toBe(newest);
 	});
 
 	// A truncated file is not a model. Falling back to "newest" here is right: there is nothing to keep.
 	it("ignores a directory whose files are the wrong length", () => {
-		expect(chooseGeneration([{ name: older.dir, modelBytes: 12, mmprojBytes: older.mmprojBytes }])).toBe(newest);
+		expect(chooseGeneration([{ name: older.dir, modelBytes: 12, mmprojBytes: older.mmprojBytes }], big)).toBe(newest);
 	});
 
 	// A half-fetched newer model must never displace a working older one; the card shows the download
 	// from the download itself.
 	it("ignores a directory with no files in it at all", () => {
-		expect(chooseGeneration([{ name: newest.dir, modelBytes: null, mmprojBytes: null }, complete(older)])).toBe(older);
+		expect(chooseGeneration([{ name: newest.dir, modelBytes: null, mmprojBytes: null }, complete(older)], big)).toBe(older);
 	});
 
 	it("matches a generation only in its own directory", () => {
@@ -270,8 +272,8 @@ describe("chooseGeneration", () => {
 	});
 
 	it("offers the newest to an older install and nothing to the newest one", () => {
-		expect(newerGeneration(older)).toBe(newest);
-		expect(newerGeneration(newest)).toBeNull();
+		expect(betterGeneration(older, big)).toBe(newest);
+		expect(betterGeneration(newest, big)).toBeNull();
 	});
 
 });
@@ -431,5 +433,58 @@ describe("the context every generation runs at", () => {
 	// invocation, and with it the figure it measured.
 	it("leaves the older generation's invocation exactly as it shipped", () => {
 		expect(MODEL_GENERATIONS[1].contextTokens).toBeNull();
+	});
+});
+
+/**
+ * The list is a size ladder, not a timeline. "Newest wins" only looked right while both generations
+ * had the same memory floor; the moment one is offered on a smaller machine it hands that machine a
+ * model its own memory gate then refuses.
+ */
+describe("chooseGeneration against the machine", () => {
+	const [best, older] = MODEL_GENERATIONS;
+	const complete = (g: (typeof MODEL_GENERATIONS)[number]) => ({ name: g.dir, modelBytes: g.modelBytes, mmprojBytes: g.mmprojBytes });
+	const mac = (gb: number, preferred?: string) => ({ platform: "darwin" as const, totalMemoryBytes: gb * 1024 ** 3, preferred });
+
+	it("never returns a model this machine cannot run", () => {
+		// 16 GB clears the newer model's floor and not the older one's, whatever is on disk.
+		expect(chooseGeneration([complete(older)], mac(16))).toBe(best);
+		expect(chooseGeneration([], mac(16))).toBe(best);
+	});
+
+	it("sorts by accuracy rather than by age or size", () => {
+		const order = runnableGenerations(mac(64));
+		expect(order[0]).toBe(best);
+		expect(order.map((g) => g.measured.medianCer)).toEqual([...order.map((g) => g.measured.medianCer)].sort((a, b) => a - b));
+	});
+
+	// A reader who picked the small model on a large Mac had a reason -- speed, memory pressure while
+	// other things run, disk. A plugin update must not quietly move them back.
+	it("honours a choice the user made", () => {
+		expect(chooseGeneration([complete(best), complete(older)], mac(64, older.dir))).toBe(older);
+	});
+
+	// A preference, never a fact: the name in `data.json` outlives the file it points at, and must
+	// never be able to stop transcription.
+	it("ignores a choice whose model is not installed", () => {
+		expect(chooseGeneration([complete(best)], mac(64, older.dir))).toBe(best);
+	});
+
+	it("ignores a choice this machine has outgrown", () => {
+		expect(chooseGeneration([complete(older)], mac(16, older.dir))).toBe(best);
+	});
+
+	// On a machine too small for the best model there may still be a better one than the reader has,
+	// and on one already running the best there is nothing to say.
+	it("offers only a model that is both better and runnable", () => {
+		expect(betterGeneration(older, mac(64))).toBe(best);
+		expect(betterGeneration(best, mac(64))).toBeNull();
+		expect(betterGeneration(best, mac(16))).toBeNull();
+	});
+	// A machine too small for anything at all. `localModelBlock` refuses the backend long before this,
+	// so the arm is unreachable in the product -- but a function that can return "nothing" would hand
+	// its caller an undefined generation, and every caller dereferences it.
+	it("still names a model on a machine that can run none of them", () => {
+		expect(chooseGeneration([], { platform: "darwin", totalMemoryBytes: 4 * 1024 ** 3 })).toBe(MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]);
 	});
 });

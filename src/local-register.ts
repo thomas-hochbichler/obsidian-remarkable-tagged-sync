@@ -28,11 +28,11 @@ import {
 	resolveLocalModel,
 	resolveLocalModelPaths,
 } from "./local-model-runtime";
-import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent } from "./local-model-settings";
-import { deriveLocalModelState, type LocalModelPaths, type LocalModelPlatform } from "./local-model-store";
-import { type ModelGeneration, MODEL_GENERATIONS, newerGeneration } from "./local-model-artefacts";
+import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir } from "./local-model-settings";
+import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
+import { betterGeneration, type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
-import { type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
+import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 export const LOCAL_BACKEND_ID = "local";
@@ -60,6 +60,18 @@ export function noteLocalRuntimeFailure(message: string): void {
 	runtimeFailure = message;
 }
 
+/** What the choice rule needs about this machine, plus the user's own pick. Null off a desktop Mac/PC. */
+function choiceContext(settings?: BackendSettings): ChoiceContext | null {
+	const machine = machineFacts();
+	const platform = localModelPlatform();
+	if (!machine || !platform) return null;
+	return {
+		platform,
+		totalMemoryBytes: machine.totalMemoryBytes,
+		preferred: settings ? readLocalModelSettings(settings).preferredModelDir : null,
+	};
+}
+
 /**
  * Why this machine cannot run the model, or null. Null on a machine where node is not available.
  *
@@ -71,7 +83,10 @@ export function noteLocalRuntimeFailure(message: string): void {
 function blockForThisMachine(): ReturnType<typeof localModelBlock> {
 	const machine = machineFacts();
 	if (!machine) return { kind: "architecture" };
-	return localModelBlock(machine, (resolveLocalModel(PLUGIN_ID)?.generation ?? MODEL_GENERATIONS[0]).floorGb);
+	// Judged against the model this install would actually use, and the least demanding one otherwise:
+	// a machine that can run *something* is not blocked because the most accurate model needs more.
+	const generation = resolveLocalModel(PLUGIN_ID)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
+	return localModelBlock(machine, generation.floorGb);
 }
 
 /** True where the backend could actually run, which is what decides whether it gets a card at all. */
@@ -85,7 +100,7 @@ function machineCanRun(): boolean {
  * Never cached: a model deleted or truncated by something outside the plugin has to be noticed, and a
  * remembered "ready" is precisely what would hide it.
  */
-function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, platform: LocalModelPlatform | null): LocalCardState {
+function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, context: ChoiceContext | null): LocalCardState {
 	const inFlight = download?.progress();
 	if (inFlight) {
 		switch (inFlight.phase) {
@@ -133,7 +148,7 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, p
 			if (runtimeFailure) return { kind: "runtime-failed", message: runtimeFailure };
 			// The offer, and only an offer: a working model is never displaced by a newer one without the
 			// user pressing the button (ticket 20).
-			return { kind: "ready", newer: platform === null ? null : newerModelOffer(generation, platform) };
+			return { kind: "ready", newer: context === null ? null : newerModelOffer(generation, context) };
 		case "absent":
 			// Unreachable while a complete older model is present -- `chooseGeneration` would have picked
 			// it and this would read `ready`. What is left is a genuine fresh install.
@@ -178,17 +193,18 @@ function beginDownload(into: LocalModelPaths, rerender: () => void, generation: 
 
 /** Renders the setup card: the state, its copy, its buttons, and the consent checkbox where it belongs. */
 function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, rerender: () => void): void {
-	const resolved = resolveLocalModel(PLUGIN_ID);
+	const context = choiceContext(ctx.settings);
+	const resolved = resolveLocalModel(PLUGIN_ID, context?.preferred ?? null);
 	const platform = localModelPlatform();
-	if (!resolved || !platform) return;
+	if (!resolved || !platform || !context) return;
 	const { paths, generation } = resolved;
 	// A partial of a model no build can finish any more is provably useless; anything complete is left
 	// exactly where it is, whether it is the model in use or the one to fall back to.
 	sweepUnfinishedDirectories(paths, generation);
 
-	const state = currentCardState(paths, generation, platform);
+	const state = currentCardState(paths, generation, context);
 	// Where the newer model would land, resolved once so the update button does not have to.
-	const newer = newerGeneration(generation);
+	const newer = betterGeneration(generation, context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
 	// A ready model has nothing left to set up: the backend is selectable, so the dropdown is where it
 	// belongs now. Its speed, its misread caveat and its delete button are about a backend in use, and
@@ -208,6 +224,39 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 		const bar = card.createEl("progress");
 		bar.max = 100;
 		bar.value = copy.percent;
+	}
+
+	// The choice, offered only where there is one: a single runnable model is not a decision, and a
+	// dropdown listing one option is a question with one answer.
+	const choices = runnableGenerations(context);
+	if (state.kind === "ready" && choices.length > 1) {
+		new Setting(card)
+			.setName("Model")
+			.setDesc(
+				`Sorted by how well each read the fifteen public reference pages. Lower is better; the memory figure is what it uses while a page is read. ${
+					MODEL_GENERATIONS.filter((candidate) => !choices.includes(candidate))
+						.map((candidate) => `${candidate.label} needs ${candidate.floorGb[context.platform]} GB and is not offered here.`)
+						.join(" ")
+				}`.trim(),
+			)
+			.addDropdown((dropdown) => {
+				dropdown.addOption("", `Decide for me (${generation.label})`);
+				for (const candidate of choices) {
+					dropdown.addOption(
+						candidate.dir,
+						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${(candidate.peakRssBytes / 1024 ** 3).toFixed(1)} GB`,
+					);
+				}
+				dropdown.setValue(context.preferred ?? "");
+				dropdown.onChange(async (value) => {
+					// Empty means "decide for me", which is a cleared preference rather than a stored empty
+					// string -- `readLocalModelSettings` treats both alike, and not writing one keeps
+					// `data.json` free of a key that means nothing.
+					setPreferredModelDir(ctx.settings, value === "" ? null : value);
+					await ctx.save();
+					rerender();
+				});
+			});
 	}
 
 	if (copy.actions.length > 0) {
@@ -233,7 +282,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 						// The one action that writes into a *different* directory than the one in use: the
 						// newer model installs beside the working one, which is what makes it an offer.
 						case "update":
-							beginDownload(newerPaths ?? paths, rerender, newerGeneration(generation) ?? generation, paths);
+							beginDownload(newerPaths ?? paths, rerender, newer ?? generation, paths);
 							break;
 						case "cancel":
 							download?.cancel();

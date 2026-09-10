@@ -6,7 +6,7 @@
 // that can be asserted is a string that cannot quietly drift. The renderer below the seam turns this
 // into DOM and knows nothing about what any of it means.
 
-import { MODEL_GENERATIONS, type ModelGeneration, newerGeneration, totalDownloadBytes } from "./local-model-artefacts";
+import { betterGeneration, type ChoiceContext, MODEL_GENERATIONS, type ModelGeneration, totalDownloadBytes } from "./local-model-artefacts";
 import { formatBytes, shortfallMessage } from "./local-model-download";
 import { estimateLine } from "./local-model-settings";
 import type { LocalModelPlatform } from "./local-model-store";
@@ -33,14 +33,18 @@ export interface NewerModelOffer {
  * everything that *decides* is a function over facts, so it can be tested without a filesystem. Both
  * error rates come from the generation records, so the card quotes what *these* files measured on the
  * fifteen public reference pages rather than a claim from a model card.
+ *
+ * "Better" is judged against what this machine can run, not against the list: on a Mac too small for
+ * the most accurate model there may still be one better than the reader has, and offering a model its
+ * own memory gate would refuse is worse than offering nothing.
  */
-export function newerModelOffer(inUse: ModelGeneration, platform: LocalModelPlatform): NewerModelOffer | null {
-	const newer = newerGeneration(inUse);
-	if (!newer) return null;
+export function newerModelOffer(inUse: ModelGeneration, context: ChoiceContext): NewerModelOffer | null {
+	const better = betterGeneration(inUse, context);
+	if (!better) return null;
 	return {
-		label: newer.label,
-		downloadBytes: totalDownloadBytes(platform, newer),
-		medianCer: newer.measured.medianCer,
+		label: better.label,
+		downloadBytes: totalDownloadBytes(context.platform, better),
+		medianCer: better.measured.medianCer,
 		currentMedianCer: inUse.measured.medianCer,
 	};
 }

@@ -8,23 +8,26 @@ import {
 	recordPageDuration,
 	reTranscribeCaveat,
 	setBackgroundConsent,
+	setPreferredModelDir,
 	typicalPageSeconds,
 } from "./local-model-settings";
 
 describe("readLocalModelSettings", () => {
 	it("defaults an empty blob to no consent and no measurements", () => {
-		expect(readLocalModelSettings({})).toEqual({ backgroundConsent: false, recentPageMs: [] });
+		expect(readLocalModelSettings({})).toEqual({ backgroundConsent: false, recentPageMs: [], preferredModelDir: null });
 	});
 
 	// The blob is opaque to the core and survives backend switches, so it can hold anything.
 	it("survives a blob holding the wrong shapes", () => {
-		expect(readLocalModelSettings({ backgroundConsent: "yes", recentPageMs: "nope" })).toEqual({
+		expect(readLocalModelSettings({ backgroundConsent: "yes", recentPageMs: "nope", preferredModelDir: 7 })).toEqual({
 			backgroundConsent: false,
 			recentPageMs: [],
+			preferredModelDir: null,
 		});
 		expect(readLocalModelSettings({ recentPageMs: [1, "two", -3, 4] })).toEqual({
 			backgroundConsent: false,
 			recentPageMs: [1, 4],
+			preferredModelDir: null,
 		});
 	});
 });
@@ -196,5 +199,24 @@ describe("setBackgroundConsent", () => {
 		setBackgroundConsent(blob, true);
 
 		expect(readLocalModelSettings(blob).backgroundConsent).toBe(true);
+	});
+});
+
+describe("setPreferredModelDir", () => {
+	it("records the model the user picked", () => {
+		const blob = {};
+		setPreferredModelDir(blob, "qwen3-vl-2b-instruct-q4_k_m");
+
+		expect(readLocalModelSettings(blob).preferredModelDir).toBe("qwen3-vl-2b-instruct-q4_k_m");
+	});
+
+	// "Decide for me" is a cleared preference rather than a stored empty string: not writing the key
+	// keeps `data.json` free of one that means nothing.
+	it("clears the choice rather than storing an empty one", () => {
+		const blob = { preferredModelDir: "something" };
+		setPreferredModelDir(blob, null);
+
+		expect("preferredModelDir" in blob).toBe(false);
+		expect(readLocalModelSettings(blob).preferredModelDir).toBeNull();
 	});
 });

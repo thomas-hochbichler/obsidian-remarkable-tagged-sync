@@ -105,6 +105,8 @@ export class LocalOcrBackend implements OcrBackend {
 	 * newer model -- a constant would have gone on claiming the old model's transcripts were current.
 	 */
 	readonly fingerprint: string;
+	/** Read for one thing only: whether this model wants a very tall page cut before it sees it. */
+	private readonly generation: ModelGeneration;
 	private readonly runPage: LocalPageRunner;
 	private readonly settings: BackendSettings;
 	private readonly onRuntimeFailure: (message: string) => void;
@@ -116,6 +118,7 @@ export class LocalOcrBackend implements OcrBackend {
 	private runtimeBroken = false;
 
 	constructor(options: LocalOcrOptions) {
+		this.generation = options.generation;
 		this.fingerprint = `local:${options.generation.artefacts[0].sha256}`;
 		this.runPage = options.runPage;
 		this.settings = options.settings;
@@ -139,7 +142,7 @@ export class LocalOcrBackend implements OcrBackend {
 			const read: string[] = [];
 			let pageFailed = false;
 
-			for (const part of splitAtTypedText(page)) {
+			for (const part of splitAtTypedText(page, { splitTall: this.generation.splitsTallPages })) {
 				if (part.kind === "typed") {
 					read.push(part.text);
 					continue;
