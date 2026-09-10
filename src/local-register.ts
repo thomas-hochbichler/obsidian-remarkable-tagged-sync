@@ -7,7 +7,7 @@
 // place that knows they belong to each other.
 
 import { Notice, Platform, Setting } from "obsidian";
-import { BACKGROUND_CONSENT_DESC, cardCopy, deleteConfirmation, type LocalCardState, newerModelOffer } from "./local-model-card";
+import { backgroundConsentDesc, cardCopy, deleteConfirmation, type LocalCardState, newerModelOffer } from "./local-model-card";
 import { planCleanup } from "./local-model-download";
 import { localModelBlock, localModelUnavailableLabel, NOT_READY_LABEL } from "./local-model-gate";
 import {
@@ -213,7 +213,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// selected to reach that explanation.
 	if (state.kind === "ready" && !ctx.isSelected) return;
 
-	const copy = cardCopy(state, platform, ctx.settings);
+	const copy = cardCopy(state, platform, ctx.settings, generation);
 
 	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
 	card.createEl("h4", { text: copy.heading });
@@ -318,7 +318,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	if (copy.showsBackgroundConsent && !ctx.isSelected) {
 		new Setting(card)
 			.setName("Transcribe during background sync")
-			.setDesc(BACKGROUND_CONSENT_DESC)
+			.setDesc(backgroundConsentDesc(generation))
 			.addToggle((toggle) =>
 				toggle.setValue(readLocalModelSettings(ctx.settings).backgroundConsent).onChange(async (value) => {
 					setBackgroundConsent(ctx.settings, value);
@@ -411,7 +411,7 @@ if (offeredOnThisPlatform()) {
 		backgroundConsent: {
 			get: (settings) => readLocalModelSettings(settings).backgroundConsent,
 			set: (settings, value) => setBackgroundConsent(settings, value),
-			description: BACKGROUND_CONSENT_DESC,
+			description: backgroundConsentDesc(resolveLocalModel(PLUGIN_ID)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
 		},
 	});
 }

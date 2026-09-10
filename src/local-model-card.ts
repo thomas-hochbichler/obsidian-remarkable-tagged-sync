@@ -6,7 +6,7 @@
 // that can be asserted is a string that cannot quietly drift. The renderer below the seam turns this
 // into DOM and knows nothing about what any of it means.
 
-import { betterGeneration, type ChoiceContext, MODEL_GENERATIONS, type ModelGeneration, totalDownloadBytes } from "./local-model-artefacts";
+import { betterGeneration, type ChoiceContext, type ModelGeneration, totalDownloadBytes } from "./local-model-artefacts";
 import { formatBytes, shortfallMessage } from "./local-model-download";
 import { estimateLine } from "./local-model-settings";
 import type { LocalModelPlatform } from "./local-model-store";
@@ -95,13 +95,13 @@ function percent(rate: number): string {
 }
 
 /**
- * The download's two halves as the consent copy names them, one line each.
+ * What this install would actually download, as the consent copy names it.
  *
- * Derived from the newest generation rather than written out, because two generations ship now and
- * this string sits on the button a fresh install presses -- a hard-coded size would have quoted the
- * old model's 5.5 GB over a 6.2 GB download.
+ * A function of the generation rather than a constant, because three ship and they differ by a factor
+ * of four: a fresh install on an 8 GB Mac fetches 1.6 GB, and a hard-coded string would have promised
+ * it the 6.2 GB the largest one costs.
  */
-const MODEL_SIZE = gib(MODEL_GENERATIONS[0].modelBytes + MODEL_GENERATIONS[0].mmprojBytes);
+const modelSize = (generation: ModelGeneration) => gib(generation.modelBytes + generation.mmprojBytes);
 /**
  * The engine's size, quoted as **12 MB**.
  *
@@ -135,32 +135,39 @@ export const QUALITY_LINE =
 export const QUALITY_LINE_SHORT =
 	"This model's misreads come out as fluent text, so check anything that matters against the handwriting.";
 
-/** The background-sync gate's own copy. Money is gone from it entirely: this costs none (§7.5). */
-export const BACKGROUND_CONSENT_DESC =
-	"Off by default. In the background the model holds 14 GB and pushes the fans for as long as it runs. Manual syncs are unaffected.";
+/**
+ * The background-sync gate's own copy. Money is gone from it entirely: this costs none (§7.5).
+ *
+ * The memory figure is the chosen model's own. It was a constant while one model shipped, and telling
+ * a reader on the smallest tier that "the model holds 14 GB" would be describing somebody else's Mac.
+ */
+export function backgroundConsentDesc(generation: ModelGeneration): string {
+	return `Off by default. In the background the model holds ${gib(generation.peakRssBytes)} and pushes the fans for as long as it runs. Manual syncs are unaffected.`;
+}
 
 /** What the user is agreeing to, in the four terms §7.2 requires plus the speed line of §7.3. */
-function consentParagraphs(platform: LocalModelPlatform, settings: BackendSettings): string[] {
+function consentParagraphs(platform: LocalModelPlatform, settings: BackendSettings, generation: ModelGeneration): string[] {
 	return [
-		`${MODEL_SIZE} model + ${ENGINE_SIZE} program, each checked against a published SHA-256 before it runs.`,
+		`${modelSize(generation)} model + ${ENGINE_SIZE} program, each checked against a published SHA-256 before it runs.`,
 		"Stored outside your vault, shared by every vault, never synced. Uninstalling the plugin does not remove it; the Delete button here does.",
 		"Runs on this machine. No account, no key, no network once the download is done.",
-		"Qwen2.5-VL-7B · Apache-2.0.",
+		`${generation.label} · Apache-2.0.`,
 		`Speed: ${estimateLine(platform, settings)}`,
-		// 13.43 GB is not an implementation detail on a 32 GB floor; it is half the machine.
-		"Memory: 14 GB · 32 GB of memory recommended.",
+		// Not an implementation detail on a machine at the floor; it is a large share of it. Both figures
+		// are this model's own -- they range from 2.9 GB on an 8 GB Mac to 8.0 GB on a 16 GB one.
+		`Memory: ${gib(generation.peakRssBytes)} while a page is read · ${generation.floorGb[platform]} GB of memory needed.`,
 		QUALITY_LINE,
 	];
 }
 
 /** The whole card, for one state. */
-export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, settings: BackendSettings): CardCopy {
+export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, settings: BackendSettings, generation: ModelGeneration): CardCopy {
 	switch (state.kind) {
 		case "absent":
 			return {
 				heading: "Local model — not downloaded",
-				paragraphs: consentParagraphs(platform, settings),
-				actions: [{ id: "download", label: `Download the model (${MODEL_SIZE})`, emphasis: "cta" }],
+				paragraphs: consentParagraphs(platform, settings, generation),
+				actions: [{ id: "download", label: `Download the model (${modelSize(generation)})`, emphasis: "cta" }],
 				percent: null,
 				// Asked here, on the one screen where the runtime estimate is already on the user's eye.
 				showsBackgroundConsent: true,

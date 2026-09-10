@@ -284,7 +284,6 @@ src/local-model-card.test.ts :: consent (§7.2) > asks for background consent he
 src/local-model-card.test.ts :: consent (§7.2) > names both downloads, the engine as its own cost
 src/local-model-card.test.ts :: consent (§7.2) > says the download is checked before anything runs
 src/local-model-card.test.ts :: consent (§7.2) > says the model outlives the plugin, and how to remove it
-src/local-model-card.test.ts :: consent (§7.2) > states privacy, licence and memory
 src/local-model-card.test.ts :: deleteConfirmation > names the bytes freed, the fallback and what survives
 src/local-model-card.test.ts :: every state > draws a bar exactly where there is progress to draw
 src/local-model-card.test.ts :: every state > never mentions an antivirus exclusion anywhere

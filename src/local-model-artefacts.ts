@@ -179,8 +179,53 @@ const QWEN25_VL_7B: ModelGeneration = {
 	splitsTallPages: true,
 };
 
+/**
+ * Qwen3-VL-2B-Instruct Q4_K_M, from Qwen's own repository. **The only model here an 8 GB Mac can run**,
+ * and the answer to a machine that until now had nothing but Apple Vision: 6.55 % against Vision's
+ * 15.65 % on the fifteen public reference pages.
+ */
+const QWEN3_VL_2B: ModelGeneration = {
+	dir: "qwen3-vl-2b-instruct-q4_k_m",
+	label: "Qwen3-VL-2B-Instruct",
+	modelBytes: 1_107_409_952,
+	mmprojBytes: 445_053_216,
+	artefacts: [
+		{
+			url: huggingFaceUrl("Qwen/Qwen3-VL-2B-Instruct-GGUF", "52d6c8ffea26cc873ac5ad116f8631268d7eb503", "Qwen3VL-2B-Instruct-Q4_K_M.gguf"),
+			fileName: MODEL_FILE,
+			bytes: 1_107_409_952,
+			sha256: "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae",
+		},
+		{
+			url: huggingFaceUrl("Qwen/Qwen3-VL-2B-Instruct-GGUF", "52d6c8ffea26cc873ac5ad116f8631268d7eb503", "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf"),
+			fileName: MMPROJ_FILE,
+			bytes: 445_053_216,
+			sha256: "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82",
+		},
+	],
+	measured: { medianCer: 0.0655, on: "2026-09-10" },
+	peakRssBytes: 3_107_241_984,
+	// 2.89 GiB + 4 GiB = 6.89 GiB, against the 7 GiB an 8 GB Mac reports: **114 MB of margin**, the
+	// thinnest of any tier and set by one page. Windows is 16 GB and is **derived, never measured** --
+	// the only Windows figure anyone has is the 7B's CPU-only 16.64 GB against its 13.43 GB on Metal,
+	// and that ratio puts this model at 7.58 GiB, past an 8 GB machine's 7 GiB. A derived number that
+	// close to a threshold is not one to gate on, so Windows keeps the larger floor.
+	floorGb: { darwin: 8, win32: 16 },
+	// 6144 rather than 8192, and the difference is the whole tier: 2.89 GB against 3.11 GB, which is
+	// 8 GB against 16 GB. It is the smallest context that reads **all fifteen** pages -- at 4096 the
+	// scrolled page does not fit and fails -- so the number comes from the pages rather than from the
+	// floor it lands on. A page taller than any measured here fails visibly rather than swapping,
+	// because the cache is capped and cannot grow with the page.
+	contextTokens: 6144,
+	// **Off, and this is the one model where that matters.** Cut, it reads the scrolled page at
+	// 10.63 %; whole, at 1.00 %. Splitting would buy 599 MB of margin and cost that page nine and a
+	// half points -- the wrong way round for the tier whose whole argument is that it beats Apple
+	// Vision by enough to be worth a download.
+	splitsTallPages: false,
+};
+
 /** Newest first. The order is the preference, and `chooseGeneration` is the only thing that reads it. */
-export const MODEL_GENERATIONS: readonly ModelGeneration[] = [QWEN3_VL_8B, QWEN25_VL_7B];
+export const MODEL_GENERATIONS: readonly ModelGeneration[] = [QWEN3_VL_8B, QWEN25_VL_7B, QWEN3_VL_2B];
 
 /** What one directory under `models/` holds, as facts rather than a conclusion. */
 export interface ModelDirectoryFacts {

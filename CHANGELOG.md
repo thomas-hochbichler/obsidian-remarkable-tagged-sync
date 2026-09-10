@@ -14,6 +14,14 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **A Mac with 8 GB of memory can now read handwriting locally.** Until now those machines had Apple's
+  built-in recognition and nothing else. A third model, Qwen3-VL-2B, reads the fifteen public reference
+  pages at **6.6 % character error against Apple's 15.7 %** — less than half the mistakes — in 2.9 GB
+  while it works and a 1.6 GB download. It is what a fresh install on such a Mac now gets, and it is
+  offered nowhere it would not fit. Windows on ARM keeps a 16 GB requirement for it: the only Windows
+  memory figure anyone has measured is the largest model's, and the number derived from it lands too
+  close to the line to gate on. (#146)
+
 - **You can pick which local model runs, and the plugin picks well if you do not.** Where more than one
   model fits your machine, the settings screen lists them by how well each read the fifteen public
   reference pages, with the memory each uses while a page is read, and any model your Mac is too small
