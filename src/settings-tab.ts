@@ -85,6 +85,11 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this;
+		// Read before the rebuild, restored after it. Nearly every control on this page redraws the
+		// whole tab in place -- choosing a backend, a transport, a tag -- and an emptied element scrolls
+		// back to the top, which threw the reader away from the setting they had just touched. Picking a
+		// backend two thirds down the page was the case that made it obvious.
+		const offset = containerEl.scrollTop;
 		containerEl.empty();
 
 		const connected = this.plugin.transport().status().connected;
@@ -101,6 +106,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		this.renderAutoSyncSettings(containerEl);
 		this.renderPro(containerEl);
 		this.renderActions(containerEl, connected);
+		// After the content is back, so there is something to scroll through. A page that got shorter
+		// clamps this itself, which is the right answer -- there is nowhere further to be.
+		containerEl.scrollTop = offset;
 	}
 
 	/**

@@ -666,6 +666,22 @@ describe("the backend dropdown", () => {
 		expect(dropdown(draw(tab), "Backend").value).toBe("test-plain");
 	});
 
+	/**
+	 * The re-draw above is what makes the rows right; this is what stops it costing the reader their
+	 * place. Transcription sits well down a long page, so choosing a backend emptied the element the
+	 * pane scrolls, took the offset to zero with it, and left the user at the top -- away from the very
+	 * setting they had just changed. Reported from a real settings page on 2026-09-10.
+	 */
+	it("leaves the reader where they were after a re-draw", async () => {
+		const { tab } = await tabWith({ ocrBackend: "off" });
+		tab.containerEl.scrollTop = 420;
+
+		dropdown(draw(tab), "Backend").pick("test-plain");
+		await settle();
+
+		expect(tab.containerEl.scrollTop).toBe(420);
+	});
+
 	it("describes the families this build has, and claims nothing about the ones it does not", async () => {
 		const { tab } = await tabWith();
 		const desc = row(draw(tab), "Backend").desc;

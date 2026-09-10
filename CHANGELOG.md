@@ -135,6 +135,11 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **Settings no longer jumps to the top when you change something.** Nearly every control on the
+  settings page redraws the page in place, and the redraw was throwing you back to the top — so
+  choosing a transcription backend, which sits well down a long page, took you away from the very
+  setting you had just touched. The page now keeps your place.
+
 - **Starting a download no longer says another vault is transcribing.** A download fetches the 12 MB
   transcription engine first and the model second, and for that first minute the plugin read its own
   download as somebody else's work: pressing Resume was refused with *"another vault is transcribing

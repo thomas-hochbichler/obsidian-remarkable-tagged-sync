@@ -205,6 +205,8 @@ export class FakeEl {
 	 */
 	readonly style: Record<string, string> = {};
 	text = "";
+	/** Read and written by a redraw that wants the reader to stay where they were. */
+	scrollTop = 0;
 	visible = true;
 	removed = false;
 	disabled = false;
@@ -247,6 +249,10 @@ export class FakeEl {
 	empty(): void {
 		this.children.length = 0;
 		this.text = "";
+		// Faithful to the DOM, and the reason it is modelled at all: emptying an element collapses its
+		// content, so the browser clamps the scroll offset to zero. A stub that kept the offset would
+		// let a redraw that reads it *after* emptying look correct here and still jump on a real page.
+		this.scrollTop = 0;
 	}
 	addClass(...classes: string[]): void {
 		for (const c of classes) this.classes.add(c);

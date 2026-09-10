@@ -139,6 +139,13 @@
       file: src/settings-tab.test.ts
       test: "the backend dropdown > saves the pick and re-draws itself, because the rows below it belong to the backend"
 
+    - id: E1.6
+      scenario: The scroll offset across that re-draw, and across every other in-place re-draw on this page
+      expect: The reader stays where they were. Emptying the element the pane scrolls takes the offset to zero with it, so picking a backend two thirds down the page threw the reader to the top -- away from the setting they had just changed
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > leaves the reader where they were after a re-draw"
+
     - id: E1.5
       scenario: The description under the dropdown is composed
       expect: One clause per family this build registers -- three different promises, and no clause about a family that is not there
