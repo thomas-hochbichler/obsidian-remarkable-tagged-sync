@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MODEL_GENERATIONS } from "./local-model-artefacts";
+import { pageArgs } from "./local-ocr-runtime";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
 import { ENOUGH_PAGES_TO_MEASURE, readLocalModelSettings } from "./local-model-settings";
 import type { RmPage } from "./rm-parser";
@@ -263,5 +264,36 @@ describe("classifyRun", () => {
 		for (const extra of [{ code: 1, stdout: "" }, { code: null, timedOut: true, stdout: "" }, { code: 3 }]) {
 			expect(classifyRun(run({ ...extra, executablePresent: false })).kind).toBe("runtime-broken");
 		}
+	});
+});
+
+/**
+ * The argv is where the memory floor is actually honoured. Without `-c` llama.cpp sizes the KV cache
+ * from the model's own declared context, and Qwen3-VL-8B declares one big enough to take the peak
+ * from 7.99 GB to 42.82 GB -- on the machines this generation's 16 GB floor newly admits.
+ */
+describe("pageArgs", () => {
+	const paths = { modelFile: "/m/model.gguf", mmprojFile: "/m/mmproj.gguf" } as never;
+	const withContext = { ...MODEL_GENERATIONS[0], contextTokens: 8192 };
+	const withoutContext = { ...MODEL_GENERATIONS[0], contextTokens: null };
+
+	it("pins the context when the generation names one", () => {
+		const args = pageArgs(paths, "/tmp/page.png", withContext);
+
+		expect(args.slice(-2)).toEqual(["-c", "8192"]);
+		expect(args).toContain("/m/mmproj.gguf");
+	});
+
+	// Every install before 2026-09-09 ran without one, and its published figure was measured that way.
+	it("passes no context at all when the generation names none", () => {
+		expect(pageArgs(paths, "/tmp/page.png", withoutContext)).not.toContain("-c");
+	});
+
+	it("sends one image per process, at temperature zero and a fixed seed", () => {
+		const args = pageArgs(paths, "/tmp/page.png", withContext);
+
+		expect(args.filter((a) => a === "--image")).toHaveLength(1);
+		expect(args[args.indexOf("--temp") + 1]).toBe("0");
+		expect(args[args.indexOf("--seed") + 1]).toBe("42");
 	});
 });

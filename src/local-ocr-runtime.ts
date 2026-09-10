@@ -83,8 +83,14 @@ async function repairQuarantine(executable: string): Promise<void> {
 	});
 }
 
-/** The invocation of §3.3, with one image per process and per-page results. */
-function pageArgs(paths: LocalModelPaths, imageFile: string, generation: ModelGeneration): string[] {
+/**
+ * The invocation of §3.3, with one image per process and per-page results.
+ *
+ * Exported for its own test rather than exercised through a spawn: it is the one part of this file
+ * that decides anything, and what it decides -- whether a context is pinned -- is the difference
+ * between 7.99 GB and 42.82 GB of peak memory.
+ */
+export function pageArgs(paths: LocalModelPaths, imageFile: string, generation: ModelGeneration): string[] {
 	return [
 		"-m",
 		paths.modelFile,

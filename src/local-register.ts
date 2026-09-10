@@ -7,7 +7,7 @@
 // place that knows they belong to each other.
 
 import { Notice, Platform, Setting } from "obsidian";
-import { BACKGROUND_CONSENT_DESC, cardCopy, deleteConfirmation, type LocalCardState, type NewerModelOffer } from "./local-model-card";
+import { BACKGROUND_CONSENT_DESC, cardCopy, deleteConfirmation, type LocalCardState, newerModelOffer } from "./local-model-card";
 import { planCleanup } from "./local-model-download";
 import { localModelBlock, localModelUnavailableLabel, NOT_READY_LABEL } from "./local-model-gate";
 import {
@@ -29,8 +29,8 @@ import {
 	resolveLocalModelPaths,
 } from "./local-model-runtime";
 import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent } from "./local-model-settings";
-import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
-import { type ModelGeneration, MODEL_GENERATIONS, newerGeneration, totalDownloadBytes } from "./local-model-artefacts";
+import { deriveLocalModelState, type LocalModelPaths, type LocalModelPlatform } from "./local-model-store";
+import { type ModelGeneration, MODEL_GENERATIONS, newerGeneration } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
 import { type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
@@ -85,7 +85,7 @@ function machineCanRun(): boolean {
  * Never cached: a model deleted or truncated by something outside the plugin has to be noticed, and a
  * remembered "ready" is precisely what would hide it.
  */
-function currentCardState(paths: LocalModelPaths, generation: ModelGeneration): LocalCardState {
+function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, platform: LocalModelPlatform | null): LocalCardState {
 	const inFlight = download?.progress();
 	if (inFlight) {
 		switch (inFlight.phase) {
@@ -133,30 +133,12 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration): 
 			if (runtimeFailure) return { kind: "runtime-failed", message: runtimeFailure };
 			// The offer, and only an offer: a working model is never displaced by a newer one without the
 			// user pressing the button (ticket 20).
-			return { kind: "ready", newer: newerOffer(generation) };
+			return { kind: "ready", newer: platform === null ? null : newerModelOffer(generation, platform) };
 		case "absent":
 			// Unreachable while a complete older model is present -- `chooseGeneration` would have picked
 			// it and this would read `ready`. What is left is a genuine fresh install.
 			return { kind: "absent" };
 	}
-}
-
-/**
- * What to say about a newer model, when the one in use is not the newest.
- *
- * Both figures come from the generation records, so the card quotes what *these* files measured on the
- * fifteen public reference pages rather than a claim from a model card.
- */
-function newerOffer(inUse: ModelGeneration): NewerModelOffer | null {
-	const newer = newerGeneration(inUse);
-	const platform = localModelPlatform();
-	if (!newer || !platform) return null;
-	return {
-		label: newer.label,
-		downloadBytes: totalDownloadBytes(platform, newer),
-		medianCer: newer.measured.medianCer,
-		currentMedianCer: inUse.measured.medianCer,
-	};
 }
 
 /** Deletes the partials of a model this build can no longer finish; leaves anything complete alone. */
@@ -209,7 +191,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// exactly where it is, whether it is the model in use or the one to fall back to.
 	sweepUnfinishedDirectories(paths, generation);
 
-	const state = currentCardState(paths, generation);
+	const state = currentCardState(paths, generation, platform);
 	// Where the newer model would land, resolved once so the update button does not have to.
 	const newer = newerGeneration(generation);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;

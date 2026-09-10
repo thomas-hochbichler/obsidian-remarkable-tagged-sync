@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { MODEL_GENERATIONS } from "./local-model-artefacts";
 import {
 	BACKGROUND_CONSENT_DESC,
 	type CardCopy,
 	cardCopy,
 	deleteConfirmation,
 	type LocalCardState,
+	newerModelOffer,
 	QUALITY_LINE,
 	QUALITY_LINE_SHORT,
 } from "./local-model-card";
@@ -235,5 +237,31 @@ describe("deleteConfirmation", () => {
 		expect(text).toContain("5.5 GB");
 		expect(text).toContain("Apple Vision");
 		expect(text).toContain("Transcripts already in your notes are not touched");
+	});
+});
+
+/**
+ * The offer a ready model carries when a better one exists (ticket 20). Pure, so the whole rule is
+ * testable without a filesystem -- which is what the rest of the local-model set is built on and what
+ * the settings registry had briefly broken by deciding this inside itself.
+ */
+describe("newerModelOffer", () => {
+	const [newest, older] = MODEL_GENERATIONS;
+
+	it("quotes both error rates and the real download size", () => {
+		const offer = newerModelOffer(older, "darwin");
+
+		expect(offer).toMatchObject({ label: newest.label, medianCer: newest.measured.medianCer, currentMedianCer: older.measured.medianCer });
+		// The runtime archive rides along, so the figure is what the user actually waits for.
+		expect(offer?.downloadBytes).toBeGreaterThan(newest.modelBytes + newest.mmprojBytes);
+	});
+
+	it("offers nothing to an install already on the newest model", () => {
+		expect(newerModelOffer(newest, "darwin")).toBeNull();
+	});
+
+	// Windows fetches a different runtime archive, so the size it is promised has to be its own.
+	it("sizes the download per platform", () => {
+		expect(newerModelOffer(older, "win32")?.downloadBytes).not.toBe(newerModelOffer(older, "darwin")?.downloadBytes);
 	});
 });

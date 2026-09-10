@@ -225,10 +225,14 @@ function serveEverything(): void {
 	serve("https://example.test/mmproj.gguf", { status: 200, body: MMPROJ_BODY });
 }
 
-async function download(paths: LocalModelPaths, platform: "darwin" | "win32" = "darwin") {
+async function download(paths: LocalModelPaths, platform: "darwin" | "win32" = "darwin", generation?: unknown) {
 	const { startLocalModelDownload } = await import("./local-model-fetch");
 	installTar(paths);
-	const handle = startLocalModelDownload(paths, platform, () => undefined);
+	// Called both ways on purpose: the default is what a fresh install takes, and the explicit argument
+	// is what "get the newer model" passes when it writes into a directory that is not the one in use.
+	const handle = generation === undefined
+		? startLocalModelDownload(paths, platform, () => undefined)
+		: startLocalModelDownload(paths, platform, () => undefined, generation as never);
 	return { handle, outcome: await handle.finished };
 }
 
@@ -237,7 +241,8 @@ describe("a download that runs to the end", () => {
 		const paths = pathsIn(root);
 		serveEverything();
 
-		const { outcome } = await download(paths);
+		const { MODEL_GENERATIONS } = await import("./local-model-artefacts");
+		const { outcome } = await download(paths, "darwin", MODEL_GENERATIONS[0]);
 
 		expect(outcome).toEqual({ phase: "done" });
 		expect(fs.readFileSync(paths.modelFile)).toEqual(MODEL_BODY);
