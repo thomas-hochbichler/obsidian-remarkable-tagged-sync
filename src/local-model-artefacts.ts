@@ -303,6 +303,20 @@ export function betterGeneration(inUse: ModelGeneration, context: ChoiceContext)
 	return best !== undefined && best.measured.medianCer < inUse.measured.medianCer ? best : null;
 }
 
+/**
+ * The model the ready card offers to download beside the one in use, or null.
+ *
+ * First what the user picked, when this machine can run it and it is not on disk yet: the pick cannot
+ * displace a working model until it is installed (`chooseGeneration` step 2), so without an offer it
+ * sat in the dropdown over a card running something else and nothing happened. Failing that, a more
+ * accurate model this machine can run, which is the offer an older install has always had.
+ */
+export function offeredGeneration(inUse: ModelGeneration, present: readonly ModelDirectoryFacts[], context: ChoiceContext): ModelGeneration | null {
+	const picked = runnableGenerations(context).find((generation) => generation.dir === context.preferred);
+	if (picked && picked !== inUse && !present.some((entry) => holdsGeneration(entry, picked))) return picked;
+	return betterGeneration(inUse, context);
+}
+
 /** llama.cpp release b10295 (2026-08-06T12:56:29Z). */
 const RUNTIME_RELEASE = "b10295";
 

@@ -6,7 +6,7 @@
 // that can be asserted is a string that cannot quietly drift. The renderer below the seam turns this
 // into DOM and knows nothing about what any of it means.
 
-import { betterGeneration, type ChoiceContext, type ModelGeneration, totalDownloadBytes } from "./local-model-artefacts";
+import { type ChoiceContext, type ModelDirectoryFacts, type ModelGeneration, offeredGeneration, totalDownloadBytes } from "./local-model-artefacts";
 import { formatBytes, shortfallMessage } from "./local-model-download";
 import { estimateLine } from "./local-model-settings";
 import type { LocalModelPlatform } from "./local-model-store";
@@ -38,8 +38,8 @@ export interface NewerModelOffer {
  * the most accurate model there may still be one better than the reader has, and offering a model its
  * own memory gate would refuse is worse than offering nothing.
  */
-export function newerModelOffer(inUse: ModelGeneration, context: ChoiceContext): NewerModelOffer | null {
-	const better = betterGeneration(inUse, context);
+export function newerModelOffer(inUse: ModelGeneration, context: ChoiceContext, present: readonly ModelDirectoryFacts[] = []): NewerModelOffer | null {
+	const better = offeredGeneration(inUse, present, context);
 	if (!better) return null;
 	return {
 		label: better.label,
@@ -49,9 +49,18 @@ export function newerModelOffer(inUse: ModelGeneration, context: ChoiceContext):
 	};
 }
 
-export interface CardAction {
-	id: "download" | "resume" | "cancel" | "discard" | "delete" | "retry-runtime" | "update";
+/** A complete model of another generation still on disk beside the one in use: the way back after an update. */
+export interface SupersededModel {
+	directory: string;
 	label: string;
+	bytes: number;
+}
+
+export interface CardAction {
+	id: "download" | "resume" | "cancel" | "discard" | "delete" | "retry-runtime" | "update" | "remove-superseded";
+	label: string;
+	/** For `remove-superseded`: the model directory the button removes. */
+	directory?: string;
 	/** `cta` is the one obvious next step; `warning` is destructive and styled as such. */
 	emphasis: "cta" | "warning" | "normal";
 }
@@ -77,15 +86,12 @@ export type LocalCardState =
 	| { kind: "out-of-disk"; shortfallBytes: number }
 	| { kind: "network-lost"; message: string }
 	| { kind: "foreign-download"; percent: number }
-	| { kind: "ready"; newer: NewerModelOffer | null }
+	| { kind: "ready"; newer: NewerModelOffer | null; superseded?: SupersededModel[] }
 	| { kind: "corrupt" }
 	| { kind: "removed"; modelBytes: number }
 	| { kind: "runtime-failed"; message: string };
 
 /** Bytes as a one-decimal GB, for copy a person reads rather than a number a machine compares. */
-function gib(bytes: number): string {
-	return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
-}
 
 /** A rate as a one-decimal percentage. */
 function percent(rate: number): string {
@@ -99,7 +105,7 @@ function percent(rate: number): string {
  * of four: a fresh install on an 8 GB Mac fetches 1.6 GB, and a hard-coded string would have promised
  * it the 6.2 GB the largest one costs.
  */
-const modelSize = (generation: ModelGeneration) => gib(generation.modelBytes + generation.mmprojBytes);
+const modelSize = (generation: ModelGeneration) => formatBytes(generation.modelBytes + generation.mmprojBytes);
 /**
  * The engine's size, quoted as **12 MB**.
  *
@@ -151,7 +157,7 @@ export const QUALITY_LINE_SHORT = "Misreads come out as fluent text — check an
  */
 export function backgroundConsentDesc(generation: ModelGeneration): string {
 	return (
-		`An automatic sync would run the model while you are not there: ${gib(generation.peakRssBytes)} held and minutes of heavy work each time, which on battery you will notice. ` +
+		`An automatic sync would run the model while you are not there: ${formatBytes(generation.peakRssBytes)} held and minutes of heavy work each time, which on battery you will notice. ` +
 		"Off by default — automatic sync then does nothing while this backend is chosen, and a sync you start yourself brings everything, transcript included."
 	);
 }
@@ -166,7 +172,7 @@ function consentParagraphs(platform: LocalModelPlatform, settings: BackendSettin
 		`Speed: ${estimateLine(platform, settings)}`,
 		// Not an implementation detail on a machine at the floor; it is a large share of it. Both figures
 		// are this model's own -- they range from 2.9 GB on an 8 GB Mac to 8.0 GB on a 16 GB one.
-		`Memory: ${gib(generation.peakRssBytes)} while a page is read · ${generation.floorGb[platform]} GB of memory needed.`,
+		`Memory: ${formatBytes(generation.peakRssBytes)} while a page is read · ${generation.floorGb[platform]} GB of memory needed.`,
 		QUALITY_LINE,
 	];
 }
@@ -266,10 +272,16 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				// have works, and a multi-gigabyte download is not something a plugin update may decide.
 				paragraphs.push(
 					`${state.newer.label} reads the same pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
-						`A ${gib(state.newer.downloadBytes)} download, installed beside the model you have, which keeps working until you delete it.`,
+						`A ${formatBytes(state.newer.downloadBytes)} download, installed beside the model you have, which keeps working until you delete it.`,
 					"Notes already transcribed are not redone; 'Re-transcribe everything' does that.",
 				);
 				actions.unshift({ id: "update", label: `Get ${state.newer.label}`, emphasis: "cta" });
+			}
+			// Named and offered, never removed underneath the user: it is the way back if the newer model
+			// disappoints, and it costs a button press to give the disk back.
+			for (const old of state.superseded ?? []) {
+				paragraphs.push(`${old.label} is still on disk (${formatBytes(old.bytes)}) as the way back.`);
+				actions.push({ id: "remove-superseded", label: `Remove ${old.label}`, emphasis: "warning", directory: old.directory });
 			}
 			return { heading: "Local model — ready", paragraphs, actions, percent: null };
 		}
@@ -297,7 +309,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 					// malware alert once per cycle, and no "removed twice, giving up" counter.
 					// The size of the model *this install has*, not of the newest one on offer: two generations
 					// ship, and telling a 5.5 GB user their 6.2 GB model is safe reads as a different machine.
-					`Only the ${ENGINE_SIZE} engine is affected; the ${gib(state.modelBytes)} model on disk is untouched and does not need downloading again.`,
+					`Only the ${ENGINE_SIZE} engine is affected; the ${formatBytes(state.modelBytes)} model on disk is untouched and does not need downloading again.`,
 				],
 				actions: [{ id: "retry-runtime", label: "Download the engine again", emphasis: "cta" }],
 				percent: null,

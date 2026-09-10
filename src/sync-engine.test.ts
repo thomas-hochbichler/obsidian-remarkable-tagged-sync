@@ -4540,17 +4540,18 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		expect(note).toContain("Could not read this page");
 	});
 
-	// #116's truncation is a page that comes back `ok` and is quietly incomplete -- exactly what the
-	// tie-breaker refuses to freeze. Rare, and self-healing on the next clean run.
-	it("stores nothing from a run the backend warned about", async () => {
+	// Every warning the shipped backends raise names pages they marked `failed`, and a failed page is
+	// never stored. The rule used to empty the store on any warning, so a server that was down for
+	// one sync threw away every page already read and the next edit re-read the whole notebook.
+	it("keeps the pages that came back ok when the backend warned about the ones it failed", async () => {
 		const warning: OcrBackend = {
 			id: "vision",
 			metered: false,
 			fingerprint: "test-backend",
 			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => ({
 				status: "ok",
-				pages: pages.map(() => ({ status: "ok" as const, text: "possibly truncated" })),
-				text: "possibly truncated",
+				pages: pages.map((_, index) => (index === 1 ? { status: "failed" as const, text: "" } : { status: "ok" as const, text: "read" })),
+				text: "read",
 				confidence: null,
 				warnings: ["a page's answer was cut off"],
 			})),
@@ -4558,7 +4559,8 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		const deps = { ...baseDeps(notebook("root-117-f", "hash-1", THREE), { sync: "Target" }), ocrBackend: warning };
 		const synced = await runSync(deps, EMPTY_SYNC_INDEX);
 
-		expect(synced.index.rows[KEY].transcribedPages).toBeUndefined();
+		expect(synced.index.rows[KEY].transcribedPages).toHaveLength(2);
+		expect(synced.backendWarnings).toEqual(["a page's answer was cut off"]);
 	});
 
 	// Ticket 04's easy-to-miss half. Without it the user pays twice -- once for the command, and again

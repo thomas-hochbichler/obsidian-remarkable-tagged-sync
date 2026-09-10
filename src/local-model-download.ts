@@ -208,14 +208,18 @@ export interface ModelDirectory {
  * > press.
  *
  * A partial of an unpinned version is provably useless: this build has no URL that could finish it.
+ * A partial of any generation this build *does* pin is a download in flight or paused -- the update
+ * to a newer model lands beside the one in use -- so every pinned name is passed, not only the one in
+ * use: judged by the in-use name alone, the update's own `.part` read as "unpinned" and was deleted
+ * on its first progress tick.
  * A *complete* model of a superseded version still transcribes, and it is the fallback if the new
  * download fails -- so it is named and sized and offered, never removed underneath the user.
  */
-export function planCleanup(directories: ModelDirectory[], pinnedName: string): { deleteSilently: string[]; offerToDelete: string[] } {
+export function planCleanup(directories: ModelDirectory[], pinnedNames: readonly string[]): { deleteSilently: string[]; offerToDelete: string[] } {
 	const deleteSilently: string[] = [];
 	const offerToDelete: string[] = [];
 	for (const directory of directories) {
-		if (directory.name === pinnedName) continue;
+		if (pinnedNames.includes(directory.name)) continue;
 		if (directory.complete) offerToDelete.push(directory.name);
 		else if (directory.hasPart) deleteSilently.push(directory.name);
 	}

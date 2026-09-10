@@ -369,6 +369,13 @@ export interface SyncResult {
 	 * a note, but a degraded digest that says so nowhere is exactly the silent loss spec §6 forbids.
 	 */
 	skipErrors: string[];
+	/**
+	 * What the transcription backend warned about, one entry per distinct sentence: a page truncated,
+	 * a server that did not answer, a refusal. Separate from `skipErrors` because these are said to
+	 * the user at the end of the run -- a notebook that lost three pages of five used to report a
+	 * clean sync, with the sentence written into diagnostics and nowhere else.
+	 */
+	backendWarnings: string[];
 }
 
 /**
@@ -1019,27 +1026,28 @@ async function emptyBlockReport(
  * What this write leaves in the row for the *next* sync to read pages back from (issue #117), as the
  * two fields to spread onto it.
  *
- * Four outcomes, and three of them store nothing:
+ * Three outcomes, and two of them store nothing:
  *
  * - **the unit is not one the store covers** -- no fingerprint was passed (a PDF-backed unit, a
  *   page-tag note), or the note has a single page and so carries no per-page headings to read back;
  * - **no OCR ran** (`keepTranscript`): the previous row's store is carried through untouched. Nothing
  *   was re-read, the device is unchanged, and the transcript was written back verbatim with its
  *   headings intact -- so what the old row said is still true, including *which backend* said it;
- * - **the backend warned**: nothing is stored this round. #116's truncation is a page that comes back
- *   `ok` and is quietly incomplete, which is exactly the shape ticket 02's tie-breaker refuses to
- *   freeze. Warnings are unit-level, so there is no way to store around them; they are also rare, and
- *   the unit gets a store again on its next clean run;
  * - **otherwise**: the pages read successfully, each under the hash and the heading ordinal it was
  *   written with, plus the count of quotes folded in above it so the next parse can drop them.
+ *
+ * A backend warning does **not** empty the store. Every warning the shipped backends raise --
+ * unreachable, refused, timed out, truncated -- names pages they marked `failed`, and a failed page is
+ * never in `readPages`. The rule used to skip the store on any warning, on the belief that #116's
+ * truncation came back `ok` and quietly short; it comes back `failed`. What the rule actually did was
+ * throw away every page already read whenever the server was down for one sync, so the next edit
+ * re-read the whole notebook.
  */
 function transcriptStoreFor(params: UnitParams, ocr: UnitOcr, transcriptHighlights: HighlightGroup[]): Pick<SyncIndexRow, "transcribedPages" | "transcribedWith"> {
 	if (params.transcriptFingerprint === undefined || params.pageContentHash === undefined || params.unitPages <= 1) return {};
 	if (params.keepTranscript !== undefined) {
 		return { transcribedPages: params.previous?.transcribedPages, transcribedWith: params.previous?.transcribedWith };
 	}
-	if (ocr.warnings.length > 0) return {};
-
 	return { transcribedPages: storedPages(ocr.readPages, params.pageContentHash, transcriptHighlights), transcribedWith: params.transcriptFingerprint };
 }
 
@@ -1710,7 +1718,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [] };
+		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -1725,6 +1733,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const untouchedKeys = new Set<string>();
 	const skippedDocIds = new Set<string>();
 	const skipErrors: string[] = [];
+	const backendWarnings: string[] = [];
 	let shrunkNotes = 0;
 	let relaidDocuments = 0;
 	// Pages this run did not have to read again, for the diagnostics line. The characteristic bug
@@ -1763,6 +1772,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			reusedPageTranscriptions,
 			pageTranscriptionsConsidered,
 			skipErrors,
+			backendWarnings,
 		};
 	};
 
@@ -2048,6 +2058,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// A page the backend lost while the rest of the unit read fine: the note is written and the
 			// unit counts as ok, so this line is the only trace the loss leaves anywhere.
 			skipErrors.push(...ocrWarnings);
+			for (const warning of ocrWarnings) if (!backendWarnings.includes(warning)) backendWarnings.push(warning);
 			if (shrink !== null) {
 				skipErrors.push(shrink);
 				shrunkNotes++;
@@ -2148,6 +2159,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]); // see the notebook-tag branch
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
 			skipErrors.push(...ocrWarnings);
+			for (const warning of ocrWarnings) if (!backendWarnings.includes(warning)) backendWarnings.push(warning);
 			if (shrink !== null) {
 				skipErrors.push(shrink);
 				shrunkNotes++;
@@ -2188,7 +2200,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors };
+	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings };
 }
 
 export interface ReTranscribeDeps {

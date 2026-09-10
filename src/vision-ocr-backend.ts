@@ -340,7 +340,15 @@ export class UnavailableOcrBackend implements OcrBackend {
 	/** Transcribes nothing, so it stores nothing; the string only has to be stable. */
 	readonly fingerprint = "unavailable";
 
-	constructor(readonly id: OcrBackendId) {}
+	/**
+	 * True for a backend that is unavailable *for now* rather than on this machine -- the downloaded
+	 * model, selected before its download -- so the end-of-sync notice can say so instead of the
+	 * once-only platform sentence. The core still names no provider: the entry declares this.
+	 */
+	constructor(
+		readonly id: OcrBackendId,
+		readonly notReadyNotice = false,
+	) {}
 
 	async recognize(pages: RmPage[]): Promise<OcrResult> {
 		return pages.length === 0 ? SKIPPED : UNAVAILABLE;

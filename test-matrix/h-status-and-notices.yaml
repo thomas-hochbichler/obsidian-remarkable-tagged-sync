@@ -349,6 +349,13 @@
       file: src/sync-notices.test.ts
       test: "partialOutcomeNotices > says each outcome in its own words, singular and plural"
 
+    - id: H7.24
+      scenario: The transcription backend warned -- a page cut off, a server that did not answer -- while the unit still wrote
+      expect: The backend's own sentence is raised as a notice, one per distinct warning, with time to be read. It used to go into diagnostics and nowhere else, so a notebook that lost three pages of five reported a clean sync
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > raises each backend warning as the backend wrote it"
+
     - id: H7.18
       scenario: A run where nothing was skipped
       expect: "An empty list, so the caller has nothing to raise rather than a list of empty strings"
@@ -463,6 +470,20 @@
       layer: unit
       file: src/sync-notices.test.ts
       test: "platformGapNotice > answers null once it has been shown, and when there was nothing to report"
+
+    - id: E15.9
+      scenario: The sync ran with the downloaded model selected and not on disk
+      expect: Its own sentence -- how many notes synced with the render only, download it in settings, re-transcribe the notes synced meanwhile -- never the platform one. "Needs macOS 13 or later" reached a reader whose Mac was fine, once, and then never again while the gap was still open
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "modelNotReadyNotice > names the model and the way back, and never the platform"
+
+    - id: E15.10
+      scenario: Every unit was transcribed
+      expect: Nothing to say
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "modelNotReadyNotice > says nothing when every unit was transcribed"
 
     - id: E15.8
       scenario: The sentence is read for what it commits the plugin to

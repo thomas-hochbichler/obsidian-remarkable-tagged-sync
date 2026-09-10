@@ -27,11 +27,10 @@ import {
 	removeModelDirectory,
 	pathsForGeneration,
 	resolveLocalModel,
-	resolveLocalModelPaths,
 } from "./local-model-runtime";
 import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir } from "./local-model-settings";
 import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
-import { betterGeneration, type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, runnableGenerations } from "./local-model-artefacts";
+import { type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, offeredGeneration, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
@@ -140,6 +139,7 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 	}
 
 	const snapshot = readLocalModelSnapshot(paths);
+	const present = readModelDirectories(paths);
 	const state = deriveLocalModelState(snapshot, Date.now(), generation);
 	switch (state) {
 		case "corrupt":
@@ -157,7 +157,14 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 			if (runtimeFailure) return { kind: "runtime-failed", message: runtimeFailure };
 			// The offer, and only an offer: a working model is never displaced by a newer one without the
 			// user pressing the button (ticket 20).
-			return { kind: "ready", newer: context === null ? null : newerModelOffer(generation, context) };
+			return {
+				kind: "ready",
+				newer: context === null ? null : newerModelOffer(generation, context, present),
+				superseded: planCleanup(present, MODEL_GENERATIONS.map((candidate) => candidate.dir)).offerToDelete.map((name) => {
+					const entry = present.find((candidate) => candidate.name === name);
+					return { directory: name, label: MODEL_GENERATIONS.find((candidate) => candidate.dir === name)?.label ?? name, bytes: (entry?.modelBytes ?? 0) + (entry?.mmprojBytes ?? 0) };
+				}),
+			};
 		case "absent":
 			// Unreachable while a complete older model is present -- `chooseGeneration` would have picked
 			// it and this would read `ready`. What is left is a genuine fresh install.
@@ -166,8 +173,8 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 }
 
 /** Deletes the partials of a model this build can no longer finish; leaves anything complete alone. */
-function sweepUnfinishedDirectories(paths: LocalModelPaths, inUse: ModelGeneration): void {
-	const plan = planCleanup(readModelDirectories(paths), inUse.dir);
+function sweepUnfinishedDirectories(paths: LocalModelPaths): void {
+	const plan = planCleanup(readModelDirectories(paths), MODEL_GENERATIONS.map((generation) => generation.dir));
 	// Provably useless: no URL in this build could finish it. A *complete* directory is never touched
 	// here -- it is either the model in use or the one the user can fall back to.
 	for (const name of plan.deleteSilently) removeModelDirectory(paths, name);
@@ -176,14 +183,13 @@ function sweepUnfinishedDirectories(paths: LocalModelPaths, inUse: ModelGenerati
 /**
  * Starts (or restarts) the download and re-renders as it moves.
  *
- * `into` is where the files land and `busyPaths` is what the "is anything transcribing" guard reads,
+ * `paths` is where the files land and `busyPaths` is what the "is anything transcribing" guard reads,
  * and they are the same directory in every case but one: taking the offer of a newer model writes into
  * a directory nothing has ever locked, while the transcription that must not be disturbed is holding
  * the *current* model's lock. Passing the target to the guard would have made it answer about an empty
  * directory and always say no.
  */
-function beginDownload(into: LocalModelPaths, rerender: () => void, generation: ModelGeneration, busyPaths: LocalModelPaths): void {
-	const paths = into;
+function beginDownload(paths: LocalModelPaths, rerender: () => void, generation: ModelGeneration, busyPaths: LocalModelPaths): void {
 	const platform = localModelPlatform();
 	if (!platform) return;
 	if (isLocalModelBusy(busyPaths)) {
@@ -216,14 +222,14 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	const { paths, generation } = resolved;
 	// A partial of a model no build can finish any more is provably useless; anything complete is left
 	// exactly where it is, whether it is the model in use or the one to fall back to.
-	sweepUnfinishedDirectories(paths, generation);
+	sweepUnfinishedDirectories(paths);
 
 	const state = currentCardState(paths, generation, context);
 	// A leftover `.part` beside a model that is ready is ignored by the state rule; here it is also
 	// removed, for an install that got one before the download learnt to clean up after itself.
 	if (state.kind === "ready") removeStaleParts(paths);
-	// Where the newer model would land, resolved once so the update button does not have to.
-	const newer = betterGeneration(generation, context);
+	// Where the offered model would land, resolved once so the update button does not have to.
+	const newer = offeredGeneration(generation, readModelDirectories(paths), context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
 	const copy = cardCopy(state, platform, ctx.settings, generation);
 
@@ -316,14 +322,21 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 							download = null;
 							rerender();
 							break;
+						case "remove-superseded":
+							if (action.directory !== undefined) removeModelDirectory(paths, action.directory);
+							rerender();
+							break;
 						case "delete": {
+							// The pick goes with the model: a name in `data.json` for a directory that is gone
+							// would be silently ignored, and then honoured again the day it reappears.
+							setPreferredModelDir(ctx.settings, null);
+							await ctx.save();
 							const freed = removeLocalModel(paths);
 							new Notice(deleteConfirmation(freed, Platform.isMacOS ? "Apple Vision" : "no transcription"));
 							download = null;
 							runtimeFailure = null;
-							// The selection has to move with the model. §6.2's listing rule keeps a *selected*
-							// entry in the dropdown, disabled -- so without this the user is left holding a
-							// backend that transcribes nothing, with no hint of what to switch to.
+							// The selection moves with the model: without this every sync from here on writes
+							// notes without a transcript, with nothing but a notice to say why.
 							await ctx.selectDefaultBackend();
 							break;
 						}
@@ -379,14 +392,17 @@ if (offeredOnThisPlatform()) {
 		 * and poisons no cache, and *Re-transcribe all synced notes* is the way back (§8.1).
 		 */
 		create(settings, options) {
-			const paths = resolveLocalModelPaths(PLUGIN_ID);
+			// Resolved with the user's pick, as the adapter below is: the busy check and the run must
+			// read the same directory, or the guard answers about a model that is not about to run.
+			const paths = resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.paths ?? null;
 			if (paths && isLocalModelBusy(paths) && !options?.silent) {
 				// Two concurrent runs are 27 GB. Manual says so; a background sync is skipped silently and
 				// the next interval retries.
 				new Notice("Another vault is transcribing right now. Try again in a moment.");
 			}
 			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure);
-			return backend ?? new UnavailableOcrBackend(LOCAL_BACKEND_ID);
+			// `true`: unavailable for now, not on this machine -- the end-of-sync notice says which.
+			return backend ?? new UnavailableOcrBackend(LOCAL_BACKEND_ID, true);
 		},
 
 		/**

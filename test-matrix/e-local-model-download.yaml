@@ -481,3 +481,15 @@
       layer: unit
       file: src/local-model-card.test.ts
       test: "consent (§7.2) > keeps money out of the background consent copy"
+
+- feature: E37
+  name: An update download is not swept away by the card
+  code: src/local-model-download.ts
+  tier: free
+  scenarios:
+    - id: E37.1
+      scenario: A `.part` sits in the directory of another generation this build pins -- the update to a newer model, in flight or paused
+      expect: Left alone. The sweep used to judge by the in-use name only, so the update's own partial read as "unpinned" and was deleted on its first progress tick, and the download restarted from zero on every tick after it
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "planCleanup > keeps a partial of another generation this build still pins, which is an update in flight"

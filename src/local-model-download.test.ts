@@ -138,14 +138,14 @@ describe("planCleanup", () => {
 	const pinned = "qwen2.5-vl-7b-instruct-q4_k_m";
 
 	it("leaves the pinned directory alone whatever state it is in", () => {
-		const plan = planCleanup([{ name: pinned, hasPart: true, complete: false }], pinned);
+		const plan = planCleanup([{ name: pinned, hasPart: true, complete: false }], [pinned]);
 
 		expect(plan).toEqual({ deleteSilently: [], offerToDelete: [] });
 	});
 
 	// Provably useless: an incomplete download of a version this build can no longer finish.
 	it("silently deletes a partial of a version that is no longer pinned", () => {
-		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: true, complete: false }], pinned);
+		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: true, complete: false }], [pinned]);
 
 		expect(plan.deleteSilently).toEqual(["qwen2.5-vl-7b-instruct-q3_k_m"]);
 		expect(plan.offerToDelete).toEqual([]);
@@ -157,7 +157,7 @@ describe("planCleanup", () => {
 	 * that ever worked costs a button press.
 	 */
 	it("never silently deletes a complete model of a superseded version", () => {
-		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: false, complete: true }], pinned);
+		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: false, complete: true }], [pinned]);
 
 		expect(plan.deleteSilently).toEqual([]);
 		expect(plan.offerToDelete).toEqual(["qwen2.5-vl-7b-instruct-q3_k_m"]);
@@ -165,14 +165,22 @@ describe("planCleanup", () => {
 
 	// Half-downloaded on top of a complete set is still something that once worked.
 	it("offers rather than deletes when a superseded directory is both complete and resuming", () => {
-		const plan = planCleanup([{ name: "old", hasPart: true, complete: true }], pinned);
+		const plan = planCleanup([{ name: "old", hasPart: true, complete: true }], [pinned]);
 
 		expect(plan.deleteSilently).toEqual([]);
 		expect(plan.offerToDelete).toEqual(["old"]);
 	});
 
+	// The update to a newer model downloads beside the one in use. Judged by the in-use name alone,
+	// its `.part` read as "a partial of an unpinned version" and was deleted on the first progress tick.
+	it("keeps a partial of another generation this build still pins, which is an update in flight", () => {
+		const plan = planCleanup([{ name: "newer", hasPart: true, complete: false }], [pinned, "newer"]);
+
+		expect(plan).toEqual({ deleteSilently: [], offerToDelete: [] });
+	});
+
 	it("leaves a superseded directory that is neither alone", () => {
-		const plan = planCleanup([{ name: "old", hasPart: false, complete: false }], pinned);
+		const plan = planCleanup([{ name: "old", hasPart: false, complete: false }], [pinned]);
 
 		expect(plan).toEqual({ deleteSilently: [], offerToDelete: [] });
 	});

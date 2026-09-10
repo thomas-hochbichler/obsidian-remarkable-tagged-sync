@@ -53,6 +53,7 @@ import {
 	outcomeNotice,
 	partialOutcomeNotices,
 	type PartialOutcome,
+	modelNotReadyNotice,
 	platformGapNotice,
 } from "./sync-notices";
 import { NOTHING_SYNCED_NOTICE, type Preflight, preflightRun, reTranscribableUnits, type RunConditions } from "./sync-guards";
@@ -618,14 +619,24 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Not on a stopped run: the user asked for the run to end, and an unstamped row simply waits
 			// for the next sync. Runs in a background sync too, otherwise anyone who only ever
 			// auto-syncs would stay without the new keys for good.
+			//
+			// Its failure is its own, never the run's: every unit above is already checkpointed, and
+			// letting it throw took the run's report down with it -- the unavailable notice, the
+			// backend's warnings, `lastSyncAt` -- for pages that would then never be reported again.
+			let backfillError: string | null = null;
 			if (frontmatterOn && !result.stopped) {
-				await backfillFrontmatter(session.api, createNoteStore(this.app), this.data.syncIndex, { select: isStaleFrontmatter });
+				try {
+					await backfillFrontmatter(session.api, createNoteStore(this.app), this.data.syncIndex, { select: isStaleFrontmatter });
+				} catch (error) {
+					console.warn("Tagged Sync: frontmatter backfill failed", error);
+					backfillError = `frontmatter backfill failed: ${error instanceof Error ? error.message : String(error)}`;
+				}
 			}
 			// Deliberately not stamped on a stopped run. `isIntervalSyncDue` counts from the last
 			// *completed* sync, so stamping here would push the next auto-sync out by a full interval as
 			// if the work had been done -- and leave "last synced" claiming a run that never finished.
 			if (!result.stopped) this.data.lastSyncAt = this.nowIso();
-			if (speak) this.maybeShowUnavailableNotice(result.unavailableOcrUnits);
+			if (speak) this.maybeShowUnavailableNotice(result.unavailableOcrUnits, backend);
 			// Saved either way: this is also the only call that persists what a backend wrote into its own
 			// settings blob during the run (the local model records each page's duration there).
 			await this.saveData(this.data);
@@ -634,7 +645,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			// diagnostics" is for -- they used to be console.warn only, leaving "Last error: none"
 			// there. A clean run clears any stale error, so diagnostics reflects the latest sync. A stop
 			// is not itself an error and contributes nothing here; only what the partial run hit does.
-			this.lastSyncError = result.skipErrors.length > 0 ? result.skipErrors.join("\n") : null;
+			const errors = backfillError === null ? result.skipErrors : [...result.skipErrors, backfillError];
+			this.lastSyncError = errors.length > 0 ? errors.join("\n") : null;
 			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
 
 			this.applyStatus(outcomeStatus(result));
@@ -748,8 +760,17 @@ export default class TaggedSyncPlugin extends Plugin {
 		for (const notice of partialOutcomeNotices(result)) new Notice(notice.message, notice.timeout);
 	}
 
-	/** Once, on the first sync that produces an `unavailable` unit; then never again. Caller persists `this.data`. */
-	private maybeShowUnavailableNotice(unavailableOcrUnits: number): void {
+	/**
+	 * Once, on the first sync that produces an `unavailable` unit; then never again. Caller persists
+	 * `this.data`. A backend that is unavailable *for now* -- the downloaded model, selected before its
+	 * download -- has its own sentence, said on every watched sync until the download is done.
+	 */
+	private maybeShowUnavailableNotice(unavailableOcrUnits: number, backend: OcrBackendAdapter): void {
+		if (backend instanceof UnavailableOcrBackend && backend.notReadyNotice) {
+			const notReady = modelNotReadyNotice(unavailableOcrUnits);
+			if (notReady !== null) new Notice(notReady, LONG_NOTICE_MS);
+			return;
+		}
 		const notice = platformGapNotice({
 			unavailableUnits: unavailableOcrUnits,
 			alreadyShown: this.data.ocrUnavailableNoticeShown,

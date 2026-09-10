@@ -4,7 +4,7 @@ import {
 	outcomeNotice,
 	type PartialOutcome,
 	partialOutcomeNotices,
-	platformGapNotice,
+	modelNotReadyNotice, platformGapNotice,
 	SHORT_NOTICE_MS,
 } from "./sync-notices";
 
@@ -17,6 +17,7 @@ const NOTHING_SKIPPED: PartialOutcome = {
 	documentsSkipped: 0,
 	relaidDocuments: 0,
 	shrunkNotes: 0,
+	backendWarnings: [],
 };
 
 const only = (field: keyof PartialOutcome, count: number) =>
@@ -69,10 +70,12 @@ describe("partialOutcomeNotices", () => {
 			documentsSkipped: 1,
 			relaidDocuments: 1,
 			shrunkNotes: 1,
+			backendWarnings: ["A page was cut off"],
 		});
 
 		expect(all.map((notice) => notice.message.slice(0, 16))).toEqual([
 			"1 note synced wi",
+			"A page was cut o",
 			"1 note was not u",
 			"1 notebook was s",
 			"1 book has been ",
@@ -81,10 +84,20 @@ describe("partialOutcomeNotices", () => {
 		expect(all.map((notice) => notice.timeout)).toEqual([
 			LONG_NOTICE_MS,
 			LONG_NOTICE_MS,
+			LONG_NOTICE_MS,
 			SHORT_NOTICE_MS,
 			LONG_NOTICE_MS,
 			LONG_NOTICE_MS,
 		]);
+	});
+
+	// The truncation and timeout sentences were written into diagnostics and nowhere else, so a
+	// notebook that lost three pages of five reported a clean sync.
+	it("raises each backend warning as the backend wrote it", () => {
+		const notices = partialOutcomeNotices({ ...NOTHING_SKIPPED, backendWarnings: ["3 pages were cut off", "The server did not answer"] });
+
+		expect(notices.map((notice) => notice.message)).toEqual(["3 pages were cut off", "The server did not answer"]);
+		expect(notices.every((notice) => notice.timeout === LONG_NOTICE_MS)).toBe(true);
 	});
 
 	it("leaves out the ones that did not happen", () => {
@@ -136,5 +149,21 @@ describe("platformGapNotice", () => {
 	it("answers null once it has been shown, and when there was nothing to report", () => {
 		expect(platformGapNotice({ ...hit, alreadyShown: true })).toBeNull();
 		expect(platformGapNotice({ ...hit, unavailableUnits: 0 })).toBeNull();
+	});
+});
+
+describe("modelNotReadyNotice", () => {
+	// "needs macOS 13 or later" was the sentence a reader got after picking the downloaded model before
+	// its download, on a Mac with nothing wrong with it.
+	it("names the model and the way back, and never the platform", () => {
+		const notice = modelNotReadyNotice(2);
+
+		expect(notice).toContain("2 notes synced with the handwriting render only");
+		expect(notice).toContain("Re-transcribe all synced notes");
+		expect(notice).not.toContain("macOS");
+	});
+
+	it("says nothing when every unit was transcribed", () => {
+		expect(modelNotReadyNotice(0)).toBeNull();
 	});
 });
