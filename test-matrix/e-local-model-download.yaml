@@ -120,6 +120,18 @@
       file: src/local-model-fetch.test.ts
       test: "the tools it refuses to use > unpacks with the system tar, and asks for a real archive path"
 
+- feature: E34
+  name: What the background-sync switch says it does
+  code: src/local-model-card.ts
+  tier: free
+  scenarios:
+    - id: E34.1
+      scenario: The description beside the switch
+      expect: What being off means before what being on costs. Off is not mild -- the gate fires before a run starts (C15), so the whole scheduled sync is skipped and nothing arrives on its own while this backend is chosen. The old copy named only the price, "the model holds 8.6 GB and pushes the fans", and was reported as a setting nobody could picture. The memory figure stays; it is the reason to think before switching it on
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "consent (§7.2) > says what the switch does before what it costs, and how much off actually costs"
+
 - feature: E33
   name: A download this vault is not the one running
   code: src/local-model-card.ts

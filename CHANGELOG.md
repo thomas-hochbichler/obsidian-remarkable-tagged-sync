@@ -135,6 +135,12 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **"Transcribe during background sync" now says what it does, not just what it costs.** It named the
+  memory and the fans and left you to guess what you were agreeing to — and it never mentioned the
+  part that matters most: while the switch is off, scheduled syncs are skipped altogether for that
+  backend, so nothing arrives until you sync by hand. Both the downloaded model and a local server
+  say so now.
+
 - **The model check now sits with the model field.** The green or red line saying whether your model
   can read images was drawn *underneath* the field's box rather than inside it, so it floated in the
   gap between two settings and looked like it belonged to neither. It now sits in the field's own

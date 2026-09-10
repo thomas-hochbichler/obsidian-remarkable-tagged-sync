@@ -63,7 +63,8 @@ const MODEL_RECOMMENDATION =
  * time, which is exactly what `src/local-register.ts` sets the same flag for.
  */
 const BACKGROUND_CONSENT_DESC =
-	"Transcribe in the background with your local server. It runs a model on this machine — expect fans and several GB of memory while a sync runs.";
+	"Off by default: while this backend is chosen, scheduled syncs are skipped altogether and nothing arrives until you sync by hand. " +
+	"Switch it on and they run unattended — your server carries the load, so expect fans and several GB of memory on the machine it runs on.";
 
 /** This backend's slice of the opaque settings blob: the provider config plus its own consent flag. */
 type LocalhostSettings = LlmProviderConfig & { backgroundConsent?: boolean };

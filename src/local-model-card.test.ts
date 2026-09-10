@@ -120,6 +120,21 @@ describe("consent (§7.2)", () => {
 		expect(backgroundConsentDesc(MODEL_GENERATIONS[0]).toLowerCase()).not.toContain("money");
 		expect(backgroundConsentDesc(MODEL_GENERATIONS[0]).toLowerCase()).not.toContain("api");
 	});
+
+	/**
+	 * Reported as a setting nobody could picture. The old copy named the price and never the purchase:
+	 * *"the model holds 8.6 GB and pushes the fans"*. And what off means is not mild -- the gate fires
+	 * before a run starts, so the whole scheduled sync is skipped and nothing arrives on its own.
+	 */
+	it("says what the switch does before what it costs, and how much off actually costs", () => {
+		const desc = backgroundConsentDesc(MODEL_GENERATIONS[0]);
+
+		expect(desc).toContain("scheduled syncs are skipped altogether");
+		expect(desc).toContain("sync by hand");
+		// The price still has to be there; it is the reason to think before switching it on.
+		// The card's own `gib()` counts in GB, not GiB -- the figure a disk and an activity monitor show.
+		expect(desc).toContain(`${(MODEL_GENERATIONS[0].peakRssBytes / 1_000_000_000).toFixed(1)} GB`);
+	});
 });
 
 describe("the quality line (§7.4)", () => {

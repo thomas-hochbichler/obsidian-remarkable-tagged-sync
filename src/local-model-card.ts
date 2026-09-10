@@ -139,9 +139,19 @@ export const QUALITY_LINE_SHORT = "Misreads come out as fluent text — check an
  *
  * The memory figure is the chosen model's own. It was a constant while one model shipped, and telling
  * a reader on the smallest tier that "the model holds 14 GB" would be describing somebody else's Mac.
+ *
+ * **It says what the switch does before what it costs.** The old wording named only the price --
+ * *"the model holds 8.6 GB and pushes the fans"* -- and left the reader to guess what they were
+ * buying; it was reported as a setting nobody could picture. What being off actually means is not
+ * mild, either: `backgroundRunBlocked` returns `no-background-consent` *before* a run starts, so the
+ * whole scheduled sync is skipped, silently, and no note arrives on its own while this backend is the
+ * chosen one. "Manual syncs are unaffected" hinted at that and never said it.
  */
 export function backgroundConsentDesc(generation: ModelGeneration): string {
-	return `Off by default. In the background the model holds ${gib(generation.peakRssBytes)} and pushes the fans for as long as it runs. Manual syncs are unaffected.`;
+	return (
+		"Off by default: while this backend is chosen, scheduled syncs are skipped altogether and nothing arrives until you sync by hand. " +
+		`Switch it on and they run unattended — the model holds ${gib(generation.peakRssBytes)} and keeps the fans going for as long as each run takes.`
+	);
 }
 
 /** What the user is agreeing to, in the four terms §7.2 requires plus the speed line of §7.3. */
