@@ -147,11 +147,25 @@
       test: "the backend dropdown > leaves the reader where they were after a re-draw"
 
     - id: E1.5
-      scenario: The description under the dropdown is composed
-      expect: One clause per family this build registers -- three different promises, and no clause about a family that is not there
+      scenario: The description beside the dropdown, on an unmetered backend the user runs themselves
+      expect: The promise of the backend that is *selected*, and no other. It used to make all three families' promises at once, so a reader on LM Studio read about Apple Vision and about cloud providers and had to find their own clause
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the backend dropdown > describes the families this build has, and claims nothing about the ones it does not"
+      test: "the backend dropdown > describes the backend that is selected, and none of the others"
+
+    - id: E1.7
+      scenario: The same row on a metered backend
+      expect: Says the page leaves the machine and is charged to the user's own key -- the one promise that is about money, made only where it is true
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > names the cost where the pages leave the machine, and only there"
+
+    - id: E1.8
+      scenario: The same row on Apple Vision
+      expect: Its own promise, without the macOS floor. Where Vision cannot run the dropdown option itself reads "needs macOS 13 or later", which is the place a reader can act on it
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > keeps the macOS floor out of the description"
 
 - feature: E13
   name: Note-contract hint

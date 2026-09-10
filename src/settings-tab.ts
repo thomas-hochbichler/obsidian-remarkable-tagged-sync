@@ -18,7 +18,7 @@ import { activateKey, deactivateHere } from "./licence-check";
 import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft } from "./licence-messages";
 import { startTrial, withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
-import { defaultOcrBackend, hasAlternativeBackends, hasCloudBackends, hasOnDeviceBackends } from "./ocr-resolution";
+import { backendPromise, defaultOcrBackend, hasAlternativeBackends } from "./ocr-resolution";
 import { isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
 import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
@@ -586,26 +586,18 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private renderOcrSettings(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Transcription").setHeading();
 
+		// Null only for a stored id no build registers -- a downgrade, or a hand-edited `data.json`.
+		// The row then says nothing rather than guessing which promise an unknown backend makes.
+		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
+
 		new Setting(containerEl)
 			.setName("Backend")
-			// Composed from what is actually registered, because the three cases are three different
-			// promises and one sentence cannot make all of them (free-localhost-ocr spec §4.1).
-			.setDesc(
-				[
-					// The macOS floor is deliberately not repeated here: where Vision cannot run, the
-					// dropdown option itself reads "Apple Vision — needs macOS 13 or later", which is the
-					// place a reader can act on it.
-					"Apple Vision runs on your Mac — no account, key, or network.",
-					// "So does" rather than a second full promise: both unmetered families make the same
-					// one, and stating it twice is what made this description three long sentences. Not
-					// "sends nothing anywhere" -- a `custom` endpoint may well be another box on your LAN,
-					// and the honest claim is about who owns it, not about whether a packet moves.
-					hasOnDeviceBackends(ocrBackendEntries()) ? "So does a local model, downloaded or a server you run yourself." : "",
-					hasCloudBackends(ocrBackendEntries()) ? "A cloud provider needs your own API key, and each page is sent to it." : "",
-				]
-					.filter(Boolean)
-					.join(" "),
-			)
+			// The promise of the backend that is *selected*. The three cases are three different
+			// promises (free-localhost-ocr spec §4.1) and this row used to make all of them at once,
+			// which left a reader on LM Studio reading about Apple Vision and about cloud providers.
+			// Where Vision cannot run, the dropdown option itself carries the macOS floor, so that is
+			// not repeated here either.
+			.setDesc(selected ? backendPromise(selected) : "")
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {
 					// A backend whose gap its own setup card is already explaining is hidden rather than

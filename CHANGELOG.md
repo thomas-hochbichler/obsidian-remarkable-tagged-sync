@@ -135,6 +135,11 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **The Backend setting now describes the backend you chose.** It explained all three families at
+  once — Apple Vision, a model on your own machine, and the cloud providers — so whichever one you
+  had picked, most of what you were reading was about the other two. It now makes one promise: the
+  one belonging to the backend in the box beside it.
+
 - **Settings no longer jumps to the top when you change something.** Nearly every control on the
   settings page redraws the page in place, and the redraw was throwing you back to the top — so
   choosing a transcription backend, which sits well down a long page, took you away from the very

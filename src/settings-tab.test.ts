@@ -130,6 +130,8 @@ registerOcrBackend(testBackend("test-gap", { renderSetup: undefined, unavailable
 registerOcrBackend(testBackend("test-carded", { unavailableLabel: () => "Test — not ready" }));
 /** A card and no gap: listed, and the card still renders. */
 registerOcrBackend(testBackend("test-ready-card"));
+/** Costs money per page, which is the only thing that makes a backend "cloud" here. */
+registerOcrBackend(testBackend("test-metered", { renderSetup: undefined, metered: true }));
 /** Has a sentence of its own about what its transcripts look like. */
 const CONTRACT = "Test backend: headings, lists and tables.";
 registerOcrBackend(testBackend("test-contract", { noteContract: CONTRACT }));
@@ -682,19 +684,32 @@ describe("the backend dropdown", () => {
 		expect(tab.containerEl.scrollTop).toBe(420);
 	});
 
-	it("describes the families this build has, and claims nothing about the ones it does not", async () => {
-		const { tab } = await tabWith();
-		const desc = row(draw(tab), "Backend").desc;
+	/**
+	 * Reported from a real settings page: with LM Studio selected, the row explained Apple Vision, then
+	 * local models, then cloud providers, and left the reader to work out which clause was theirs. The
+	 * three families really are three different promises, which is the argument for making one.
+	 */
+	it("describes the backend that is selected, and none of the others", async () => {
+		const onDevice = row(draw((await tabWith({ ocrBackend: "test-plain" })).tab), "Backend").desc;
 
-		expect(desc).toContain("Apple Vision runs on your Mac");
-		// Both clauses are true of this build: the localhost servers are on-device, the six providers
-		// are cloud. The sentence is composed rather than fixed because the three cases are three
-		// different promises -- the unmetered two share one, which is why the second clause says "so
-		// does" rather than making it again.
-		expect(desc).toContain("So does a local model");
-		expect(desc).toContain("your own API key");
-		// The macOS floor belongs on the option that cannot run, not in a description of all of them.
-		expect(desc).not.toContain("macOS 13");
+		expect(onDevice).toBe("Runs on hardware you own — no account and no key.");
+		expect(onDevice).not.toContain("Apple Vision");
+		expect(onDevice).not.toContain("API key");
+	});
+
+	it("names the cost where the pages leave the machine, and only there", async () => {
+		const metered = row(draw((await tabWith({ ocrBackend: "test-metered" })).tab), "Backend").desc;
+
+		expect(metered).toBe("Each page is sent to the provider, charged to your own API key.");
+	});
+
+	// The macOS floor belongs on the option that cannot run -- the dropdown carries it there -- not in
+	// the description of the backend somebody has already chosen.
+	it("keeps the macOS floor out of the description", async () => {
+		const vision = row(draw((await tabWith({ ocrBackend: "vision" })).tab), "Backend").desc;
+
+		expect(vision).toContain("Runs on your Mac");
+		expect(vision).not.toContain("macOS 13");
 	});
 });
 
