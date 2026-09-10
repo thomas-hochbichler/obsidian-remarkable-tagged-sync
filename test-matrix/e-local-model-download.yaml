@@ -256,3 +256,45 @@
       file: src/local-model-download.test.ts
       test: "the context every generation runs at > leaves the older generation's invocation exactly as it shipped"
 
+    - id: E29.18
+      scenario: The argv built for a generation that names a context
+      expect: The `-c` flag is passed with it. This is where the memory floor is actually honoured -- the floor is derived from the peak at that context, and an invocation that does not pin it would let the same model allocate 42.82 GB on a machine admitted at 16 GB
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "pageArgs > pins the context when the generation names one"
+
+    - id: E29.19
+      scenario: The argv built for the generation that shipped before contexts were pinned
+      expect: No `-c` at all. Every install before 2026-09-09 ran without one and its published figure was measured that way; adding one would change what the model is asked
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "pageArgs > passes no context at all when the generation names none"
+
+    - id: E29.20
+      scenario: The rest of the invocation, whichever generation is running
+      expect: One image per process, `--temp 0` and a fixed seed -- the sampling every local figure this repo publishes was measured at
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "pageArgs > sends one image per process, at temperature zero and a fixed seed"
+
+    - id: E29.21
+      scenario: A ready install that is not on the newest generation
+      expect: An offer carrying both error rates and the real download size, the runtime archive included -- so the card can state a trade rather than assert an improvement. stating the trade beats asserting an improvement
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "newerModelOffer > quotes both error rates and the real download size"
+
+    - id: E29.22
+      scenario: A ready install already on the newest generation
+      expect: No offer at all
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "newerModelOffer > offers nothing to an install already on the newest model"
+
+    - id: E29.23
+      scenario: The same offer made on macOS and on Windows
+      expect: Different download sizes. Each platform fetches its own runtime archive, so a single figure would promise one of them a wait it does not have
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "newerModelOffer > sizes the download per platform"
+
