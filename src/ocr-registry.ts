@@ -43,6 +43,18 @@ export interface CreateOptions {
  * build and any backends shipped separately: the plugin names no provider and imports no adapter, it
  * only walks the registry. That is what lets it compile with those backends absent.
  */
+/**
+ * The row both places draw for {@link OcrBackendEntry.backgroundConsent}, named once so they cannot
+ * drift apart -- the setup card asks during setup, the settings page asks once the backend is chosen.
+ *
+ * It used to read *"Transcribe during background sync"*, which promised the switch was about
+ * transcription. It is not: with it off the scheduled run is skipped entirely, so beside *Enable
+ * automatic sync* it looked like a second switch for the same thing with a different name, and was
+ * reported as exactly that. What it really decides is whether an automatic sync may happen *with
+ * this backend*, so that is what it says.
+ */
+export const BACKGROUND_CONSENT_NAME = "Allow automatic sync with this backend";
+
 export interface OcrBackendEntry {
 	readonly id: OcrBackendId;
 	/** Dropdown text when this backend can run here. */
@@ -70,7 +82,7 @@ export interface OcrBackendEntry {
 	 * Ollama and LM Studio are `false` today and are not background-gated. Renaming the field and
 	 * applying its new meaning honestly would flip them to `true` while the consent flag defaults to
 	 * `false`, and an existing Ollama user's background transcription would silently stop. A local
-	 * model costs no money and still costs battery, fans and several GB of RAM, which is what this
+	 * model costs no money and still costs battery, heat and several GB of RAM, which is what this
 	 * field is for.
 	 */
 	readonly needsBackgroundConsent: boolean;

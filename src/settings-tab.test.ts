@@ -25,7 +25,7 @@ import { NO_LICENCE } from "./licence-state";
 import { DeviceUnreachableError } from "./ssh-connection";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import { PairingRefusedError } from "./ssh-pairing";
-import { isListedBackend, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
+import { BACKGROUND_CONSENT_NAME, isListedBackend, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
 
 // Gap G28 -- the settings tab. `main.ts` and `local-register.ts` are the only files that construct a
 // `Setting`, and neither had a test file: every string, state and rule *below* the tab is verified
@@ -837,10 +837,10 @@ describe("automatic sync", () => {
 		// where to keep the answer. One without the other draws no row -- so a backend that declares
 		// the need alone is background-gated with no way for anyone to lift the gate.
 		const withBoth = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-consent" });
-		expect(rowNames(section(draw(withBoth.tab), "Automatic sync"))).toContain("Transcribe during background sync");
+		expect(rowNames(section(draw(withBoth.tab), "Automatic sync"))).toContain(BACKGROUND_CONSENT_NAME);
 
 		const withHalf = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-half-consent" });
-		expect(rowNames(section(draw(withHalf.tab), "Automatic sync"))).not.toContain("Transcribe during background sync");
+		expect(rowNames(section(draw(withHalf.tab), "Automatic sync"))).not.toContain(BACKGROUND_CONSENT_NAME);
 	});
 
 	it("writes the consent through the backend's own accessors, never into a field of its own", async () => {
@@ -848,7 +848,7 @@ describe("automatic sync", () => {
 		// which key inside it holds the answer.
 		const { plugin, tab } = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-consent" });
 		const drawn = draw(tab);
-		const consent = row(drawn, "Transcribe during background sync");
+		const consent = row(drawn, BACKGROUND_CONSENT_NAME);
 
 		expect(consent.desc).toBe("Test consent row.");
 		expect(consent.setting.toggles[0].value).toBe(false);

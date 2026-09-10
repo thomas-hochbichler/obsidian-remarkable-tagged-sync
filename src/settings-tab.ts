@@ -19,7 +19,7 @@ import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft
 import { startTrial, withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
 import { backendPromise, defaultOcrBackend, hasAlternativeBackends } from "./ocr-resolution";
-import { isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { BACKGROUND_CONSENT_NAME, isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
 import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
@@ -708,7 +708,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				});
 			});
 
-		// The canonical control for a backend whose background cost is not money but battery, fans and
+		// The canonical control for a backend whose background cost is not money but battery, heat and
 		// several GB of RAM. It is asked a second time on that backend's own setup card, where the
 		// runtime estimate is already on the user's eye; both write this same value.
 		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
@@ -716,7 +716,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			const consent = selected.backgroundConsent;
 			const blob = (this.plugin.data.llmProviders[selected.id] ??= {});
 			new Setting(containerEl)
-				.setName("Transcribe during background sync")
+				.setName(BACKGROUND_CONSENT_NAME)
 				.setDesc(consent.description)
 				.addToggle((toggle) =>
 					toggle.setValue(consent.get(blob)).onChange(async (value) => {

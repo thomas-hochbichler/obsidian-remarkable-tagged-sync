@@ -32,7 +32,7 @@ import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPr
 import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
 import { betterGeneration, type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
-import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
+import { BACKGROUND_CONSENT_NAME, type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 export const LOCAL_BACKEND_ID = "local";
@@ -317,7 +317,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// runtime estimate that makes it answerable (§7.5). Once selected, the canonical row has it.
 	if (copy.showsBackgroundConsent && !ctx.isSelected) {
 		new Setting(card)
-			.setName("Transcribe during background sync")
+			.setName(BACKGROUND_CONSENT_NAME)
 			.setDesc(backgroundConsentDesc(generation))
 			.addToggle((toggle) =>
 				toggle.setValue(readLocalModelSettings(ctx.settings).backgroundConsent).onChange(async (value) => {
@@ -348,7 +348,7 @@ if (offeredOnThisPlatform()) {
 		metered: false,
 		requiresLicence: false,
 		/**
-		 * Costs no money and still costs battery, fans and 14 GB of RAM for minutes at a time without the
+		 * Costs no money and still costs battery, heat and 14 GB of RAM for minutes at a time without the
 		 * user having asked. That is what this field is for, and it is why it is not a rename of `metered`.
 		 */
 		needsBackgroundConsent: true,

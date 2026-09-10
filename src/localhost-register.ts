@@ -59,12 +59,12 @@ const MODEL_RECOMMENDATION =
  * Not an inconsistency. `pro/llm-register.ts` derives the flag from `kind === "cloud"` and says why
  * it was left alone: flipping it would silently stop background transcription for users who already
  * configured those providers. This registration has no such users, and the substance points the
- * other way -- a 7B on your own machine costs battery, fans and several GB of RAM for minutes at a
+ * other way -- a 7B on your own machine costs battery, heat and several GB of RAM for minutes at a
  * time, which is exactly what `src/local-register.ts` sets the same flag for.
  */
 const BACKGROUND_CONSENT_DESC =
-	"Off by default: while this backend is chosen, scheduled syncs are skipped altogether and nothing arrives until you sync by hand. " +
-	"Switch it on and they run unattended — your server carries the load, so expect fans and several GB of memory on the machine it runs on.";
+	"An automatic sync would put your server to work while you are not there: several GB of memory and minutes of heavy work on whichever machine runs it. " +
+	"Off by default — automatic sync then does nothing while this backend is chosen, and a sync you start yourself brings everything, transcript included.";
 
 /** This backend's slice of the opaque settings blob: the provider config plus its own consent flag. */
 type LocalhostSettings = LlmProviderConfig & { backgroundConsent?: boolean };

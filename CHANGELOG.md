@@ -135,11 +135,14 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
-- **"Transcribe during background sync" now says what it does, not just what it costs.** It named the
-  memory and the fans and left you to guess what you were agreeing to — and it never mentioned the
-  part that matters most: while the switch is off, scheduled syncs are skipped altogether for that
-  backend, so nothing arrives until you sync by hand. Both the downloaded model and a local server
-  say so now.
+- **The background-transcription switch is now called *Allow automatic sync with this backend*, and
+  says what it does.** It used to be *Transcribe during background sync*, which promised it was about
+  transcription — so beside *Enable automatic sync* it looked like a second switch for the same thing
+  under a different name. It is not about transcription: while it is off, automatic sync does nothing
+  at all for that backend and a sync you start yourself brings everything. The description says that
+  first and the cost second, and it no longer mentions fans — most Macs this runs on either have none
+  or never spin them audibly, so the thing you actually notice is the battery. Both the downloaded
+  model and a local server say it the same way.
 
 - **The model check now sits with the model field.** The green or red line saying whether your model
   can read images was drawn *underneath* the field's box rather than inside it, so it floated in the

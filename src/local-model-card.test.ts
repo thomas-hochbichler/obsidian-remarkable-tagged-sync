@@ -129,8 +129,16 @@ describe("consent (§7.2)", () => {
 	it("says what the switch does before what it costs, and how much off actually costs", () => {
 		const desc = backgroundConsentDesc(MODEL_GENERATIONS[0]);
 
-		expect(desc).toContain("scheduled syncs are skipped altogether");
-		expect(desc).toContain("sync by hand");
+		expect(desc).toContain("automatic sync then does nothing");
+		expect(desc).toContain("a sync you start yourself brings everything");
+		// The row is called "automatic sync" two headings further down. Saying "background sync" or
+		// "scheduled sync" instead gave one feature three names, and the switch read as a duplicate of
+		// the one under that heading.
+		expect(desc).not.toContain("background");
+		expect(desc).not.toContain("scheduled");
+		// A MacBook Air has no fan and the rest are near-silent, so naming one described a symptom the
+		// reader will never notice -- reported as "total verwirrend".
+		expect(desc).not.toContain("fans");
 		// The price still has to be there; it is the reason to think before switching it on.
 		// The card's own `gib()` counts in GB, not GiB -- the figure a disk and an activity monitor show.
 		expect(desc).toContain(`${(MODEL_GENERATIONS[0].peakRssBytes / 1_000_000_000).toFixed(1)} GB`);

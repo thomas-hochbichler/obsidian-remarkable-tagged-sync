@@ -76,7 +76,7 @@ export interface BackgroundConsentSource {
  * Whether the chosen backend may run unattended, money aside.
  *
  * A backend that does not ask for this consent has it: most cost nothing but network. The one that
- * asks costs no money either and still costs battery, fans and several GB of RAM, which is why this
+ * asks costs no money either and still costs battery, heat and several GB of RAM, which is why this
  * is a separate promise from the auto-spend one -- agreeing to be billed by a cloud provider is not
  * agreeing to run a local model all night.
  *
