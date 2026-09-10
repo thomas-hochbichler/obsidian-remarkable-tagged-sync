@@ -236,9 +236,18 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 		case "foreign-download":
 			// The filesystem is the shared state: this vault watches the same growing file rather than
 			// coordinating with the vault that owns the lock.
+			//
+			// **"Elsewhere", not "in another vault".** The lock holds a timestamp and nothing else -- by
+			// §5.4's design, because two vaults share one process and a PID would prove nothing -- so
+			// this card cannot actually see a second vault. It never could, and it said so anyway: a
+			// download left running by a previous plugin instance shows up here identically, and a user
+			// with one vault open was told about a vault that did not exist. The heading now says only
+			// what the disk shows, and the paragraph names both ways it happens.
 			return {
-				heading: `Being downloaded in another vault — ${state.percent} %`,
-				paragraphs: ["The model is shared by every vault, so this one will use it as soon as that download finishes."],
+				heading: `Downloading elsewhere — ${state.percent} %`,
+				paragraphs: [
+					"Another vault is fetching it — or this one was, before the plugin last reloaded. The model is shared, so this vault will use it as soon as the download finishes.",
+				],
 				actions: [],
 				percent: state.percent,
 				showsBackgroundConsent: true,

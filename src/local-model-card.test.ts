@@ -236,8 +236,21 @@ describe("the states that carry a decided sentence", () => {
 		expect(copyFor({ kind: "downloading", receivedBytes: 1, totalBytes: 2 }).paragraphs.join(" ")).toContain("Syncing still works");
 	});
 
-	it("shows the other vault's progress rather than a spinner", () => {
+	it("shows the download's progress rather than a spinner", () => {
 		expect(copyFor({ kind: "foreign-download", percent: 62 }).heading).toContain("62 %");
+	});
+
+	/**
+	 * The lock carries a timestamp and nothing else (§5.4), so this card cannot see a second vault --
+	 * and a download left running by a previous plugin instance reaches it looking exactly the same. It
+	 * claimed one anyway, and a user with one vault open was told about a vault that did not exist.
+	 */
+	it("claims no second vault in the heading, because it cannot see one", () => {
+		const copy = copyFor({ kind: "foreign-download", percent: 62 });
+
+		expect(copy.heading).not.toContain("another vault");
+		// The paragraph may still name it -- there it is one of two possibilities offered, not a fact.
+		expect(copy.paragraphs.join(" ")).toContain("before the plugin last reloaded");
 	});
 });
 

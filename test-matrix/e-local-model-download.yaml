@@ -120,6 +120,25 @@
       file: src/local-model-fetch.test.ts
       test: "the tools it refuses to use > unpacks with the system tar, and asks for a real archive path"
 
+- feature: E33
+  name: A download this vault is not the one running
+  code: src/local-model-card.ts
+  tier: free
+  scenarios:
+    - id: E33.1
+      scenario: A download is under way and this plugin instance is not the one running it
+      expect: The growing file's own percentage, read off the disk -- a spinner would say "wait" about something that has a number
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "the states that carry a decided sentence > shows the download's progress rather than a spinner"
+
+    - id: E33.2
+      scenario: What that heading is allowed to claim
+      expect: Not a second vault. The lock holds a timestamp and nothing else (E32), so this cannot see one -- and a download left running by a previous plugin instance arrives looking identical, which is how a user with one vault open was told about a vault that did not exist. The paragraph offers both readings; the heading asserts neither
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "the states that carry a decided sentence > claims no second vault in the heading, because it cannot see one"
+
 - feature: E32
   name: Which job is holding the lock
   code: src/local-model-store.ts

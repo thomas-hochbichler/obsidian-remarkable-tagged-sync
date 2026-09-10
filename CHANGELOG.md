@@ -151,7 +151,9 @@ workflow publishes the section as the GitHub release body. See
   and the freshly loaded plugin could only read the growing file as *"Being downloaded in another
   vault"*, on machines with one vault open. A download now stops when the plugin unloads, keeps every
   byte it had already fetched, and comes back as *Download paused* with the amount named and a Resume
-  button.
+  button. The card also stops claiming a vault it cannot see: the lock the plugin writes carries a
+  timestamp and nothing else, deliberately, so where a download really is running somewhere else it
+  now says *Downloading elsewhere* and names both of the ways that happens.
 
 - **Typed text now sits where you typed it, not at the end of the page.** On a page with handwriting
   above *and* below a block of typed text, the block was appended after everything the transcription

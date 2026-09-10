@@ -299,7 +299,6 @@ src/local-model-card.test.ts :: the states that carry a decided sentence > names
 src/local-model-card.test.ts :: the states that carry a decided sentence > names what discarding a paused download throws away, on the button
 src/local-model-card.test.ts :: the states that carry a decided sentence > says nothing was run when verification failed
 src/local-model-card.test.ts :: the states that carry a decided sentence > says syncing keeps working during the download
-src/local-model-card.test.ts :: the states that carry a decided sentence > shows the other vault's progress rather than a spinner
 src/local-model-card.test.ts :: the states that carry a decided sentence > tells a user whose engine was deleted that the model survived
 src/local-model-card.test.ts :: the states that carry a decided sentence > warns that an update does not redo existing transcripts
 src/local-model-download.test.ts :: formatBytes > keeps one decimal for gigabytes and none for megabytes
