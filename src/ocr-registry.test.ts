@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isListedBackend, isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry, type OcrBackendEntry } from "./ocr-registry";
+import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry, type OcrBackendEntry } from "./ocr-registry";
 import "./vision-register";
 
 describe("the free registry", () => {
@@ -49,42 +49,6 @@ describe("the free registry", () => {
  * already explaining. The distinction matters because Obsidian persists a dropdown change
  * immediately: listing a backend that cannot run yet saves a setting that transcribes nothing.
  */
-describe("isListedBackend", () => {
-	function entry(overrides: Partial<OcrBackendEntry> = {}): OcrBackendEntry {
-		return {
-			id: "candidate",
-			label: "Candidate",
-			metered: false,
-			requiresLicence: false,
-			needsBackgroundConsent: false,
-			create: () => null,
-			...overrides,
-		};
-	}
-
-	it("lists a backend that can run here", () => {
-		expect(isListedBackend(entry(), "vision")).toBe(true);
-	});
-
-	it("lists an unavailable backend that has no card, so a permanent gap explains itself in place", () => {
-		expect(isListedBackend(entry({ unavailableLabel: () => "Apple Vision — macOS only" }), "vision")).toBe(true);
-	});
-
-	it("hides an unavailable backend whose card is already explaining the gap", () => {
-		const candidate = entry({ unavailableLabel: () => "not ready", renderSetup: () => {} });
-		expect(isListedBackend(candidate, "vision")).toBe(false);
-	});
-
-	it("keeps a card-carrying backend listed while it is the selected one, so the dropdown is never empty", () => {
-		const candidate = entry({ unavailableLabel: () => "not ready", renderSetup: () => {} });
-		expect(isListedBackend(candidate, "candidate")).toBe(true);
-	});
-
-	it("lists a card-carrying backend that can run, since the card is not what hides it", () => {
-		expect(isListedBackend(entry({ renderSetup: () => {} }), "vision")).toBe(true);
-	});
-});
-
 // Load-time migration (multi-provider spec §7): anything that isn't a backend *this build has* is
 // coerced to the platform default, so a retired literal and an absent backend behave the same way.
 describe("isRegisteredOcrBackend", () => {

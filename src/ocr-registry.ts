@@ -13,26 +13,11 @@ export interface BackendSettingsContext {
 	settings: BackendSettings;
 	save(): Promise<void>;
 	/**
-	 * Whether this backend is the selected one. A setup card renders for every backend, so a card that
-	 * has nothing left to set up — the model is downloaded and the backend is now selectable — is
-	 * noise beside whichever backend the user actually picked.
-	 */
-	isSelected: boolean;
-	/**
-	 * Whether the *selected* backend already asks "may an automatic sync run with this backend?" on
-	 * its own row under *Automatic sync*. A setup card that asks the same question for a backend that
-	 * is not selected would then put two switches with one name on one screen, for two different
-	 * backends, one of them inert -- so the card is told, and keeps its own copy of the question to
-	 * itself until the other row is gone.
-	 */
-	selectedBackendAsksBackgroundConsent: boolean;
-	/**
 	 * Hands the selection back to the platform default, for a backend that has just made itself
 	 * unusable on purpose — the one case being a "delete the model" button.
 	 *
-	 * Without it the user is left selecting a backend the listing rule has just hidden: the entry
-	 * stays in the dropdown because it is selected, disabled, pointing at a card, and every sync from
-	 * then on transcribes nothing until they work out what to change it to.
+	 * Without it the user is left selecting a backend that transcribes nothing, and every sync from
+	 * then on writes notes without a transcript until they work out what to change it to.
 	 */
 	selectDefaultBackend(): Promise<void>;
 }
@@ -52,9 +37,9 @@ export interface CreateOptions {
  * only walks the registry. That is what lets it compile with those backends absent.
  */
 /**
- * The one name for the "may an automatic sync run with this backend?" row, wherever it is drawn: the
- * setup card asks during setup, the settings page asks once the backend is chosen, and the money row
- * for a metered backend asks the same question with a price attached. One name so they cannot drift.
+ * The one name for the "may an automatic sync run with this backend?" row under *Automatic sync*,
+ * whether it is the battery/RAM question of a local model or the money question of a metered one.
+ * One name so they cannot drift.
  *
  * It used to read *"Transcribe during background sync"*, which promised the switch was about
  * transcription. It is not: with it off the scheduled run is skipped entirely, so beside *Enable
@@ -129,21 +114,14 @@ export interface OcrBackendEntry {
 	 * with another backend selected is about to get.
 	 */
 	readonly noteContract?: string;
-	/** Renders this backend's own settings rows under the backend dropdown, when it has any. */
-	renderSettings?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
 	/**
-	 * Renders this backend's setup card, for **every** registered backend regardless of which one is
-	 * selected — unlike `renderSettings`, which the plugin calls for the selected one only.
-	 *
-	 * That difference is the whole point: a backend that cannot yet be selected has no way to explain
-	 * what would make it selectable, because the only hook it has fires once it already is. This is
-	 * where a backend that must be downloaded before it can run says so, asks for consent and shows
-	 * its progress.
-	 *
-	 * Its presence also drives {@link isListedBackend}: a backend with a card is one whose gap the card
-	 * is already explaining, so it is hidden from the dropdown rather than shown disabled.
+	 * Renders this backend's own rows under the backend dropdown, when it has any -- for the selected
+	 * backend only. A backend that has to be downloaded before it can run draws its setup card here,
+	 * which is why it is listed *before* the download: the reader picks it, sees "not downloaded" and
+	 * the button, and until the download is done a sync writes notes without a transcript rather than
+	 * falling back. Hiding the entry until the model was there was reported as the entry missing.
 	 */
-	renderSetup?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
+	renderSettings?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
 	/**
 	 * This backend's own sentence for the re-transcribe confirmation, or null when it has nothing to
 	 * add. The core cannot compute it: a figure like "about ten minutes per notebook" is a rolling mean
@@ -186,28 +164,6 @@ export function ocrBackendEntries(): OcrBackendEntry[] {
 
 export function ocrBackendEntry(id: OcrBackendId): OcrBackendEntry | null {
 	return entries.get(id) ?? null;
-}
-
-/**
- * Whether an entry belongs in the backend dropdown at all.
- *
- * > Not listed when `unavailableLabel()` returns a string **and** the entry has a `renderSetup`
- * > **and** it is not the currently selected backend.
- *
- * Which is the mechanical form of one rule: **show-but-disable is for a gap the user cannot fix; hide
- * is for a gap the card below is already explaining.** Apple Vision off macOS has no card and stays
- * visible-and-disabled forever, which is right for a gap that will never close. A backend whose model
- * has not been downloaded yet has a card, and listing it would hand the user a selectable option that
- * transcribes nothing -- Obsidian persists a dropdown change immediately, so the setting would be
- * saved and dead for as long as the download takes.
- *
- * The selected-backend clause carries the case that makes it a rule rather than a filter: the user
- * selects the backend while it works and the model later disappears. Hiding a *selected* entry would
- * leave the dropdown showing nothing at all, so it stays, disabled, pointing at its card.
- */
-export function isListedBackend(entry: OcrBackendEntry, selectedId: OcrBackendId): boolean {
-	if (entry.id === selectedId) return true;
-	return !(entry.unavailableLabel?.() && entry.renderSetup);
 }
 
 /**

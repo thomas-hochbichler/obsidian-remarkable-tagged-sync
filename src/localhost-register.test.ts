@@ -20,17 +20,13 @@ const IDS = ["ollama", "lmstudio", "custom"] as const;
  */
 describe("the localhost backends' registration", () => {
 	it("registers all three, on every platform", () => {
-		// The point of the effort: no `unavailableLabel`, so `isListedBackend` lists them everywhere --
+		// The point of the effort: no `unavailableLabel`, so the dropdown lists them enabled everywhere --
 		// including Windows x64 and Linux, where the dropdown had nothing selectable in it.
 		for (const id of IDS) {
 			const entry = ocrBackendEntry(id);
 			expect(entry, id).not.toBeNull();
 			expect(entry?.unavailableLabel).toBeUndefined();
 		}
-	});
-
-	it("gives none of them a setup card, so none can be hidden from the dropdown", () => {
-		for (const id of IDS) expect(ocrBackendEntry(id)?.renderSetup).toBeUndefined();
 	});
 
 	it("costs no money and still asks before running in the background", () => {
@@ -119,8 +115,6 @@ describe("the thinking line in the localhost callout", () => {
 		ocrBackendEntry(id)?.renderSettings?.(container as unknown as HTMLElement, {
 			settings,
 			save: async () => undefined,
-			isSelected: true,
-			selectedBackendAsksBackgroundConsent: false,
 			selectDefaultBackend: async () => undefined,
 		});
 		// Both sit in the Model row's own description -- one says what to type, the other judges what

@@ -9,7 +9,7 @@
 import { Notice, Platform, Setting } from "obsidian";
 import { backgroundConsentDesc, cardCopy, deleteConfirmation, type LocalCardState, newerModelOffer } from "./local-model-card";
 import { planCleanup } from "./local-model-download";
-import { localModelBlock, localModelUnavailableLabel, NOT_READY_LABEL } from "./local-model-gate";
+import { localModelBlock, localModelUnavailableLabel } from "./local-model-gate";
 import {
 	discardPartialDownload,
 	type DownloadHandle,
@@ -33,7 +33,7 @@ import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPr
 import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
 import { betterGeneration, type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
-import { BACKGROUND_CONSENT_NAME, type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
+import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 export const LOCAL_BACKEND_ID = "local";
@@ -225,13 +225,6 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// Where the newer model would land, resolved once so the update button does not have to.
 	const newer = betterGeneration(generation, context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
-	// A ready model has nothing left to set up: the backend is selectable, so the dropdown is where it
-	// belongs now. Its speed, its misread caveat and its delete button are about a backend in use, and
-	// beside a different selected backend they only add a screenful. Every other state stays -- an
-	// absent, paused or broken model is exactly what the card exists to explain, and it cannot be
-	// selected to reach that explanation.
-	if (state.kind === "ready" && !ctx.isSelected) return;
-
 	const copy = cardCopy(state, platform, ctx.settings, generation);
 
 	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
@@ -336,25 +329,6 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 		}
 	}
 
-	// Asked twice, but never on one screen. The canonical row under *Automatic sync* only exists while
-	// this backend is the selected one, and a backend still downloading cannot be selected -- so the
-	// card carries the question exactly where the other row cannot reach: during setup, next to the
-	// runtime estimate that makes it answerable (§7.5). Once selected, the canonical row has it.
-	//
-	// "Never on one screen" has to hold across backends too: while a *cloud* backend is selected, its
-	// own row of the same name sits under *Automatic sync*, and a second one here -- for a model that
-	// is not even chosen -- was two switches nobody could tell apart, one of them doing nothing.
-	if (copy.showsBackgroundConsent && !ctx.isSelected && !ctx.selectedBackendAsksBackgroundConsent) {
-		new Setting(card)
-			.setName(BACKGROUND_CONSENT_NAME)
-			.setDesc(backgroundConsentDesc(generation))
-			.addToggle((toggle) =>
-				toggle.setValue(readLocalModelSettings(ctx.settings).backgroundConsent).onChange(async (value) => {
-					setBackgroundConsent(ctx.settings, value);
-					await ctx.save();
-				}),
-			);
-	}
 }
 
 /**
@@ -389,12 +363,9 @@ if (offeredOnThisPlatform()) {
 				const platform = Platform.isDesktop ? (require("os") as typeof import("os")).platform() : "";
 				return localModelUnavailableLabel(block, platform);
 			}
-			const resolved = resolveLocalModel(PLUGIN_ID);
-			if (!resolved) return null;
-			const snapshot = readLocalModelSnapshot(resolved.paths);
-			if (deriveLocalModelState(snapshot, Date.now(), resolved.generation) === "ready" && !runtimeFailure) return null;
-			// The one lifecycle string: the card below says which of the five reasons it is.
-			return NOT_READY_LABEL;
+			// Not downloaded is not unavailable: the entry is listed and selectable, and its card below
+			// says what to do. Only a machine that can never run it gets the disabled option.
+			return null;
 		},
 
 		/**
@@ -433,7 +404,7 @@ if (offeredOnThisPlatform()) {
 		 * *without* a card and carries a permanent `unavailableLabel()` — which makes §6.2's listing rule
 		 * produce show-but-disable for exactly those machines, with no extra mechanism.
 		 */
-		renderSetup: machineCanRun()
+		renderSettings: machineCanRun()
 			? (containerEl, ctx) => {
 					// The card gets an element of its own, so a redraw empties the card and nothing else.
 					// `containerEl` is the whole settings page: emptying *that* on a progress tick left the

@@ -113,8 +113,7 @@ describe("consent (§7.2)", () => {
 		expect(line).not.toContain(MODEL_GENERATIONS[0].label);
 	});
 
-	it("asks for background consent here, where the estimate is already on screen", () => {
-		expect(copy.showsBackgroundConsent).toBe(true);
+	it("keeps money out of the background consent copy", () => {
 		expect(backgroundConsentDesc(MODEL_GENERATIONS[0])).toContain("Off by default");
 		// Money is gone from the copy entirely: a local model costs none.
 		expect(backgroundConsentDesc(MODEL_GENERATIONS[0]).toLowerCase()).not.toContain("money");

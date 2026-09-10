@@ -462,3 +462,15 @@
       layer: pure
       file: src/local-model-store.test.ts
       test: "deriveLocalModelState > is ready when a stray part file sits beside a verified model"
+
+- feature: E36
+  name: Background consent copy for the local model
+  code: src/local-model-card.ts
+  tier: free
+  scenarios:
+    - id: E36.1
+      scenario: The consent row's description is read
+      expect: It says what off means and never mentions money -- a local model costs none, and the money question is the metered backends' own
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "consent (§7.2) > keeps money out of the background consent copy"

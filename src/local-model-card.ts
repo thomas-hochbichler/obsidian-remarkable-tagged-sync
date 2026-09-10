@@ -62,8 +62,6 @@ export interface CardCopy {
 	actions: CardAction[];
 	/** 0-100 when the card should draw a bar, null otherwise. */
 	percent: number | null;
-	/** True when the card asks for the background-sync consent checkbox (§7.5). */
-	showsBackgroundConsent: boolean;
 }
 
 /**
@@ -182,8 +180,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: consentParagraphs(platform, settings, generation),
 				actions: [{ id: "download", label: `Download the model (${modelSize(generation)})`, emphasis: "cta" }],
 				percent: null,
-				// Asked here, on the one screen where the runtime estimate is already on the user's eye.
-				showsBackgroundConsent: true,
 			};
 
 		case "downloading": {
@@ -196,7 +192,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [{ id: "cancel", label: "Pause", emphasis: "normal" }],
 				percent,
-				showsBackgroundConsent: true,
 			};
 		}
 
@@ -208,7 +203,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: ["Checking the downloaded files against the SHA-256 this plugin was published with."],
 				actions: [],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "paused":
@@ -221,7 +215,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 					{ id: "discard", label: `Discard ${formatBytes(state.onDiskBytes)}`, emphasis: "warning" },
 				],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "out-of-disk":
@@ -235,7 +228,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [{ id: "resume", label: "Resume", emphasis: "cta" }],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "network-lost":
@@ -244,7 +236,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: [state.message, "What is already on disk is kept, and Resume picks up where it stopped."],
 				actions: [{ id: "resume", label: "Resume", emphasis: "cta" }],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "foreign-download":
@@ -265,7 +256,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [],
 				percent: state.percent,
-				showsBackgroundConsent: true,
 			};
 
 		case "ready": {
@@ -281,7 +271,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				);
 				actions.unshift({ id: "update", label: `Get ${state.newer.label}`, emphasis: "cta" });
 			}
-			return { heading: "Local model — ready", paragraphs, actions, percent: null, showsBackgroundConsent: true };
+			return { heading: "Local model — ready", paragraphs, actions, percent: null };
 		}
 
 		case "corrupt":
@@ -295,7 +285,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [{ id: "delete", label: "Delete and start over", emphasis: "warning" }],
 				percent: null,
-				showsBackgroundConsent: false,
 			};
 
 		case "removed":
@@ -312,7 +301,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [{ id: "retry-runtime", label: "Download the engine again", emphasis: "cta" }],
 				percent: null,
-				showsBackgroundConsent: false,
 			};
 
 		case "runtime-failed":
@@ -321,7 +309,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: [state.message, "Notes still sync with the handwriting render. The next sync tries again."],
 				actions: [{ id: "retry-runtime", label: "Download the engine again", emphasis: "normal" }],
 				percent: null,
-				showsBackgroundConsent: false,
 			};
 	}
 }

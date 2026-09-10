@@ -19,7 +19,7 @@ import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft
 import { startTrial, withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
 import { backendPromise, defaultOcrBackend, hasAlternativeBackends } from "./ocr-resolution";
-import { BACKGROUND_CONSENT_NAME, isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { BACKGROUND_CONSENT_NAME, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
 import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
@@ -39,7 +39,7 @@ import { visionRunStats } from "./vision-ocr-backend";
  * between them lived in `main.ts` beside the sync engine's wiring, where nothing could reach them.
  *
  * The class holds no rules of its own on purpose. Where a decision looks like it is being made here,
- * it is being *asked for*: `planTagRouting`, `isListedBackend`, `licenceStatusText`,
+ * it is being *asked for*: `planTagRouting`, `backendPromise`, `licenceStatusText`,
  * `isMeteredProvider`. What is left is the part that has to be characterised rather than unit-tested
  * -- which row, in which order, wired to which handler.
  */
@@ -613,10 +613,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.setDesc(selected ? [backendPromise(selected), contract].filter(Boolean).join(" ") : "")
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {
-					// A backend whose gap its own setup card is already explaining is hidden rather than
-					// shown disabled -- otherwise picking it would persist a setting that transcribes
-					// nothing, since Obsidian saves a dropdown change the moment it is made.
-					if (!isListedBackend(entry, this.plugin.data.ocrBackend)) continue;
 					dropdown.addOption(entry.id, entry.label);
 					// Show every backend; disable one that can't run here, so the gap explains itself in place (spec §4.2).
 					const unavailable = entry.unavailableLabel?.();
@@ -634,13 +630,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				});
 			});
 
-		// One context shape for both hooks, so a backend's rows and its card get the same powers.
-		const selectedAsksConsent = this.selectedBackendAsksBackgroundConsent();
 		const contextFor = (backendId: string) => ({
 			settings: (this.plugin.data.llmProviders[backendId] ??= {}),
 			save: () => this.plugin.saveData(this.plugin.data),
-			isSelected: backendId === this.plugin.data.ocrBackend,
-			selectedBackendAsksBackgroundConsent: selectedAsksConsent,
 			selectDefaultBackend: async () => {
 				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
 				await this.plugin.saveData(this.plugin.data);
@@ -650,23 +642,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const id = this.plugin.data.ocrBackend;
 		ocrBackendEntry(id)?.renderSettings?.(containerEl, contextFor(id));
-
-		// Setup cards, for *every* registered backend rather than the selected one. A backend that has
-		// to be downloaded before it can be chosen is not selectable yet, so `renderSettings` above
-		// would never fire for it and it would have no way to say what it needs.
-		for (const entry of ocrBackendEntries()) {
-			entry.renderSetup?.(containerEl, contextFor(entry.id));
-		}
-	}
-
-	/**
-	 * Whether {@link renderAutoSyncSettings} draws a consent row for the selected backend: the
-	 * battery/RAM one for a backend that declares both halves of it, or the money one for a metered
-	 * backend. Only the union matters to the caller -- both rows carry the same name.
-	 */
-	private selectedBackendAsksBackgroundConsent(): boolean {
-		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
-		return Boolean(selected?.needsBackgroundConsent && selected.backgroundConsent) || isMeteredProvider(this.plugin.data.ocrBackend);
 	}
 
 	/**
@@ -713,9 +688,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				});
 			});
 
-		// The canonical control for a backend whose background cost is not money but battery, heat and
-		// several GB of RAM. It is asked a second time on that backend's own setup card, where the
-		// runtime estimate is already on the user's eye; both write this same value.
+		// The control for a backend whose background cost is not money but battery, heat and several
+		// GB of RAM.
 		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
 		if (selected?.needsBackgroundConsent && selected.backgroundConsent) {
 			const consent = selected.backgroundConsent;

@@ -306,6 +306,5 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 		},
 		// No `unavailableLabel`: it can run anywhere. A server that is not running is a run-time
 		// failure, not a property of the machine -- see spec §5 for where that is said instead.
-		// No `renderSetup`: nothing to download, and a card would hide the entry from the dropdown.
 	});
 }

@@ -37,10 +37,6 @@ describe("the LLM providers' background-consent flags", () => {
 			expect(entry.needsBackgroundConsent).toBe(entry.metered);
 		}
 	});
-
-	it("gives none of them a setup card, so none of them can be hidden from the dropdown", () => {
-		for (const entry of ocrBackendEntries()) expect(entry.renderSetup).toBeUndefined();
-	});
 });
 
 // Gap G28's other half -- E8, the live vision-capability callout under the Model field.
@@ -80,8 +76,6 @@ describe("the live vision-capability callout", () => {
 		ocrBackendEntry(PROVIDER)?.renderSettings?.(container as unknown as HTMLElement, {
 			settings,
 			save: async () => undefined,
-			isSelected: true,
-			selectedBackendAsksBackgroundConsent: false,
 			selectDefaultBackend: async () => undefined,
 		});
 		const rows = takeSettings();
@@ -180,8 +174,6 @@ describe("the thinking line in the callout", () => {
 		ocrBackendEntry(provider)?.renderSettings?.(container as unknown as HTMLElement, {
 			settings,
 			save: async () => undefined,
-			isSelected: true,
-			selectedBackendAsksBackgroundConsent: false,
 			selectDefaultBackend: async () => undefined,
 		});
 		const callout = takeSettings()

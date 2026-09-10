@@ -82,9 +82,7 @@ export function localModelBlock(machine: MachineFacts, floors: MemoryFloors = DE
  * The dropdown's replacement text for a machine that can never run the model (§4.3).
  *
  * Each is rendered as the *entire* option text of a disabled dropdown entry, so each is the whole
- * explanation and neither has a card beneath it -- §4.1 attaches no `renderSetup` where the model
- * cannot run, which is what makes §6.2's listing rule produce show-but-disable here with no extra
- * mechanism.
+ * explanation and neither has a card beneath it -- §4.1 attaches no card where the model cannot run.
  *
  * The memory string names the machine's own figure, because a bare requirement only sends the user
  * looking for what they have.
@@ -98,13 +96,3 @@ export function localModelUnavailableLabel(block: LocalModelBlock, platform: str
 	const machine = platform === "darwin" ? "Mac" : "PC";
 	return `Local model — needs ${block.floorGb} GB RAM (this ${machine} has ${block.actualGb} GB)`;
 }
-
-/**
- * The one lifecycle string the dropdown needs (§6.2).
- *
- * Not-downloaded, downloading, corrupt, runtime-failed and removed all live in the card; this line's
- * only job is to point at it. It is reached only through §6.2's third clause -- the user selected the
- * backend while it worked and the model later disappeared -- because hiding a *selected* entry would
- * leave the dropdown showing nothing at all.
- */
-export const NOT_READY_LABEL = "Local model — not ready, see below";

@@ -113,10 +113,10 @@
   scenarios:
     - id: E1.1
       scenario: The dropdown is drawn over the registry this build actually has
-      expect: Exactly the entries `isListedBackend` admits -- a backend whose gap its own card explains is absent, one whose gap nothing can close is present
+      expect: Every registered entry, in registry order. A backend whose model is not downloaded yet is listed too -- its own rows say what to do once it is picked, and hiding it until then was reported as the entry missing
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the backend dropdown > lists exactly what the listing rule says, over the registry this build actually has"
+      test: "the backend dropdown > lists every registered backend, whether or not it can run here"
 
     - id: E1.2
       scenario: A listed backend cannot run on this machine
@@ -124,13 +124,6 @@
       layer: vault
       file: src/settings-tab.test.ts
       test: "the backend dropdown > shows a gap nothing can close, disabled, with the reason where the name was"
-
-    - id: E1.3
-      scenario: The selected backend is one the listing rule would otherwise hide -- picked while it worked, its model gone since
-      expect: It stays in the list, disabled, so the dropdown never shows an empty box
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "the backend dropdown > keeps a hidden backend visible while it is the selected one, so the box is never blank"
 
     - id: E1.4
       scenario: Another backend is picked
@@ -194,7 +187,7 @@
       test: "the transcript sentence in the Backend row > appends the selected backend's own contract to its promise, as one description"
 
 - feature: E14
-  name: Per-backend settings and setup cards
+  name: Per-backend settings rows
   code: src/settings-tab.ts
   tier: free
   scenarios:
@@ -203,21 +196,7 @@
       expect: Only the selected one's `renderSettings` runs -- the rows are the chosen backend's key, URL and model, and no other's
       layer: vault
       file: src/settings-tab.test.ts
-      test: "a backend's own rows and its setup card > draws the settings rows of the selected backend and of no other"
-
-    - id: E14.2
-      scenario: A backend that has to be set up before it can be selected is registered
-      expect: Its `renderSetup` runs anyway -- `renderSettings` fires only once a backend already is selectable, so a card is the only way it can say what would make it so
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "a backend's own rows and its setup card > draws every registered backend's setup card, selected or not"
-
-    - id: E14.3
-      scenario: A card belongs to the backend that is currently selected
-      expect: The context says so, so a card with nothing left to set up can stand down beside the backend the user actually picked
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "a backend's own rows and its setup card > tells a card whether it is the selected backend, so a finished one can stand down"
+      test: "a backend's own rows > draws the settings rows of the selected backend and of no other"
 
 - feature: C15
   name: Interval backstop -- the settings side
@@ -275,13 +254,6 @@
       layer: vault
       file: src/settings-tab.test.ts
       test: "automatic sync > asks for background consent only where the backend declares both halves of it"
-
-    - id: C18.14
-      scenario: A setup card renders while a backend with its own consent row is selected, and while one without is
-      expect: The card is told whether the selected backend already asks the question -- true for a metered one and for one with both halves, false for a free plain one -- so it cannot draw a second switch of the same name on the same screen
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "automatic sync > tells every setup card whether the selected backend already asks the background question"
 
     - id: C18.13
       scenario: The consent switch is flipped
