@@ -379,6 +379,10 @@ export default class TaggedSyncPlugin extends Plugin {
 	onunload() {
 		if (this.autoSyncLaunchTimer !== null) this.scheduler.clearTimeout(this.autoSyncLaunchTimer);
 		if (this.autoSyncIntervalTimer !== null) this.scheduler.clearInterval(this.autoSyncIntervalTimer);
+		// Backends holding something Obsidian does not tear down with the plugin get to let go of it.
+		// One does: the local model's download runs on promises and a `window` interval, and a reload
+		// mid-download used to leave both running with no way to reach them.
+		for (const entry of ocrBackendEntries()) entry.onPluginUnload?.();
 	}
 
 	/**

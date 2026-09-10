@@ -50,6 +50,28 @@ registerOcrBackend({
 	},
 });
 
+/**
+ * A backend holding something that outlives the plugin, on every platform.
+ *
+ * Here for the same reason HUNGRY is: the shipped one that holds such a thing -- the local model,
+ * whose download runs on plain promises and a `window` interval Obsidian does not tear down with the
+ * plugin -- registers on macOS and Windows only, so a test driving it would pass here and quietly
+ * never run on CI.
+ */
+const LINGERING = "test-lingering";
+const lingering = { released: 0 };
+registerOcrBackend({
+	id: LINGERING,
+	label: "Lingering (test)",
+	metered: false,
+	requiresLicence: false,
+	needsBackgroundConsent: false,
+	create: () => new UnavailableOcrBackend(LINGERING),
+	onPluginUnload: () => {
+		lingering.released++;
+	},
+});
+
 const engine = vi.hoisted(() => ({ runs: 0, fail: false }));
 
 vi.mock("./sync-engine", async (importOriginal) => {
@@ -269,6 +291,23 @@ describe("when a background sync is scheduled", () => {
 		plugin.onunload();
 
 		expect(clock.armed).toBe(0);
+	});
+
+	/**
+	 * The plugin's own timers are not everything a backend can leave behind. The local model's
+	 * download runs on promises and a `window` interval, and a reload mid-download -- a plugin update,
+	 * a disable and enable -- left the fetch and its 10-second lock heartbeat running with nothing able
+	 * to reach them. The fresh instance then read its own predecessor's `.part` under a live lock as
+	 * somebody else's work: *"Being downloaded in another vault -- 8 %"*, on a machine with one vault
+	 * open. Measured 2026-09-10.
+	 */
+	it("tells the backends to let go of what outlives them", async () => {
+		const plugin = await loadWith({ intervalHours: 6 });
+		lingering.released = 0;
+
+		plugin.onunload();
+
+		expect(lingering.released).toBe(1);
 	});
 });
 

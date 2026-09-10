@@ -385,10 +385,6 @@ src/local-model-store.test.ts :: isLockFresh > abandons one older than the stale
 src/local-model-store.test.ts :: isLockFresh > holds a lock stamped in the future rather than stealing the directory
 src/local-model-store.test.ts :: isLockFresh > holds a lock that was stamped a heartbeat ago
 src/local-model-store.test.ts :: isLockFresh > treats no lock as free
-src/local-model-store.test.ts :: isTranscriptionInProgress > blocks a second run while a transcription holds the lock
-src/local-model-store.test.ts :: isTranscriptionInProgress > ignores a lock nobody is renewing any more
-src/local-model-store.test.ts :: isTranscriptionInProgress > is not busy when there is no lock at all
-src/local-model-store.test.ts :: isTranscriptionInProgress > lets a sync run while a download holds it
 src/local-model-store.test.ts :: localModelPaths > carries the version in both artefact directory names
 src/local-model-store.test.ts :: localModelPaths > falls back to the standard location when LOCALAPPDATA is missing or empty
 src/local-model-store.test.ts :: localModelPaths > keeps every file it names inside the model directory

@@ -201,9 +201,26 @@ export function isLocalModelRunnable(state: LocalModelState): boolean {
  * transcription running must not start** (two runs are 27 GB), and **a sync that finds a download
  * running must**, because a download lasts hours and refusing to sync for hours would cost renders,
  * notes and highlights, which are the plugin's actual job.
+ *
+ * **`runtimePartPresent` is here because "a download always has a `.part`" was only three-quarters
+ * true.** A download fetches the 12 MB engine *first* and the model second, under one lock, and the
+ * engine's partial file lands in the engine directory -- not beside the model, which is the only
+ * place this looked. For that first minute the lock was held with no `.part` in sight, so the plugin
+ * read its own download as somebody else's transcription: Resume refused with *"another vault is
+ * transcribing"*, and a sync in the same window skipped transcription for a reason that was not
+ * true. Both halves of a download count now.
  */
-export function isTranscriptionInProgress(snapshot: Pick<LocalModelSnapshot, "lockHeldAtMs" | "partPresent">, nowMs: number): boolean {
-	return isLockFresh(snapshot.lockHeldAtMs, nowMs) && !snapshot.partPresent;
+export function isTranscriptionInProgress(facts: LockHolderFacts, nowMs: number): boolean {
+	return isLockFresh(facts.lockHeldAtMs, nowMs) && !facts.partPresent && !facts.runtimePartPresent;
+}
+
+/** The evidence {@link isTranscriptionInProgress} weighs: a held lock, and every place a download writes. */
+export interface LockHolderFacts {
+	lockHeldAtMs: number | null;
+	/** A `.part` for the model or the mmproj -- the second half of a download. */
+	partPresent: boolean;
+	/** A `.part` in the engine directory -- the *first* half, and the half this used to miss. */
+	runtimePartPresent: boolean;
 }
 
 /**

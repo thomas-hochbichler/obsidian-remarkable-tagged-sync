@@ -80,6 +80,19 @@ export interface OcrBackendEntry {
 	 */
 	unavailableLabel?(): string | null;
 	/**
+	 * Called when the plugin unloads, for a backend holding something that outlives it.
+	 *
+	 * Only the downloadable local model needs it today, and the reason it needs it is worth stating:
+	 * its download runs on plain promises and a `window` interval, neither of which Obsidian tears
+	 * down with the plugin. A reload mid-download -- a plugin update, a disable and enable -- left the
+	 * fetch and the lock heartbeat running with nobody able to stop them, while the fresh instance saw
+	 * a held lock over a growing `.part` and could only conclude the download belonged to *another
+	 * vault*. It said so, on a machine with one vault open.
+	 *
+	 * The core still names no provider: the entry declares this about itself, like every other hook.
+	 */
+	onPluginUnload?(): void;
+	/**
 	 * Builds the adapter for one run. Returns `null` when the backend is selected but not configured
 	 * enough to run *and* falling back to a free local backend is the right answer (a cloud provider
 	 * with no key) — the caller decides the fallback, so this never silently spends money. A backend

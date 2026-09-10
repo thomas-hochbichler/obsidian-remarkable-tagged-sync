@@ -97,6 +97,13 @@
       file: src/auto-sync-schedule.test.ts
       test: "when a background sync is scheduled > leaves nothing running after unload"
 
+    - id: C15.19
+      scenario: The plugin is unloaded while a backend holds something Obsidian does not tear down with it
+      expect: Every registered entry's `onPluginUnload` is called. The local model's download runs on promises and a `window` interval, and a reload mid-download used to leave both running with nothing able to reach them -- the fresh instance then read its own predecessor's `.part` under a live lock as "Being downloaded in another vault", with one vault open
+      layer: vault
+      file: src/auto-sync-schedule.test.ts
+      test: "when a background sync is scheduled > tells the backends to let go of what outlives them"
+
     - id: C15.14
       scenario: A sync finishes and stamps when it happened
       expect: The moment is read from the same clock the interval is measured on -- two clocks here would have the backstop answering about a moment that never happened

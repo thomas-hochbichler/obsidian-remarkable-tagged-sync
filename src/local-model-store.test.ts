@@ -26,7 +26,7 @@ describe("isTranscriptionInProgress", () => {
 	 * The lock holds a timestamp and nothing else, so the `.part` is what names the holder's job.
 	 */
 	it("blocks a second run while a transcription holds the lock", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: false }, NOW)).toBe(true);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: false, runtimePartPresent: false }, NOW)).toBe(true);
 	});
 
 	/**
@@ -35,15 +35,25 @@ describe("isTranscriptionInProgress", () => {
 	 * renders, notes and highlights, which are the plugin's actual job.
 	 */
 	it("lets a sync run while a download holds it", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: true }, NOW)).toBe(false);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: true, runtimePartPresent: false }, NOW)).toBe(false);
 	});
 
 	it("ignores a lock nobody is renewing any more", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - LOCK_STALE_MS - 1, partPresent: false }, NOW)).toBe(false);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - LOCK_STALE_MS - 1, partPresent: false, runtimePartPresent: false }, NOW)).toBe(false);
+	});
+
+	/**
+	 * The half this guard used to miss. A download fetches the 12 MB engine first and the model second,
+	 * under one lock, and the engine's `.part` lands in the engine directory rather than beside the
+	 * model -- so for that first minute the lock was held with nothing this looked at. Measured on a
+	 * real install: 16:54-16:56 engine, "Another vault is transcribing" on Resume; 16:57 model, gone.
+	 */
+	it("lets a sync run while the engine half of a download holds it", () => {
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: false, runtimePartPresent: true }, NOW)).toBe(false);
 	});
 
 	it("is not busy when there is no lock at all", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: null, partPresent: false }, NOW)).toBe(false);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: null, partPresent: false, runtimePartPresent: false }, NOW)).toBe(false);
 	});
 });
 

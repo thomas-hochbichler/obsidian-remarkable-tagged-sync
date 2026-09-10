@@ -386,6 +386,20 @@ if (offeredOnThisPlatform()) {
 		},
 
 		/**
+		 * Stops a download this plugin instance started, so it does not outlive the instance.
+		 *
+		 * Cancelling releases the lock and leaves the `.part` where a Resume finds it, so nothing that
+		 * was fetched is thrown away -- the card comes back as *Download paused* with the bytes named,
+		 * which is a state the user already has a button for. Without this the fetch and the 10-second
+		 * lock heartbeat both survive a reload, and the fresh instance reads its own predecessor's work
+		 * as `foreign-download`: *"Being downloaded in another vault"*, with one vault open.
+		 */
+		onPluginUnload() {
+			download?.cancel();
+			download = null;
+		},
+
+		/**
 		 * Attached only where the model could actually run (§4.1). Where it cannot, the entry registers
 		 * *without* a card and carries a permanent `unavailableLabel()` — which makes §6.2's listing rule
 		 * produce show-but-disable for exactly those machines, with no extra mechanism.

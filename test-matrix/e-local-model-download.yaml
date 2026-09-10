@@ -120,6 +120,46 @@
       file: src/local-model-fetch.test.ts
       test: "the tools it refuses to use > unpacks with the system tar, and asks for a real archive path"
 
+- feature: E32
+  name: Which job is holding the lock
+  code: src/local-model-store.ts
+  tier: free
+  scenarios:
+    - id: E32.1
+      scenario: A transcription holds the lock -- a fresh lock with no `.part` anywhere
+      expect: Busy. Two concurrent runs are 27 GB, so a second one must not start beside it
+      layer: pure
+      file: src/local-model-store.test.ts
+      test: "isTranscriptionInProgress > blocks a second run while a transcription holds the lock"
+
+    - id: E32.2
+      scenario: The model half of a download holds it -- a `.part` beside the model
+      expect: Not busy. A download lasts hours, and refusing to sync for hours costs renders, notes and highlights
+      layer: pure
+      file: src/local-model-store.test.ts
+      test: "isTranscriptionInProgress > lets a sync run while a download holds it"
+
+    - id: E32.3
+      scenario: The **engine** half holds it -- E5.2 fetches the engine first, and its `.part` lands in the engine directory, not beside the model
+      expect: Not busy. This was read as a foreign transcription for the whole first minute of every download -- Resume refused with "another vault is transcribing", and a sync in that window skipped transcription for a reason that was not true
+      layer: pure
+      file: src/local-model-store.test.ts
+      test: "isTranscriptionInProgress > lets a sync run while the engine half of a download holds it"
+
+    - id: E32.4
+      scenario: A lock nobody renews any more
+      expect: Not busy once it is older than the stale window; a crashed holder must not wedge the directory forever
+      layer: pure
+      file: src/local-model-store.test.ts
+      test: "isTranscriptionInProgress > ignores a lock nobody is renewing any more"
+
+    - id: E32.5
+      scenario: No lock at all
+      expect: Not busy
+      layer: pure
+      file: src/local-model-store.test.ts
+      test: "isTranscriptionInProgress > is not busy when there is no lock at all"
+
 - feature: T12
   name: The download fixture's own assumption
   code: src/local-model-fetch.test.ts

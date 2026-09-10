@@ -135,6 +135,19 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **Starting a download no longer says another vault is transcribing.** A download fetches the 12 MB
+  transcription engine first and the model second, and for that first minute the plugin read its own
+  download as somebody else's work: pressing Resume was refused with *"another vault is transcribing
+  right now"*, and a sync started in that window skipped transcription for a reason that was not
+  true. Both halves of a download are recognised now.
+
+- **A download no longer outlives the plugin that started it.** Reloading the plugin while one ran —
+  an update, or switching it off and on again — left the transfer going with nothing able to stop it,
+  and the freshly loaded plugin could only read the growing file as *"Being downloaded in another
+  vault"*, on machines with one vault open. A download now stops when the plugin unloads, keeps every
+  byte it had already fetched, and comes back as *Download paused* with the amount named and a Resume
+  button.
+
 - **Typed text now sits where you typed it, not at the end of the page.** On a page with handwriting
   above *and* below a block of typed text, the block was appended after everything the transcription
   backend read, so the line you wrote under it came back in the middle. The page's ink is now split
