@@ -359,3 +359,10 @@
       file: src/local-model-settings.test.ts
       test: "setPreferredModelDir > records the model the user picked"
 
+    - id: E31.9
+      scenario: A machine with too little memory for any model at all
+      expect: The least demanding one is still named. `localModelBlock` refuses the backend long before this arm is reached in the product, but a chooser that could return nothing would hand every caller an undefined generation to dereference
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > still names a model on a machine that can run none of them"
+

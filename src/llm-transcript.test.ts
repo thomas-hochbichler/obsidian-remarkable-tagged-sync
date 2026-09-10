@@ -407,4 +407,14 @@ describe("splitAtTypedText, for a model that reads a tall image natively", () =>
 		expect(parts).toHaveLength(1);
 		expect(parts[0].kind === "ink" && parts[0].scene.layers[0].strokes).toHaveLength(4);
 	});
+	// The typed-text split and the tall-page split compose: a page with writing above and below a typed
+	// block is cut on both axes, unless the model says not to cut for height.
+	it("still splits at the typed text when it is not splitting for height", () => {
+		const [line] = baselines("typed line");
+		const page = pageWithInkAndText("typed line", [line - 3000, line + 3000]);
+
+		const parts = splitAtTypedText(page, { splitTall: false });
+
+		expect(parts.map((part) => part.kind)).toEqual(["ink", "typed", "ink"]);
+	});
 });

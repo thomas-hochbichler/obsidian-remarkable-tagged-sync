@@ -481,4 +481,10 @@ describe("chooseGeneration against the machine", () => {
 		expect(betterGeneration(best, mac(64))).toBeNull();
 		expect(betterGeneration(best, mac(16))).toBeNull();
 	});
+	// A machine too small for anything at all. `localModelBlock` refuses the backend long before this,
+	// so the arm is unreachable in the product -- but a function that can return "nothing" would hand
+	// its caller an undefined generation, and every caller dereferences it.
+	it("still names a model on a machine that can run none of them", () => {
+		expect(chooseGeneration([], { platform: "darwin", totalMemoryBytes: 4 * 1024 ** 3 })).toBe(MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]);
+	});
 });

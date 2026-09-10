@@ -202,6 +202,13 @@
       file: src/llm-transcript.test.ts
       test: "splitAtTypedText, for a model that reads a tall image natively > cuts by default, which is what every cloud backend and both shipped models want"
 
+    - id: E30.10
+      scenario: A page with typed text between two runs of ink, for a model that does not split for height
+      expect: Still split at the typed text. The two splits compose and are independent -- typed text is not on the page image at all and must be placed among the ink whatever the model thinks about tall images
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitAtTypedText, for a model that reads a tall image natively > still splits at the typed text when it is not splitting for height"
+
 - feature: G14
   name: Shrunk-highlight warning
   code: src/sync-engine.ts
