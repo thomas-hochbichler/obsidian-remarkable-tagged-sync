@@ -235,7 +235,7 @@ describe("the pinned table", () => {
 		expect(RUNTIME_ARTEFACTS.win32.fileName).not.toContain("x64");
 	});
 
-	it("orders the generations newest first, and every one names a directory of its own", () => {
+	it("lists the most accurate generation first, and every one names a directory of its own", () => {
 		expect(new Set(MODEL_GENERATIONS.map((g) => g.dir)).size).toBe(MODEL_GENERATIONS.length);
 		expect(MODEL_GENERATIONS[0].measured.medianCer).toBeLessThan(MODEL_GENERATIONS[1].measured.medianCer);
 	});

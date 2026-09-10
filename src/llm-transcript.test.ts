@@ -397,7 +397,7 @@ describe("splitAtTypedText, for a model that reads a tall image natively", () =>
 		return { formatVersion: 6, layers: [{ id: "l", name: null, strokes }] } as unknown as RmPage;
 	}
 
-	it("cuts by default, which is what every cloud backend and both shipped models want", () => {
+	it("cuts by default, which is what every cloud backend and the two larger shipped models want", () => {
 		expect(splitAtTypedText(tallPage()).length).toBeGreaterThan(1);
 	});
 

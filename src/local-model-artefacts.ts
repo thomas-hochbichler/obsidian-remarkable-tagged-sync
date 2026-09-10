@@ -1,13 +1,14 @@
-// The four files the plugin downloads, pinned (managed-local-llm-ocr spec §5.2).
+// The files the plugin downloads -- one engine archive per platform, two model files per generation --
+// pinned (managed-local-llm-ocr spec §5.2).
 //
 // Repo, **commit revision** -- never `main`, never `releases/latest` -- file names, byte sizes and
 // SHA-256 hashes are constants in the shipped plugin, and nothing here is resolved at runtime.
 //
 // Why, stated once: a hash fetched from the host that serves the bytes proves only that the wire did
 // not corrupt them; research 01 already tripped a `latest` whose assets were still uploading; and
-// every quality and runtime figure the settings card quotes describes *these* files. **The plugin
-// version is the model version** -- there is no model-update channel, so an update is a plugin
-// release that ships new constants.
+// every quality and runtime figure the settings card quotes describes *these* files. There is no
+// model-update channel: a new model is a plugin release that ships new constants, and an install
+// keeps the model it has until the user takes the offer (`chooseGeneration`).
 
 import { MMPROJ_FILE, MODEL_FILE, type LocalModelPlatform } from "./local-model-store";
 
@@ -224,7 +225,10 @@ const QWEN3_VL_2B: ModelGeneration = {
 	splitsTallPages: false,
 };
 
-/** Newest first. The order is the preference, and `chooseGeneration` is the only thing that reads it. */
+/**
+ * Every generation this build can fetch. The order is not a preference: `chooseGeneration` sorts by
+ * accuracy through `runnableGenerations`, and the 2B -- the newest by date -- is last.
+ */
 export const MODEL_GENERATIONS: readonly ModelGeneration[] = [QWEN3_VL_8B, QWEN25_VL_7B, QWEN3_VL_2B];
 
 /** What one directory under `models/` holds, as facts rather than a conclusion. */
@@ -258,7 +262,7 @@ export function runnableGenerations(context: ChoiceContext): ModelGeneration[] {
 }
 
 /**
- * Which model this install uses, in three steps.
+ * Which model this install uses, in four steps.
  *
  * 1. **What the user picked**, if they picked one and it is installed and this machine can run it. A
  *    reader who chose the small model on a large Mac had a reason, and a plugin update must not
@@ -287,8 +291,8 @@ export function chooseGeneration(present: readonly ModelDirectoryFacts[], contex
 
 	const picked = runnable.find((generation) => generation.dir === context.preferred && installed(generation));
 	const wanted = runnable.find((generation) => generation.dir === context.preferred);
-	// Nothing here may return a generation this machine cannot run, so every arm reads from `runnable`
-	// and the last resort is the least demanding model rather than the best one.
+	// Every arm reads from `runnable`. The last resort, for a machine that can run none of them, is the
+	// least demanding model -- which the gate then refuses before it runs, with the floor named.
 	return picked ?? runnable.find(installed) ?? wanted ?? runnable[0] ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
 }
 

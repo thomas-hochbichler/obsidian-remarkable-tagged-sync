@@ -12,7 +12,6 @@ import { estimateLine } from "./local-model-settings";
 import type { LocalModelPlatform } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
 
-/** What the user can press. The renderer maps each id to behaviour; the copy owns the label. */
 /**
  * A better model exists and this install is not using it (ticket 20).
  *
@@ -56,6 +55,7 @@ export interface SupersededModel {
 	bytes: number;
 }
 
+/** What the user can press. The renderer maps each id to behaviour; the copy owns the label. */
 export interface CardAction {
 	id: "download" | "resume" | "cancel" | "discard" | "delete" | "retry-runtime" | "update" | "remove-superseded";
 	label: string;

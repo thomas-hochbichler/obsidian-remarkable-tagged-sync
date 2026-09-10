@@ -166,8 +166,9 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 				}),
 			};
 		case "absent":
-			// Unreachable while a complete older model is present -- `chooseGeneration` would have picked
-			// it and this would read `ready`. What is left is a genuine fresh install.
+			// Unreachable while a complete model of any generation is present -- `chooseGeneration` would
+			// have picked it and this would read `ready`. What is left is a fresh install, or a model
+			// picked on one before its download.
 			return { kind: "absent" };
 	}
 }
@@ -421,8 +422,8 @@ if (offeredOnThisPlatform()) {
 
 		/**
 		 * Attached only where the model could actually run (§4.1). Where it cannot, the entry registers
-		 * *without* a card and carries a permanent `unavailableLabel()` — which makes §6.2's listing rule
-		 * produce show-but-disable for exactly those machines, with no extra mechanism.
+		 * *without* a card and carries a permanent `unavailableLabel()`, so the dropdown shows it
+		 * disabled with the reason where its name was.
 		 */
 		renderSettings: machineCanRun()
 			? (containerEl, ctx) => {

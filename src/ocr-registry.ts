@@ -32,11 +32,6 @@ export interface CreateOptions {
 }
 
 /**
- * A transcription backend the user can select, as the plugin sees it. This is the seam between this
- * build and any backends shipped separately: the plugin names no provider and imports no adapter, it
- * only walks the registry. That is what lets it compile with those backends absent.
- */
-/**
  * The one name for the "may an automatic sync run with this backend?" row under *Automatic sync*,
  * whether it is the battery/RAM question of a local model or the money question of a metered one.
  * One name so they cannot drift.
@@ -49,6 +44,11 @@ export interface CreateOptions {
  */
 export const BACKGROUND_CONSENT_NAME = "Allow automatic sync with this backend";
 
+/**
+ * A transcription backend the user can select, as the plugin sees it. This is the seam between this
+ * build and any backends shipped separately: the plugin names no provider and imports no adapter, it
+ * only walks the registry. That is what lets it compile with those backends absent.
+ */
 export interface OcrBackendEntry {
 	readonly id: OcrBackendId;
 	/** Dropdown text when this backend can run here. */

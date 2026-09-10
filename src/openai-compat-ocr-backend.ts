@@ -227,15 +227,6 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 }
 
 /**
- * The one sentence a user sees when pages were dropped for running too long (#116).
- *
- * Four things it must carry, and each is there for a reason a shorter sentence loses: the cause in
- * the user's terms rather than `finish_reason`; that the page was **left out** on purpose, so it does
- * not read as a plugin bug; the lever, which has to stand alone for someone who never opened
- * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
- * hash is unchanged, so "Re-transcribe all notes" is the repair.
- */
-/**
  * The sentence a run that waited out {@link OCR_REQUEST_TIMEOUT_MS} puts in the report.
  *
  * It names the tall-page shape because that is the one that has produced it: a page scrolled far
@@ -251,6 +242,15 @@ function timeoutWarning(pages: number, baseURL: string): string {
 	);
 }
 
+/**
+ * The one sentence a user sees when pages were dropped for running too long (#116).
+ *
+ * Four things it must carry, and each is there for a reason a shorter sentence loses: the cause in
+ * the user's terms rather than `finish_reason`; that the page was **left out** on purpose, so it does
+ * not read as a plugin bug; the lever, which has to stand alone for someone who never opened
+ * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
+ * hash is unchanged, so "Re-transcribe all notes" is the repair.
+ */
 function truncationWarning(pages: number): string {
 	return (
 		`${pageCount(pages)} left out because the model's answer ran past what it may return — ` +

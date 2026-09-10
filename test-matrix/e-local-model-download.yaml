@@ -217,14 +217,14 @@
 
     - id: E29.2
       scenario: A fresh install with no model on disk
-      expect: The newest generation, without asking the user to choose between two names they cannot judge
+      expect: The most accurate generation this machine can run, without asking the user to choose between names they cannot judge
       layer: unit
       file: src/local-model-download.test.ts
       test: "chooseGeneration > gives a fresh install the newest model"
 
     - id: E29.3
       scenario: Both generations are complete on disk, because the user took the offer and kept the old one
-      expect: The newest of them. Keeping the old files is the rollback path, not a preference
+      expect: The most accurate of them. Keeping the old files is the rollback path, not a preference
       layer: unit
       file: src/local-model-download.test.ts
       test: "chooseGeneration > prefers the newest of the models actually on disk"
@@ -237,8 +237,8 @@
       test: "chooseGeneration > ignores a directory whose files are the wrong length"
 
     - id: E29.5
-      scenario: The newer model is half-downloaded while the older one is complete and in use
-      expect: The older one stays in use. A download in flight must never displace a working model -- the card shows its progress from the download itself, not from the directory
+      scenario: A directory exists for another generation with nothing in it yet -- the update's directory the moment before its first byte lands
+      expect: The older one stays in use. An empty directory is not a model, and a download in flight must never displace a working one -- the card shows its progress from the download itself, not from the directory
       layer: unit
       file: src/local-model-download.test.ts
       test: "chooseGeneration > ignores a directory with no files in it at all"
@@ -280,10 +280,10 @@
 
     - id: E29.11
       scenario: The generation list itself
-      expect: Newest first, one directory each, and the newest is the one that measured better. The order is the preference, and it is the only thing `chooseGeneration` reads
+      expect: One directory each, and the first entry is the one that measured best. The list is not an order of preference -- `chooseGeneration` sorts by accuracy through `runnableGenerations` -- so the newest by date, the 2B, sits last
       layer: unit
       file: src/local-model-download.test.ts
-      test: "the pinned table > orders the generations newest first, and every one names a directory of its own"
+      test: "the pinned table > lists the most accurate generation first, and every one names a directory of its own"
 
     - id: E29.12
       scenario: A ready model that is not the newest one available
@@ -307,8 +307,8 @@
       test: "the floor follows the generation > offers a 16 GB Mac the newer model, which the older model's floor shut out"
 
     - id: E29.15
-      scenario: The gate called without naming a generation, as every existing caller did
-      expect: The shipped 18 / 24 floors, unchanged. Nobody already running the first model is newly excluded by a second one being added
+      scenario: The gate called without naming a generation
+      expect: The first model's 18 / 24 floors. No production caller does this any more -- every call passes its generation's own floor -- and the default stays so the gate's own rule can be tested apart from any generation
       layer: unit
       file: src/local-model-gate.test.ts
       test: "the floor follows the generation > keeps the shipped floors when no generation is named"
@@ -350,7 +350,7 @@
 
     - id: E29.21
       scenario: A ready install that is not on the newest generation
-      expect: An offer carrying both error rates and the real download size, the runtime archive included -- so the card can state a trade rather than assert an improvement. stating the trade beats asserting an improvement
+      expect: An offer carrying both error rates and the real download size, the runtime archive included -- so the card can state a trade rather than assert an improvement
       layer: unit
       file: src/local-model-card.test.ts
       test: "newerModelOffer > quotes both error rates and the real download size"
