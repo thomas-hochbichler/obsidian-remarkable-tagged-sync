@@ -259,7 +259,7 @@
   scenarios:
     - id: C17.8
       scenario: The selected backend costs money per page, and then one that does not
-      expect: The paid-API consent row appears only for the metered one, off by default, and writes the flag the background gate reads
+      expect: The consent row appears only for the metered one, under the same name as the battery/RAM row (off skips the whole run either way), names the provider and the bill, is off by default, and writes the flag the background gate reads
       layer: vault
       file: src/settings-tab.test.ts
       test: "automatic sync > asks about spending money only on a backend that spends money"
@@ -275,6 +275,13 @@
       layer: vault
       file: src/settings-tab.test.ts
       test: "automatic sync > asks for background consent only where the backend declares both halves of it"
+
+    - id: C18.14
+      scenario: A setup card renders while a backend with its own consent row is selected, and while one without is
+      expect: The card is told whether the selected backend already asks the question -- true for a metered one and for one with both halves, false for a free plain one -- so it cannot draw a second switch of the same name on the same screen
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > tells every setup card whether the selected backend already asks the background question"
 
     - id: C18.13
       scenario: The consent switch is flipped

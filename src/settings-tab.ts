@@ -642,10 +642,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		if (hint) containerEl.createDiv({ cls: "tagged-sync-note", text: hint });
 
 		// One context shape for both hooks, so a backend's rows and its card get the same powers.
+		const selectedAsksConsent = this.selectedBackendAsksBackgroundConsent();
 		const contextFor = (backendId: string) => ({
 			settings: (this.plugin.data.llmProviders[backendId] ??= {}),
 			save: () => this.plugin.saveData(this.plugin.data),
 			isSelected: backendId === this.plugin.data.ocrBackend,
+			selectedBackendAsksBackgroundConsent: selectedAsksConsent,
 			selectDefaultBackend: async () => {
 				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
 				await this.plugin.saveData(this.plugin.data);
@@ -662,6 +664,16 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		for (const entry of ocrBackendEntries()) {
 			entry.renderSetup?.(containerEl, contextFor(entry.id));
 		}
+	}
+
+	/**
+	 * Whether {@link renderAutoSyncSettings} draws a consent row for the selected backend: the
+	 * battery/RAM one for a backend that declares both halves of it, or the money one for a metered
+	 * backend. Only the union matters to the caller -- both rows carry the same name.
+	 */
+	private selectedBackendAsksBackgroundConsent(): boolean {
+		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
+		return Boolean(selected?.needsBackgroundConsent && selected.backgroundConsent) || isMeteredProvider(this.plugin.data.ocrBackend);
 	}
 
 	/**
@@ -727,10 +739,18 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		}
 
 		// Money-safety consent (spec §"Money-safety gate"): only meaningful for a metered cloud backend.
+		// Same name as the battery/RAM row above, because it decides the same thing: with it off the
+		// whole scheduled run is skipped, not just the transcription. It used to say "transcribe during
+		// background sync", which promised a sync that arrives without transcripts, and that is not
+		// what happens.
 		if (isMeteredProvider(this.plugin.data.ocrBackend)) {
+			const provider = selected?.label ?? "your provider";
 			new Setting(containerEl)
-				.setName("Automatically transcribe during background sync (uses your paid API)")
-				.setDesc("Off by default: background sync is suppressed on a metered backend until you allow it here. Manual syncs are unaffected.")
+				.setName(BACKGROUND_CONSENT_NAME)
+				.setDesc(
+					`Each automatic sync sends your new pages to ${provider} and bills your API key. ` +
+						"Off, automatic sync does nothing while this backend is chosen. A sync you start yourself still runs.",
+				)
 				.addToggle((toggle) =>
 					toggle.setValue(auto.autoTranscribeMetered).onChange(async (value) => {
 						auto.autoTranscribeMetered = value;

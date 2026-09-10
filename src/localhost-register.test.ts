@@ -120,6 +120,7 @@ describe("the thinking line in the localhost callout", () => {
 			settings,
 			save: async () => undefined,
 			isSelected: true,
+			selectedBackendAsksBackgroundConsent: false,
 			selectDefaultBackend: async () => undefined,
 		});
 		// Both sit in the Model row's own description -- one says what to type, the other judges what

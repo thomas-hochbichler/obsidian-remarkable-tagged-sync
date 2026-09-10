@@ -19,6 +19,14 @@ export interface BackendSettingsContext {
 	 */
 	isSelected: boolean;
 	/**
+	 * Whether the *selected* backend already asks "may an automatic sync run with this backend?" on
+	 * its own row under *Automatic sync*. A setup card that asks the same question for a backend that
+	 * is not selected would then put two switches with one name on one screen, for two different
+	 * backends, one of them inert -- so the card is told, and keeps its own copy of the question to
+	 * itself until the other row is gone.
+	 */
+	selectedBackendAsksBackgroundConsent: boolean;
+	/**
 	 * Hands the selection back to the platform default, for a backend that has just made itself
 	 * unusable on purpose — the one case being a "delete the model" button.
 	 *
@@ -44,8 +52,9 @@ export interface CreateOptions {
  * only walks the registry. That is what lets it compile with those backends absent.
  */
 /**
- * The row both places draw for {@link OcrBackendEntry.backgroundConsent}, named once so they cannot
- * drift apart -- the setup card asks during setup, the settings page asks once the backend is chosen.
+ * The one name for the "may an automatic sync run with this backend?" row, wherever it is drawn: the
+ * setup card asks during setup, the settings page asks once the backend is chosen, and the money row
+ * for a metered backend asks the same question with a price attached. One name so they cannot drift.
  *
  * It used to read *"Transcribe during background sync"*, which promised the switch was about
  * transcription. It is not: with it off the scheduled run is skipped entirely, so beside *Enable

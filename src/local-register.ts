@@ -315,7 +315,11 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// this backend is the selected one, and a backend still downloading cannot be selected -- so the
 	// card carries the question exactly where the other row cannot reach: during setup, next to the
 	// runtime estimate that makes it answerable (§7.5). Once selected, the canonical row has it.
-	if (copy.showsBackgroundConsent && !ctx.isSelected) {
+	//
+	// "Never on one screen" has to hold across backends too: while a *cloud* backend is selected, its
+	// own row of the same name sits under *Automatic sync*, and a second one here -- for a model that
+	// is not even chosen -- was two switches nobody could tell apart, one of them doing nothing.
+	if (copy.showsBackgroundConsent && !ctx.isSelected && !ctx.selectedBackendAsksBackgroundConsent) {
 		new Setting(card)
 			.setName(BACKGROUND_CONSENT_NAME)
 			.setDesc(backgroundConsentDesc(generation))

@@ -81,6 +81,7 @@ describe("the live vision-capability callout", () => {
 			settings,
 			save: async () => undefined,
 			isSelected: true,
+			selectedBackendAsksBackgroundConsent: false,
 			selectDefaultBackend: async () => undefined,
 		});
 		const rows = takeSettings();
@@ -180,6 +181,7 @@ describe("the thinking line in the callout", () => {
 			settings,
 			save: async () => undefined,
 			isSelected: true,
+			selectedBackendAsksBackgroundConsent: false,
 			selectDefaultBackend: async () => undefined,
 		});
 		const callout = takeSettings()

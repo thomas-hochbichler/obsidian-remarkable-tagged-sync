@@ -97,6 +97,8 @@ vi.stubGlobal("navigator", { clipboard: { writeText: async (text: string) => voi
 
 const setupCards: string[] = [];
 const settingsRows: string[] = [];
+/** What the last setup card was told about the selected backend's own consent row. */
+let cardToldConsentAsked: boolean | null = null;
 
 function testBackend(id: string, extra: Partial<OcrBackendEntry> = {}): OcrBackendEntry {
 	return {
@@ -108,6 +110,7 @@ function testBackend(id: string, extra: Partial<OcrBackendEntry> = {}): OcrBacke
 		create: () => null,
 		renderSetup: (containerEl, ctx) => {
 			setupCards.push(`${id}${ctx.isSelected ? " (selected)" : ""}`);
+			cardToldConsentAsked = ctx.selectedBackendAsksBackgroundConsent;
 			(containerEl as unknown as FakeEl).createDiv({ cls: "test-card", text: `card:${id}` });
 		},
 		...extra,
@@ -843,6 +846,20 @@ describe("automatic sync", () => {
 		expect(rowNames(section(draw(withHalf.tab), "Automatic sync"))).not.toContain(BACKGROUND_CONSENT_NAME);
 	});
 
+	it("tells every setup card whether the selected backend already asks the background question", async () => {
+		// A card that asks it too would put two rows of one name on one screen, for two backends.
+		for (const [backend, asked] of [
+			["test-plain", false],
+			["test-consent", true],
+			["anthropic", true],
+		] as const) {
+			const { tab } = await tabWith({ autoSync: AUTO_ON, ocrBackend: backend });
+			cardToldConsentAsked = null;
+			draw(tab);
+			expect(cardToldConsentAsked, backend).toBe(asked);
+		}
+	});
+
 	it("writes the consent through the backend's own accessors, never into a field of its own", async () => {
 		// The blob stays opaque: the plugin renders the row and gates the run without ever learning
 		// which key inside it holds the answer.
@@ -861,13 +878,15 @@ describe("automatic sync", () => {
 
 	it("asks about spending money only on a backend that spends money", async () => {
 		const free = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-plain" });
-		expect(rowNames(section(draw(free.tab), "Automatic sync"))).not.toContain(
-			"Automatically transcribe during background sync (uses your paid API)",
-		);
+		expect(rowNames(section(draw(free.tab), "Automatic sync"))).not.toContain(BACKGROUND_CONSENT_NAME);
 
+		// Same name as the battery/RAM row, because off means the same thing: no scheduled run at
+		// all. The old name promised a sync without transcripts, which is not what the gate does.
 		const metered = await tabWith({ autoSync: AUTO_ON, ocrBackend: "anthropic" });
-		const paid = row(draw(metered.tab), "Automatically transcribe during background sync (uses your paid API)");
-		expect(paid.desc).toContain("Off by default");
+		const paid = row(draw(metered.tab), BACKGROUND_CONSENT_NAME);
+		expect(paid.desc).toContain("bills your API key");
+		expect(paid.desc).toContain("Anthropic (Claude)");
+		expect(paid.desc).toContain("automatic sync does nothing while this backend is chosen");
 		expect(paid.setting.toggles[0].value).toBe(false);
 
 		paid.setting.toggles[0].toggle(true);
