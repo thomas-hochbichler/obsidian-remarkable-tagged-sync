@@ -14,6 +14,17 @@ workflow publishes the section as the GitHub release body. See
 
 ### Added
 
+- **A better model to read your handwriting on your own machine, and nothing taken away if you
+  already have one.** A new install now downloads Qwen3-VL-8B, which reads the fifteen public
+  reference pages at 1.8 % character error against the previous model's 4.3 % -- and does it in 8 GB of
+  memory rather than 15, so it is offered on Macs with 16 GB, which the old model's memory requirement
+  shut out entirely. If you already downloaded the old model, **it keeps working and nothing replaces
+  it behind your back**: the settings screen shows you the newer one with both error rates beside each
+  other and the download size, and fetches it only if you press the button. The old model stays on disk
+  afterwards as the way back, and there is a button to remove it when you no longer want the 5.5 GB.
+  Notes you have already transcribed are not re-read; *Re-transcribe all synced notes* is there if you
+  want them redone with the better model. (#143)
+
 - **One bad transcript no longer costs a whole-vault run.** A new command, *Re-transcribe this note*,
   re-reads just the note you have open. Because it works on one note, it can be more careful than the
   whole-vault command: it names the notebook's page count before spending anything on a metered
