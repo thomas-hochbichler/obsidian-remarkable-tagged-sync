@@ -13,7 +13,7 @@
 //      stopped.
 
 import { Platform } from "obsidian";
-import { MODEL_ARTEFACTS, RUNTIME_ARTEFACTS, type PinnedArtefact, totalDownloadBytes } from "./local-model-artefacts";
+import { type ModelGeneration, RUNTIME_ARTEFACTS, type PinnedArtefact, totalDownloadBytes } from "./local-model-artefacts";
 import {
 	freeSpaceShortfall,
 	planRangeResponse,
@@ -331,11 +331,18 @@ function extractArchive(archive: string, intoDirectory: string, stripComponents:
  * a quarantined archive then surfaces in seconds instead of after the hours the model takes -- and
  * the model is the half nobody wants to fetch twice.
  */
-export function startLocalModelDownload(paths: LocalModelPaths, platform: LocalModelPlatform, onChange: () => void): DownloadHandle {
+export function startLocalModelDownload(
+	paths: LocalModelPaths,
+	platform: LocalModelPlatform,
+	onChange: () => void,
+	// Required, with no default: two generations ship and "whichever is newest" is exactly the guess
+	// that would write the wrong weights into a directory named after the other one.
+	generation: ModelGeneration,
+): DownloadHandle {
 	const fs = nodeRequire("fs");
 	const path = nodeRequire("path");
 	const signal = { cancelled: false };
-	const counter: ByteCounter = { received: 0, total: totalDownloadBytes(platform) };
+	const counter: ByteCounter = { received: 0, total: totalDownloadBytes(platform, generation) };
 	let current: DownloadProgress = { phase: "checking" };
 
 	const publish = (next: DownloadProgress): void => {
@@ -390,7 +397,7 @@ export function startLocalModelDownload(paths: LocalModelPaths, platform: LocalM
 			fs.rmSync(archive, { force: true });
 			if (platform === "darwin") fs.chmodSync(paths.runtimeExecutable, 0o755);
 
-			for (const artefact of MODEL_ARTEFACTS) {
+			for (const artefact of generation.artefacts) {
 				const target = path.join(paths.modelDir, artefact.fileName);
 				if (fs.existsSync(target) && fs.statSync(target).size === artefact.bytes) {
 					counter.received += artefact.bytes;
@@ -436,12 +443,16 @@ export function startLocalModelDownload(paths: LocalModelPaths, platform: LocalM
  * The filesystem is the shared state: a second vault reads the same growing `.part` rather than
  * coordinating with the first (§5.4). Null when there is nothing to measure.
  */
-export function foreignDownloadPercent(paths: LocalModelPaths, platform: LocalModelPlatform): number | null {
+export function foreignDownloadPercent(
+	paths: LocalModelPaths,
+	platform: LocalModelPlatform,
+	generation: ModelGeneration,
+): number | null {
 	const fs = nodeRequire("fs");
 	const path = nodeRequire("path");
 	let received = 0;
 	let found = false;
-	for (const artefact of MODEL_ARTEFACTS) {
+	for (const artefact of generation.artefacts) {
 		const target = path.join(paths.modelDir, artefact.fileName);
 		try {
 			received += fs.statSync(target).size;
@@ -457,7 +468,7 @@ export function foreignDownloadPercent(paths: LocalModelPaths, platform: LocalMo
 		}
 	}
 	if (!found) return null;
-	return Math.min(99, Math.floor((received / totalDownloadBytes(platform)) * 100));
+	return Math.min(99, Math.floor((received / totalDownloadBytes(platform, generation)) * 100));
 }
 
 /** Removes the model, its markers and the engine, for §5.6's Delete button. Returns the bytes freed. */

@@ -6,14 +6,19 @@ import {
 	isTranscriptionInProgress,
 	localModelPaths,
 	LOCK_STALE_MS,
-	MMPROJ_BYTES,
-	MODEL_BYTES,
 	parseLock,
 	type LocalModelSnapshot,
 } from "./local-model-store";
 
 const join = (...parts: string[]) => parts.join("/");
 const NOW = 1_700_000_000_000;
+
+// The generation under test. Two ship now, so the sizes and the directory are arguments rather than
+// constants -- these are the older model's, which is what every existing install still holds.
+const MODEL_BYTES = 4_683_072_032;
+const MMPROJ_BYTES = 853_119_712;
+const MODEL_DIR = "qwen2.5-vl-7b-instruct-q4_k_m";
+const EXPECTED = { modelBytes: MODEL_BYTES, mmprojBytes: MMPROJ_BYTES };
 
 describe("isTranscriptionInProgress", () => {
 	/**
@@ -44,7 +49,7 @@ describe("isTranscriptionInProgress", () => {
 
 describe("localModelPaths", () => {
 	it("puts the model under Application Support on macOS, never under Caches", () => {
-		const paths = localModelPaths("darwin", { home: "/Users/me", pluginId: "tagged-sync", join });
+		const paths = localModelPaths("darwin", { home: "/Users/me", pluginId: "tagged-sync", modelDir: MODEL_DIR, join });
 
 		expect(paths.root).toBe("/Users/me/Library/Application Support/tagged-sync");
 		// Caches is the one directory the OS is allowed to empty underneath a 5.5 GB download.
@@ -57,7 +62,7 @@ describe("localModelPaths", () => {
 		const paths = localModelPaths("win32", {
 			home: "C:/Users/me",
 			localAppData: "C:/Users/me/AppData/Local",
-			pluginId: "tagged-sync",
+			pluginId: "tagged-sync", modelDir: MODEL_DIR,
 			join,
 		});
 
@@ -66,7 +71,7 @@ describe("localModelPaths", () => {
 
 	it("falls back to the standard location when LOCALAPPDATA is missing or empty", () => {
 		for (const localAppData of [undefined, ""]) {
-			const paths = localModelPaths("win32", { home: "C:/Users/me", localAppData, pluginId: "tagged-sync", join });
+			const paths = localModelPaths("win32", { home: "C:/Users/me", localAppData, pluginId: "tagged-sync", modelDir: MODEL_DIR, join });
 			expect(paths.root).toBe("C:/Users/me/AppData/Local/tagged-sync");
 		}
 	});
@@ -74,19 +79,19 @@ describe("localModelPaths", () => {
 	// An update lands beside its predecessor and the switch is a rename of a verified directory, which
 	// only works while the version is part of the name.
 	it("carries the version in both artefact directory names", () => {
-		const paths = localModelPaths("darwin", { home: "/h", pluginId: "p", join });
+		const paths = localModelPaths("darwin", { home: "/h", pluginId: "p", modelDir: MODEL_DIR, join });
 
 		expect(paths.runtimeDir).toContain("b10295");
 		expect(paths.modelDir).toContain("qwen2.5-vl-7b");
 	});
 
 	it("names the platform's own executable", () => {
-		expect(localModelPaths("darwin", { home: "/h", pluginId: "p", join }).runtimeExecutable).toMatch(/llama-mtmd-cli$/);
-		expect(localModelPaths("win32", { home: "C:/h", pluginId: "p", join }).runtimeExecutable).toMatch(/llama-mtmd-cli\.exe$/);
+		expect(localModelPaths("darwin", { home: "/h", pluginId: "p", modelDir: MODEL_DIR, join }).runtimeExecutable).toMatch(/llama-mtmd-cli$/);
+		expect(localModelPaths("win32", { home: "C:/h", pluginId: "p", modelDir: MODEL_DIR, join }).runtimeExecutable).toMatch(/llama-mtmd-cli\.exe$/);
 	});
 
 	it("keeps every file it names inside the model directory", () => {
-		const paths = localModelPaths("darwin", { home: "/h", pluginId: "p", join });
+		const paths = localModelPaths("darwin", { home: "/h", pluginId: "p", modelDir: MODEL_DIR, join });
 
 		for (const file of [paths.modelFile, paths.mmprojFile, paths.verifiedMarker, paths.corruptMarker, paths.lockFile, paths.modelPart]) {
 			expect(file.startsWith(`${paths.modelDir}/`)).toBe(true);
@@ -145,23 +150,23 @@ describe("deriveLocalModelState", () => {
 	const complete = { modelBytes: MODEL_BYTES, mmprojBytes: MMPROJ_BYTES };
 
 	it("is absent with nothing on disk", () => {
-		expect(deriveLocalModelState(snapshot(), NOW)).toBe("absent");
+		expect(deriveLocalModelState(snapshot(), NOW, EXPECTED)).toBe("absent");
 	});
 
 	it("is downloading while a part file and a fresh lock are both there", () => {
-		expect(deriveLocalModelState(snapshot({ partPresent: true, lockHeldAtMs: NOW - 5_000 }), NOW)).toBe("downloading");
+		expect(deriveLocalModelState(snapshot({ partPresent: true, lockHeldAtMs: NOW - 5_000 }), NOW, EXPECTED)).toBe("downloading");
 	});
 
 	it("is partial when the part file outlived its lock", () => {
-		expect(deriveLocalModelState(snapshot({ partPresent: true, lockHeldAtMs: NOW - LOCK_STALE_MS - 1 }), NOW)).toBe("partial");
+		expect(deriveLocalModelState(snapshot({ partPresent: true, lockHeldAtMs: NOW - LOCK_STALE_MS - 1 }), NOW, EXPECTED)).toBe("partial");
 	});
 
 	it("is verifying once the files are complete but nothing has confirmed them", () => {
-		expect(deriveLocalModelState(snapshot(complete), NOW)).toBe("verifying");
+		expect(deriveLocalModelState(snapshot(complete), NOW, EXPECTED)).toBe("verifying");
 	});
 
 	it("is ready with the marker, the right sizes and the engine present", () => {
-		const state = deriveLocalModelState(snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: true }), NOW);
+		const state = deriveLocalModelState(snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: true }), NOW, EXPECTED);
 		expect(state).toBe("ready");
 	});
 
@@ -170,7 +175,7 @@ describe("deriveLocalModelState", () => {
 	 * model alone. Reading it as "absent" would tell the user to download everything again.
 	 */
 	it("is removed when the model survived but the engine was taken", () => {
-		const state = deriveLocalModelState(snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: false }), NOW);
+		const state = deriveLocalModelState(snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: false }), NOW, EXPECTED);
 		expect(state).toBe("removed");
 	});
 
@@ -178,21 +183,21 @@ describe("deriveLocalModelState", () => {
 	// acceptable, and a size still catches the two things that happen -- deletion and truncation.
 	it("refuses a verified model whose file has been truncated", () => {
 		const truncated = snapshot({ ...complete, modelBytes: MODEL_BYTES - 1, verifiedPresent: true, runtimeExecutablePresent: true });
-		expect(deriveLocalModelState(truncated, NOW)).toBe("absent");
+		expect(deriveLocalModelState(truncated, NOW, EXPECTED)).toBe("absent");
 	});
 
 	it("is corrupt once two verification passes have failed, whatever else is on disk", () => {
 		const marked = snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: true, corruptMarked: true });
-		expect(deriveLocalModelState(marked, NOW)).toBe("corrupt");
+		expect(deriveLocalModelState(marked, NOW, EXPECTED)).toBe("corrupt");
 	});
 
 	// Terminal means terminal across a restart, which is why the marker is a file rather than a counter
 	// held in memory: otherwise a reload silently buys a third 5.5 GB attempt.
 	it("stays corrupt after a restart, with no lock and no part file left", () => {
-		expect(deriveLocalModelState(snapshot({ corruptMarked: true }), NOW)).toBe("corrupt");
+		expect(deriveLocalModelState(snapshot({ corruptMarked: true }), NOW, EXPECTED)).toBe("corrupt");
 	});
 
 	it("reports an incomplete pair as absent rather than half-ready", () => {
-		expect(deriveLocalModelState(snapshot({ modelBytes: MODEL_BYTES }), NOW)).toBe("absent");
+		expect(deriveLocalModelState(snapshot({ modelBytes: MODEL_BYTES }), NOW, EXPECTED)).toBe("absent");
 	});
 });

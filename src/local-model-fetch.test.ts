@@ -51,9 +51,21 @@ vi.mock("./local-model-artefacts", async (importOriginal) => {
 	const mmprojBody = Buffer.from("mmproj-bytes");
 	return {
 		...actual,
-		MODEL_ARTEFACTS: [
-			{ url: "https://example.test/model.gguf", fileName: "model.gguf", bytes: modelBody.length, sha256: hash(modelBody) },
-			{ url: "https://example.test/mmproj.gguf", fileName: "mmproj.gguf", bytes: mmprojBody.length, sha256: hash(mmprojBody) },
+		// One tiny generation stands in for the two that ship: the download path takes the generation as
+		// an argument now, and it is the argument's artefacts it fetches.
+		MODEL_GENERATIONS: [
+			{
+				dir: "test-generation",
+				label: "Test model",
+				modelBytes: modelBody.length,
+				mmprojBytes: mmprojBody.length,
+				artefacts: [
+					{ url: "https://example.test/model.gguf", fileName: "model.gguf", bytes: modelBody.length, sha256: hash(modelBody) },
+					{ url: "https://example.test/mmproj.gguf", fileName: "mmproj.gguf", bytes: mmprojBody.length, sha256: hash(mmprojBody) },
+				],
+				measured: { medianCer: 0.01, on: "2026-09-09" },
+				peakRssBytes: 1_000,
+			},
 		],
 		RUNTIME_ARTEFACTS: {
 			darwin: {
@@ -213,10 +225,13 @@ function serveEverything(): void {
 	serve("https://example.test/mmproj.gguf", { status: 200, body: MMPROJ_BODY });
 }
 
-async function download(paths: LocalModelPaths, platform: "darwin" | "win32" = "darwin") {
+async function download(paths: LocalModelPaths, platform: "darwin" | "win32" = "darwin", generation?: unknown) {
 	const { startLocalModelDownload } = await import("./local-model-fetch");
 	installTar(paths);
-	const handle = startLocalModelDownload(paths, platform, () => undefined);
+	// Called both ways on purpose: the default is what a fresh install takes, and the explicit argument
+	// is what "get the newer model" passes when it writes into a directory that is not the one in use.
+	const { MODEL_GENERATIONS } = await import("./local-model-artefacts");
+	const handle = startLocalModelDownload(paths, platform, () => undefined, (generation ?? MODEL_GENERATIONS[0]) as never);
 	return { handle, outcome: await handle.finished };
 }
 
@@ -430,11 +445,12 @@ describe("cancelling mid-stream", () => {
 		serve("https://example.test/mmproj.gguf", { status: 200, body: MMPROJ_BODY });
 
 		const { startLocalModelDownload } = await import("./local-model-fetch");
+		const { MODEL_GENERATIONS } = await import("./local-model-artefacts");
 		installTar(paths);
 		const handle = startLocalModelDownload(paths, "darwin", () => {
 			// Cancel the moment the engine is done and the model has started arriving.
 			if (fs.existsSync(paths.runtimeExecutable)) handle.cancel();
-		});
+		}, MODEL_GENERATIONS[0]);
 		const outcome = await handle.finished;
 
 		expect(outcome).toEqual({ phase: "failed", failure: { kind: "cancelled" } });

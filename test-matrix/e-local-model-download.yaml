@@ -131,3 +131,170 @@
       layer: vault
       file: src/local-model-fetch.test.ts
       test: "the fixture's own assumption > is running somewhere a system tar exists"
+
+- feature: E29
+  name: Two model generations at once, and the older one keeps working
+  code: src/local-model-artefacts.ts
+  tier: free
+  scenarios:
+    - id: E29.1
+      scenario: A plugin update ships a better model to an install that already downloaded the older one
+      expect: The install keeps the model it has and goes on transcribing. This is the whole ticket -- the previous rule was "the plugin version is the model version", under which an update would have declared the working model absent and stopped reading pages until 6.2 GB finished downloading
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration > keeps the model an existing install already has, rather than declaring it out of date"
+
+    - id: E29.2
+      scenario: A fresh install with no model on disk
+      expect: The newest generation, without asking the user to choose between two names they cannot judge
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration > gives a fresh install the newest model"
+
+    - id: E29.3
+      scenario: Both generations are complete on disk, because the user took the offer and kept the old one
+      expect: The newest of them. Keeping the old files is the rollback path, not a preference
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration > prefers the newest of the models actually on disk"
+
+    - id: E29.4
+      scenario: A directory holds files of the wrong length -- a truncated or half-deleted model
+      expect: Not chosen. A truncated file is not a model, and there is nothing to preserve
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration > ignores a directory whose files are the wrong length"
+
+    - id: E29.5
+      scenario: The newer model is half-downloaded while the older one is complete and in use
+      expect: The older one stays in use. A download in flight must never displace a working model -- the card shows its progress from the download itself, not from the directory
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration > ignores a directory with no files in it at all"
+
+    - id: E29.6
+      scenario: A directory holds the right file sizes under the wrong name
+      expect: Not a match. The directory name carries the version, which is what lets two generations sit side by side at all
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration > matches a generation only in its own directory"
+
+    - id: E29.7
+      scenario: Asking what to offer an install on each generation
+      expect: The newest to an older install, nothing to one already on the newest
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration > offers the newest to an older install and nothing to the newest one"
+
+    - id: E29.8
+      scenario: Every pinned model URL across both generations
+      expect: A 40-character commit revision, never a branch. Research 01 tripped a `latest` whose assets were still uploading
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the pinned table > resolves every model at a commit revision rather than a branch"
+
+    - id: E29.9
+      scenario: The size on the download button a fresh install presses
+      expect: The newest generation's, derived rather than written out. A hard-coded string would have gone on quoting the previous model's 5.5 GB over a 6.2 GB job
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the pinned table > totals what the consent copy quotes, for the generation a fresh install gets"
+
+    - id: E29.10
+      scenario: The older generation's constants after the newer one is added
+      expect: Byte-identical -- the same directory, sizes and hashes that verified every existing download. Changing any of them would mean an existing install failing its own size check and being told to start over
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the pinned table > keeps the older generation byte-identical to what every existing install verified"
+
+    - id: E29.11
+      scenario: The generation list itself
+      expect: Newest first, one directory each, and the newest is the one that measured better. The order is the preference, and it is the only thing `chooseGeneration` reads
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the pinned table > orders the generations newest first, and every one names a directory of its own"
+
+    - id: E29.12
+      scenario: A ready model that is not the newest one available
+      expect: The card offers the newer one with both error rates and the download size, keeps the "ready" heading, and starts nothing. A card that reached for the download itself would be the plugin spending two hours and 6.2 GB of someone's disk on an update they did not ask for
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "the states that carry a decided sentence > offers a newer model beside a ready one, with both error rates and no push"
+
+    - id: E29.13
+      scenario: A ready model that is already the newest
+      expect: No offer, no update button, and no sentence about error rates
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "the states that carry a decided sentence > says nothing about a newer model when there is not one"
+
+    - id: E29.14
+      scenario: A 16 GB Mac, against each generation's floor
+      expect: Offered the newer model and refused the older one. The 8B peaks at 8.3 GB and the 7B at 15.1 GB, so a single floor would either shut a 16 GB Mac out of a model it runs comfortably or let it start one that swaps. **This opens the backend to 16 GB Macs**, which the first model's own arithmetic excluded
+      layer: unit
+      file: src/local-model-gate.test.ts
+      test: "the floor follows the generation > offers a 16 GB Mac the newer model, which the older model's floor shut out"
+
+    - id: E29.15
+      scenario: The gate called without naming a generation, as every existing caller did
+      expect: The shipped 18 / 24 floors, unchanged. Nobody already running the first model is newly excluded by a second one being added
+      layer: unit
+      file: src/local-model-gate.test.ts
+      test: "the floor follows the generation > keeps the shipped floors when no generation is named"
+
+    - id: E29.16
+      scenario: A generation whose memory floor was measured at a pinned context
+      expect: It pins that context in the invocation too, and the floor still covers peak + 4 GiB. Without `-c` llama.cpp sizes the KV cache from the model's own declared context, and Qwen3-VL-8B declares one big enough to take the peak from 7.99 GB to **42.82 GB** -- for byte-identical output on all fifteen pages. A floor derived from the pinned figure beside an invocation that does not pin it would invite a 16 GB Mac to start a 42 GB job
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the context every generation runs at > pins one wherever the floor was measured with it pinned"
+
+    - id: E29.17
+      scenario: The generation every existing install is already running
+      expect: Its invocation is untouched. Pinning a context would change what it is asked and with it the 4.32 % it measured, which is not a side effect a second model may have
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "the context every generation runs at > leaves the older generation's invocation exactly as it shipped"
+
+    - id: E29.18
+      scenario: The argv built for a generation that names a context
+      expect: The `-c` flag is passed with it. This is where the memory floor is actually honoured -- the floor is derived from the peak at that context, and an invocation that does not pin it would let the same model allocate 42.82 GB on a machine admitted at 16 GB
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "pageArgs > pins the context when the generation names one"
+
+    - id: E29.19
+      scenario: The argv built for the generation that shipped before contexts were pinned
+      expect: No `-c` at all. Every install before 2026-09-09 ran without one and its published figure was measured that way; adding one would change what the model is asked
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "pageArgs > passes no context at all when the generation names none"
+
+    - id: E29.20
+      scenario: The rest of the invocation, whichever generation is running
+      expect: One image per process, `--temp 0` and a fixed seed -- the sampling every local figure this repo publishes was measured at
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "pageArgs > sends one image per process, at temperature zero and a fixed seed"
+
+    - id: E29.21
+      scenario: A ready install that is not on the newest generation
+      expect: An offer carrying both error rates and the real download size, the runtime archive included -- so the card can state a trade rather than assert an improvement. stating the trade beats asserting an improvement
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "newerModelOffer > quotes both error rates and the real download size"
+
+    - id: E29.22
+      scenario: A ready install already on the newest generation
+      expect: No offer at all
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "newerModelOffer > offers nothing to an install already on the newest model"
+
+    - id: E29.23
+      scenario: The same offer made on macOS and on Windows
+      expect: Different download sizes. Each platform fetches its own runtime archive, so a single figure would promise one of them a wait it does not have
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "newerModelOffer > sizes the download per platform"
+

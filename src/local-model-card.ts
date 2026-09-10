@@ -6,12 +6,45 @@
 // that can be asserted is a string that cannot quietly drift. The renderer below the seam turns this
 // into DOM and knows nothing about what any of it means.
 
+import { MODEL_GENERATIONS, type ModelGeneration, newerGeneration, totalDownloadBytes } from "./local-model-artefacts";
 import { formatBytes, shortfallMessage } from "./local-model-download";
 import { estimateLine } from "./local-model-settings";
 import type { LocalModelPlatform } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
 
 /** What the user can press. The renderer maps each id to behaviour; the copy owns the label. */
+/**
+ * A better model exists and this install is not using it (ticket 20).
+ *
+ * Both error rates are carried so the card can state the trade rather than assert an improvement --
+ * "3.2 % against your 4.3 %" is a reason to press a button; "a newer model is available" is not.
+ */
+export interface NewerModelOffer {
+	label: string;
+	downloadBytes: number;
+	medianCer: number;
+	currentMedianCer: number;
+}
+
+/**
+ * What to say about a newer model, when the one in use is not the newest.
+ *
+ * Pure, and here rather than in the settings registry for the reason the local-model set is built on:
+ * everything that *decides* is a function over facts, so it can be tested without a filesystem. Both
+ * error rates come from the generation records, so the card quotes what *these* files measured on the
+ * fifteen public reference pages rather than a claim from a model card.
+ */
+export function newerModelOffer(inUse: ModelGeneration, platform: LocalModelPlatform): NewerModelOffer | null {
+	const newer = newerGeneration(inUse);
+	if (!newer) return null;
+	return {
+		label: newer.label,
+		downloadBytes: totalDownloadBytes(platform, newer),
+		medianCer: newer.measured.medianCer,
+		currentMedianCer: inUse.measured.medianCer,
+	};
+}
+
 export interface CardAction {
 	id: "download" | "resume" | "cancel" | "discard" | "delete" | "retry-runtime" | "update";
 	label: string;
@@ -42,14 +75,29 @@ export type LocalCardState =
 	| { kind: "out-of-disk"; shortfallBytes: number }
 	| { kind: "network-lost"; message: string }
 	| { kind: "foreign-download"; percent: number }
-	| { kind: "ready" }
-	| { kind: "update-available" }
+	| { kind: "ready"; newer: NewerModelOffer | null }
 	| { kind: "corrupt" }
-	| { kind: "removed" }
+	| { kind: "removed"; modelBytes: number }
 	| { kind: "runtime-failed"; message: string };
 
-/** The download's two halves as the consent copy names them, one line each. */
-const MODEL_SIZE = "5.5 GB";
+/** Bytes as a one-decimal GB, for copy a person reads rather than a number a machine compares. */
+function gib(bytes: number): string {
+	return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+}
+
+/** A rate as a one-decimal percentage. */
+function percent(rate: number): string {
+	return `${(rate * 100).toFixed(1)} %`;
+}
+
+/**
+ * The download's two halves as the consent copy names them, one line each.
+ *
+ * Derived from the newest generation rather than written out, because two generations ship now and
+ * this string sits on the button a fresh install presses -- a hard-coded size would have quoted the
+ * old model's 5.5 GB over a 6.2 GB download.
+ */
+const MODEL_SIZE = gib(MODEL_GENERATIONS[0].modelBytes + MODEL_GENERATIONS[0].mmprojBytes);
 /**
  * The engine's size, quoted as **12 MB**.
  *
@@ -186,30 +234,21 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				showsBackgroundConsent: true,
 			};
 
-		case "ready":
-			return {
-				heading: "Local model — ready",
-				paragraphs: [`Speed: ${estimateLine(platform, settings)}`, QUALITY_LINE_SHORT],
-				actions: [{ id: "delete", label: "Delete the model", emphasis: "warning" }],
-				percent: null,
-				showsBackgroundConsent: true,
-			};
-
-		case "update-available":
-			return {
-				heading: "A newer model is available",
-				paragraphs: [
-					`This plugin version ships a different model. Downloading it needs ${MODEL_SIZE} of free space alongside the one you have, which stays until the new one is verified.`,
-					// An 8 GB-class update must not silently start a two-hour job.
+		case "ready": {
+			const paragraphs = [`Speed: ${estimateLine(platform, settings)}`, QUALITY_LINE_SHORT];
+			const actions: CardAction[] = [{ id: "delete", label: "Delete the model", emphasis: "warning" }];
+			if (state.newer) {
+				// Stated as a trade with both numbers in it, and never started for the user: what they
+				// have works, and a multi-gigabyte download is not something a plugin update may decide.
+				paragraphs.push(
+					`${state.newer.label} reads the same reference pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
+						`It is a ${gib(state.newer.downloadBytes)} download and it installs beside the model you have, which keeps working and stays until you remove it.`,
 					"Notes you have already transcribed are not redone — use 'Re-transcribe everything' afterwards if you want them redone.",
-				],
-				actions: [
-					{ id: "update", label: "Download the new model", emphasis: "cta" },
-					{ id: "delete", label: "Delete the old model", emphasis: "warning" },
-				],
-				percent: null,
-				showsBackgroundConsent: true,
-			};
+				);
+				actions.unshift({ id: "update", label: `Get ${state.newer.label}`, emphasis: "cta" });
+			}
+			return { heading: "Local model — ready", paragraphs, actions, percent: null, showsBackgroundConsent: true };
+		}
 
 		case "corrupt":
 			// Terminal, with no further automatic attempt. The second sentence is the one that matters:
@@ -233,7 +272,9 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 					// Load-bearing: Defender never touched the model, so the honest reassurance is that the
 					// expensive half is safe. There is deliberately no automatic retry, which would loop the
 					// malware alert once per cycle, and no "removed twice, giving up" counter.
-					`Only the ${ENGINE_SIZE} engine is affected; the ${MODEL_SIZE} model on disk is untouched and does not need downloading again.`,
+					// The size of the model *this install has*, not of the newest one on offer: two generations
+					// ship, and telling a 5.5 GB user their 6.2 GB model is safe reads as a different machine.
+					`Only the ${ENGINE_SIZE} engine is affected; the ${gib(state.modelBytes)} model on disk is untouched and does not need downloading again.`,
 				],
 				actions: [{ id: "retry-runtime", label: "Download the engine again", emphasis: "cta" }],
 				percent: null,

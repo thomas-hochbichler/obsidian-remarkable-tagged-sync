@@ -9,7 +9,7 @@
 // version is the model version** -- there is no model-update channel, so an update is a plugin
 // release that ships new constants.
 
-import { MMPROJ_BYTES, MMPROJ_FILE, MODEL_BYTES, MODEL_FILE, type LocalModelPlatform } from "./local-model-store";
+import { MMPROJ_FILE, MODEL_FILE, type LocalModelPlatform } from "./local-model-store";
 
 /** One pinned file: where it comes from, what it is called here, and what it must weigh and hash. */
 export interface PinnedArtefact {
@@ -30,35 +30,173 @@ export interface PinnedArtefact {
 	stripComponents?: number;
 }
 
-/** The model repo, pinned to a commit rather than a branch. */
-const MODEL_REPO = "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF";
-const MODEL_REVISION = "508edd0afaa66bb9e9f40587acc2184f02daf1f6";
-
-function huggingFaceUrl(name: string): string {
-	return `https://huggingface.co/${MODEL_REPO}/resolve/${MODEL_REVISION}/${name}`;
+function huggingFaceUrl(repo: string, revision: string, name: string): string {
+	return `https://huggingface.co/${repo}/resolve/${revision}/${name}`;
 }
 
 /**
- * The two model files.
+ * One model the plugin knows how to fetch and run, with everything that differs between models.
  *
- * They are written as `model.gguf` / `mmproj.gguf` rather than under their upstream names: the
- * directory already carries the version (§5.1), so the file names carry no information, and the
- * backend's spawn line stays the same across a model change.
+ * There are two of these now, and the reason is a user decision (ticket 20, 2026-09-09): a better
+ * model exists, and **nobody who already downloaded 5.5 GB is made to download 6.2 GB more to keep
+ * what they have working**. Both generations sit side by side under `models/`, each in a directory
+ * that names it, and {@link chooseGeneration} decides which one this install uses.
+ *
+ * That replaces the older rule, which was *"the plugin version is the model version"*. It held while
+ * there was one model; with two it would mean a plugin update silently stops transcription until a
+ * multi-gigabyte download finishes, which is the one outcome the decision rules out.
  */
-export const MODEL_ARTEFACTS: readonly PinnedArtefact[] = [
-	{
-		url: huggingFaceUrl("Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"),
-		fileName: MODEL_FILE,
-		bytes: MODEL_BYTES,
-		sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392",
-	},
-	{
-		url: huggingFaceUrl("mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf"),
-		fileName: MMPROJ_FILE,
-		bytes: MMPROJ_BYTES,
-		sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506",
-	},
-];
+export interface ModelGeneration {
+	/** Directory under `models/`. It carries the version, so a new generation lands beside its predecessor. */
+	dir: string;
+	/** What the settings card calls it. */
+	label: string;
+	modelBytes: number;
+	mmprojBytes: number;
+	/**
+	 * The two files, written as `model.gguf` / `mmproj.gguf` rather than under their upstream names:
+	 * the directory already carries the version, so the file names carry no information, and the
+	 * backend's spawn line stays the same across a model change.
+	 */
+	artefacts: readonly PinnedArtefact[];
+	/**
+	 * Median character error rate over the fifteen public reference pages, and the day it was measured.
+	 * Quoted by the settings card, so it is a measurement of *these* files and never a published claim
+	 * copied from a model card.
+	 */
+	measured: { medianCer: number; on: string };
+	/** Peak resident set size observed across those pages; the floor below is derived from it. */
+	peakRssBytes: number;
+	/**
+	 * The RAM this generation needs, per platform, as a nominal shipping configuration:
+	 * **peak RSS + 4 GiB, rounded up to a size machines are sold in.** Per generation rather than a
+	 * constant because the models differ by nearly a factor of two in working set, and a single floor
+	 * would either shut a 16 GB Mac out of a model it runs comfortably or let a 16 GB Mac start one
+	 * that swaps.
+	 */
+	floorGb: Readonly<Record<LocalModelPlatform, number>>;
+	/**
+	 * `-c` for `llama-mtmd-cli`, or null to let llama.cpp size the KV cache from the model's own
+	 * declared context.
+	 *
+	 * Null was the only behaviour until 2026-09-09, and it is a trap on a modern model. Measured on
+	 * this corpus: Qwen3-VL-8B declares a context large enough that the cache alone takes the peak to
+	 * **42.82 GB**. Pinned at 8192 the same fifteen pages come back **byte-identical** at **7.99 GB**
+	 * and 27 % faster -- one page never needs more, since the whole prompt is one image plus at most
+	 * `MAX_TOKENS` of answer.
+	 */
+	contextTokens: number | null;
+}
+
+/**
+ * Qwen3-VL-8B-Instruct Q4_K_M, from **Qwen's own repository** rather than a community requantisation.
+ * Two builds of this model exist at identical file sizes and different hashes; the publisher's own is
+ * pinned because a third-party mirror can be deleted and this URL has to work for years.
+ */
+const QWEN3_VL_8B: ModelGeneration = {
+	dir: "qwen3-vl-8b-instruct-q4_k_m",
+	label: "Qwen3-VL-8B-Instruct",
+	modelBytes: 5_027_784_800,
+	mmprojBytes: 1_159_029_824,
+	artefacts: [
+		{
+			url: huggingFaceUrl("Qwen/Qwen3-VL-8B-Instruct-GGUF", "f982a07559d4a2f6c8744d840bf6fccab30eea96", "Qwen3VL-8B-Instruct-Q4_K_M.gguf"),
+			fileName: MODEL_FILE,
+			bytes: 5_027_784_800,
+			sha256: "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
+		},
+		{
+			url: huggingFaceUrl("Qwen/Qwen3-VL-8B-Instruct-GGUF", "f982a07559d4a2f6c8744d840bf6fccab30eea96", "mmproj-Qwen3VL-8B-Instruct-F16.gguf"),
+			fileName: MMPROJ_FILE,
+			bytes: 1_159_029_824,
+			sha256: "ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38",
+		},
+	],
+	measured: { medianCer: 0.0179, on: "2026-09-09" },
+	peakRssBytes: 8_579_448_832,
+	// **Only true with `contextTokens` pinned.** Unpinned this model peaks at 42.82 GB, and the floor
+	// below would invite a 16 GB Mac to start it.
+	// 7.99 GiB + 4 GiB -> 11.99, which rounds up to 16 GB. **This opens the backend to 16 GB Macs**,
+	// which the 7B's own arithmetic shut out. Windows keeps 24 GB and is deliberately not derived: the
+	// only Windows figure anyone has measured is the 7B's, on a CPU-only path, and scaling it by a
+	// ratio would be inventing a measurement rather than making one.
+	floorGb: { darwin: 16, win32: 24 },
+	contextTokens: 8192,
+};
+
+/**
+ * Qwen2.5-VL-7B-Instruct Q4_K_M -- what every install before this shipped, kept **byte for byte**.
+ * These hashes verified every existing download, and an install that has this model keeps using it.
+ */
+const QWEN25_VL_7B: ModelGeneration = {
+	dir: "qwen2.5-vl-7b-instruct-q4_k_m",
+	label: "Qwen2.5-VL-7B-Instruct",
+	modelBytes: 4_683_072_032,
+	mmprojBytes: 853_119_712,
+	artefacts: [
+		{
+			url: huggingFaceUrl("ggml-org/Qwen2.5-VL-7B-Instruct-GGUF", "508edd0afaa66bb9e9f40587acc2184f02daf1f6", "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"),
+			fileName: MODEL_FILE,
+			bytes: 4_683_072_032,
+			sha256: "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392",
+		},
+		{
+			url: huggingFaceUrl("ggml-org/Qwen2.5-VL-7B-Instruct-GGUF", "508edd0afaa66bb9e9f40587acc2184f02daf1f6", "mmproj-Qwen2.5-VL-7B-Instruct-Q8_0.gguf"),
+			fileName: MMPROJ_FILE,
+			bytes: 853_119_712,
+			sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506",
+		},
+	],
+	measured: { medianCer: 0.0432, on: "2026-09-09" },
+	peakRssBytes: 16_200_204_288,
+	// Left at the shipped 18 / 24, deliberately, although `peakRssBytes` above is the 15.09 GiB the
+	// tall reference page reached rather than the 13.43 GiB these floors were derived from. Raising
+	// macOS to 24 on that basis would newly exclude 18 GB Macs that are running this model today, and
+	// whether the floor should move is an open question, not a side effect of adding a second model.
+	floorGb: { darwin: 18, win32: 24 },
+	// Deliberately unpinned, which is what every existing install has been running. Its 15.09 GB peak
+	// would very likely fall with a `-c` too, but that changes the invocation of a model we are moving
+	// away from -- and with it the 4.32 % it measured. See ticket 16.
+	contextTokens: null,
+};
+
+/** Newest first. The order is the preference, and `chooseGeneration` is the only thing that reads it. */
+export const MODEL_GENERATIONS: readonly ModelGeneration[] = [QWEN3_VL_8B, QWEN25_VL_7B];
+
+/** What one directory under `models/` holds, as facts rather than a conclusion. */
+export interface ModelDirectoryFacts {
+	name: string;
+	modelBytes: number | null;
+	mmprojBytes: number | null;
+}
+
+/** True when this directory holds a complete, full-length copy of that generation. */
+export function holdsGeneration(entry: ModelDirectoryFacts, generation: ModelGeneration): boolean {
+	return entry.name === generation.dir && entry.modelBytes === generation.modelBytes && entry.mmprojBytes === generation.mmprojBytes;
+}
+
+/**
+ * Which model this install uses: **the newest generation already on disk, and only otherwise the
+ * newest one there is.**
+ *
+ * The order matters more than it looks. Preferring what is installed is what keeps a plugin update
+ * from stopping transcription: an install holding the 7B keeps reading pages with it, and the newer
+ * model is offered rather than required. Preferring the newest when nothing is installed is what
+ * gives a fresh install the better model without asking it to choose between two names it cannot
+ * judge.
+ *
+ * A download in flight is not considered here at all -- the settings card shows it from the download
+ * itself -- so a half-fetched 8B never displaces a working 7B.
+ */
+export function chooseGeneration(present: readonly ModelDirectoryFacts[]): ModelGeneration {
+	return MODEL_GENERATIONS.find((generation) => present.some((entry) => holdsGeneration(entry, generation))) ?? MODEL_GENERATIONS[0];
+}
+
+/** The generation after the one in use, when there is one worth offering. */
+export function newerGeneration(inUse: ModelGeneration): ModelGeneration | null {
+	const at = MODEL_GENERATIONS.indexOf(inUse);
+	return at > 0 ? MODEL_GENERATIONS[0] : null;
+}
 
 /** llama.cpp release b10295 (2026-08-06T12:56:29Z). */
 const RUNTIME_RELEASE = "b10295";
@@ -94,7 +232,7 @@ export const RUNTIME_ARTEFACTS: Readonly<Record<LocalModelPlatform, PinnedArtefa
 	},
 };
 
-/** Every byte this machine has to fetch: both model files plus its own runtime archive. */
-export function totalDownloadBytes(platform: LocalModelPlatform): number {
-	return MODEL_ARTEFACTS.reduce((sum, artefact) => sum + artefact.bytes, 0) + RUNTIME_ARTEFACTS[platform].bytes;
+/** Every byte this machine has to fetch for one generation: its two model files plus the runtime archive. */
+export function totalDownloadBytes(platform: LocalModelPlatform, generation: ModelGeneration = MODEL_GENERATIONS[0]): number {
+	return generation.artefacts.reduce((sum, artefact) => sum + artefact.bytes, 0) + RUNTIME_ARTEFACTS[platform].bytes;
 }

@@ -16,13 +16,25 @@
 const GIB = 1024 ** 3;
 
 /**
- * The RAM floors, as nominal shipping configurations.
+ * The floors of the model that shipped first, kept as the default so every existing caller and every
+ * existing test keeps the numbers it was written against.
  *
  * macOS: 13.43 GB peak RSS (Metal) + 4 GiB -> 18 GB. Windows: 16.64 GB (CPU-only) + 4 GiB -> 24 GB.
  * Windows pays more because it has no Metal path and does the whole thing on the CPU.
+ *
+ * They are no longer *the* floors: each model generation carries its own, because the two that ship
+ * differ by nearly a factor of two in working set (`local-model-artefacts.ts`).
  */
 export const MACOS_FLOOR_GB = 18;
 export const WINDOWS_FLOOR_GB = 24;
+
+/** One generation's RAM floors, as nominal shipping configurations. */
+export interface MemoryFloors {
+	darwin: number;
+	win32: number;
+}
+
+const DEFAULT_FLOORS: MemoryFloors = { darwin: MACOS_FLOOR_GB, win32: WINDOWS_FLOOR_GB };
 
 /**
  * The thresholds sit one GiB under the nominal figure **on purpose**: a machine sold as 24 GB reports
@@ -57,11 +69,11 @@ export type LocalModelBlock = { kind: "architecture" } | { kind: "memory"; floor
  * macOS screenshot promise it -- and silence would read as a bug. Windows x64's own reason is §4.2:
  * Defender quarantines the engine.
  */
-export function localModelBlock(machine: MachineFacts): LocalModelBlock | null {
+export function localModelBlock(machine: MachineFacts, floors: MemoryFloors = DEFAULT_FLOORS): LocalModelBlock | null {
 	const supportedPlatform = machine.platform === "darwin" || machine.platform === "win32";
 	if (!supportedPlatform || machine.arch !== "arm64") return { kind: "architecture" };
 
-	const floorGb = machine.platform === "darwin" ? MACOS_FLOOR_GB : WINDOWS_FLOOR_GB;
+	const floorGb = machine.platform === "darwin" ? floors.darwin : floors.win32;
 	if (machine.totalMemoryBytes >= thresholdBytes(floorGb)) return null;
 	return { kind: "memory", floorGb, actualGb: Math.round(machine.totalMemoryBytes / GIB) };
 }

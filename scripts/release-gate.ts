@@ -6,7 +6,7 @@
 // harness replaces all of it with the plugin's own modules and touches the model only through them:
 //
 //   * the model arrives through `startLocalModelDownload` -- the pinned URLs, the SHA-256 pass, `tar`;
-//   * the paths come from `resolveLocalModelPaths`, so it lands where the plugin will look for it;
+//   * the paths come from `resolveLocalModel`, so it lands where the plugin will look for it;
 //   * a page is transcribed by `createLocalOcrBackend(...).recognize([page])`, which means the shipped
 //     raster, the shipped prompt, the shipped flags, `sanitizeTranscript` and `typedText`.
 //
@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import { Platform } from "obsidian";
 import { type DownloadHandle, startLocalModelDownload } from "../src/local-model-fetch";
-import { localModelPlatform, readLocalModelState, resolveLocalModelPaths } from "../src/local-model-runtime";
+import { localModelPlatform, readLocalModelState, resolveLocalModel } from "../src/local-model-runtime";
 import { createLocalOcrBackend } from "../src/local-ocr-runtime";
 import { parseRmV6 } from "../src/rm-parser";
 
@@ -53,10 +53,12 @@ function gib(bytes: number): string {
 /** Fetches whatever is missing, through the shipped downloader, printing the card's own progress. */
 async function ensureModel(): Promise<void> {
 	const platform = localModelPlatform();
-	const paths = resolveLocalModelPaths(PLUGIN_ID);
-	if (!platform || !paths) throw new Error("this machine is not one the backend is offered on");
+	const resolved = resolveLocalModel(PLUGIN_ID);
+	if (!platform || !resolved) throw new Error("this machine is not one the backend is offered on");
+	const { paths, generation } = resolved;
+	console.log(`  model:        ${generation.label}`);
 
-	const before = readLocalModelState(paths, Date.now());
+	const before = readLocalModelState(paths, Date.now(), generation);
 	console.log(`  state before: ${before}`);
 	console.log(`  root:         ${paths.root}`);
 	if (before === "ready") return;
@@ -75,11 +77,11 @@ async function ensureModel(): Promise<void> {
 		if (line === lastLine) return;
 		lastLine = line;
 		console.log(line);
-	});
+	}, generation);
 
 	const outcome = await handle.finished;
 	if (outcome.phase !== "done") throw new Error(`download failed: ${JSON.stringify(outcome)}`);
-	const after = readLocalModelState(paths, Date.now());
+	const after = readLocalModelState(paths, Date.now(), generation);
 	console.log(`  state after:  ${after}`);
 	if (after !== "ready") throw new Error(`the download finished but the state is ${after}`);
 }

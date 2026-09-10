@@ -4,7 +4,7 @@
 // without a 5.5 GB model; `local-ocr-runtime.ts` is the half that spawns `llama-mtmd-cli`.
 
 import { splitAtTypedText } from "./llm-transcript";
-import { MODEL_ARTEFACTS } from "./local-model-artefacts";
+import type { ModelGeneration } from "./local-model-artefacts";
 import { recordPageDuration } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
 import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
@@ -66,6 +66,8 @@ export function classifyRun(run: FinishedRun): LocalPageOutcome {
 
 export interface LocalOcrOptions {
 	runPage: LocalPageRunner;
+	/** The generation this install resolved to; its weights' hash becomes the backend's fingerprint. */
+	generation: ModelGeneration;
 	/**
 	 * The backend's own blob from `data.json`, live rather than a copy: page durations are written
 	 * through it and the plugin's next save carries them (§7.3's rolling mean).
@@ -97,11 +99,12 @@ export class LocalOcrBackend implements OcrBackend {
 	/** Costs no money by construction: it never leaves the machine. */
 	readonly metered = false;
 	/**
-	 * The pinned weights' own hash. Exact, and it needs no settings to read: "the plugin version is
-	 * the model version" (`local-model-artefacts.ts`) -- there is no update channel, so a new model is
-	 * a release that ships a new constant, and the transcript store discards itself when it does.
+	 * The hash of the weights **this install actually runs**, which is not a constant any more: two
+	 * generations ship and an install keeps the one it has (`chooseGeneration`). Reading it off the
+	 * chosen generation is what makes the transcript store discard itself when a user moves to the
+	 * newer model -- a constant would have gone on claiming the old model's transcripts were current.
 	 */
-	readonly fingerprint = `local:${MODEL_ARTEFACTS[0].sha256}`;
+	readonly fingerprint: string;
 	private readonly runPage: LocalPageRunner;
 	private readonly settings: BackendSettings;
 	private readonly onRuntimeFailure: (message: string) => void;
@@ -113,6 +116,7 @@ export class LocalOcrBackend implements OcrBackend {
 	private runtimeBroken = false;
 
 	constructor(options: LocalOcrOptions) {
+		this.fingerprint = `local:${options.generation.artefacts[0].sha256}`;
 		this.runPage = options.runPage;
 		this.settings = options.settings;
 		this.onRuntimeFailure = options.onRuntimeFailure ?? (() => undefined);

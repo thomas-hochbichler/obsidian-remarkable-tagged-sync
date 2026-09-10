@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MODEL_ARTEFACTS, RUNTIME_ARTEFACTS, totalDownloadBytes } from "./local-model-artefacts";
+import { chooseGeneration, holdsGeneration, MODEL_GENERATIONS, newerGeneration, RUNTIME_ARTEFACTS, totalDownloadBytes } from "./local-model-artefacts";
 import {
 	formatBytes,
 	freeSpaceShortfall,
@@ -13,7 +13,7 @@ import {
 	verificationOutcome,
 	withNetworkRetry,
 } from "./local-model-download";
-import { MMPROJ_BYTES, MODEL_BYTES } from "./local-model-store";
+
 
 describe("planResume", () => {
 	it("starts from zero when nothing is on disk", () => {
@@ -77,7 +77,7 @@ describe("free space", () => {
 	 */
 	it("never discounts an already-installed model", () => {
 		expect(requiredFreeBytes("win32")).toBe(requiredFreeBytes("win32"));
-		expect(requiredFreeBytes("win32")).toBeGreaterThan(MODEL_BYTES + MMPROJ_BYTES);
+		expect(requiredFreeBytes("win32")).toBeGreaterThan(MODEL_GENERATIONS[0].modelBytes + MODEL_GENERATIONS[0].mmprojBytes);
 	});
 
 	it("reports no shortfall when there is room", () => {
@@ -182,7 +182,7 @@ describe("the pinned table", () => {
 	// Every figure the card quotes describes these files; a typo here is a download that can never
 	// verify, discovered after 5.5 GB.
 	it("pins a full-length SHA-256 and an absolute URL for every artefact", () => {
-		for (const artefact of [...MODEL_ARTEFACTS, RUNTIME_ARTEFACTS.darwin, RUNTIME_ARTEFACTS.win32]) {
+		for (const artefact of [...MODEL_GENERATIONS.flatMap((generation) => generation.artefacts), RUNTIME_ARTEFACTS.darwin, RUNTIME_ARTEFACTS.win32]) {
 			expect(artefact.sha256).toMatch(/^[0-9a-f]{64}$/);
 			expect(artefact.url).toMatch(/^https:\/\//);
 			expect(artefact.bytes).toBeGreaterThan(0);
@@ -191,16 +191,31 @@ describe("the pinned table", () => {
 
 	// Never `main`, never `releases/latest`: research 01 tripped a `latest` whose assets were still
 	// uploading.
-	it("resolves the model at a commit revision rather than a branch", () => {
-		for (const artefact of MODEL_ARTEFACTS) {
-			expect(artefact.url).toContain("/resolve/508edd0afaa66bb9e9f40587acc2184f02daf1f6/");
-			expect(artefact.url).not.toContain("/resolve/main/");
+	it("resolves every model at a commit revision rather than a branch", () => {
+		for (const generation of MODEL_GENERATIONS) {
+			for (const artefact of generation.artefacts) {
+				expect(artefact.url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
+				expect(artefact.url).not.toContain("/resolve/main/");
+			}
 		}
 	});
 
-	it("totals the 5.5 GB the consent copy quotes", () => {
-		expect(MODEL_ARTEFACTS.reduce((sum, a) => sum + a.bytes, 0)).toBe(5_536_191_744);
-		expect(formatBytes(totalDownloadBytes("darwin"))).toBe("5.5 GB");
+	// The size on the button a fresh install presses. It follows the newest generation rather than a
+	// written-out string, which is what stops it quoting the previous model's 5.5 GB over a 6.2 GB job.
+	it("totals what the consent copy quotes, for the generation a fresh install gets", () => {
+		const newest = MODEL_GENERATIONS[0];
+		expect(newest.artefacts.reduce((sum, a) => sum + a.bytes, 0)).toBe(newest.modelBytes + newest.mmprojBytes);
+		expect(formatBytes(totalDownloadBytes("darwin", newest))).toBe("6.2 GB");
+	});
+
+	// Two generations ship, and the whole point of the second is that nobody is made to fetch it.
+	it("keeps the older generation byte-identical to what every existing install verified", () => {
+		const older = MODEL_GENERATIONS[1];
+		expect(older.dir).toBe("qwen2.5-vl-7b-instruct-q4_k_m");
+		expect(older.modelBytes).toBe(4_683_072_032);
+		expect(older.mmprojBytes).toBe(853_119_712);
+		expect(older.artefacts[0].sha256).toBe("9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392");
+		expect(older.artefacts[1].sha256).toBe("2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506");
 	});
 
 	/**
@@ -211,6 +226,54 @@ describe("the pinned table", () => {
 		expect(RUNTIME_ARTEFACTS.win32.fileName).toContain("win-cpu-arm64");
 		expect(RUNTIME_ARTEFACTS.win32.fileName).not.toContain("x64");
 	});
+
+	it("orders the generations newest first, and every one names a directory of its own", () => {
+		expect(new Set(MODEL_GENERATIONS.map((g) => g.dir)).size).toBe(MODEL_GENERATIONS.length);
+		expect(MODEL_GENERATIONS[0].measured.medianCer).toBeLessThan(MODEL_GENERATIONS[1].measured.medianCer);
+	});
+});
+
+/**
+ * The rule that keeps a plugin update from stopping transcription (ticket 20): an install that
+ * already has a model keeps it, and only an install with none gets the newest.
+ */
+describe("chooseGeneration", () => {
+	const older = MODEL_GENERATIONS[1];
+	const newest = MODEL_GENERATIONS[0];
+	const complete = (g: (typeof MODEL_GENERATIONS)[number]) => ({ name: g.dir, modelBytes: g.modelBytes, mmprojBytes: g.mmprojBytes });
+
+	it("keeps the model an existing install already has, rather than declaring it out of date", () => {
+		expect(chooseGeneration([complete(older)])).toBe(older);
+	});
+
+	it("gives a fresh install the newest model", () => {
+		expect(chooseGeneration([])).toBe(newest);
+	});
+
+	it("prefers the newest of the models actually on disk", () => {
+		expect(chooseGeneration([complete(older), complete(newest)])).toBe(newest);
+	});
+
+	// A truncated file is not a model. Falling back to "newest" here is right: there is nothing to keep.
+	it("ignores a directory whose files are the wrong length", () => {
+		expect(chooseGeneration([{ name: older.dir, modelBytes: 12, mmprojBytes: older.mmprojBytes }])).toBe(newest);
+	});
+
+	// A half-fetched newer model must never displace a working older one; the card shows the download
+	// from the download itself.
+	it("ignores a directory with no files in it at all", () => {
+		expect(chooseGeneration([{ name: newest.dir, modelBytes: null, mmprojBytes: null }, complete(older)])).toBe(older);
+	});
+
+	it("matches a generation only in its own directory", () => {
+		expect(holdsGeneration({ name: "somewhere-else", modelBytes: older.modelBytes, mmprojBytes: older.mmprojBytes }, older)).toBe(false);
+	});
+
+	it("offers the newest to an older install and nothing to the newest one", () => {
+		expect(newerGeneration(older)).toBe(newest);
+		expect(newerGeneration(newest)).toBeNull();
+	});
+
 });
 
 describe("planNetworkRetry", () => {
@@ -346,5 +409,27 @@ describe("withNetworkRetry", () => {
 
 		await expect(withNetworkRetry(h.options)).rejects.toThrow();
 		expect(h.state.attempts).toBe(1);
+	});
+});
+
+/**
+ * The KV cache is sized from `-c`, and without it llama.cpp reads the model's own declared context.
+ * Qwen3-VL-8B declares one big enough to take the peak to 42.82 GB -- against 7.99 GB at 8192, for
+ * byte-identical output on all fifteen reference pages. A floor derived from the pinned figure and an
+ * invocation that does not pin it is the worst pair available: it invites a 16 GB Mac to start a 42 GB
+ * job.
+ */
+describe("the context every generation runs at", () => {
+	it("pins one wherever the floor was measured with it pinned", () => {
+		const newest = MODEL_GENERATIONS[0];
+		expect(newest.contextTokens).toBe(8192);
+		// The floor is peak + 4 GiB rounded to a shipping size, and it only holds at that context.
+		expect(newest.peakRssBytes + 4 * 1024 ** 3).toBeLessThan(newest.floorGb.darwin * 1024 ** 3);
+	});
+
+	// Unchanged for the model every existing install is running: pinning a context would change its
+	// invocation, and with it the figure it measured.
+	it("leaves the older generation's invocation exactly as it shipped", () => {
+		expect(MODEL_GENERATIONS[1].contextTokens).toBeNull();
 	});
 });
