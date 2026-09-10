@@ -470,6 +470,13 @@ describe("chooseGeneration against the machine", () => {
 		expect(chooseGeneration([complete(best)], mac(64, older.dir))).toBe(best);
 	});
 
+	// Nothing on disk means nothing to protect, and the pick decides what the first download fetches.
+	// Without it a reader who wanted the small model got the large one, and could only switch after
+	// downloading both.
+	it("honours a choice on a fresh install, so the first download fetches the model the user picked", () => {
+		expect(chooseGeneration([], mac(64, older.dir))).toBe(older);
+	});
+
 	it("ignores a choice this machine has outgrown", () => {
 		expect(chooseGeneration([complete(older)], mac(16, older.dir))).toBe(best);
 	});

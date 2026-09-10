@@ -240,8 +240,10 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 
 	// The choice, offered only where there is one: a single runnable model is not a decision, and a
 	// dropdown listing one option is a question with one answer.
+	// Offered before the download too: the pick decides which model the button below fetches. A reader
+	// who wanted the small model used to get the large one, and could switch only after having both.
 	const choices = runnableGenerations(context);
-	if (state.kind === "ready" && choices.length > 1) {
+	if ((state.kind === "ready" || state.kind === "absent") && choices.length > 1) {
 		// What the rule picks with no preference stored. It used to be its own entry, "Decide for me
 		// (Qwen3-VL-8B)", above an entry for the same model -- two rows for one choice, and the reader
 		// asked why the 8B was listed twice. Now the rule's pick is marked on the entry it names, and

@@ -402,6 +402,13 @@
       file: src/local-model-download.test.ts
       test: "chooseGeneration against the machine > ignores a choice whose model is not installed"
 
+    - id: E31.12
+      scenario: Nothing is on disk and the user has picked a model
+      expect: The pick, so the first download fetches it. There is no working model to protect on a fresh install, and without this arm the pick was silently the most accurate model -- a reader who wanted the small one could only get it after downloading the large one first
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > honours a choice on a fresh install, so the first download fetches the model the user picked"
+
     - id: E31.5
       scenario: A stored choice naming a model this machine no longer has the memory for
       expect: Ignored the same way. A machine can shrink -- a different Mac, a different vault -- and the choice is a preference rather than a fact

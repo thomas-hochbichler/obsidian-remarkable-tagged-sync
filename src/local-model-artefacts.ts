@@ -266,9 +266,14 @@ export function runnableGenerations(context: ChoiceContext): ModelGeneration[] {
  * 2. **The most accurate model already on disk.** Preferring what is installed is what keeps a plugin
  *    update from stopping transcription: an install holding the 7B goes on reading pages with it, and
  *    a better model is offered rather than required.
- * 3. **The most accurate this machine can run**, for a fresh install -- which is not the same as the
- *    newest. The list is a size ladder, not a timeline: an 8 GB Mac cannot run the largest model at
- *    all, and handing it one whose own memory gate then refuses it is how "newest wins" fails.
+ * 3. **What the user picked, on a fresh install** -- nothing is on disk, so there is no working model
+ *    to protect, and the pick decides which model the first download fetches. Without this arm the
+ *    choice was silently the most accurate one, and a reader who wanted the small model could not get
+ *    it until the large one had been downloaded first.
+ * 4. **The most accurate this machine can run**, for a fresh install with no pick -- which is not the
+ *    same as the newest. The list is a size ladder, not a timeline: an 8 GB Mac cannot run the
+ *    largest model at all, and handing it one whose own memory gate then refuses it is how "newest
+ *    wins" fails.
  *
  * Accuracy is the sort key throughout because that is what the choice is *about*. Memory and download
  * size are its costs, and a cost belongs beside the thing it buys rather than in the ordering.
@@ -281,9 +286,10 @@ export function chooseGeneration(present: readonly ModelDirectoryFacts[], contex
 	const runnable = runnableGenerations(context);
 
 	const picked = runnable.find((generation) => generation.dir === context.preferred && installed(generation));
+	const wanted = runnable.find((generation) => generation.dir === context.preferred);
 	// Nothing here may return a generation this machine cannot run, so every arm reads from `runnable`
 	// and the last resort is the least demanding model rather than the best one.
-	return picked ?? runnable.find(installed) ?? runnable[0] ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
+	return picked ?? runnable.find(installed) ?? wanted ?? runnable[0] ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
 }
 
 /**
