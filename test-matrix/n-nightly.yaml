@@ -316,10 +316,17 @@
   scenarios:
     - id: N6.1
       scenario: A committed verdict is read back as a recorded night
-      expect: Measured nights yield their numbers; an unknown night yields nothing worth baselining, and a page that could not be measured is left out
+      expect: Measured nights yield their numbers; a night that measured nothing yields nothing, and a page that could not be measured is left out
       layer: unit
       file: scripts/ocr-baseline.test.mjs
       test: "extracting a night from a committed verdict > takes the numbers from a measured night and refuses an unknown one"
+
+    - id: N6.9
+      scenario: One backend is rate-limited while the others read the whole set
+      expect: The backends that measured are recorded. The part's status is the worst of them all, so rejecting the night on it discarded seven clean backends over one 429 -- and left five new models at zero nights while their figures sat in the file
+      layer: unit
+      file: scripts/ocr-baseline.test.mjs
+      test: "extracting a night from a committed verdict > keeps the backends that measured when another one could not"
 
     - id: N6.2
       scenario: A key has fewer than five recorded nights
