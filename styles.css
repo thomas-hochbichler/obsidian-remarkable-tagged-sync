@@ -79,6 +79,18 @@
 }
 
 /*
+ * A live verdict about the value in the field beside it -- the vision-capability check under Model.
+ *
+ * It lives in the setting's own description, so it needs none of the inset `.tagged-sync-note`
+ * carries: that inset exists for text placed straight into the tab, between the cards, and applying
+ * it again inside a card would indent the line twice. Colour is set on the element by the code that
+ * paints it, because the verdict is the thing the colour is about.
+ */
+.tagged-sync-verdict {
+	padding-top: var(--size-4-1);
+}
+
+/*
  * The local model's setup card: one block that carries prose, a progress bar and a button row, so it
  * takes the card treatment itself rather than sitting between the cards as loose text.
  */

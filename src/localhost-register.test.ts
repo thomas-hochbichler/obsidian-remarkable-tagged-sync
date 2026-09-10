@@ -122,9 +122,12 @@ describe("the thinking line in the localhost callout", () => {
 			isSelected: true,
 			selectDefaultBackend: async () => undefined,
 		});
-		takeSettings();
-		// The first note div is the standing model recommendation; the live callout is the one after it.
-		const notes = container.children.filter((child) => child.classes.has("tagged-sync-note"));
+		// Both sit in the Model row's own description -- one says what to type, the other judges what
+		// was typed. The first is the standing recommendation; the live callout is the one after it.
+		const notes =
+			takeSettings()
+				.find((row) => row.name === "Model")
+				?.descEl.children.filter((child) => child.classes.has("tagged-sync-verdict")) ?? [];
 		return notes[1];
 	}
 

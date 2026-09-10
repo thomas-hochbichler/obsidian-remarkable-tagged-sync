@@ -135,6 +135,11 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **The model check now sits with the model field.** The green or red line saying whether your model
+  can read images was drawn *underneath* the field's box rather than inside it, so it floated in the
+  gap between two settings and looked like it belonged to neither. It now sits in the field's own
+  description, directly under it.
+
 - **The Backend setting now describes the backend you chose.** It explained all three families at
   once — Apple Vision, a model on your own machine, and the cloud providers — so whichever one you
   had picked, most of what you were reading was about the other two. It now makes one promise: the

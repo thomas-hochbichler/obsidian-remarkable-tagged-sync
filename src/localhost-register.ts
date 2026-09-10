@@ -229,7 +229,7 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 	// Everything else here already has a working value -- the endpoint is the provider's own default,
 	// and a key is only wanted by a server that asks for one -- and a row nobody has to touch is a row
 	// that can wait behind a disclosure.
-	new Setting(containerEl)
+	const modelSetting = new Setting(containerEl)
 		.setName("Model")
 		.setDesc("The vision model to transcribe with — whichever one you loaded.")
 		.addText((text) => {
@@ -241,9 +241,13 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 			});
 		});
 
-	containerEl.createDiv({ cls: "tagged-sync-note", text: MODEL_RECOMMENDATION });
+	// Both of these belong to the field above them -- one says what to type, the other judges what
+	// was typed -- so they go in its description rather than beside it. Obsidian 1.13 draws each
+	// setting as its own card, and a sibling note landed in the gap between two cards, reading as
+	// belonging to neither.
+	modelSetting.descEl.createDiv({ cls: "tagged-sync-verdict", text: MODEL_RECOMMENDATION });
 
-	visionWarningEl = containerEl.createDiv({ cls: "tagged-sync-note" });
+	visionWarningEl = modelSetting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 	scheduleVisionCheck(meta, cfg);
 
 	const advanced = containerEl.createEl("details", { cls: "tagged-sync-advanced" });

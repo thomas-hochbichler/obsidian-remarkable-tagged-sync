@@ -84,9 +84,12 @@ describe("the live vision-capability callout", () => {
 			selectDefaultBackend: async () => undefined,
 		});
 		const rows = takeSettings();
-		const model = rows.find((row) => row.name === "Model")?.texts[0];
+		const modelRow = rows.find((row) => row.name === "Model");
+		const model = modelRow?.texts[0];
 		if (!model) throw new Error("no Model field");
-		const callout = container.children.find((child) => child.classes.has("tagged-sync-note"));
+		// Inside the Model row's own description, not beside it: the verdict judges the value in that
+		// one field, and Obsidian draws each setting as a card, so a sibling sat in the gap between two.
+		const callout = modelRow?.descEl.children.find((child) => child.classes.has("tagged-sync-verdict"));
 		if (!callout) throw new Error("no callout");
 		return { container, callout, model };
 	}
@@ -179,8 +182,9 @@ describe("the thinking line in the callout", () => {
 			isSelected: true,
 			selectDefaultBackend: async () => undefined,
 		});
-		takeSettings();
-		const callout = container.children.find((child) => child.classes.has("tagged-sync-note"));
+		const callout = takeSettings()
+			.find((row) => row.name === "Model")
+			?.descEl.children.find((child) => child.classes.has("tagged-sync-verdict"));
 		if (!callout) throw new Error("no callout");
 		return callout;
 	}
