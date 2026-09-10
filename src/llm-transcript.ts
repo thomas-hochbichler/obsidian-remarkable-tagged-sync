@@ -1,4 +1,5 @@
 import { type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
+import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
@@ -34,7 +35,39 @@ export type PagePart = { kind: "ink"; scene: RmPage } | { kind: "typed"; text: s
  * page rarer still. The cap is not protecting against a shape anyone has produced; it is there so a
  * page nobody imagined cannot quietly cost ten requests.
  */
-const MAX_INK_PARTS = 3;
+/**
+ * The most images one page may cost.
+ *
+ * Raised from 3 to 6 on 2026-09-10, when a scrolled page became splittable: page 15 of the reference
+ * set needs five pieces. Six leaves one piece of headroom without opening the door to a page that
+ * costs twenty requests. A page that would exceed it is sent whole, which is exactly the behaviour
+ * before any of this and therefore never a regression -- only a page that was going to be read badly
+ * anyway is read badly still.
+ */
+const MAX_INK_PARTS = 6;
+
+/**
+ * A blank band this tall, in device pixels, reads as a break between blocks of writing rather than as
+ * the space between two lines. The prototype's number, kept: it was chosen on one page and cuts a
+ * completely different one into sensible pieces without being touched, which is the only evidence
+ * available that it is not fitted to the page it came from.
+ */
+const GAP_PX = 200;
+
+/** Neighbouring blocks are merged again while the image they make stays this many times its own width. */
+const MERGE_ASPECT = 2;
+
+/**
+ * How many times its own width a page's ink must run before it is worth cutting at all.
+ *
+ * Measured, and the bracket is wide: the widest of the fourteen ordinary reference pages reaches
+ * **2.08x** its own width, and the scrolled page reaches **8.77x**. A gate at 3x catches the scrolled
+ * page and no ordinary one, with the nearest miss 44 % below and the target 192 % above.
+ *
+ * An aspect ratio rather than a pixel height or a byte count on purpose: both of those move with the
+ * rasterizer's scale, while how much taller than wide someone wrote is a property of the writing.
+ */
+const TALL_ASPECT = 3;
 
 /** The vertical middle of a stroke, which is the slot it belongs to even where it spans two. */
 function strokeMiddleY(stroke: RmStroke): number {
@@ -78,10 +111,84 @@ function inkOnly(page: RmPage, keep: ReadonlySet<RmStroke>): RmPage {
  * `VisionOcrBackend` needs none of this and does not use it: Apple Vision reports a box per line, so
  * it places typed lines by height directly (`insertTypedText`).
  */
+/** The band of page a stroke covers, top to bottom. */
+function strokeBand(stroke: RmStroke): { top: number; bottom: number } {
+	let top = Number.POSITIVE_INFINITY;
+	let bottom = Number.NEGATIVE_INFINITY;
+	for (const point of stroke.points) {
+		top = Math.min(top, point.y);
+		bottom = Math.max(bottom, point.y);
+	}
+	return { top, bottom };
+}
+
+/**
+ * A page far taller than it is wide, cut into pieces at the blank bands between blocks of writing.
+ *
+ * A scrolled page is one very tall image, and every backend shrinks an image before reading it -- so
+ * the writing arrives at a fraction of its legible size and the model guesses. Measured on the
+ * reference set's scrolled page, cutting it at its blank bands: GPT-4o **50.17 % -> 4.32 %**, Claude
+ * 11.30 % -> 8.31 %, Gemini 3.65 % -> 1.33 %, the local model 4.32 % -> **1.00 %**. Every backend
+ * improved and none regressed.
+ *
+ * Cuts fall where there is no ink, so **no stroke is ever divided** -- the failure that would hand a
+ * model two half-glyphs and be worse than the tall image. Neighbouring blocks are put back together
+ * while the piece they make stays a readable shape, because cutting at every band would send one
+ * request per line: more expensive and no better read.
+ *
+ * Returns the page unchanged unless it is past {@link TALL_ASPECT}, so an ordinary page takes exactly
+ * the path it took before and `inkBounds` returns exactly the frame it returned before.
+ */
+export function splitTallInk(page: RmPage): RmPage[] {
+	const frame = inkBounds(page);
+	if (frame === null || frame.height <= frame.width * TALL_ASPECT) return [page];
+
+	const banded = page.layers
+		.flatMap((layer) => layer.strokes)
+		.map((stroke) => ({ stroke, ...strokeBand(stroke) }))
+		.sort((a, b) => a.top - b.top);
+	// No `banded.length === 0` guard: `inkBounds` returns null unless a stroke has points, and that
+	// case already returned above.
+
+	// Every blank band wider than a line's spacing is a cut. `reach` is the lowest ink so far, not the
+	// previous stroke's: a long stroke drawn early must not let a later one look isolated.
+	const blocks: { strokes: RmStroke[]; top: number; bottom: number }[] = [];
+	let reach = Number.NEGATIVE_INFINITY;
+	for (const { stroke, top, bottom } of banded) {
+		const block = blocks[blocks.length - 1];
+		if (block === undefined || top - reach > GAP_PX) blocks.push({ strokes: [stroke], top, bottom });
+		else {
+			block.strokes.push(stroke);
+			block.bottom = Math.max(block.bottom, bottom);
+		}
+		reach = Math.max(reach, bottom);
+	}
+
+	const merged: typeof blocks = [];
+	for (const block of blocks) {
+		const last = merged[merged.length - 1];
+		if (last !== undefined && block.bottom - last.top <= frame.width * MERGE_ASPECT) {
+			last.strokes.push(...block.strokes);
+			last.bottom = block.bottom;
+			continue;
+		}
+		merged.push({ ...block, strokes: [...block.strokes] });
+	}
+
+	// One piece is the page itself; returning it unwrapped keeps the caller's "did anything split"
+	// question answerable by length alone.
+	if (merged.length <= 1) return [page];
+	return merged.map((block) => inkOnly(page, new Set(block.strokes)));
+}
+
 export function splitAtTypedText(page: RmPage): PagePart[] {
 	const lines = page.text ? layoutText(page.text).lines.filter((line) => line.text.trim() !== "") : [];
 	const whole: PagePart[] = [{ kind: "ink", scene: page }];
-	if (lines.length === 0) return whole;
+	// No typed text: the only question left is whether the ink itself is too tall to read in one image.
+	if (lines.length === 0) {
+		const tall = splitTallInk(page).map((scene): PagePart => ({ kind: "ink", scene }));
+		return tall.length > MAX_INK_PARTS ? whole : tall;
+	}
 
 	// Slot i holds the strokes above typed line i; the last slot holds what is below them all.
 	const slots: Set<RmStroke>[] = Array.from({ length: lines.length + 1 }, () => new Set());
@@ -100,7 +207,9 @@ export function splitAtTypedText(page: RmPage): PagePart[] {
 		if (slots[i].size > 0) {
 			if (pending.length > 0) parts.push({ kind: "typed", text: pending.join("\n") });
 			pending = [];
-			parts.push({ kind: "ink", scene: inkOnly(page, slots[i]) });
+			// Each run of ink between typed lines is still a page image, and still worth cutting if it is
+			// far taller than it is wide.
+			for (const scene of splitTallInk(inkOnly(page, slots[i]))) parts.push({ kind: "ink", scene });
 		}
 		if (i < lines.length) pending.push(lines[i].text);
 	}

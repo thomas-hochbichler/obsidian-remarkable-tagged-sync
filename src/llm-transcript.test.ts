@@ -3,8 +3,9 @@
 // need coverage in the suite that actually gates this repo.
 
 import { describe, expect, it, vi } from "vitest";
-import { isUnreachable, LLM_MAX_PARALLELISM, refusalDetail, sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT, transcribePages } from "./llm-transcript";
-import type { RmPage } from "./rm-parser";
+import { isUnreachable, LLM_MAX_PARALLELISM, refusalDetail, sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT, transcribePages, splitTallInk } from "./llm-transcript";
+import type { RmPage, RmStroke } from "./rm-parser";
+import { inkBounds } from "./page-rasterizer";
 import { layoutText } from "./text-layout";
 
 function pageWithText(text: string | null): RmPage {
@@ -167,8 +168,9 @@ describe("splitAtTypedText", () => {
 	// Past the cap the page is transcribed whole and its typed text appended -- what every page did
 	// before this existed. A page nobody imagined must not quietly cost ten requests.
 	it("falls back to one scene and an appended block past the request cap", () => {
-		// Four runs of ink around four typed lines, so five parts would be five requests.
-		const text = "a\nb\nc\nd";
+		// Seven runs of ink around seven typed lines. The cap is six since a scrolled page became
+		// splittable (page 15 of the reference set needs five pieces), so the fixture has to clear that.
+		const text = "a\nb\nc\nd\ne\nf\ng";
 		const lines = baselines(text);
 		const parts = splitAtTypedText(pageWithInkAndText(text, lines.map((y, i) => (i === 0 ? y - 50 : (lines[i - 1] + y) / 2))));
 
@@ -287,5 +289,96 @@ describe("isUnreachable", () => {
 	it("handles something thrown that is not an Error at all", () => {
 		expect(isUnreachable("ECONNRESET")).toBe(true);
 		expect(isUnreachable({ nope: true })).toBe(false);
+	});
+});
+
+/**
+ * A scrolled page is one very tall image, and every backend shrinks an image before reading it -- so
+ * the writing arrives at a fraction of its legible size. Measured on the reference set's scrolled
+ * page, cutting it at its blank bands: GPT-4o 50.17 % -> 4.32 %, Claude 11.30 % -> 8.31 %, Gemini
+ * 3.65 % -> 1.33 %, the local model 4.32 % -> 1.00 %. Every backend improved and none regressed.
+ */
+describe("splitTallInk", () => {
+	/** A stroke `height` tall at `y`, `width` wide -- enough for a function that reads x and y only. */
+	function block(y: number, id: string, width = 800, height = 40): RmStroke {
+		return { layerId: "l", id, timestamp: "1", penType: 0, color: 0, brushSize: 2, points: [{ x: 0, y }, { x: width, y: y + height }] } as unknown as RmStroke;
+	}
+	function pageOf(strokes: RmStroke[]): RmPage {
+		return { formatVersion: 6, layers: [{ id: "l", name: null, strokes }] } as unknown as RmPage;
+	}
+
+	// The bracket is measured: the widest ordinary reference page reaches 2.08x its own width and the
+	// scrolled one reaches 8.77x, so a gate at 3x has 44 % of clearance on one side and 192 % on the other.
+	it("leaves an ordinary page exactly as it was, frame and all", () => {
+		const page = pageOf([block(0, "a"), block(600, "b")]);
+
+		const pieces = splitTallInk(page);
+
+		expect(pieces).toEqual([page]);
+		// Non-negotiable: `vision-ocr-backend.ts` normalises Vision's observation boxes against this
+		// frame, so a frame that moved by a padding would make every cluster read as uncovered and
+		// silently re-OCR the page cluster by cluster.
+		expect(inkBounds(pieces[0])).toEqual(inkBounds(page));
+	});
+
+	it("cuts a tall page where no ink is, and divides no stroke", () => {
+		const strokes = [block(0, "a"), block(1000, "b"), block(2000, "c"), block(3000, "d")];
+
+		const pieces = splitTallInk(pageOf(strokes));
+
+		expect(pieces.length).toBeGreaterThan(1);
+		const ids = pieces.flatMap((piece) => piece.layers.flatMap((layer) => layer.strokes.map((s) => s.id)));
+		// Every stroke, once, whole. A cut through the raster would hand the model two half-glyphs,
+		// which is worse than the tall image it was meant to fix.
+		expect(ids.sort()).toEqual(["a", "b", "c", "d"]);
+	});
+
+	// Cutting at every blank band would send one request per line: more expensive and no better read.
+	it("puts neighbours back together while the piece stays a readable shape", () => {
+		const tight = splitTallInk(pageOf([block(0, "a"), block(300, "b"), block(3000, "c"), block(3300, "d")]));
+
+		expect(tight).toHaveLength(2);
+		expect(tight[0].layers[0].strokes.map((s) => s.id)).toEqual(["a", "b"]);
+	});
+
+	it("returns the page itself when the cuts would produce only one piece", () => {
+		const page = pageOf([block(0, "a"), block(120, "b"), block(240, "c")]);
+
+		expect(splitTallInk(page)).toEqual([page]);
+	});
+
+	// A long stroke drawn early must not let a later one look isolated: the gap is measured from the
+	// lowest ink so far, not from the previous stroke's own top.
+	it("measures the gap from the lowest ink so far, not from the last stroke", () => {
+		const pieces = splitTallInk(pageOf([block(0, "long", 800, 2600), block(500, "inside"), block(3000, "after")]));
+
+		expect(pieces[0].layers[0].strokes.map((s) => s.id)).toEqual(["long", "inside"]);
+	});
+});
+
+describe("splitTallInk on the pages that have no shape to judge", () => {
+	function pageOf(strokes: RmStroke[]): RmPage {
+		return { formatVersion: 6, layers: [{ id: "l", name: null, strokes }] } as unknown as RmPage;
+	}
+	function block(y: number, id: string): RmStroke {
+		return { layerId: "l", id, timestamp: "1", penType: 0, color: 0, brushSize: 2, points: [{ x: 0, y }, { x: 800, y: y + 40 }] } as unknown as RmStroke;
+	}
+
+	// A typed-only page, or one whose layers are empty. There is no frame to measure, so there is
+	// nothing to cut and nothing to decide.
+	it("leaves a page with no ink on it alone", () => {
+		const page = pageOf([]);
+
+		expect(splitTallInk(page)).toEqual([page]);
+	});
+
+	// The cap is about cost, not about shape: a page nobody imagined must not quietly become twenty
+	// requests. Read whole is exactly what it did before any of this, so it is never a regression --
+	// only a page that was going to read badly reads badly still.
+	it("sends a page needing more pieces than the cap allows as one image", () => {
+		const strokes = Array.from({ length: 7 }, (_, i) => block(i * 3000, `b${i}`));
+
+		expect(splitTallInk(pageOf(strokes)).length).toBeGreaterThan(6);
+		expect(splitAtTypedText(pageOf(strokes))).toHaveLength(1);
 	});
 });

@@ -134,6 +134,60 @@
       file: src/llm-transcript.test.ts
       test: "transcribePages over a page in parts > ticks the progress bar once for a page it sent twice"
 
+- feature: E30
+  name: A scrolled page is cut where no ink is
+  code: src/llm-transcript.ts
+  tier: free + Pro
+  scenarios:
+    - id: E30.1
+      scenario: An ordinary page, whatever its shape
+      expect: Returned exactly as it was, and `inkBounds` returns exactly the frame it returned before. Non-negotiable -- `vision-ocr-backend.ts` normalises Vision's observation boxes against that frame, so a frame moved by a padding would make every cluster read as uncovered and silently re-OCR the page cluster by cluster. The gate's bracket is measured, the widest ordinary reference page reaching 2.08x its own width against the scrolled page's 8.77x
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitTallInk > leaves an ordinary page exactly as it was, frame and all"
+
+    - id: E30.2
+      scenario: A page far taller than it is wide, with blank bands between blocks of writing
+      expect: Cut at the bands, with every stroke appearing once and whole. Every backend shrinks an image before reading it, so a scrolled page arrives at a fraction of its legible size -- measured on the reference set's scrolled page, cutting it moved GPT-4o from 50.17 % to 4.32 % and the local model from 4.32 % to 1.00 %, with no backend regressing. A cut through the raster instead would hand the model two half-glyphs, which is worse than the tall image
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitTallInk > cuts a tall page where no ink is, and divides no stroke"
+
+    - id: E30.3
+      scenario: Two blocks of writing close enough that the piece they make is still a readable shape
+      expect: Merged back into one piece. Cutting at every blank band would send one request per line -- more expensive and no better read
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitTallInk > puts neighbours back together while the piece stays a readable shape"
+
+    - id: E30.4
+      scenario: A tall page whose bands all merge back into a single piece
+      expect: The page itself, unwrapped, so "did anything split" stays answerable by length alone
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitTallInk > returns the page itself when the cuts would produce only one piece"
+
+    - id: E30.5
+      scenario: A long stroke drawn early, with later writing inside the band it spans
+      expect: The gap is measured from the lowest ink so far rather than from the previous stroke's own top, so a box or an arrow drawn across a block does not make the writing under it look isolated and get cut away from its neighbours
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitTallInk > measures the gap from the lowest ink so far, not from the last stroke"
+
+    - id: E30.6
+      scenario: A page with no ink on it at all -- typed only, or empty layers
+      expect: Returned alone. There is no frame to measure, so there is nothing to cut and nothing to decide
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitTallInk on the pages that have no shape to judge > leaves a page with no ink on it alone"
+
+    - id: E30.7
+      scenario: A page whose blank bands would produce more pieces than the cap allows
+      expect: Sent as one image. The cap is about cost rather than shape -- a page nobody imagined must not quietly become twenty requests -- and reading it whole is exactly what it did before any of this, so a page that was going to read badly reads badly still and nothing regresses
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "splitTallInk on the pages that have no shape to judge > sends a page needing more pieces than the cap allows as one image"
+
 - feature: G14
   name: Shrunk-highlight warning
   code: src/sync-engine.ts

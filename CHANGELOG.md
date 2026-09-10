@@ -12,6 +12,20 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **A page you scrolled is now read in pieces, and comes back far better.** A scrolled page is one very
+  tall image -- one in the reference set is 852 by 7469 pixels -- and every transcription backend
+  shrinks an image before reading it, so the writing arrived at a fraction of the size it needs to be
+  legible and the model guessed. The page is now cut where there is no ink, at the blank bands between
+  blocks of writing, and each piece is read on its own. Measured on that page: GPT-4o went from 50.2 %
+  character error to 4.3 %, Claude from 11.3 % to 8.3 %, Gemini from 3.7 % to 1.3 %, and the local
+  model from 4.3 % to 1.0 %. Every backend improved and none got worse. **Ordinary pages are untouched**
+  -- the cut only applies to a page whose writing runs more than three times its own width, which the
+  widest ordinary page in the reference set does not approach. No stroke is ever divided, so nothing is
+  cut through the middle of a letter, and a page that would need more than six pieces is read whole as
+  before. On a metered backend a cut page costs one request per piece. (#144)
+
 ### Added
 
 - **One bad transcript no longer costs a whole-vault run.** A new command, *Re-transcribe this note*,
