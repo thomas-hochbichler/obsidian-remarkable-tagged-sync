@@ -72,10 +72,16 @@ function pathsFor(pluginId: string, modelDir: string): LocalModelPaths | null {
  * directories decide, and the answer is rebuilt around the winner. The provisional generation is
  * never returned -- it is scaffolding for a `dirname`.
  */
-export function resolveLocalModel(pluginId: string): { paths: LocalModelPaths; generation: ModelGeneration } | null {
+export function resolveLocalModel(pluginId: string, preferred: string | null = null): { paths: LocalModelPaths; generation: ModelGeneration } | null {
 	const provisional = pathsFor(pluginId, MODEL_GENERATIONS[0].dir);
-	if (!provisional) return null;
-	const generation = chooseGeneration(readModelDirectories(provisional));
+	const machine = machineFacts();
+	const platform = localModelPlatform();
+	if (!provisional || !machine || !platform) return null;
+	const generation = chooseGeneration(readModelDirectories(provisional), {
+		platform,
+		totalMemoryBytes: machine.totalMemoryBytes,
+		preferred,
+	});
 	const paths = pathsFor(pluginId, generation.dir);
 	return paths ? { paths, generation } : null;
 }

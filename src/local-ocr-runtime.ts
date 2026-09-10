@@ -7,6 +7,7 @@ import { Platform } from "obsidian";
 import { sanitizeTranscript, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
 import type { ModelGeneration } from "./local-model-artefacts";
+import { readLocalModelSettings } from "./local-model-settings";
 import { readLocalModelState, readLock, releaseLock, resolveLocalModel, writeLock } from "./local-model-runtime";
 import { isTranscriptionInProgress, LOCK_HEARTBEAT_MS, type LocalModelPaths } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
@@ -201,7 +202,9 @@ export function createLocalOcrBackend(
 	settings: BackendSettings,
 	onRuntimeFailure?: (message: string) => void,
 ): LocalOcrBackend | null {
-	const resolved = resolveLocalModel(pluginId);
+	// The user's pick reaches the sync the same way it reaches the card: a preference, ignored the
+	// moment the model it names is gone or too big for this machine.
+	const resolved = resolveLocalModel(pluginId, readLocalModelSettings(settings).preferredModelDir);
 	if (!resolved) return null;
 	const { paths, generation } = resolved;
 	if (readLocalModelState(paths, Date.now(), generation) !== "ready") return null;

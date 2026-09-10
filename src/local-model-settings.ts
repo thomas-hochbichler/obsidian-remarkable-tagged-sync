@@ -28,13 +28,28 @@ export interface LocalModelSettings {
 	backgroundConsent: boolean;
 	/** The last {@link ENOUGH_PAGES_TO_MEASURE} page durations, oldest first. */
 	recentPageMs: number[];
+	/**
+	 * The model directory the user picked, or null for "decide for me".
+	 *
+	 * **A preference, never a fact.** Everything else about the local model is derived from disk on
+	 * every load and never remembered, precisely so that a model deleted from outside is noticed. A
+	 * *choice* is not derived state and may be stored -- but it has to fail in the same direction: if
+	 * the chosen model is gone or this machine can no longer run it, the rule decides again and the
+	 * name in `data.json` is ignored rather than allowed to stop transcription.
+	 */
+	preferredModelDir: string | null;
 }
 
 /** Reads the blob defensively: it is opaque to the core and outlives any shape this build expects. */
 export function readLocalModelSettings(blob: BackendSettings): LocalModelSettings {
 	const raw = blob.recentPageMs;
 	const recentPageMs = Array.isArray(raw) ? raw.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0) : [];
-	return { backgroundConsent: blob.backgroundConsent === true, recentPageMs };
+	const preferred = blob.preferredModelDir;
+	return {
+		backgroundConsent: blob.backgroundConsent === true,
+		recentPageMs,
+		preferredModelDir: typeof preferred === "string" && preferred !== "" ? preferred : null,
+	};
 }
 
 /** Records one page's wall-clock time, discarding the window's oldest entry. */
@@ -46,6 +61,12 @@ export function recordPageDuration(blob: BackendSettings, durationMs: number): v
 
 export function setBackgroundConsent(blob: BackendSettings, consented: boolean): void {
 	blob.backgroundConsent = consented;
+}
+
+/** Records which model the user picked, or clears the choice so the rule decides again. */
+export function setPreferredModelDir(blob: BackendSettings, dir: string | null): void {
+	if (dir === null) delete blob.preferredModelDir;
+	else blob.preferredModelDir = dir;
 }
 
 /**

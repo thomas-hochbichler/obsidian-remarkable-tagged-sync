@@ -181,11 +181,18 @@ export function splitTallInk(page: RmPage): RmPage[] {
 	return merged.map((block) => inkOnly(page, new Set(block.strokes)));
 }
 
-export function splitAtTypedText(page: RmPage): PagePart[] {
+export function splitAtTypedText(page: RmPage, options: { splitTall?: boolean } = {}): PagePart[] {
+	// Whether a very tall page is cut is a property of *the model that will read it*, not of the page:
+	// measured on the reference set's scrolled page, cutting takes GPT-4o from 39.53 % to 3.99 % and
+	// Qwen3-VL-2B from 1.00 % to 10.63 %. The default is on, which is what every cloud backend wants
+	// and what the local models that ship today want; a caller with a model that reads a tall image
+	// natively passes false.
+	const splitTall = options.splitTall ?? true;
 	const lines = page.text ? layoutText(page.text).lines.filter((line) => line.text.trim() !== "") : [];
 	const whole: PagePart[] = [{ kind: "ink", scene: page }];
 	// No typed text: the only question left is whether the ink itself is too tall to read in one image.
 	if (lines.length === 0) {
+		if (!splitTall) return whole;
 		const tall = splitTallInk(page).map((scene): PagePart => ({ kind: "ink", scene }));
 		return tall.length > MAX_INK_PARTS ? whole : tall;
 	}
@@ -209,7 +216,8 @@ export function splitAtTypedText(page: RmPage): PagePart[] {
 			pending = [];
 			// Each run of ink between typed lines is still a page image, and still worth cutting if it is
 			// far taller than it is wide.
-			for (const scene of splitTallInk(inkOnly(page, slots[i]))) parts.push({ kind: "ink", scene });
+			const run = inkOnly(page, slots[i]);
+			for (const scene of splitTall ? splitTallInk(run) : [run]) parts.push({ kind: "ink", scene });
 		}
 		if (i < lines.length) pending.push(lines[i].text);
 	}

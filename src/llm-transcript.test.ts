@@ -382,3 +382,29 @@ describe("splitTallInk on the pages that have no shape to judge", () => {
 		expect(splitAtTypedText(pageOf(strokes))).toHaveLength(1);
 	});
 });
+
+/**
+ * Whether a tall page is cut is a property of the model that will read it, not of the page. Measured
+ * on the reference set's scrolled page: GPT-4o 39.53 % -> 3.99 % and Qwen2.5-VL-7B 4.32 % -> 1.00 %,
+ * against Qwen3-VL-2B 1.00 % -> 10.63 % the other way.
+ */
+describe("splitAtTypedText, for a model that reads a tall image natively", () => {
+	function tallPage(): RmPage {
+		const strokes = [0, 1000, 2000, 3000].map((y, i) => ({
+			layerId: "l", id: `b${i}`, timestamp: "1", penType: 0, color: 0, brushSize: 2,
+			points: [{ x: 0, y }, { x: 800, y: y + 40 }],
+		}));
+		return { formatVersion: 6, layers: [{ id: "l", name: null, strokes }] } as unknown as RmPage;
+	}
+
+	it("cuts by default, which is what every cloud backend and both shipped models want", () => {
+		expect(splitAtTypedText(tallPage()).length).toBeGreaterThan(1);
+	});
+
+	it("sends the page whole when the model says not to cut it", () => {
+		const parts = splitAtTypedText(tallPage(), { splitTall: false });
+
+		expect(parts).toHaveLength(1);
+		expect(parts[0].kind === "ink" && parts[0].scene.layers[0].strokes).toHaveLength(4);
+	});
+});
