@@ -670,12 +670,15 @@ describe("the backend dropdown", () => {
 		const { tab } = await tabWith();
 		const desc = row(draw(tab), "Backend").desc;
 
-		expect(desc).toContain("Apple Vision runs locally and privately on macOS 13 or later");
+		expect(desc).toContain("Apple Vision runs on your Mac");
 		// Both clauses are true of this build: the localhost servers are on-device, the six providers
 		// are cloud. The sentence is composed rather than fixed because the three cases are three
-		// different promises.
-		expect(desc).toContain("needs no account and no key");
-		expect(desc).toContain("using your own API key");
+		// different promises -- the unmetered two share one, which is why the second clause says "so
+		// does" rather than making it again.
+		expect(desc).toContain("So does a local model");
+		expect(desc).toContain("your own API key");
+		// The macOS floor belongs on the option that cannot run, not in a description of all of them.
+		expect(desc).not.toContain("macOS 13");
 	});
 });
 

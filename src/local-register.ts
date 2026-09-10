@@ -233,7 +233,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 		new Setting(card)
 			.setName("Model")
 			.setDesc(
-				`Sorted by how well each read the fifteen public reference pages. Lower is better; the memory figure is what it uses while a page is read. ${
+				`Character error on fifteen reference pages, and the memory used while a page is read. Lower is better. ${
 					MODEL_GENERATIONS.filter((candidate) => !choices.includes(candidate))
 						.map((candidate) => `${candidate.label} needs ${candidate.floorGb[context.platform]} GB and is not offered here.`)
 						.join(" ")

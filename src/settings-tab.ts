@@ -584,13 +584,16 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			// promises and one sentence cannot make all of them (free-localhost-ocr spec §4.1).
 			.setDesc(
 				[
-					"Apple Vision runs locally and privately on macOS 13 or later — no account, key, or network.",
-					// Covers both unmetered families in one clause, because both are true of both: the
-					// downloadable model and a server you run yourself. Not "sends nothing anywhere" --
-					// a `custom` endpoint may well be another box on your LAN, and the honest claim is
-					// about who owns it, not about whether a packet moves.
-					hasOnDeviceBackends(ocrBackendEntries()) ? "A local model — downloaded, or a server you run yourself — needs no account and no key." : "",
-					hasCloudBackends(ocrBackendEntries()) ? "The cloud providers send each page's render to that provider, using your own API key." : "",
+					// The macOS floor is deliberately not repeated here: where Vision cannot run, the
+					// dropdown option itself reads "Apple Vision — needs macOS 13 or later", which is the
+					// place a reader can act on it.
+					"Apple Vision runs on your Mac — no account, key, or network.",
+					// "So does" rather than a second full promise: both unmetered families make the same
+					// one, and stating it twice is what made this description three long sentences. Not
+					// "sends nothing anywhere" -- a `custom` endpoint may well be another box on your LAN,
+					// and the honest claim is about who owns it, not about whether a packet moves.
+					hasOnDeviceBackends(ocrBackendEntries()) ? "So does a local model, downloaded or a server you run yourself." : "",
+					hasCloudBackends(ocrBackendEntries()) ? "A cloud provider needs your own API key, and each page is sent to it." : "",
 				]
 					.filter(Boolean)
 					.join(" "),

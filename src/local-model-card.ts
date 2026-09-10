@@ -132,8 +132,7 @@ export const QUALITY_LINE =
  * accurate option. On a model already downloaded and selected there is nothing left to compare -- the
  * only sentence still doing work is the one that says what a mistake will look like.
  */
-export const QUALITY_LINE_SHORT =
-	"This model's misreads come out as fluent text, so check anything that matters against the handwriting.";
+export const QUALITY_LINE_SHORT = "Misreads come out as fluent text — check anything that matters against the handwriting.";
 
 /**
  * The background-sync gate's own copy. Money is gone from it entirely: this costs none (§7.5).
@@ -252,9 +251,9 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				// Stated as a trade with both numbers in it, and never started for the user: what they
 				// have works, and a multi-gigabyte download is not something a plugin update may decide.
 				paragraphs.push(
-					`${state.newer.label} reads the same reference pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
-						`It is a ${gib(state.newer.downloadBytes)} download and it installs beside the model you have, which keeps working and stays until you remove it.`,
-					"Notes you have already transcribed are not redone — use 'Re-transcribe everything' afterwards if you want them redone.",
+					`${state.newer.label} reads the same pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
+						`A ${gib(state.newer.downloadBytes)} download, installed beside the model you have, which keeps working until you delete it.`,
+					"Notes already transcribed are not redone; 'Re-transcribe everything' does that.",
 				);
 				actions.unshift({ id: "update", label: `Get ${state.newer.label}`, emphasis: "cta" });
 			}
