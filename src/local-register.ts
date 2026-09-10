@@ -8,7 +8,7 @@
 
 import { Notice, Platform, Setting } from "obsidian";
 import { backgroundConsentDesc, cardCopy, deleteConfirmation, type LocalCardState, newerModelOffer } from "./local-model-card";
-import { planCleanup } from "./local-model-download";
+import { formatBytes, planCleanup } from "./local-model-download";
 import { localModelBlock, localModelUnavailableLabel } from "./local-model-gate";
 import {
 	discardPartialDownload,
@@ -262,7 +262,9 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 				for (const candidate of choices) {
 					dropdown.addOption(
 						candidate.dir,
-						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${(candidate.peakRssBytes / 1024 ** 3).toFixed(1)} GB${
+						// Same unit as the card's Memory line: this divided by 1024³ while the card divided by
+						// 10⁹, so one screen said 2.9 GB and 3.1 GB of the same figure.
+						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${formatBytes(candidate.peakRssBytes)}${
 							candidate === byRule ? " (default)" : ""
 						}`,
 					);
