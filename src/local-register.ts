@@ -167,11 +167,25 @@ function sweepUnfinishedDirectories(paths: LocalModelPaths, inUse: ModelGenerati
 	for (const name of plan.deleteSilently) removeModelDirectory(paths, name);
 }
 
-/** Starts (or restarts) the download and re-renders as it moves. */
-function beginDownload(paths: LocalModelPaths, rerender: () => void, generation: ModelGeneration = MODEL_GENERATIONS[0]): void {
+/**
+ * Starts (or restarts) the download and re-renders as it moves.
+ *
+ * `into` is where the files land and `busyPaths` is what the "is anything transcribing" guard reads,
+ * and they are the same directory in every case but one: taking the offer of a newer model writes into
+ * a directory nothing has ever locked, while the transcription that must not be disturbed is holding
+ * the *current* model's lock. Passing the target to the guard would have made it answer about an empty
+ * directory and always say no.
+ */
+function beginDownload(
+	into: LocalModelPaths,
+	rerender: () => void,
+	generation: ModelGeneration = MODEL_GENERATIONS[0],
+	busyPaths: LocalModelPaths = into,
+): void {
+	const paths = into;
 	const platform = localModelPlatform();
 	if (!platform) return;
-	if (isLocalModelBusy(paths)) {
+	if (isLocalModelBusy(busyPaths)) {
 		// The guard names a *transcription*, not a download: `isLocalModelBusy` is only true for a held
 		// lock with no `.part` beside it (§5.4). A vault that is downloading is caught earlier and much
 		// more usefully, by the `foreign-download` card state, which shows its progress instead of a
@@ -242,7 +256,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 						// The one action that writes into a *different* directory than the one in use: the
 						// newer model installs beside the working one, which is what makes it an offer.
 						case "update":
-							beginDownload(newerPaths ?? paths, rerender, newerGeneration(generation) ?? generation);
+							beginDownload(newerPaths ?? paths, rerender, newerGeneration(generation) ?? generation, paths);
 							break;
 						case "cancel":
 							download?.cancel();
