@@ -366,3 +366,17 @@
       file: src/local-model-download.test.ts
       test: "chooseGeneration against the machine > still names a model on a machine that can run none of them"
 
+    - id: E31.10
+      scenario: The consent card, for whichever model this machine would actually fetch
+      expect: Every figure is that model's own -- its name, its licence, its download size, the memory it holds while a page is read, and the memory it needs. Three generations ship and they differ by a factor of four in both, so a constant here would describe somebody else's Mac
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "consent (§7.2) > states privacy, licence and this model's own memory"
+
+    - id: E31.11
+      scenario: A machine small enough that the smallest model is the one a fresh install gets
+      expect: The card quotes that model throughout and never names a larger one. The download button used to promise 6.2 GB to a machine that fetches 1.6 GB
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "consent (§7.2) > quotes the smallest model's own figures when that is the one this machine would fetch"
+

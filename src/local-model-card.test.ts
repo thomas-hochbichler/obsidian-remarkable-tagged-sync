@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MODEL_GENERATIONS } from "./local-model-artefacts";
 import {
-	BACKGROUND_CONSENT_DESC,
+	backgroundConsentDesc,
 	type CardCopy,
 	cardCopy,
 	deleteConfirmation,
@@ -31,7 +31,7 @@ const EVERY_STATE: LocalCardState[] = [
 ];
 
 function copyFor(state: LocalCardState, settings: Record<string, unknown> = {}): CardCopy {
-	return cardCopy(state, "darwin", settings);
+	return cardCopy(state, "darwin", settings, MODEL_GENERATIONS[0]);
 }
 
 describe("every state", () => {
@@ -96,18 +96,29 @@ describe("consent (§7.2)", () => {
 		expect(text).toContain("Delete button");
 	});
 
-	it("states privacy, licence and memory", () => {
+	// Every figure here is the chosen model's own. Three generations ship and they differ by a factor
+	// of four in download and in working set, so a constant would describe somebody else's Mac.
+	it("states privacy, licence and this model's own memory", () => {
 		expect(text).toContain("No account, no key, no network");
-		expect(text).toContain("Apache-2.0");
-		expect(text).toContain("32 GB of memory recommended");
+		expect(text).toContain(`${MODEL_GENERATIONS[0].label} · Apache-2.0`);
+		expect(text).toContain(`${MODEL_GENERATIONS[0].floorGb.darwin} GB of memory needed`);
+	});
+
+	it("quotes the smallest model's own figures when that is the one this machine would fetch", () => {
+		const smallest = MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
+		const line = cardCopy({ kind: "absent" }, "darwin", {}, smallest).paragraphs.join(" ");
+
+		expect(line).toContain(smallest.label);
+		expect(line).toContain(`${smallest.floorGb.darwin} GB of memory needed`);
+		expect(line).not.toContain(MODEL_GENERATIONS[0].label);
 	});
 
 	it("asks for background consent here, where the estimate is already on screen", () => {
 		expect(copy.showsBackgroundConsent).toBe(true);
-		expect(BACKGROUND_CONSENT_DESC).toContain("Off by default");
+		expect(backgroundConsentDesc(MODEL_GENERATIONS[0])).toContain("Off by default");
 		// Money is gone from the copy entirely: a local model costs none.
-		expect(BACKGROUND_CONSENT_DESC.toLowerCase()).not.toContain("money");
-		expect(BACKGROUND_CONSENT_DESC.toLowerCase()).not.toContain("api");
+		expect(backgroundConsentDesc(MODEL_GENERATIONS[0]).toLowerCase()).not.toContain("money");
+		expect(backgroundConsentDesc(MODEL_GENERATIONS[0]).toLowerCase()).not.toContain("api");
 	});
 });
 
@@ -149,7 +160,7 @@ describe("the speed line (§7.3)", () => {
 	});
 
 	it("never claims a Windows figure was measured", () => {
-		const line = cardCopy({ kind: "absent" }, "win32", {}).paragraphs.join(" ");
+		const line = cardCopy({ kind: "absent" }, "win32", {}, MODEL_GENERATIONS[0]).paragraphs.join(" ");
 
 		expect(line).toContain("Estimated, never measured on Windows hardware");
 	});
