@@ -24,12 +24,23 @@ const median = (values) => {
 };
 
 /**
- * One night's OCR measurements, extracted from a committed verdict -- or null when that night did
- * not really measure (an `unknown` part carries no numbers worth baselining).
+ * One night's OCR measurements, extracted from a committed verdict -- or null when that night
+ * produced no numbers at all.
+ *
+ * **The numbers decide, not the part's status.** That status is the worst of every backend
+ * (`mergeBackendStatuses`), which was a sound gate while three backends ran and became a trap at
+ * eight: one rate-limited page on one model turns the whole part `unknown`, and rejecting the part
+ * threw away the seven backends that had measured cleanly. Both nights after the set grew to eight
+ * were discarded that way, and the five new backends sat at zero recorded nights while their
+ * figures were already in the file.
+ *
+ * Nothing is softened by reading them. Every backend without a numeric CER is dropped below, the
+ * baseline is keyed per backend *and* per page, and a 429 on page 10 therefore means exactly what
+ * it is -- one sample fewer for page 10, on that one model.
  */
 export function nightFromVerdict(verdict) {
 	const part = verdict?.parts?.ocr;
-	if (!part || !["pass", "degraded", "catastrophe"].includes(part.status)) return null;
+	if (!part) return null;
 	const detail = part.detail ?? {};
 	const backends = {};
 	for (const [key, backend] of Object.entries(detail.backends ?? {})) {

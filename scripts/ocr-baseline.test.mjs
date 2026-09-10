@@ -30,6 +30,35 @@ describe("extracting a night from a committed verdict", () => {
 		expect(nightData.backends[KEY].pages).toEqual({ "01": 0.01 });
 		expect(nightFromVerdict({ parts: { ocr: { status: "unknown", measuredAt: "t", detail: {} } } })).toBeNull();
 	});
+
+	/**
+	 * The part's status is the worst of every backend, so one rate-limited page on one model made the
+	 * whole night `unknown` -- and the old status gate then discarded the seven backends that had
+	 * measured cleanly. Both nights after the set grew to eight were lost that way.
+	 */
+	it("keeps the backends that measured when another one could not", () => {
+		const mixed = {
+			parts: {
+				ocr: {
+					status: "unknown",
+					measuredAt: "t",
+					detail: {
+						promptSha: "abc",
+						renderVersion: 30,
+						backends: {
+							[KEY]: { status: "pass", model: "m", pages: { "01": { cer: 0.01 } } },
+							"openrouter/qwen/qwen3-vl-8b-instruct": { status: "unknown", model: "q", pages: { "10": { cer: null, problem: "unavailable" } } },
+						},
+					},
+				},
+			},
+		};
+
+		const nightData = nightFromVerdict(mixed);
+		expect(nightData.backends[KEY].pages).toEqual({ "01": 0.01 });
+		// The backend that answered nothing contributes nothing, rather than contributing a hole.
+		expect(nightData.backends["openrouter/qwen/qwen3-vl-8b-instruct"]).toBeUndefined();
+	});
 });
 
 describe("the baseline computation (§5)", () => {
