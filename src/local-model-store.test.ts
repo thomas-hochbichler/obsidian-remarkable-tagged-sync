@@ -184,6 +184,16 @@ describe("deriveLocalModelState", () => {
 	 * The state the card exists to explain: antivirus takes the 12 MB engine and leaves the 5.5 GB
 	 * model alone. Reading it as "absent" would tell the user to download everything again.
 	 */
+	/**
+	 * A second attempt that lost a race with the one that finished leaves its `.part` beside the
+	 * verified pair. Read as "partial", that put a *Discard 6.5 GB* button under a model that had just
+	 * been verified -- and it would have deleted it.
+	 */
+	it("is ready when a stray part file sits beside a verified model", () => {
+		const stray = snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: true, partPresent: true });
+		expect(deriveLocalModelState(stray, NOW, EXPECTED)).toBe("ready");
+	});
+
 	it("is removed when the model survived but the engine was taken", () => {
 		const state = deriveLocalModelState(snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: false }), NOW, EXPECTED);
 		expect(state).toBe("removed");

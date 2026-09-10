@@ -451,3 +451,14 @@
       file: src/local-model-card.test.ts
       test: "consent (§7.2) > quotes the smallest model's own figures when that is the one this machine would fetch"
 
+- feature: E35
+  name: A stray part beside a verified model
+  code: src/local-model-store.ts
+  tier: free
+  scenarios:
+    - id: E35.1
+      scenario: The pair is verified and full-size, and a `.part` from an attempt that lost the race is still beside it
+      expect: Ready, not partial. Nothing fetches a file that is already complete, so the part is a leftover -- and "partial" put a Resume button and a *Discard 6.5 GB* button under a model that had just been verified, the second of which would have deleted it
+      layer: pure
+      file: src/local-model-store.test.ts
+      test: "deriveLocalModelState > is ready when a stray part file sits beside a verified model"

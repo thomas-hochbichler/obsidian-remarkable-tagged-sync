@@ -175,15 +175,23 @@ export function isLockFresh(lockHeldAtMs: number | null, nowMs: number): boolean
  */
 export function deriveLocalModelState(snapshot: LocalModelSnapshot, nowMs: number, expected: ExpectedModelBytes): LocalModelState {
 	if (snapshot.corruptMarked) return "corrupt";
+
+	// Size, not hash: the check runs on every plugin load, and it still catches deletion and truncation.
+	const sized = snapshot.modelBytes === expected.modelBytes && snapshot.mmprojBytes === expected.mmprojBytes;
+	// Judged before the `.part`, because a `.part` beside a verified, full-size pair is not a download:
+	// nothing fetches a file that is already complete. It is a leftover -- a second attempt that lost
+	// a race with the one that finished -- and reading it as "partial" put a Resume button and a
+	// *Discard 6.5 GB* button under a model that had just been verified, the second of which would
+	// have deleted it.
+	if (snapshot.verifiedPresent && sized) return snapshot.runtimeExecutablePresent ? "ready" : "removed";
+
 	if (snapshot.partPresent) return isLockFresh(snapshot.lockHeldAtMs, nowMs) ? "downloading" : "partial";
 
 	const complete = snapshot.modelBytes !== null && snapshot.mmprojBytes !== null;
 	if (!complete) return "absent";
 	if (!snapshot.verifiedPresent) return "verifying";
-	// Size, not hash: the check runs on every plugin load, and it still catches deletion and truncation.
-	if (snapshot.modelBytes !== expected.modelBytes || snapshot.mmprojBytes !== expected.mmprojBytes) return "absent";
-	if (!snapshot.runtimeExecutablePresent) return "removed";
-	return "ready";
+	// Verified, but a file is no longer the size the marker vouched for.
+	return "absent";
 }
 
 /** True when the state means a transcription can start right now. */

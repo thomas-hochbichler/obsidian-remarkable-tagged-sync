@@ -15,6 +15,7 @@ import {
 	type DownloadHandle,
 	foreignDownloadPercent,
 	partialBytes,
+	removeStaleParts,
 	removeLocalModel,
 	startLocalModelDownload,
 } from "./local-model-fetch";
@@ -193,6 +194,13 @@ function beginDownload(into: LocalModelPaths, rerender: () => void, generation: 
 		new Notice("Another vault is transcribing right now. Try again in a moment.");
 		return;
 	}
+	const inFlight = download?.progress().phase;
+	if (inFlight !== undefined && inFlight !== "done" && inFlight !== "failed") {
+		// Two fetchers appending to one `.part` is how a verified model ends up with a stray part
+		// beside it. The card should never offer the button while this instance is downloading, but
+		// the guard belongs here, where the second download would actually start.
+		return;
+	}
 	runtimeFailure = null;
 	download = startLocalModelDownload(paths, platform, rerender, generation);
 	void download.finished.then(() => rerender());
@@ -211,6 +219,9 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	sweepUnfinishedDirectories(paths, generation);
 
 	const state = currentCardState(paths, generation, context);
+	// A leftover `.part` beside a model that is ready is ignored by the state rule; here it is also
+	// removed, for an install that got one before the download learnt to clean up after itself.
+	if (state.kind === "ready") removeStaleParts(paths);
 	// Where the newer model would land, resolved once so the update button does not have to.
 	const newer = betterGeneration(generation, context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
