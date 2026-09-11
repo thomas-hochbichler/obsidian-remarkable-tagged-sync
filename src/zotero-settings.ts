@@ -67,6 +67,19 @@ export function zoteroAllowed(entitlement: Entitlement): boolean {
 	return entitlement.tier !== "free";
 }
 
+/**
+ * Why a Zotero command has nothing to do, in the two ways {@link createZoteroClientFor} answers `null`.
+ *
+ * Only ever reached by a command that *was* registered, which is why the second sentence is about a
+ * licence that has ended rather than about one that was never bought: a vault that has never had Pro
+ * registers nothing at all (spec §5), so nobody there can arrive here.
+ */
+export function zoteroUnavailable(entitlement: Entitlement): string {
+	return zoteroAllowed(entitlement)
+		? "Connect Zotero first — Settings → Zotero."
+		: "Your Tagged Sync Pro licence has ended, so Zotero is switched off. Nothing in your library has been changed.";
+}
+
 /** Has the user set up either connection? Says nothing about whether it answers. */
 export function zoteroConfigured(settings: ZoteroSettings): boolean {
 	return settings.apiKey !== null || settings.useLocal;

@@ -26,6 +26,8 @@ export interface PartialOutcome {
 	readonly shrunkNotes: number;
 	/** The backend's own sentences, one per distinct warning -- see `SyncResult.backendWarnings`. */
 	readonly backendWarnings?: readonly string[];
+	/** What the Zotero half could not do -- see `SyncResult.zoteroNotices` (spec §3.4.2, §3.4.3). */
+	readonly zoteroNotices?: readonly string[];
 }
 
 /**
@@ -51,6 +53,10 @@ export function partialOutcomeNotices(result: PartialOutcome): NoticeText[] {
 	// gone -- was written into diagnostics and nowhere else, so a notebook that lost three pages of
 	// five reported a clean sync. The backend's own sentence goes up as it was written.
 	for (const warning of result.backendWarnings ?? []) notices.push({ message: warning, timeout: LONG_NOTICE_MS });
+	// Beside the backend's warnings and for the same reason: the sync itself succeeded, and the half
+	// that did not is invisible from anywhere else. Its sentences are already one per document and
+	// already say what to do about it, so they go up as they were written (spec §3.4.2).
+	for (const notice of result.zoteroNotices ?? []) notices.push({ message: notice, timeout: LONG_NOTICE_MS });
 	if (result.editedNotesSkipped > 0) {
 		notices.push({
 			message:

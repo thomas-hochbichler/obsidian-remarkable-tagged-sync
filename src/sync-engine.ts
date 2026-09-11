@@ -1,6 +1,9 @@
 import type { DocumentContent, Entry, LegacyDocumentContent, RawRemarkableApi, RemarkableApi } from "rmapi-js";
 import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, writeAttachment } from "./attachment-writer";
+import { md5Hex } from "./file-md5";
 import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipeline";
+import { type DigestPage, renderDigest } from "./digest-builder";
+import type { ZoteroNoteParts, ZoteroPass } from "./zotero-sync";
 import {
 	blockHashOf,
 	extractManagedBlock,
@@ -306,6 +309,12 @@ export interface SyncDeps {
 	 */
 	saveIndex?: (index: SyncIndex) => Promise<void>;
 	/**
+	 * The Zotero half of the run (spec §3), or absent -- which is what a free vault, a lapsed licence
+	 * and a vault that has configured no Zotero connection all arrive as. The engine asks it once per
+	 * PDF-backed note, **after** that note is written, and nothing it answers can fail the sync.
+	 */
+	zotero?: ZoteroPass;
+	/**
 	 * Polled at unit boundaries: `true` ends the run early, in a state the next sync resumes from.
 	 * Only ever read, never awaited -- nothing in this path can actually be aborted (the cloud API
 	 * goes through Obsidian's `requestUrl`, which takes no AbortSignal, and OCR runs in subprocesses
@@ -376,6 +385,15 @@ export interface SyncResult {
 	 * clean sync, with the sentence written into diagnostics and nowhere else.
 	 */
 	backendWarnings: string[];
+	/**
+	 * What the Zotero half could not do, one entry per distinct sentence (spec §3.4.2, §3.4.3).
+	 *
+	 * Its own channel rather than `skipErrors`, for the same reason `backendWarnings` has one: these
+	 * are said *to the user* when the run ends. A sync whose notes all landed and whose highlights
+	 * silently stopped reaching Zotero the day a key expired is the failure §3.4 is written against,
+	 * and diagnostics nobody opens is not where that gets noticed.
+	 */
+	zoteroNotices: string[];
 }
 
 /**
@@ -918,6 +936,21 @@ interface UnitParams {
 	pageContentHash?: (pageId: string) => string;
 	/** `transcriptFingerprint` of the backend this run, stamped on whatever the row stores. */
 	transcriptFingerprint?: string;
+	/**
+	 * What the Zotero half of the run needs about this unit, and the switch that decides whether it
+	 * runs for this unit at all.
+	 *
+	 * One field rather than two, because the two are one decision. It is supplied for a PDF-backed
+	 * unit and for no other: a Zotero-linked document *is* a PDF, a notebook has no source file to
+	 * hash, nothing in a library could ever match it, and asking would cost every sync of every
+	 * handwritten notebook one listing of the whole library.
+	 */
+	zotero?: {
+		/** The digest's own entries: the rectangles that go into Zotero, and the block ids its links hang on. */
+		readonly pages: readonly DigestPage[];
+		/** MD5 of the source PDF the tablet holds -- what §2.3 matches on. Read only when something asks. */
+		md5(): Promise<string | null>;
+	};
 }
 
 /**
@@ -962,6 +995,8 @@ interface WrittenUnit {
 	ocr: OcrResult["status"];
 	ocrWarnings: string[];
 	shrink: string | null;
+	/** What the Zotero half had to say about this note (spec §3.4.2, §3.4.3). Empty on every other run. */
+	zoteroNotices: readonly string[];
 }
 
 interface WriteUnitResult {
@@ -1066,7 +1101,7 @@ function storedPages(readPages: { id: string; label: number }[], hashOf: (pageId
 
 /** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
-	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend"> & { attachmentsFolder: string; newNoteId: () => string },
+	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<WriteUnitResult> {
@@ -1106,6 +1141,26 @@ async function writeUnit(
 
 	const notePath = await write(fields);
 
+	// ⚠️ Everything Zotero happens **after** that line and nowhere else (spec §3.4.1). The note above
+	// is complete: every highlight the tablet had is in it, at a path the index is about to name. What
+	// follows can fail in every way a network and somebody else's application can fail, and all it
+	// costs is the second write below.
+	let zotero: ZoteroNoteParts | undefined;
+	let withZotero = fields;
+	if (params.zotero !== undefined && deps.zotero !== undefined) {
+		const unit = params.zotero;
+		zotero = await deps.zotero.run({ docId: params.docId, visibleName: params.source, notePath, pages: unit.pages, md5: () => unit.md5() });
+		// Rewritten only where there is something to add. A vault with no Zotero, a document that is
+		// not linked and a licence that lapsed all arrive here with nothing, and the note keeps the
+		// one write it already had.
+		if (zotero.line !== null || Object.keys(zotero.links).length > 0) {
+			// The digest is re-rendered from the same entries and the same embed path the first render
+			// used, so the only difference between the two writes is the `in Zotero` link per quote.
+			withZotero = { ...fields, zoteroLine: zotero.line, digest: renderDigest(embedPath, [...params.zotero.pages], zotero.links) };
+			await writeNote(deps.noteStore, "", withZotero, notePath);
+		}
+	}
+
 	// Carried from the row this write replaces -- which is the rename's source row when a mapped tag
 	// was renamed, so the note keeps its identity across that too -- and only minted for a note that
 	// has never had one. Minted even with the feature off: it costs an index field, and a note that
@@ -1121,7 +1176,10 @@ async function writeUnit(
 		if (written !== null) {
 			const applied = applyFrontmatter(
 				written,
-				{ ...params.frontmatter, synced: formatLocalMinute(new Date(synced)), noteId },
+				// The Zotero keys are spread in rather than defaulted, and that is the whole of §5's
+				// lapsed licence: with no pass there is no `zoteroKey` field at all, which `frontmatter.ts`
+				// reads as "I do not know" and leaves whatever the note already carries exactly where it is.
+				{ ...params.frontmatter, ...zotero?.keys, synced: formatLocalMinute(new Date(synced)), noteId },
 				params.previous?.frontmatterTags ?? [],
 			);
 			if (applied.content !== written) await deps.noteStore.write(notePath, applied.content);
@@ -1154,7 +1212,7 @@ async function writeUnit(
 				status: "active",
 				syncedAt: synced,
 				renderVersion: RENDER_VERSION,
-				blockHash: managedBlockHash(fields),
+				blockHash: managedBlockHash(withZotero),
 				highlightCount,
 				frontmatterTags,
 				...store,
@@ -1164,6 +1222,7 @@ async function writeUnit(
 			ocr: ocr.status,
 			ocrWarnings: ocr.warnings,
 			shrink: shrinkWarning(params, highlightCount),
+			zoteroNotices: zotero?.notices ?? [],
 		},
 	};
 }
@@ -1707,7 +1766,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const { api, tagRouter, now, ocrBackend } = deps;
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
 	const newNoteId = deps.newNoteId ?? (() => crypto.randomUUID());
-	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, newNoteId };
+	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, newNoteId, zotero: deps.zotero };
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 
@@ -1721,7 +1780,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [] };
+		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -1737,6 +1796,19 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const skippedDocIds = new Set<string>();
 	const skipErrors: string[] = [];
 	const backendWarnings: string[] = [];
+	const zoteroNotices: string[] = [];
+	/**
+	 * What the Zotero half of one note had to say, into both channels it belongs in.
+	 *
+	 * Deduplicated for the report and not for diagnostics, because they answer different questions: a
+	 * document synced under two mapped tags is two notes of one paper, and the reader is owed the
+	 * sentence once -- while "which notes did not get their highlights" is a count, and dropping the
+	 * second one there would lose a note.
+	 */
+	const reportZotero = (notices: readonly string[]): void => {
+		for (const notice of notices) if (!zoteroNotices.includes(notice)) zoteroNotices.push(notice);
+		skipErrors.push(...notices);
+	};
 	let shrunkNotes = 0;
 	let relaidDocuments = 0;
 	// Pages this run did not have to read again, for the diagnostics line. The characteristic bug
@@ -1776,6 +1848,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			pageTranscriptionsConsidered,
 			skipErrors,
 			backendWarnings,
+			zoteroNotices,
 		};
 	};
 
@@ -1882,6 +1955,16 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		let sourcePdf: Promise<Uint8Array> | null = null;
 		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
 
+		/**
+		 * What §2.3 matches a document on: the MD5 of the file the tablet holds, not of our render.
+		 *
+		 * Once per document however many units it has, and only where something asks -- which is only
+		 * a document the Zotero half has no link for. A linked one is never matched again, so the
+		 * bytes of every already-linked PDF in the account are never read for this at all.
+		 */
+		let sourceMd5: Promise<string> | null = null;
+		const zoteroMd5 = pdfBacked ? () => (sourceMd5 ??= getSourcePdf().then(md5Hex)) : undefined;
+
 		// The book behind a rendered EPUB, on the same terms: at most once per doc, and only when a
 		// digest has something whose wording is worth correcting (see `DigestSource.book`).
 		let book: Promise<EpubBook | null> | null = null;
@@ -1903,7 +1986,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			pageId: string | null,
 			pages: DigestPageInput[],
 			unit: string,
-		): Promise<{ markdown: string; ocr: OcrStatus | null; covered: number[] }> => {
+		): Promise<{ markdown: string; ocr: OcrStatus | null; covered: number[]; pages: DigestPage[] }> => {
 			try {
 				const build = await buildDigest(
 					// The tick comes from the pipeline's page loop rather than from the backend: it
@@ -1919,11 +2002,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					},
 				);
 				skipErrors.push(...build.warnings);
-				return { markdown: build.markdown, ocr: build.ocr, covered: build.covered };
+				return { markdown: build.markdown, ocr: build.ocr, covered: build.covered, pages: build.pages };
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to build the digest for ${unit}, the note keeps its highlights`, error);
 				skipErrors.push(`failed to build the digest for ${unit}: ${errorText(error)}`);
-				return { markdown: "", ocr: null, covered: [] };
+				return { markdown: "", ocr: null, covered: [], pages: [] };
 			}
 		};
 
@@ -1987,7 +2070,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `"${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName) : { markdown: "", ocr: null, covered: [] };
+			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName) : { markdown: "", ocr: null, covered: [], pages: [] };
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 			// Only for a notebook: a PDF-backed unit's pages carry no id, and its transcript is the
 			// digest's business (issue #117 is scoped to the notebook transcription path). `considered`
@@ -2029,6 +2112,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					frontmatter: unitFrontmatter(tag, null),
 					previous: unit.writtenRow,
 					onPage: bar.page,
+					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, md5: zoteroMd5 },
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2043,6 +2127,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				continue;
 			}
 			const { row, ocr, ocrWarnings, shrink } = written;
+			reportZotero(written.zoteroNotices);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
@@ -2117,7 +2202,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName) : { markdown: "", ocr: null, covered: [] };
+			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName) : { markdown: "", ocr: null, covered: [], pages: [] };
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
 			const { written, emptyBlock } = await writeUnit(
@@ -2142,6 +2227,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					frontmatter: unitFrontmatter(tag, unit.pageId),
 					previous: unit.writtenRow,
 					onPage: bar.page,
+					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, md5: zoteroMd5 },
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2154,6 +2240,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				continue;
 			}
 			const { row, ocr, ocrWarnings, shrink } = written;
+			reportZotero(written.zoteroNotices);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = { ...row, folder };
 			notesWritten++;
@@ -2203,7 +2290,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings };
+	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings, zoteroNotices };
 }
 
 export interface ReTranscribeDeps {

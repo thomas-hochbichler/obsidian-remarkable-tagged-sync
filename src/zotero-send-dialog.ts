@@ -60,7 +60,7 @@ type Step =
 	| { readonly kind: "tag"; readonly item: ZoteroItem; readonly attachment: ZoteroAttachment; readonly options: string[]; tag: string };
 
 class SendDialog extends Modal {
-	private step: Step = { kind: "search" };
+	private step: Step;
 	private query = "";
 	private results: ZoteroItem[] = [];
 	private searched = false;
@@ -70,8 +70,10 @@ class SendDialog extends Modal {
 		app: App,
 		private readonly deps: SendDialogDeps,
 		private readonly onChoice: (choice: SendChoice | null) => void,
+		start: Step = { kind: "search" },
 	) {
 		super(app);
+		this.step = start;
 	}
 
 	onOpen(): void {
@@ -214,4 +216,19 @@ class SendDialog extends Modal {
 /** Opens the dialog and resolves to what the user chose, or `null` if they closed it. */
 export function askWhatToSend(app: App, deps: SendDialogDeps): Promise<SendChoice | null> {
 	return new Promise((resolve) => new SendDialog(app, deps, resolve).open());
+}
+
+/**
+ * The same dialog entered where the caller already knows the paper and the PDF -- the context action
+ * on a note that carries `zotero-key` (§2.4).
+ *
+ * Which is usually **no dialog at all**: a vault with one mapped tag has nothing left to ask, and
+ * opening a window to show somebody a single answer they cannot change is not a question. That is
+ * the same rule the search path follows one step earlier, applied to the one step that is left.
+ */
+export function askWhereToSend(app: App, deps: SendDialogDeps, item: ZoteroItem, attachment: ZoteroAttachment): Promise<SendChoice | null> {
+	const tag = deps.tag;
+	if (tag.kind === "use") return Promise.resolve({ item, attachment, tag: tag.tag });
+	const start: Step = { kind: "tag", item, attachment, options: tag.options, tag: tag.preferred ?? tag.options[0] };
+	return new Promise((resolve) => new SendDialog(app, deps, resolve, start).open());
 }

@@ -149,3 +149,18 @@ describe("a question the user closed", () => {
 		expect(linkFor(stored, DOC)).toEqual(link);
 	});
 });
+
+describe("a link the plugin made by itself", () => {
+	// The disclosure of §2.3's silent row. It has to survive the sync that made it, because the reader
+	// opens the note weeks later -- and it has to be dropped the moment the link stops being ours alone.
+	it("remembers that nobody was asked", () => {
+		const stored = withLink({}, DOC, { ...link, matchedBy: "hash" });
+
+		expect(linkFor(stored, DOC)?.matchedBy).toBe("hash");
+	});
+
+	it("is not what a link the user or Send wrote looks like", () => {
+		expect(linkFor(withLink({}, DOC, link), DOC)?.matchedBy).toBeUndefined();
+		expect(linkFor({ [DOC]: { ...link, matchedBy: "something else" } }, DOC)?.matchedBy).toBeUndefined();
+	});
+});

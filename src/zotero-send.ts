@@ -171,6 +171,35 @@ export function sendState(links: StoredZoteroLinks, attachmentKey: string, onTab
 	return { present, vanished };
 }
 
+/** As much of a sync-index row as "is this document still there?" needs. */
+export interface SyncedDocument {
+	readonly docId: string;
+	readonly status: "active" | "orphaned";
+}
+
+/**
+ * Which linked documents are still on the tablet -- the `onTablet` set {@link sendState} asks for.
+ *
+ * Read off what the last sync saw rather than by listing the account, and that is a deliberate
+ * trade. Listing costs a round trip on the cloud and a full index-and-hash pass over SSH, which is
+ * minutes of work in front of a person who pressed Send and expects a file dialog. What the sync
+ * index holds is the same fact, one sync old.
+ *
+ * The second rule is what makes one-sync-old good enough: a document sent *since* the last completed
+ * sync counts as present. It has not had a chance to appear in the index yet, and the alternative is
+ * worse in exactly the case that matters -- a send, then a second send before the first has ever
+ * synced, would otherwise read as "it vanished", drop the link, and leave two documents on the
+ * tablet with one mapping between them.
+ */
+export function documentsOnTablet(rows: readonly SyncedDocument[], links: StoredZoteroLinks, lastSyncAt: string | null): Set<string> {
+	const present = new Set(rows.filter((row) => row.status === "active").map((row) => row.docId));
+	for (const docId of Object.keys(links)) {
+		const sentAt = linkFor(links, docId)?.sentAt;
+		if (sentAt !== undefined && (lastSyncAt === null || sentAt >= lastSyncAt)) present.add(docId);
+	}
+	return present;
+}
+
 /** How the bytes were come by, for the one sentence the send reports afterwards. */
 export type BytesSource = "file" | "download" | "picked";
 

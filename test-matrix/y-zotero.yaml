@@ -606,6 +606,20 @@
       test: "changing the map > lists the documents this build can act on, and no others"
 
 
+    - id: Y8.21
+      scenario: A link the plugin made off a file hash, with nobody asked
+      expect: "`matchedBy: \"hash\"` survives the round trip. Without it, §2.3's \"note says: matched by file hash\" would be true for one sync and then quietly stop being said -- and a link the plugin made on its own would be indistinguishable from one the user chose"
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a link the plugin made by itself > remembers that nobody was asked"
+
+    - id: Y8.22
+      scenario: A link Send or the user wrote, and one carrying a word this build does not know
+      expect: No `matchedBy`. The clause is a disclosure about *our* decision, so anything that is not exactly "hash" is not one
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a link the plugin made by itself > is not what a link the user or Send wrote looks like"
+
 - feature: Y9
   name: Whether this vault has Zotero at all
   code: src/zotero-settings.ts
@@ -694,6 +708,20 @@
       layer: unit
       file: src/zotero-settings.test.ts
       test: "from the settings block to Zotero and back > stores a newly granted key where the next run will find it"
+
+    - id: Y9.13
+      scenario: A Zotero command run in a vault that has Pro but no connection configured
+      expect: Sent to the settings. The command is registered on the capability, not on the configuration, so a Pro user who has not pasted a key yet is told what to do rather than finding nothing
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "why a Zotero command has nothing to do > sends a Pro vault to the settings"
+
+    - id: Y9.14
+      scenario: A Zotero command run after the licence ended
+      expect: 'Says the licence ended **and** that nothing in the library was touched. The second half is the one the user actually wants: an add-only feature switching off must not read as something having been undone'
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "why a Zotero command has nothing to do > tells a lapsed one that nothing in their library has been touched"
 
 - feature: Y10
   name: The Zotero settings section
@@ -1454,6 +1482,20 @@
       file: src/note-builder.test.ts
       test: "buildNoteContent > changes the block hash when the Zotero line does"
 
+    - id: Y15.22
+      scenario: The line of a document the plugin linked by itself, off the file's hash
+      expect: "` · matched by file hash` before the write-back clause. §2.3 links silently on a hash hit, so the note is the only place the user can ever find out that something linked their document to something in their library"
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "a link nobody was asked about > says so in the line, before what happened to the highlights"
+
+    - id: Y15.23
+      scenario: The line of a document the user picked, or that Send put there
+      expect: No such clause. It discloses a decision the plugin made alone, and there was not one
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "a link nobody was asked about > says nothing at all about a link that was asked about or sent"
+
 - feature: Y16
   name: The two Zotero keys in the frontmatter
   code: src/frontmatter.ts
@@ -1739,6 +1781,41 @@
       layer: unit
       file: src/zotero-send.test.ts
       test: 'which route the send takes > is nothing for a vault with neither'
+
+    - id: Y19.18
+      scenario: A linked document with an active row in the sync index
+      expect: Counted as still on the tablet. §2.5 needs that answer before it can offer *Send another copy*, and the last sync is the cheapest place it exists -- listing the account costs a round trip on the cloud and a whole index pass over SSH
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "what is still on the tablet > counts a document the last sync saw"
+
+    - id: Y19.19
+      scenario: A linked document whose row was orphaned
+      expect: Not counted. An orphaned row is exactly what a document leaving the device looks like, and §2.5 then replaces the mapping rather than asking
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "what is still on the tablet > does not count one whose row was orphaned -- that is a document that left the device"
+
+    - id: Y19.20
+      scenario: A second Send of a paper sent since the last completed sync
+      expect: Counted, so the user is asked. Without this rule the first copy reads as vanished, its link is dropped, and two documents on the tablet share one mapping between them
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "what is still on the tablet > counts one sent since the last sync, which has had no chance to appear yet"
+
+    - id: Y19.21
+      scenario: A Send into a vault that has never completed a sync
+      expect: Counted. There is no sync to have seen it, which is not evidence that it is gone
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "what is still on the tablet > counts one sent into a vault that has never completed a sync at all"
+
+    - id: Y19.22
+      scenario: A paper sent, synced past, and never seen in the index
+      expect: Not counted -- the user deleted it on the tablet, or it never arrived. The send replaces the mapping
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "what is still on the tablet > does not count one that was sent, synced past, and never turned up"
 
 - feature: Y20
   name: Sending, and what it records
@@ -2152,6 +2229,27 @@
       file: src/zotero-send-dialog.test.ts
       test: 'closing the dialog > answers nothing when it is dismissed'
 
+    - id: Y23.16
+      scenario: The context action on a note that names its paper, in a vault with one mapped tag
+      expect: No dialog at all. Everything the dialog asks is already answered, and a window showing somebody a single answer they cannot change is not a question
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: "the context action, which already knows the paper and the PDF > opens nothing where there is nothing left to ask"
+
+    - id: Y23.17
+      scenario: The same action in a vault with two mapped tags
+      expect: Only the tag step, with the last-used tag selected. The paper and the PDF are known; the tag is the one thing that is not
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: "the context action, which already knows the paper and the PDF > asks only the tag where there is a choice of them, offering the last one first"
+
+    - id: Y23.18
+      scenario: The last-used tag is not mapped any more
+      expect: The first mapped tag instead. Pre-selecting an unmapped one would send the document with a tag that routes nowhere
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: "the context action, which already knows the paper and the PDF > falls back to the first mapped tag where the last one is not mapped any more"
+
 - feature: Y24
   name: The Zotero send settings
   code: src/settings-tab.ts
@@ -2191,3 +2289,695 @@
       layer: unit
       file: src/settings-tab.test.ts
       test: 'the Zotero section > takes a folder name the user typed'
+
+# The wiring (spec §3.4, §5). Three features, and the order between them is the whole of §3.4.1: the
+# note is on disk before anything here talks to Zotero, so every way a library can fail costs the
+# Zotero part of one note and nothing else. Y25 is the policy, Y28 is where the run puts it, and Y26
+# and Y27 are the two places a person is asked something.
+#
+# The load-bearing rows are Y28.2 (the second write's hash is the row's, or the next sync reads the
+# plugin's own write as a hand edit and never touches the note again) and Y28.8 (a lapsed licence
+# keeps the frontmatter keys, because "I do not know" and "not linked" are different answers).
+
+- feature: Y25
+  name: The Zotero half of a sync
+  code: src/zotero-sync.ts
+  tier: pro
+  scenarios:
+    - id: Y25.1
+      scenario: A linked document whose highlights write back cleanly
+      expect: The callout line of §4 -- the paper, the web library, and the date it was written back
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > names the paper, links the web library and dates the write-back"
+
+    - id: Y25.2
+      scenario: The same document's quotes
+      expect: One `zotero://open-pdf` link per written highlight, on the physical page and the annotation Zotero handed back
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > gives every written highlight its in-Zotero link"
+
+    - id: Y25.3
+      scenario: The note's frontmatter
+      expect: The **item's** key and citekey, never the attachment's. `zotero-key` is the vocabulary ZotLit and Zotero Integration write, and it names the paper there
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > hands back the two frontmatter keys of the item, not of the attachment"
+
+    - id: Y25.4
+      scenario: What is stored after a write-back
+      expect: The annotation map, per block id. Without it the next sync creates a second copy of every highlight in the user's library
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > remembers what it wrote, so the next sync refreshes rather than duplicates"
+
+    - id: Y25.5
+      scenario: A vault talking only to the Zotero desktop app
+      expect: No web-library link. The desktop connection knows the user id, but a vault that never talks to zotero.org has no business printing a zotero.org URL into a note (§4)
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > leaves out the web link for a vault that only talks to the desktop app"
+
+    - id: Y25.6
+      scenario: A vault holding both a literature note about the paper and our own note about it
+      expect: The literature note. Our own notes now carry `zotero-key` too, so the note just written is excluded by path -- otherwise a note would point at its own twin and call it the user's
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > points at the vault's own note about the paper, and never at one of ours"
+
+    - id: Y25.7
+      scenario: A standalone PDF that hangs under no bibliographic item
+      expect: The attachment stands in for the item -- its title in the line, its own key as `zotero-key`. In Zotero it *is* the item, and `zotero://select` opens it
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > stands the attachment in for a standalone PDF that hangs under no item"
+
+    - id: Y25.8
+      scenario: An unlinked document whose bytes hash to exactly one attachment
+      expect: Linked without asking, and the note says "matched by file hash". Identity, not resemblance (§2.3)
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > links it silently when one attachment has exactly these bytes, and says so in the note"
+
+    - id: Y25.9
+      scenario: The same file attached to two items
+      expect: The picker, once, with both candidates and the evidence; the answer is stored
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > asks once when the same file hangs under two items, and remembers the answer"
+
+    - id: Y25.10
+      scenario: The note after the user answered that picker
+      expect: No "matched by file hash". The clause discloses a decision the plugin made alone, and this one was the user's
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > does not claim the answer as its own: a link the user chose says nothing about a hash"
+
+    - id: Y25.11
+      scenario: The user closes the picker without answering
+      expect: Remembered as declined. Without it the same picker opens on every sync, for somebody who has already decided
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > remembers a picker the user closed, so the question is asked once and not every sync"
+
+    - id: Y25.12
+      scenario: The same ambiguity during a background sync
+      expect: Nothing is asked **and** nothing is remembered. A refusal recorded on the user's behalf would spend the one question §2.3 allows on a run nobody was watching
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > never asks in a background run, and never records a refusal the user did not make"
+
+    - id: Y25.13
+      scenario: A document already declined
+      expect: Not asked again, and its bytes are never read -- hashing a file to answer a question nobody will be asked is the cost this skip avoids
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > asks nothing again about a document that was already declined, and reads no bytes for it"
+
+    - id: Y25.14
+      scenario: A document that is already linked
+      expect: Never re-matched, so never re-hashed. Re-matching would undo a correction the user made by hand the moment the library grew a second file with that name
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > never hashes a document it is already linked to"
+
+    - id: Y25.15
+      scenario: A document nothing in the library matches
+      expect: 'No line, no links, and `zoteroKey: null` -- which removes the key. "Not linked" is an answer, unlike "I could not ask"'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > leaves a note with no Zotero part alone, and takes the key off it"
+
+    - id: Y25.16
+      scenario: A run that writes several notes
+      expect: One library listing for the whole run. It is the matcher's entire input and the most expensive thing this feature does; per document it would make a twenty-note sync twenty times as slow at it
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "matching a document nobody has linked > reads the library once however many notes the run writes"
+
+    - id: Y25.17
+      scenario: Zotero unreachable while the write-back runs
+      expect: 'The note still names the paper and carries `not written back: <reason>`; the run gets a sentence naming the document. §3.4.2 -- skipped, and said out loud'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "when Zotero says no > keeps the note's own identity and says in one clause why its marks are not there yet"
+
+    - id: Y25.18
+      scenario: Zotero refuses some of a batch
+      expect: '"N of M highlights written, retry on next sync" in both the note and the run. Add-and-refresh means nothing needs rolling back'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "when Zotero says no > reports a half-written run in both numbers, and keeps the keys it did get"
+
+    - id: Y25.19
+      scenario: The attachment has been trashed or deleted in Zotero
+      expect: '"Zotero: item no longer found", no write-back, and the frontmatter keys left **absent** rather than removed -- the user may put the item back, and the key is the only record of what the document was'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "when Zotero says no > keeps the note and drops the Zotero part when the attachment is gone from the library"
+
+    - id: Y25.20
+      scenario: Anything at all throws -- the listing, the picker, the save
+      expect: Never propagates. The note is already written; this costs its Zotero part and the run hears one sentence
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "when Zotero says no > never throws, whatever the library does, and leaves the note's keys where they are"
+
+    - id: Y25.21
+      scenario: Each of the seven ways Zotero can say no
+      expect: A distinct sentence, about Zotero rather than about us. The note is read months later by somebody asking whether their marks are in their library
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what a failure is called > has a sentence for every way Zotero can say no"
+
+    - id: Y25.22
+      scenario: A failure that is not a Zotero failure at all
+      expect: Its own message, kept
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what a failure is called > keeps the message of anything that is not a Zotero failure at all"
+
+    - id: Y25.23
+      scenario: Several documents skipped in one run
+      expect: 'Both sentences name the document. Two bare "Zotero: 3 of 7" lines in one run are unreadable'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what a failure is called > names the document in both sentences the run raises"
+
+- feature: Y26
+  name: Which paper is this?
+  code: src/zotero-link-dialog.ts
+  tier: pro
+  scenarios:
+    - id: Y26.1
+      scenario: The sync's picker, opened on a filename match
+      expect: The sentence of §2.3's filename row -- that a filename is not identity. The user is being asked precisely because the plugin will not guess
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the sync's picker > says why these are being offered, in the words of the row that offered them"
+
+    - id: Y26.2
+      scenario: Two candidates from one file hash
+      expect: Each named by its paper, with its filename below -- two PDFs of one item differ in nothing else
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the sync's picker > names the paper and the file, because two PDFs of one item differ in nothing else"
+
+    - id: Y26.3
+      scenario: Escape, the background, the close button
+      expect: '`null`, like `confirm-modal`: nothing but a press on *Choose* is an answer, and a stray keystroke must not link somebody''s notes to the wrong paper'
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the sync's picker > answers nothing when it is closed rather than answered"
+
+    - id: Y26.4
+      scenario: A candidate that hangs under no item
+      expect: Its own title, in both lines
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the sync's picker > falls back to the file's own title where the candidate hangs under no item"
+
+    - id: Y26.5
+      scenario: The context action on an item with two PDFs
+      expect: The same list, asked for the other reason -- which file, not which paper. The one the reader annotates is the one the highlights go back onto
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the context action's PDF question > offers the item's own PDFs under the paper's name"
+
+    - id: Y26.6
+      scenario: Typing in the *Link to Zotero item…* command
+      expect: Zotero's own quick search, once the typing settles
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the Link to Zotero item… command > asks Zotero's own search once the typing settles"
+
+    - id: Y26.7
+      scenario: The chosen item has one PDF
+      expect: Linked to it, with no second question
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the Link to Zotero item… command > links straight to the one PDF an item has, without a second question"
+
+    - id: Y26.8
+      scenario: The chosen item has two
+      expect: The PDF question
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the Link to Zotero item… command > asks which PDF where the item has more than one"
+
+    - id: Y26.9
+      scenario: The chosen item has none
+      expect: Says so, with a way back to the search rather than a dead end
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the Link to Zotero item… command > says so where the item has no PDF at all, and goes back rather than dead-ending"
+
+    - id: Y26.10
+      scenario: The dialog before anything is typed
+      expect: No "nothing matches". It would be an answer to a search the user never made
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the Link to Zotero item… command > says nothing matched only once a search has come back"
+
+    - id: Y26.11
+      scenario: The search field cleared
+      expect: The list goes, and so does the sentence about having found nothing
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the Link to Zotero item… command > clears the list when the field is cleared, rather than reporting an empty search"
+
+    - id: Y26.12
+      scenario: A slow answer to a query the user has already typed past
+      expect: Dropped. The dialog is a text field and the user is still typing into it
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "the Link to Zotero item… command > lets a slow answer to an old query be overtaken rather than replace a newer one"
+
+- feature: Y27
+  name: Reaching the machine for a PDF
+  code: src/desktop-files.ts
+  tier: pro
+  scenarios:
+    - id: Y27.1
+      scenario: The absolute path Zotero's desktop connection answered
+      expect: Its bytes. No download, and it works for a linked file that was never in Zotero's storage at all
+      layer: unit
+      file: src/desktop-files.test.ts
+      test: "reading a file Zotero named > hands back its bytes"
+
+    - id: Y27.2
+      scenario: Zotero names a file the user has since moved or deleted
+      expect: '`null`, so §2.4 falls through to the download. Missing is an answer, not a failure'
+      layer: unit
+      file: src/desktop-files.test.ts
+      test: "reading a file Zotero named > answers null for a file that is not there, so the send falls through to the download"
+
+    - id: Y27.3
+      scenario: A permission, a directory, a disk
+      expect: Throws. Falling through would turn it into a needless download of a file that is right there
+      layer: unit
+      file: src/desktop-files.test.ts
+      test: "reading a file Zotero named > lets every other reason through rather than turning it into a needless download"
+
+    - id: Y27.4
+      scenario: A platform with no filesystem to read
+      expect: Refused in words, like every other node reach in this plugin
+      layer: unit
+      file: src/desktop-files.test.ts
+      test: "reading a file Zotero named > refuses on a platform with no filesystem to read"
+
+    - id: Y27.5
+      scenario: The one file dialog of §2.4
+      expect: A PDF file input, opened, and the bytes of what was chosen
+      layer: unit
+      file: src/desktop-files.test.ts
+      test: "the one file dialog > asks for a PDF and hands back the bytes of the one chosen"
+
+    - id: Y27.6
+      scenario: The user cancels it
+      expect: '`null`. A promise settled only by a choice never settles when there is no choice -- and somebody is standing in front of this'
+      layer: unit
+      file: src/desktop-files.test.ts
+      test: "the one file dialog > settles on a cancelled dialog rather than leaving the send waiting for ever"
+
+    - id: Y27.7
+      scenario: A change event carrying no file
+      expect: '`null`'
+      layer: unit
+      file: src/desktop-files.test.ts
+      test: "the one file dialog > answers null for a change event that carries no file at all"
+
+- feature: Y28
+  name: Where the run puts the Zotero half
+  code: src/sync-engine.ts
+  tier: pro
+  scenarios:
+    - id: Y28.1
+      scenario: A PDF-backed note being synced
+      expect: Zotero is asked only **after** the note is on disk, and about that note's path. §3.4.1, as a fact about the code rather than a rule to remember
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > asks Zotero only after the note is written, and about the note that is already there"
+
+    - id: Y28.2
+      scenario: The second write, with the callout line in it
+      expect: The line is inside the ownership callout **and** the row's `blockHash` is the hash of what is on disk. Otherwise the next sync reads the plugin's own second write as a hand edit and refuses to touch the note ever again
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > writes the line into the ownership callout, and the row's hash agrees with what is on disk"
+
+    - id: Y28.3
+      scenario: The Pro frontmatter toggle is on
+      expect: '`zotero-key` and `citekey` merged into the block the toggle already owns'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > writes the two Zotero keys into the frontmatter the Pro toggle already owns"
+
+    - id: Y28.4
+      scenario: A handwritten notebook
+      expect: Not offered to Zotero at all. It has no source file to hash, nothing in a library could match it, and asking would cost every sync one listing of the whole library
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > offers a notebook to nothing: there is no source file for Zotero to hold"
+
+    - id: Y28.5
+      scenario: What §2.3 matches on
+      expect: The MD5 of the **source** PDF the tablet holds, not of the render written into the vault. Measured against Zotero's own storage on 2026-09-11 -- same bytes, same hash
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > hands over the hash of the file the tablet holds, not of the render in the vault"
+
+    - id: Y28.6
+      scenario: The Zotero half skipped a document
+      expect: The sentence reaches both the run's report and diagnostics. §3.4.2 -- a sync whose notes all landed and whose highlights stopped reaching Zotero the day a key expired is invisible from anywhere else
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > says what the Zotero half could not do, in the run's report and in diagnostics"
+
+    - id: Y28.9
+      scenario: One document synced under a notebook tag and a page tag, both skipped
+      expect: 'The sentence once in the report, twice in diagnostics. The reader is owed it once; "which notes did not get their highlights" is a count, and dropping the second there would lose a note'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: 'the Zotero half of a sync (spec §3.4) > says a repeated sentence once in the report, and once per note in diagnostics'
+
+    - id: Y28.10
+      scenario: A page-tag note of a PDF
+      expect: The same Zotero part as a whole-document note. A paper read a page at a time is still that paper
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: 'the Zotero half of a sync (spec §3.4) > gives a page-tag note its Zotero part too: a paper read a page at a time is still that paper'
+
+    - id: Y28.7
+      scenario: A document with no Zotero part to add
+      expect: One write, not two. A vault with no Zotero, an unlinked document and a lapsed licence all arrive here with nothing
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > writes the note once where there is no Zotero part to add"
+
+    - id: Y28.8
+      scenario: The licence lapses and the note is rewritten (§5)
+      expect: The callout line goes; the frontmatter keys **stay**; the row's hash still matches. A pass that did not run knows nothing about this document, and "I do not know" must not be written as "not linked"
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > drops the callout line and keeps the frontmatter keys when the licence has lapsed"
+
+# The three entry points a person reaches, and the wiring under them. Y29 is where the decisions are
+# -- what Send refuses, what it asks, what it records -- and Y30 is the one thing a unit test of Y29
+# cannot say: that `main.ts` hands those decisions the real plugin's licence, settings, transports
+# and clock. A host wired to the wrong thing passes every Y29 row and ships a command that does
+# nothing.
+#
+# The load-bearing rows are Y29.1 (a free vault registers nothing at all, §5) and Y29.13/Y29.14 (a
+# second copy is offered and never assumed -- nothing already on the tablet is ever touched, §1.2).
+
+- feature: Y29
+  name: The three Zotero entry points
+  code: src/zotero-plugin.ts
+  tier: pro
+  scenarios:
+    - id: Y29.1
+      scenario: A free vault
+      expect: Nothing registered -- no commands, no context action. §5 says the free plugin is unchanged, and a command that appears and then refuses is an advertisement
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > registers nothing at all in a free vault'
+
+    - id: Y29.2
+      scenario: A Pro vault
+      expect: Both commands and the file-menu action
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > registers the two commands and the context action for a Pro vault'
+
+    - id: Y29.3
+      scenario: A Pro vault that has pasted no API key yet
+      expect: Registered all the same. The gate is the capability, not the configuration -- this user is told what to do rather than finding nothing
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > registers them for a Pro vault that has configured no connection'
+
+    - id: Y29.4
+      scenario: Send run from the command palette
+      expect: The same command the context action runs, with the paper still to be chosen
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > runs Send from the palette'
+
+    - id: Y29.5
+      scenario: '*Link to Zotero item…* with no file open, with a note, with a PDF'
+      expect: Offered on a Markdown note only. Deciding properly means an index lookup, and this runs on every keystroke in the palette -- so the note that is not ours earns a sentence at run time instead
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > offers Link to Zotero item… on a Markdown note and nowhere else'
+
+    - id: Y29.6
+      scenario: Send in a vault whose licence has ended, or which has no connection
+      expect: The sentence, and no dialog. Refused before anything opens
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what Send refuses before it opens anything > says why there is no Zotero, rather than opening a dialog over nothing'
+
+    - id: Y29.7
+      scenario: Send with neither the cloud nor a paired tablet
+      expect: '§2.4''s last line. A dialog that asks a reader to find their paper and then cannot deliver it has wasted the one thing the command exists to save'
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what Send refuses before it opens anything > refuses a vault with no route to a tablet'
+
+    - id: Y29.8
+      scenario: Send in a vault that maps no reMarkable tag to a folder
+      expect: Refused. A document sent without a sync tag is annotated once and never looked at again -- sending it would keep the promise of the command and break the promise of the loop
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what Send refuses before it opens anything > refuses a vault that maps no tag at all'
+
+    - id: Y29.9
+      scenario: A paper chosen in the dialog
+      expect: Uploaded into the tablet folder with the sync tag, the link written, the tag remembered, and one sentence saying what to do next
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'sending a paper > puts it in the tablet folder, tagged, and records the link'
+
+    - id: Y29.10
+      scenario: The folder setting emptied
+      expect: '`Zotero`. A folder with no name puts every sent paper at the root of the tablet'
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'sending a paper > falls back to the default folder when the setting was emptied'
+
+    - id: Y29.11
+      scenario: The upload fails
+      expect: The reason, in a notice. A send that fails in silence looks exactly like one that worked
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'sending a paper > says what went wrong rather than failing silently'
+
+    - id: Y29.12
+      scenario: A failure that is not an Error at all
+      expect: Still said. A reverse-engineered API rejects with whatever it likes
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'sending a paper > says what went wrong even when what went wrong was not an Error'
+
+    - id: Y29.13
+      scenario: Neither Zotero connection can produce the PDF
+      expect: The file dialog of §2.4, with its sentence; closing it stops the send without a failure
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'sending a paper > asks for the file when neither connection can produce it, and stops when that is closed'
+
+    - id: Y29.14
+      scenario: The send dialog closed
+      expect: Nothing uploaded, nothing saved
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'sending a paper > writes nothing when the dialog is closed'
+
+    - id: Y29.15
+      scenario: A paper already on the tablet (§2.5)
+      expect: Asked, not refused and not assumed -- and *no* on that question sends nothing
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'a paper that is already on the tablet (§2.5) > asks before adding a second copy, and adds nothing when the answer is no'
+
+    - id: Y29.16
+      scenario: '*Send another copy*'
+      expect: A second document with its own mapping, the first one untouched. Nothing already on the tablet is ever changed (§1.2)
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'a paper that is already on the tablet (§2.5) > adds a second document with its own mapping when the answer is yes'
+
+    - id: Y29.17
+      scenario: The mapped document is gone from the tablet
+      expect: Sent without a question, and the stale mapping replaced. There is nothing there to be a second copy of
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'a paper that is already on the tablet (§2.5) > replaces the mapping of a document that is no longer on the tablet, without asking'
+
+    - id: Y29.18
+      scenario: The file menu over a note with `zotero-key`, one with a non-string key, one without, and a folder
+      expect: Offered on the first only. A key that is not a string is the user's own YAML, not ours to guess at
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'the context action on a note that names its paper > offers Send on a note carrying zotero-key, and on nothing else'
+
+    - id: Y29.19
+      scenario: That action on a paper with one PDF
+      expect: Sent, with no question at all -- the note already says which paper
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the context action on a note that names its paper > sends that paper's only PDF without asking which paper"
+
+    - id: Y29.20
+      scenario: The item named in the note has left the library
+      expect: Said in words
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'the context action on a note that names its paper > says so when the item has left the library'
+
+    - id: Y29.21
+      scenario: The item has no PDF
+      expect: Said in words
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'the context action on a note that names its paper > says so when the item has no PDF'
+
+    - id: Y29.22
+      scenario: The item has two PDFs
+      expect: Asked which -- the one the reader annotates is the one the highlights go back onto
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'the context action on a note that names its paper > asks which PDF where the paper has two, and sends the one chosen'
+
+    - id: Y29.23
+      scenario: That question closed
+      expect: Nothing sent
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'the context action on a note that names its paper > sends nothing when that question is closed'
+
+    - id: Y29.24
+      scenario: '*Link to Zotero item…* on a note this plugin did not write'
+      expect: 'Refused with the sentence `re-transcribe` already uses: there is no document behind it to link'
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'Link to Zotero item… > refuses a note this plugin did not write'
+
+    - id: Y29.25
+      scenario: The user picks an item
+      expect: The link written against the note's document, and saved
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'Link to Zotero item… > writes the link the user chose'
+
+    - id: Y29.26
+      scenario: Re-linking to the same attachment, and to a different one
+      expect: The annotation map survives the first and is dropped by the second -- pointed at another file, those keys describe somebody else's pages
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'Link to Zotero item… > keeps what was written back only when the link still points at the same attachment'
+
+    - id: Y29.27
+      scenario: That dialog closed
+      expect: Nothing written
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'Link to Zotero item… > writes nothing when the dialog is closed'
+
+    - id: Y29.28
+      scenario: The command in a vault with no Zotero
+      expect: The sentence, and no search over a library that is not there
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'Link to Zotero item… > says why there is no Zotero rather than opening a search over nothing'
+
+    - id: Y29.29
+      scenario: A vault holding a literature note, one of our own notes, and a plain one
+      expect: Only the literature note. Our own notes carry `zotero-key` too now, and `remarkable-note-id` is the one key that is ours alone
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the vault's own notes about papers > takes the notes carrying a Zotero key, and never one of ours"
+
+    - id: Y29.30
+      scenario: Notes carrying only `zotero-key`, only `citekey`, or neither
+      expect: Either key on its own is enough; frontmatter with neither is not a note about a paper
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the vault's own notes about papers > takes a note carrying only one of the two keys"
+
+    - id: Y29.31
+      scenario: The run's Zotero half in a vault with no Zotero
+      expect: Absent, so the engine has no Zotero half at all -- the whole of "refused in place"
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the run's Zotero half > is absent for a vault with no Zotero"
+
+    - id: Y29.32
+      scenario: The pass built for a vault with a web key and a literature note
+      expect: It reads this vault's links, notes and user id, and writes back into the same `data.json`
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the run's Zotero half > reads this vault's links, its notes and its user id, and writes back into the same data"
+
+    - id: Y29.33
+      scenario: A vault talking only to the desktop app
+      expect: No zotero.org link. The desktop connection knows the user id, but a vault that never talks to zotero.org has no business printing its URL into a note (§4)
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the run's Zotero half > prints no zotero.org link for a vault with no web connection"
+
+    - id: Y29.34
+      scenario: A web connection that cannot name the library
+      expect: No web link, rather than a URL with a hole in it
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the run's Zotero half > says nothing about a web library Zotero cannot name"
+
+    - id: Y29.35
+      scenario: An ambiguous document during a watched run, and during a background one
+      expect: The picker opens for the first and never for the second. A modal nobody is there to answer would either hang the sync or be answered for them -- and "ask once" means that asking is spent for good
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the run's Zotero half > opens the picker for an ambiguous document in a watched run, and never in a background one"
+
+- feature: Y30
+  name: The Zotero commands in the shipped plugin
+  code: src/main.ts
+  tier: pro
+  scenarios:
+    - id: Y30.1
+      scenario: The plugin loaded from a free vault's `data.json`
+      expect: No Zotero command in the palette at all (§5)
+      layer: integration
+      file: src/zotero-wiring.test.ts
+      test: 'the Zotero commands as the plugin registers them > registers none of them in a free vault'
+
+    - id: Y30.2
+      scenario: The plugin loaded from a Pro vault's
+      expect: Both commands
+      layer: integration
+      file: src/zotero-wiring.test.ts
+      test: 'the Zotero commands as the plugin registers them > registers both in a Pro vault'
+
+    - id: Y30.3
+      scenario: Send pressed with neither transport connected
+      expect: '§2.4''s last line -- which proves the host reads the plugin''s own transports rather than a copy of them'
+      layer: integration
+      file: src/zotero-wiring.test.ts
+      test: "the Zotero commands as the plugin registers them > reads this vault's transports when Send asks for a route"
+
+    - id: Y30.4
+      scenario: SSH send switched on, the cloud not connected, a paired tablet
+      expect: The send goes over SSH. It is the fallback and not the default because that route restarts the tablet's reading app
+      layer: integration
+      file: src/zotero-wiring.test.ts
+      test: 'the Zotero commands as the plugin registers them > takes the SSH route when it is switched on and the cloud is not connected'
+
+    - id: Y30.5
+      scenario: A whole send, pressed in the palette of a loaded plugin
+      expect: It goes through the plugin's own transport and the link lands in the plugin's own `data.json`. The one thing a unit test of the decisions cannot say
+      layer: integration
+      file: src/zotero-wiring.test.ts
+      test: "the Zotero commands as the plugin registers them > sends through the plugin's own transport and saves the link in its own data"

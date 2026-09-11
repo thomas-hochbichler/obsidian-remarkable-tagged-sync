@@ -66,6 +66,16 @@ export interface ZoteroLink {
 	readonly sentAt?: string;
 	/** The MD5 Send uploaded, which is what a later match can recognise the file by without asking Zotero. */
 	readonly sentMd5?: string;
+	/**
+	 * Present only on a link this plugin made **without asking** -- the hash row of §2.3.
+	 *
+	 * It is what keeps that row's "note says: matched by file hash" true for longer than the one sync
+	 * in which it happened. A silent link is the plugin deciding something about the user's library on
+	 * its own, and a note that mentions it only on the day it was made discloses it to nobody: the
+	 * reader opens the note weeks later. The clause goes as soon as the link stops being ours alone --
+	 * *Link to Zotero item…* and Send both write a link without this field.
+	 */
+	readonly matchedBy?: "hash";
 	/** Block id (`hl-…` / `nt-…`) -> the annotation it became in Zotero. */
 	readonly annotations: Record<string, LinkedAnnotation>;
 }
@@ -139,6 +149,7 @@ export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | n
 		library: "user",
 		...(asString(stored.sentAt) === undefined ? {} : { sentAt: asString(stored.sentAt) }),
 		...(asString(stored.sentMd5) === undefined ? {} : { sentMd5: asString(stored.sentMd5) }),
+		...(stored.matchedBy === "hash" ? { matchedBy: "hash" as const } : {}),
 		annotations: annotationsOf(stored.annotations),
 	};
 }

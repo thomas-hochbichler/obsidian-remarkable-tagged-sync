@@ -3,6 +3,7 @@ import { Platform } from "../test-stubs/fake-obsidian";
 import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client";
 import { linkFor, type StoredZoteroLinks } from "./zotero-links";
 import {
+	documentsOnTablet,
 	pdfChoice,
 	sendBytes,
 	sendState,
@@ -303,5 +304,41 @@ describe("sending", () => {
 
 		expect(linkFor(result?.links ?? {}, "doc-1")?.annotations["hl-1"]?.key).toBe("ANN1");
 		expect(linkFor(result?.links ?? {}, "doc-2")?.attachmentKey).toBe("ATT1");
+	});
+});
+
+describe("what is still on the tablet", () => {
+	const link = { attachmentKey: "ATT1", library: "user" as const, annotations: {} };
+
+	it("counts a document the last sync saw", () => {
+		const rows = [{ docId: "doc-1", status: "active" as const }];
+
+		expect([...documentsOnTablet(rows, { "doc-1": link }, "2026-09-11T09:00:00.000Z")]).toEqual(["doc-1"]);
+	});
+
+	it("does not count one whose row was orphaned -- that is a document that left the device", () => {
+		const rows = [{ docId: "doc-1", status: "orphaned" as const }];
+
+		expect(documentsOnTablet(rows, { "doc-1": link }, "2026-09-11T09:00:00.000Z").has("doc-1")).toBe(false);
+	});
+
+	// Otherwise a second Send before the first has ever synced reads as "it vanished": the link would
+	// be dropped, and two documents on the tablet would share one mapping between them.
+	it("counts one sent since the last sync, which has had no chance to appear yet", () => {
+		const sent = { ...link, sentAt: "2026-09-11T10:00:00.000Z" };
+
+		expect(documentsOnTablet([], { "doc-1": sent }, "2026-09-11T09:00:00.000Z").has("doc-1")).toBe(true);
+	});
+
+	it("counts one sent into a vault that has never completed a sync at all", () => {
+		const sent = { ...link, sentAt: "2026-09-11T10:00:00.000Z" };
+
+		expect(documentsOnTablet([], { "doc-1": sent }, null).has("doc-1")).toBe(true);
+	});
+
+	it("does not count one that was sent, synced past, and never turned up", () => {
+		const sent = { ...link, sentAt: "2026-09-01T10:00:00.000Z" };
+
+		expect(documentsOnTablet([], { "doc-1": sent }, "2026-09-11T09:00:00.000Z").has("doc-1")).toBe(false);
 	});
 });

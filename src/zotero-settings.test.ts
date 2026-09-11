@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { entitlementOf, type Entitlement, NO_LICENCE, startTrial } from "./licence-state";
 import {
+	zoteroUnavailable,
 	createZoteroClientFor,
 	DEFAULT_ZOTERO_SETTINGS,
 	zoteroAllowed,
@@ -151,5 +152,17 @@ describe("from the settings block to Zotero and back", () => {
 
 		expect(data.zotero.localKeys).toEqual({ SERVERID1234: "freshly-granted" });
 		expect(saved.count).toBe(1);
+	});
+});
+
+describe("why a Zotero command has nothing to do", () => {
+	// Only ever reached by a command that was registered, so the two sentences are "you have not set
+	// it up" and "your licence ended" -- never "this is a paid feature you have not bought".
+	it("sends a Pro vault to the settings", () => {
+		expect(zoteroUnavailable(BOUGHT)).toContain("Settings");
+	});
+
+	it("tells a lapsed one that nothing in their library has been touched", () => {
+		expect(zoteroUnavailable(FREE)).toContain("Nothing in your library has been changed.");
 	});
 });

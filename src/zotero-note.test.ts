@@ -250,6 +250,19 @@ describe("the note of spec §4", () => {
 	});
 });
 
+describe("a link nobody was asked about", () => {
+	// §2.3's "note says: matched by file hash". The note is the only place a reader can find out that
+	// the plugin linked their document to something in their library on its own.
+	it("says so in the line, before what happened to the highlights", () => {
+		expect(zoteroCalloutLine(info({ matchedByHash: true }))).toContain("· matched by file hash · highlights written back");
+	});
+
+	it("says nothing at all about a link that was asked about or sent", () => {
+		expect(zoteroCalloutLine(info({ matchedByHash: false }))).not.toContain("matched by file hash");
+		expect(zoteroCalloutLine(info())).not.toContain("matched by file hash");
+	});
+});
+
 const FRONTMATTER = {
 	tags: [],
 	modified: null,

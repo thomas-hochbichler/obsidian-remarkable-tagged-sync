@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { asApp, FakeApp, takeModals, takeSettings } from "../test-stubs/fake-obsidian";
 import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
-import { askWhatToSend, NO_PDF, NO_RESULTS, type SendChoice, type SendDialogDeps } from "./zotero-send-dialog";
+import { askWhatToSend, askWhereToSend, NO_PDF, NO_RESULTS, type SendChoice, type SendDialogDeps } from "./zotero-send-dialog";
 
 const ITEM: ZoteroItem = { key: "ITEM1", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
 const OTHER: ZoteroItem = { key: "ITEM2", title: "Etwas anderes", creator: null, year: null, citationKey: null };
@@ -223,5 +223,37 @@ describe("closing the dialog", () => {
 		const dialog = open();
 		takeModals()[0].close();
 		expect(await dialog.choice).toBeNull();
+	});
+});
+
+describe("the context action, which already knows the paper and the PDF", () => {
+	const deps = (tag: SendDialogDeps["tag"]): SendDialogDeps => ({ search: async () => [ITEM], attachments: async () => [attachment()], tag, searchDelayMs: 0 });
+
+	// One mapped tag is not a question, and a window that shows somebody a single answer they cannot
+	// change is not a dialog. Nothing opens at all here.
+	it("opens nothing where there is nothing left to ask", async () => {
+		const choice = await askWhereToSend(asApp(new FakeApp()), deps({ kind: "use", tag: "#papers" }), ITEM, attachment());
+
+		expect(choice).toEqual({ item: ITEM, attachment: attachment(), tag: "#papers" });
+		expect(takeModals()).toEqual([]);
+	});
+
+	it("asks only the tag where there is a choice of them, offering the last one first", async () => {
+		const choice = askWhereToSend(asApp(new FakeApp()), deps({ kind: "ask", options: ["#papers", "#reading"], preferred: "#reading" }), ITEM, attachment());
+		const rows = takeSettings();
+
+		expect(rows[0].name).toBe("Sync tag");
+		expect(rows[0].dropdowns[0].value).toBe("#reading");
+		press("Send", rows);
+		expect(await choice).toEqual({ item: ITEM, attachment: attachment(), tag: "#reading" });
+	});
+
+	it("falls back to the first mapped tag where the last one is not mapped any more", async () => {
+		const choice = askWhereToSend(asApp(new FakeApp()), deps({ kind: "ask", options: ["#papers", "#reading"], preferred: null }), ITEM, attachment());
+		const rows = takeSettings();
+
+		expect(rows[0].dropdowns[0].value).toBe("#papers");
+		press("Send", rows);
+		expect(await choice).toEqual({ item: ITEM, attachment: attachment(), tag: "#papers" });
 	});
 });

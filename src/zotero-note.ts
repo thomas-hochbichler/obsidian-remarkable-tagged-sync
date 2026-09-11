@@ -41,6 +41,15 @@ export interface ZoteroNoteInfo {
 	readonly writeBack: ZoteroWriteBack;
 	/** The vault's own note about this paper, as its link text -- see {@link findLiteratureNote}. */
 	readonly literatureNote: string | null;
+	/**
+	 * Was this link made by the plugin alone, off the file's hash (§2.3)?
+	 *
+	 * The one clause of this line that is about the plugin's own decision rather than about the paper.
+	 * A hash hit is identity and it is not asked about -- so the note is the only place the user can
+	 * ever find out that something linked their document to something in their library, and that has
+	 * to be legible after the sync that did it is long forgotten.
+	 */
+	readonly matchedByHash?: boolean;
 }
 
 /**
@@ -101,6 +110,7 @@ function writeBackPhrase(writeBack: ZoteroWriteBack): string {
 export function zoteroCalloutLine(info: ZoteroNoteInfo): string {
 	const parts = [`[${escapeLabel(itemLabel(info.item))}](zotero://select/library/items/${info.item.key})`];
 	if (info.webUserId !== null) parts.push(`[web library](https://www.zotero.org/users/${info.webUserId}/items/${info.item.key})`);
+	if (info.matchedByHash === true) parts.push("matched by file hash");
 	parts.push(writeBackPhrase(info.writeBack));
 	if (info.literatureNote !== null) parts.push(`literature note: [[${info.literatureNote}]]`);
 	return `Zotero: ${parts.join(" · ")}`;
