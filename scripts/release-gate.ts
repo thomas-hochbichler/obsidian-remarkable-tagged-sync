@@ -1,4 +1,4 @@
-// The release gate (managed-local-llm-ocr spec §15, last paragraph): the ten-page corpus through the
+// The release gate (managed-local-llm-ocr spec §15, last paragraph): the reference corpus through the
 // *shipped* path, scored against §12's 7.6 % CER / 78.9 % word recall on the eight linear pages.
 //
 // Every earlier number in §12 came from `prototype/run-cli.sh`, which drives `llama-mtmd-cli` directly
@@ -8,7 +8,7 @@
 //   * the model arrives through `startLocalModelDownload` -- the pinned URLs, the SHA-256 pass, `tar`;
 //   * the paths come from `resolveLocalModel`, so it lands where the plugin will look for it;
 //   * a page is transcribed by `createLocalOcrBackend(...).recognize([page])`, which means the shipped
-//     raster, the shipped prompt, the shipped flags, `sanitizeTranscript` and `typedText`.
+//     raster, the shipped prompt, the shipped flags, `sanitizeTranscript` and the typed-text placement.
 //
 // What is left over is scoring, and that stays `prototype/mdbench.ts` deliberately: a gate that
 // reproduces a number has to use the instrument that produced it.

@@ -28,14 +28,6 @@ export const TRANSCRIPTION_PROMPT =
 export type PagePart = { kind: "ink"; scene: RmPage } | { kind: "typed"; text: string };
 
 /**
- * How many requests one page may cost. Past it the page is transcribed whole and its typed text
- * appended, which is what every page did before this existed.
- *
- * Three, because typed text is rare (72 of the 80 corpus pages carry none) and two blocks on one
- * page rarer still. The cap is not protecting against a shape anyone has produced; it is there so a
- * page nobody imagined cannot quietly cost ten requests.
- */
-/**
  * The most images one page may cost.
  *
  * Raised from 3 to 6 on 2026-09-10, when a scrolled page became splittable: page 15 of the reference
@@ -71,13 +63,8 @@ const TALL_ASPECT = 3;
 
 /** The vertical middle of a stroke, which is the slot it belongs to even where it spans two. */
 function strokeMiddleY(stroke: RmStroke): number {
-	let min = Number.POSITIVE_INFINITY;
-	let max = Number.NEGATIVE_INFINITY;
-	for (const point of stroke.points) {
-		min = Math.min(min, point.y);
-		max = Math.max(max, point.y);
-	}
-	return (min + max) / 2;
+	const { top, bottom } = strokeBand(stroke);
+	return (top + bottom) / 2;
 }
 
 /** The page with only the given strokes on it, and no typed text -- a scene that is this ink and nothing else. */
@@ -89,28 +76,6 @@ function inkOnly(page: RmPage, keep: ReadonlySet<RmStroke>): RmPage {
 	};
 }
 
-/**
- * A page in reading order: its ink split where the typed text sits between it, and the typed lines
- * in their place.
- *
- * Typed text is on no page image at all -- the rasterizer draws ink -- so without it the words are
- * missing from the note entirely, and it must not go through transcription either, being exact
- * already. That much was always true. What was not is *where* it lands: it used to be appended after
- * the model's answer for the page, so a page with handwriting above and below a typed block read
- * back with the block last and the writing that followed it in the middle.
- *
- * The answer carries no positions, so nothing in it can be spliced against. The ink can be split
- * before it is ever sent, though, and the device does record where every stroke and every typed line
- * sits. So each stroke is placed in the slot between the typed baselines it falls between, and each
- * run of ink becomes a scene of its own.
- *
- * Strokes are assigned, never cut. A stroke that spans the typed text -- a box drawn around it, an
- * arrow across it -- goes whole into the slot its middle is in. That is the wrong half for it, and a
- * far smaller wrong than the two half-glyphs a cut through the raster would hand the model.
- *
- * `VisionOcrBackend` needs none of this and does not use it: Apple Vision reports a box per line, so
- * it places typed lines by height directly (`insertTypedText`).
- */
 /** The band of page a stroke covers, top to bottom. */
 function strokeBand(stroke: RmStroke): { top: number; bottom: number } {
 	let top = Number.POSITIVE_INFINITY;
@@ -181,6 +146,28 @@ export function splitTallInk(page: RmPage): RmPage[] {
 	return merged.map((block) => inkOnly(page, new Set(block.strokes)));
 }
 
+/**
+ * A page in reading order: its ink split where the typed text sits between it, and the typed lines
+ * in their place.
+ *
+ * Typed text is on no page image at all -- the rasterizer draws ink -- so without it the words are
+ * missing from the note entirely, and it must not go through transcription either, being exact
+ * already. That much was always true. What was not is *where* it lands: it used to be appended after
+ * the model's answer for the page, so a page with handwriting above and below a typed block read
+ * back with the block last and the writing that followed it in the middle.
+ *
+ * The answer carries no positions, so nothing in it can be spliced against. The ink can be split
+ * before it is ever sent, though, and the device does record where every stroke and every typed line
+ * sits. So each stroke is placed in the slot between the typed baselines it falls between, and each
+ * run of ink becomes a scene of its own.
+ *
+ * Strokes are assigned, never cut. A stroke that spans the typed text -- a box drawn around it, an
+ * arrow across it -- goes whole into the slot its middle is in. That is the wrong half for it, and a
+ * far smaller wrong than the two half-glyphs a cut through the raster would hand the model.
+ *
+ * `VisionOcrBackend` needs none of this and does not use it: Apple Vision reports a box per line, so
+ * it places typed lines by height directly (`insertTypedText`).
+ */
 export function splitAtTypedText(page: RmPage, options: { splitTall?: boolean } = {}): PagePart[] {
 	// Whether a very tall page is cut is a property of *the model that will read it*, not of the page:
 	// measured on the reference set's scrolled page, cutting takes GPT-4o from 39.53 % to 3.99 % and
@@ -397,7 +384,8 @@ export async function fetchWithRetry(fetchFn: typeof fetch, url: string, init: R
  *
  * Typed text is placed **within** the page rather than appended after it, by splitting the ink where
  * the typed lines sit and sending each run of it as a scene of its own (`splitAtTypedText`). A page
- * with no typed text on it is one part and one request, exactly as before.
+ * with no typed text on it is one part and one request, unless its ink runs tall enough to be cut
+ * into pieces (`splitTallInk`), which is one request a piece.
  *
  * A part that fails fails its page, and the parts after it are not requested. The page carries one
  * status, as it always has, and a backend that just refused is not worth asking twice -- a failure

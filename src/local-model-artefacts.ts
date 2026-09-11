@@ -1,13 +1,14 @@
-// The four files the plugin downloads, pinned (managed-local-llm-ocr spec §5.2).
+// The files the plugin downloads -- one engine archive per platform, two model files per generation --
+// pinned (managed-local-llm-ocr spec §5.2).
 //
 // Repo, **commit revision** -- never `main`, never `releases/latest` -- file names, byte sizes and
 // SHA-256 hashes are constants in the shipped plugin, and nothing here is resolved at runtime.
 //
 // Why, stated once: a hash fetched from the host that serves the bytes proves only that the wire did
 // not corrupt them; research 01 already tripped a `latest` whose assets were still uploading; and
-// every quality and runtime figure the settings card quotes describes *these* files. **The plugin
-// version is the model version** -- there is no model-update channel, so an update is a plugin
-// release that ships new constants.
+// every quality and runtime figure the settings card quotes describes *these* files. There is no
+// model-update channel: a new model is a plugin release that ships new constants, and an install
+// keeps the model it has until the user takes the offer (`chooseGeneration`).
 
 import { MMPROJ_FILE, MODEL_FILE, type LocalModelPlatform } from "./local-model-store";
 
@@ -224,7 +225,10 @@ const QWEN3_VL_2B: ModelGeneration = {
 	splitsTallPages: false,
 };
 
-/** Newest first. The order is the preference, and `chooseGeneration` is the only thing that reads it. */
+/**
+ * Every generation this build can fetch. The order is not a preference: `chooseGeneration` sorts by
+ * accuracy through `runnableGenerations`, and the 2B -- the newest by date -- is last.
+ */
 export const MODEL_GENERATIONS: readonly ModelGeneration[] = [QWEN3_VL_8B, QWEN25_VL_7B, QWEN3_VL_2B];
 
 /** What one directory under `models/` holds, as facts rather than a conclusion. */
@@ -258,7 +262,7 @@ export function runnableGenerations(context: ChoiceContext): ModelGeneration[] {
 }
 
 /**
- * Which model this install uses, in three steps.
+ * Which model this install uses, in four steps.
  *
  * 1. **What the user picked**, if they picked one and it is installed and this machine can run it. A
  *    reader who chose the small model on a large Mac had a reason, and a plugin update must not
@@ -266,9 +270,14 @@ export function runnableGenerations(context: ChoiceContext): ModelGeneration[] {
  * 2. **The most accurate model already on disk.** Preferring what is installed is what keeps a plugin
  *    update from stopping transcription: an install holding the 7B goes on reading pages with it, and
  *    a better model is offered rather than required.
- * 3. **The most accurate this machine can run**, for a fresh install -- which is not the same as the
- *    newest. The list is a size ladder, not a timeline: an 8 GB Mac cannot run the largest model at
- *    all, and handing it one whose own memory gate then refuses it is how "newest wins" fails.
+ * 3. **What the user picked, on a fresh install** -- nothing is on disk, so there is no working model
+ *    to protect, and the pick decides which model the first download fetches. Without this arm the
+ *    choice was silently the most accurate one, and a reader who wanted the small model could not get
+ *    it until the large one had been downloaded first.
+ * 4. **The most accurate this machine can run**, for a fresh install with no pick -- which is not the
+ *    same as the newest. The list is a size ladder, not a timeline: an 8 GB Mac cannot run the
+ *    largest model at all, and handing it one whose own memory gate then refuses it is how "newest
+ *    wins" fails.
  *
  * Accuracy is the sort key throughout because that is what the choice is *about*. Memory and download
  * size are its costs, and a cost belongs beside the thing it buys rather than in the ordering.
@@ -281,9 +290,10 @@ export function chooseGeneration(present: readonly ModelDirectoryFacts[], contex
 	const runnable = runnableGenerations(context);
 
 	const picked = runnable.find((generation) => generation.dir === context.preferred && installed(generation));
-	// Nothing here may return a generation this machine cannot run, so every arm reads from `runnable`
-	// and the last resort is the least demanding model rather than the best one.
-	return picked ?? runnable.find(installed) ?? runnable[0] ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
+	const wanted = runnable.find((generation) => generation.dir === context.preferred);
+	// Every arm reads from `runnable`. The last resort, for a machine that can run none of them, is the
+	// least demanding model -- which the gate then refuses before it runs, with the floor named.
+	return picked ?? runnable.find(installed) ?? wanted ?? runnable[0] ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1];
 }
 
 /**
@@ -295,6 +305,20 @@ export function chooseGeneration(present: readonly ModelDirectoryFacts[], contex
 export function betterGeneration(inUse: ModelGeneration, context: ChoiceContext): ModelGeneration | null {
 	const best = runnableGenerations(context)[0];
 	return best !== undefined && best.measured.medianCer < inUse.measured.medianCer ? best : null;
+}
+
+/**
+ * The model the ready card offers to download beside the one in use, or null.
+ *
+ * First what the user picked, when this machine can run it and it is not on disk yet: the pick cannot
+ * displace a working model until it is installed (`chooseGeneration` step 2), so without an offer it
+ * sat in the dropdown over a card running something else and nothing happened. Failing that, a more
+ * accurate model this machine can run, which is the offer an older install has always had.
+ */
+export function offeredGeneration(inUse: ModelGeneration, present: readonly ModelDirectoryFacts[], context: ChoiceContext): ModelGeneration | null {
+	const picked = runnableGenerations(context).find((generation) => generation.dir === context.preferred);
+	if (picked && picked !== inUse && !present.some((entry) => holdsGeneration(entry, picked))) return picked;
+	return betterGeneration(inUse, context);
 }
 
 /** llama.cpp release b10295 (2026-08-06T12:56:29Z). */

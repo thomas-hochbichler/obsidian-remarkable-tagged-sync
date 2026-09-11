@@ -26,7 +26,7 @@ describe("isTranscriptionInProgress", () => {
 	 * The lock holds a timestamp and nothing else, so the `.part` is what names the holder's job.
 	 */
 	it("blocks a second run while a transcription holds the lock", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: false }, NOW)).toBe(true);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: false, runtimePartPresent: false }, NOW)).toBe(true);
 	});
 
 	/**
@@ -35,15 +35,25 @@ describe("isTranscriptionInProgress", () => {
 	 * renders, notes and highlights, which are the plugin's actual job.
 	 */
 	it("lets a sync run while a download holds it", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: true }, NOW)).toBe(false);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: true, runtimePartPresent: false }, NOW)).toBe(false);
 	});
 
 	it("ignores a lock nobody is renewing any more", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - LOCK_STALE_MS - 1, partPresent: false }, NOW)).toBe(false);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - LOCK_STALE_MS - 1, partPresent: false, runtimePartPresent: false }, NOW)).toBe(false);
+	});
+
+	/**
+	 * The half this guard used to miss. A download fetches the 12 MB engine first and the model second,
+	 * under one lock, and the engine's `.part` lands in the engine directory rather than beside the
+	 * model -- so for that first minute the lock was held with nothing this looked at. Measured on a
+	 * real install: 16:54-16:56 engine, "Another vault is transcribing" on Resume; 16:57 model, gone.
+	 */
+	it("lets a sync run while the engine half of a download holds it", () => {
+		expect(isTranscriptionInProgress({ lockHeldAtMs: NOW - 5_000, partPresent: false, runtimePartPresent: true }, NOW)).toBe(false);
 	});
 
 	it("is not busy when there is no lock at all", () => {
-		expect(isTranscriptionInProgress({ lockHeldAtMs: null, partPresent: false }, NOW)).toBe(false);
+		expect(isTranscriptionInProgress({ lockHeldAtMs: null, partPresent: false, runtimePartPresent: false }, NOW)).toBe(false);
 	});
 });
 
@@ -174,6 +184,16 @@ describe("deriveLocalModelState", () => {
 	 * The state the card exists to explain: antivirus takes the 12 MB engine and leaves the 5.5 GB
 	 * model alone. Reading it as "absent" would tell the user to download everything again.
 	 */
+	/**
+	 * A second attempt that lost a race with the one that finished leaves its `.part` beside the
+	 * verified pair. Read as "partial", that put a *Discard 6.5 GB* button under a model that had just
+	 * been verified -- and it would have deleted it.
+	 */
+	it("is ready when a stray part file sits beside a verified model", () => {
+		const stray = snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: true, partPresent: true });
+		expect(deriveLocalModelState(stray, NOW, EXPECTED)).toBe("ready");
+	});
+
 	it("is removed when the model survived but the engine was taken", () => {
 		const state = deriveLocalModelState(snapshot({ ...complete, verifiedPresent: true, runtimeExecutablePresent: false }), NOW, EXPECTED);
 		expect(state).toBe("removed");

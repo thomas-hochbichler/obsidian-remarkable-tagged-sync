@@ -8,13 +8,14 @@
 
 import { Notice, Platform, Setting } from "obsidian";
 import { backgroundConsentDesc, cardCopy, deleteConfirmation, type LocalCardState, newerModelOffer } from "./local-model-card";
-import { planCleanup } from "./local-model-download";
-import { localModelBlock, localModelUnavailableLabel, NOT_READY_LABEL } from "./local-model-gate";
+import { formatBytes, planCleanup } from "./local-model-download";
+import { localModelBlock, localModelUnavailableLabel } from "./local-model-gate";
 import {
 	discardPartialDownload,
 	type DownloadHandle,
 	foreignDownloadPercent,
 	partialBytes,
+	removeStaleParts,
 	removeLocalModel,
 	startLocalModelDownload,
 } from "./local-model-fetch";
@@ -26,17 +27,16 @@ import {
 	removeModelDirectory,
 	pathsForGeneration,
 	resolveLocalModel,
-	resolveLocalModelPaths,
 } from "./local-model-runtime";
 import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir } from "./local-model-settings";
 import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
-import { betterGeneration, type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, runnableGenerations } from "./local-model-artefacts";
+import { type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, offeredGeneration, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 export const LOCAL_BACKEND_ID = "local";
-const LOCAL_BACKEND_LABEL = "Local model (on your machine)";
+const LOCAL_BACKEND_LABEL = "Downloaded model (managed by this plugin)";
 
 /**
  * The plugin id, which is the directory name under Application Support / LOCALAPPDATA.
@@ -48,12 +48,20 @@ const LOCAL_BACKEND_LABEL = "Local model (on your machine)";
 const PLUGIN_ID = "remarkable-tagged-sync";
 
 /** What the note-contract hint says while this backend is selected (§7.6). */
-export const LOCAL_NOTE_CONTRACT = "Local model: headings and lists, as written on the page. Tables are transcribed as plain lines.";
+export const LOCAL_NOTE_CONTRACT = "Transcripts keep headings and lists as written on the page; tables come out as plain lines.";
 
 /** The download in flight for this Obsidian session, if any. Never persisted; §5.5 forbids it. */
 let download: DownloadHandle | null = null;
 /** A runtime that failed to start this session (§5.5: session-scoped, not a property of the directory). */
 let runtimeFailure: string | null = null;
+
+/**
+ * Redraws the most recently rendered card, in place. Module state like `download` because it has to
+ * outlive one render: the download keeps calling back long after the settings page that started it
+ * has been redrawn, and a redraw bound to that first render would draw into an element the page no
+ * longer shows.
+ */
+let redrawCard: () => void = () => undefined;
 
 /** Records a runtime failure so the card can explain it, rather than showing a healthy "ready". */
 export function noteLocalRuntimeFailure(message: string): void {
@@ -131,6 +139,7 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 	}
 
 	const snapshot = readLocalModelSnapshot(paths);
+	const present = readModelDirectories(paths);
 	const state = deriveLocalModelState(snapshot, Date.now(), generation);
 	switch (state) {
 		case "corrupt":
@@ -148,17 +157,25 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 			if (runtimeFailure) return { kind: "runtime-failed", message: runtimeFailure };
 			// The offer, and only an offer: a working model is never displaced by a newer one without the
 			// user pressing the button (ticket 20).
-			return { kind: "ready", newer: context === null ? null : newerModelOffer(generation, context) };
+			return {
+				kind: "ready",
+				newer: context === null ? null : newerModelOffer(generation, context, present),
+				superseded: planCleanup(present, MODEL_GENERATIONS.map((candidate) => candidate.dir)).offerToDelete.map((name) => {
+					const entry = present.find((candidate) => candidate.name === name);
+					return { directory: name, label: MODEL_GENERATIONS.find((candidate) => candidate.dir === name)?.label ?? name, bytes: (entry?.modelBytes ?? 0) + (entry?.mmprojBytes ?? 0) };
+				}),
+			};
 		case "absent":
-			// Unreachable while a complete older model is present -- `chooseGeneration` would have picked
-			// it and this would read `ready`. What is left is a genuine fresh install.
+			// Unreachable while a complete model of any generation is present -- `chooseGeneration` would
+			// have picked it and this would read `ready`. What is left is a fresh install, or a model
+			// picked on one before its download.
 			return { kind: "absent" };
 	}
 }
 
 /** Deletes the partials of a model this build can no longer finish; leaves anything complete alone. */
-function sweepUnfinishedDirectories(paths: LocalModelPaths, inUse: ModelGeneration): void {
-	const plan = planCleanup(readModelDirectories(paths), inUse.dir);
+function sweepUnfinishedDirectories(paths: LocalModelPaths): void {
+	const plan = planCleanup(readModelDirectories(paths), MODEL_GENERATIONS.map((generation) => generation.dir));
 	// Provably useless: no URL in this build could finish it. A *complete* directory is never touched
 	// here -- it is either the model in use or the one the user can fall back to.
 	for (const name of plan.deleteSilently) removeModelDirectory(paths, name);
@@ -167,14 +184,13 @@ function sweepUnfinishedDirectories(paths: LocalModelPaths, inUse: ModelGenerati
 /**
  * Starts (or restarts) the download and re-renders as it moves.
  *
- * `into` is where the files land and `busyPaths` is what the "is anything transcribing" guard reads,
+ * `paths` is where the files land and `busyPaths` is what the "is anything transcribing" guard reads,
  * and they are the same directory in every case but one: taking the offer of a newer model writes into
  * a directory nothing has ever locked, while the transcription that must not be disturbed is holding
  * the *current* model's lock. Passing the target to the guard would have made it answer about an empty
  * directory and always say no.
  */
-function beginDownload(into: LocalModelPaths, rerender: () => void, generation: ModelGeneration, busyPaths: LocalModelPaths): void {
-	const paths = into;
+function beginDownload(paths: LocalModelPaths, rerender: () => void, generation: ModelGeneration, busyPaths: LocalModelPaths): void {
 	const platform = localModelPlatform();
 	if (!platform) return;
 	if (isLocalModelBusy(busyPaths)) {
@@ -183,6 +199,13 @@ function beginDownload(into: LocalModelPaths, rerender: () => void, generation: 
 		// more usefully, by the `foreign-download` card state, which shows its progress instead of a
 		// notice.
 		new Notice("Another vault is transcribing right now. Try again in a moment.");
+		return;
+	}
+	const inFlight = download?.progress().phase;
+	if (inFlight !== undefined && inFlight !== "done" && inFlight !== "failed") {
+		// Two fetchers appending to one `.part` is how a verified model ends up with a stray part
+		// beside it. The card should never offer the button while this instance is downloading, but
+		// the guard belongs here, where the second download would actually start.
 		return;
 	}
 	runtimeFailure = null;
@@ -200,19 +223,15 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	const { paths, generation } = resolved;
 	// A partial of a model no build can finish any more is provably useless; anything complete is left
 	// exactly where it is, whether it is the model in use or the one to fall back to.
-	sweepUnfinishedDirectories(paths, generation);
+	sweepUnfinishedDirectories(paths);
 
 	const state = currentCardState(paths, generation, context);
-	// Where the newer model would land, resolved once so the update button does not have to.
-	const newer = betterGeneration(generation, context);
+	// A leftover `.part` beside a model that is ready is ignored by the state rule; here it is also
+	// removed, for an install that got one before the download learnt to clean up after itself.
+	if (state.kind === "ready") removeStaleParts(paths);
+	// Where the offered model would land, resolved once so the update button does not have to.
+	const newer = offeredGeneration(generation, readModelDirectories(paths), context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
-	// A ready model has nothing left to set up: the backend is selectable, so the dropdown is where it
-	// belongs now. Its speed, its misread caveat and its delete button are about a backend in use, and
-	// beside a different selected backend they only add a screenful. Every other state stays -- an
-	// absent, paused or broken model is exactly what the card exists to explain, and it cannot be
-	// selected to reach that explanation.
-	if (state.kind === "ready" && !ctx.isSelected) return;
-
 	const copy = cardCopy(state, platform, ctx.settings, generation);
 
 	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
@@ -228,31 +247,41 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 
 	// The choice, offered only where there is one: a single runnable model is not a decision, and a
 	// dropdown listing one option is a question with one answer.
+	// Offered before the download too: the pick decides which model the button below fetches. A reader
+	// who wanted the small model used to get the large one, and could switch only after having both.
 	const choices = runnableGenerations(context);
-	if (state.kind === "ready" && choices.length > 1) {
+	if ((state.kind === "ready" || state.kind === "absent") && choices.length > 1) {
+		// What the rule picks with no preference stored. It used to be its own entry, "Decide for me
+		// (Qwen3-VL-8B)", above an entry for the same model -- two rows for one choice, and the reader
+		// asked why the 8B was listed twice. Now the rule's pick is marked on the entry it names, and
+		// choosing that entry stores nothing, exactly as the old entry did.
+		const byRule = resolveLocalModel(PLUGIN_ID, null)?.generation ?? generation;
 		new Setting(card)
 			.setName("Model")
 			.setDesc(
-				`Sorted by how well each read the fifteen public reference pages. Lower is better; the memory figure is what it uses while a page is read. ${
+				`Character error on fifteen reference pages, and the memory used while a page is read. Lower is better. The memory is measured, not read off the name: a smaller model can hold more. ${
 					MODEL_GENERATIONS.filter((candidate) => !choices.includes(candidate))
 						.map((candidate) => `${candidate.label} needs ${candidate.floorGb[context.platform]} GB and is not offered here.`)
 						.join(" ")
 				}`.trim(),
 			)
 			.addDropdown((dropdown) => {
-				dropdown.addOption("", `Decide for me (${generation.label})`);
 				for (const candidate of choices) {
 					dropdown.addOption(
 						candidate.dir,
-						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${(candidate.peakRssBytes / 1024 ** 3).toFixed(1)} GB`,
+						// Same unit as the card's Memory line: this divided by 1024³ while the card divided by
+						// 10⁹, so one screen said 2.9 GB and 3.1 GB of the same figure.
+						`${candidate.label} — ${(candidate.measured.medianCer * 100).toFixed(1)} % error, ${formatBytes(candidate.peakRssBytes)} memory${
+							candidate === byRule ? " (default)" : ""
+						}`,
 					);
 				}
-				dropdown.setValue(context.preferred ?? "");
+				dropdown.setValue(context.preferred ?? byRule.dir);
 				dropdown.onChange(async (value) => {
-					// Empty means "decide for me", which is a cleared preference rather than a stored empty
-					// string -- `readLocalModelSettings` treats both alike, and not writing one keeps
-					// `data.json` free of a key that means nothing.
-					setPreferredModelDir(ctx.settings, value === "" ? null : value);
+					// The default is a cleared preference rather than a stored one -- `readLocalModelSettings`
+					// treats both alike, and not writing a key keeps `data.json` free of one that means
+					// nothing. It also keeps the rule in charge on another machine, where its pick may differ.
+					setPreferredModelDir(ctx.settings, value === byRule.dir ? null : value);
 					await ctx.save();
 					rerender();
 				});
@@ -294,14 +323,21 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 							download = null;
 							rerender();
 							break;
+						case "remove-superseded":
+							if (action.directory !== undefined) removeModelDirectory(paths, action.directory);
+							rerender();
+							break;
 						case "delete": {
+							// The pick goes with the model: a name in `data.json` for a directory that is gone
+							// would be silently ignored, and then honoured again the day it reappears.
+							setPreferredModelDir(ctx.settings, null);
+							await ctx.save();
 							const freed = removeLocalModel(paths);
 							new Notice(deleteConfirmation(freed, Platform.isMacOS ? "Apple Vision" : "no transcription"));
 							download = null;
 							runtimeFailure = null;
-							// The selection has to move with the model. §6.2's listing rule keeps a *selected*
-							// entry in the dropdown, disabled -- so without this the user is left holding a
-							// backend that transcribes nothing, with no hint of what to switch to.
+							// The selection moves with the model: without this every sync from here on writes
+							// notes without a transcript, with nothing but a notice to say why.
 							await ctx.selectDefaultBackend();
 							break;
 						}
@@ -311,21 +347,6 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 		}
 	}
 
-	// Asked twice, but never on one screen. The canonical row under *Automatic sync* only exists while
-	// this backend is the selected one, and a backend still downloading cannot be selected -- so the
-	// card carries the question exactly where the other row cannot reach: during setup, next to the
-	// runtime estimate that makes it answerable (§7.5). Once selected, the canonical row has it.
-	if (copy.showsBackgroundConsent && !ctx.isSelected) {
-		new Setting(card)
-			.setName("Transcribe during background sync")
-			.setDesc(backgroundConsentDesc(generation))
-			.addToggle((toggle) =>
-				toggle.setValue(readLocalModelSettings(ctx.settings).backgroundConsent).onChange(async (value) => {
-					setBackgroundConsent(ctx.settings, value);
-					await ctx.save();
-				}),
-			);
-	}
 }
 
 /**
@@ -348,7 +369,7 @@ if (offeredOnThisPlatform()) {
 		metered: false,
 		requiresLicence: false,
 		/**
-		 * Costs no money and still costs battery, fans and 14 GB of RAM for minutes at a time without the
+		 * Costs no money and still costs battery, heat and 14 GB of RAM for minutes at a time without the
 		 * user having asked. That is what this field is for, and it is why it is not a rename of `metered`.
 		 */
 		needsBackgroundConsent: true,
@@ -360,12 +381,9 @@ if (offeredOnThisPlatform()) {
 				const platform = Platform.isDesktop ? (require("os") as typeof import("os")).platform() : "";
 				return localModelUnavailableLabel(block, platform);
 			}
-			const resolved = resolveLocalModel(PLUGIN_ID);
-			if (!resolved) return null;
-			const snapshot = readLocalModelSnapshot(resolved.paths);
-			if (deriveLocalModelState(snapshot, Date.now(), resolved.generation) === "ready" && !runtimeFailure) return null;
-			// The one lifecycle string: the card below says which of the five reasons it is.
-			return NOT_READY_LABEL;
+			// Not downloaded is not unavailable: the entry is listed and selectable, and its card below
+			// says what to do. Only a machine that can never run it gets the disabled option.
+			return null;
 		},
 
 		/**
@@ -375,27 +393,50 @@ if (offeredOnThisPlatform()) {
 		 * and poisons no cache, and *Re-transcribe all synced notes* is the way back (§8.1).
 		 */
 		create(settings, options) {
-			const paths = resolveLocalModelPaths(PLUGIN_ID);
+			// Resolved with the user's pick, as the adapter below is: the busy check and the run must
+			// read the same directory, or the guard answers about a model that is not about to run.
+			const paths = resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.paths ?? null;
 			if (paths && isLocalModelBusy(paths) && !options?.silent) {
 				// Two concurrent runs are 27 GB. Manual says so; a background sync is skipped silently and
 				// the next interval retries.
 				new Notice("Another vault is transcribing right now. Try again in a moment.");
 			}
 			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure);
-			return backend ?? new UnavailableOcrBackend(LOCAL_BACKEND_ID);
+			// `true`: unavailable for now, not on this machine -- the end-of-sync notice says which.
+			return backend ?? new UnavailableOcrBackend(LOCAL_BACKEND_ID, true);
+		},
+
+		/**
+		 * Stops a download this plugin instance started, so it does not outlive the instance.
+		 *
+		 * Cancelling releases the lock and leaves the `.part` where a Resume finds it, so nothing that
+		 * was fetched is thrown away -- the card comes back as *Download paused* with the bytes named,
+		 * which is a state the user already has a button for. Without this the fetch and the 10-second
+		 * lock heartbeat both survive a reload, and the fresh instance reads its own predecessor's work
+		 * as `foreign-download`: *"Being downloaded in another vault"*, with one vault open.
+		 */
+		onPluginUnload() {
+			download?.cancel();
+			download = null;
 		},
 
 		/**
 		 * Attached only where the model could actually run (§4.1). Where it cannot, the entry registers
-		 * *without* a card and carries a permanent `unavailableLabel()` — which makes §6.2's listing rule
-		 * produce show-but-disable for exactly those machines, with no extra mechanism.
+		 * *without* a card and carries a permanent `unavailableLabel()`, so the dropdown shows it
+		 * disabled with the reason where its name was.
 		 */
-		renderSetup: machineCanRun()
+		renderSettings: machineCanRun()
 			? (containerEl, ctx) => {
-					renderCard(containerEl, ctx, () => {
-						containerEl.empty();
-						renderCard(containerEl, ctx, () => undefined);
-					});
+					// The card gets an element of its own, so a redraw empties the card and nothing else.
+					// `containerEl` is the whole settings page: emptying *that* on a progress tick left the
+					// user with a lone card and no settings, and the redrawn card's own redraw was a no-op,
+					// so the tick after it moved nothing.
+					const host = containerEl.createDiv();
+					redrawCard = () => {
+						host.empty();
+						renderCard(host, ctx, () => redrawCard());
+					};
+					renderCard(host, ctx, () => redrawCard());
 				}
 			: undefined,
 
@@ -411,7 +452,8 @@ if (offeredOnThisPlatform()) {
 		backgroundConsent: {
 			get: (settings) => readLocalModelSettings(settings).backgroundConsent,
 			set: (settings, value) => setBackgroundConsent(settings, value),
-			description: backgroundConsentDesc(resolveLocalModel(PLUGIN_ID)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
+			description: (settings) =>
+				backgroundConsentDesc(resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
 		},
 	});
 }

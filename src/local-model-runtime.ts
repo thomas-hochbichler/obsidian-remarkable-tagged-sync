@@ -91,11 +91,6 @@ export function pathsForGeneration(pluginId: string, generation: ModelGeneration
 	return pathsFor(pluginId, generation.dir);
 }
 
-/** The paths for the generation this install resolved to, or null where the backend is not offered. */
-export function resolveLocalModelPaths(pluginId: string): LocalModelPaths | null {
-	return resolveLocalModel(pluginId)?.paths ?? null;
-}
-
 /** Byte size, or null when the file is not there. Any other error is also "not usable", by design. */
 function sizeOf(file: string): number | null {
 	const fs = nodeRequire("fs");

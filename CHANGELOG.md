@@ -12,44 +12,7 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
-### Added
-
-- **A Mac with 8 GB of memory can now read handwriting locally.** Until now those machines had Apple's
-  built-in recognition and nothing else. A third model, Qwen3-VL-2B, reads the fifteen public reference
-  pages at **6.6 % character error against Apple's 15.7 %** — less than half the mistakes — in 2.9 GB
-  while it works and a 1.6 GB download. It is what a fresh install on such a Mac now gets, and it is
-  offered nowhere it would not fit. Windows on ARM keeps a 16 GB requirement for it: the only Windows
-  memory figure anyone has measured is the largest model's, and the number derived from it lands too
-  close to the line to gate on. (#146)
-
-- **You can pick which local model runs, and the plugin picks well if you do not.** Where more than one
-  model fits your machine, the settings screen lists them by how well each read the fifteen public
-  reference pages, with the memory each uses while a page is read, and any model your Mac is too small
-  for is named with the reason. Leave it on *Decide for me* and you get the most accurate one your
-  machine can run. Your choice is remembered, and it is a preference rather than a fact — if the model
-  it names is deleted or you move to a smaller machine, the plugin decides again instead of stopping.
-  (#145)
-
-### Changed
-
-- **Whether a scrolled page is cut before reading is now decided per model.** Cutting a very tall page
-  at its blank bands helps most backends enormously — GPT-4o goes from 39.5 % character error to
-  4.0 % — but it is not universal: a model that handles a tall image natively reads it *better* whole,
-  and one was measured going the other way, from 1.0 % to 10.6 %. Both models the plugin ships still
-  cut, which is what their measurements say; the setting exists so a model that should not is not made
-  to. (#145)
-
-- **A page you scrolled is now read in pieces, and comes back far better.** A scrolled page is one very
-  tall image -- one in the reference set is 852 by 7469 pixels -- and every transcription backend
-  shrinks an image before reading it, so the writing arrived at a fraction of the size it needs to be
-  legible and the model guessed. The page is now cut where there is no ink, at the blank bands between
-  blocks of writing, and each piece is read on its own. Measured on that page: GPT-4o went from 50.2 %
-  character error to 4.3 %, Claude from 11.3 % to 8.3 %, Gemini from 3.7 % to 1.3 %, and the local
-  model from 4.3 % to 1.0 %. Every backend improved and none got worse. **Ordinary pages are untouched**
-  -- the cut only applies to a page whose writing runs more than three times its own width, which the
-  widest ordinary page in the reference set does not approach. No stroke is ever divided, so nothing is
-  cut through the middle of a letter, and a page that would need more than six pieces is read whole as
-  before. On a metered backend a cut page costs one request per piece. (#144)
+## [1.7.0] - 2026-09-11
 
 ### Added
 
@@ -63,6 +26,23 @@ workflow publishes the section as the GitHub release body. See
   afterwards as the way back, and there is a button to remove it when you no longer want the 5.5 GB.
   Notes you have already transcribed are not re-read; *Re-transcribe all synced notes* is there if you
   want them redone with the better model. (#143)
+
+- **A Mac with 8 GB of memory can now read handwriting locally.** Until now those machines had Apple's
+  built-in recognition and nothing else. A third model, Qwen3-VL-2B, reads the fifteen public reference
+  pages at **6.6 % character error against Apple's 15.7 %** — less than half the mistakes — in 2.9 GB
+  while it works and a 1.6 GB download. It is what a fresh install on such a Mac now gets, and it is
+  offered nowhere it would not fit. Windows on ARM keeps a 16 GB requirement for it: the only Windows
+  memory figure anyone has measured is the largest model's, and the number derived from it lands too
+  close to the line to gate on. (#146)
+
+- **You can pick which local model runs, and the plugin picks well if you do not.** Where more than one
+  model fits your machine, the settings screen lists them by how well each read the fifteen public
+  reference pages, with the memory each uses while a page is read, and any model your Mac is too small
+  for is named with the reason. The most accurate one your machine can run is marked *default* and is
+  what you get unless you pick another; on a fresh install the pick decides which model is downloaded,
+  and on an install that already has a model the card offers to fetch the one you picked beside it.
+  Your choice is remembered, and it is a preference rather than a fact — if the model it names is
+  deleted or you move to a smaller machine, the plugin decides again instead of stopping. (#145)
 
 - **One bad transcript no longer costs a whole-vault run.** A new command, *Re-transcribe this note*,
   re-reads just the note you have open. Because it works on one note, it can be more careful than the
@@ -99,15 +79,54 @@ workflow publishes the section as the GitHub release body. See
 
 - **A page dropped for running too long is now reported at the end of the sync.** It was dropped
   before too -- half a page read as a whole one is a permanent loss -- but only a console message
-  said so, and a notebook that lost three pages out of five looked like a clean sync. The report now
-  names how many pages were left out, why, and that they will not come back on their own: switch to
-  a model that does not reason and run "Re-transcribe all notes". (#116)
+  said so, and a notebook that lost three pages out of five looked like a clean sync. The end-of-sync
+  notice now names how many pages were left out, why, and that they will not come back on their own:
+  switch to a model that does not reason and run "Re-transcribe all notes". The same goes for a
+  server that did not answer within ten minutes, and for one that refused. (#116)
 
   The Anthropic backend reported *nothing* until now -- not this, not a dead connection, not a
   rejected key. It has the same three-part report as every other backend, and its page ceiling has
   been raised from 4096 to 16384 tokens so a reasoning pass stops eating the room a transcript needs.
 
 ### Changed
+
+- **The downloaded model is in the Backend list before it is downloaded.** It used to appear only once
+  the download had finished, and the card that explained what to do sat under whatever backend you
+  had selected — so a fresh install looked as if the entry was missing. Pick it, and its card says
+  *not downloaded* with the button; until the download is done, a sync writes the notes without a
+  transcript and says so at the end. The entry is called *Downloaded model (managed by this plugin)*
+  now, beside *Ollama (your own server)* and *Apple Vision (built into macOS)* — all three used to say
+  *local*, and the word did not separate them.
+
+- **The model list says what its number is.** Beside a download button naming 1.6 GB, a bare 2.9 GB
+  read as a second size for the same download; it is the memory the model holds while a page is read,
+  and the entry says *memory* now, in the same unit the card's own Memory line uses — the two used to
+  divide by different powers and show 2.9 and 3.1 for one figure.
+
+- **What the transcripts will look like is said in the Backend setting itself**, as its second
+  sentence, rather than on a loose line under it that belonged to nothing. And it is said for the
+  backend you chose: with LM Studio selected it used to read *"Apple Vision: flat text only … choose
+  an LLM backend"*.
+
+- **A page you scrolled is now read in pieces, and comes back far better.** A scrolled page is one very
+  tall image -- one in the reference set is 852 by 7469 pixels -- and every transcription backend
+  shrinks an image before reading it, so the writing arrived at a fraction of the size it needs to be
+  legible and the model guessed. The page is now cut where there is no ink, at the blank bands between
+  blocks of writing, and each piece is read on its own. Measured on that page: GPT-4o went from 50.2 %
+  character error to 4.3 %, Claude from 11.3 % to 8.3 %, Gemini from 3.7 % to 1.3 %, and the local
+  model from 4.3 % to 1.0 %. Every backend improved and none got worse. **Ordinary pages are untouched**
+  -- the cut only applies to a page whose writing runs more than three times its own width, which the
+  widest ordinary page in the reference set does not approach. No stroke is ever divided, so nothing is
+  cut through the middle of a letter, and a page that would need more than six pieces is read whole as
+  before. On a metered backend a cut page costs one request per piece. (#144)
+
+- **Whether a scrolled page is cut before reading is now decided per downloaded model.** Cutting a
+  very tall page at its blank bands helps most backends enormously — GPT-4o goes from 39.5 %
+  character error to 4.0 % — but it is not universal: a model that handles a tall image natively reads
+  it *better* whole, and one was measured going the other way, from 1.0 % to 10.6 %. The two larger
+  models the plugin ships still cut, which is what their measurements say; the 2B for 8 GB Macs reads
+  a tall page whole, which is what its measurement says. Every other backend — the cloud providers and
+  a server of your own — cuts. (#145)
 
 - **Only the pages you changed are transcribed again.** Adding one page to a long notebook used to
   read the whole notebook back, every time -- so the cost of capturing one new meeting grew with how
@@ -117,8 +136,8 @@ workflow publishes the section as the GitHub release body. See
   on go to the transcription backend.
 
   **Changing the backend or the model discards what was kept**, so a note is never a mix of two
-  models reading it. So does a plugin release that ships a new local model or changes how pages are
-  read. To read everything again on purpose, use **Re-transcribe all notes** -- it still reads every
+  models reading it — taking the offer of a newer downloaded model counts as a model change. So does
+  a plugin release that changes how pages are read. To read everything again on purpose, use **Re-transcribe all notes** -- it still reads every
   page, and now leaves the saved text behind it, so the sync after it is quick.
 
   **The first sync of each notebook after this update still reads it whole, once.** Nothing was
@@ -137,12 +156,96 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **Fetching a newer model beside the one you have no longer deletes its own download.** The settings
+  card tidies away half-downloaded models of versions this plugin can no longer finish, and it judged
+  them by the name of the model in use — so the newer model's own download, in its own directory, was
+  read as one of those and removed on its first progress tick, then started again from zero on the
+  next. Every model this plugin can fetch is left alone now.
+
+- **A model that was verified no longer shows as *Download paused* over a *Discard 6.5 GB* button.** A
+  leftover partial file from an attempt the finished download had overtaken made the card read the
+  model as incomplete — and the Discard button would have deleted the verified model along with the
+  leftover. A verified, full-size model is ready whatever sits beside it, and the leftover is removed.
+
+- **A page dropped or a server that did not answer is now said at the end of the sync.** The sentence
+  existed, but it went into *Copy diagnostics* and nowhere else, so a notebook that lost three pages
+  of five still reported *Synced 1 note*. It is raised as a notice now, in the backend's own words.
+
+- **A server that was down for one sync no longer throws away the pages already read.** Any warning
+  from the backend emptied the per-page store, so the next edit to that notebook re-read all of it.
+  The pages the backend marked as failed were never stored anyway; the ones it read are kept.
+
+- **A failure while bringing old notes up to the current properties no longer swallows the sync's own
+  report** — the notice about pages left out, the *last synced* time and the reuse figures — for
+  notes that had already been written. It is its own line in diagnostics now.
+
+- **Picking the downloaded model before its download no longer ends the first sync with "Text
+  transcription needs macOS 13 or later".** That sentence was for a Mac that cannot run Apple Vision,
+  and it was shown once and then never again. A sync with the model not yet on disk now says how
+  many notes went without a transcript and what to do: download it in settings, then run
+  *Re-transcribe all synced notes* for the notes synced meanwhile.
+
+- **Picking a model that is not on disk now offers to download it.** The pick used to sit in the
+  list over a card running a different model, doing nothing, because a working model is never
+  displaced until the picked one is installed. The card now offers the picked model the way it
+  offers a better one, with both error rates and the download size.
+
+- **The card no longer takes the whole settings page with it while a model downloads.** Each tick of
+  the progress bar redrew the card into an emptied page, so after the first tick nothing but the card
+  was left — and the redrawn card did not move again. It redraws only itself now.
+
+- **A scrolled page's lower blocks are no longer folded onto its last row and lost.** The renderer
+  drew a page scrolled far past one screen at the height of one screen; the writing below it landed on
+  top of the last row. The page is drawn at its full height. (#136)
+
+- **The background-transcription switch is now called *Allow automatic sync with this backend*, and
+  says what it does.** It used to be *Transcribe during background sync*, which promised it was about
+  transcription — so beside *Enable automatic sync* it looked like a second switch for the same thing
+  under a different name. It is not about transcription: while it is off, automatic sync does nothing
+  at all for that backend and a sync you start yourself brings everything. The description says that
+  first and the cost second, and it no longer mentions fans — most Macs this runs on either have none
+  or never spin them audibly, so the thing you actually notice is the battery. The downloaded model,
+  a local server and a paid provider all say it under the same name — the paid one used to be
+  *Automatically transcribe during background sync*, which promised a sync without transcripts and
+  delivered no sync at all — and only one of them is asked on any screen.
+
+- **The model check now sits with the model field.** The green or red line saying whether your model
+  can read images was drawn *underneath* the field's box rather than inside it, so it floated in the
+  gap between two settings and looked like it belonged to neither. It now sits in the field's own
+  description, directly under it.
+
+- **The Backend setting now describes the backend you chose.** It explained all three families at
+  once — Apple Vision, a model on your own machine, and the cloud providers — so whichever one you
+  had picked, most of what you were reading was about the other two. It now makes one promise: the
+  one belonging to the backend in the box beside it.
+
+- **Settings no longer jumps to the top when you change something.** Nearly every control on the
+  settings page redraws the page in place, and the redraw was throwing you back to the top — so
+  choosing a transcription backend, which sits well down a long page, took you away from the very
+  setting you had just touched. The page now keeps your place.
+
+- **Starting a download no longer says another vault is transcribing.** A download fetches the 12 MB
+  transcription engine first and the model second, and for that first minute the plugin read its own
+  download as somebody else's work: pressing Resume was refused with *"another vault is transcribing
+  right now"*, and a sync started in that window skipped transcription for a reason that was not
+  true. Both halves of a download are recognised now.
+
+- **A download no longer outlives the plugin that started it.** Reloading the plugin while one ran —
+  an update, or switching it off and on again — left the transfer going with nothing able to stop it,
+  and the freshly loaded plugin could only read the growing file as *"Being downloaded in another
+  vault"*, on machines with one vault open. A download now stops when the plugin unloads, keeps every
+  byte it had already fetched, and comes back as *Download paused* with the amount named and a Resume
+  button. The card also stops claiming a vault it cannot see: the lock the plugin writes carries a
+  timestamp and nothing else, deliberately, so where a download really is running somewhere else it
+  now says only that a download is running, with the progress it can see, and names both of the ways
+  that happens.
+
 - **Typed text now sits where you typed it, not at the end of the page.** On a page with handwriting
   above *and* below a block of typed text, the block was appended after everything the transcription
   backend read, so the line you wrote under it came back in the middle. The page's ink is now split
   where the typed lines sit and read in parts, and the transcript follows the page: handwriting,
-  typed block, handwriting. A page with no typed text on it still costs exactly one request. Apple
-  Vision was never affected -- it knows where each line sits and has always placed them.
+  typed block, handwriting. A page with no typed text on it still costs one request, unless it is a
+  scrolled page cut into pieces (see above). Apple Vision was never affected -- it knows where each line sits and has always placed them.
 
 ## [1.6.3] - 2026-09-05
 

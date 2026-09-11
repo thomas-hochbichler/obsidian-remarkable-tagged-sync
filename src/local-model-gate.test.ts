@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localModelBlock, localModelUnavailableLabel, MACOS_FLOOR_GB, NOT_READY_LABEL, WINDOWS_FLOOR_GB } from "./local-model-gate";
+import { localModelBlock, localModelUnavailableLabel, MACOS_FLOOR_GB, WINDOWS_FLOOR_GB } from "./local-model-gate";
 
 const GIB = 1024 ** 3;
 
@@ -88,21 +88,16 @@ describe("the three strings (§4.3, §6.2)", () => {
 		);
 	});
 
-	// The lifecycle line's only job is to point at the card that explains the rest.
-	it("keeps the lifecycle line to a pointer", () => {
-		expect(NOT_READY_LABEL).toBe("Local model — not ready, see below");
-	});
-
 	it("is three strings and no more", () => {
 		const strings = new Set([
 			localModelUnavailableLabel({ kind: "architecture" }, "darwin"),
 			localModelUnavailableLabel({ kind: "architecture" }, "win32"),
 			localModelUnavailableLabel({ kind: "memory", floorGb: 18, actualGb: 16 }, "darwin"),
 			localModelUnavailableLabel({ kind: "memory", floorGb: 24, actualGb: 8 }, "win32"),
-			NOT_READY_LABEL,
 		]);
-		// Two hardware shapes plus one lifecycle line; the memory ones differ only by their numbers.
-		expect(strings.size).toBe(4);
+		// Two hardware shapes; the memory ones differ only by their numbers. A model that is merely not
+		// downloaded gets no string at all -- it is listed, and its card says what to do.
+		expect(strings.size).toBe(3);
 		for (const value of strings) expect(value.startsWith("Local model — ")).toBe(true);
 	});
 });

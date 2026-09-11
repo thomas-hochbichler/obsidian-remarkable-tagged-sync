@@ -6,13 +6,12 @@
 // that can be asserted is a string that cannot quietly drift. The renderer below the seam turns this
 // into DOM and knows nothing about what any of it means.
 
-import { betterGeneration, type ChoiceContext, type ModelGeneration, totalDownloadBytes } from "./local-model-artefacts";
+import { type ChoiceContext, type ModelDirectoryFacts, type ModelGeneration, offeredGeneration, totalDownloadBytes } from "./local-model-artefacts";
 import { formatBytes, shortfallMessage } from "./local-model-download";
 import { estimateLine } from "./local-model-settings";
 import type { LocalModelPlatform } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
 
-/** What the user can press. The renderer maps each id to behaviour; the copy owns the label. */
 /**
  * A better model exists and this install is not using it (ticket 20).
  *
@@ -38,8 +37,8 @@ export interface NewerModelOffer {
  * the most accurate model there may still be one better than the reader has, and offering a model its
  * own memory gate would refuse is worse than offering nothing.
  */
-export function newerModelOffer(inUse: ModelGeneration, context: ChoiceContext): NewerModelOffer | null {
-	const better = betterGeneration(inUse, context);
+export function newerModelOffer(inUse: ModelGeneration, context: ChoiceContext, present: readonly ModelDirectoryFacts[] = []): NewerModelOffer | null {
+	const better = offeredGeneration(inUse, present, context);
 	if (!better) return null;
 	return {
 		label: better.label,
@@ -49,9 +48,19 @@ export function newerModelOffer(inUse: ModelGeneration, context: ChoiceContext):
 	};
 }
 
-export interface CardAction {
-	id: "download" | "resume" | "cancel" | "discard" | "delete" | "retry-runtime" | "update";
+/** A complete model of another generation still on disk beside the one in use: the way back after an update. */
+export interface SupersededModel {
+	directory: string;
 	label: string;
+	bytes: number;
+}
+
+/** What the user can press. The renderer maps each id to behaviour; the copy owns the label. */
+export interface CardAction {
+	id: "download" | "resume" | "cancel" | "discard" | "delete" | "retry-runtime" | "update" | "remove-superseded";
+	label: string;
+	/** For `remove-superseded`: the model directory the button removes. */
+	directory?: string;
 	/** `cta` is the one obvious next step; `warning` is destructive and styled as such. */
 	emphasis: "cta" | "warning" | "normal";
 }
@@ -62,8 +71,6 @@ export interface CardCopy {
 	actions: CardAction[];
 	/** 0-100 when the card should draw a bar, null otherwise. */
 	percent: number | null;
-	/** True when the card asks for the background-sync consent checkbox (§7.5). */
-	showsBackgroundConsent: boolean;
 }
 
 /**
@@ -79,15 +86,12 @@ export type LocalCardState =
 	| { kind: "out-of-disk"; shortfallBytes: number }
 	| { kind: "network-lost"; message: string }
 	| { kind: "foreign-download"; percent: number }
-	| { kind: "ready"; newer: NewerModelOffer | null }
+	| { kind: "ready"; newer: NewerModelOffer | null; superseded?: SupersededModel[] }
 	| { kind: "corrupt" }
 	| { kind: "removed"; modelBytes: number }
 	| { kind: "runtime-failed"; message: string };
 
 /** Bytes as a one-decimal GB, for copy a person reads rather than a number a machine compares. */
-function gib(bytes: number): string {
-	return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
-}
 
 /** A rate as a one-decimal percentage. */
 function percent(rate: number): string {
@@ -101,7 +105,7 @@ function percent(rate: number): string {
  * of four: a fresh install on an 8 GB Mac fetches 1.6 GB, and a hard-coded string would have promised
  * it the 6.2 GB the largest one costs.
  */
-const modelSize = (generation: ModelGeneration) => gib(generation.modelBytes + generation.mmprojBytes);
+const modelSize = (generation: ModelGeneration) => formatBytes(generation.modelBytes + generation.mmprojBytes);
 /**
  * The engine's size, quoted as **12 MB**.
  *
@@ -132,17 +136,30 @@ export const QUALITY_LINE =
  * accurate option. On a model already downloaded and selected there is nothing left to compare -- the
  * only sentence still doing work is the one that says what a mistake will look like.
  */
-export const QUALITY_LINE_SHORT =
-	"This model's misreads come out as fluent text, so check anything that matters against the handwriting.";
+export const QUALITY_LINE_SHORT = "Misreads come out as fluent text — check anything that matters against the handwriting.";
 
 /**
  * The background-sync gate's own copy. Money is gone from it entirely: this costs none (§7.5).
  *
  * The memory figure is the chosen model's own. It was a constant while one model shipped, and telling
  * a reader on the smallest tier that "the model holds 14 GB" would be describing somebody else's Mac.
+ *
+ * **It says what the switch does before what it costs.** The old wording named only the price and
+ * left the reader to guess what they were buying; it was reported as a setting nobody could picture.
+ * What being off actually means is not mild, either: `backgroundRunBlocked` returns
+ * `no-background-consent` *before* a run starts, so the whole scheduled sync is skipped, silently,
+ * and no note arrives on its own while this backend is the chosen one.
+ *
+ * **No fans.** The copy used to lead with them, and on the machines this ships to most that is a
+ * sound nobody hears: a MacBook Air has no fan at all and the rest are near-silent. Naming a symptom
+ * the reader will never notice made the whole sentence read as being about somebody else's computer.
+ * Memory and a warm machine on battery are what they will actually see.
  */
 export function backgroundConsentDesc(generation: ModelGeneration): string {
-	return `Off by default. In the background the model holds ${gib(generation.peakRssBytes)} and pushes the fans for as long as it runs. Manual syncs are unaffected.`;
+	return (
+		`An automatic sync would run the model while you are not there: ${formatBytes(generation.peakRssBytes)} held and minutes of heavy work each time, which on battery you will notice. ` +
+		"Off by default — automatic sync then does nothing while this backend is chosen, and a sync you start yourself brings everything, transcript included."
+	);
 }
 
 /** What the user is agreeing to, in the four terms §7.2 requires plus the speed line of §7.3. */
@@ -155,7 +172,7 @@ function consentParagraphs(platform: LocalModelPlatform, settings: BackendSettin
 		`Speed: ${estimateLine(platform, settings)}`,
 		// Not an implementation detail on a machine at the floor; it is a large share of it. Both figures
 		// are this model's own -- they range from 2.9 GB on an 8 GB Mac to 8.0 GB on a 16 GB one.
-		`Memory: ${gib(generation.peakRssBytes)} while a page is read · ${generation.floorGb[platform]} GB of memory needed.`,
+		`Memory: ${formatBytes(generation.peakRssBytes)} while a page is read · ${generation.floorGb[platform]} GB of memory needed.`,
 		QUALITY_LINE,
 	];
 }
@@ -169,8 +186,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: consentParagraphs(platform, settings, generation),
 				actions: [{ id: "download", label: `Download the model (${modelSize(generation)})`, emphasis: "cta" }],
 				percent: null,
-				// Asked here, on the one screen where the runtime estimate is already on the user's eye.
-				showsBackgroundConsent: true,
 			};
 
 		case "downloading": {
@@ -183,7 +198,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [{ id: "cancel", label: "Pause", emphasis: "normal" }],
 				percent,
-				showsBackgroundConsent: true,
 			};
 		}
 
@@ -195,7 +209,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: ["Checking the downloaded files against the SHA-256 this plugin was published with."],
 				actions: [],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "paused":
@@ -208,7 +221,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 					{ id: "discard", label: `Discard ${formatBytes(state.onDiskBytes)}`, emphasis: "warning" },
 				],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "out-of-disk":
@@ -222,7 +234,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [{ id: "resume", label: "Resume", emphasis: "cta" }],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "network-lost":
@@ -231,18 +242,26 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: [state.message, "What is already on disk is kept, and Resume picks up where it stopped."],
 				actions: [{ id: "resume", label: "Resume", emphasis: "cta" }],
 				percent: null,
-				showsBackgroundConsent: true,
 			};
 
 		case "foreign-download":
 			// The filesystem is the shared state: this vault watches the same growing file rather than
 			// coordinating with the vault that owns the lock.
+			//
+			// **"Elsewhere", not "in another vault".** The lock holds a timestamp and nothing else -- by
+			// §5.4's design, because two vaults share one process and a PID would prove nothing -- so
+			// this card cannot actually see a second vault. It never could, and it said so anyway: a
+			// download left running by a previous plugin instance shows up here identically, and a user
+			// with one vault open was told about a vault that did not exist. The heading now says only
+			// what the disk shows -- that a download is running -- and the paragraph names both ways it
+			// can be one this vault did not start.
 			return {
-				heading: `Being downloaded in another vault — ${state.percent} %`,
-				paragraphs: ["The model is shared by every vault, so this one will use it as soon as that download finishes."],
+				heading: `Downloading… — ${state.percent} %`,
+				paragraphs: [
+					"Another vault is fetching it — or this one was, before the plugin last reloaded. The model is shared, so this vault will use it as soon as the download finishes.",
+				],
 				actions: [],
 				percent: state.percent,
-				showsBackgroundConsent: true,
 			};
 
 		case "ready": {
@@ -252,13 +271,19 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				// Stated as a trade with both numbers in it, and never started for the user: what they
 				// have works, and a multi-gigabyte download is not something a plugin update may decide.
 				paragraphs.push(
-					`${state.newer.label} reads the same reference pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
-						`It is a ${gib(state.newer.downloadBytes)} download and it installs beside the model you have, which keeps working and stays until you remove it.`,
-					"Notes you have already transcribed are not redone — use 'Re-transcribe everything' afterwards if you want them redone.",
+					`${state.newer.label} reads the same pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
+						`A ${formatBytes(state.newer.downloadBytes)} download, installed beside the model you have, which keeps working until you delete it.`,
+					"Notes already transcribed are not redone; 'Re-transcribe everything' does that.",
 				);
 				actions.unshift({ id: "update", label: `Get ${state.newer.label}`, emphasis: "cta" });
 			}
-			return { heading: "Local model — ready", paragraphs, actions, percent: null, showsBackgroundConsent: true };
+			// Named and offered, never removed underneath the user: it is the way back if the newer model
+			// disappoints, and it costs a button press to give the disk back.
+			for (const old of state.superseded ?? []) {
+				paragraphs.push(`${old.label} is still on disk (${formatBytes(old.bytes)}) as the way back.`);
+				actions.push({ id: "remove-superseded", label: `Remove ${old.label}`, emphasis: "warning", directory: old.directory });
+			}
+			return { heading: "Local model — ready", paragraphs, actions, percent: null };
 		}
 
 		case "corrupt":
@@ -272,7 +297,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				],
 				actions: [{ id: "delete", label: "Delete and start over", emphasis: "warning" }],
 				percent: null,
-				showsBackgroundConsent: false,
 			};
 
 		case "removed":
@@ -285,11 +309,10 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 					// malware alert once per cycle, and no "removed twice, giving up" counter.
 					// The size of the model *this install has*, not of the newest one on offer: two generations
 					// ship, and telling a 5.5 GB user their 6.2 GB model is safe reads as a different machine.
-					`Only the ${ENGINE_SIZE} engine is affected; the ${gib(state.modelBytes)} model on disk is untouched and does not need downloading again.`,
+					`Only the ${ENGINE_SIZE} engine is affected; the ${formatBytes(state.modelBytes)} model on disk is untouched and does not need downloading again.`,
 				],
 				actions: [{ id: "retry-runtime", label: "Download the engine again", emphasis: "cta" }],
 				percent: null,
-				showsBackgroundConsent: false,
 			};
 
 		case "runtime-failed":
@@ -298,7 +321,6 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs: [state.message, "Notes still sync with the handwriting render. The next sync tries again."],
 				actions: [{ id: "retry-runtime", label: "Download the engine again", emphasis: "normal" }],
 				percent: null,
-				showsBackgroundConsent: false,
 			};
 	}
 }

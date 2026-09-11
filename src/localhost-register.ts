@@ -30,7 +30,7 @@ import { UnavailableOcrBackend } from "./vision-ocr-backend";
  * loaded. Apple Vision's flat-text limit is a property of Vision; this backend's is a property of a
  * choice we did not make.
  */
-const NOTE_CONTRACT = "Structure depends on the model you load — a capable vision model returns headings and lists, a weak one flat text.";
+const NOTE_CONTRACT = "Transcript structure depends on the model you load — a capable vision model returns headings and lists, a weak one flat text.";
 
 /**
  * The model recommendation, and the exact extent of what stands behind it (spec §4.3).
@@ -59,11 +59,12 @@ const MODEL_RECOMMENDATION =
  * Not an inconsistency. `pro/llm-register.ts` derives the flag from `kind === "cloud"` and says why
  * it was left alone: flipping it would silently stop background transcription for users who already
  * configured those providers. This registration has no such users, and the substance points the
- * other way -- a 7B on your own machine costs battery, fans and several GB of RAM for minutes at a
+ * other way -- a 7B on your own machine costs battery, heat and several GB of RAM for minutes at a
  * time, which is exactly what `src/local-register.ts` sets the same flag for.
  */
 const BACKGROUND_CONSENT_DESC =
-	"Transcribe in the background with your local server. It runs a model on this machine — expect fans and several GB of memory while a sync runs.";
+	"An automatic sync would put your server to work while you are not there: several GB of memory and minutes of heavy work on whichever machine runs it. " +
+	"Off by default — automatic sync then does nothing while this backend is chosen, and a sync you start yourself brings everything, transcript included.";
 
 /** This backend's slice of the opaque settings blob: the provider config plus its own consent flag. */
 type LocalhostSettings = LlmProviderConfig & { backgroundConsent?: boolean };
@@ -229,7 +230,7 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 	// Everything else here already has a working value -- the endpoint is the provider's own default,
 	// and a key is only wanted by a server that asks for one -- and a row nobody has to touch is a row
 	// that can wait behind a disclosure.
-	new Setting(containerEl)
+	const modelSetting = new Setting(containerEl)
 		.setName("Model")
 		.setDesc("The vision model to transcribe with — whichever one you loaded.")
 		.addText((text) => {
@@ -241,9 +242,13 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 			});
 		});
 
-	containerEl.createDiv({ cls: "tagged-sync-note", text: MODEL_RECOMMENDATION });
+	// Both of these belong to the field above them -- one says what to type, the other judges what
+	// was typed -- so they go in its description rather than beside it. Obsidian 1.13 draws each
+	// setting as its own card, and a sibling note landed in the gap between two cards, reading as
+	// belonging to neither.
+	modelSetting.descEl.createDiv({ cls: "tagged-sync-verdict", text: MODEL_RECOMMENDATION });
 
-	visionWarningEl = containerEl.createDiv({ cls: "tagged-sync-note" });
+	visionWarningEl = modelSetting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 	scheduleVisionCheck(meta, cfg);
 
 	const advanced = containerEl.createEl("details", { cls: "tagged-sync-advanced" });
@@ -297,10 +302,9 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 			set: (settings, value) => {
 				(settings as LocalhostSettings).backgroundConsent = value;
 			},
-			description: BACKGROUND_CONSENT_DESC,
+			description: () => BACKGROUND_CONSENT_DESC,
 		},
 		// No `unavailableLabel`: it can run anywhere. A server that is not running is a run-time
 		// failure, not a property of the machine -- see spec §5 for where that is said instead.
-		// No `renderSetup`: nothing to download, and a card would hide the entry from the dropdown.
 	});
 }

@@ -12,7 +12,6 @@ pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > retries a rate-limite
 pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > sends one page per HTTP call, one image block each
 pro/anthropic-ocr-backend.test.ts :: AnthropicOcrBackend > skips OCR for an empty page list without making a request
 pro/anthropic-ocr-backend.test.ts :: metered > always bills, so a background sync needs explicit consent
-pro/llm-register.test.ts :: the LLM providers' background-consent flags > gives none of them a setup card, so none of them can be hidden from the dropdown
 pro/llm-register.test.ts :: the LLM providers' background-consent flags > keeps the cloud providers metered and gated
 pro/llm-register.test.ts :: the LLM providers' background-consent flags > leaves the local providers unmetered and unconsented, exactly as before
 pro/llm-register.test.ts :: the LLM providers' background-consent flags > says the same thing with both fields for every provider, so nothing about these six changes
@@ -280,7 +279,6 @@ src/llm-transcript.test.ts :: sanitizeTranscript > never touches a real code blo
 src/llm-transcript.test.ts :: sanitizeTranscript > strips a tight preamble line
 src/llm-transcript.test.ts :: sanitizeTranscript > survives an empty response
 src/llm-transcript.test.ts :: sanitizeTranscript > unwraps an outer markdown fence
-src/local-model-card.test.ts :: consent (§7.2) > asks for background consent here, where the estimate is already on screen
 src/local-model-card.test.ts :: consent (§7.2) > names both downloads, the engine as its own cost
 src/local-model-card.test.ts :: consent (§7.2) > says the download is checked before anything runs
 src/local-model-card.test.ts :: consent (§7.2) > says the model outlives the plugin, and how to remove it
@@ -299,7 +297,6 @@ src/local-model-card.test.ts :: the states that carry a decided sentence > names
 src/local-model-card.test.ts :: the states that carry a decided sentence > names what discarding a paused download throws away, on the button
 src/local-model-card.test.ts :: the states that carry a decided sentence > says nothing was run when verification failed
 src/local-model-card.test.ts :: the states that carry a decided sentence > says syncing keeps working during the download
-src/local-model-card.test.ts :: the states that carry a decided sentence > shows the other vault's progress rather than a spinner
 src/local-model-card.test.ts :: the states that carry a decided sentence > tells a user whose engine was deleted that the model survived
 src/local-model-card.test.ts :: the states that carry a decided sentence > warns that an update does not redo existing transcripts
 src/local-model-download.test.ts :: formatBytes > keeps one decimal for gigabytes and none for megabytes
@@ -350,7 +347,6 @@ src/local-model-gate.test.ts :: the registration predicate (§4.1) > offers the 
 src/local-model-gate.test.ts :: the registration predicate (§4.1) > passes a machine that reports slightly under its advertised size
 src/local-model-gate.test.ts :: the registration predicate (§4.1) > reports architecture rather than memory when both would fail
 src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > is three strings and no more
-src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > keeps the lifecycle line to a pointer
 src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > names the machine's own figure beside the requirement
 src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > uses one architecture line for Intel Macs and Windows x64 alike
 src/local-model-settings.test.ts :: estimateLine > drops the caveat once this machine's own figure stands
@@ -385,10 +381,6 @@ src/local-model-store.test.ts :: isLockFresh > abandons one older than the stale
 src/local-model-store.test.ts :: isLockFresh > holds a lock stamped in the future rather than stealing the directory
 src/local-model-store.test.ts :: isLockFresh > holds a lock that was stamped a heartbeat ago
 src/local-model-store.test.ts :: isLockFresh > treats no lock as free
-src/local-model-store.test.ts :: isTranscriptionInProgress > blocks a second run while a transcription holds the lock
-src/local-model-store.test.ts :: isTranscriptionInProgress > ignores a lock nobody is renewing any more
-src/local-model-store.test.ts :: isTranscriptionInProgress > is not busy when there is no lock at all
-src/local-model-store.test.ts :: isTranscriptionInProgress > lets a sync run while a download holds it
 src/local-model-store.test.ts :: localModelPaths > carries the version in both artefact directory names
 src/local-model-store.test.ts :: localModelPaths > falls back to the standard location when LOCALAPPDATA is missing or empty
 src/local-model-store.test.ts :: localModelPaths > keeps every file it names inside the model directory
@@ -425,7 +417,6 @@ src/localhost-register.test.ts :: create() > reports unavailable for a custom en
 src/localhost-register.test.ts :: create() > transcribes nothing while the model field is empty, which is what a fresh install stores
 src/localhost-register.test.ts :: create() > uses the user's base URL over the preset when they set one
 src/localhost-register.test.ts :: the localhost backends' registration > costs no money and still asks before running in the background
-src/localhost-register.test.ts :: the localhost backends' registration > gives none of them a setup card, so none can be hidden from the dropdown
 src/localhost-register.test.ts :: the localhost backends' registration > registers all three, on every platform
 src/localhost-register.test.ts :: the localhost backends' registration > seeds no model, because none of these servers has been measured
 src/localhost-register.test.ts :: the localhost backends' registration > stores its background consent in its own settings blob, defaulting to off
@@ -525,11 +516,6 @@ src/note-region.test.ts :: parseRegionBlock > refuses a page that is not a page,
 src/note-region.test.ts :: regionFailureMessage > passes a known reason through untouched
 src/note-region.test.ts :: regionFailureMessage > says what it can about a failure nobody anticipated
 src/note-region.test.ts :: the block a digest entry carries > parses back to exactly what the digest was given
-src/ocr-registry.test.ts :: isListedBackend > hides an unavailable backend whose card is already explaining the gap
-src/ocr-registry.test.ts :: isListedBackend > keeps a card-carrying backend listed while it is the selected one, so the dropdown is never empty
-src/ocr-registry.test.ts :: isListedBackend > lists a backend that can run here
-src/ocr-registry.test.ts :: isListedBackend > lists a card-carrying backend that can run, since the card is not what hides it
-src/ocr-registry.test.ts :: isListedBackend > lists an unavailable backend that has no card, so a permanent gap explains itself in place
 src/ocr-registry.test.ts :: isRegisteredOcrBackend > accepts a registered backend
 src/ocr-registry.test.ts :: isRegisteredOcrBackend > rejects a backend this build does not include
 src/ocr-registry.test.ts :: isRegisteredOcrBackend > rejects non-strings

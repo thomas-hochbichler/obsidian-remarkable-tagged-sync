@@ -175,15 +175,23 @@ export function isLockFresh(lockHeldAtMs: number | null, nowMs: number): boolean
  */
 export function deriveLocalModelState(snapshot: LocalModelSnapshot, nowMs: number, expected: ExpectedModelBytes): LocalModelState {
 	if (snapshot.corruptMarked) return "corrupt";
+
+	// Size, not hash: the check runs on every plugin load, and it still catches deletion and truncation.
+	const sized = snapshot.modelBytes === expected.modelBytes && snapshot.mmprojBytes === expected.mmprojBytes;
+	// Judged before the `.part`, because a `.part` beside a verified, full-size pair is not a download:
+	// nothing fetches a file that is already complete. It is a leftover -- a second attempt that lost
+	// a race with the one that finished -- and reading it as "partial" put a Resume button and a
+	// *Discard 6.5 GB* button under a model that had just been verified, the second of which would
+	// have deleted it.
+	if (snapshot.verifiedPresent && sized) return snapshot.runtimeExecutablePresent ? "ready" : "removed";
+
 	if (snapshot.partPresent) return isLockFresh(snapshot.lockHeldAtMs, nowMs) ? "downloading" : "partial";
 
 	const complete = snapshot.modelBytes !== null && snapshot.mmprojBytes !== null;
 	if (!complete) return "absent";
 	if (!snapshot.verifiedPresent) return "verifying";
-	// Size, not hash: the check runs on every plugin load, and it still catches deletion and truncation.
-	if (snapshot.modelBytes !== expected.modelBytes || snapshot.mmprojBytes !== expected.mmprojBytes) return "absent";
-	if (!snapshot.runtimeExecutablePresent) return "removed";
-	return "ready";
+	// Verified, but a file is no longer the size the marker vouched for.
+	return "absent";
 }
 
 /** True when the state means a transcription can start right now. */
@@ -201,9 +209,26 @@ export function isLocalModelRunnable(state: LocalModelState): boolean {
  * transcription running must not start** (two runs are 27 GB), and **a sync that finds a download
  * running must**, because a download lasts hours and refusing to sync for hours would cost renders,
  * notes and highlights, which are the plugin's actual job.
+ *
+ * **`runtimePartPresent` is here because "a download always has a `.part`" was only three-quarters
+ * true.** A download fetches the 12 MB engine *first* and the model second, under one lock, and the
+ * engine's partial file lands in the engine directory -- not beside the model, which is the only
+ * place this looked. For that first minute the lock was held with no `.part` in sight, so the plugin
+ * read its own download as somebody else's transcription: Resume refused with *"another vault is
+ * transcribing"*, and a sync in the same window skipped transcription for a reason that was not
+ * true. Both halves of a download count now.
  */
-export function isTranscriptionInProgress(snapshot: Pick<LocalModelSnapshot, "lockHeldAtMs" | "partPresent">, nowMs: number): boolean {
-	return isLockFresh(snapshot.lockHeldAtMs, nowMs) && !snapshot.partPresent;
+export function isTranscriptionInProgress(facts: LockHolderFacts, nowMs: number): boolean {
+	return isLockFresh(facts.lockHeldAtMs, nowMs) && !facts.partPresent && !facts.runtimePartPresent;
+}
+
+/** The evidence {@link isTranscriptionInProgress} weighs: a held lock, and every place a download writes. */
+export interface LockHolderFacts {
+	lockHeldAtMs: number | null;
+	/** A `.part` for the model or the mmproj -- the second half of a download. */
+	partPresent: boolean;
+	/** A `.part` in the engine directory -- the *first* half, and the half this used to miss. */
+	runtimePartPresent: boolean;
 }
 
 /**

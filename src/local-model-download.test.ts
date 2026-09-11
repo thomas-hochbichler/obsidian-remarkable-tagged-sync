@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { betterGeneration, chooseGeneration, holdsGeneration, MODEL_GENERATIONS, RUNTIME_ARTEFACTS, runnableGenerations, totalDownloadBytes } from "./local-model-artefacts";
+import { betterGeneration, chooseGeneration, holdsGeneration, MODEL_GENERATIONS, offeredGeneration, RUNTIME_ARTEFACTS, runnableGenerations, totalDownloadBytes } from "./local-model-artefacts";
 import {
 	formatBytes,
 	freeSpaceShortfall,
@@ -138,14 +138,14 @@ describe("planCleanup", () => {
 	const pinned = "qwen2.5-vl-7b-instruct-q4_k_m";
 
 	it("leaves the pinned directory alone whatever state it is in", () => {
-		const plan = planCleanup([{ name: pinned, hasPart: true, complete: false }], pinned);
+		const plan = planCleanup([{ name: pinned, hasPart: true, complete: false }], [pinned]);
 
 		expect(plan).toEqual({ deleteSilently: [], offerToDelete: [] });
 	});
 
 	// Provably useless: an incomplete download of a version this build can no longer finish.
 	it("silently deletes a partial of a version that is no longer pinned", () => {
-		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: true, complete: false }], pinned);
+		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: true, complete: false }], [pinned]);
 
 		expect(plan.deleteSilently).toEqual(["qwen2.5-vl-7b-instruct-q3_k_m"]);
 		expect(plan.offerToDelete).toEqual([]);
@@ -157,7 +157,7 @@ describe("planCleanup", () => {
 	 * that ever worked costs a button press.
 	 */
 	it("never silently deletes a complete model of a superseded version", () => {
-		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: false, complete: true }], pinned);
+		const plan = planCleanup([{ name: "qwen2.5-vl-7b-instruct-q3_k_m", hasPart: false, complete: true }], [pinned]);
 
 		expect(plan.deleteSilently).toEqual([]);
 		expect(plan.offerToDelete).toEqual(["qwen2.5-vl-7b-instruct-q3_k_m"]);
@@ -165,14 +165,22 @@ describe("planCleanup", () => {
 
 	// Half-downloaded on top of a complete set is still something that once worked.
 	it("offers rather than deletes when a superseded directory is both complete and resuming", () => {
-		const plan = planCleanup([{ name: "old", hasPart: true, complete: true }], pinned);
+		const plan = planCleanup([{ name: "old", hasPart: true, complete: true }], [pinned]);
 
 		expect(plan.deleteSilently).toEqual([]);
 		expect(plan.offerToDelete).toEqual(["old"]);
 	});
 
+	// The update to a newer model downloads beside the one in use. Judged by the in-use name alone,
+	// its `.part` read as "a partial of an unpinned version" and was deleted on the first progress tick.
+	it("keeps a partial of another generation this build still pins, which is an update in flight", () => {
+		const plan = planCleanup([{ name: "newer", hasPart: true, complete: false }], [pinned, "newer"]);
+
+		expect(plan).toEqual({ deleteSilently: [], offerToDelete: [] });
+	});
+
 	it("leaves a superseded directory that is neither alone", () => {
-		const plan = planCleanup([{ name: "old", hasPart: false, complete: false }], pinned);
+		const plan = planCleanup([{ name: "old", hasPart: false, complete: false }], [pinned]);
 
 		expect(plan).toEqual({ deleteSilently: [], offerToDelete: [] });
 	});
@@ -227,7 +235,7 @@ describe("the pinned table", () => {
 		expect(RUNTIME_ARTEFACTS.win32.fileName).not.toContain("x64");
 	});
 
-	it("orders the generations newest first, and every one names a directory of its own", () => {
+	it("lists the most accurate generation first, and every one names a directory of its own", () => {
 		expect(new Set(MODEL_GENERATIONS.map((g) => g.dir)).size).toBe(MODEL_GENERATIONS.length);
 		expect(MODEL_GENERATIONS[0].measured.medianCer).toBeLessThan(MODEL_GENERATIONS[1].measured.medianCer);
 	});
@@ -470,6 +478,13 @@ describe("chooseGeneration against the machine", () => {
 		expect(chooseGeneration([complete(best)], mac(64, older.dir))).toBe(best);
 	});
 
+	// Nothing on disk means nothing to protect, and the pick decides what the first download fetches.
+	// Without it a reader who wanted the small model got the large one, and could only switch after
+	// downloading both.
+	it("honours a choice on a fresh install, so the first download fetches the model the user picked", () => {
+		expect(chooseGeneration([], mac(64, older.dir))).toBe(older);
+	});
+
 	it("ignores a choice this machine has outgrown", () => {
 		expect(chooseGeneration([complete(older)], mac(16, older.dir))).toBe(best);
 	});
@@ -481,6 +496,28 @@ describe("chooseGeneration against the machine", () => {
 		expect(betterGeneration(best, mac(64))).toBeNull();
 		expect(betterGeneration(best, mac(16))).toBeNull();
 	});
+	/**
+	 * The pick can only reach a working install as an *offer*: `chooseGeneration` refuses to displace
+	 * a model that runs with one that is not on disk, so the dropdown sat over a card describing
+	 * something else and no button ever appeared for what had just been chosen.
+	 */
+	it("offers the model the user picked while it is not on disk", () => {
+		expect(offeredGeneration(best, [complete(best)], mac(64, older.dir))).toBe(older);
+	});
+
+	it("has nothing more to offer once the pick is installed", () => {
+		// The pick is in use, so the first rule passes and the second finds nothing better to suggest.
+		expect(offeredGeneration(older, [complete(older)], mac(64, older.dir))).toBe(best);
+		expect(offeredGeneration(best, [complete(best), complete(older)], mac(64, best.dir))).toBeNull();
+	});
+
+	// With no pick stored the offer is the one an older install has always had: a more accurate model
+	// this machine can run, and nothing on a machine already running the best of them.
+	it("falls back to the accuracy offer when the user picked nothing", () => {
+		expect(offeredGeneration(older, [complete(older)], mac(64))).toBe(best);
+		expect(offeredGeneration(best, [complete(best)], mac(64))).toBeNull();
+	});
+
 	// A machine too small for anything at all. `localModelBlock` refuses the backend long before this,
 	// so the arm is unreachable in the product -- but a function that can return "nothing" would hand
 	// its caller an undefined generation, and every caller dereferences it.

@@ -12,7 +12,7 @@ export function visionBackend(): VisionOcrBackend {
 
 registerOcrBackend({
 	id: "vision",
-	label: "Apple Vision (local, default)",
+	label: "Apple Vision (built into macOS, default)",
 	metered: false,
 	requiresLicence: false,
 	// Costs nothing and runs in a few hundred ms per page: nothing to ask the user about.

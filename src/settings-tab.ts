@@ -18,8 +18,8 @@ import { activateKey, deactivateHere } from "./licence-check";
 import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft } from "./licence-messages";
 import { startTrial, withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
-import { defaultOcrBackend, hasAlternativeBackends, hasCloudBackends, hasOnDeviceBackends } from "./ocr-resolution";
-import { isListedBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { backendPromise, defaultOcrBackend, hasAlternativeBackends } from "./ocr-resolution";
+import { BACKGROUND_CONSENT_NAME, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
 import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
@@ -39,7 +39,7 @@ import { visionRunStats } from "./vision-ocr-backend";
  * between them lived in `main.ts` beside the sync engine's wiring, where nothing could reach them.
  *
  * The class holds no rules of its own on purpose. Where a decision looks like it is being made here,
- * it is being *asked for*: `planTagRouting`, `isListedBackend`, `licenceStatusText`,
+ * it is being *asked for*: `planTagRouting`, `backendPromise`, `licenceStatusText`,
  * `isMeteredProvider`. What is left is the part that has to be characterised rather than unit-tested
  * -- which row, in which order, wired to which handler.
  */
@@ -85,6 +85,11 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this;
+		// Read before the rebuild, restored after it. Nearly every control on this page redraws the
+		// whole tab in place -- choosing a backend, a transport, a tag -- and an emptied element scrolls
+		// back to the top, which threw the reader away from the setting they had just touched. Picking a
+		// backend two thirds down the page was the case that made it obvious.
+		const offset = containerEl.scrollTop;
 		containerEl.empty();
 
 		const connected = this.plugin.transport().status().connected;
@@ -101,6 +106,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		this.renderAutoSyncSettings(containerEl);
 		this.renderPro(containerEl);
 		this.renderActions(containerEl, connected);
+		// After the content is back, so there is something to scroll through. A page that got shorter
+		// clamps this itself, which is the right answer -- there is nowhere further to be.
+		containerEl.scrollTop = offset;
 	}
 
 	/**
@@ -578,29 +586,33 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private renderOcrSettings(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Transcription").setHeading();
 
+		// Null only for a stored id no build registers -- a downgrade, or a hand-edited `data.json`.
+		// The row then says nothing rather than guessing which promise an unknown backend makes.
+		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
+
+		// What the transcripts of the *selected* backend will look like (structure-preserving-ocr spec
+		// §3.2), as the second sentence of the row rather than a loose line under it: on its own it
+		// read as a footnote with nothing to belong to. Vision's flat-text ceiling is named only while
+		// Vision is chosen -- it used to be the fallback for every backend without a contract of its
+		// own, so a reader on LM Studio was told to "choose an LLM backend".
+		const contract =
+			selected?.noteContract ??
+			(selected?.id === "vision"
+				? ["Transcripts are flat text, no headings or tables.", hasAlternativeBackends(ocrBackendEntries()) ? "Choose an LLM backend for structured Markdown." : ""]
+						.filter(Boolean)
+						.join(" ")
+				: "");
+
 		new Setting(containerEl)
 			.setName("Backend")
-			// Composed from what is actually registered, because the three cases are three different
-			// promises and one sentence cannot make all of them (free-localhost-ocr spec §4.1).
-			.setDesc(
-				[
-					"Apple Vision runs locally and privately on macOS 13 or later — no account, key, or network.",
-					// Covers both unmetered families in one clause, because both are true of both: the
-					// downloadable model and a server you run yourself. Not "sends nothing anywhere" --
-					// a `custom` endpoint may well be another box on your LAN, and the honest claim is
-					// about who owns it, not about whether a packet moves.
-					hasOnDeviceBackends(ocrBackendEntries()) ? "A local model — downloaded, or a server you run yourself — needs no account and no key." : "",
-					hasCloudBackends(ocrBackendEntries()) ? "The cloud providers send each page's render to that provider, using your own API key." : "",
-				]
-					.filter(Boolean)
-					.join(" "),
-			)
+			// The promise of the backend that is *selected*. The three cases are three different
+			// promises (free-localhost-ocr spec §4.1) and this row used to make all of them at once,
+			// which left a reader on LM Studio reading about Apple Vision and about cloud providers.
+			// Where Vision cannot run, the dropdown option itself carries the macOS floor, so that is
+			// not repeated here either.
+			.setDesc(selected ? [backendPromise(selected), contract].filter(Boolean).join(" ") : "")
 			.addDropdown((dropdown) => {
 				for (const entry of ocrBackendEntries()) {
-					// A backend whose gap its own setup card is already explaining is hidden rather than
-					// shown disabled -- otherwise picking it would persist a setting that transcribes
-					// nothing, since Obsidian saves a dropdown change the moment it is made.
-					if (!isListedBackend(entry, this.plugin.data.ocrBackend)) continue;
 					dropdown.addOption(entry.id, entry.label);
 					// Show every backend; disable one that can't run here, so the gap explains itself in place (spec §4.2).
 					const unavailable = entry.unavailableLabel?.();
@@ -618,31 +630,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				});
 			});
 
-		// Flat-text ceiling hint (structure-preserving-ocr spec §3.2): the moment the user picks a
-		// backend is where the Apple-Vision structure limit earns its place. Off macOS, Vision is not
-		// selectable at all, so its ceiling is noise -- say nothing rather than name a limit of a
-		// backend this system cannot run.
-		//
-		// The selected backend's own contract wins where it has one: with the local model chosen,
-		// Vision's flat-text ceiling is no longer what the user's notes will look like, and claiming
-		// parity with the cloud providers would be wrong in the other direction -- the single table in
-		// the corpus came back as 24 bullets.
-		const selectedContract = ocrBackendEntry(this.plugin.data.ocrBackend)?.noteContract;
-		const hint =
-			selectedContract ??
-			[
-				visionPlatformSupported() ? "Apple Vision: flat text only, no headings or tables." : "",
-				hasAlternativeBackends(ocrBackendEntries()) ? "Choose an LLM backend for structured Markdown." : "",
-			]
-				.filter(Boolean)
-				.join(" ");
-		if (hint) containerEl.createDiv({ cls: "tagged-sync-note", text: hint });
-
-		// One context shape for both hooks, so a backend's rows and its card get the same powers.
 		const contextFor = (backendId: string) => ({
 			settings: (this.plugin.data.llmProviders[backendId] ??= {}),
 			save: () => this.plugin.saveData(this.plugin.data),
-			isSelected: backendId === this.plugin.data.ocrBackend,
 			selectDefaultBackend: async () => {
 				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
 				await this.plugin.saveData(this.plugin.data);
@@ -652,13 +642,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const id = this.plugin.data.ocrBackend;
 		ocrBackendEntry(id)?.renderSettings?.(containerEl, contextFor(id));
-
-		// Setup cards, for *every* registered backend rather than the selected one. A backend that has
-		// to be downloaded before it can be chosen is not selectable yet, so `renderSettings` above
-		// would never fire for it and it would have no way to say what it needs.
-		for (const entry of ocrBackendEntries()) {
-			entry.renderSetup?.(containerEl, contextFor(entry.id));
-		}
 	}
 
 	/**
@@ -705,16 +688,15 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				});
 			});
 
-		// The canonical control for a backend whose background cost is not money but battery, fans and
-		// several GB of RAM. It is asked a second time on that backend's own setup card, where the
-		// runtime estimate is already on the user's eye; both write this same value.
+		// The control for a backend whose background cost is not money but battery, heat and several
+		// GB of RAM.
 		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
 		if (selected?.needsBackgroundConsent && selected.backgroundConsent) {
 			const consent = selected.backgroundConsent;
 			const blob = (this.plugin.data.llmProviders[selected.id] ??= {});
 			new Setting(containerEl)
-				.setName("Transcribe during background sync")
-				.setDesc(consent.description)
+				.setName(BACKGROUND_CONSENT_NAME)
+				.setDesc(consent.description(blob))
 				.addToggle((toggle) =>
 					toggle.setValue(consent.get(blob)).onChange(async (value) => {
 						consent.set(blob, value);
@@ -724,10 +706,18 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		}
 
 		// Money-safety consent (spec §"Money-safety gate"): only meaningful for a metered cloud backend.
+		// Same name as the battery/RAM row above, because it decides the same thing: with it off the
+		// whole scheduled run is skipped, not just the transcription. It used to say "transcribe during
+		// background sync", which promised a sync that arrives without transcripts, and that is not
+		// what happens.
 		if (isMeteredProvider(this.plugin.data.ocrBackend)) {
+			const provider = selected?.label ?? "your provider";
 			new Setting(containerEl)
-				.setName("Automatically transcribe during background sync (uses your paid API)")
-				.setDesc("Off by default: background sync is suppressed on a metered backend until you allow it here. Manual syncs are unaffected.")
+				.setName(BACKGROUND_CONSENT_NAME)
+				.setDesc(
+					`Each automatic sync sends your new pages to ${provider} and bills your API key. ` +
+						"Off, automatic sync does nothing while this backend is chosen. A sync you start yourself still runs.",
+				)
 				.addToggle((toggle) =>
 					toggle.setValue(auto.autoTranscribeMetered).onChange(async (value) => {
 						auto.autoTranscribeMetered = value;

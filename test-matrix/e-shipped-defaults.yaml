@@ -196,11 +196,11 @@
       test: "splitAtTypedText, for a model that reads a tall image natively > sends the page whole when the model says not to cut it"
 
     - id: E30.9
-      scenario: A caller that says nothing about splitting -- every cloud backend, and both models that ship today
+      scenario: A caller that says nothing about splitting -- every cloud backend, and the two larger models that ship today (the 2B for 8 GB Macs says no, on its own measurement)
       expect: The page is cut. The default is the case that is right for everything currently measured, so a backend added without thinking about it gets the behaviour that helps rather than the one that does not
       layer: unit
       file: src/llm-transcript.test.ts
-      test: "splitAtTypedText, for a model that reads a tall image natively > cuts by default, which is what every cloud backend and both shipped models want"
+      test: "splitAtTypedText, for a model that reads a tall image natively > cuts by default, which is what every cloud backend and the two larger shipped models want"
 
     - id: E30.10
       scenario: A page with typed text between two runs of ink, for a model that does not split for height

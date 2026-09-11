@@ -13,18 +13,11 @@ export interface BackendSettingsContext {
 	settings: BackendSettings;
 	save(): Promise<void>;
 	/**
-	 * Whether this backend is the selected one. A setup card renders for every backend, so a card that
-	 * has nothing left to set up — the model is downloaded and the backend is now selectable — is
-	 * noise beside whichever backend the user actually picked.
-	 */
-	isSelected: boolean;
-	/**
 	 * Hands the selection back to the platform default, for a backend that has just made itself
 	 * unusable on purpose — the one case being a "delete the model" button.
 	 *
-	 * Without it the user is left selecting a backend the listing rule has just hidden: the entry
-	 * stays in the dropdown because it is selected, disabled, pointing at a card, and every sync from
-	 * then on transcribes nothing until they work out what to change it to.
+	 * Without it the user is left selecting a backend that transcribes nothing, and every sync from
+	 * then on writes notes without a transcript until they work out what to change it to.
 	 */
 	selectDefaultBackend(): Promise<void>;
 }
@@ -37,6 +30,19 @@ export interface CreateOptions {
 	 */
 	silent: boolean;
 }
+
+/**
+ * The one name for the "may an automatic sync run with this backend?" row under *Automatic sync*,
+ * whether it is the battery/RAM question of a local model or the money question of a metered one.
+ * One name so they cannot drift.
+ *
+ * It used to read *"Transcribe during background sync"*, which promised the switch was about
+ * transcription. It is not: with it off the scheduled run is skipped entirely, so beside *Enable
+ * automatic sync* it looked like a second switch for the same thing with a different name, and was
+ * reported as exactly that. What it really decides is whether an automatic sync may happen *with
+ * this backend*, so that is what it says.
+ */
+export const BACKGROUND_CONSENT_NAME = "Allow automatic sync with this backend";
 
 /**
  * A transcription backend the user can select, as the plugin sees it. This is the seam between this
@@ -70,7 +76,7 @@ export interface OcrBackendEntry {
 	 * Ollama and LM Studio are `false` today and are not background-gated. Renaming the field and
 	 * applying its new meaning honestly would flip them to `true` while the consent flag defaults to
 	 * `false`, and an existing Ollama user's background transcription would silently stop. A local
-	 * model costs no money and still costs battery, fans and several GB of RAM, which is what this
+	 * model costs no money and still costs battery, heat and several GB of RAM, which is what this
 	 * field is for.
 	 */
 	readonly needsBackgroundConsent: boolean;
@@ -79,6 +85,19 @@ export interface OcrBackendEntry {
 	 * A backend that can never be unavailable omits this.
 	 */
 	unavailableLabel?(): string | null;
+	/**
+	 * Called when the plugin unloads, for a backend holding something that outlives it.
+	 *
+	 * Only the downloadable local model needs it today, and the reason it needs it is worth stating:
+	 * its download runs on plain promises and a `window` interval, neither of which Obsidian tears
+	 * down with the plugin. A reload mid-download -- a plugin update, a disable and enable -- left the
+	 * fetch and the lock heartbeat running with nobody able to stop them, while the fresh instance saw
+	 * a held lock over a growing `.part` and could only conclude the download belonged to *another
+	 * vault*. It said so, on a machine with one vault open.
+	 *
+	 * The core still names no provider: the entry declares this about itself, like every other hook.
+	 */
+	onPluginUnload?(): void;
 	/**
 	 * Builds the adapter for one run. Returns `null` when the backend is selected but not configured
 	 * enough to run *and* falling back to a free local backend is the right answer (a cloud provider
@@ -95,21 +114,14 @@ export interface OcrBackendEntry {
 	 * with another backend selected is about to get.
 	 */
 	readonly noteContract?: string;
-	/** Renders this backend's own settings rows under the backend dropdown, when it has any. */
-	renderSettings?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
 	/**
-	 * Renders this backend's setup card, for **every** registered backend regardless of which one is
-	 * selected — unlike `renderSettings`, which the plugin calls for the selected one only.
-	 *
-	 * That difference is the whole point: a backend that cannot yet be selected has no way to explain
-	 * what would make it selectable, because the only hook it has fires once it already is. This is
-	 * where a backend that must be downloaded before it can run says so, asks for consent and shows
-	 * its progress.
-	 *
-	 * Its presence also drives {@link isListedBackend}: a backend with a card is one whose gap the card
-	 * is already explaining, so it is hidden from the dropdown rather than shown disabled.
+	 * Renders this backend's own rows under the backend dropdown, when it has any -- for the selected
+	 * backend only. A backend that has to be downloaded before it can run draws its setup card here,
+	 * which is why it is listed *before* the download: the reader picks it, sees "not downloaded" and
+	 * the button, and until the download is done a sync writes notes without a transcript rather than
+	 * falling back. Hiding the entry until the model was there was reported as the entry missing.
 	 */
-	renderSetup?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
+	renderSettings?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
 	/**
 	 * This backend's own sentence for the re-transcribe confirmation, or null when it has nothing to
 	 * add. The core cannot compute it: a figure like "about ten minutes per notebook" is a rolling mean
@@ -134,8 +146,13 @@ export interface OcrBackendEntry {
 	backgroundConsent?: {
 		get(settings: BackendSettings): boolean;
 		set(settings: BackendSettings, value: boolean): void;
-		/** The row's description under *Automatic sync* — the canonical control for this consent. */
-		readonly description: string;
+		/**
+		 * The row's description under *Automatic sync* — the canonical control for this consent. Read
+		 * with the blob, because the sentence may quote what the blob decides: the downloaded model's
+		 * memory figure follows the model the user picked, and a string fixed at registration went on
+		 * quoting the previous model's figure until the next reload.
+		 */
+		description(settings: BackendSettings): string;
 	};
 }
 
@@ -152,28 +169,6 @@ export function ocrBackendEntries(): OcrBackendEntry[] {
 
 export function ocrBackendEntry(id: OcrBackendId): OcrBackendEntry | null {
 	return entries.get(id) ?? null;
-}
-
-/**
- * Whether an entry belongs in the backend dropdown at all.
- *
- * > Not listed when `unavailableLabel()` returns a string **and** the entry has a `renderSetup`
- * > **and** it is not the currently selected backend.
- *
- * Which is the mechanical form of one rule: **show-but-disable is for a gap the user cannot fix; hide
- * is for a gap the card below is already explaining.** Apple Vision off macOS has no card and stays
- * visible-and-disabled forever, which is right for a gap that will never close. A backend whose model
- * has not been downloaded yet has a card, and listing it would hand the user a selectable option that
- * transcribes nothing -- Obsidian persists a dropdown change immediately, so the setting would be
- * saved and dead for as long as the download takes.
- *
- * The selected-backend clause carries the case that makes it a rule rather than a filter: the user
- * selects the backend while it works and the model later disappears. Hiding a *selected* entry would
- * leave the dropdown showing nothing at all, so it stays, disabled, pointing at its card.
- */
-export function isListedBackend(entry: OcrBackendEntry, selectedId: OcrBackendId): boolean {
-	if (entry.id === selectedId) return true;
-	return !(entry.unavailableLabel?.() && entry.renderSetup);
 }
 
 /**

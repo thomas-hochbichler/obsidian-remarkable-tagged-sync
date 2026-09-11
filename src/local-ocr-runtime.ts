@@ -9,7 +9,7 @@ import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, 
 import type { ModelGeneration } from "./local-model-artefacts";
 import { readLocalModelSettings } from "./local-model-settings";
 import { readLocalModelState, readLock, releaseLock, resolveLocalModel, writeLock } from "./local-model-runtime";
-import { isTranscriptionInProgress, LOCK_HEARTBEAT_MS, type LocalModelPaths } from "./local-model-store";
+import { isTranscriptionInProgress, LOCK_HEARTBEAT_MS, PART_SUFFIX, type LocalModelPaths } from "./local-model-store";
 import type { BackendSettings } from "./ocr-registry";
 
 /** Tokens per page. 1024 covers the longest corpus page with room; a runaway loop is capped by it. */
@@ -184,9 +184,31 @@ function createRunner(paths: LocalModelPaths, generation: ModelGeneration): Loca
 export function isLocalModelBusy(paths: LocalModelPaths): boolean {
 	const fs = nodeRequire("fs");
 	return isTranscriptionInProgress(
-		{ lockHeldAtMs: readLock(paths), partPresent: fs.existsSync(paths.modelPart) || fs.existsSync(paths.mmprojPart) },
+		{
+			lockHeldAtMs: readLock(paths),
+			partPresent: fs.existsSync(paths.modelPart) || fs.existsSync(paths.mmprojPart),
+			runtimePartPresent: hasRuntimePart(paths),
+		},
 		Date.now(),
 	);
+}
+
+/**
+ * Whether the engine archive is mid-download.
+ *
+ * The directory is *read* rather than one filename being rebuilt here. The archive's name comes from
+ * `RUNTIME_ARTEFACTS` and changes with the platform and with every llama.cpp revision -- and a check
+ * that has to be kept in step with a constant declared somewhere else is exactly how the engine half
+ * of a download went unnoticed by this guard in the first place.
+ */
+function hasRuntimePart(paths: LocalModelPaths): boolean {
+	const fs = nodeRequire("fs");
+	try {
+		return fs.readdirSync(paths.runtimeDir).some((name) => name.endsWith(PART_SUFFIX));
+	} catch {
+		// No engine directory yet, or it cannot be read: either way nothing is being written into it.
+		return false;
+	}
 }
 
 /**

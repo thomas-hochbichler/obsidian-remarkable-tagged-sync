@@ -113,10 +113,10 @@
   scenarios:
     - id: E1.1
       scenario: The dropdown is drawn over the registry this build actually has
-      expect: Exactly the entries `isListedBackend` admits -- a backend whose gap its own card explains is absent, one whose gap nothing can close is present
+      expect: Every registered entry, in registry order. A backend whose model is not downloaded yet is listed too -- its own rows say what to do once it is picked, and hiding it until then was reported as the entry missing
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the backend dropdown > lists exactly what the listing rule says, over the registry this build actually has"
+      test: "the backend dropdown > lists every registered backend, whether or not it can run here"
 
     - id: E1.2
       scenario: A listed backend cannot run on this machine
@@ -125,13 +125,6 @@
       file: src/settings-tab.test.ts
       test: "the backend dropdown > shows a gap nothing can close, disabled, with the reason where the name was"
 
-    - id: E1.3
-      scenario: The selected backend is one the listing rule would otherwise hide -- picked while it worked, its model gone since
-      expect: It stays in the list, disabled, so the dropdown never shows an empty box
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "the backend dropdown > keeps a hidden backend visible while it is the selected one, so the box is never blank"
-
     - id: E1.4
       scenario: Another backend is picked
       expect: The choice is persisted and the tab re-draws itself, because every row under the dropdown belongs to the backend that was just replaced
@@ -139,41 +132,62 @@
       file: src/settings-tab.test.ts
       test: "the backend dropdown > saves the pick and re-draws itself, because the rows below it belong to the backend"
 
-    - id: E1.5
-      scenario: The description under the dropdown is composed
-      expect: One clause per family this build registers -- three different promises, and no clause about a family that is not there
+    - id: E1.6
+      scenario: The scroll offset across that re-draw, and across every other in-place re-draw on this page
+      expect: The reader stays where they were. Emptying the element the pane scrolls takes the offset to zero with it, so picking a backend two thirds down the page threw the reader to the top -- away from the setting they had just changed
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the backend dropdown > describes the families this build has, and claims nothing about the ones it does not"
+      test: "the backend dropdown > leaves the reader where they were after a re-draw"
+
+    - id: E1.5
+      scenario: The description beside the dropdown, on an unmetered backend the user runs themselves
+      expect: The promise of the backend that is *selected*, and no other. It used to make all three families' promises at once, so a reader on LM Studio read about Apple Vision and about cloud providers and had to find their own clause
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > describes the backend that is selected, and none of the others"
+
+    - id: E1.7
+      scenario: The same row on a metered backend
+      expect: Says the page leaves the machine and is charged to the user's own key -- the one promise that is about money, made only where it is true
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > names the cost where the pages leave the machine, and only there"
+
+    - id: E1.8
+      scenario: The same row on Apple Vision
+      expect: Its own promise, without the macOS floor. Where Vision cannot run the dropdown option itself reads "needs macOS 13 or later", which is the place a reader can act on it
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the backend dropdown > keeps the macOS floor out of the description"
 
 - feature: E13
-  name: Note-contract hint
+  name: Note-contract sentence in the Backend row
   code: src/settings-tab.ts
   tier: free
   scenarios:
     - id: E13.1
-      scenario: Apple Vision cannot run on this machine and the selected backend has no contract of its own
-      expect: Nothing is said about Vision's flat-text ceiling -- naming the limit of a backend this system does not offer reads as a limit of whatever was picked
+      scenario: Apple Vision is the selected backend
+      expect: Its promise, then both clauses -- the flat-text ceiling, and where to go for structured Markdown -- as one description of the row
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the sentence under the dropdown > says nothing about Apple Vision's ceiling on a machine that cannot run Apple Vision"
+      test: "the transcript sentence in the Backend row > names Apple Vision's ceiling only while Apple Vision is the selected backend"
 
     - id: E13.2
-      scenario: Apple Vision is a real option here
-      expect: Both clauses -- the ceiling, and where to go for structured Markdown
+      scenario: A backend with no contract of its own is selected, on a machine where Apple Vision runs
+      expect: The promise alone. The ceiling used to be the fallback for every such backend, so a reader who had already chosen an LLM backend was told to choose an LLM backend
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the sentence under the dropdown > names the ceiling where Apple Vision is a real option"
+      test: "the transcript sentence in the Backend row > says nothing about Apple Vision under a backend that has no contract of its own"
 
     - id: E13.3
       scenario: The selected backend declares its own note contract
-      expect: It replaces the generic sentence rather than joining it -- Vision's ceiling is simply not true of the notes this user is about to get
+      expect: Appended to the row's promise as its second sentence, never a loose line under the row -- on its own it read as a footnote with nothing to belong to
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the sentence under the dropdown > lets the selected backend's own contract replace it, rather than join it"
+      test: "the transcript sentence in the Backend row > appends the selected backend's own contract to its promise, as one description"
 
 - feature: E14
-  name: Per-backend settings and setup cards
+  name: Per-backend settings rows
   code: src/settings-tab.ts
   tier: free
   scenarios:
@@ -182,21 +196,7 @@
       expect: Only the selected one's `renderSettings` runs -- the rows are the chosen backend's key, URL and model, and no other's
       layer: vault
       file: src/settings-tab.test.ts
-      test: "a backend's own rows and its setup card > draws the settings rows of the selected backend and of no other"
-
-    - id: E14.2
-      scenario: A backend that has to be set up before it can be selected is registered
-      expect: Its `renderSetup` runs anyway -- `renderSettings` fires only once a backend already is selectable, so a card is the only way it can say what would make it so
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "a backend's own rows and its setup card > draws every registered backend's setup card, selected or not"
-
-    - id: E14.3
-      scenario: A card belongs to the backend that is currently selected
-      expect: The context says so, so a card with nothing left to set up can stand down beside the backend the user actually picked
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "a backend's own rows and its setup card > tells a card whether it is the selected backend, so a finished one can stand down"
+      test: "a backend's own rows > draws the settings rows of the selected backend and of no other"
 
 - feature: C15
   name: Interval backstop -- the settings side
@@ -238,7 +238,7 @@
   scenarios:
     - id: C17.8
       scenario: The selected backend costs money per page, and then one that does not
-      expect: The paid-API consent row appears only for the metered one, off by default, and writes the flag the background gate reads
+      expect: The consent row appears only for the metered one, under the same name as the battery/RAM row (off skips the whole run either way), names the provider and the bill, is off by default, and writes the flag the background gate reads
       layer: vault
       file: src/settings-tab.test.ts
       test: "automatic sync > asks about spending money only on a backend that spends money"

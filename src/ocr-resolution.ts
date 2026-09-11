@@ -71,6 +71,29 @@ export function hasOnDeviceBackends(entries: readonly BackendListing[]): boolean
 }
 
 /**
+ * What the **selected** backend promises about accounts, keys, and where a page goes.
+ *
+ * One backend's promise, not a tour of every family this build has. The Backend row used to compose
+ * all three, so a reader who had chosen LM Studio read a sentence about Apple Vision, a sentence
+ * about local models and a sentence about cloud providers, and had to work out which one was theirs.
+ * The three cases genuinely are three different promises -- which is the argument for saying only
+ * the one the reader is standing on, not for saying all of them at once.
+ *
+ * The families are read off `metered` and the built-in set, exactly the way {@link hasCloudBackends}
+ * and {@link hasOnDeviceBackends} read them, so there is no second definition of "cloud" to drift.
+ *
+ * Note the on-device wording claims **no network**, which the localhost ones deliberately do not: a
+ * `custom` endpoint may be another box on the user's LAN, so the honest claim there is about who owns
+ * the machine, not about whether a packet moves.
+ */
+export function backendPromise(entry: BackendListing): string {
+	if (entry.id === "off") return "Notes still sync with their page images. No text is produced.";
+	if (entry.id === "vision") return "Runs on your Mac — no account, no key, no network.";
+	if (entry.metered) return "Each page is sent to the provider, charged to your own API key.";
+	return "Runs on hardware you own — no account and no key.";
+}
+
+/**
  * What runs instead of the backend the user selected, and what to tell them.
  *
  * `use` is free local Apple Vision or nothing at all, and the absence of a third option is the rule

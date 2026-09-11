@@ -257,6 +257,37 @@ describe("turning the setting off", () => {
 	});
 });
 
+/**
+ * The backfill runs at the end of every sync that has the feature on, so old notes get the keys a
+ * release added. Letting it throw took the whole run's report down with it -- the unavailable notice,
+ * the backend's warnings, `lastSyncAt` -- for pages that were already written and would then never be
+ * reported at all.
+ */
+describe("the backfill that runs at the end of a sync", () => {
+	it("keeps the run's own report when the pass dies, and records the failure beside it", async () => {
+		const plugin = await pluginWith({ frontmatter: true });
+		passes.backfillError = new Error("connection lost");
+		engine.release = () => {};
+
+		await plugin.syncNow();
+
+		expect(passes.backfillCalls).toBe(1);
+		expect((plugin as unknown as { lastSyncError: string | null }).lastSyncError).toBe("frontmatter backfill failed: connection lost");
+		// The run finished, so the next auto-sync counts from here rather than repeating this one.
+		expect(plugin.data.lastSyncAt).toEqual(expect.any(String));
+	});
+
+	it("keeps a clean run's error empty, which is what diagnostics reads", async () => {
+		const plugin = await pluginWith({ frontmatter: true });
+		engine.release = () => {};
+
+		await plugin.syncNow();
+
+		expect(passes.backfillCalls).toBe(1);
+		expect((plugin as unknown as { lastSyncError: string | null }).lastSyncError).toBeNull();
+	});
+});
+
 describe("the licence gate on the sync itself", () => {
 	it("hands the engine the feature only while the licence allows it", async () => {
 		const trial = await pluginWith({ frontmatter: true });

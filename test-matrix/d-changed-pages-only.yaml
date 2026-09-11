@@ -192,11 +192,11 @@
       test: "transcribing only the pages that changed (issue #117) > keeps the stored pages when the backend is unavailable, instead of emptying the transcript"
 
     - id: D22.6
-      scenario: The backend returns a warning alongside its pages
-      expect: Nothing is stored this round. #116's truncation is a page that comes back `ok` and is quietly incomplete, which is what the tie-breaker refuses to freeze; warnings are unit-level, so there is no storing around them
+      scenario: The backend returns a warning alongside its pages, one of which it marked failed
+      expect: The `ok` pages are stored and the failed one is not. Every warning the shipped backends raise -- unreachable, refused, timed out, truncated -- names pages they marked `failed`, and a failed page never enters the store. The rule used to empty the store on any warning, so a server that was down for one sync threw away every page already read and the next edit re-read the whole notebook
       layer: engine
       file: src/sync-engine.test.ts
-      test: "transcribing only the pages that changed (issue #117) > stores nothing from a run the backend warned about"
+      test: "transcribing only the pages that changed (issue #117) > keeps the pages that came back ok when the backend warned about the ones it failed"
 
     - id: D22.7
       scenario: The Re-transcribe all notes command is run, then the notebook changes

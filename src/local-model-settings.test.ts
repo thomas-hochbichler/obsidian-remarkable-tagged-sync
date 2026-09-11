@@ -210,8 +210,8 @@ describe("setPreferredModelDir", () => {
 		expect(readLocalModelSettings(blob).preferredModelDir).toBe("qwen3-vl-2b-instruct-q4_k_m");
 	});
 
-	// "Decide for me" is a cleared preference rather than a stored empty string: not writing the key
-	// keeps `data.json` free of one that means nothing.
+	// Picking the default is a cleared preference rather than a stored one: not writing the key keeps
+	// `data.json` free of one that means nothing.
 	it("clears the choice rather than storing an empty one", () => {
 		const blob = { preferredModelDir: "something" };
 		setPreferredModelDir(blob, null);

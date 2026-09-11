@@ -24,6 +24,8 @@ export interface PartialOutcome {
 	readonly documentsSkipped: number;
 	readonly relaidDocuments: number;
 	readonly shrunkNotes: number;
+	/** The backend's own sentences, one per distinct warning -- see `SyncResult.backendWarnings`. */
+	readonly backendWarnings?: readonly string[];
 }
 
 /**
@@ -45,6 +47,10 @@ export function partialOutcomeNotices(result: PartialOutcome): NoticeText[] {
 			timeout: LONG_NOTICE_MS,
 		});
 	}
+	// A page the backend lost while the rest of the unit read fine -- truncated, timed out, the server
+	// gone -- was written into diagnostics and nowhere else, so a notebook that lost three pages of
+	// five reported a clean sync. The backend's own sentence goes up as it was written.
+	for (const warning of result.backendWarnings ?? []) notices.push({ message: warning, timeout: LONG_NOTICE_MS });
 	if (result.editedNotesSkipped > 0) {
 		notices.push({
 			message:
@@ -124,6 +130,20 @@ export interface PlatformGap {
  * Returns null rather than deciding to stay quiet itself, because the "once" half is persistence and
  * that belongs to whoever owns `data.json` -- a flag kept in memory would say it again every morning.
  */
+/**
+ * The sync ran with the downloaded model selected and not on disk -- picked before its download, or
+ * deleted since. Its own sentence and not the platform one: "needs macOS 13 or later" reached a reader
+ * whose Mac was fine, and it was shown once and never again, while this gap closes the moment the
+ * download does. Said on every sync the user is watching until then.
+ */
+export function modelNotReadyNotice(unavailableUnits: number): string | null {
+	if (unavailableUnits === 0) return null;
+	return (
+		`${unavailableUnits} ${unavailableUnits === 1 ? "note" : "notes"} synced with the handwriting render only: the downloaded model is not ready. ` +
+		"Download it in settings, then run Re-transcribe all synced notes for the notes synced meanwhile."
+	);
+}
+
 export function platformGapNotice(gap: PlatformGap): string | null {
 	if (gap.unavailableUnits === 0 || gap.alreadyShown) return null;
 	return (

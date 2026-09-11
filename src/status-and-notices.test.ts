@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../test-stubs/fake-clock";
 import { FakeApp, type FakeEl, noticeLog, takeNotices } from "../test-stubs/fake-obsidian";
+import { registerOcrBackend } from "./ocr-registry";
 import { EMPTY_SYNC_INDEX } from "./sync-engine";
+import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 // Gaps G27 and G34 -- everything the plugin says about a run, and the one thing it says once.
 //
@@ -49,6 +51,29 @@ vi.mock("./sync-engine", async (importOriginal) => {
 			};
 		},
 	};
+});
+
+/**
+ * Two backends that transcribe nothing, for the two reasons that are not the same: one is waiting on
+ * a download that is minutes away, the other can never run on this machine. `main.ts` tells them
+ * apart by what the entry builds, so only a registered entry can put the question to it.
+ */
+registerOcrBackend({
+	id: "test-not-ready" as never,
+	label: "Test — downloaded model, not on disk",
+	metered: false,
+	requiresLicence: false,
+	needsBackgroundConsent: false,
+	create: () => new UnavailableOcrBackend("test-not-ready" as never, true),
+});
+
+registerOcrBackend({
+	id: "test-never-here" as never,
+	label: "Test — not on this machine",
+	metered: false,
+	requiresLicence: false,
+	needsBackgroundConsent: false,
+	create: () => new UnavailableOcrBackend("test-never-here" as never),
 });
 
 interface Plugin {
@@ -524,6 +549,48 @@ describe("the one-time notice about what this platform cannot transcribe", () =>
 
 		expect(plugin.data.ocrUnavailableNoticeShown).toBe(true);
 		expect(takeNotices().join(" ")).not.toContain("macOS 13");
+	});
+
+	/**
+	 * The downloaded model, picked before its download or deleted since. "Needs macOS 13 or later"
+	 * reached a reader whose Mac was fine -- once, and then never again, while the gap was still open
+	 * and closing it was a button press away.
+	 */
+	it("says the model is not ready instead of the platform sentence, and says it every time", async () => {
+		const plugin = await loadWith({ ocrBackend: "test-not-ready" });
+		engine.result = { unavailableOcrUnits: 2 };
+
+		await plugin.syncNow();
+		const first = takeNotices().join("\n");
+		await plugin.syncNow();
+		const second = takeNotices().join("\n");
+
+		expect(first).toContain("2 notes synced with the handwriting render only: the downloaded model is not ready");
+		expect(first).not.toContain("macOS 13");
+		// Not once-only: unlike the platform gap, this one closes the moment the download does.
+		expect(second).toContain("the downloaded model is not ready");
+		// And the once-only flag is not spent: it belongs to a sentence this reader never saw.
+		expect(plugin.data.ocrUnavailableNoticeShown).toBe(false);
+	});
+
+	it("stays quiet about the model when every note was transcribed", async () => {
+		const plugin = await loadWith({ ocrBackend: "test-not-ready" });
+
+		await plugin.syncNow();
+
+		expect(takeNotices().join(" ")).not.toContain("not ready");
+	});
+
+	// A backend that can never run here is the platform case, whatever its own class: the once-only
+	// sentence is the right one, and the flag is spent on it.
+	it("keeps the platform sentence for a backend that is not merely waiting on a download", async () => {
+		const plugin = await loadWith({ ocrBackend: "test-never-here" });
+		engine.result = { unavailableOcrUnits: 1 };
+
+		await plugin.syncNow();
+
+		expect(takeNotices().join("\n")).toContain("Text transcription needs macOS 13 or later");
+		expect(plugin.data.ocrUnavailableNoticeShown).toBe(true);
 	});
 
 	it("gives the partial-outcome notices room to be read", async () => {

@@ -20,17 +20,13 @@ const IDS = ["ollama", "lmstudio", "custom"] as const;
  */
 describe("the localhost backends' registration", () => {
 	it("registers all three, on every platform", () => {
-		// The point of the effort: no `unavailableLabel`, so `isListedBackend` lists them everywhere --
+		// The point of the effort: no `unavailableLabel`, so the dropdown lists them enabled everywhere --
 		// including Windows x64 and Linux, where the dropdown had nothing selectable in it.
 		for (const id of IDS) {
 			const entry = ocrBackendEntry(id);
 			expect(entry, id).not.toBeNull();
 			expect(entry?.unavailableLabel).toBeUndefined();
 		}
-	});
-
-	it("gives none of them a setup card, so none can be hidden from the dropdown", () => {
-		for (const id of IDS) expect(ocrBackendEntry(id)?.renderSetup).toBeUndefined();
 	});
 
 	it("costs no money and still asks before running in the background", () => {
@@ -49,6 +45,15 @@ describe("the localhost backends' registration", () => {
 		expect(entry?.backgroundConsent?.get(settings)).toBe(false);
 		entry?.backgroundConsent?.set(settings, true);
 		expect(entry?.backgroundConsent?.get(settings)).toBe(true);
+	});
+
+	it("says what a background run costs, rather than leaving the toggle bare", () => {
+		// The registry renders whatever this returns under the switch. An entry that answers nothing
+		// leaves the reader consenting to a sentence that is not there.
+		for (const id of IDS) {
+			const desc = ocrBackendEntry(id)?.backgroundConsent?.description({});
+			expect(desc, id).toContain("while you are not there");
+		}
 	});
 
 	it("seeds no model, because none of these servers has been measured", () => {
@@ -119,12 +124,14 @@ describe("the thinking line in the localhost callout", () => {
 		ocrBackendEntry(id)?.renderSettings?.(container as unknown as HTMLElement, {
 			settings,
 			save: async () => undefined,
-			isSelected: true,
 			selectDefaultBackend: async () => undefined,
 		});
-		takeSettings();
-		// The first note div is the standing model recommendation; the live callout is the one after it.
-		const notes = container.children.filter((child) => child.classes.has("tagged-sync-note"));
+		// Both sit in the Model row's own description -- one says what to type, the other judges what
+		// was typed. The first is the standing recommendation; the live callout is the one after it.
+		const notes =
+			takeSettings()
+				.find((row) => row.name === "Model")
+				?.descEl.children.filter((child) => child.classes.has("tagged-sync-verdict")) ?? [];
 		return notes[1];
 	}
 

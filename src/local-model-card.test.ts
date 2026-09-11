@@ -113,12 +113,34 @@ describe("consent (§7.2)", () => {
 		expect(line).not.toContain(MODEL_GENERATIONS[0].label);
 	});
 
-	it("asks for background consent here, where the estimate is already on screen", () => {
-		expect(copy.showsBackgroundConsent).toBe(true);
+	it("keeps money out of the background consent copy", () => {
 		expect(backgroundConsentDesc(MODEL_GENERATIONS[0])).toContain("Off by default");
 		// Money is gone from the copy entirely: a local model costs none.
 		expect(backgroundConsentDesc(MODEL_GENERATIONS[0]).toLowerCase()).not.toContain("money");
 		expect(backgroundConsentDesc(MODEL_GENERATIONS[0]).toLowerCase()).not.toContain("api");
+	});
+
+	/**
+	 * Reported as a setting nobody could picture. The old copy named the price and never the purchase:
+	 * *"the model holds 8.6 GB and pushes the fans"*. And what off means is not mild -- the gate fires
+	 * before a run starts, so the whole scheduled sync is skipped and nothing arrives on its own.
+	 */
+	it("says what the switch does before what it costs, and how much off actually costs", () => {
+		const desc = backgroundConsentDesc(MODEL_GENERATIONS[0]);
+
+		expect(desc).toContain("automatic sync then does nothing");
+		expect(desc).toContain("a sync you start yourself brings everything");
+		// The row is called "automatic sync" two headings further down. Saying "background sync" or
+		// "scheduled sync" instead gave one feature three names, and the switch read as a duplicate of
+		// the one under that heading.
+		expect(desc).not.toContain("background");
+		expect(desc).not.toContain("scheduled");
+		// A MacBook Air has no fan and the rest are near-silent, so naming one described a symptom the
+		// reader will never notice -- reported as "total verwirrend".
+		expect(desc).not.toContain("fans");
+		// The price still has to be there; it is the reason to think before switching it on.
+		// The card's own `gib()` counts in GB, not GiB -- the figure a disk and an activity monitor show.
+		expect(desc).toContain(`${(MODEL_GENERATIONS[0].peakRssBytes / 1_000_000_000).toFixed(1)} GB`);
 	});
 });
 
@@ -211,6 +233,25 @@ describe("the states that carry a decided sentence", () => {
 		expect(copy.actions[0].label).toContain("Qwen3-VL-8B-Instruct");
 	});
 
+	/**
+	 * The model that has just been superseded is the way back, so it is named and offered rather than
+	 * removed underneath the reader -- and named with its size, because 5.5 GB of disk is the whole
+	 * reason to press the button.
+	 */
+	it("names the model left behind as the way back, with a button to give the disk back", () => {
+		const copy = copyFor({
+			kind: "ready",
+			newer: null,
+			superseded: [{ directory: "qwen2.5-vl-7b-instruct-q4_k_m", label: "Qwen2.5-VL-7B-Instruct", bytes: 5_536_191_744 }],
+		});
+
+		expect(copy.paragraphs.join(" ")).toContain("Qwen2.5-VL-7B-Instruct is still on disk (5.5 GB) as the way back.");
+		const remove = copy.actions.find((action) => action.id === "remove-superseded");
+		expect(remove?.label).toBe("Remove Qwen2.5-VL-7B-Instruct");
+		expect(remove?.emphasis).toBe("warning");
+		expect(remove?.directory).toBe("qwen2.5-vl-7b-instruct-q4_k_m");
+	});
+
 	it("says nothing about a newer model when there is not one", () => {
 		const copy = copyFor({ kind: "ready", newer: null });
 
@@ -236,8 +277,21 @@ describe("the states that carry a decided sentence", () => {
 		expect(copyFor({ kind: "downloading", receivedBytes: 1, totalBytes: 2 }).paragraphs.join(" ")).toContain("Syncing still works");
 	});
 
-	it("shows the other vault's progress rather than a spinner", () => {
+	it("shows the download's progress rather than a spinner", () => {
 		expect(copyFor({ kind: "foreign-download", percent: 62 }).heading).toContain("62 %");
+	});
+
+	/**
+	 * The lock carries a timestamp and nothing else (§5.4), so this card cannot see a second vault --
+	 * and a download left running by a previous plugin instance reaches it looking exactly the same. It
+	 * claimed one anyway, and a user with one vault open was told about a vault that did not exist.
+	 */
+	it("claims no second vault in the heading, because it cannot see one", () => {
+		const copy = copyFor({ kind: "foreign-download", percent: 62 });
+
+		expect(copy.heading).not.toContain("another vault");
+		// The paragraph may still name it -- there it is one of two possibilities offered, not a fact.
+		expect(copy.paragraphs.join(" ")).toContain("before the plugin last reloaded");
 	});
 });
 

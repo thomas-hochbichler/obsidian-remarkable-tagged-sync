@@ -3896,6 +3896,94 @@ describe("failed transcription", () => {
 		expect(result.failedOcrUnits).toBe(0);
 		expect(result.unavailableOcrUnits).toBe(1);
 	});
+
+	// A tagged page is a unit like any other, and the notice at the end of the sync counts units. A
+	// vault tagging pages rather than notebooks would have been told nothing at all.
+	it("counts a tagged page whose transcript the backend could not produce", async () => {
+		const api = fakeApi({
+			rootHash: "root-2",
+			entries: [documentEntry({ hash: "hash-2" })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }] }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = { ...baseDeps(api, { todo: "Todo" }), ocrBackend: fakeOcrBackend({ status: "unavailable", text: "", confidence: null }) };
+
+		const result = await runSync(deps, { rootHash: "root-1", rows: {} });
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.unavailableOcrUnits).toBe(1);
+		expect(result.failedOcrUnits).toBe(0);
+	});
+
+	// A page the backend lost while the rest of the unit read fine: the note is written and the unit
+	// counts as ok, so the warning is the only trace the loss leaves anywhere -- and a vault tagging
+	// pages had that trace only on the notebook path.
+	it("raises what the backend warned about while transcribing a tagged page", async () => {
+		const warning: OcrBackend = {
+			id: "vision",
+			metered: false,
+			fingerprint: "test-backend",
+			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => ({
+				status: "ok",
+				pages: pages.map(() => ({ status: "ok" as const, text: "read" })),
+				text: "read",
+				confidence: null,
+				warnings: ["a page's answer was cut off"],
+			})),
+		};
+		const api = fakeApi({
+			rootHash: "root-2",
+			entries: [documentEntry({ hash: "hash-2" })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }] }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = { ...baseDeps(api, { todo: "Todo" }), ocrBackend: warning };
+
+		const result = await runSync(deps, { rootHash: "root-1", rows: {} });
+
+		expect(result.notesWritten).toBe(1);
+		expect(result.backendWarnings).toEqual(["a page's answer was cut off"]);
+	});
+
+	/**
+	 * The same sentence from every unit the backend touched is one fact about the run, not one per
+	 * note: the end-of-sync notice raises each warning as its own `Notice`, so two notebooks that both
+	 * lost a line would stack the identical message twice on screen.
+	 */
+	it("says a warning the backend repeated across units only once", async () => {
+		const repeating: OcrBackend = {
+			id: "vision",
+			metered: false,
+			fingerprint: "test-backend",
+			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => ({
+				status: "ok",
+				pages: pages.map(() => ({ status: "ok" as const, text: "read" })),
+				text: "read",
+				confidence: null,
+				warnings: ["a page's answer was cut off"],
+			})),
+		};
+		const api = fakeApi({
+			rootHash: "root-2",
+			entries: [
+				documentEntry({ hash: "hash-2", tags: [{ name: "sync", timestamp: 0 }] }),
+				documentEntry({ id: "doc-2", hash: "hash-3", visibleName: "Second", tags: [{ name: "sync", timestamp: 0 }] }),
+			],
+			contentById: {
+				"doc-1": documentContent({ cPages: cPages(["page-a"]) }),
+				"doc-2": documentContent({ cPages: cPages(["page-b"]) }),
+			},
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" }, "doc-2": { "page-b": "hash-b" } },
+		});
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: repeating };
+
+		const result = await runSync(deps, { rootHash: "root-1", rows: {} });
+
+		expect(result.notesWritten).toBe(2);
+		expect(result.backendWarnings).toEqual(["a page's answer was cut off"]);
+		// Diagnostics keeps every occurrence: there the question is which unit lost what.
+		expect(result.skipErrors.filter((error) => error === "a page's answer was cut off")).toHaveLength(2);
+	});
 });
 
 describe("invalidateRenders", () => {
@@ -4540,17 +4628,18 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		expect(note).toContain("Could not read this page");
 	});
 
-	// #116's truncation is a page that comes back `ok` and is quietly incomplete -- exactly what the
-	// tie-breaker refuses to freeze. Rare, and self-healing on the next clean run.
-	it("stores nothing from a run the backend warned about", async () => {
+	// Every warning the shipped backends raise names pages they marked `failed`, and a failed page is
+	// never stored. The rule used to empty the store on any warning, so a server that was down for
+	// one sync threw away every page already read and the next edit re-read the whole notebook.
+	it("keeps the pages that came back ok when the backend warned about the ones it failed", async () => {
 		const warning: OcrBackend = {
 			id: "vision",
 			metered: false,
 			fingerprint: "test-backend",
 			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => ({
 				status: "ok",
-				pages: pages.map(() => ({ status: "ok" as const, text: "possibly truncated" })),
-				text: "possibly truncated",
+				pages: pages.map((_, index) => (index === 1 ? { status: "failed" as const, text: "" } : { status: "ok" as const, text: "read" })),
+				text: "read",
 				confidence: null,
 				warnings: ["a page's answer was cut off"],
 			})),
@@ -4558,7 +4647,8 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		const deps = { ...baseDeps(notebook("root-117-f", "hash-1", THREE), { sync: "Target" }), ocrBackend: warning };
 		const synced = await runSync(deps, EMPTY_SYNC_INDEX);
 
-		expect(synced.index.rows[KEY].transcribedPages).toBeUndefined();
+		expect(synced.index.rows[KEY].transcribedPages).toHaveLength(2);
+		expect(synced.backendWarnings).toEqual(["a page's answer was cut off"]);
 	});
 
 	// Ticket 04's easy-to-miss half. Without it the user pays twice -- once for the command, and again

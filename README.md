@@ -212,7 +212,7 @@ deleted as soon as it has been read.
 |---|---|---|
 | [Apple Vision](#apple-vision-macos) | macOS 13 or later | none, it is the default there |
 | [A local server you run yourself](#a-local-server-you-run-yourself) | everywhere | install Ollama or LM Studio |
-| [Managed local model](#local-model-optional-opt-in) | Apple Silicon, Windows on ARM | one opt-in click, 5.5 GB download |
+| [Managed local model](#local-model-optional-opt-in) | Apple Silicon, Windows on ARM | one opt-in click, a 1.6 to 6.2 GB download depending on the model |
 
 Four **cloud** backends are also available, with [Tagged Sync Pro](#tagged-sync-pro). Those are the
 one case where a page image leaves your device: you choose them, they use your own API key, and they
@@ -278,17 +278,19 @@ about three times more accurately than Apple Vision and keeps headings and lists
 it runs entirely on your machine. It is **never a default**: a fresh install downloads nothing,
 and Apple Vision stays the default on macOS.
 
-Choosing it downloads **5.5 GB of model files plus a 12 MB program**, after an explicit opt-in in
-settings. Both are checked against a SHA-256 published in the plugin before anything runs. It is
-slow compared with Vision — roughly 15 seconds a page on a fast Mac against Vision's 0.4 — and it
-holds about 14 GB of memory while it runs.
+Choosing it downloads **1.6 to 6.2 GB of model files plus a 12 MB program**, after an explicit opt-in
+in settings — three models ship, and settings offers the ones your machine can run, with the most
+accurate marked as the default. Both files are checked against a SHA-256 published in the plugin
+before anything runs. It is slow compared with Vision — roughly 15 seconds a page on a fast Mac
+against Vision's 0.4 — and it holds between 3 and 9 GB of memory while it runs, depending on the
+model.
 
 **Offered only on:**
 
 | | Requirement |
 |---|---|
-| macOS | Apple Silicon, 18 GB of memory or more (32 GB recommended) |
-| Windows | ARM (Snapdragon X and similar), 24 GB of memory or more |
+| macOS | Apple Silicon, 8 GB of memory or more; 16 GB for the most accurate model |
+| Windows | ARM (Snapdragon X and similar), 16 GB of memory or more; 24 GB for the most accurate model |
 
 Intel Macs, Windows on x64 and Linux do not get the option, and settings says why on the machine
 itself. **Windows x64 is excluded because Windows Defender quarantines the engine** — the
@@ -646,8 +648,8 @@ stays where it is and is still preserved on every sync — new notes just no lon
 - Transcription with Apple Vision requires **macOS 13 or later**, and its transcripts are flat
   text — no headings, lists, task lists, or tables.
 - The optional [local model](#local-model-optional-opt-in) keeps headings and lists, but needs
-  Apple Silicon with 18 GB of memory or Windows on ARM with 24 GB, and a 5.5 GB download. Tables
-  come out as plain lines.
+  Apple Silicon with 8 GB of memory or Windows on ARM with 16 GB, and a download of 1.6 to 6.2 GB
+  depending on the model. Tables come out as plain lines.
 - **Windows on x64 and Linux get the render and no handwriting transcript out of the box** —
   [a local server you run yourself](#a-local-server-you-run-yourself) is the only route there. The
   [digest of a marked-up PDF](#annotated-pdfs) and of a [typed
@@ -714,8 +716,9 @@ Two more hosts are contacted **only if you opt in to the local model**
 ([see above](#local-model-optional-opt-in)), once, to download it — never during a sync, and never
 again once the files are on disk:
 
-- **`huggingface.co`** — the two model files, from
-  `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`, pinned to one commit (4.68 GB + 853 MB).
+- **`huggingface.co`** — the two model files, from `Qwen/Qwen3-VL-8B-Instruct-GGUF`,
+  `Qwen/Qwen3-VL-2B-Instruct-GGUF` or `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`, each pinned to one
+  commit.
 - **`github.com`** — the `llama.cpp` engine, from release `b10295` of `ggml-org/llama.cpp`
   (11–12 MB depending on platform).
 
@@ -736,13 +739,13 @@ Two things, both only on the paths your OS reserves for exactly this:
 - **Page images during transcription.** Each page is written as a temporary PNG under your OS
   temp directory (`os.tmpdir()`) — never under Documents/Desktop/Downloads/iCloud — and deleted as
   soon as the page has been read.
-- **The local model, if you opt in to it.** The 5.5 GB of model files and the engine are written
+- **The local model, if you opt in to it.** The model files (1.6 to 6.2 GB) and the engine are written
   to the standard per-application data directory — `~/Library/Application Support/remarkable-tagged-sync/`
   on macOS, `%LOCALAPPDATA%\remarkable-tagged-sync\` on Windows — and read from there when you
   transcribe.
 
   They live **outside your vault on purpose**: inside it they would go through Obsidian Sync and
-  every vault backup, once per vault, and 5.5 GB is not something to put in someone's backup
+  every vault backup, once per vault, and several gigabytes is not something to put in someone's backup
   without saying so. The price is that **uninstalling the plugin does not delete them.** The
   *Delete the model* button in settings does, and settings names the exact size before you agree
   to download anything.

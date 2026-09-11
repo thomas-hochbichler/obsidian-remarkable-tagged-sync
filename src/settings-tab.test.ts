@@ -25,7 +25,7 @@ import { NO_LICENCE } from "./licence-state";
 import { DeviceUnreachableError } from "./ssh-connection";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import { PairingRefusedError } from "./ssh-pairing";
-import { isListedBackend, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
+import { BACKGROUND_CONSENT_NAME, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
 
 // Gap G28 -- the settings tab. `main.ts` and `local-register.ts` are the only files that construct a
 // `Setting`, and neither had a test file: every string, state and rule *below* the tab is verified
@@ -89,13 +89,9 @@ vi.stubGlobal("navigator", { clipboard: { writeText: async (text: string) => voi
 
 // --- test backends ------------------------------------------------------------------------------
 //
-// Four combinations of `unavailableLabel()` and `renderSetup`, because the listing rule is a rule
-// about that pair and this build ships no machine on which all four are reachable: the managed local
-// model is the only entry with a card, and it does not even register off a supported desktop. Adding
-// them to the real registry rather than testing the predicate again is the point -- what is untested
-// is the *wire* between the rule and the dropdown.
+// Added to the real registry rather than mocked, because what is under test is the *wire* between
+// the registry and the dropdown.
 
-const setupCards: string[] = [];
 const settingsRows: string[] = [];
 
 function testBackend(id: string, extra: Partial<OcrBackendEntry> = {}): OcrBackendEntry {
@@ -106,30 +102,23 @@ function testBackend(id: string, extra: Partial<OcrBackendEntry> = {}): OcrBacke
 		requiresLicence: false,
 		needsBackgroundConsent: false,
 		create: () => null,
-		renderSetup: (containerEl, ctx) => {
-			setupCards.push(`${id}${ctx.isSelected ? " (selected)" : ""}`);
-			(containerEl as unknown as FakeEl).createDiv({ cls: "test-card", text: `card:${id}` });
-		},
 		...extra,
 	} as OcrBackendEntry;
 }
 
-/** Runs here, no card. Listed and enabled -- and its rows appear only while it is selected. */
+/** Runs here. Listed and enabled -- and its rows appear only while it is selected. */
 registerOcrBackend(
 	testBackend("test-plain", {
-		renderSetup: undefined,
-		renderSettings: (containerEl, ctx) => {
-			settingsRows.push(`test-plain${ctx.isSelected ? " (selected)" : ""}`);
+		renderSettings: (containerEl) => {
+			settingsRows.push("test-plain");
 			(containerEl as unknown as FakeEl).createDiv({ cls: "test-rows", text: "rows:test-plain" });
 		},
 	}),
 );
-/** A gap nothing can fix and no card to explain it: shown, disabled, with the reason in its place. */
-registerOcrBackend(testBackend("test-gap", { renderSetup: undefined, unavailableLabel: () => "Test — not here" }));
-/** A gap its own card is already explaining: hidden, so it cannot be selected into a dead setting. */
-registerOcrBackend(testBackend("test-carded", { unavailableLabel: () => "Test — not ready" }));
-/** A card and no gap: listed, and the card still renders. */
-registerOcrBackend(testBackend("test-ready-card"));
+/** A gap nothing can fix: shown, disabled, with the reason in its place. */
+registerOcrBackend(testBackend("test-gap", { unavailableLabel: () => "Test — not here" }));
+/** Costs money per page, which is the only thing that makes a backend "cloud" here. */
+registerOcrBackend(testBackend("test-metered", { metered: true }));
 /** Has a sentence of its own about what its transcripts look like. */
 const CONTRACT = "Test backend: headings, lists and tables.";
 registerOcrBackend(testBackend("test-contract", { noteContract: CONTRACT }));
@@ -137,19 +126,18 @@ registerOcrBackend(testBackend("test-contract", { noteContract: CONTRACT }));
 const consented = { description: "Test consent row." } as const;
 registerOcrBackend(
 	testBackend("test-consent", {
-		renderSetup: undefined,
-		needsBackgroundConsent: true,
+				needsBackgroundConsent: true,
 		backgroundConsent: {
 			get: (settings) => settings.ok === true,
 			set: (settings, value) => {
 				settings.ok = value;
 			},
-			description: consented.description,
+			description: () => consented.description,
 		},
 	}),
 );
 /** Declares the need and forgets the accessors -- the half-declared pair, from the tab's side. */
-registerOcrBackend(testBackend("test-half-consent", { renderSetup: undefined, needsBackgroundConsent: true }));
+registerOcrBackend(testBackend("test-half-consent", { needsBackgroundConsent: true }));
 
 // --- harness ------------------------------------------------------------------------------------
 
@@ -244,7 +232,6 @@ beforeEach(() => {
 	cloud.register = async () => "device-token";
 	opened.length = 0;
 	copied.length = 0;
-	setupCards.length = 0;
 	settingsRows.length = 0;
 	takeNotices();
 	takeSettings();
@@ -622,16 +609,16 @@ describe("the backend dropdown", () => {
 		}));
 	}
 
-	it("lists exactly what the listing rule says, over the registry this build actually has", async () => {
-		// Asserted as the rule over the live registry rather than as a fixed list of ids: a build that
-		// gains a backend would pass a hard-coded list by simply not showing it.
+	it("lists every registered backend, whether or not it can run here", async () => {
+		// Asserted over the live registry rather than as a fixed list of ids: a build that gains a
+		// backend would pass a hard-coded list by simply not showing it. Nothing is hidden any more --
+		// a backend whose model is not downloaded yet is listed, and its own rows say what to do once
+		// it is picked. Hiding it until then was reported as the entry missing.
 		const { tab } = await tabWith({ ocrBackend: "off" });
 		const listed = options(draw(tab)).map((option) => option.id);
 
-		expect(listed).toEqual(ocrBackendEntries().filter((entry) => isListedBackend(entry, "off")).map((entry) => entry.id));
-		// The two halves of the rule, named, so a mutation that lists everything still fails here.
+		expect(listed).toEqual(ocrBackendEntries().map((entry) => entry.id));
 		expect(listed).toContain("test-gap");
-		expect(listed).not.toContain("test-carded");
 	});
 
 	it("shows a gap nothing can close, disabled, with the reason where the name was", async () => {
@@ -639,16 +626,6 @@ describe("the backend dropdown", () => {
 
 		expect(options(draw(tab))).toContainEqual({ id: "test-gap", text: "Test — not here", disabled: true });
 		expect(options(draw(tab))).toContainEqual({ id: "test-plain", text: "Test test-plain", disabled: false });
-	});
-
-	it("keeps a hidden backend visible while it is the selected one, so the box is never blank", async () => {
-		// The user selects it while it works and its model later disappears. Hiding it would leave the
-		// dropdown showing nothing at all.
-		const { tab } = await tabWith({ ocrBackend: "test-carded" });
-		const drawn = draw(tab);
-
-		expect(options(drawn)).toContainEqual({ id: "test-carded", text: "Test — not ready", disabled: true });
-		expect(dropdown(drawn, "Backend").value).toBe("test-carded");
 	});
 
 	it("saves the pick and re-draws itself, because the rows below it belong to the backend", async () => {
@@ -662,84 +639,96 @@ describe("the backend dropdown", () => {
 
 		expect(plugin.data.ocrBackend).toBe("test-plain");
 		expect((plugin.saves.at(-1) as { ocrBackend: string }).ocrBackend).toBe("test-plain");
-		expect(settingsRows).toEqual(["test-plain (selected)"]);
+		expect(settingsRows).toEqual(["test-plain"]);
 		expect(dropdown(draw(tab), "Backend").value).toBe("test-plain");
 	});
 
-	it("describes the families this build has, and claims nothing about the ones it does not", async () => {
-		const { tab } = await tabWith();
-		const desc = row(draw(tab), "Backend").desc;
+	/**
+	 * The re-draw above is what makes the rows right; this is what stops it costing the reader their
+	 * place. Transcription sits well down a long page, so choosing a backend emptied the element the
+	 * pane scrolls, took the offset to zero with it, and left the user at the top -- away from the very
+	 * setting they had just changed. Reported from a real settings page on 2026-09-10.
+	 */
+	it("leaves the reader where they were after a re-draw", async () => {
+		const { tab } = await tabWith({ ocrBackend: "off" });
+		tab.containerEl.scrollTop = 420;
 
-		expect(desc).toContain("Apple Vision runs locally and privately on macOS 13 or later");
-		// Both clauses are true of this build: the localhost servers are on-device, the six providers
-		// are cloud. The sentence is composed rather than fixed because the three cases are three
-		// different promises.
-		expect(desc).toContain("needs no account and no key");
-		expect(desc).toContain("using your own API key");
+		dropdown(draw(tab), "Backend").pick("test-plain");
+		await settle();
+
+		expect(tab.containerEl.scrollTop).toBe(420);
+	});
+
+	/**
+	 * Reported from a real settings page: with LM Studio selected, the row explained Apple Vision, then
+	 * local models, then cloud providers, and left the reader to work out which clause was theirs. The
+	 * three families really are three different promises, which is the argument for making one.
+	 */
+	it("describes the backend that is selected, and none of the others", async () => {
+		const onDevice = row(draw((await tabWith({ ocrBackend: "test-plain" })).tab), "Backend").desc;
+
+		expect(onDevice).toBe("Runs on hardware you own — no account and no key.");
+		expect(onDevice).not.toContain("Apple Vision");
+		expect(onDevice).not.toContain("API key");
+	});
+
+	it("names the cost where the pages leave the machine, and only there", async () => {
+		const metered = row(draw((await tabWith({ ocrBackend: "test-metered" })).tab), "Backend").desc;
+
+		expect(metered).toBe("Each page is sent to the provider, charged to your own API key.");
+	});
+
+	// The macOS floor belongs on the option that cannot run -- the dropdown carries it there -- not in
+	// the description of the backend somebody has already chosen.
+	it("keeps the macOS floor out of the description", async () => {
+		const vision = row(draw((await tabWith({ ocrBackend: "vision" })).tab), "Backend").desc;
+
+		expect(vision).toContain("Runs on your Mac");
+		expect(vision).not.toContain("macOS 13");
 	});
 });
 
-describe("the sentence under the dropdown", () => {
-	function note(drawn: Drawn[]): string | undefined {
-		return drawn.find((item): item is Extract<Drawn, { kind: "note" }> => item.kind === "note" && item.cls === "tagged-sync-note")
-			?.text;
-	}
+describe("the transcript sentence in the Backend row", () => {
+	const desc = (drawn: Drawn[]) => row(drawn, "Backend").desc;
 
-	it("says nothing about Apple Vision's ceiling on a machine that cannot run Apple Vision", async () => {
-		// Naming the limit of a backend this system does not offer is noise, and it reads as a limit of
-		// whatever the user *did* pick.
-		machine.visionAvailable = false;
-		const { tab } = await tabWith({ ocrBackend: "off" });
-
-		expect(note(draw(tab))).toBe("Choose an LLM backend for structured Markdown.");
-	});
-
-	it("names the ceiling where Apple Vision is a real option", async () => {
+	it("names Apple Vision's ceiling only while Apple Vision is the selected backend", async () => {
 		machine.visionAvailable = true;
-		const { tab } = await tabWith({ ocrBackend: "off" });
+		const { tab } = await tabWith({ ocrBackend: "vision" });
 
-		expect(note(draw(tab))).toBe(
-			"Apple Vision: flat text only, no headings or tables. Choose an LLM backend for structured Markdown.",
+		expect(desc(draw(tab))).toBe(
+			"Runs on your Mac — no account, no key, no network. Transcripts are flat text, no headings or tables. Choose an LLM backend for structured Markdown.",
 		);
 	});
 
-	it("lets the selected backend's own contract replace it, rather than join it", async () => {
-		// With another backend chosen, Vision's flat-text ceiling is not what the user's notes will look
-		// like -- and claiming parity with the cloud providers would be wrong the other way.
+	it("says nothing about Apple Vision under a backend that has no contract of its own", async () => {
+		// The ceiling used to be the fallback sentence for every backend without a contract, so a reader
+		// who had already chosen an LLM backend was told to choose an LLM backend.
+		machine.visionAvailable = true;
+		const { tab } = await tabWith({ ocrBackend: "test-plain" });
+
+		expect(desc(draw(tab))).toBe("Runs on hardware you own — no account and no key.");
+	});
+
+	it("appends the selected backend's own contract to its promise, as one description", async () => {
+		// One row, not a loose line under it: on its own the sentence read as a footnote with nothing to
+		// belong to.
 		machine.visionAvailable = true;
 		const { tab } = await tabWith({ ocrBackend: "test-contract" });
 
-		expect(note(draw(tab))).toBe(CONTRACT);
+		expect(desc(draw(tab))).toBe(`Runs on hardware you own — no account and no key. ${CONTRACT}`);
 	});
 });
 
-describe("a backend's own rows and its setup card", () => {
+describe("a backend's own rows", () => {
 	it("draws the settings rows of the selected backend and of no other", async () => {
 		const { tab } = await tabWith({ ocrBackend: "test-plain" });
 		draw(tab);
-		expect(settingsRows).toEqual(["test-plain (selected)"]);
+		expect(settingsRows).toEqual(["test-plain"]);
 
 		settingsRows.length = 0;
 		const other = await tabWith({ ocrBackend: "off" });
 		draw(other.tab);
 		expect(settingsRows).toEqual([]);
-	});
-
-	it("draws every registered backend's setup card, selected or not", async () => {
-		// The difference is the whole point: a backend that cannot yet be selected has no other way to
-		// say what would make it selectable, because `renderSettings` fires only once it already is.
-		const { tab } = await tabWith({ ocrBackend: "off" });
-		draw(tab);
-
-		expect(setupCards).toEqual(["test-carded", "test-ready-card", "test-contract"]);
-	});
-
-	it("tells a card whether it is the selected backend, so a finished one can stand down", async () => {
-		const { tab } = await tabWith({ ocrBackend: "test-ready-card" });
-		draw(tab);
-
-		expect(setupCards).toContain("test-ready-card (selected)");
-		expect(setupCards).toContain("test-carded");
 	});
 });
 
@@ -803,10 +792,10 @@ describe("automatic sync", () => {
 		// where to keep the answer. One without the other draws no row -- so a backend that declares
 		// the need alone is background-gated with no way for anyone to lift the gate.
 		const withBoth = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-consent" });
-		expect(rowNames(section(draw(withBoth.tab), "Automatic sync"))).toContain("Transcribe during background sync");
+		expect(rowNames(section(draw(withBoth.tab), "Automatic sync"))).toContain(BACKGROUND_CONSENT_NAME);
 
 		const withHalf = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-half-consent" });
-		expect(rowNames(section(draw(withHalf.tab), "Automatic sync"))).not.toContain("Transcribe during background sync");
+		expect(rowNames(section(draw(withHalf.tab), "Automatic sync"))).not.toContain(BACKGROUND_CONSENT_NAME);
 	});
 
 	it("writes the consent through the backend's own accessors, never into a field of its own", async () => {
@@ -814,7 +803,7 @@ describe("automatic sync", () => {
 		// which key inside it holds the answer.
 		const { plugin, tab } = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-consent" });
 		const drawn = draw(tab);
-		const consent = row(drawn, "Transcribe during background sync");
+		const consent = row(drawn, BACKGROUND_CONSENT_NAME);
 
 		expect(consent.desc).toBe("Test consent row.");
 		expect(consent.setting.toggles[0].value).toBe(false);
@@ -827,13 +816,15 @@ describe("automatic sync", () => {
 
 	it("asks about spending money only on a backend that spends money", async () => {
 		const free = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-plain" });
-		expect(rowNames(section(draw(free.tab), "Automatic sync"))).not.toContain(
-			"Automatically transcribe during background sync (uses your paid API)",
-		);
+		expect(rowNames(section(draw(free.tab), "Automatic sync"))).not.toContain(BACKGROUND_CONSENT_NAME);
 
+		// Same name as the battery/RAM row, because off means the same thing: no scheduled run at
+		// all. The old name promised a sync without transcripts, which is not what the gate does.
 		const metered = await tabWith({ autoSync: AUTO_ON, ocrBackend: "anthropic" });
-		const paid = row(draw(metered.tab), "Automatically transcribe during background sync (uses your paid API)");
-		expect(paid.desc).toContain("Off by default");
+		const paid = row(draw(metered.tab), BACKGROUND_CONSENT_NAME);
+		expect(paid.desc).toContain("bills your API key");
+		expect(paid.desc).toContain("Anthropic (Claude)");
+		expect(paid.desc).toContain("automatic sync does nothing while this backend is chosen");
 		expect(paid.setting.toggles[0].value).toBe(false);
 
 		paid.setting.toggles[0].toggle(true);

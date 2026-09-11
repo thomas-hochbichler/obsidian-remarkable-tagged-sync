@@ -412,6 +412,8 @@ export function startLocalModelDownload(
 			}
 
 			// Written last and only once both hashes matched: its presence is half of "ready" (§5.5).
+			// Any `.part` still here belongs to an attempt this one overtook, and it is junk now.
+			removeStaleParts(paths);
 			fs.writeFileSync(paths.verifiedMarker, "");
 			return { phase: "done" };
 		} catch (error) {
@@ -498,6 +500,16 @@ export function removeLocalModel(paths: LocalModelPaths): number {
 export function discardPartialDownload(paths: LocalModelPaths): void {
 	const fs = nodeRequire("fs");
 	for (const file of [paths.modelFile, paths.mmprojFile, paths.modelPart, paths.mmprojPart]) fs.rmSync(file, { force: true });
+}
+
+/**
+ * Removes a `.part` that outlived the download it belonged to. Only meaningful beside a verified
+ * model: {@link deriveLocalModelState} already ignores such a file, and this is what stops it
+ * sitting there at 300 MB forever.
+ */
+export function removeStaleParts(paths: LocalModelPaths): void {
+	const fs = nodeRequire("fs");
+	for (const file of [paths.modelPart, paths.mmprojPart]) fs.rmSync(file, { force: true });
 }
 
 /** Bytes {@link discardPartialDownload} would throw away, so the button can name them before it does. */

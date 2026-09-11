@@ -173,7 +173,7 @@ function renderProviderSettings(meta: ProviderMeta, containerEl: HTMLElement, ct
 		urlSetting.setDesc(meta.baseURL);
 	}
 
-	new Setting(containerEl)
+	const modelSetting = new Setting(containerEl)
 		.setName("Model")
 		.setDesc("The vision model to transcribe with.")
 		.addText((text) => {
@@ -185,8 +185,11 @@ function renderProviderSettings(meta: ProviderMeta, containerEl: HTMLElement, ct
 			});
 		});
 
-	// Vision-capability callout, rendered under the Model field (spec §5.1).
-	visionWarningEl = containerEl.createDiv({ cls: "tagged-sync-note" });
+	// Vision-capability callout, rendered under the Model field (spec §5.1) -- inside its description
+	// rather than as a sibling below it. It is a verdict about the value in that one field, and
+	// Obsidian 1.13 draws each setting as its own card, so a sibling note landed in the gap between
+	// two cards and read as belonging to neither.
+	visionWarningEl = modelSetting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 	scheduleVisionCheck(meta, cfg);
 
 	if (meta.key !== "none") {

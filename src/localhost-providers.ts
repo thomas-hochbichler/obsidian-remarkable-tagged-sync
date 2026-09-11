@@ -74,7 +74,7 @@ export interface ProviderMeta {
 export const LOCALHOST_PROVIDERS = {
 	ollama: {
 		id: "ollama",
-		label: "Ollama (local)",
+		label: "Ollama (your own server)",
 		kind: "local",
 		adapter: "openai-compat",
 		baseURL: "http://localhost:11434/v1",
@@ -86,7 +86,7 @@ export const LOCALHOST_PROVIDERS = {
 	},
 	lmstudio: {
 		id: "lmstudio",
-		label: "LM Studio (local)",
+		label: "LM Studio (your own server)",
 		kind: "local",
 		adapter: "openai-compat",
 		baseURL: "http://localhost:1234/v1",
@@ -98,7 +98,7 @@ export const LOCALHOST_PROVIDERS = {
 	},
 	custom: {
 		id: "custom",
-		label: "Custom (OpenAI-compatible)",
+		label: "Custom (any OpenAI-compatible server)",
 		kind: "user",
 		adapter: "openai-compat",
 		baseURL: "",
