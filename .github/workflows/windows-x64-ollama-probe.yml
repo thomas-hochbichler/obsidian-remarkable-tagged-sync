@@ -1,0 +1,200 @@
+# Does a stock Windows Defender leave Ollama's signed x64 runtime alone, and does the route read the
+# reference pages as well on x64 as it does on a Mac?
+#
+# managed-llm-windows-x64 ticket 07, Stage 1. Stage 0 ran on a Mac on 2026-09-11 and passed: the
+# route reads the fifteen public pages at 4.52 % median CER (our own `llama-mtmd-cli` path reads
+# 4.32 %), and `ollama create` keeps the pinned GGUFs byte for byte. What no reading can settle is
+# the one constraint this job exists for -- nobody has ever run these bytes under a default Defender.
+#
+# **Manual dispatch only, and deliberately not part of `ci.yml` or `nightly.yml`.** It downloads
+# 5.5 GB and runs a 7B vision model on a two-core runner; it is a measurement, not a gate, and
+# nothing in the repo depends on it. The flag on the *upstream* llama.cpp zip oscillated six times in
+# nine days, so one clean run is a snapshot: run this on two separate days and quote both.
+#
+# **No figure from here is a user's figure.** A `windows-latest` runner has two cores and no GPU, so
+# seconds-per-page is logged and never gated (map constraint 5). The one number this job may publish
+# as measured-on-Windows is peak working set.
+#
+# Actions are pinned by commit SHA; the trailing comment is the human-readable tag. Update both.
+
+name: Windows x64 Ollama probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "What this run is, for the record (e.g. 'day 1 of 2')"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  OLLAMA_VERSION: v0.34.0
+  GENERATION: qwen2.5-vl-7b-instruct-q4_k_m
+  # Never 11434: that is the port a user-installed Ollama owns, and this must not speak to one.
+  PROBE_PORT: "11533"
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Step 1. Which scanner is about to look at these bytes. Recorded before anything is fetched,
+      # because a detection is only meaningful against a named engine and signature version -- and a
+      # run on an image with real-time protection off proves nothing at all.
+      - name: Record the scanner, before
+        run: |
+          $status = Get-MpComputerStatus
+          $status | Select-Object AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated, RealTimeProtectionEnabled, IsTamperProtected | Format-List
+          if (-not $status.RealTimeProtectionEnabled) {
+            Write-Error "Real-time protection is OFF on this image. The run is void -- it cannot answer the question it exists for."
+            exit 1
+          }
+          New-Item -ItemType Directory -Force -Path probe-out | Out-Null
+          $status | Select-Object AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated, RealTimeProtectionEnabled |
+            ConvertTo-Json | Set-Content probe-out/defender-before.json
+
+      - run: npm ci
+
+      # Step 2. Only the members a CUDA-less install needs -- 42,914,054 B of a 1,469,375,054 B zip --
+      # each one CRC-32 checked against the zip's own central directory and SHA-256'd against the
+      # manifest before it is written. A mismatch fails the job: the release moved, and nothing
+      # measured after that would be about the artefact we decided on.
+      - name: Fetch the signed runtime, selectively
+        run: |
+          $runtime = Join-Path $env:LOCALAPPDATA "remarkable-tagged-sync\bin\ollama-$env:OLLAMA_VERSION"
+          node scripts/ollama-x64-probe/fetch-runtime.mjs $runtime
+          "RUNTIME=$runtime" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Step 3. Research 04 read off `discover/runner.go` that the CUDA directories are optional and
+      # never ran it. This is where that inference is settled. If the server refuses to start without
+      # them, the selective fetch decided in ticket 06 falls back to the whole 1.47 GB zip and the
+      # consent copy has to change -- so a failure here is a finding, not a flake.
+      - name: Start the server with the CUDA directories absent
+        run: |
+          $models = Join-Path $env:LOCALAPPDATA "remarkable-tagged-sync\ollama-models"
+          New-Item -ItemType Directory -Force -Path $models | Out-Null
+          $env:OLLAMA_HOST = "127.0.0.1:$env:PROBE_PORT"
+          $env:OLLAMA_MODELS = $models
+          $env:OLLAMA_KEEP_ALIVE = "5m"
+          "OLLAMA_HOST=127.0.0.1:$env:PROBE_PORT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "OLLAMA_MODELS=$models"                 | Out-File -FilePath $env:GITHUB_ENV -Append
+          Start-Process -FilePath (Join-Path $env:RUNTIME "ollama.exe") -ArgumentList "serve" `
+            -RedirectStandardOutput probe-out/serve.out.log -RedirectStandardError probe-out/serve.err.log -NoNewWindow
+          $deadline = (Get-Date).AddSeconds(30)
+          do {
+            Start-Sleep -Milliseconds 500
+            try { $version = Invoke-RestMethod "http://127.0.0.1:$env:PROBE_PORT/api/version" } catch { $version = $null }
+          } while (-not $version -and (Get-Date) -lt $deadline)
+          if (-not $version) {
+            Write-Error "No /api/version within 30 s with cuda_v12 and cuda_v13 absent. This is a finding: see step comment."
+            Get-Content probe-out/serve.err.log -Tail 50
+            exit 1
+          }
+          "server reports version $($version.version)"
+
+      # Step 4. The pins come from `src/local-model-artefacts.ts` by import, not by copy, so this can
+      # never measure a model the plugin does not ship.
+      - name: Fetch the pinned model
+        run: |
+          $dir = Join-Path $env:LOCALAPPDATA "remarkable-tagged-sync\models\$env:GENERATION"
+          npx esbuild test-support/probe/fetch-model-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --format=cjs --outfile=probe-fetch-model.cjs
+          node probe-fetch-model.cjs $dir $env:GENERATION
+          "MODEL_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # Step 5. `ollama create` *copies* the weights into its blob store, which would cost a user
+      # 11 GB rather than 5.5 (Stage 0 §1.1). Ollama addresses blobs by content hash, so pre-placing
+      # each blob as a **hardlink** to the file we already verified makes `create` say "using existing
+      # layer" and copy nothing. This job measures that variant, because it is the one worth shipping.
+      # The assertion is the point: if a copy happens anyway, the 11 GB is real and §4.2 must say so.
+      - name: Link the blobs, then create the model
+        run: |
+          $blobs = Join-Path $env:OLLAMA_MODELS "blobs"
+          New-Item -ItemType Directory -Force -Path $blobs | Out-Null
+          $free = (Get-PSDrive -Name (Split-Path $env:LOCALAPPDATA -Qualifier).TrimEnd(":")).Free
+          foreach ($pair in @(@("model.gguf"), @("mmproj.gguf"))) {
+            $file = Join-Path $env:MODEL_DIR $pair[0]
+            $sha = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLower()
+            New-Item -ItemType HardLink -Path (Join-Path $blobs "sha256-$sha") -Target $file | Out-Null
+            "linked $($pair[0]) as sha256-$sha"
+          }
+          "FROM $env:MODEL_DIR" | Set-Content probe-out/Modelfile
+          & (Join-Path $env:RUNTIME "ollama.exe") create taggedsync-probe -f probe-out/Modelfile
+          & (Join-Path $env:RUNTIME "ollama.exe") show taggedsync-probe | Tee-Object probe-out/ollama-show.txt
+          $after = (Get-PSDrive -Name (Split-Path $env:LOCALAPPDATA -Qualifier).TrimEnd(":")).Free
+          $grew = $free - $after
+          "free space moved by $grew B during create"
+          if ($grew -gt 500MB) {
+            Write-Error "create consumed $grew B: the hardlinks did not spare the copy, and the route costs 11 GB. Finding, not flake."
+            exit 1
+          }
+
+      # Step 6. Same prompt, same render, same sampling and same scoring as the Mac reference, which
+      # is the only reason the two numbers may be compared at all. Peak working set of the tree is
+      # sampled alongside -- the one figure from this job that is a Windows number.
+      - name: Transcribe the fifteen reference pages
+        run: |
+          npx esbuild test-support/probe/ollama-x64-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=probe-bench.cjs
+          $sampler = Start-Job {
+            $peak = 0
+            while ($true) {
+              $sum = (Get-Process ollama, llama-server -ErrorAction SilentlyContinue | Measure-Object WorkingSet64 -Sum).Sum
+              if ($sum -gt $peak) { $peak = $sum }
+              $peak | Set-Content $using:PWD/probe-out/peak-rss-bytes.txt
+              Start-Sleep -Seconds 1
+            }
+          }
+          $env:PROBE_BASE_URL = "http://127.0.0.1:$env:PROBE_PORT/v1"
+          $env:PROBE_MODEL = "taggedsync-probe"
+          $env:PROBE_OUT = "probe-out"
+          $env:PROBE_MACHINE = "github windows-latest runner, $((Get-CimInstance Win32_Processor).Name), $([math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)) GB"
+          node probe-bench.cjs
+          Stop-Job $sampler; Remove-Job $sampler
+          "peak working set: $(Get-Content probe-out/peak-rss-bytes.txt) B"
+
+      # Step 7. The question the whole job exists for. `if: always()` on purpose -- a quarantined
+      # binary makes an earlier step fail, and that is exactly when this answer matters most.
+      - name: Record the scanner, after
+        if: always()
+        run: |
+          $threats = @(Get-MpThreatDetection -ErrorAction SilentlyContinue)
+          $known = @(Get-MpThreat -ErrorAction SilentlyContinue)
+          $events = @(Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Id -in 1116, 1117 })
+          $status = Get-MpComputerStatus
+          @{
+            detections = $threats | Select-Object ThreatID, Resources, InitialDetectionTime, ActionSuccess
+            threats    = $known   | Select-Object ThreatName, SeverityID, Resources
+            events     = $events  | Select-Object Id, TimeCreated, Message
+            engineAfter = $status | Select-Object AMEngineVersion, AntivirusSignatureVersion
+          } | ConvertTo-Json -Depth 5 | Set-Content probe-out/defender-after.json
+          "detections: $($threats.Count) · known threats: $($known.Count) · events 1116/1117: $($events.Count)"
+          $ours = @($threats) + @($known) | Where-Object { "$($_.Resources)" -match "remarkable-tagged-sync" }
+          if ($ours.Count -gt 0) {
+            $ours | Format-List
+            Write-Error "Defender acted on something under the plugin's directory. Route (a) fails this gate."
+            exit 1
+          }
+
+      - name: Stop the server
+        if: always()
+        run: Get-Process ollama, llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: windows-x64-ollama-probe-${{ github.run_id }}
+          path: probe-out/
+          retention-days: 90

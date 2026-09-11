@@ -1,0 +1,512 @@
+{
+	"_comment": "Members of ollama-windows-amd64.zip v0.34.0 that a CUDA-less install needs. Derived from the artefact's own central directory; every entry CRC-32 checked against that directory and SHA-256'd after inflation. The CUDA directories are deliberately absent -- 1.43 GB of the 1.47 GB zip.",
+	"url": "https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-windows-amd64.zip",
+	"zipBytes": 1469375054,
+	"entries": 87,
+	"centralDirectory": {
+		"offset": 1469365208,
+		"size": 9824
+	},
+	"selective": {
+		"members": 55,
+		"compressedBytes": 42914054,
+		"uncompressedBytes": 132072383
+	},
+	"members": [
+		{
+			"name": "lib/ollama/CPP_HTTPLIB_LICENSE",
+			"localHeaderOffset": 75,
+			"method": 8,
+			"compressed": 635,
+			"uncompressed": 1097,
+			"crc32": 842748904,
+			"sha256": "bb546eae5924d8ee842e0e567e6d533c5824bdebccf605f99a5b3429034e6697"
+		},
+		{
+			"name": "lib/ollama/CUDNN_LICENSE.txt",
+			"localHeaderOffset": 1426448527,
+			"method": 8,
+			"compressed": 655,
+			"uncompressed": 1169,
+			"crc32": 1770008921,
+			"sha256": "b6fe452605fe29245f0cbafa724b42df94a5e170bedb9d45bc9cfaa4883ad907"
+		},
+		{
+			"name": "lib/ollama/CUTLASS_LICENSE.txt",
+			"localHeaderOffset": 1426449240,
+			"method": 8,
+			"compressed": 1018,
+			"uncompressed": 1888,
+			"crc32": 1355366538,
+			"sha256": "48eb34a9124af8fdd2ad1858a64be9827ebc42e5389c6dd4b5a93e411ac7e693"
+		},
+		{
+			"name": "lib/ollama/DLFCN_WIN32_COPYING",
+			"localHeaderOffset": 1426450318,
+			"method": 8,
+			"compressed": 588,
+			"uncompressed": 1040,
+			"crc32": 3083266616,
+			"sha256": "4cc7ac997b9293db5919baf630100cc09b3508efdfe6a6611c95511fb863b3c7"
+		},
+		{
+			"name": "lib/ollama/DLPACK_LICENSE",
+			"localHeaderOffset": 1426450966,
+			"method": 8,
+			"compressed": 3838,
+			"uncompressed": 11546,
+			"crc32": 3539264016,
+			"sha256": "9bda2385fa325d1df6dc39772eba3cc6d07bdfaf2c656cd644cd29f7509514fd"
+		},
+		{
+			"name": "lib/ollama/FMT_LICENSE",
+			"localHeaderOffset": 1426454859,
+			"method": 8,
+			"compressed": 803,
+			"uncompressed": 1458,
+			"crc32": 3753302547,
+			"sha256": "25b5db04aa6070c12ac518b91cbd0a59725c050ecb091456e6ebc3d3eeb369cf"
+		},
+		{
+			"name": "lib/ollama/ggml-base.dll",
+			"localHeaderOffset": 1426455714,
+			"method": 8,
+			"compressed": 322454,
+			"uncompressed": 841608,
+			"crc32": 3777934970,
+			"sha256": "a43906186c752cd1c346627370090d7ee416d15a1623e5d35412b6c7669feb56"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-alderlake.dll",
+			"localHeaderOffset": 1426778222,
+			"method": 8,
+			"compressed": 543808,
+			"uncompressed": 1553288,
+			"crc32": 2231816976,
+			"sha256": "7d1f029faba62aea9001570a07ce50cd941b610bba41a1c99cfedce03f61b998"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-cannonlake.dll",
+			"localHeaderOffset": 1427322093,
+			"method": 8,
+			"compressed": 608413,
+			"uncompressed": 1813896,
+			"crc32": 3669226060,
+			"sha256": "e1afad4a094383e722c2268a62a5269d5de67680b367edd79cf186eaf9b5e348"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-cascadelake.dll",
+			"localHeaderOffset": 1427930570,
+			"method": 8,
+			"compressed": 604252,
+			"uncompressed": 1795976,
+			"crc32": 1987034447,
+			"sha256": "29cc4b7268d23a2e7892e1ebc94d17888c1fbe10e02b635dcdcb218fced07cc9"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-cooperlake.dll",
+			"localHeaderOffset": 1428534887,
+			"method": 8,
+			"compressed": 605452,
+			"uncompressed": 1799560,
+			"crc32": 763231762,
+			"sha256": "131ef72c993d707d8db63d65693819899d105d3fdba2d5fdf8dba4577b30473b"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-haswell.dll",
+			"localHeaderOffset": 1429140403,
+			"method": 8,
+			"compressed": 545881,
+			"uncompressed": 1561480,
+			"crc32": 4011359221,
+			"sha256": "7f57f128b9ab8ca49feb143ba0943415f0fe4e85df152bd1b6bb1d43f3441a1a"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-icelake.dll",
+			"localHeaderOffset": 1429686345,
+			"method": 8,
+			"compressed": 607067,
+			"uncompressed": 1803144,
+			"crc32": 3890954241,
+			"sha256": "5460ab7be1bc1708ef8866fdfa5ebe750e0e12309d01019d664a98848dce43dc"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-ivybridge.dll",
+			"localHeaderOffset": 1430293473,
+			"method": 8,
+			"compressed": 505835,
+			"uncompressed": 1458056,
+			"crc32": 2920667407,
+			"sha256": "b63b5e1a17519151fc1836819b1a5bf548acf9ac8ea79dfa7625e61b59ac4fc3"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-piledriver.dll",
+			"localHeaderOffset": 1430799371,
+			"method": 8,
+			"compressed": 509400,
+			"uncompressed": 1460616,
+			"crc32": 451345570,
+			"sha256": "dfca40f98ff78e949fa5e8d3afd093493270cba959ea3bee6d1d95bc649f29ef"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-sandybridge.dll",
+			"localHeaderOffset": 1431308835,
+			"method": 8,
+			"compressed": 502848,
+			"uncompressed": 1438600,
+			"crc32": 3080745595,
+			"sha256": "9081c6246f4f4c1ddcadc556b66baea587620d27714834eb47c7e1f5dd5902f7"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-sapphirerapids.dll",
+			"localHeaderOffset": 1431811748,
+			"method": 8,
+			"compressed": 693064,
+			"uncompressed": 2100616,
+			"crc32": 3592773714,
+			"sha256": "f4449cb368a223fa1e0dee5ba31f033285ed286248403ec8744f796d58854c40"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-skylakex.dll",
+			"localHeaderOffset": 1432504880,
+			"method": 8,
+			"compressed": 605211,
+			"uncompressed": 1806728,
+			"crc32": 525997884,
+			"sha256": "289f243296b9d8d0f44100df29407e04e4483574b1e5a5b458ea34871302bb5b"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-sse42.dll",
+			"localHeaderOffset": 1433110153,
+			"method": 8,
+			"compressed": 436722,
+			"uncompressed": 1252744,
+			"crc32": 2706219837,
+			"sha256": "02214c5395874f6f0d2efdc08faea3d4f056b388ed9ef60126327f48e0318afc"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-x64.dll",
+			"localHeaderOffset": 1433546934,
+			"method": 8,
+			"compressed": 430488,
+			"uncompressed": 1240456,
+			"crc32": 378752393,
+			"sha256": "f4ac38a39c73f6c43f500c6859353cd08b6908b191e5ce1bec4d83982036f920"
+		},
+		{
+			"name": "lib/ollama/ggml-cpu-zen4.dll",
+			"localHeaderOffset": 1433977479,
+			"method": 8,
+			"compressed": 608809,
+			"uncompressed": 1806728,
+			"crc32": 82998022,
+			"sha256": "016b083afee2b38130c585ad519c804e82dac17f8f0c3c17e9cba539358792fd"
+		},
+		{
+			"name": "lib/ollama/ggml.dll",
+			"localHeaderOffset": 1434586346,
+			"method": 8,
+			"compressed": 23460,
+			"uncompressed": 50568,
+			"crc32": 3750805539,
+			"sha256": "de63125a10ab66eaba1dd6e56b80de6722ea30c38824b423c9114c8732893f05"
+		},
+		{
+			"name": "lib/ollama/GO_LICENSE",
+			"localHeaderOffset": 1434609855,
+			"method": 8,
+			"compressed": 28279,
+			"uncompressed": 302673,
+			"crc32": 3493586993,
+			"sha256": "b38143e93506fe4502327e7f0de09952931b4430706faf586fabd9254f1c4080"
+		},
+		{
+			"name": "lib/ollama/JSON_LICENSE.MIT",
+			"localHeaderOffset": 1434638185,
+			"method": 8,
+			"compressed": 625,
+			"uncompressed": 1076,
+			"crc32": 772347145,
+			"sha256": "86b998c792894ccb911a1cb7994f7a9652894e7a094c0b5e45be2f553f45cf14"
+		},
+		{
+			"name": "lib/ollama/libc++.dll",
+			"localHeaderOffset": 1434638867,
+			"method": 8,
+			"compressed": 507518,
+			"uncompressed": 1767816,
+			"crc32": 764983201,
+			"sha256": "5d20dc0a2c407b8dffefc16513e850df787821ed538b7a784a1e58d307e92259"
+		},
+		{
+			"name": "lib/ollama/libllama-common.dll",
+			"localHeaderOffset": 1435146436,
+			"method": 8,
+			"compressed": 1456504,
+			"uncompressed": 4108168,
+			"crc32": 3770737733,
+			"sha256": "6e7a3a95650e00fd1dc8e2827ea8863b97460865c872a643b577db81d94c3249"
+		},
+		{
+			"name": "lib/ollama/libllama-quantize-impl.dll",
+			"localHeaderOffset": 1436603000,
+			"method": 8,
+			"compressed": 38119,
+			"uncompressed": 83848,
+			"crc32": 3491955618,
+			"sha256": "b4f4c53871244ba8b33bb05ac6c227e3fb0280e77cf922acfba43411489d594d"
+		},
+		{
+			"name": "lib/ollama/libllama-server-impl.dll",
+			"localHeaderOffset": 1436641186,
+			"method": 8,
+			"compressed": 931719,
+			"uncompressed": 2492296,
+			"crc32": 4139404173,
+			"sha256": "f3c2d3fbcede43e4cb5ebf7c370330967124e6f046840fd8f076230be8a3bcd8"
+		},
+		{
+			"name": "lib/ollama/libllama.dll",
+			"localHeaderOffset": 1437572970,
+			"method": 8,
+			"compressed": 1217832,
+			"uncompressed": 3409800,
+			"crc32": 3565197335,
+			"sha256": "94f19add4768b13b4139d6acd635adc855a4700170c842955c39397a996ba34e"
+		},
+		{
+			"name": "lib/ollama/libmtmd.dll",
+			"localHeaderOffset": 1438790855,
+			"method": 8,
+			"compressed": 587071,
+			"uncompressed": 1538952,
+			"crc32": 2983232788,
+			"sha256": "393eb3a5d80fbd0298a78a83676eedfe138845ead7353d9d5a9dcca53739807e"
+		},
+		{
+			"name": "lib/ollama/libomp.dll",
+			"localHeaderOffset": 1439377978,
+			"method": 8,
+			"compressed": 351417,
+			"uncompressed": 965000,
+			"crc32": 4194086968,
+			"sha256": "42493b04371c5b52733ffdd58238392be5da9d5f22f42251c996d57ae08c4672"
+		},
+		{
+			"name": "lib/ollama/libunwind.dll",
+			"localHeaderOffset": 1439729446,
+			"method": 8,
+			"compressed": 39781,
+			"uncompressed": 107912,
+			"crc32": 3599522762,
+			"sha256": "f2dc575756dc9d55e627eff915b46d18726b8dab42d3a16fe230993aa8b4f5e5"
+		},
+		{
+			"name": "lib/ollama/libwinpthread-1.dll",
+			"localHeaderOffset": 1439769281,
+			"method": 8,
+			"compressed": 129472,
+			"uncompressed": 390024,
+			"crc32": 3305098000,
+			"sha256": "7a7e5d6a2dd1e3fa0acfd06eada8de8252084d2f89d8e6185d87c4f6fbca39c2"
+		},
+		{
+			"name": "lib/ollama/llama-quantize.exe",
+			"localHeaderOffset": 1439898813,
+			"method": 8,
+			"compressed": 11432,
+			"uncompressed": 22920,
+			"crc32": 1312300448,
+			"sha256": "d46ec9076d1b4d0b5602632aca82d06c736f16bc80d1e330d88140fbfec01589"
+		},
+		{
+			"name": "lib/ollama/llama-server.exe",
+			"localHeaderOffset": 1439910304,
+			"method": 8,
+			"compressed": 11436,
+			"uncompressed": 22920,
+			"crc32": 2066954515,
+			"sha256": "447f64d33c4a22ab7b18e9bb95c4ca1cf2e48c96aafdf6a133e4857902b30e6e"
+		},
+		{
+			"name": "lib/ollama/LLAMA_CPP_LICENSE",
+			"localHeaderOffset": 1439921797,
+			"method": 8,
+			"compressed": 637,
+			"uncompressed": 1099,
+			"crc32": 3126254455,
+			"sha256": "bcd8ec749126d45cb06737d0690295d73df4b6e7e194205bcf91190368f27285"
+		},
+		{
+			"name": "lib/ollama/LLAMA_CPP_VENDORS_LICENSE",
+			"localHeaderOffset": 1439922492,
+			"method": 8,
+			"compressed": 1543,
+			"uncompressed": 7424,
+			"crc32": 3322078229,
+			"sha256": "7547ae6372a35e7382898dd9f5519ebc16e93095f69c2466b5b74b617c33d4da"
+		},
+		{
+			"name": "lib/ollama/MLX_C_LICENSE",
+			"localHeaderOffset": 1439924101,
+			"method": 8,
+			"compressed": 629,
+			"uncompressed": 1088,
+			"crc32": 3499919223,
+			"sha256": "d8d63c7fa57071d80d30116d014e4189c52ef4cb2d1671f6d848e78d9f6cfad0"
+		},
+		{
+			"name": "lib/ollama/MLX_LICENSE",
+			"localHeaderOffset": 1439924784,
+			"method": 8,
+			"compressed": 635,
+			"uncompressed": 1087,
+			"crc32": 3918666053,
+			"sha256": "e93675e97d080c4fcfef6dd530448b9a6fd7c1ad43c736d593537079cd669d3d"
+		},
+		{
+			"name": "lib/ollama/NVTX3_LICENSE.txt",
+			"localHeaderOffset": 1439925471,
+			"method": 8,
+			"compressed": 4197,
+			"uncompressed": 12706,
+			"crc32": 3993678133,
+			"sha256": "c3b19baa37cf18bac07b65700824acadcfa617316f02af10d3852ed20f4f6ab8"
+		},
+		{
+			"name": "lib/ollama/PICOJSON_LICENSE",
+			"localHeaderOffset": 1439929726,
+			"method": 8,
+			"compressed": 719,
+			"uncompressed": 1441,
+			"crc32": 2109384717,
+			"sha256": "02f4aea46c66a0c110bb4fd995817db2dc2af0b57c18336b367e6bc9c27eb91f"
+		},
+		{
+			"name": "lib/ollama/vulkan/concrt140.dll",
+			"localHeaderOffset": 1439930550,
+			"method": 8,
+			"compressed": 132321,
+			"uncompressed": 311688,
+			"crc32": 3348642250,
+			"sha256": "3b910c0efb04d7e40b89957f2a5c4b79b62627685ec286158807ecdfb088f4a7"
+		},
+		{
+			"name": "lib/ollama/vulkan/ggml-vulkan.dll",
+			"localHeaderOffset": 1440062932,
+			"method": 8,
+			"compressed": 15597619,
+			"uncompressed": 53927816,
+			"crc32": 1541489560,
+			"sha256": "8008867c58ab33cfbd4379d552bef05e189ec315b8a807b403c947f869bedcdf"
+		},
+		{
+			"name": "lib/ollama/vulkan/msvcp140.dll",
+			"localHeaderOffset": 1455660614,
+			"method": 8,
+			"compressed": 171208,
+			"uncompressed": 545160,
+			"crc32": 2230323703,
+			"sha256": "5eeabb2a9097871666c6995cd95b2abe1e34f7d679a05b78d9f9dc1c9154555a"
+		},
+		{
+			"name": "lib/ollama/vulkan/msvcp140_1.dll",
+			"localHeaderOffset": 1455831882,
+			"method": 8,
+			"compressed": 11610,
+			"uncompressed": 23432,
+			"crc32": 1227586373,
+			"sha256": "1e47ea1c1cb96113946f03acf1ef7c1dd11aba97129a588356b82c4bad98316a"
+		},
+		{
+			"name": "lib/ollama/vulkan/msvcp140_2.dll",
+			"localHeaderOffset": 1455843554,
+			"method": 8,
+			"compressed": 101415,
+			"uncompressed": 267656,
+			"crc32": 2824010355,
+			"sha256": "6a5421964803f8acdad5133e289fc1bd8ead56aa4cdc23b159a8b1d01d17bcb0"
+		},
+		{
+			"name": "lib/ollama/vulkan/msvcp140_atomic_wait.dll",
+			"localHeaderOffset": 1455945031,
+			"method": 8,
+			"compressed": 19150,
+			"uncompressed": 37768,
+			"crc32": 583236304,
+			"sha256": "3904a07b301ef03eef8b2c6feb2498d4cb954bf7e0db50d60828969bacb2d7b0"
+		},
+		{
+			"name": "lib/ollama/vulkan/msvcp140_codecvt_ids.dll",
+			"localHeaderOffset": 1455964253,
+			"method": 8,
+			"compressed": 10303,
+			"uncompressed": 19336,
+			"crc32": 471641190,
+			"sha256": "103ab7bf4edcc892f2e748ed31df9051b375f69c6d6383e8e48c888ff3d97704"
+		},
+		{
+			"name": "lib/ollama/vulkan/vccorlib140.dll",
+			"localHeaderOffset": 1455974628,
+			"method": 8,
+			"compressed": 101362,
+			"uncompressed": 339848,
+			"crc32": 3589941369,
+			"sha256": "0506792b12c9828997051a52abd88612c70f5e36e4b9fd8895b280a9e33b9cea"
+		},
+		{
+			"name": "lib/ollama/vulkan/vcruntime140.dll",
+			"localHeaderOffset": 1456076053,
+			"method": 8,
+			"compressed": 52601,
+			"uncompressed": 112008,
+			"crc32": 1596186503,
+			"sha256": "656d62619365d56c8d84606df7c1ac7f72f47855af37698ba114b50f30747c84"
+		},
+		{
+			"name": "lib/ollama/vulkan/vcruntime140_1.dll",
+			"localHeaderOffset": 1456128718,
+			"method": 8,
+			"compressed": 19599,
+			"uncompressed": 37256,
+			"crc32": 2474425775,
+			"sha256": "42afceb609dafe5e24a2e3b29356b4481c27e31dfcfbb4e1a72d52b0d6cebe74"
+		},
+		{
+			"name": "lib/ollama/vulkan/vcruntime140_threads.dll",
+			"localHeaderOffset": 1456148383,
+			"method": 8,
+			"compressed": 13835,
+			"uncompressed": 25992,
+			"crc32": 981970888,
+			"sha256": "5058bad6c72fb36f22d5c05c01b399d99ffb0b3aa645c7512cbde95235f6697e"
+		},
+		{
+			"name": "lib/ollama/XGRAMMAR_LICENSE",
+			"localHeaderOffset": 1456162290,
+			"method": 8,
+			"compressed": 3843,
+			"uncompressed": 11558,
+			"crc32": 3676067130,
+			"sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6"
+		},
+		{
+			"name": "lib/ollama/XGRAMMAR_NOTICE",
+			"localHeaderOffset": 1456166190,
+			"method": 8,
+			"compressed": 53,
+			"uncompressed": 57,
+			"crc32": 2435951947,
+			"sha256": "93971ad2b725c8398df171dbd7c8145fc9d11bf016294aa69a8a783b55a40775"
+		},
+		{
+			"name": "ollama.exe",
+			"localHeaderOffset": 1456166299,
+			"method": 8,
+			"compressed": 13198869,
+			"uncompressed": 37372296,
+			"crc32": 2670103069,
+			"sha256": "1f9b38e594a3e1cffdf606a507ac8660626c0985ee0782dd6b49309153d38080"
+		}
+	]
+}
