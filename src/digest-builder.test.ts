@@ -12,15 +12,15 @@ function top(pdfY: number): number {
 }
 
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
-	return { id: "hl-000000", sentence: "", marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
+	return { id: "hl-000000", sentence: "", rects: [], marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
 }
 
 function note(overrides: Partial<DigestNote> = {}): DigestNote {
-	return { id: "nt-000000", anchor: { kind: "page" }, text: "", region: null, top: 0, ...overrides };
+	return { id: "nt-000000", anchor: { kind: "page" }, text: "", region: null, rect: null, top: 0, ...overrides };
 }
 
 function page(overrides: Partial<DigestPage> = {}): DigestPage {
-	return { pageLabel: "1", embedPage: 1, highlights: [], notes: [], ...overrides };
+	return { pageLabel: "1", embedPage: 1, source: null, highlights: [], notes: [], ...overrides };
 }
 
 /** The fixture page's right margin, where every one of its notes was written. */
@@ -52,6 +52,7 @@ const NOTE_NEXT_TO_HIGHLIGHT = note({
 const FIXTURE_PAGE: DigestPage = {
 	pageLabel: "2",
 	embedPage: 2,
+	source: { index: 1, heightPt: PAGE_HEIGHT },
 	highlights: [
 		highlight({
 			id: "hl-9f21c4",

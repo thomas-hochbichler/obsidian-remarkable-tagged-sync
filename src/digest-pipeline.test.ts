@@ -576,6 +576,31 @@ describe("buildDigest merges highlights that share a sentence", () => {
 		expect(result.markdown.match(/==/g)).toHaveLength(4);
 	});
 
+	it("keeps every run of a highlight, not only the box around them", async () => {
+		// A gesture over wrapped lines is one box per line; their union is the whole block including the
+		// unmarked ends of the first and last line, which is not what the reader marked (Zotero spec §3.1).
+		const { page, document } = sharedSentencePage([SENTENCE], [{ sentence: 0, from: 0, to: 20 }]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.pages[0].highlights[0].rects).toHaveLength(1);
+		expect(result.pages[0].highlights[0].rects[0].width).toBeGreaterThan(0);
+	});
+
+	it("gives the merged entry every member's runs", async () => {
+		// One selection the reader adjusted arrives as several runs. The entry is one annotation, and
+		// all of it is what they marked -- the survivor's own box is only where the entry *sits*.
+		const { page, document } = sharedSentencePage([SENTENCE], [
+			{ sentence: 0, from: 0, to: 20 },
+			{ sentence: 0, from: 40, to: 62 },
+		]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.pages[0].highlights).toHaveLength(1);
+		expect(result.pages[0].highlights[0].rects).toHaveLength(2);
+	});
+
 	it("keeps the id of the topmost contributing highlight and its position", async () => {
 		const { page, document } = sharedSentencePage(["Ein erster Satz auf dieser Seite steht hier.", SENTENCE], [
 			// The lower highlight comes first in the scene, so the surviving id cannot be "the first one".
@@ -1198,5 +1223,65 @@ describe("typed text as the document", () => {
 		const result = await buildTyped([typedPage(typedScene())]);
 
 		expect(result.warnings).toEqual([]);
+	});
+});
+
+// Everything below is about the digest as a *model* rather than as markdown: the places on the source
+// page that the rendered note cannot carry and write-back needs (Zotero spec §8). Nothing here changes
+// what is written into the vault -- the golden digests above are the proof of that.
+describe("where the digest's entries sit on the source page", () => {
+	it("hands back the entries the markdown was rendered from", async () => {
+		// Re-deriving them would mean parsing our own output, which is the one input that is guaranteed
+		// to be a rendering rather than a record.
+		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		expect(result.pages).toHaveLength(1);
+		expect(result.pages[0].highlights.length).toBeGreaterThan(0);
+		expect(result.pages[0].embedPage).toBe(2);
+	});
+
+	it("says which page of the source document it is, and how tall that page is", async () => {
+		// The height is the axis every rectangle here is measured against, and the one thing a caller
+		// cannot recover from the rectangles themselves.
+		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		expect(result.pages[0].source).toEqual({ index: 1, heightPt: PAGE_HEIGHT_PT });
+	});
+
+	// ⚠️ Without a text layer the frame is the *device screen*, so a rectangle measured on it names a
+	// place on the tablet rather than in the PDF. Saying so once here is what keeps write-back from
+	// drawing a highlight onto the wrong part of somebody's paper.
+	it("says a page whose text could not be read is not a place in the document", async () => {
+		const result = await build([fixturePage()], { loadText: async () => null, ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		expect(result.pages[0].source).toBeNull();
+		expect(result.pages[0].highlights.every((highlight) => highlight.rects.length === 0)).toBe(true);
+	});
+
+	it("gives a margin note a box on the page it was written on", async () => {
+		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+		const notes = result.pages.flatMap((page) => [...page.notes, ...page.highlights.flatMap((highlight) => highlight.notes)]);
+
+		expect(notes.length).toBeGreaterThan(0);
+		for (const note of notes) {
+			expect(note.rect).not.toBeNull();
+			// Two things a caller must expect, both real in this fixture rather than hypothetical:
+			// a box can be **flat** (a single horizontal stroke is a note of height 0), and it can sit
+			// **past the page edge** horizontally (x ≈ 743 pt on a 612 pt page) -- the device's canvas is
+			// wider than the paper it shows, so the margin really is off the page.
+			expect(note.rect!.width).toBeGreaterThanOrEqual(0);
+			expect(note.rect!.height).toBeGreaterThanOrEqual(0);
+			// Vertically it is on the paper, which is the axis the page height fixes.
+			expect(note.rect!.y).toBeGreaterThanOrEqual(0);
+			expect(note.rect!.y + note.rect!.height).toBeLessThanOrEqual(PAGE_HEIGHT_PT);
+		}
+	});
+
+	it("leaves a margin note without a box where the page is not a place in the document", async () => {
+		const result = await build([fixturePage()], { loadText: async () => null, ocrBackend: fakeOcr(...VISION_OUTPUT) });
+		const notes = result.pages.flatMap((page) => page.notes);
+
+		expect(notes.length).toBeGreaterThan(0);
+		expect(notes.every((note) => note.rect === null)).toBe(true);
 	});
 });

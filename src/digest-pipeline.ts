@@ -82,6 +82,14 @@ export interface DigestBuild {
 	 */
 	ocr: OcrStatus;
 	/**
+	 * The same entries the markdown was rendered from, with their places on the source document.
+	 *
+	 * Handed out because the markdown is a rendering and cannot be read back: write-back needs the
+	 * rectangles, the page and the block ids, and re-deriving them from the note would mean parsing
+	 * our own output. Nothing here is written to the vault.
+	 */
+	pages: DigestPage[];
+	/**
 	 * The `embedPage` of every page that produced an entry -- what the digest actually carries.
 	 *
 	 * The caller hands in pages and gets back markdown, which is not enough to answer "is page 4 in
@@ -305,6 +313,10 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
 			pdfRect: unionRect(rects),
 			highlight: {
 				id: digestId("hl", page.pageId, source.id),
+				// Only where they name a place on the source page. Without a text layer the frame is the
+				// device screen (see `buildDigest`), and the same numbers would put the mark somewhere on
+				// the tablet -- the condition `DigestPage.source` is derived from.
+				rects: pageText === null ? [] : rects,
 				// F4's soft fail: without a text layer -- or when the rectangles hit no line -- the
 				// device's own recorded text is still the truth about what was highlighted.
 				sentence: found?.sentence ?? oneLine(source.text),
@@ -335,6 +347,9 @@ function placeMark(page: DigestPageInput, mark: InkMark): PlacedHighlight {
 		fromInk: true,
 		highlight: {
 			id: digestId("hl", page.pageId, mark.strokeId),
+			// One box, and it is the marked *text's* rather than the ink's -- see `InkMark.pdfRect`. An
+			// underline's own box sits in the whitespace below the words, which is not what was marked.
+			rects: [mark.pdfRect],
 			sentence: mark.sentence,
 			marked: mark.marked,
 			// A pen has no marker colour, and F9 would not render one anyway; a marker swipe has its own.
@@ -423,6 +438,10 @@ function mergeBySentence(placed: PlacedHighlight[]): { highlights: PlacedHighlig
 				...survivor.highlight,
 				sentence: longest.highlight.sentence,
 				marked: members.flatMap((member) => member.highlight.marked),
+				// Every member's boxes, not the survivor's alone: the reader drew one selection and
+				// adjusted it, and all of it is what they marked. `pdfRect` stays the survivor's -- it is
+				// the anchor cascade's input, and that is about where the entry *sits*.
+				rects: members.flatMap((member) => member.highlight.rects),
 			},
 		};
 	});
@@ -473,6 +492,18 @@ function noteRegion(rect: PdfRect, { page, geometry }: PageContext): NoteRegion 
 	};
 }
 
+/**
+ * The same rectangle, but only where it names a place on the *source* page.
+ *
+ * Without a text layer the frame is the device screen (see `buildDigest`), so the numbers describe a
+ * spot on the tablet rather than in the PDF -- and something drawing them back onto the document
+ * would put the mark anywhere. The one condition is `DigestPage.source`, which is derived from the
+ * same fact.
+ */
+function sourceRect(rect: PdfRect, { geometry }: PageContext): PdfRect | null {
+	return geometry.pageText === null ? null : rect;
+}
+
 /** Transcribes one cluster and turns it into a note. Called strictly one cluster at a time -- see `buildNotes`. */
 async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<PlacedNote> {
 	const { deps, page, geometry, warnings } = context;
@@ -499,7 +530,10 @@ async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<
 	const paragraph = geometry.pageText ? paragraphBounds(geometry.pageText, rect.y + rect.height, rect.y) : null;
 	const regionRect = paragraph ? (unionRect([rect, paragraph]) ?? rect) : rect;
 	return {
-		note: { id, anchor, text, region: noteRegion(regionRect, context), top: cluster.rowTop },
+		// `rect` is the ink itself; `region` is the wider clip that includes the paragraph beside it,
+		// placed in the render. A sticky note in another reader belongs on the handwriting, not on the
+		// paragraph it comments on.
+		note: { id, anchor, text, region: noteRegion(regionRect, context), rect: sourceRect(rect, context), top: cluster.rowTop },
 		anchor,
 		pdfLeft: rect.x,
 		pdfTop: rect.y + rect.height,
@@ -626,6 +660,7 @@ async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink
 		anchor: { kind: "page" },
 		text,
 		region: null,
+		rect: null,
 		top: 0,
 		wholePage: true,
 		section: null,
@@ -657,7 +692,9 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	if (page.appended) {
 		if (!state.deps.marginNotes || ink.length === 0) return null;
 		const transcript = await buildPageTranscript(state, page, ink);
-		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, highlights: [], notes: [transcript] };
+		// A page added on the device is not a page of the source document, so nothing on it can be
+		// placed there -- which is also why write-back skips it (Zotero spec §3.1).
+		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, source: null, highlights: [], notes: [transcript] };
 	}
 
 	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
@@ -714,6 +751,9 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	return {
 		pageLabel: pageLabelOf(page, geometry),
 		embedPage: page.embedPage,
+		// The frame is the source page's own only when its text layer could be read; otherwise it is
+		// the device screen and nothing measured here belongs to the document.
+		source: geometry.pageText === null ? null : { index: page.sourceIndex, heightPt: geometry.frame.heightPt },
 		highlights: highlights.map((item) => item.highlight),
 		notes: standalone,
 	};
@@ -901,6 +941,7 @@ export async function buildDigest(
 
 	return {
 		markdown: renderDigest(embedPath, digestPages),
+		pages: digestPages,
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
 		covered: digestPages.map((page) => page.embedPage),

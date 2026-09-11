@@ -2515,7 +2515,7 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 
 	/** What `buildDigest` came back with, in the shape the engine reads. */
 	function digestBuild(markdown: string, covered: number[], ocr: OcrStatus = "skipped") {
-		return { markdown, warnings: [], ocr, covered };
+		return { markdown, warnings: [], ocr, covered, pages: [] };
 	}
 
 	const lastWrite = (deps: { noteStore: { write: ReturnType<typeof vi.fn> } }) => deps.noteStore.write.mock.calls.at(-1)![1] as string;
@@ -2918,7 +2918,7 @@ describe("reTranscribeAll", () => {
 		/** A mixed notebook, synced: page 1 typed and in the digest, page 2 handwritten and transcribed. */
 		async function syncedMixedNotebook(rootHash: string, pageBBytes = PAGE_BYTES) {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [] });
 			const api = twoPageNotebook(rootHash);
 			api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-b") ? pageBBytes : PAGE_BYTES));
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
@@ -2973,7 +2973,7 @@ describe("reTranscribeAll", () => {
 		// Nothing else in the note accounts for that page, and the naming line is the whole point.
 		it("names a typed page when the note has no digest to carry it", async () => {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [], pages: [] });
 			const api = twoPageNotebook("root-06-nodigest");
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
 			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -2992,7 +2992,7 @@ describe("reTranscribeAll", () => {
 		// dropped it instead, and the two paths then disagreed about the same notebook (ticket 06).
 		it("names a typed page the note's digest saw and found nothing on", async () => {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [] });
 			const api = twoPageNotebook("root-06-uncovered");
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
 			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -4693,7 +4693,7 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		// Page 1 reads as a document, so the unit gets a digest -- which is what makes page 3's quotes
 		// fold into the transcript instead of standing in their own `## Highlights` section.
 		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
-		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1] });
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [] });
 
 		const backend = countingOcrBackend();
 		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: backend };
@@ -4708,7 +4708,7 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		const secondApi = notebook("root-117-m2", "hash-2", { ...THREE, "page-b": "h-b-edited" });
 		secondApi.raw.getHash.mockImplementation(async (path: string) => (path.includes("page-c") ? HIGHLIGHTED_PAGE_BYTES : PAGE_BYTES));
 		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
-		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1] });
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [] });
 		await runSync({ ...baseDeps(secondApi, { sync: "Target" }), noteStore: deps.noteStore, ocrBackend: countingOcrBackend("test-backend", "fresh") }, synced.index);
 
 		const after = (await deps.noteStore.read(NOTE))!;

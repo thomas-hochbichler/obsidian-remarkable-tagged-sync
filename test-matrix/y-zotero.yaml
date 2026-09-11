@@ -756,3 +756,57 @@
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > says not connected when the connection that is set up does not answer"
+
+- feature: Y11
+  name: Where a digest entry sits on the source page
+  code: src/digest-pipeline.ts
+  tier: free
+  scenarios:
+    - id: Y11.1
+      scenario: A digest is built
+      expect: The entries it was rendered from come back with it. Re-deriving them would mean parsing our own markdown, which is a rendering rather than a record -- and nothing of this reaches the vault
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "where the digest's entries sit on the source page > hands back the entries the markdown was rendered from"
+
+    - id: Y11.2
+      scenario: A page of a PDF whose text layer could be read
+      expect: Its source index and the page height in points. The height is the axis every rectangle is measured against and the one thing a caller cannot recover from the rectangles themselves
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "where the digest's entries sit on the source page > says which page of the source document it is, and how tall that page is"
+
+    - id: Y11.3
+      scenario: A page whose text layer could not be read
+      expect: '`source: null` and no rectangles. Without a text layer the frame is the *device screen*, so the same numbers would name a place on the tablet -- a highlight written back from them would land on the wrong part of the paper'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "where the digest's entries sit on the source page > says a page whose text could not be read is not a place in the document"
+
+    - id: Y11.4
+      scenario: A margin note on a page of the document
+      expect: Its own ink's box, in the source page's points. Flat boxes and boxes past the page edge are both real -- the device's canvas is wider than the paper, and a single horizontal stroke has no height
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "where the digest's entries sit on the source page > gives a margin note a box on the page it was written on"
+
+    - id: Y11.5
+      scenario: A margin note on a page that is not a page of the document
+      expect: No box, for the same reason as Y11.3
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "where the digest's entries sit on the source page > leaves a margin note without a box where the page is not a place in the document"
+
+    - id: Y11.6
+      scenario: One highlight over printed text
+      expect: Its runs are kept, not just the box around them. A gesture over wrapped lines is one box per line, and their union includes the unmarked ends of the first and last line -- which is not what the reader marked
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > keeps every run of a highlight, not only the box around them"
+
+    - id: Y11.7
+      scenario: Two runs of one adjusted selection, merged into one entry
+      expect: The entry carries both runs. It is one annotation and all of it is what they marked; the survivor's own box stays what it was, because that is about where the entry sits
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest merges highlights that share a sentence > gives the merged entry every member's runs"

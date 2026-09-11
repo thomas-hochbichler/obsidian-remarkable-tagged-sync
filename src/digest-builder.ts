@@ -10,6 +10,7 @@
 
 import type { DigestAnchor } from "./digest-anchoring";
 import { hashString } from "./note-builder";
+import type { PdfRect } from "./pdf-text";
 
 /**
  * Where a note's ink sits in the embedded PDF: its page, and the ink's bounding box in PDF points
@@ -35,6 +36,19 @@ export interface DigestNote {
 	text: string;
 	/** Where to draw the handwriting from, or null where there is nothing to draw it out of. */
 	region: NoteRegion | null;
+	/**
+	 * The ink's own box on the **source** page, in PDF points with the PDF's bottom-left origin --
+	 * what a second reader of this document, one that never saw our render, would need to point at
+	 * the same handwriting.
+	 *
+	 * Not the same thing as {@link DigestNote.region}, which is measured in the vault attachment we
+	 * wrote out: that one is placed by the renderer's own transform (a page whose ink runs off the
+	 * paper is drawn shrunk), and it is y-from-top because a pdf.js viewport is. The two agree for
+	 * most pages and must not be confused on the ones they do not.
+	 *
+	 * Null on a page whose frame is a guess -- see {@link DigestPage.source}.
+	 */
+	rect: PdfRect | null;
 	/** Scene y, for reading order. */
 	top: number;
 	/**
@@ -51,6 +65,18 @@ export interface DigestHighlight {
 	id: string;
 	/** The full surrounding sentence, or the `.rm` highlight text alone (F4 soft fail). */
 	sentence: string;
+	/**
+	 * The marked text's boxes on the **source** page, one per run the reader's gesture covered, in
+	 * PDF points with the PDF's bottom-left origin.
+	 *
+	 * Kept per run rather than as the union the anchor cascade uses: a highlight over three wrapped
+	 * lines is three boxes, and its union is the whole block of text including the unmarked ends of
+	 * the first and last line. Anything drawing the marks back onto the page needs the runs.
+	 *
+	 * Empty where the page has no text layer at all. See {@link DigestPage.source} for the frame they
+	 * are measured in.
+	 */
+	rects: PdfRect[];
 	/**
 	 * The highlighted runs inside `sentence`; empty when none is known (F4 soft fail).
 	 *
@@ -73,6 +99,23 @@ export interface DigestHighlight {
 	top: number;
 }
 
+/**
+ * The page of the source document a digest page was measured against.
+ *
+ * `null` says the entries on this page **cannot be placed on the source document**, and it covers
+ * the two cases that look different and are not: a page the reader added on the device, which has no
+ * source page at all, and a page whose text layer could not be read, where the coordinate frame falls
+ * back to the device screen and every rectangle on it names a place on the tablet rather than in the
+ * PDF. Either way the rectangles below describe something other than the source page, so anything
+ * writing them back into that document has one field to check instead of two conditions to re-derive.
+ */
+export interface DigestPageSource {
+	/** 0-based index of the page in the source PDF. */
+	index: number;
+	/** The source page's height in PDF points -- the axis every rectangle here is measured against. */
+	heightPt: number;
+}
+
 export interface DigestPage {
 	/**
 	 * The page's own label in the source document -- its printed number, which is not always its
@@ -81,6 +124,8 @@ export interface DigestPage {
 	 */
 	pageLabel: string | null;
 	embedPage: number;
+	/** Which page of the source document this is, or `null` when it is not a page of it. */
+	source: DigestPageSource | null;
 	highlights: DigestHighlight[];
 	/** Notes not nested under a highlight, each with its own `section`. */
 	notes: (DigestNote & { section: string | null })[];
