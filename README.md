@@ -35,7 +35,8 @@ it does on a Mac.
 <sub>PDF shown: Kang et al., <a href="https://arxiv.org/abs/2510.00615">ACON: Optimizing Context
 Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
-**Desktop only** · **one-way** (reMarkable → Obsidian) · never writes back to your tablet.
+**Desktop only** · **one-way** (reMarkable → Obsidian, and → Zotero) · nothing on your tablet is
+changed, deleted, moved or renamed.
 
 ## What makes it different
 
@@ -45,7 +46,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 |---|:---:|:---:|
 | **Direction & safety** | | |
 | [reMarkable → Obsidian sync](#how-it-works) | ✓ | ✓ |
-| [One-way by design — never writes to your tablet](#what-gets-synced) | ✓ | ✓ |
+| [One-way by design — Send only ever adds to your tablet](#what-gets-synced) | ✓ | ✓ |
 | [No reMarkable Connect subscription needed](#install-and-set-up) | ✓ | ✓ |
 | [Sync straight from the tablet, without the reMarkable cloud](#syncing-without-the-cloud) | — | ✓ |
 | [Your edits are never silently overwritten](#writing-your-own-notes) | ✓ | ✓ |
@@ -68,6 +69,10 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Cloud transcription with your own API key](#tagged-sync-pro) | — | ✓ |
 | [Re-transcribe notes you already synced](#re-transcribing) | ✓ | ✓ |
 | [Repair one note without re-running the whole vault](#re-transcribing) | ✓ | ✓ |
+| **Zotero** | | |
+| [Send a Zotero PDF to your tablet, tagged for sync](#zotero) | — | ✓ |
+| [Notes know their Zotero item — link, web library, in-Zotero jumps](#zotero) | — | ✓ |
+| [Your tablet highlights as native Zotero annotations](#zotero) | — | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
@@ -103,6 +108,7 @@ Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 - [Handwriting transcription](#handwriting-transcription)
 - [Typed text and the Type Folio](#typed-text-and-the-type-folio)
 - [Tagged Sync Pro](#tagged-sync-pro)
+- [Zotero](#zotero)
 - [Syncing without the cloud](#syncing-without-the-cloud)
 - [Annotated PDFs](#annotated-pdfs)
 - [What gets synced](#what-gets-synced)
@@ -340,6 +346,8 @@ Everything described above is free and stays free. Two things are paid:
   tablet directly over USB or Wi-Fi.
 - **[Frontmatter properties](#frontmatter-properties-pro)** — each synced note carries its
   reMarkable tags and metadata as Obsidian properties, for Dataview and Bases queries.
+- **[Zotero](#zotero)** — send a paper to the tablet from your library, and get what you marked on
+  it back as native Zotero annotations.
 
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
@@ -380,6 +388,87 @@ Updates come through the Obsidian plugin store, to everyone, for as long as the 
 I promise is effort, not dates.
 
 None of this changes your rights as a consumer under EU law.
+
+## Zotero
+
+*[Tagged Sync Pro](#tagged-sync-pro).*
+
+Your reMarkable highlights land in Zotero as native annotations. No script, no Python, no Zotero
+plugin, no closed Zotero.
+
+The loop is three steps:
+
+1. In Obsidian, run **Send Zotero PDF to reMarkable…** and search your library the way you
+   remember the paper — half a title, an author, a year. The PDF lands on your tablet in a
+   `Zotero` folder, already carrying your sync tag.
+2. Read it and mark it up: highlighter, pen underlines, notes in the margin.
+3. Sync. The [digest](#annotated-pdfs) arrives in your vault knowing which paper it is, and what
+   you marked appears in Zotero as real highlights and underlines you can click, colour, search
+   and cite. A margin note anchored to a passage becomes that annotation's comment.
+
+Each half stands on its own. A PDF that reached the tablet some other way is recognised at sync
+time — by the file's own hash, or by asking you once — and a note gets its Zotero link whether or
+not you ever use write-back. A note that is already in your vault can be pointed at an item by hand
+with **Link to Zotero item…**.
+
+**What the note gets.** One line in the block at the top, naming the paper and linking to it in
+Zotero, to your web library, and to your own literature note if you keep one. Every quote gets an
+`in Zotero` link that opens the reader at that annotation on that page. With [frontmatter
+properties](#frontmatter-properties-pro) on, the note also carries `zotero-key` and — if the item
+has one — `citekey`, which is the same vocabulary other Zotero tools in Obsidian use.
+
+### Connecting
+
+Either connection is enough on its own, and you can have both:
+
+| | **zotero.org** | **The Zotero desktop app** |
+|---|---|---|
+| What you need | an API key from zotero.org, with read and write access to your personal library | Zotero 10 running, with *Allow other applications on this computer to communicate with Zotero* on |
+| Works with Zotero closed | ✓ | — |
+| Finds your PDFs | the copies synced to zotero.org | any file on your disk |
+
+With both set up the desktop app is asked first and zotero.org is the fallback, so a paper Zotero
+never uploaded still gets sent. If neither is set up, nothing Zotero-related runs and your sync is
+exactly what it was.
+
+Sending needs a way onto the tablet: the reMarkable cloud, or [a paired
+tablet](#syncing-without-the-cloud) with **Send over SSH** switched on. Sending over SSH restarts
+the tablet's reading app, which closes whatever you have open — that is the only way it notices a
+new file. The home screen is back in about six seconds.
+
+**What leaves your machine.** Your handwriting never does — the ink itself is never uploaded
+anywhere, by any part of this plugin. What write-back sends is the *transcribed text* of your
+margin notes, into your own Zotero library, and to zotero.org if that is the connection carrying
+it. Setting up a connection above is what switches this on; there is no separate step, and with no
+connection nothing is sent at all.
+
+### When something does not reach Zotero
+
+Your notes are never held up by Zotero: the vault half of a sync always finishes first, and
+whatever happens afterwards costs you the Zotero half of one note and nothing else. When that
+happens the note says so in its own top line, in place of the write-back date:
+
+- *Zotero could not be reached* — no connection answered.
+- *the Zotero desktop app is not letting other applications talk to it* — the setting in Zotero's
+  *Advanced* pane is off.
+- *Zotero refused this plugin permission* — the desktop app asks the first time; choose
+  **Always Allow**.
+- *Zotero rejected the API key* — the key is wrong, or has no write access.
+- *Zotero asked for a pause* — its rate limit; nothing is wrong.
+- *the Zotero item was no longer found* — the attachment was deleted or moved to the trash. Here
+  the line reads *Zotero: item no longer found* instead: the note keeps every quote it has and
+  simply stops claiming a paper it can no longer point at.
+- *Zotero answered with an error* — its end, not yours.
+
+Every one of these is retried by the next sync, and there is nothing to clean up first: write-back
+only ever adds. If half the highlights of a document made it, the rest are written next time; the
+ones already there are not written twice.
+
+**Zotero is never the truth for your note.** The annotations this plugin creates are a copy, marked
+with a `tagged-sync` tag. Edit one in Zotero and your version wins from then on — that field is
+never overwritten again. Delete one and it stays deleted. Your own highlights, made in Zotero, are
+never read and never touched. On the tablet side nothing is ever removed: a highlight you erase
+disappears from the Obsidian note and stays in Zotero, where you may already have built on it.
 
 ## Syncing without the cloud
 
@@ -643,7 +732,12 @@ stays where it is and is still preserved on every sync — new notes just no lon
 ## Limitations
 
 - Desktop only. Obsidian on mobile is unsupported.
-- One-way sync: reMarkable → Obsidian only. Nothing is ever written back to your tablet.
+- One-way sync: reMarkable → Obsidian, and → Zotero. Nothing on your tablet is ever changed,
+  deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
+- [Zotero](#zotero) works with **PDF attachments only** — an EPUB in your library cannot be sent,
+  and a book you read on the tablet is not matched to one.
+- [Zotero](#zotero) works with your **personal library only.** Group libraries are not searched,
+  sent from, or written to.
 - One tag → folder mapping.
 - Transcription with Apple Vision requires **macOS 13 or later**, and its transcripts are flat
   text — no headings, lists, task lists, or tables.
@@ -685,8 +779,9 @@ This plugin makes network requests to exactly one place by default:
 
 - **reMarkable cloud** (required) — the plugin authenticates to `my.remarkable.com` via a
   one-time device code, then reads your notebook/page list, tags, and content over the
-  reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
-  your reMarkable account.
+  reMarkable cloud API to sync it into your vault. It reads only; the one thing it ever writes is
+  a PDF you sent yourself with [Send a Zotero PDF](#zotero). Nothing already in your reMarkable
+  account is changed, deleted, moved, renamed or re-tagged.
 
 **Your tablet, over your own network — only if you set it up**
 ([Syncing without the cloud](#syncing-without-the-cloud), [Tagged Sync Pro](#tagged-sync-pro)):
@@ -694,14 +789,27 @@ This plugin makes network requests to exactly one place by default:
 - **An SSH connection to your reMarkable**, at the address you pair with — the USB address
   (`10.11.99.1`) or the tablet's address on your Wi-Fi. The plugin reads the notes directory over
   SFTP and runs two commands on the device: one to list the files with their sizes and times, and
-  `sha256sum` to hash them so it can tell what changed. It is read-only apart from pairing, which
-  appends one public key to `/home/root/.ssh/authorized_keys`, and — only if you agree when asked —
-  runs `rm-ssh-over-wlan on` so the tablet keeps accepting connections over Wi-Fi.
+  `sha256sum` to hash them so it can tell what changed. It reads only, with three exceptions, each
+  of which you ask for: pairing appends one public key to `/home/root/.ssh/authorized_keys`; if you
+  agree when asked, `rm-ssh-over-wlan on` keeps the tablet accepting connections over Wi-Fi; and
+  [Send a Zotero PDF](#zotero) over SSH writes the new document's three files and restarts the
+  tablet's reading app so it notices them. Nothing already on the tablet is touched.
 
   **This connection stays on your network.** It goes to your tablet and nowhere else; no server of
   mine and none of reMarkable's is involved, and with it configured a sync needs no internet
   connection at all. The root password you type while pairing is used for that one connection and
   is never stored.
+
+**Your Zotero library — only if you set it up** ([Zotero](#zotero), [Tagged Sync
+Pro](#tagged-sync-pro)):
+
+- **`api.zotero.org`** — with your own API key, and only for your personal library. The plugin
+  searches it, reads your PDF attachments, and writes the annotations it made from your tablet
+  marks. Nothing you did not mark on the tablet is sent, and no annotation of yours is read.
+- **The Zotero desktop app on `127.0.0.1:23119`** — the same thing over your own machine's loopback
+  interface. This leaves nothing on your machine at all.
+
+  Both are off unless you configure them, and a free user never causes either call.
 
 **A transcription backend you choose yourself.** Which of these is contacted, if any, depends
 entirely on the backend selected in settings:
