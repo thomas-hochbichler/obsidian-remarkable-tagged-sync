@@ -119,6 +119,11 @@ jobs:
       # each blob as a **hardlink** to the file we already verified makes `create` say "using existing
       # layer" and copy nothing. This job measures that variant, because it is the one worth shipping.
       # The assertion is the point: if a copy happens anyway, the 11 GB is real and §4.2 must say so.
+      #
+      # **This step must stay after the server is up, and the order is not cosmetic.** `ollama serve`
+      # sweeps blobs no manifest references when it starts -- "total unused blobs removed" in its own
+      # log. Links placed before it starts are deleted, and `create` then copies the 5.5 GB back in,
+      # silently, still reporting "using existing layer". Stage 0 lost the links exactly that way once.
       - name: Link the blobs, then create the model
         run: |
           $blobs = Join-Path $env:OLLAMA_MODELS "blobs"
