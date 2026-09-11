@@ -52,7 +52,7 @@
 
     - id: A8.6
       scenario: A whole working install's data.json is read
-      expect: Every field comes back exactly as it was found -- device token, tag map, sync index, licence and all
+      expect: Every field comes back exactly as it was found -- device token, tag map, sync index, licence, and the Zotero links, which are carried whole and validated per entry at the point of use rather than here
       layer: unit
       file: src/settings-store.test.ts
       test: "migrateSettings > keeps a whole working install exactly as it found it"

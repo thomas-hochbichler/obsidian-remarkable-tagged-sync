@@ -465,3 +465,129 @@
       layer: unit
       file: src/zotero-local.test.ts
       test: "which library this is > says it does not know, on a library with nothing in it"
+
+
+- feature: Y8
+  name: Which reMarkable document is which Zotero PDF
+  code: src/zotero-links.ts
+  tier: pro
+  scenarios:
+    - id: Y8.1
+      scenario: A link written and read back
+      expect: Exactly what was stored. The link is the answer to a question the user was asked once, and asking again is the failure this file exists to prevent (§2.3)
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > reads back exactly what was stored"
+
+    - id: Y8.2
+      scenario: Nothing stored at all
+      expect: Not linked, so the document is matched again (§2.3) and its note carries no Zotero part until it is
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > answers 'not linked' for nothing stored at all"
+
+    - id: Y8.3
+      scenario: The map holds other documents but not this one
+      expect: Not linked. Another document's link says nothing about this one
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > answers 'not linked' for a document that is not in the map"
+
+    - id: Y8.4
+      scenario: A hand-edited `data.json` where a link should be a string
+      expect: Not linked, rather than a throw on the sync path -- the totality `migrateSettings` is held to
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > answers 'not linked' for a string where a link should be"
+
+    - id: Y8.5
+      scenario: An array where a link should be
+      expect: Not linked. Every shape has an answer
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > answers 'not linked' for an array"
+
+    - id: Y8.6
+      scenario: A null where a link should be
+      expect: Not linked -- the shape `JSON.parse` produces most readily, and the one a bare `typeof x === "object"` guard lets through
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > answers 'not linked' for null"
+
+    - id: Y8.7
+      scenario: Half a link, with no attachment key
+      expect: Not linked. A link that names no attachment cannot be acted on
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > answers 'not linked' for a link with no attachment key"
+
+    - id: Y8.8
+      scenario: A link into a group library, which only a newer build could have written
+      expect: Not acted on, and not deleted either. Dropping it would delete what the other install wrote into a file both of them share
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > does not act on a link into a library this build does not handle, and does not drop it either"
+
+    - id: Y8.9
+      scenario: A document that was matched at sync time rather than sent
+      expect: No `sentAt`, no `sentMd5`. The two stamps are Send's own record, and a later match must not read them as one
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "reading a link > keeps the send stamps apart from a document that was matched rather than sent"
+
+    - id: Y8.10
+      scenario: A stored annotation entry that names no key
+      expect: Dropped. It can neither be refreshed nor recognised as deleted, and keeping it would answer "already in Zotero" for an annotation that is not there
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the annotations we have written > drops an entry that names no annotation"
+
+    - id: Y8.11
+      scenario: The user deleted one of our annotations in Zotero
+      expect: The entry remembers it. The only difference between "the user deleted it" and "never created" is what is written here, and §3.3 keeps it deleted
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the annotations we have written > remembers that the user deleted one of ours"
+
+    - id: Y8.12
+      scenario: We wrote an empty comment
+      expect: The empty string survives the round trip. Dropped, it would read as "we never wrote this field", and a field the user cleared by hand would be written over on the next sync
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the annotations we have written > keeps an empty value we wrote, because that is a value and not an absence"
+
+    - id: Y8.13
+      scenario: An entry carrying fields this build does not write
+      expect: Only the six a refresh compares. Everything else is somebody else's, and comparing against it would report edits nobody made
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the annotations we have written > keeps only the fields a refresh may compare, whatever else the entry carries"
+
+    - id: Y8.14
+      scenario: A link added or removed
+      expect: The map handed in is untouched. `data.json` is passed around whole and saved by whoever saves next -- a mutation here reaches the file through a caller that never asked to write, which is how a shared `EMPTY_SYNC_INDEX` once carried rows between installs
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "changing the map > leaves the map it was given alone"
+
+    - id: Y8.15
+      scenario: The same document linked to a different attachment
+      expect: Replaced, not merged. A second copy on the tablet is a second document with its own mapping (§2.5), so a field surviving the replacement would describe the wrong PDF
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "changing the map > replaces a link rather than merging into it, because a re-send is a new document"
+
+    - id: Y8.16
+      scenario: A mapped document is no longer on the tablet
+      expect: That one link goes, the others stay
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "changing the map > forgets one document without touching the rest"
+
+    - id: Y8.17
+      scenario: The map holds entries this build cannot read
+      expect: They are not listed as linked documents, and they stay in the file
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "changing the map > lists the documents this build can act on, and no others"
+
