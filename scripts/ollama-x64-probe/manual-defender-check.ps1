@@ -25,10 +25,14 @@
   behaviour monitoring would fire.
 
 .NOTES
-  Run in an ELEVATED PowerShell ("Run as administrator") on a machine whose Defender settings you
-  have not changed. Elevation is needed to read the verdict, not to produce it: `Get-MpThreatDetection`
-  and the *Windows Defender/Operational* event log are admin-only. The files still land in the same
-  user's %LOCALAPPDATA%, which is where the plugin would put them.
+  Elevation is OPTIONAL. Defender acts on files whoever wrote them, so the evidence that matters --
+  EICAR deleted, binaries surviving, server starting -- is visible to any user. Only the corroborating
+  read of `Get-MpThreatDetection` and the *Windows Defender/Operational* log needs admin, and the
+  script says so when it cannot do it. Run elevated if you can; run it anyway if you cannot.
+
+  Use a machine whose Defender settings you have not changed. **A corporate, centrally managed
+  Defender is not the "stock Defender" this question is about** -- the answer from one is still worth
+  having, but it must be reported as what it is.
 
   Do not add exclusions -- an exclusion is the thing this route is trying to avoid needing.
 
@@ -49,9 +53,17 @@ $ErrorActionPreference = 'Stop'
 # download into a crawl. Silencing it is worth an order of magnitude.
 $ProgressPreference = 'SilentlyContinue'
 
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-        ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-  throw "Run this from an elevated PowerShell. Get-MpThreatDetection and the Defender event log are admin-only, so an unelevated run would report 'nothing found' without being able to look."
+# Elevation is a bonus, not a requirement -- the primary evidence does not need it.
+#
+# What this check actually rests on is whether Defender *acts*: does it delete EICAR, do the binaries
+# survive on disk, does the server start. All of that is visible to any user, because Defender acts on
+# files regardless of who wrote them. Only the corroborating read -- Get-MpThreatDetection, Get-MpThreat
+# and the Windows Defender/Operational log -- is admin-only. So an unelevated run is a real measurement
+# with one section missing, and it says which.
+$IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+              ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $IsElevated) {
+  Write-Host "Not elevated. Everything runs; Defender's own threat log cannot be read, so section 3 reports what it can see and says so." -ForegroundColor Yellow
 }
 $ZipUrl  = 'https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-windows-amd64.zip'
 $Root    = Join-Path $env:LOCALAPPDATA 'x64-defender-check'
@@ -166,24 +178,31 @@ Get-Process ollama, llama-server -ErrorAction SilentlyContinue | Stop-Process -F
 
 # ---------------------------------------------------------------- 3. What did Defender do?
 Say '3. Defender, afterwards'
-$threats = @(Get-MpThreatDetection -ErrorAction SilentlyContinue)
-$known   = @(Get-MpThreat -ErrorAction SilentlyContinue)
-$events  = @(Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -ErrorAction SilentlyContinue |
-             Where-Object { $_.Id -in 1116, 1117 -and $_.TimeCreated -gt (Get-Date).AddHours(-1) })
-$ours = @($threats + $known) | Where-Object { "$($_.Resources)" -match 'x64-defender-check' }
-
-"detections (all time): $($threats.Count) · known threats: $($known.Count) · events 1116/1117 in the last hour: $($events.Count)"
-"naming OUR directory : $($ours.Count)"
-$ours | Format-List
-$report.ourDetections = $ours.Count
+if ($IsElevated) {
+  $threats = @(Get-MpThreatDetection -ErrorAction SilentlyContinue)
+  $known   = @(Get-MpThreat -ErrorAction SilentlyContinue)
+  $events  = @(Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -ErrorAction SilentlyContinue |
+               Where-Object { $_.Id -in 1116, 1117 -and $_.TimeCreated -gt (Get-Date).AddHours(-1) })
+  $ours = @($threats + $known) | Where-Object { "$($_.Resources)" -match 'x64-defender-check' }
+  "detections (all time): $($threats.Count) · known threats: $($known.Count) · events 1116/1117 in the last hour: $($events.Count)"
+  "naming OUR directory : $($ours.Count)"
+  $ours | Format-List
+  $report.ourDetections = $ours.Count
+} else {
+  'threat log not read -- not elevated. The file-survival result above stands on its own.'
+  $report.ourDetections = 'not read (unelevated)'
+  $ours = @()
+}
+$report.elevated = $IsElevated
 $after = Get-MpComputerStatus
 $report.engineAfter = $after.AMEngineVersion
 $report.signatureAfter = $after.AntivirusSignatureVersion
 
 Say 'VERDICT'
 if ($ours.Count -eq 0 -and $report.filesQuarantined.Count -eq 0 -and $up) {
-  'CLEAN -- Defender left the signed Ollama runtime alone on this machine, this day.' }
-else { 'FLAGGED -- see above. This is the finding the route was waiting for.' }
+  'CLEAN -- Defender left the signed Ollama runtime alone on this machine, this day.'
+  if (-not $IsElevated) { '  (unelevated: files survived and the server ran; the threat log was not read)' }
+} else { 'FLAGGED -- see above. This is the finding the route was waiting for.' }
 
 $out = Join-Path $Root 'report.json'
 $report | ConvertTo-Json -Depth 4 | Set-Content $out
