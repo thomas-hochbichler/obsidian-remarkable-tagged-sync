@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Platform } from "../test-stubs/fake-obsidian";
 import { MODEL_GENERATIONS } from "./local-model-artefacts";
-import { pageArgs } from "./local-ocr-runtime";
+import { isLocalModelBusy, pageArgs } from "./local-ocr-runtime";
+import { writeLock } from "./local-model-runtime";
+import type { LocalModelPaths } from "./local-model-store";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
 import { ENOUGH_PAGES_TO_MEASURE, readLocalModelSettings } from "./local-model-settings";
 import type { RmPage } from "./rm-parser";
@@ -295,5 +301,80 @@ describe("pageArgs", () => {
 		expect(args.filter((a) => a === "--image")).toHaveLength(1);
 		expect(args[args.indexOf("--temp") + 1]).toBe("0");
 		expect(args[args.indexOf("--seed") + 1]).toBe("42");
+	});
+});
+
+/**
+ * The guard that decides whether a sync -- or a Resume -- has to stand aside, and the one place a
+ * download and a transcription are told apart. Real files in a real temporary directory: what is
+ * under test is precisely which files the guard looks at, and a faked `fs` would answer whatever the
+ * test already believed.
+ */
+describe("isLocalModelBusy", () => {
+	let root: string;
+	let paths: LocalModelPaths;
+
+	beforeEach(() => {
+		Platform.isDesktop = true;
+		root = fs.mkdtempSync(path.join(os.tmpdir(), "tagged-sync-busy-"));
+		paths = {
+			root,
+			runtimeDir: path.join(root, "runtime"),
+			runtimeExecutable: path.join(root, "runtime", "llama-mtmd-cli"),
+			modelDir: path.join(root, "model"),
+			modelFile: path.join(root, "model", "model.gguf"),
+			mmprojFile: path.join(root, "model", "mmproj.gguf"),
+			verifiedMarker: path.join(root, "verified"),
+			corruptMarker: path.join(root, "corrupt"),
+			lockFile: path.join(root, "lock"),
+			modelPart: path.join(root, "model", "model.gguf.part"),
+			mmprojPart: path.join(root, "model", "mmproj.gguf.part"),
+		};
+	});
+
+	afterEach(() => {
+		fs.rmSync(root, { recursive: true, force: true });
+		Platform.isDesktop = false;
+	});
+
+	it("says no while nothing holds the lock", () => {
+		expect(isLocalModelBusy(paths)).toBe(false);
+	});
+
+	// A held lock with no `.part` anywhere is a transcription, and a fresh engine directory that does
+	// not exist yet is not evidence of anything.
+	it("says yes for a held lock with nothing being written beside it", () => {
+		writeLock(paths, Date.now());
+
+		expect(isLocalModelBusy(paths)).toBe(true);
+	});
+
+	// Either half of a download holds the same lock for hours. Reading that as a transcription is what
+	// made Resume refuse with "another vault is transcribing" against the vault's own download.
+	it("reads a lock held beside a half-written model as the download it is", () => {
+		writeLock(paths, Date.now());
+		fs.writeFileSync(paths.modelPart, "half a model");
+
+		expect(isLocalModelBusy(paths)).toBe(false);
+	});
+
+	it("reads a half-written mmproj the same way", () => {
+		writeLock(paths, Date.now());
+		fs.writeFileSync(paths.mmprojPart, "half an mmproj");
+
+		expect(isLocalModelBusy(paths)).toBe(false);
+	});
+
+	/**
+	 * The engine half, and the reason the directory is *read* rather than one filename rebuilt: the
+	 * archive's name comes from the artefact table and changes with the platform and with every
+	 * llama.cpp revision, so a rebuilt name is one release behind by construction.
+	 */
+	it("finds a part in the engine directory whatever it is called", () => {
+		writeLock(paths, Date.now());
+		fs.mkdirSync(paths.runtimeDir, { recursive: true });
+		fs.writeFileSync(path.join(paths.runtimeDir, "some-future-archive.tar.gz.part"), "half an engine");
+
+		expect(isLocalModelBusy(paths)).toBe(false);
 	});
 });

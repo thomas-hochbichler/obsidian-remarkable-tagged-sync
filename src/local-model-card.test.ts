@@ -233,6 +233,25 @@ describe("the states that carry a decided sentence", () => {
 		expect(copy.actions[0].label).toContain("Qwen3-VL-8B-Instruct");
 	});
 
+	/**
+	 * The model that has just been superseded is the way back, so it is named and offered rather than
+	 * removed underneath the reader -- and named with its size, because 5.5 GB of disk is the whole
+	 * reason to press the button.
+	 */
+	it("names the model left behind as the way back, with a button to give the disk back", () => {
+		const copy = copyFor({
+			kind: "ready",
+			newer: null,
+			superseded: [{ directory: "qwen2.5-vl-7b-instruct-q4_k_m", label: "Qwen2.5-VL-7B-Instruct", bytes: 5_536_191_744 }],
+		});
+
+		expect(copy.paragraphs.join(" ")).toContain("Qwen2.5-VL-7B-Instruct is still on disk (5.5 GB) as the way back.");
+		const remove = copy.actions.find((action) => action.id === "remove-superseded");
+		expect(remove?.label).toBe("Remove Qwen2.5-VL-7B-Instruct");
+		expect(remove?.emphasis).toBe("warning");
+		expect(remove?.directory).toBe("qwen2.5-vl-7b-instruct-q4_k_m");
+	});
+
 	it("says nothing about a newer model when there is not one", () => {
 		const copy = copyFor({ kind: "ready", newer: null });
 

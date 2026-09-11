@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { betterGeneration, chooseGeneration, holdsGeneration, MODEL_GENERATIONS, RUNTIME_ARTEFACTS, runnableGenerations, totalDownloadBytes } from "./local-model-artefacts";
+import { betterGeneration, chooseGeneration, holdsGeneration, MODEL_GENERATIONS, offeredGeneration, RUNTIME_ARTEFACTS, runnableGenerations, totalDownloadBytes } from "./local-model-artefacts";
 import {
 	formatBytes,
 	freeSpaceShortfall,
@@ -496,6 +496,28 @@ describe("chooseGeneration against the machine", () => {
 		expect(betterGeneration(best, mac(64))).toBeNull();
 		expect(betterGeneration(best, mac(16))).toBeNull();
 	});
+	/**
+	 * The pick can only reach a working install as an *offer*: `chooseGeneration` refuses to displace
+	 * a model that runs with one that is not on disk, so the dropdown sat over a card describing
+	 * something else and no button ever appeared for what had just been chosen.
+	 */
+	it("offers the model the user picked while it is not on disk", () => {
+		expect(offeredGeneration(best, [complete(best)], mac(64, older.dir))).toBe(older);
+	});
+
+	it("has nothing more to offer once the pick is installed", () => {
+		// The pick is in use, so the first rule passes and the second finds nothing better to suggest.
+		expect(offeredGeneration(older, [complete(older)], mac(64, older.dir))).toBe(best);
+		expect(offeredGeneration(best, [complete(best), complete(older)], mac(64, best.dir))).toBeNull();
+	});
+
+	// With no pick stored the offer is the one an older install has always had: a more accurate model
+	// this machine can run, and nothing on a machine already running the best of them.
+	it("falls back to the accuracy offer when the user picked nothing", () => {
+		expect(offeredGeneration(older, [complete(older)], mac(64))).toBe(best);
+		expect(offeredGeneration(best, [complete(best)], mac(64))).toBeNull();
+	});
+
 	// A machine too small for anything at all. `localModelBlock` refuses the backend long before this,
 	// so the arm is unreachable in the product -- but a function that can return "nothing" would hand
 	// its caller an undefined generation, and every caller dereferences it.

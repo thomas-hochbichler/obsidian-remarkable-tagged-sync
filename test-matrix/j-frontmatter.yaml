@@ -347,6 +347,20 @@
       file: src/frontmatter-toggle.test.ts
       test: "the licence gate on the sync itself > hands the engine the feature only while the licence allows it"
 
+    - id: J6.15
+      scenario: The end-of-sync backfill throws -- the cloud dropped while it walked the vault's older notes
+      expect: The run keeps its own report. Every unit above it is checkpointed and its notices, warnings and `lastSyncAt` all belong to work that really happened; letting the pass throw took all of it down for pages that would then never be reported again. The failure is recorded beside the sync's own errors, where Copy diagnostics finds it
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "the backfill that runs at the end of a sync > keeps the run's own report when the pass dies, and records the failure beside it"
+
+    - id: J6.16
+      scenario: The same sync with the backfill running cleanly
+      expect: No error recorded at all. "Last error" reading something after a clean run is how a user is sent looking for a problem that is not there
+      layer: vault
+      file: src/frontmatter-toggle.test.ts
+      test: "the backfill that runs at the end of a sync > keeps a clean run's error empty, which is what diagnostics reads"
+
 - feature: J7
   name: The device folder path the keys quote
   code: src/remarkable-tags.ts

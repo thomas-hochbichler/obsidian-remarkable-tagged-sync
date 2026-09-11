@@ -369,6 +369,13 @@
       file: src/local-model-card.test.ts
       test: "newerModelOffer > sizes the download per platform"
 
+    - id: E29.24
+      scenario: The model an update superseded is still on disk
+      expect: Named, sized and offered -- never removed underneath the user. It is the way back if the newer model disappoints, and the size is on the button because 5.5 GB of disk is the whole reason to press it
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "the states that carry a decided sentence > names the model left behind as the way back, with a button to give the disk back"
+
 - feature: E31
   name: The model is chosen by what the machine can run, and by the user
   code: src/local-model-artefacts.ts
@@ -458,6 +465,27 @@
       file: src/local-model-card.test.ts
       test: "consent (§7.2) > quotes the smallest model's own figures when that is the one this machine would fetch"
 
+    - id: E31.13
+      scenario: The reader picks a model that is not on disk while another one is running
+      expect: It is *offered*, with a button. `chooseGeneration` refuses to displace a working model with one that is not installed (E31.4), so without an offer the pick sat in the dropdown over a card describing something else and nothing ever happened
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > offers the model the user picked while it is not on disk"
+
+    - id: E31.14
+      scenario: The picked model is the one already in use
+      expect: The pick has nothing to offer, so the accuracy rule answers instead -- a better model where there is one, nothing where the best is running
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > has nothing more to offer once the pick is installed"
+
+    - id: E31.15
+      scenario: No pick stored at all
+      expect: "The offer an older install has always had: a more accurate model this machine can run, and silence on a machine already running the best of them"
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "chooseGeneration against the machine > falls back to the accuracy offer when the user picked nothing"
+
 - feature: E35
   name: A stray part beside a verified model
   code: src/local-model-store.ts
@@ -493,3 +521,133 @@
       layer: unit
       file: src/local-model-download.test.ts
       test: "planCleanup > keeps a partial of another generation this build still pins, which is an update in flight"
+
+- feature: E38
+  name: Whether the local model is busy right now, read off the disk
+  code: src/local-ocr-runtime.ts
+  tier: free
+  scenarios:
+    - id: E38.1
+      scenario: Nothing holds the lock
+      expect: Not busy. E32 decides the rule; this is the half that reads the files it decides from, and a rule reading the wrong filenames answers confidently and wrongly
+      layer: vault
+      file: src/local-ocr-backend.test.ts
+      test: "isLocalModelBusy > says no while nothing holds the lock"
+
+    - id: E38.2
+      scenario: A fresh lock with no `.part` beside it and no engine directory yet
+      expect: Busy -- a transcription. A directory that does not exist is not evidence of a download
+      layer: vault
+      file: src/local-ocr-backend.test.ts
+      test: "isLocalModelBusy > says yes for a held lock with nothing being written beside it"
+
+    - id: E38.3
+      scenario: The same lock with the model's own `.part` beside it
+      expect: Not busy -- a download. Reading it as a transcription made Resume refuse with "another vault is transcribing" against the vault's own download
+      layer: vault
+      file: src/local-ocr-backend.test.ts
+      test: "isLocalModelBusy > reads a lock held beside a half-written model as the download it is"
+
+    - id: E38.4
+      scenario: The mmproj's `.part` instead
+      expect: Not busy, the same way. Both halves of the model count
+      layer: vault
+      file: src/local-ocr-backend.test.ts
+      test: "isLocalModelBusy > reads a half-written mmproj the same way"
+
+    - id: E38.5
+      scenario: A part in the engine directory under a name this build does not know
+      expect: Found anyway, because the directory is read rather than one filename rebuilt. The archive's name comes from the artefact table and changes with the platform and with every llama.cpp revision, so a rebuilt name is one release behind by construction -- which is exactly how the engine half went unnoticed by this guard
+      layer: vault
+      file: src/local-ocr-backend.test.ts
+      test: "isLocalModelBusy > finds a part in the engine directory whatever it is called"
+
+- feature: E39
+  name: The local model's card, wired to the disk, the download and the settings blob
+  code: src/local-register.ts
+  tier: free
+  scenarios:
+    - id: E39.1
+      scenario: A fresh install presses Download with no pick stored
+      expect: The rule's own model is fetched, into that model's directory. Every rule here is tested on its own (E29, E31, E35); what this file adds is that they are joined up, and a wrong wire spends 6.2 GB of somebody's bandwidth on the wrong model
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the model the first download fetches > fetches what the rule picked when the reader picked nothing"
+
+    - id: E39.2
+      scenario: The reader picked the small model before downloading anything
+      expect: The small model is fetched, into its own directory. The dropdown used to decide nothing until both models were on disk, so a reader who wanted the small one got the large one and could only switch after downloading 6.2 GB they did not want
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the model the first download fetches > fetches the model the reader picked instead"
+
+    - id: E39.3
+      scenario: The dropdown on a machine that can run all three
+      expect: Every runnable model, each with its error rate and the memory it uses while a page is read, and the rule's pick marked "(default)" on its own entry. It used to be a separate entry above the model it named -- two rows for one choice, and the reader asked why the same model was listed twice
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the choice of model > lists every model this machine can run, marking the one the rule would pick"
+
+    - id: E39.4
+      scenario: A machine too small for one of them
+      expect: That model is not in the list, and the description says which it is and what it would need. An option that cannot be chosen is worse than an absence; a name with a number beside it is an answer
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the choice of model > leaves out a model this machine is too small for, and says why underneath"
+
+    - id: E39.5
+      scenario: A machine with exactly one runnable model
+      expect: No dropdown at all. A question with one answer is not a choice
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the choice of model > asks nothing where there is only one model to run"
+
+    - id: E39.6
+      scenario: A pick is made, then the rule's own answer is picked back
+      expect: The name is stored, and then cleared rather than stored. A key that means what the absence of the key means keeps `data.json` honest, and it leaves the rule in charge on the next machine -- where its answer may be a different model
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the choice of model > stores a pick, and stores nothing at all for the rule's own answer"
+
+    - id: E39.7
+      scenario: A working model, with a better one on offer, and the offer taken
+      expect: The newer model is fetched into *its own* directory, beside the one that works. Writing into the running model's directory is what would make it a replacement, and an interrupted one would leave the reader with neither
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a model that is ready, beside a better one > installs the newer model beside the working one, not over it"
+
+    - id: E39.8
+      scenario: The same button pressed while another vault is transcribing
+      expect: Nothing starts, and the reader is told why. The guard reads the directory that is *locked* -- the model in use -- because asking about the empty directory the download is about to create would answer no every time
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a model that is ready, beside a better one > refuses to start while another vault is transcribing, and says so"
+
+    - id: E39.9
+      scenario: The row carrying the delete button
+      expect: The model directory is named beside it. A delete button on a nameless row asks the user to take on trust what it removes, and the path is also where to look when the model is gone from outside the plugin
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a model that is ready, beside a better one > names the directory beside the delete button, so nothing is removed on trust"
+
+    - id: E39.10
+      scenario: The model is deleted
+      expect: The files go, the stored pick goes with them, and the selection falls back to the platform default. A name in `data.json` for a directory that is gone is silently ignored and then honoured again the day a download recreates it -- and a reader left selecting a backend that transcribes nothing syncs notes without a transcript until they work out what to change
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a model that is ready, beside a better one > gives the selection back when the model is deleted"
+
+    - id: E39.11
+      scenario: A complete model this build no longer pins, left by an earlier release
+      expect: Offered by name with a button of its own, and only that directory is removed when it is pressed. It still transcribes, so it is never removed underneath the user
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a model an earlier release left behind > offers it by name, and removes only the directory its own button names"
+
+    - id: E39.12
+      scenario: A *partial* of a model this build no longer pins
+      expect: Removed without asking. No URL in this build could finish it, and silent deletion is for what is provably useless -- anything that ever worked costs a button press (E37)
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a model an earlier release left behind > removes an unfinishable partial without asking"
+

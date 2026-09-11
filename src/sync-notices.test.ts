@@ -163,6 +163,12 @@ describe("modelNotReadyNotice", () => {
 		expect(notice).not.toContain("macOS");
 	});
 
+	// One note is the commonest case of all: the reader picks the model, syncs once to see what
+	// happens, and gets the sentence. "1 notes" in the first thing they read is the whole impression.
+	it("counts a single note in the singular", () => {
+		expect(modelNotReadyNotice(1)).toContain("1 note synced with the handwriting render only");
+	});
+
 	it("says nothing when every unit was transcribed", () => {
 		expect(modelNotReadyNotice(0)).toBeNull();
 	});

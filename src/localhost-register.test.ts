@@ -47,6 +47,15 @@ describe("the localhost backends' registration", () => {
 		expect(entry?.backgroundConsent?.get(settings)).toBe(true);
 	});
 
+	it("says what a background run costs, rather than leaving the toggle bare", () => {
+		// The registry renders whatever this returns under the switch. An entry that answers nothing
+		// leaves the reader consenting to a sentence that is not there.
+		for (const id of IDS) {
+			const desc = ocrBackendEntry(id)?.backgroundConsent?.description({});
+			expect(desc, id).toContain("while you are not there");
+		}
+	});
+
 	it("seeds no model, because none of these servers has been measured", () => {
 		for (const id of IDS) expect(LOCALHOST_PROVIDERS[id].defaultModel, id).toBe("");
 	});

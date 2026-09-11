@@ -466,3 +466,16 @@
       layer: unit
       file: pro/ocr-providers.test.ts
       test: "PROVIDERS metadata > pins the temperature only on the servers the user runs"
+
+- feature: E40
+  name: What the localhost backends say a background run costs
+  code: src/localhost-register.ts
+  tier: free
+  scenarios:
+    - id: E40.1
+      scenario: The description under the background-consent switch, for each of the three
+      expect: It says what an automatic run would do while nobody is there -- several GB of memory and minutes of heavy work on whichever machine runs the server. The registry renders whatever the entry answers, so an entry answering nothing leaves the reader consenting to a blank
+      layer: unit
+      file: src/localhost-register.test.ts
+      test: "the localhost backends' registration > says what a background run costs, rather than leaving the toggle bare"
+

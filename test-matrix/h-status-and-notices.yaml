@@ -485,6 +485,34 @@
       file: src/sync-notices.test.ts
       test: "modelNotReadyNotice > says nothing when every unit was transcribed"
 
+    - id: E15.11
+      scenario: Exactly one note synced with the render only
+      expect: "\"1 note\", in the singular. It is the commonest case of all -- a reader picks the model, syncs once to see what happens, and \"1 notes\" is the first thing they read"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "modelNotReadyNotice > counts a single note in the singular"
+
+    - id: E15.12
+      scenario: The sync ran with the downloaded model selected and not on disk, and runs again
+      expect: The model's own sentence both times, and never the platform one. Unlike the platform gap this closes the moment the download does, so it is said on every sync the user is watching until then -- and the once-only flag is not spent on a sentence this reader never saw
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > says the model is not ready instead of the platform sentence, and says it every time"
+
+    - id: E15.13
+      scenario: The downloaded model is selected and every note was transcribed anyway
+      expect: Nothing said. Its own sentence is still a report about units that went untranscribed, and there were none
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > stays quiet about the model when every note was transcribed"
+
+    - id: E15.14
+      scenario: A backend that transcribes nothing because it can never run here, rather than because a download is pending
+      expect: The platform sentence, once, with the flag written. The two cases share a class and differ in what the user can do about them, and the entry is what declares which is which
+      layer: vault
+      file: src/status-and-notices.test.ts
+      test: "the one-time notice about what this platform cannot transcribe > keeps the platform sentence for a backend that is not merely waiting on a download"
+
     - id: E15.8
       scenario: The sentence is read for what it commits the plugin to
       expect: "Nothing. A promise of a future fix would be a debt, and the platform gap is not this plugin's to close"
@@ -522,3 +550,29 @@
       layer: unit
       file: src/status-model.test.ts
       test: "statusView > gives each state its own icon, and spins only while busy"
+
+- feature: H11
+  name: What a run counts and says once, whichever kind of unit it was
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: H11.1
+      scenario: A tagged **page** whose transcript the backend could not produce
+      expect: Counted as unavailable, exactly as a tagged notebook is, and the note is still written. The end-of-sync notice counts units, so a vault that tags pages rather than notebooks was told nothing at all
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "failed transcription > counts a tagged page whose transcript the backend could not produce"
+
+    - id: H11.2
+      scenario: The backend warns while transcribing a tagged page
+      expect: The warning reaches the run's report. A page the backend lost while the rest read fine writes its note and counts as ok, so the warning is the only trace the loss leaves anywhere -- and that trace existed only on the notebook path
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "failed transcription > raises what the backend warned about while transcribing a tagged page"
+
+    - id: H11.3
+      scenario: Two units the backend gave the identical warning about
+      expect: One sentence in `backendWarnings`, two entries in `skipErrors`. Each warning is raised as its own `Notice`, so the identical message would stack twice on screen -- while diagnostics is where the question is which unit lost what
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "failed transcription > says a warning the backend repeated across units only once"
