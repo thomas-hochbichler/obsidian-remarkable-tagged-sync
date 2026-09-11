@@ -66,6 +66,39 @@ jobs:
           $status | Select-Object AMEngineVersion, AntivirusSignatureVersion, AntivirusSignatureLastUpdated, RealTimeProtectionEnabled |
             ConvertTo-Json | Set-Content probe-out/defender-before.json
 
+      # Step 1b. Prove the scanner detects *anything* before trusting it to detect nothing.
+      #
+      # This is not paranoia, it is what happened: GitHub's `windows-latest` image ships real-time
+      # protection off, and when it is switched on -- with signatures updated the same morning -- it
+      # still does not remove **EICAR**, the one file every scanner is required to detect, neither in
+      # real time nor under `Start-MpScan`. A "zero detections" from such a machine is not a pass, it
+      # is an instrument reading zero because it is disconnected.
+      #
+      # EICAR is a harmless 68-byte ASCII string, published by EICAR precisely so that a scanner can be
+      # tested without malware. It is assembled at run time so this file is not itself a detection.
+      - name: Prove the scanner works at all (EICAR)
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "avcheck"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $file = Join-Path $dir "eicar.com"
+          $s = 'X5O!P%@AP[4\PZX54(P^)7CC)7}$' + 'EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+          Set-Content -Path $file -Value $s -Encoding ASCII
+          Get-Content $file -ErrorAction SilentlyContinue | Out-Null
+          Start-Sleep -Seconds 20
+          $realtime = -not (Test-Path $file)
+          if (-not $realtime) {
+            Start-MpScan -ScanType CustomScan -ScanPath $dir -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
+          }
+          $gone = -not (Test-Path $file)
+          "EICAR removed in real time: $realtime · removed at all: $gone"
+          Remove-Item $file -Force -ErrorAction SilentlyContinue
+          if (-not $gone) {
+            Write-Error "This machine does not detect EICAR. Whatever it says about the plugin's files is meaningless, and the run is void. See managed-llm-windows-x64 research 07 §2.1."
+            exit 1
+          }
+          Get-MpComputerStatus | Select-Object IoavProtectionEnabled, BehaviorMonitorEnabled, OnAccessProtectionEnabled | Format-List
+
       - run: npm ci
 
       # Step 2. Only the members a CUDA-less install needs -- 42,914,054 B of a 1,469,375,054 B zip --
