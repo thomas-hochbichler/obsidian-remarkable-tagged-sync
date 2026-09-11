@@ -25,8 +25,14 @@
   behaviour monitoring would fire.
 
 .NOTES
-  Run in a NORMAL user PowerShell (not elevated) on a machine whose Defender settings you have not
-  changed. Do not add exclusions -- an exclusion is the thing this route is trying to avoid needing.
+  Run in an ELEVATED PowerShell ("Run as administrator") on a machine whose Defender settings you
+  have not changed. Elevation is needed to read the verdict, not to produce it: `Get-MpThreatDetection`
+  and the *Windows Defender/Operational* event log are admin-only. The files still land in the same
+  user's %LOCALAPPDATA%, which is where the plugin would put them.
+
+  Do not add exclusions -- an exclusion is the thing this route is trying to avoid needing.
+
+  Works on Windows PowerShell 5.1 and on PowerShell 7.
 
   Smart App Control cannot be tested by this script: it only exists on a clean Windows 11 consumer
   install and is off on most machines. Check yours at
@@ -39,6 +45,14 @@
 param([switch]$WithModel)
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 renders a progress bar per chunk in Invoke-WebRequest, which turns a 1.5 GB
+# download into a crawl. Silencing it is worth an order of magnitude.
+$ProgressPreference = 'SilentlyContinue'
+
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+        ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  throw "Run this from an elevated PowerShell. Get-MpThreatDetection and the Defender event log are admin-only, so an unelevated run would report 'nothing found' without being able to look."
+}
 $ZipUrl  = 'https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-windows-amd64.zip'
 $Root    = Join-Path $env:LOCALAPPDATA 'x64-defender-check'
 $Runtime = Join-Path $Root 'ollama-v0.34.0'
@@ -79,7 +93,7 @@ Say '1. Download and extract -- everything except the CUDA directories'
 $zip = Join-Path $Root 'ollama.zip'
 New-Item -ItemType Directory -Force -Path $Runtime | Out-Null
 # The download itself is the first thing Defender sees.
-Invoke-WebRequest -Uri $ZipUrl -OutFile $zip
+Invoke-WebRequest -Uri $ZipUrl -OutFile $zip -UseBasicParsing
 if (-not (Test-Path $zip)) { throw 'The zip is gone after download -- Defender took it. THAT IS THE ANSWER.' }
 "zip on disk: {0:N0} bytes (expected 1,469,375,054)" -f (Get-Item $zip).Length
 
@@ -137,8 +151,8 @@ if ($WithModel -and $up) {
   $md = Join-Path $models 'qwen3-vl-2b'; New-Item -ItemType Directory -Force -Path $md | Out-Null
   $rev = '52d6c8ffea26cc873ac5ad116f8631268d7eb503'
   $base = "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/$rev"
-  Invoke-WebRequest "$base/Qwen3VL-2B-Instruct-Q4_K_M.gguf"        -OutFile (Join-Path $md 'model.gguf')
-  Invoke-WebRequest "$base/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf"   -OutFile (Join-Path $md 'mmproj.gguf')
+  Invoke-WebRequest "$base/Qwen3VL-2B-Instruct-Q4_K_M.gguf"      -OutFile (Join-Path $md 'model.gguf')  -UseBasicParsing
+  Invoke-WebRequest "$base/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf" -OutFile (Join-Path $md 'mmproj.gguf') -UseBasicParsing
   "FROM $md`nPARAMETER num_ctx 6144" | Set-Content (Join-Path $Root 'Modelfile')
   & (Join-Path $Runtime 'ollama.exe') create defendercheck -f (Join-Path $Root 'Modelfile')
   # A trivial prompt is enough: the point is that llama-server.exe starts and runs.
