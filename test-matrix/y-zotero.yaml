@@ -1589,3 +1589,605 @@
       layer: unit
       file: src/digest-builder.test.ts
       test: "renderDigest — the link into Zotero > leaves every entry as it was for a sync with nothing written back"
+
+- feature: Y18
+  name: The one hash Zotero speaks
+  code: src/file-md5.ts
+  tier: pro
+  scenarios:
+    - id: Y18.1
+      scenario: 'Bytes whose MD5 is published'
+      expect: 'The published number. Every other hash in this plugin is SHA-256; this one exists because Zotero stores an `md5` per attachment and §2.3 matches on it, so ours has to be the one Zotero computed'
+      layer: unit
+      file: src/file-md5.test.ts
+      test: 'the one hash Zotero speaks > is MD5, lowercase hex'
+
+    - id: Y18.2
+      scenario: 'A PDF, which is not text'
+      expect: '32 lowercase hex characters, the spelling Zotero''s own field uses'
+      layer: unit
+      file: src/file-md5.test.ts
+      test: 'the one hash Zotero speaks > is 32 characters for bytes that are not text at all'
+
+    - id: Y18.3
+      scenario: 'Somewhere node is not there'
+      expect: 'A refusal naming the reason, not a TypeError out of `require`. The plugin is desktop-only, so this is the same refusal every node-backed corner of it makes'
+      layer: unit
+      file: src/file-md5.test.ts
+      test: 'the one hash Zotero speaks > refuses rather than half-working where node is not there'
+
+- feature: Y19
+  name: What Send calls a document, and what it asks about it
+  code: src/zotero-send.ts
+  tier: pro
+  scenarios:
+    - id: Y19.1
+      scenario: 'An item with a title and an attachment called "Full Text PDF"'
+      expect: 'The item''s title. The attachment''s is "Full Text PDF" for most of a library, which is what every second document on the tablet would then be called'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what the document is called on the tablet > is the item''s title, not the attachment''s'
+
+    - id: Y19.2
+      scenario: 'An attachment whose parent item has no title'
+      expect: 'The filename, without the `.pdf`: a document on the tablet is a document rather than a file, and the reMarkable''s own upload drops it too'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what the document is called on the tablet > falls back to the attachment''s filename, without the extension'
+
+    - id: Y19.3
+      scenario: 'An item with no title and an attachment with no filename'
+      expect: 'The attachment key. A link whose label is empty is a document nobody can find again'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what the document is called on the tablet > falls back to the attachment key where there is no name at all'
+
+    - id: Y19.4
+      scenario: 'A title with a slash and a colon in it'
+      expect: 'Both become `-` (§2.4). They are the two characters the reMarkable''s file list will not take'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what the document is called on the tablet > replaces the characters a tablet filename cannot hold'
+
+    - id: Y19.5
+      scenario: 'A title longer than 120 characters'
+      expect: 'Cut to 120 (§2.4)'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what the document is called on the tablet > cuts a very long title at 120 characters'
+
+    - id: Y19.6
+      scenario: 'A title of emoji'
+      expect: 'Cut between code points. A cut through a surrogate pair leaves half a character in the tablet''s file list'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what the document is called on the tablet > cuts between characters, never through one'
+
+    - id: Y19.7
+      scenario: 'Any document at all'
+      expect: 'No key suffix and no marker of ours (§2.4). The tablet''s file list is the reader''s; what makes the document findable again is the link in `data.json`'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what the document is called on the tablet > carries no key, no marker and nothing else of ours'
+
+    - id: Y19.8
+      scenario: 'An item with one PDF'
+      expect: 'That one, with no question asked'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which PDF of an item is meant > is the only one, where there is only one'
+
+    - id: Y19.9
+      scenario: 'An item with two PDFs -- a preprint beside the published version'
+      expect: 'A question (§2.4). The one the reader annotates is the one the highlights go back onto, and the two do not have the same pages'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which PDF of an item is meant > is a question where an item has two'
+
+    - id: Y19.10
+      scenario: 'An item whose attachments all belong to something else'
+      expect: 'Nothing to send. The picker says so rather than sending someone else''s paper'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which PDF of an item is meant > is nothing for an item whose attachments are all somebody else''s'
+
+    - id: Y19.11
+      scenario: 'A vault with exactly one mapped tag'
+      expect: 'No question (§2.4)'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which tag the document is sent with > asks nothing where the vault maps exactly one tag'
+
+    - id: Y19.12
+      scenario: 'A vault with two, and a remembered last choice'
+      expect: 'A question, with last time''s answer offered first'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which tag the document is sent with > asks, and offers last time''s answer first'
+
+    - id: Y19.13
+      scenario: 'A remembered tag the user has since unmapped'
+      expect: 'Forgotten. Offering it would send the document with a tag that routes to no folder at all'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which tag the document is sent with > forgets last time''s answer once that tag is no longer mapped'
+
+    - id: Y19.14
+      scenario: 'A vault that maps no tags at all'
+      expect: 'Nothing to offer -- the command refuses (`SEND_NEEDS_A_TAG`) rather than sending. Not in the spec: a document sent without a sync tag is one the plugin never looks at again'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which tag the document is sent with > has nothing to offer a vault that maps no tags at all'
+
+    - id: Y19.15
+      scenario: 'A vault with both the cloud and a paired tablet'
+      expect: 'The cloud. Not about speed: the SSH route ends in a restart of the tablet''s reading app, which closes whatever the reader has open'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which route the send takes > is the cloud wherever there is one, even with a paired tablet'
+
+    - id: Y19.16
+      scenario: 'A vault with only a paired tablet'
+      expect: 'The tablet'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which route the send takes > is the tablet for a vault that has only that'
+
+    - id: Y19.17
+      scenario: 'A vault with neither'
+      expect: 'Nothing, and the command says so in the spec''s own words'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'which route the send takes > is nothing for a vault with neither'
+
+- feature: Y20
+  name: Sending, and what it records
+  code: src/zotero-send.ts
+  tier: pro
+  scenarios:
+    - id: Y20.1
+      scenario: 'An attachment nobody has sent'
+      expect: 'Nothing on the tablet and nothing to replace'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what this attachment already is on the tablet > is nothing at all for an attachment nobody has sent'
+
+    - id: Y20.2
+      scenario: 'An attachment already on the tablet (§2.5)'
+      expect: 'The document that carries it, so the user can be asked and offered *Send another copy*'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what this attachment already is on the tablet > names the document that is still there, so the user can be asked'
+
+    - id: Y20.3
+      scenario: 'A mapped document the user deleted from the tablet (§2.5)'
+      expect: 'Reported as a mapping to replace. The link points at nothing, and a send is the only moment anything is in a position to notice'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what this attachment already is on the tablet > reports a mapping whose document is gone as one to replace'
+
+    - id: Y20.4
+      scenario: 'A link a newer build wrote, which this one cannot read'
+      expect: 'Passed over, and left exactly where it is -- the same rule the whole link store follows'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'what this attachment already is on the tablet > passes over an entry this build cannot read'
+
+    - id: Y20.5
+      scenario: 'Zotero knows where the PDF is on this machine'
+      expect: 'Read off the disk. It beats a round trip, and it works for a library whose storage was never synced to zotero.org'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'where the PDF''s bytes come from > is the file on this machine, where Zotero knows where that is'
+
+    - id: Y20.6
+      scenario: 'A path Zotero remembers for a file that has been moved since'
+      expect: 'The download. Not an error: Zotero''s own path going stale is ordinary'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'where the PDF''s bytes come from > is the download where the path Zotero gave no longer holds a file'
+
+    - id: Y20.7
+      scenario: 'A linked file neither connection can hand over'
+      expect: 'One file dialog (§2.4), last, because it is the only one of the three that costs the user attention'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'where the PDF''s bytes come from > is the file dialog where neither connection can hand the PDF over'
+
+    - id: Y20.8
+      scenario: 'The user closes that dialog'
+      expect: 'Nothing. An answer rather than a failure'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'where the PDF''s bytes come from > is nothing at all when the user closes that dialog'
+
+    - id: Y20.9
+      scenario: 'A send that goes through'
+      expect: 'The transport gets the name, the folder and the tag, and nothing else'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'sending > hands the transport the name, the folder and the tag'
+
+    - id: Y20.10
+      scenario: 'The link written afterwards (§2.4)'
+      expect: '`sentAt` and `sentMd5` -- the hash of the bytes that actually went up, not the `md5` Zotero reports, which is null for a linked file and describes Zotero''s own copy'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'sending > writes the link only after the upload, with what was sent and when'
+
+    - id: Y20.11
+      scenario: 'An upload that throws'
+      expect: 'No link at all. A link is the claim that a document on the tablet is this item, and a failed upload left no document to claim'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'sending > writes no link at all when the upload throws'
+
+    - id: Y20.12
+      scenario: 'The user closes the file dialog'
+      expect: 'Nothing is uploaded and nothing is written down'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'sending > does nothing at all when the user closes the file dialog'
+
+    - id: Y20.13
+      scenario: 'A send replacing two vanished mappings (§2.5)'
+      expect: 'Exactly one link is left behind, not three'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'sending > replaces the mappings of documents that are no longer on the tablet'
+
+    - id: Y20.14
+      scenario: '*Send another copy* (§2.5)'
+      expect: 'A second document with its own mapping; the first keeps everything it has, annotations included'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: 'sending > leaves the first copy''s mapping alone when a second is sent'
+
+- feature: Y21
+  name: Send over SSH, and the restart it costs
+  code: src/ssh-send.ts
+  tier: pro
+  scenarios:
+    - id: Y21.1
+      scenario: 'A tablet that already has a Zotero folder'
+      expect: 'That one, found by name. Nothing is written'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > is the one that is there, found by its name'
+
+    - id: Y21.2
+      scenario: 'A tablet that has none'
+      expect: 'One is created, in the shape a cloud-made folder has'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > is created where the tablet has none'
+
+    - id: Y21.3
+      scenario: 'A folder called Zotero nested inside another folder'
+      expect: 'Not used. That is somebody''s own arrangement, and papers collected into it are papers they cannot find from the home screen'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > is never one nested inside another folder'
+
+    - id: Y21.4
+      scenario: 'A Zotero folder the user deleted'
+      expect: 'Not used. The device keeps a tombstone until its next cloud sync clears it -- the same rule the account listing follows'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > is never a folder the user has deleted'
+
+    - id: Y21.5
+      scenario: 'A *document* called Zotero'
+      expect: 'Not used. A document is not a folder, whatever it is called'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > is never a document that happens to be called Zotero'
+
+    - id: Y21.6
+      scenario: 'Two Zotero folders at the top level'
+      expect: 'The lowest id, every time. The tablet''s listing has no order to promise and two sends in a row have to mean the same folder'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > is the same one of two every time'
+
+    - id: Y21.7
+      scenario: 'A half-written `.metadata` on a live device'
+      expect: 'Passed over. xochitl writes while we read, and repairing its files is not this command''s business'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > passes over a metadata file it cannot read'
+
+    - id: Y21.8
+      scenario: 'A library of documents with pages and pictures'
+      expect: 'Only the top-level `<uuid>.metadata` files are read at all'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'the tablet''s Zotero folder > looks at nothing but the top-level metadata files'
+
+    - id: Y21.9
+      scenario: 'A PDF sent to a tablet'
+      expect: '`<uuid>.pdf`, `.content` and `.metadata` -- the shape rmapi-js uploads, which research 13 proved xochitl accepts on disk. The rest (`.pagedata`, `.local`, thumbnails) xochitl writes itself on the next start'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'putting a PDF on the tablet > writes the three files xochitl needs, into the folder'
+
+    - id: Y21.10
+      scenario: 'The sync tag'
+      expect: 'In `.content`, in the shape a cloud upload has. Without it the reader annotates a paper the plugin never looks at again'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'putting a PDF on the tablet > carries the sync tag, in the shape a cloud upload has'
+
+    - id: Y21.11
+      scenario: 'A connection that drops part-way through a send'
+      expect: 'The `.metadata` is written last, so what is left is stray files rather than an entry that opens onto nothing'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'putting a PDF on the tablet > writes the metadata last of the three'
+
+    - id: Y21.12
+      scenario: 'Files dropped into `xochitl/`'
+      expect: '⚠️ `systemctl restart xochitl`, or the document never appears. Measured: no directory watch, no reachable upload endpoint on a Paper Pro (research 13)'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'putting a PDF on the tablet > restarts the reading app, which is the only thing that makes the document appear'
+
+    - id: Y21.13
+      scenario: 'A send with no id handed in'
+      expect: 'A fresh uuid4. A reused id would overwrite a document on the tablet, which is the one thing §1.2 promises never happens'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'putting a PDF on the tablet > mints its own ids where the caller names none'
+
+    - id: Y21.14
+      scenario: 'The order of the whole send'
+      expect: 'Every file first, the restart last'
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: 'putting a PDF on the tablet > restarts only after every file is written'
+
+    - id: Y21.15
+      scenario: 'Writing a file to the device over SFTP'
+      expect: 'Under the xochitl directory, bytes unchanged. The only caller is Send, and the read interface every other part of the plugin holds has no `write` at all'
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: 'writing a file onto the tablet > puts the bytes under the xochitl directory, exactly as they were handed over'
+
+    - id: Y21.16
+      scenario: 'A device that refuses the write'
+      expect: 'A failure. A silent one would report a document as sent that is not there'
+      layer: unit
+      file: src/ssh-connection.test.ts
+      test: 'writing a file onto the tablet > fails rather than reporting a write the device refused'
+
+    - id: Y21.17
+      scenario: 'A send over the SSH transport'
+      expect: 'The document is written and the reading app restarted, over a connection of its own -- `open()` would index and hash the whole account first, and hands back a read-only surface'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: 'sending a PDF over SSH > writes the document and restarts the reading app'
+
+    - id: Y21.18
+      scenario: 'A send that fails part-way'
+      expect: 'The connection is closed all the same. Left open it stays open until the process ends, and the next send opens a second beside it'
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: 'sending a PDF over SSH > closes the connection even when the send fails'
+
+- feature: Y22
+  name: Send through the reMarkable cloud
+  code: src/cloud-send.ts
+  tier: pro
+  scenarios:
+    - id: Y22.1
+      scenario: 'An account that already has a Zotero folder'
+      expect: 'That one, by name. No folder is created'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'the cloud''s Zotero folder > is the one that is there, found by its name'
+
+    - id: Y22.2
+      scenario: 'An account that has none'
+      expect: 'One is created'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'the cloud''s Zotero folder > is created where the account has none'
+
+    - id: Y22.3
+      scenario: 'A nested folder of that name, or a document of that name'
+      expect: 'Neither is used -- the same two rules the tablet''s own side follows'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'the cloud''s Zotero folder > is never a nested folder and never a document of that name'
+
+    - id: Y22.4
+      scenario: 'Two Zotero folders in the account'
+      expect: 'The lowest id, every time'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'the cloud''s Zotero folder > is the same one of two every time'
+
+    - id: Y22.5
+      scenario: 'The tablet adds a document while our upload is in flight'
+      expect: 'Tried again, and the retry refreshes the root hash -- a retry reading the same stale generation would fail forever'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'a generation that moved under the upload > is tried again, and the retry refreshes the root hash'
+
+    - id: Y22.6
+      scenario: 'The same, while the folder is being created'
+      expect: 'Tried again there too'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'a generation that moved under the upload > is tried again for the folder too'
+
+    - id: Y22.7
+      scenario: 'A generation that keeps moving'
+      expect: 'Three attempts and then the cloud''s own error. A busy account must not turn a command the user pressed into a loop'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'a generation that moved under the upload > gives up after three attempts, saying what the cloud said'
+
+    - id: Y22.8
+      scenario: 'A rejected token'
+      expect: 'Not retried. It is not a stale generation, and trying again would only ask a refused question three times'
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: 'a generation that moved under the upload > is the only failure that is retried at all'
+
+    - id: Y22.9
+      scenario: 'A send over the cloud transport'
+      expect: 'Its own session. Widening the one `open()` hands out would put `putPdf` within reach of the sync engine, which may never write anything'
+      layer: unit
+      file: src/transport.test.ts
+      test: 'sending a PDF through the cloud > opens its own session and hands back the id the cloud gave'
+
+- feature: Y23
+  name: The Send dialog
+  code: src/zotero-send-dialog.ts
+  tier: pro
+  scenarios:
+    - id: Y23.1
+      scenario: 'A title and an author typed into the dialog'
+      expect: 'Zotero''s own search (`q=`, `qmode=titleCreatorYear`), once the typing settles. A real library is thousands of items; a filter over a list we hold is the wrong instrument'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'finding the paper > asks Zotero''s own search, once the typing settles'
+
+    - id: Y23.2
+      scenario: 'A dialog nobody has typed into yet'
+      expect: 'No "nothing matches" -- that would be telling the user about a search they did not make'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'finding the paper > says nothing about a search nobody made'
+
+    - id: Y23.3
+      scenario: 'A search that found nothing'
+      expect: 'Said, once the answer is back'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'finding the paper > says so where the library has nothing like it'
+
+    - id: Y23.4
+      scenario: 'A search field the user clears again'
+      expect: 'The list goes, and so does the sentence about having found nothing'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'finding the paper > clears the list again when the field is emptied'
+
+    - id: Y23.5
+      scenario: 'Someone typing a word'
+      expect: 'One search after the typing settles, not one per keystroke'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'finding the paper > waits for the typing to settle before it asks at all'
+
+    - id: Y23.6
+      scenario: 'Results'
+      expect: 'Named the way the note''s own Zotero line names them, so the two agree'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'finding the paper > lists what it found, named the way the note names it'
+
+    - id: Y23.7
+      scenario: '⚠️ A slow answer to a query the user has already typed past'
+      expect: 'Dropped. Otherwise the list shows results for a query that is no longer in the field'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'finding the paper > never lets a slow answer to an older query replace a newer one'
+
+    - id: Y23.8
+      scenario: 'An item with one PDF and a vault with one mapped tag'
+      expect: 'Neither question is asked: the dialog answers with the choice as soon as the paper is picked'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'choosing the PDF > asks nothing where the item has one'
+
+    - id: Y23.9
+      scenario: 'An item with two PDFs'
+      expect: 'Both offered, and the one chosen is the one sent'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'choosing the PDF > asks which, where the item has two'
+
+    - id: Y23.10
+      scenario: 'An item with no PDF at all'
+      expect: 'Said, with a way back to the search rather than a dead end'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'choosing the PDF > says so for an item with nothing to send, and lets the user go back'
+
+    - id: Y23.11
+      scenario: 'A linked file whose path Zotero did not report'
+      expect: 'Named by its Zotero title. A row with no name is a row nobody can choose between'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'choosing the PDF > names a PDF with no filename by its Zotero title'
+
+    - id: Y23.12
+      scenario: 'A vault with one mapped tag'
+      expect: 'No tag step (§2.4)'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'choosing the tag > is not asked where the vault maps one tag'
+
+    - id: Y23.13
+      scenario: 'A vault with two, and a remembered choice'
+      expect: 'Both offered, last time''s selected'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'choosing the tag > offers the mapped tags, with last time''s answer selected'
+
+    - id: Y23.14
+      scenario: 'The user picking the other tag'
+      expect: 'That one is what the send carries'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'choosing the tag > sends with the tag the user picked instead'
+
+    - id: Y23.15
+      scenario: 'A dialog dismissed with Escape or the background'
+      expect: 'Nothing chosen. Escape, the background and a Cancel button are one path in Obsidian, so the answer starts at nothing and only a choice moves it -- the rule `confirm-modal` already follows'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: 'closing the dialog > answers nothing when it is dismissed'
+
+- feature: Y24
+  name: The Zotero send settings
+  code: src/settings-tab.ts
+  tier: pro
+  scenarios:
+    - id: Y24.1
+      scenario: 'The switch that lets Send write over SSH'
+      expect: 'Names the restart before it is touched, in the spec''s own words. It is the one thing this plugin does that interrupts the person holding the tablet, so they agree to it in advance rather than finding out when their page closes'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: 'the Zotero section > names the restart before the SSH send switch is touched'
+
+    - id: Y24.2
+      scenario: 'Turning it on'
+      expect: 'Saved'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: 'the Zotero section > saves the SSH send switch'
+
+    - id: Y24.3
+      scenario: 'A free vault'
+      expect: 'Both send rows shown and disabled -- the same rule the rest of this section follows: what a free user cannot see is not something they can decide to buy'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: 'the Zotero section > keeps both send rows shut for a free vault'
+
+    - id: Y24.4
+      scenario: 'The folder name emptied'
+      expect: 'Back to `Zotero`. A folder with no name puts every sent paper at the root of the tablet, where the user has to go looking for it'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: 'the Zotero section > takes an emptied folder name as the default rather than as no folder'
+
+    - id: Y24.5
+      scenario: 'A folder name typed'
+      expect: 'Taken, trimmed, and written to `data.json` once the typing stops'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: 'the Zotero section > takes a folder name the user typed'

@@ -933,6 +933,53 @@ describe("the Zotero section", () => {
 		expect(plugin.saves).toHaveLength(1);
 	});
 
+	// §2.4's own sentence, in advance rather than in a notice afterwards: this is the one thing the
+	// plugin does that interrupts the person holding the tablet.
+	it("names the restart before the SSH send switch is touched", async () => {
+		const drawn = draw((await tabWith(PRO)).tab);
+		const restart = row(drawn, "Send over SSH when the cloud is not connected");
+
+		expect(restart.desc).toContain("restarts the tablet's reading app");
+		expect(restart.desc).toContain("the document you have open is closed first");
+	});
+
+	it("saves the SSH send switch", async () => {
+		const { plugin, tab } = await tabWith(PRO);
+		toggle(draw(tab), "Send over SSH when the cloud is not connected").toggle(true);
+		await settle();
+
+		expect((plugin.data.zotero as { sendOverSsh: boolean }).sendOverSsh).toBe(true);
+	});
+
+	it("keeps both send rows shut for a free vault", async () => {
+		const drawn = draw((await tabWith()).tab);
+
+		expect(field(drawn, "Tablet folder for sent PDFs").disabled).toBe(true);
+		expect(toggle(drawn, "Send over SSH when the cloud is not connected").disabled).toBe(true);
+	});
+
+	// A folder with no name would put every sent paper at the root of the tablet, where the user has
+	// to go looking for it.
+	it("takes an emptied folder name as the default rather than as no folder", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		field(draw(tab), "Tablet folder for sent PDFs").type("  ");
+
+		expect((plugin.data.zotero as { folder: string }).folder).toBe("Zotero");
+		vi.useRealTimers();
+	});
+
+	it("takes a folder name the user typed", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		field(draw(tab), "Tablet folder for sent PDFs").type(" Papers ");
+
+		expect((plugin.data.zotero as { folder: string }).folder).toBe("Papers");
+		await vi.advanceTimersByTimeAsync(600);
+		expect(plugin.saves.length).toBeGreaterThan(0);
+		vi.useRealTimers();
+	});
+
 	// The same debounce the attachments folder uses, and for the same reason: a 24-character key is 24
 	// writes to `data.json` otherwise.
 	it("takes a typed key immediately and reaches data.json when the typing stops", async () => {

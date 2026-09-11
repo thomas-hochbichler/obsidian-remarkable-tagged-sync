@@ -26,8 +26,8 @@ const TRIAL = entitlementOf(startTrial(NO_LICENCE, new Date(NOW.getTime() - 2 * 
 const clientFor = (settings: ZoteroSettings, entitlement: Entitlement) =>
 	createZoteroClientFor({ settings: () => settings, saveLocalKey: async () => {} }, entitlement);
 
-const WEB_ONLY: ZoteroSettings = { apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} };
-const DESKTOP_ONLY: ZoteroSettings = { apiKey: null, useLocal: true, localKeys: {} };
+const WEB_ONLY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" };
+const DESKTOP_ONLY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, useLocal: true };
 
 describe("who may use Zotero", () => {
 	it("is Pro, and a trial counts", () => {
@@ -39,7 +39,7 @@ describe("who may use Zotero", () => {
 	// The whole of "refused in place": no client, so there is nothing to match with, nothing to write
 	// back, and no Send command to register. A free vault syncs exactly as it did before.
 	it("hands a free vault no client, however well it is configured", () => {
-		expect(clientFor({ apiKey: "key", useLocal: true, localKeys: {} }, FREE)).toBeNull();
+		expect(clientFor({ ...DEFAULT_ZOTERO_SETTINGS, apiKey: "key", useLocal: true }, FREE)).toBeNull();
 	});
 
 	// The lapsed-licence case (§5): the settings the buyer filled in are still in `data.json`, and are
@@ -103,7 +103,7 @@ describe("what counts as set up", () => {
 	// A vault that has never been near Zotero must be indistinguishable from the plugin as it shipped
 	// before this feature -- which is what "the free plugin is unchanged" (§5) means in practice.
 	it("starts switched off entirely", () => {
-		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ apiKey: null, useLocal: false, localKeys: {} });
+		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, lastTag: null });
 	});
 });
 

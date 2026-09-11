@@ -60,6 +60,8 @@ interface Tablet {
 	readonly commands: { command: string; stdin: string }[];
 	/** Every path the plugin opened over SFTP, exactly as it asked for it. */
 	readonly opened: string[];
+	/** What the plugin wrote, by path -- the same SFTP subsystem, in the other direction. */
+	readonly written: Map<string, Buffer>;
 	/** Resolves when the plugin's connection goes away, so a test can insist that it did. */
 	readonly disconnected: Promise<void>;
 	stop(): void;
@@ -70,10 +72,12 @@ function startTablet(
 		reply?: (command: string, stdin: string) => ExecReply;
 		files?: Record<string, Buffer>;
 		refuseSftp?: boolean;
+		refuseWrites?: boolean;
 	} = {},
 ): Promise<Tablet> {
 	const commands: { command: string; stdin: string }[] = [];
 	const opened: string[] = [];
+	const written = new Map<string, Buffer>();
 	let sawDisconnect = () => {};
 	const disconnected = new Promise<void>((resolve) => (sawDisconnect = resolve));
 
@@ -114,22 +118,49 @@ function startTablet(
 					}
 					const sftp = accept();
 					const open = new Map<number, Buffer>();
+					// A handle opened for writing collects what arrives; the file appears at CLOSE, which is
+					// what a real SFTP server does and what makes a half-written put visible as one.
+					const writing = new Map<number, { path: string; chunks: Buffer[] }>();
 					let next = 0;
 
 					const contentOf = (handle: Buffer): Buffer | undefined => open.get(handle.readUInt32BE(0));
+					const handleFor = (id: number): Buffer => {
+						const handle = Buffer.alloc(4);
+						handle.writeUInt32BE(id, 0);
+						return handle;
+					};
 
-					sftp.on("OPEN", (reqid, filename) => {
+					sftp.on("OPEN", (reqid, filename, flags) => {
 						opened.push(filename);
+						if (options.refuseWrites === true && (flags & 0x2) !== 0) {
+							sftp.status(reqid, STATUS_CODE.PERMISSION_DENIED);
+							return;
+						}
+						// `SSH_FXF_WRITE`, which is what `writeFile` asks for. Everything else is a read.
+						if ((flags & 0x2) !== 0) {
+							writing.set(next, { path: filename, chunks: [] });
+							sftp.handle(reqid, handleFor(next));
+							next += 1;
+							return;
+						}
 						const content = options.files?.[filename];
 						if (content === undefined) {
 							sftp.status(reqid, STATUS_CODE.NO_SUCH_FILE);
 							return;
 						}
-						const handle = Buffer.alloc(4);
-						handle.writeUInt32BE(next, 0);
 						open.set(next, content);
+						sftp.handle(reqid, handleFor(next));
 						next += 1;
-						sftp.handle(reqid, handle);
+					});
+
+					sftp.on("WRITE", (reqid, handle, _offset, data) => {
+						const target = writing.get(handle.readUInt32BE(0));
+						if (target === undefined) {
+							sftp.status(reqid, STATUS_CODE.FAILURE);
+							return;
+						}
+						target.chunks.push(Buffer.from(data));
+						sftp.status(reqid, STATUS_CODE.OK);
 					});
 
 					sftp.on("FSTAT", (reqid, handle) => {
@@ -155,7 +186,11 @@ function startTablet(
 					});
 
 					sftp.on("CLOSE", (reqid, handle) => {
-						open.delete(handle.readUInt32BE(0));
+						const id = handle.readUInt32BE(0);
+						const target = writing.get(id);
+						if (target !== undefined) written.set(target.path, Buffer.concat(target.chunks));
+						writing.delete(id);
+						open.delete(id);
 						sftp.status(reqid, STATUS_CODE.OK);
 					});
 				});
@@ -170,6 +205,7 @@ function startTablet(
 				port: typeof address === "object" && address !== null ? address.port : 0,
 				commands,
 				opened,
+				written,
 				disconnected,
 				stop: () => server.close(),
 			});
@@ -328,6 +364,28 @@ describe("reading a file off the tablet", () => {
 
 		// An empty answer would be rendered as a blank page and stored under the hash of a real one.
 		await expect(device.read("abcd/0.rm")).rejects.toThrow();
+	});
+});
+
+describe("writing a file onto the tablet", () => {
+	// The one thing this connection does that changes the device, and the only caller is Send -- which
+	// only ever writes under an id nothing else has (spec §1.2).
+	it("puts the bytes under the xochitl directory, exactly as they were handed over", async () => {
+		tablet = await startTablet();
+		const pdf = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]);
+
+		device = await connectToDevice(credentialsFor(tablet.port));
+		await device.write("abcd.pdf", new Uint8Array(pdf));
+
+		expect(tablet.written.get(`${XOCHITL_DIR}/abcd.pdf`)).toEqual(pdf);
+	});
+
+	it("fails rather than reporting a write the device refused", async () => {
+		tablet = await startTablet({ refuseWrites: true });
+
+		device = await connectToDevice(credentialsFor(tablet.port));
+
+		await expect(device.write("abcd.pdf", new Uint8Array([1]))).rejects.toThrow();
 	});
 });
 

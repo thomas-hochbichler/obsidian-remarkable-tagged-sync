@@ -15,6 +15,7 @@ import type { Entitlement } from "./licence-state";
 import { createZoteroClient, type ZoteroClient } from "./zotero-client";
 import { createZoteroLocalConnection, type LocalKeyStore } from "./zotero-local";
 import { createZoteroWebConnection } from "./zotero-web";
+import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 
 export interface ZoteroSettings {
 	/** A zotero.org API key, or `null`. Read and write, personal library -- nothing else is asked for. */
@@ -31,9 +32,29 @@ export interface ZoteroSettings {
 	 * already live.
 	 */
 	localKeys: Record<string, string>;
+	/** The tablet folder Send puts documents in: looked up by name, created when missing, never renamed (§2.4). */
+	folder: string;
+	/**
+	 * May Send write straight onto the tablet over SSH?
+	 *
+	 * Off by default and asked for in words, because this is the one thing the plugin does that
+	 * interrupts the person holding the device: there is no way to make xochitl notice a new file
+	 * without restarting it (see `ssh-send.ts`), so a send closes whatever they have open. The cloud
+	 * needs no such permission and is therefore tried first.
+	 */
+	sendOverSsh: boolean;
+	/** The sync tag the last send used, offered first the next time there is a choice (§2.4). */
+	lastTag: string | null;
 }
 
-export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = { apiKey: null, useLocal: false, localKeys: {} };
+export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
+	apiKey: null,
+	useLocal: false,
+	localKeys: {},
+	folder: DEFAULT_SEND_FOLDER,
+	sendOverSsh: false,
+	lastTag: null,
+};
 
 /**
  * The gate: everything Zotero is Tagged Sync Pro (spec §5).

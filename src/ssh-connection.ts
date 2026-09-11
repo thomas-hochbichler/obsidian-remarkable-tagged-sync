@@ -79,6 +79,14 @@ export interface DeviceConnection extends DeviceFiles {
 	readonly hostKeyFingerprint: string;
 	/** One command on the device. Pairing needs it; the sync path uses only the three above. */
 	exec(command: string, stdin?: string): Promise<string>;
+	/**
+	 * Writes one file under the xochitl directory, creating it.
+	 *
+	 * Deliberately **not** on {@link DeviceFiles}: everything that reads the account takes that
+	 * interface, and none of it may write. Only Send reaches for a connection itself, and Send only
+	 * ever adds files under an id nothing else has (spec §1.2).
+	 */
+	write(path: string, bytes: Uint8Array): Promise<void>;
 	close(): Promise<void>;
 }
 
@@ -234,6 +242,12 @@ export async function connectToDevice(credentials: SshCredentials): Promise<Devi
 				if (stat !== null) stats.push(stat);
 			}
 			return stats;
+		},
+
+		write(path: string, bytes: Uint8Array): Promise<void> {
+			return new Promise((resolve, reject) => {
+				sftp.writeFile(`${XOCHITL_DIR}/${path}`, Buffer.from(bytes), (error) => (error ? reject(error) : resolve()));
+			});
 		},
 
 		read(path: string): Promise<Uint8Array> {

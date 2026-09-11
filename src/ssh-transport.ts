@@ -21,7 +21,9 @@ import {
 	USB_HOST,
 } from "./ssh-connection";
 import type { Entitlement } from "./licence-state";
+import { sendOverSsh } from "./ssh-send";
 import type { Transport, TransportId, TransportSession, TransportStatus } from "./transport";
+import type { SendDocument, SendTransport } from "./zotero-send";
 
 export const SSH_TRANSPORT_LABEL = "your reMarkable";
 
@@ -72,7 +74,7 @@ export interface SshTransportStore {
 	report?(message: string): void;
 }
 
-export class SshTransport implements Transport {
+export class SshTransport implements Transport, SendTransport {
 	readonly id = "ssh" as const;
 	readonly label = SSH_TRANSPORT_LABEL;
 
@@ -106,6 +108,23 @@ export class SshTransport implements Transport {
 		} catch (error) {
 			await connection.close();
 			throw error;
+		}
+	}
+
+	/**
+	 * Send over SSH (spec §2.4): its own connection, closed in a `finally`, and a restart at the end.
+	 *
+	 * Not built on `open()` for two reasons. That one indexes and hashes the whole account before it
+	 * answers -- minutes of work a send has no use for -- and what it hands back is the read-only
+	 * {@link SyncApi}. Writing needs the connection itself, which is the one thing this class already
+	 * holds and nothing else may.
+	 */
+	async putPdf(document: SendDocument): Promise<{ docId: string }> {
+		const connection = await this.connect(this.store.settings());
+		try {
+			return await sendOverSsh(connection, document);
+		} finally {
+			await connection.close();
 		}
 	}
 

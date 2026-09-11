@@ -5,9 +5,16 @@ import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import { explainTransportError, type Transport } from "./transport";
 
 vi.mock("rmapi-js", () => ({
-	session: vi.fn(() => ({ raw: {} })),
+	session: vi.fn(() => ({
+		raw: {},
+		listItems: async () => [],
+		putFolder: async () => ({ id: "folder-1" }),
+		putPdf: async () => ({ id: "doc-1" }),
+	})),
 	auth: vi.fn(),
 	register: vi.fn(),
+	// Imported by `cloud-send.ts`, which the cloud transport's own `putPdf` goes through.
+	GenerationError: class GenerationError extends Error {},
 }));
 
 function cloudWith(auth: Partial<RemarkableAuth>): CloudTransport {
@@ -64,5 +71,17 @@ describe("explainTransportError", () => {
 		const sentence = explainTransportError(opinionated(null), new Error("File already exists."), "sync");
 
 		expect(sentence).toContain("local name conflict");
+	});
+});
+
+describe("sending a PDF through the cloud", () => {
+	// A session of its own. The one `open()` hands out is the engine's six read methods, and widening
+	// that so a send could borrow it would put `putPdf` within reach of the sync engine.
+	it("opens its own session and hands back the id the cloud gave", async () => {
+		const session = vi.fn(async () => "token");
+		const cloud = cloudWith({ isConnected: () => true, session });
+
+		expect(await cloud.putPdf({ visibleName: "Prompting", bytes: new Uint8Array([37]), folder: "Zotero", tag: "#papers" })).toEqual({ docId: "doc-1" });
+		expect(session).toHaveBeenCalled();
 	});
 });

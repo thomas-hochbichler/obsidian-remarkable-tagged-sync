@@ -128,6 +128,7 @@ function connection(overrides: Partial<DeviceConnection> = {}): DeviceConnection
 	return {
 		hostKeyFingerprint: "SHA256:abc",
 		exec: async () => "",
+		write: async () => {},
 		list: async () => [],
 		read: async () => new Uint8Array(),
 		hash: async () => new Map(),
@@ -324,5 +325,50 @@ describe("the hash cache", () => {
 		cache.get({ path: "here.rm", size: 2, mtimeMs: 1_000 });
 
 		expect(cache.pruned()).toEqual({ "here.rm|2|1000": "kept" });
+	});
+});
+
+describe("sending a PDF over SSH", () => {
+	beforeEach(() => vi.mocked(connectToDevice).mockReset());
+
+	const document = { visibleName: "Prompting", bytes: new Uint8Array([37, 80]), folder: "Zotero", tag: "#papers" };
+
+	it("writes the document and restarts the reading app", async () => {
+		const written = new Map<string, Uint8Array>();
+		const commands: string[] = [];
+		const close = vi.fn(async () => {});
+		vi.mocked(connectToDevice).mockResolvedValue(
+			connection({
+				write: async (path, bytes) => void written.set(path, bytes),
+				exec: async (command) => {
+					commands.push(command);
+					return "";
+				},
+				close,
+			}),
+		);
+
+		const { docId } = await transport().putPdf(document);
+
+		expect(written.get(`${docId}.pdf`)).toEqual(document.bytes);
+		expect(commands).toEqual(["systemctl restart xochitl"]);
+		expect(close).toHaveBeenCalled();
+	});
+
+	// The connection is a socket to a tablet: left open by a send that threw, it stays open until the
+	// process ends, and the next send opens a second one beside it.
+	it("closes the connection even when the send fails", async () => {
+		const close = vi.fn(async () => {});
+		vi.mocked(connectToDevice).mockResolvedValue(
+			connection({
+				write: async () => {
+					throw new Error("disk full");
+				},
+				close,
+			}),
+		);
+
+		await expect(transport().putPdf(document)).rejects.toThrow("disk full");
+		expect(close).toHaveBeenCalled();
 	});
 });

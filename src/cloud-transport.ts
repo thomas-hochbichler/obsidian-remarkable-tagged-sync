@@ -10,15 +10,17 @@
  * here as well would be two copies of one paragraph.
  */
 
+import { sendToCloud } from "./cloud-send";
 import { isOfflineError } from "./explain-error";
 import type { RemarkableAuth } from "./remarkable-auth";
 import { openSession } from "./remarkable-session";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import type { Transport, TransportSession, TransportStatus } from "./transport";
+import type { SendDocument, SendTransport } from "./zotero-send";
 
 export const CLOUD_TRANSPORT_LABEL = "reMarkable's cloud";
 
-export class CloudTransport implements Transport {
+export class CloudTransport implements Transport, SendTransport {
 	readonly id = "cloud" as const;
 	readonly label = CLOUD_TRANSPORT_LABEL;
 
@@ -37,6 +39,15 @@ export class CloudTransport implements Transport {
 		const api = openSession(await this.auth.session());
 		// Nothing to tear down: rmapi-js talks HTTPS per request and holds no socket of its own.
 		return { api, close: async () => {} };
+	}
+
+	/**
+	 * Send's whole surface here (spec §2.4). A session of its own rather than the one `open()` hands
+	 * out: that one is a {@link SyncApi}, six read methods, and widening it so a send could borrow it
+	 * would put `putPdf` within reach of the sync engine -- which must never write anything at all.
+	 */
+	async putPdf(document: SendDocument): Promise<{ docId: string }> {
+		return await sendToCloud(openSession(await this.auth.session()), document);
 	}
 
 	explainError(): string | null {

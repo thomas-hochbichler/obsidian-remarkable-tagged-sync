@@ -4,7 +4,7 @@ import { isGated } from "./ocr-resolution";
 import { ocrBackendEntries } from "./ocr-registry";
 import { allowedTransports } from "./ssh-transport";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
-import { createZoteroClientFor, zoteroAllowed } from "./zotero-settings";
+import { createZoteroClientFor, DEFAULT_ZOTERO_SETTINGS, zoteroAllowed } from "./zotero-settings";
 
 /**
  * Everything Tagged Sync Pro sells, in one list a test can walk.
@@ -203,7 +203,7 @@ const ZOTERO_CAPABILITY: ProCapability = {
 		site: "src/zotero-settings.ts createZoteroClientFor, called from src/main.ts zoteroClient and asked by src/settings-tab.ts renderZotero",
 		run: (entitlement) => {
 			const client = createZoteroClientFor(
-				{ settings: () => ({ apiKey: "key", useLocal: true, localKeys: {} }), saveLocalKey: async () => {} },
+				{ settings: () => ({ ...DEFAULT_ZOTERO_SETTINGS, apiKey: "key", useLocal: true }), saveLocalKey: async () => {} },
 				entitlement,
 			);
 			return client === null ? "refused-in-place" : "allowed";

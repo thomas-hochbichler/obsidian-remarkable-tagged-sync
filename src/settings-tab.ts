@@ -22,11 +22,13 @@ import { backendPromise, defaultOcrBackend, hasAlternativeBackends } from "./ocr
 import { BACKGROUND_CONSENT_NAME, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
 import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
+import { SSH_SEND_RESTART_NOTE } from "./ssh-send";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
+import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
 import { zoteroAllowed } from "./zotero-settings";
 import { visionRunStats } from "./vision-ocr-backend";
@@ -590,6 +592,35 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					await this.plugin.saveData(this.plugin.data);
 					// Redrawn, because the status line above is now about a different set of connections.
 					this.display();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Tablet folder for sent PDFs")
+			.setDesc("Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.")
+			.addText((text) => {
+				text.setDisabled(!unlocked);
+				text.setPlaceholder(DEFAULT_SEND_FOLDER);
+				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+				text.setValue(settings.folder).onChange((value) => {
+					// Blank is the default rather than a folder with no name: a document put at the root of
+					// the tablet is one the user has to go looking for.
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, folder: value.trim() === "" ? DEFAULT_SEND_FOLDER : value.trim() };
+					persist();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Send over SSH when the cloud is not connected")
+			// The spec's own wording, and it is here rather than in a notice afterwards because it is the
+			// one thing about this plugin that interrupts the person holding the tablet. They agree to it
+			// once, in advance, rather than finding out when their page closes.
+			.setDesc(`${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`)
+			.addToggle((toggle) => {
+				toggle.setValue(settings.sendOverSsh).setDisabled(!unlocked);
+				toggle.onChange(async (value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendOverSsh: value };
+					await this.plugin.saveData(this.plugin.data);
 				});
 			});
 
