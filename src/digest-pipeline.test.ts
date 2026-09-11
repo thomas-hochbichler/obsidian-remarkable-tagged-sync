@@ -1245,7 +1245,7 @@ describe("where the digest's entries sit on the source page", () => {
 		// cannot recover from the rectangles themselves.
 		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
 
-		expect(result.pages[0].source).toEqual({ index: 1, heightPt: PAGE_HEIGHT_PT });
+		expect(result.pages[0].source).toEqual({ index: 1, widthPt: PAGE_WIDTH_PT, heightPt: PAGE_HEIGHT_PT });
 	});
 
 	// ⚠️ Without a text layer the frame is the *device screen*, so a rectangle measured on it names a

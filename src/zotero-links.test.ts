@@ -68,6 +68,24 @@ describe("the annotations we have written", () => {
 		expect(linkFor(stored, DOC)?.annotations["hl-1"].written).toEqual({ comment: "", text: "x" });
 	});
 
+	// The list is field names, and a `data.json` that carries something else there would otherwise make
+	// the writer compare against a field that does not exist -- and never refresh the real one.
+	it("keeps only field names in the list of what the user has taken over", () => {
+		const stored = {
+			[DOC]: {
+				attachmentKey: "A",
+				library: "user",
+				annotations: { "hl-1": { key: "K1", written: { comment: "ours" }, userEdited: ["comment", 7, null] } },
+			},
+		};
+		expect(linkFor(stored, DOC)?.annotations["hl-1"].userEdited).toEqual(["comment"]);
+	});
+
+	it("says nothing about fields the user has taken over where there are none", () => {
+		const stored = { [DOC]: { attachmentKey: "A", library: "user", annotations: { "hl-1": { key: "K1", userEdited: [] } } } };
+		expect(linkFor(stored, DOC)?.annotations["hl-1"]).not.toHaveProperty("userEdited");
+	});
+
 	it("keeps only the fields a refresh may compare, whatever else the entry carries", () => {
 		const stored = {
 			[DOC]: {

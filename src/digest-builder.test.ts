@@ -12,7 +12,7 @@ function top(pdfY: number): number {
 }
 
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
-	return { id: "hl-000000", sentence: "", rects: [], marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
+	return { id: "hl-000000", sentence: "", rects: [], tool: "marker", marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
 }
 
 function note(overrides: Partial<DigestNote> = {}): DigestNote {
@@ -52,7 +52,7 @@ const NOTE_NEXT_TO_HIGHLIGHT = note({
 const FIXTURE_PAGE: DigestPage = {
 	pageLabel: "2",
 	embedPage: 2,
-	source: { index: 1, heightPt: PAGE_HEIGHT },
+	source: { index: 1, widthPt: 612, heightPt: PAGE_HEIGHT },
 	highlights: [
 		highlight({
 			id: "hl-9f21c4",

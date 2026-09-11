@@ -556,6 +556,20 @@
       file: src/zotero-links.test.ts
       test: "the annotations we have written > keeps an empty value we wrote, because that is a value and not an absence"
 
+    - id: Y8.19
+      scenario: A stored `userEdited` list carrying something that is not a field name
+      expect: Only the names survive. Anything else would make the writer compare against a field that does not exist, and never refresh the real one
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the annotations we have written > keeps only field names in the list of what the user has taken over"
+
+    - id: Y8.20
+      scenario: An annotation the user has taken no field of
+      expect: No `userEdited` key at all, so the stored shape says what it means
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the annotations we have written > says nothing about fields the user has taken over where there are none"
+
     - id: Y8.13
       scenario: An entry carrying fields this build does not write
       expect: Only the six a refresh compares. Everything else is somebody else's, and comparing against it would report edits nobody made
@@ -948,3 +962,342 @@
       layer: unit
       file: src/zotero-links.test.ts
       test: "a question the user closed > gives way to a link written later"
+
+- feature: Y13
+  name: A digest entry as a Zotero annotation
+  code: src/zotero-annotations.ts
+  tier: pro
+  scenarios:
+    - id: Y13.1
+      scenario: A marker swipe and a pen mark
+      expect: '`highlight` and `underline`. The digest renders both identically -- the reader wants the passage, not the tool -- but in Zotero they are two different marks (§3.1)'
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "what kind of annotation an entry becomes > makes a marker swipe a highlight and a pen mark an underline"
+
+    - id: Y13.2
+      scenario: A margin note that is not anchored to a highlight
+      expect: A sticky `note` (§3.1)
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "what kind of annotation an entry becomes > makes a standalone margin note a sticky"
+
+    - id: Y13.3
+      scenario: A highlight whose runs have no rectangles
+      expect: Nothing is offered. `annotationPosition` is not optional, and the entry is in the vault note either way
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "what kind of annotation an entry becomes > offers nothing for a highlight with no place on the page"
+
+    - id: Y13.4
+      scenario: A margin note whose transcription came back empty
+      expect: No sticky. One with no comment marks a spot and says nothing -- it cannot be told from a stray click, and the ink is in the vault's own PDF
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "what kind of annotation an entry becomes > offers nothing for a margin note that could not be transcribed"
+
+    - id: Y13.5
+      scenario: A margin note with no box on the source page
+      expect: No sticky, for the same reason as Y13.3
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "what kind of annotation an entry becomes > offers nothing for a margin note with no place on the page"
+
+    - id: Y13.6
+      scenario: The text of a highlight annotation
+      expect: The marked runs, never the sentence around them. In Zotero the annotation sits on the page it came from, so the sentence is not context there -- it is a claim that the reader marked words the page shows they did not
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the words the annotation carries > is the marked runs, never the sentence around them"
+
+    - id: Y13.7
+      scenario: A gesture recorded as several runs
+      expect: The passage it covered, joined
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the words the annotation carries > joins several runs of one gesture into the passage it covered"
+
+    - id: Y13.8
+      scenario: A highlight the text layer could not resolve into runs
+      expect: What the device itself recorded -- which is what the F4 soft fail puts in `sentence` and the only thing that is there
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the words the annotation carries > falls back to what the device recorded when no run is known"
+
+    - id: Y13.9
+      scenario: Margin notes written beside a highlight
+      expect: They become that annotation's comment, one blank line apart (§3.1)
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the words the annotation carries > carries a margin note anchored to a highlight as that highlight's comment"
+
+    - id: Y13.10
+      scenario: A highlight with nothing written beside it
+      expect: An empty comment, which is a value we wrote and is remembered as one
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the words the annotation carries > leaves the comment empty where nothing was written beside the passage"
+
+    - id: Y13.11
+      scenario: The position field
+      expect: A JSON **string** in the PDF's own frame. Zotero's data layer rejects the object form outright
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "where Zotero is told the annotation sits > is a string, in the PDF's own frame"
+
+    - id: Y13.12
+      scenario: A gesture over two wrapped lines
+      expect: Two rectangles. Their union would paint the unmarked ends of the first and last line as marked
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "where Zotero is told the annotation sits > carries one rectangle per run, so a wrapped gesture marks the words and not the block"
+
+    - id: Y13.13
+      scenario: A margin note whose ink is flat and sits past the page edge
+      expect: A 22 pt square, on the page. Both facts are real in the fixture -- a horizontal stroke has no height, and the device's canvas is wider than the paper -- and Zotero paints a rectangle, so either one paints nothing
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "where Zotero is told the annotation sits > gives a sticky a square Zotero can actually draw, on the page"
+
+    - id: Y13.14
+      scenario: An ordinary margin note
+      expect: The square sits at the top-left of the ink -- where the reader started writing, and the corner Zotero anchors a note's icon to
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "where Zotero is told the annotation sits > puts the sticky at the corner the reader started writing in"
+
+    - id: Y13.15
+      scenario: The sort index
+      expect: '`PPPPP|000000|TTTTT`. The middle field is the reader''s own character offset, which we do not have -- zero sorts ours by page and height, and inventing one would sort them by a number that means nothing'
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the sort index Zotero will not do without > is the page, six zeros, and the distance from the page top"
+
+    - id: Y13.16
+      scenario: A rectangle above the page top or far below its bottom
+      expect: Still five digits. The format is fixed width, and a negative number or a sixth digit makes Zotero refuse the whole annotation
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the sort index Zotero will not do without > stays five digits for a rectangle off the top or the bottom of the page"
+
+    - id: Y13.17
+      scenario: An entry with no rectangle at all
+      expect: The top of its page, rather than no index -- the field is `NOT NULL` in Zotero's own schema
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the sort index Zotero will not do without > puts an entry with no rectangle at the top of its page rather than nowhere"
+
+    - id: Y13.18
+      scenario: The reMarkable's palette
+      expect: Each colour snapped to the nearest of Zotero's eight. Off that list a colour is invisible in the reader's colour filter and its sidebar grouping, which is most of what a colour is for there
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the colour > is the nearest of the eight Zotero's reader offers"
+
+    - id: Y13.19
+      scenario: A pen mark, and a highlight the device recorded without a colour
+      expect: Zotero's own default yellow (§3.2)
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the colour > is Zotero's own yellow for a mark that has no colour"
+
+    - id: Y13.20
+      scenario: Every colour this plugin can send
+      expect: Lowercase six-digit hex. Zotero's data layer matches `#[a-f0-9]{6}` and rejects anything else, uppercase included
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the colour > is always lowercase six-digit hex"
+
+    - id: Y13.21
+      scenario: A document that numbers its front matter in roman
+      expect: The document's own label, `xii`. The physical page is already carried by `pageIndex`
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the page label > is the document's own, as the digest reads it"
+
+    - id: Y13.22
+      scenario: A document with no page labels
+      expect: '`""` (§3.2), rather than an ordinal that would read as the document''s own numbering'
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the page label > is empty where the document does not number its pages"
+
+- feature: Y14
+  name: Add and refresh, never delete
+  code: src/zotero-writeback.ts
+  tier: pro
+  scenarios:
+    - id: Y14.1
+      scenario: A highlight Zotero has never seen
+      expect: Created, with what to remember about it -- the record is what every later sync compares against
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight Zotero has never seen > is created, with what to remember about it"
+
+    - id: Y14.2
+      scenario: A page with a highlight and a standalone margin note
+      expect: A highlight and a sticky, in reading order
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight Zotero has never seen > carries a standalone margin note as a sticky of its own"
+
+    - id: Y14.3
+      scenario: Nothing about a known annotation has changed
+      expect: No request at all. A refresh that rewrites identical fields costs a version bump in the user's library for nothing
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > is left alone when nothing about it has changed"
+
+    - id: Y14.4
+      scenario: A margin note written beside a highlight that was already synced
+      expect: A patch carrying only the changed field, under the version it was read at
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > is refreshed, field by field, when the tablet says something new"
+
+    - id: Y14.5
+      scenario: The user edited one of our fields in Zotero
+      expect: That field is never written again, then or on any later sync. The comparison is against **what we wrote**, so a difference can only be theirs (§3.3)
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > never writes a field the user has edited in Zotero, then or ever after"
+
+    - id: Y14.6
+      scenario: One field taken over by the user, another changed on the tablet
+      expect: The surrendered field is left alone and the other is refreshed. Surrender is per field, not per annotation
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > keeps refreshing the fields the user has not touched"
+
+    - id: Y14.7
+      scenario: The user deleted one of our annotations in Zotero
+      expect: Remembered as deleted. Re-creating it would overrule a decision silently, and every sync would do it again
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > stays deleted once the user has deleted it"
+
+    - id: Y14.8
+      scenario: The sync after that one
+      expect: Still not recreated -- which is the only thing that tells "deleted by the user" from "never written"
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > is not created again on any later sync either"
+
+    - id: Y14.9
+      scenario: '`data.json` lost its mapping while the annotations survived (a restored vault, a second machine)'
+      expect: Our own annotations are adopted by `(type, page, text)` instead of duplicated. Without it the next sync writes a second copy of every highlight, and only deleting them by hand puts it right
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "when the mapping is lost but the annotations are not > adopts our own annotation rather than writing a second copy of it"
+
+    - id: Y14.10
+      scenario: A tagged annotation that differs in page, in text, or in kind
+      expect: Not adopted. All three have to agree; an annotation we cannot identify is one we have no business editing
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "when the mapping is lost but the annotations are not > matches on type, page and text together, never on one of them"
+
+    - id: Y14.11
+      scenario: Two entries that would both match the same annotation
+      expect: One each. The second adopting the first's annotation would leave one highlight describing the other
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "when the mapping is lost but the annotations are not > gives two entries two annotations, never the same one twice"
+
+    - id: Y14.12
+      scenario: An adopted annotation whose fields have drifted
+      expect: Refreshed to what the tablet says. There is no record of writing it, so nothing about it reads as the user's edit -- which is what adoption is for
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "when the mapping is lost but the annotations are not > refreshes an adopted annotation to what the tablet says"
+
+    - id: Y14.13
+      scenario: A page the reader added on the device
+      expect: Skipped, and counted. It is no page of the source PDF, so nothing on it has a place there (§3.1)
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "what is not written at all > skips a page the reader added on the device"
+
+    - id: Y14.24
+      scenario: A margin note whose transcription came back empty
+      expect: Skipped, and counted. There is nothing to put in a sticky, and the ink is in the vault's own PDF
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "what is not written at all > skips a margin note there is nothing to say about"
+
+    - id: Y14.14
+      scenario: An entry with no place on its page
+      expect: Skipped, and counted -- the vault note still carries it
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "what is not written at all > skips an entry that has no place on its page"
+
+    - id: Y14.15
+      scenario: The user's own Zotero highlights
+      expect: Never mentioned in the plan. They are not in the input at all -- the client filters by the ownership tag on the server -- and nothing here invents them
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "what is not written at all > never touches an annotation that is not one of ours"
+
+    - id: Y14.16
+      scenario: A highlight the reader removed on the tablet
+      expect: 'Its annotation stays where it is. "Never delete" costs no code: it is simply no longer a digest entry (§3.3)'
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "what is not written at all > leaves an annotation in place when its highlight is gone from the tablet"
+
+    - id: Y14.17
+      scenario: A batch of new annotations
+      expect: Each key recorded against the block id that asked for it -- position is the only identity a not-yet-created annotation has
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > records the key Zotero gave each new annotation"
+
+    - id: Y14.18
+      scenario: Zotero refuses one annotation of a batch
+      expect: The created ones are mapped, the refused one is not, and the count says how far it got. The next sync creates it again -- which is safe precisely because nothing is ever deleted (§3.4.3)
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > keeps what landed when Zotero refuses one of a batch"
+
+    - id: Y14.25
+      scenario: The create call throws something that is not a `ZoteroError`
+      expect: Its message is reported and nothing is recorded, so the next sync creates the annotations again. Swallowing it would be a write-back that silently never happened
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > reports a failure that is not Zotero's own words, rather than swallowing it"
+
+    - id: Y14.19
+      scenario: The desktop app goes away mid-run
+      expect: Everything already written is kept and reported. Retrying here would only make the next sync slower -- the client has already honoured whatever wait was asked for
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > stops at the first failure and keeps everything before it"
+
+    - id: Y14.20
+      scenario: Zotero answers 412 -- the item changed between our read and our write
+      expect: The field is handed over, exactly as if the edit had been visible in the read. That window is the user editing it by hand
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > hands a field over when Zotero says the item changed under us"
+
+    - id: Y14.21
+      scenario: A deletion the user made
+      expect: Written into `data.json`, so the next sync does not undo it
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > remembers a deletion the user made, so the next sync does not undo it"
+
+    - id: Y14.22
+      scenario: A document whose annotations are all up to date
+      expect: No request of any kind. A sync of an unchanged document must not touch the user's library
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > asks Zotero for nothing when there is nothing to do"
+
+    - id: Y14.23
+      scenario: An annotation read from the web, patched
+      expect: The patch carries that connection's version and goes back to it. Local and web versions are unrelated -- 246 against 986 for one item -- so the wrong one is either a false conflict or a silent overwrite
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > sends a patch back to the connection its version came from"

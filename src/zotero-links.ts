@@ -45,6 +45,16 @@ export interface LinkedAnnotation {
 	readonly key: string;
 	readonly written: WrittenAnnotationFields;
 	readonly deleted?: true;
+	/**
+	 * Fields the user has edited in Zotero, which we never write again (§3.3, "user's value wins,
+	 * that field never overwritten again").
+	 *
+	 * A list rather than a re-reading of the value, because the value cannot answer the question: once
+	 * their edit is noticed, remembering *their* text as ours makes the field look untouched again on
+	 * the next sync, and it would be overwritten with what the tablet says. The surrender has to be
+	 * the thing that is stored.
+	 */
+	readonly userEdited?: readonly string[];
 }
 
 /** One reMarkable document's link to one Zotero attachment. */
@@ -99,7 +109,13 @@ function annotationsOf(value: unknown): Record<string, LinkedAnnotation> {
 		const stored = asRecord(entry);
 		const key = asString(stored.key);
 		if (key === undefined) continue;
-		annotations[blockId] = { key, written: writtenFields(stored.written), ...(stored.deleted === true ? { deleted: true as const } : {}) };
+		const userEdited = Array.isArray(stored.userEdited) ? stored.userEdited.filter((field): field is string => typeof field === "string") : [];
+		annotations[blockId] = {
+			key,
+			written: writtenFields(stored.written),
+			...(stored.deleted === true ? { deleted: true as const } : {}),
+			...(userEdited.length > 0 ? { userEdited } : {}),
+		};
 	}
 	return annotations;
 }

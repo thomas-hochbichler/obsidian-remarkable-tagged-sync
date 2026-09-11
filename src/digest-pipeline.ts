@@ -317,6 +317,7 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
 				// device screen (see `buildDigest`), and the same numbers would put the mark somewhere on
 				// the tablet -- the condition `DigestPage.source` is derived from.
 				rects: pageText === null ? [] : rects,
+				tool: "marker",
 				// F4's soft fail: without a text layer -- or when the rectangles hit no line -- the
 				// device's own recorded text is still the truth about what was highlighted.
 				sentence: found?.sentence ?? oneLine(source.text),
@@ -341,11 +342,12 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
  * that: the text of a mark entry comes out of the PDF, exactly as a marker highlight's does. It also
  * makes underlines work where no OCR backend exists at all.
  */
-function placeMark(page: DigestPageInput, mark: InkMark): PlacedHighlight {
+function placeMark(page: DigestPageInput, mark: InkMark, tool: "marker" | "pen"): PlacedHighlight {
 	return {
 		pdfRect: mark.pdfRect,
 		fromInk: true,
 		highlight: {
+			tool,
 			id: digestId("hl", page.pageId, mark.strokeId),
 			// One box, and it is the marked *text's* rather than the ink's -- see `InkMark.pdfRect`. An
 			// underline's own box sits in the whitespace below the words, which is not what was marked.
@@ -364,7 +366,9 @@ function placeMark(page: DigestPageInput, mark: InkMark): PlacedHighlight {
 function buildInkMarks(page: DigestPageInput, geometry: PageGeometry, ink: RmStroke[]): { marks: PlacedHighlight[]; strokes: RmStroke[] } {
 	if (geometry.pageText === null) return { marks: [], strokes: ink };
 	const found = findInkMarks(ink, geometry.pageText, geometry.frame, geometry.lineHeightPt);
-	return { strokes: found.strokes, marks: found.marks.map((mark) => placeMark(page, mark)) };
+	// A pen, whatever shape it drew: a line under the words, a ring around them. `fromInk` above says
+	// "found among the strokes", which a marker swipe is too -- this says which hand made it.
+	return { strokes: found.strokes, marks: found.marks.map((mark) => placeMark(page, mark, "pen")) };
 }
 
 /**
@@ -376,7 +380,7 @@ function buildInkMarks(page: DigestPageInput, geometry: PageGeometry, ink: RmStr
 function buildMarkerMarks(page: DigestPageInput, geometry: PageGeometry): PlacedHighlight[] {
 	if (geometry.pageText === null) return [];
 	const marker = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => isHighlighterOrShader(stroke.penType));
-	return findMarkerMarks(marker, geometry.pageText, geometry.frame, geometry.lineHeightPt).map((mark) => placeMark(page, mark));
+	return findMarkerMarks(marker, geometry.pageText, geometry.frame, geometry.lineHeightPt).map((mark) => placeMark(page, mark, "marker"));
 }
 
 /**
@@ -442,6 +446,9 @@ function mergeBySentence(placed: PlacedHighlight[]): { highlights: PlacedHighlig
 				// adjusted it, and all of it is what they marked. `pdfRect` stays the survivor's -- it is
 				// the anchor cascade's input, and that is about where the entry *sits*.
 				rects: members.flatMap((member) => member.highlight.rects),
+				// A passage that was swiped *and* underlined is a highlight: the marker is the stronger
+				// claim, and the survivor may be the pen only because it sits a fraction higher.
+				tool: members.some((member) => member.highlight.tool === "marker") ? ("marker" as const) : ("pen" as const),
 			},
 		};
 	});
@@ -753,7 +760,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		embedPage: page.embedPage,
 		// The frame is the source page's own only when its text layer could be read; otherwise it is
 		// the device screen and nothing measured here belongs to the document.
-		source: geometry.pageText === null ? null : { index: page.sourceIndex, heightPt: geometry.frame.heightPt },
+		source: geometry.pageText === null ? null : { index: page.sourceIndex, widthPt: geometry.frame.widthPt, heightPt: geometry.frame.heightPt },
 		highlights: highlights.map((item) => item.highlight),
 		notes: standalone,
 	};

@@ -86,6 +86,16 @@ export interface DigestHighlight {
 	 */
 	marked: string[];
 	/**
+	 * Which tool the reader marked this passage with.
+	 *
+	 * The digest renders both identically -- F9, and the reader wants the passage rather than the tool
+	 * -- but they are not the same act, and something writing them into another reader's document has
+	 * to say which: a swipe of the marker is a highlight, a line drawn under the words is an underline.
+	 * Kept here rather than derived from `color`, which is null for a marker the device recorded
+	 * without one as well as for every pen.
+	 */
+	tool: "marker" | "pen";
+	/**
 	 * The marker's color. Carried through the model but deliberately never rendered: F9 keeps every
 	 * highlight a uniform `==...==`, because color semantics ("yellow = important") is the user's
 	 * private convention and guessing at it would put meaning in the note that nobody stated. Do not
@@ -112,6 +122,8 @@ export interface DigestHighlight {
 export interface DigestPageSource {
 	/** 0-based index of the page in the source PDF. */
 	index: number;
+	/** The source page's width in PDF points. */
+	widthPt: number;
 	/** The source page's height in PDF points -- the axis every rectangle here is measured against. */
 	heightPt: number;
 }
