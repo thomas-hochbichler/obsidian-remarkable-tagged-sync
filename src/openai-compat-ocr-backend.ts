@@ -232,6 +232,11 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
  * It names the tall-page shape because that is the one that has produced it: a page scrolled far
  * past a screen becomes one very tall image, and a local model given greedy decoding did not finish
  * reading it at all. The advice is what the user can actually do about it today.
+ *
+ * `pro/anthropic-ocr-backend.ts` has a sentence of the same name and it is **not** this one: it names
+ * Anthropic where this names the server's own URL, and it has no tall-page advice to give, because a
+ * hosted model that does not answer is not slow for a reason the user can see. Two sentences about
+ * two situations, not one sentence in two places.
  */
 function timeoutWarning(pages: number, baseURL: string): string {
 	return (
@@ -250,6 +255,11 @@ function timeoutWarning(pages: number, baseURL: string): string {
  * not read as a plugin bug; the lever, which has to stand alone for someone who never opened
  * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
  * hash is unchanged, so "Re-transcribe all notes" is the repair.
+ *
+ * `pro/anthropic-ocr-backend.ts` carries the same four things and says so in its own docstring. The
+ * one thing it cannot borrow is the lever: here the fix is a model that does not reason, or the
+ * setting that stops it; there, thinking cannot be switched off at all, so the lever is the model
+ * alone. Keep the four things in step; leave the lever to each.
  */
 function truncationWarning(pages: number): string {
 	return (
@@ -259,7 +269,13 @@ function truncationWarning(pages: number): string {
 	);
 }
 
-/** "1 page was" / "3 pages were", so the warnings above read as sentences. */
+/**
+ * "1 page was" / "3 pages were", so the warnings above read as sentences.
+ *
+ * Identical to `pro/anthropic-ocr-backend.ts`'s, and the only thing in this pair that is.
+ * Deliberately left duplicated: a shared module for one line would be an abstraction for
+ * single-use code (CLAUDE.md §2), and the sentences it serves are not shared anyway.
+ */
 function pageCount(pages: number): string {
 	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
 }

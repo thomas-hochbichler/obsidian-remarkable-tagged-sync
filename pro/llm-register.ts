@@ -53,6 +53,11 @@ function paintLine(el: HTMLElement, text: string, color: string): void {
  * Renders one probe's answer (spec §8) into the settings callout: what the model can see, tone scaled
  * to the provider's detection reach (spec §5.1), and whether it reasons before answering. It only
  * ever informs -- a mis-picked model still degrades to `failed` at run time, never blocked here.
+ *
+ * `src/localhost-register.ts` renders the same callout on the same tone scale and rewrites one
+ * string: `unreachable` on a server the user runs themselves is not a network mystery but an app
+ * that is not running. Its docstring says so; this note is the other half of that pair, so a change
+ * here is read beside it.
  */
 function renderCapabilities(el: HTMLElement, caps: ModelCapabilities, model: string, meta: ProviderMeta): void {
 	el.empty();
@@ -76,6 +81,11 @@ function renderCapabilities(el: HTMLElement, caps: ModelCapabilities, model: str
  * is where a user finds that out. It does not offer to switch thinking off: the plugin sends no
  * reasoning parameter, and on Anthropic's Fable and Mythos models thinking cannot be disabled at all
  * (`{"type":"disabled"}` is refused). The lever is the model, on every provider here.
+ *
+ * **`src/localhost-register.ts` has its own, and it stays separate on purpose.** That one names
+ * `-instruct` as the lever -- a naming convention of the model hubs a local server pulls from, which
+ * says nothing about a hosted model -- and it has no bill to mention. The two must agree about what
+ * reasoning costs a user, never about the wording.
  */
 function thinkingSentence(model: string, meta: ProviderMeta): string {
 	if (meta.kind === "cloud") {
@@ -90,7 +100,13 @@ function thinkingSentence(model: string, meta: ProviderMeta): string {
 	);
 }
 
-/** The vision half, or `null` where there is nothing to say about it (`none`: no probe was made). */
+/**
+ * The vision half, or `null` where there is nothing to say about it (`none`: no probe was made).
+ *
+ * Word for word the same as `src/localhost-register.ts`'s, and deliberately so: the sentence is about
+ * the *model*, which is the same question wherever it is asked. Keep them identical, and take a
+ * difference here as a mistake rather than as a provider's own voice.
+ */
 function visionSentence(verdict: VisionVerdict, model: string, provider: string): { text: string; color: string } | null {
 	switch (verdict) {
 		case "none":

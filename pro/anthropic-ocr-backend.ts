@@ -202,12 +202,25 @@ export class AnthropicOcrBackend implements OcrBackend {
 }
 
 
-/** "1 page was" / "3 pages were", so the warnings above read as sentences. */
+/**
+ * "1 page was" / "3 pages were", so the warnings above read as sentences.
+ *
+ * Identical to `src/openai-compat-ocr-backend.ts`'s, and the only thing in this pair that is.
+ * Deliberately left duplicated: a shared module for one line would be an abstraction for
+ * single-use code (CLAUDE.md §2), and the sentences it serves are not shared anyway.
+ */
 function pageCount(pages: number): string {
 	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
 }
 
-/** The sentence a page that went unanswered puts in the report -- the adapter's, wearing this endpoint's name. */
+/**
+ * The sentence a page that went unanswered puts in the report -- the adapter's, wearing this
+ * endpoint's name.
+ *
+ * `src/openai-compat-ocr-backend.ts` has one of the same name that is deliberately different: it
+ * names the server's own URL and adds tall-page advice, a shape a user running their own server can
+ * act on. Nothing to share here beyond `pageCount`.
+ */
 function timeoutWarning(pages: number): string {
 	return (
 		`${pageCount(pages)} left out because Anthropic did not answer in ${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ` +

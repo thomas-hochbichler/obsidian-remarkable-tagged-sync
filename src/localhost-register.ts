@@ -135,6 +135,14 @@ function renderCapabilities(el: HTMLElement, caps: ModelCapabilities, model: str
  * reserved for "transcription will fail", and a reasoning model transcribes -- slowly, and sometimes
  * a page short. Overstating it would make the one red string in this pane mean two different things.
  *
+ * **`pro/llm-register.ts` has its own, and the difference is deliberate.** A cloud provider bills the
+ * reasoning tokens, so its version carries a third clause about the bill; and `-instruct` is a naming
+ * convention of the model hubs these servers pull from, which means nothing at OpenAI or Anthropic,
+ * so only this one names the lever that way. The two are *not* a copy waiting to be merged -- what
+ * they share is the first clause, and sharing that alone would leave a helper that takes a flag to
+ * decide everything it actually says. Change one and read the other; they must stay in step about
+ * what reasoning costs, not about the wording.
+ *
  * It names the lever, because it has to stand alone for someone who never reads an issue: `-instruct`
  * is the one reliable naming signal there is. It is worthless as a positive marker -- of the models
  * that reason by default, only 4 % say so in their name -- but as a negative one it held on every
@@ -147,7 +155,13 @@ function thinkingSentence(model: string): string {
 	);
 }
 
-/** The vision half, or `null` where there is nothing to say about it (`none`: no probe was made). */
+/**
+ * The vision half, or `null` where there is nothing to say about it (`none`: no probe was made).
+ *
+ * Word for word the same as `pro/llm-register.ts`'s, and that one is the one to keep it in step with:
+ * the sentence is about the *model*, which is the same question wherever it is asked. Only the shape
+ * differs -- this one takes the whole `meta` because it also has a `baseURL` to name.
+ */
 function visionSentence(verdict: VisionVerdict, model: string, meta: ProviderMeta, baseURL: string): { text: string; color: string } | null {
 	switch (verdict) {
 		case "none":
