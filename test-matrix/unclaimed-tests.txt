@@ -346,9 +346,6 @@ src/local-model-gate.test.ts :: the registration predicate (§4.1) > offers it o
 src/local-model-gate.test.ts :: the registration predicate (§4.1) > offers the backend on Apple Silicon at or above 18 GB
 src/local-model-gate.test.ts :: the registration predicate (§4.1) > passes a machine that reports slightly under its advertised size
 src/local-model-gate.test.ts :: the registration predicate (§4.1) > reports architecture rather than memory when both would fail
-src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > is three strings and no more
-src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > names the machine's own figure beside the requirement
-src/local-model-gate.test.ts :: the three strings (§4.3, §6.2) > uses one architecture line for Intel Macs and Windows x64 alike
 src/local-model-settings.test.ts :: estimateLine > drops the caveat once this machine's own figure stands
 src/local-model-settings.test.ts :: estimateLine > marks the Windows figure as never measured on Windows hardware
 src/local-model-settings.test.ts :: estimateLine > quotes the derived macOS figure before any page has run
