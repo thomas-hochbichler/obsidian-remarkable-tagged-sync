@@ -810,3 +810,141 @@
       layer: unit
       file: src/digest-pipeline.test.ts
       test: "buildDigest merges highlights that share a sentence > gives the merged entry every member's runs"
+
+- feature: Y12
+  name: Which Zotero PDF a synced document is
+  code: src/zotero-match.ts
+  tier: pro
+  scenarios:
+    - id: Y12.1
+      scenario: A document that is already linked, in a library that now holds a second file with the same bytes and name
+      expect: The stored link, untouched. Re-matching would undo a correction the user made by hand the moment the library grew a lookalike (§2.3, "use it; never re-match")
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that is already linked > is used as it stands, whatever else the library now looks like"
+
+    - id: Y12.2
+      scenario: The file behind a linked attachment is replaced in Zotero
+      expect: Unaffected. The link is by key, and the new file has a hash that would match nothing
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that is already linked > survives the file behind it being replaced"
+
+    - id: Y12.3
+      scenario: The linked attachment was trashed or deleted
+      expect: '"Gone": the note keeps everything it has and loses its Zotero part, write-back does not run, and the link stays in `data.json` because the user may put the item back'
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that is already linked > says the item is gone when Zotero no longer has it"
+
+    - id: Y12.4
+      scenario: The tablet's bytes hash to exactly one attachment
+      expect: Linked without asking. The tablet keeps the file it was given byte for byte -- measured against Zotero's storage -- so a hash hit is identity, not evidence
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > links silently when exactly one attachment has these bytes"
+
+    - id: Y12.5
+      scenario: Two attachments have the same bytes
+      expect: Asked, with both offered. A paper filed under two entries is an ordinary library; picking either would be a coin toss the user never sees
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > asks when two attachments have the same bytes"
+
+    - id: Y12.6
+      scenario: A linked file on the web connection, which has no hash, and a document whose bytes were not read
+      expect: No match. Compared without both guards, `null === null` would silently link every hashless attachment to it -- by the rule that is supposed to be the certain one
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > never takes two absent hashes for the same bytes"
+
+    - id: Y12.7
+      scenario: No hash hit, and one attachment's filename is the tablet document's name
+      expect: Asked, not linked. A shared filename is a resemblance
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > offers the one attachment whose filename is the tablet's document name, and still asks"
+
+    - id: Y12.8
+      scenario: The device kept `.pdf` in the document name, or dropped it, or changed its case
+      expect: All three compare equal. Both spellings were seen on a real device (ticket 10), and neither is the user's doing
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > compares the name with and without the extension the device may have kept"
+
+    - id: Y12.9
+      scenario: Two attachments in the library carry that filename
+      expect: Nothing is offered. Two files called `paper.pdf` say nothing at all
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > says nothing at all when two files in the library carry that name"
+
+    - id: Y12.10
+      scenario: A tablet document and a Zotero file that a human would call the same paper
+      expect: No match. Titles are never compared -- a wrong link writes one reader's highlights onto another paper, somewhere the user has no reason to look
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > never guesses from a title that merely looks like the same paper"
+
+    - id: Y12.19
+      scenario: An attachment with no filename and a document with an empty name
+      expect: Not a match. Stripped and compared without the guard, both come out as "" and every nameless attachment matches every nameless document
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > takes two missing names for nothing rather than for each other"
+
+    - id: Y12.11
+      scenario: Nothing in the library resembles the document
+      expect: No Zotero part in the note, and the *Link to Zotero item…* command is how it gets one
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > leaves a document alone when there is nothing to go on"
+
+    - id: Y12.12
+      scenario: The user closed the picker without answering, and the next sync runs
+      expect: Not asked again (§2.3, "ask once"). Without this, a duplicate hash reopens the same picker on every sync
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "asking once > does not ask a second time about a question the user closed"
+
+    - id: Y12.13
+      scenario: The user later links the document by hand
+      expect: That link is used. A decision outranks the earlier shrug
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "asking once > still uses a link written after that question was closed"
+
+    - id: Y12.14
+      scenario: Zotero is not connected, so there is no library listing
+      expect: Nothing is decided and the sync runs as it does today (§2.3, last row)
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "with nothing to match against > decides nothing when the library could not be read"
+
+    - id: Y12.15
+      scenario: A linked document while Zotero is not connected
+      expect: Reported as gone for that run rather than confirmed from nothing. The link itself is untouched
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "with nothing to match against > reports a linked document as gone rather than inventing an attachment"
+
+    - id: Y12.16
+      scenario: A dismissed question is stored
+      expect: It reads as unlinked everywhere except the asking. That is the whole of "ask once" -- there is no other place to remember it
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a question the user closed > is remembered, and reads as unlinked everywhere else"
+
+    - id: Y12.17
+      scenario: An ordinary unlinked document, and a linked one
+      expect: Neither reads as a closed question
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a question the user closed > is not what an ordinary unlinked document looks like"
+
+    - id: Y12.18
+      scenario: A link written after the question was closed
+      expect: It replaces the marker outright
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a question the user closed > gives way to a link written later"

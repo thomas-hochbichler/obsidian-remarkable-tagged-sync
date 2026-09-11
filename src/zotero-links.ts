@@ -127,6 +127,24 @@ export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | n
 	};
 }
 
+/**
+ * Was this document put to the user, and did they close the question without answering it?
+ *
+ * The spec says a document is asked about **once** (§2.3). Without a record of the asking, a
+ * duplicate file hash would open the same picker on every single sync -- so a dismissed question is
+ * stored as a document with no link, which reads as "not linked" everywhere else and stops only the
+ * asking. The *Link to Zotero item…* command is how the user changes their mind, and a link written
+ * later replaces this outright.
+ */
+export function wasDeclined(links: StoredZoteroLinks, docId: string): boolean {
+	return asRecord(links[docId]).declined === true && linkFor(links, docId) === null;
+}
+
+/** The map with this document marked as asked-about and not answered. */
+export function withDeclinedLink(links: StoredZoteroLinks, docId: string): StoredZoteroLinks {
+	return { ...links, [docId]: { declined: true } };
+}
+
 /** Every document this build sees a usable link for. The matcher's "is it already linked?" over the whole vault. */
 export function linkedDocumentIds(links: StoredZoteroLinks): string[] {
 	return Object.keys(links).filter((docId) => linkFor(links, docId) !== null);

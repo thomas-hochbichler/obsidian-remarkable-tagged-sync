@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkedDocumentIds, linkFor, withLink, withoutLink, type ZoteroLink } from "./zotero-links";
+import { linkedDocumentIds, linkFor, wasDeclined, withDeclinedLink, withLink, withoutLink, type ZoteroLink } from "./zotero-links";
 
 const DOC = "576dc0a6-323b-468e-bd69-a2ae6c25dbb9";
 
@@ -103,5 +103,31 @@ describe("changing the map", () => {
 	it("lists the documents this build can act on, and no others", () => {
 		const stored = { ...withLink({}, DOC, link), broken: "nonsense", group: { attachmentKey: "A", library: "group" } };
 		expect(linkedDocumentIds(stored)).toEqual([DOC]);
+	});
+});
+
+describe("a question the user closed", () => {
+	// Without a record of the asking, a duplicate file hash opens the same picker on every single
+	// sync -- for somebody who has already decided this document is not a Zotero paper.
+	it("is remembered, and reads as unlinked everywhere else", () => {
+		const stored = withDeclinedLink({}, DOC);
+
+		expect(wasDeclined(stored, DOC)).toBe(true);
+		expect(linkFor(stored, DOC)).toBeNull();
+		expect(linkedDocumentIds(stored)).toEqual([]);
+	});
+
+	it("is not what an ordinary unlinked document looks like", () => {
+		expect(wasDeclined({}, DOC)).toBe(false);
+		expect(wasDeclined(withLink({}, DOC, link), DOC)).toBe(false);
+	});
+
+	// The *Link to Zotero item…* command is how somebody changes their mind, and the link it writes
+	// outranks the shrug that came before it.
+	it("gives way to a link written later", () => {
+		const stored = withLink(withDeclinedLink({}, DOC), DOC, link);
+
+		expect(wasDeclined(stored, DOC)).toBe(false);
+		expect(linkFor(stored, DOC)).toEqual(link);
 	});
 });
