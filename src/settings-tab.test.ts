@@ -83,7 +83,15 @@ vi.mock("./vision-ocr-runtime", async (importOriginal) => {
 // `window.open` is the platform's and there is nothing to model.
 vi.stubGlobal("createFragment", createFragment);
 const opened: string[] = [];
-vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
+// `setTimeout`/`clearTimeout` are here for the Zotero probe: `withZoteroTimeout` uses the window's
+// timers (Obsidian's popout rule), and without them the race between the request and its timeout is
+// decided by microtask order rather than by the request. Delegated per call, so a test that installs
+// fake timers still sees them.
+vi.stubGlobal("window", {
+	open: (url: string) => opened.push(url),
+	setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+	clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+});
 const copied: string[] = [];
 vi.stubGlobal("navigator", { clipboard: { writeText: async (text: string) => void copied.push(text) } });
 
@@ -253,6 +261,9 @@ describe("the shape of the settings screen", () => {
 			"Vault output",
 			"Transcription",
 			"Automatic sync",
+			// Between automatic sync and the Pro section: it is a Pro feature, set up once, and it reads
+			// as what it is where it sits next to the thing that unlocks it.
+			"Zotero (Pro)",
 			"Tagged Sync Pro",
 			"Actions",
 		]);
@@ -830,6 +841,122 @@ describe("automatic sync", () => {
 		paid.setting.toggles[0].toggle(true);
 		await settle();
 		expect((metered.plugin.data.autoSync as { autoTranscribeMetered: boolean }).autoTranscribeMetered).toBe(true);
+	});
+});
+
+describe("the Zotero section", () => {
+	// Everything Zotero is Pro (spec §5), and the section is *shown* to a free user rather than
+	// hidden -- the same rule as the transport dropdown and the frontmatter toggle. What a free user
+	// cannot see is not something they can decide to buy.
+	const PRO = {
+		licence: {
+			...NO_LICENCE,
+			key: "TS-XXXX-1234",
+			activationId: "act-1",
+			validatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+		},
+	};
+
+	it("shows a free user what Pro buys, and lets them change nothing", async () => {
+		const { tab } = await tabWith();
+		const drawn = draw(tab);
+
+		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).toContain("Zotero (Pro)");
+		expect(field(section(drawn, "Zotero (Pro)"), "Zotero API key").disabled).toBe(true);
+		expect(toggle(section(drawn, "Zotero (Pro)"), "Use the Zotero desktop app").disabled).toBe(true);
+		expect(row(drawn, "Connection").desc).toContain("Part of Tagged Sync Pro");
+	});
+
+	it("drops the (Pro) and opens both connections for a buyer", async () => {
+		const { tab } = await tabWith(PRO);
+		const drawn = draw(tab);
+
+		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).toContain("Zotero");
+		expect(field(drawn, "Zotero API key").disabled).toBe(false);
+		expect(toggle(drawn, "Use the Zotero desktop app").disabled).toBe(false);
+	});
+
+	// The privacy sentence sits beside the switch it is about, not only in the README (spec §1.2):
+	// write-back is the one thing in this plugin that sends transcribed text anywhere.
+	it("says what leaves the machine, where the switch is", async () => {
+		const free = draw((await tabWith()).tab);
+		const bought = draw((await tabWith(PRO)).tab);
+
+		expect(rowNames(section(bought, "Zotero"))).toContain("What leaves your machine");
+		expect(row(bought, "What leaves your machine").desc).toContain("handwriting never does");
+		// Nothing is being sent anywhere for a free vault, so the sentence would be describing a
+		// feature that is not running.
+		expect(rowNames(section(free, "Zotero (Pro)"))).not.toContain("What leaves your machine");
+	});
+
+	it("says nothing is connected until one of the two is set up", async () => {
+		const { tab } = await tabWith(PRO);
+
+		// The line is drawn inside the row's own description, not as a sibling below it: Obsidian 1.13
+		// draws each setting as a card, and a loose note lands in the gap between two of them.
+		expect(row(draw(tab), "Connection").setting.descEl.allText()).toContain("Not connected.");
+	});
+
+	// The four states of §2.1 come from the client, because what *answered* is not the same question
+	// as what is configured -- a key that is set up and rejected reads as "not connected", which is the
+	// state the user has to see to go and fix it.
+	it("replaces the line with what actually answered", async () => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
+			String(input).endsWith("/keys/current")
+				? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 })
+				: new Response("[]", { status: 200 }),
+		);
+		const { tab } = await tabWith({ ...PRO, zotero: { apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		await settle();
+
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Connected via web.");
+	});
+
+	it("says not connected when the connection that is set up does not answer", async () => {
+		vi.stubGlobal("fetch", async () => {
+			throw new TypeError("fetch failed");
+		});
+		const { tab } = await tabWith({ ...PRO, zotero: { apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		await settle();
+
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Not connected.");
+	});
+
+	it("saves the desktop switch and redraws, because the status line is now about something else", async () => {
+		const { plugin, tab } = await tabWith(PRO);
+		toggle(draw(tab), "Use the Zotero desktop app").toggle(true);
+		await settle();
+
+		expect((plugin.data.zotero as { useLocal: boolean }).useLocal).toBe(true);
+		expect(plugin.saves).toHaveLength(1);
+	});
+
+	// The same debounce the attachments folder uses, and for the same reason: a 24-character key is 24
+	// writes to `data.json` otherwise.
+	it("takes a typed key immediately and reaches data.json when the typing stops", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		const text = field(draw(tab), "Zotero API key");
+
+		text.type("P9c46b0lkV2XzAoUTqPmPuGZ");
+		expect((plugin.data.zotero as { apiKey: string | null }).apiKey).toBe("P9c46b0lkV2XzAoUTqPmPuGZ");
+		expect(plugin.saves).toEqual([]);
+
+		vi.advanceTimersByTime(500);
+		expect(plugin.saves).toHaveLength(1);
+	});
+
+	it("reads a cleared field as no key at all, rather than as an empty one", async () => {
+		// `""` would be a configured connection that answers 401 on every call -- and the status line
+		// would say "not connected" for a vault that is, as far as the settings go, set up.
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		field(draw(tab), "Zotero API key").type("");
+		vi.advanceTimersByTime(500);
+
+		expect((plugin.data.zotero as { apiKey: string | null }).apiKey).toBeNull();
 	});
 });
 

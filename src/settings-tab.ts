@@ -28,6 +28,7 @@ import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
+import { zoteroAllowed } from "./zotero-settings";
 import { visionRunStats } from "./vision-ocr-backend";
 
 /**
@@ -104,6 +105,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		this.renderVaultOutput(containerEl);
 		this.renderOcrSettings(containerEl);
 		this.renderAutoSyncSettings(containerEl);
+		this.renderZotero(containerEl);
 		this.renderPro(containerEl);
 		this.renderActions(containerEl, connected);
 		// After the content is back, so there is something to scroll through. A page that got shorter
@@ -519,6 +521,86 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					toggle.setValue(this.plugin.data.frontmatter);
 				});
 			});
+	}
+
+	/**
+	 * Zotero: the two connections, and what is connected right now (spec §2.1).
+	 *
+	 * Shown to a free user, disabled, with "(Pro)" -- the same rule as the transport dropdown and the
+	 * frontmatter toggle above: a feature a free user cannot see is one they cannot decide to buy.
+	 *
+	 * The privacy sentence sits here rather than in the README alone, beside the setting it is about
+	 * (spec §1.2): ink never leaves the machine, and with write-back on, the *transcribed text* of a
+	 * margin note reaches the user's own Zotero library. That is a change to what leaves the machine,
+	 * so it is said where the switch is.
+	 */
+	private renderZotero(containerEl: HTMLElement): void {
+		const unlocked = zoteroAllowed(this.plugin.entitlement());
+		const settings = this.plugin.data.zotero;
+
+		new Setting(containerEl).setName(unlocked ? "Zotero" : "Zotero (Pro)").setHeading();
+
+		const status = new Setting(containerEl)
+			.setName("Connection")
+			.setDesc(
+				unlocked
+					? "Either connection is enough on its own. The desktop app works offline and knows where your PDFs are; zotero.org works with Zotero closed."
+					: "Send Zotero PDFs to your tablet, and get your tablet highlights back as native Zotero annotations. Part of Tagged Sync Pro -- see below.",
+			);
+		// The four states of §2.1, and the client is what says which one it is -- it knows what answered,
+		// which is not the same question as what is configured. Asked once per render of this section;
+		// the answer replaces the line when it arrives, and a render that has been superseded drops its
+		// own answer on the floor (`display()` empties the container and draws a new one).
+		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
+		const client = this.plugin.zoteroClient();
+		if (client === null) {
+			line.setText(unlocked ? "Not connected." : "");
+		} else {
+			line.setText("Checking…");
+			// No rejection arm: `status()` is the one call on the client that answers instead of
+			// throwing -- a probe is a question, and "nothing answered" is one of its answers.
+			void client.status().then((reached) => line.setText(reached.summary));
+		}
+
+		new Setting(containerEl)
+			.setName("Zotero API key")
+			.setDesc("From zotero.org → Settings → Feeds/API. Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
+			.addText((text) => {
+				text.inputEl.type = "password";
+				text.setDisabled(!unlocked);
+				// Debounced like the attachments folder: the in-memory value is current immediately, and
+				// `data.json` is not written on every keystroke of a 24-character key.
+				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+				text.setValue(settings.apiKey ?? "").onChange((value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, apiKey: value === "" ? null : value };
+					persist();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Use the Zotero desktop app")
+			.setDesc(
+				'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). ' +
+					"Zotero asks your permission the first time this plugin writes something; choose Always Allow.",
+			)
+			.addToggle((toggle) => {
+				toggle.setValue(settings.useLocal).setDisabled(!unlocked);
+				toggle.onChange(async (value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
+					await this.plugin.saveData(this.plugin.data);
+					// Redrawn, because the status line above is now about a different set of connections.
+					this.display();
+				});
+			});
+
+		if (unlocked) {
+			new Setting(containerEl)
+				.setName("What leaves your machine")
+				.setDesc(
+					"Your handwriting never does. With write-back on, the transcribed text of your margin notes is written into " +
+						"your own Zotero library -- and to zotero.org, if that is the connection carrying it.",
+				);
+		}
 	}
 
 	/**

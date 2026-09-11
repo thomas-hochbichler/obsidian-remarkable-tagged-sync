@@ -204,6 +204,11 @@ export interface ZoteroConnection {
  * connection -- and with the one call that cannot be routed freely spelled out differently.
  */
 export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "patchAnnotation"> {
+	/**
+	 * Which connections answered, for the settings line. **Never rejects** -- it is built out of
+	 * {@link ZoteroConnection.probe}, and "nothing answered" is one of its answers rather than a
+	 * failure. The settings tab relies on that: it has no second arm to fall back to.
+	 */
 	status(): Promise<ZoteroStatus>;
 	/** Goes to the connection the annotation was read from, or fails. Never to the other one -- see {@link ZoteroAnnotation.version}. */
 	patchAnnotation(annotation: ZoteroAnnotationRef, fields: AnnotationFields): Promise<PatchOutcome>;

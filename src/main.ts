@@ -43,6 +43,8 @@ import { failoverNotice, openTransportChain, type OpenedTransport, type Transpor
 import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-transport";
 import { reachableHost } from "./ssh-pairing";
 import { frontmatterAllowed } from "./frontmatter";
+import type { ZoteroClient } from "./zotero-client";
+import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
@@ -135,6 +137,18 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	entitlement(): Entitlement {
 		return entitlementOf(this.data.licence, new Date());
+	}
+
+	/**
+	 * This vault's Zotero client, or `null` when there is none to have.
+	 *
+	 * Asked fresh each time rather than built once at load: both of the things it depends on -- the
+	 * settings and the entitlement -- change while Obsidian is running, and a client cached across a
+	 * pasted API key or a lapsed licence would be the wrong one in both directions. It builds nothing
+	 * but two small objects; the connections open no socket until somebody asks them something.
+	 */
+	zoteroClient(): ZoteroClient | null {
+		return createZoteroClientFor(zoteroSettingsStore(this.data, () => this.saveData(this.data)), this.entitlement());
 	}
 
 	/**

@@ -591,3 +591,168 @@
       file: src/zotero-links.test.ts
       test: "changing the map > lists the documents this build can act on, and no others"
 
+
+- feature: Y9
+  name: Whether this vault has Zotero at all
+  code: src/zotero-settings.ts
+  tier: pro
+  scenarios:
+    - id: Y9.1
+      scenario: A free vault, a bought one, and one in its trial
+      expect: Pro and trial may, free may not. The trial exists so Pro can be judged without paying, and a feature it skips is a feature nobody tries
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "who may use Zotero > is Pro, and a trial counts"
+
+    - id: Y9.2
+      scenario: A free vault with both connections filled in
+      expect: No client. That is the whole of "refused in place" (§5) -- nothing to match with, nothing to write back, no Send command -- and it is one `null` rather than an `if` in every caller
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "who may use Zotero > hands a free vault no client, however well it is configured"
+
+    - id: Y9.3
+      scenario: A licence lapses and is renewed
+      expect: The client goes and comes back from the same stored settings. §5 keeps the links and the settings on the way out, so renewing is not a re-setup
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "who may use Zotero > comes back the moment a licence does, from the settings that were left alone"
+
+    - id: Y9.4
+      scenario: Only an API key, only the desktop toggle, or neither
+      expect: Each connection alone counts as set up; neither does not (§2.1)
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "what counts as set up > takes either connection alone, and neither as nothing"
+
+    - id: Y9.5
+      scenario: A buyer with one connection configured
+      expect: A client either way. Each connection is sufficient alone, which is what lets a web-only user have the feature at all
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "what counts as set up > builds a client for either one alone"
+
+    - id: Y9.6
+      scenario: A buyer who has configured neither
+      expect: No client, and so no Zotero anywhere in the run
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "what counts as set up > builds none at all when neither is set up"
+
+    - id: Y9.7
+      scenario: A vault that has never been near Zotero
+      expect: Every Zotero setting off. "The free plugin is unchanged" (§5) has to be true of a fresh install, not only of a free one
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "what counts as set up > starts switched off entirely"
+
+    - id: Y9.8
+      scenario: A second Zotero database grants a key while one is already stored
+      expect: Both keys are kept. Overwriting the map -- the obvious one-liner -- loses the other profile's key on every switch, and the symptom is a permission dialog that comes back for good
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "the key Zotero's dialog granted > is kept beside the keys of any other Zotero database, never instead of them"
+
+    - id: Y9.9
+      scenario: A stored key is looked up
+      expect: Found for the database that granted it, and for no other. The key is scoped to the Zotero database, which is why the map is keyed by server id
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "the key Zotero's dialog granted > is read back for the database that granted it, and for no other"
+
+    - id: Y9.10
+      scenario: A key is pasted into settings while Obsidian keeps running
+      expect: The next call uses it. A store that had copied the settings block would keep handing out the key from before the paste until a restart
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "the key Zotero's dialog granted > hands the client the settings as they are now, not as they were when it was built"
+
+    - id: Y9.11
+      scenario: A write to a Zotero desktop that has already granted this vault a key
+      expect: The stored key goes on the request and no dialog opens. This is the wire itself -- everything either side of it is covered elsewhere
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "from the settings block to Zotero and back > writes with the key this Zotero database granted earlier, without asking again"
+
+    - id: Y9.12
+      scenario: The first write this vault ever makes to Zotero
+      expect: The granted key lands in `data.json`, saved once. Not stored, every write would open the dialog again
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "from the settings block to Zotero and back > stores a newly granted key where the next run will find it"
+
+- feature: Y10
+  name: The Zotero settings section
+  code: src/settings-tab.ts
+  scenarios:
+    - id: Y10.1
+      tier: free
+      scenario: A free vault opens the settings
+      expect: The section is there, headed "Zotero (Pro)", with both controls disabled and the sales sentence in the Connection row. Hidden, it would be a feature nobody could decide to buy -- the same rule the transport dropdown and the frontmatter toggle follow
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > shows a free user what Pro buys, and lets them change nothing"
+
+    - id: Y10.2
+      tier: pro
+      scenario: A buyer opens the settings
+      expect: The heading loses its "(Pro)" and both connections can be set up
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > drops the (Pro) and opens both connections for a buyer"
+
+    - id: Y10.3
+      tier: pro
+      scenario: The privacy sentence
+      expect: Beside the switch it is about, for a buyer only. Write-back is the one thing in this plugin that sends transcribed text anywhere (§1.2), and for a free vault it is not running
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > says what leaves the machine, where the switch is"
+
+    - id: Y10.4
+      tier: pro
+      scenario: Neither connection is set up yet
+      expect: '"Not connected.", inside the row''s own description rather than as a loose note between two cards'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > says nothing is connected until one of the two is set up"
+
+    - id: Y10.5
+      tier: pro
+      scenario: The desktop switch is flipped
+      expect: Saved, and the page redrawn -- the status line above it is now about a different set of connections
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > saves the desktop switch and redraws, because the status line is now about something else"
+
+    - id: Y10.6
+      tier: pro
+      scenario: An API key is typed in
+      expect: In memory at once, in `data.json` 500 ms after the last keystroke. The same debounce the attachments folder uses, for the same reason
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > takes a typed key immediately and reaches data.json when the typing stops"
+
+    - id: Y10.7
+      tier: pro
+      scenario: The key field is cleared
+      expect: '`null`, not `""`. An empty string is a configured connection that answers 401 to everything, and the status line would report "not connected" for a vault that looks set up'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > reads a cleared field as no key at all, rather than as an empty one"
+
+    - id: Y10.8
+      tier: pro
+      scenario: A configured connection answers
+      expect: The "Checking…" line is replaced by what actually answered. What is *configured* is not the same question as what *answered* -- a key that is set up and rejected has to read as "not connected", which is the state that sends the user to fix it
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > replaces the line with what actually answered"
+
+    - id: Y10.9
+      tier: pro
+      scenario: The configured connection does not answer
+      expect: '"Not connected." -- `status()` answers rather than throwing, which is why the line has no second arm'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > says not connected when the connection that is set up does not answer"

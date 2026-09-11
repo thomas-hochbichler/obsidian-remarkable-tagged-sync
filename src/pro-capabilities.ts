@@ -4,6 +4,7 @@ import { isGated } from "./ocr-resolution";
 import { ocrBackendEntries } from "./ocr-registry";
 import { allowedTransports } from "./ssh-transport";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
+import { createZoteroClientFor, zoteroAllowed } from "./zotero-settings";
 
 /**
  * Everything Tagged Sync Pro sells, in one list a test can walk.
@@ -184,6 +185,33 @@ const FRONTMATTER_CAPABILITY: ProCapability = {
 };
 
 /**
+ * Zotero -- all three of its rows at once (spec §5), because they are one purchase and one switch.
+ *
+ * `locked` asks the production gate, and `run` drives the production *factory*: a configured vault
+ * either gets a client or gets `null`, and `null` is the whole of "refused in place" -- no matching,
+ * no write-back, no Send command. Phrased against `zoteroAllowed` alone this would still pass if the
+ * factory forgot to ask it, which is the mistake that gives the feature away.
+ */
+const ZOTERO_CAPABILITY: ProCapability = {
+	id: "zotero-integration",
+	label: "Send Zotero PDFs to your tablet, and your tablet highlights back into Zotero as native annotations",
+	locked: (entitlement) => !zoteroAllowed(entitlement),
+	// The settings section is shown, disabled, with "(Pro)" -- the same rule as the transport dropdown
+	// and the frontmatter toggle: a feature a free user cannot see is one they cannot decide to buy.
+	whenLocked: "refused-in-place",
+	enforcedAt: {
+		site: "src/zotero-settings.ts createZoteroClientFor, called from src/main.ts zoteroClient and asked by src/settings-tab.ts renderZotero",
+		run: (entitlement) => {
+			const client = createZoteroClientFor(
+				{ settings: () => ({ apiKey: "key", useLocal: true, localKeys: {} }), saveLocalKey: async () => {} },
+				entitlement,
+			);
+			return client === null ? "refused-in-place" : "allowed";
+		},
+	},
+};
+
+/**
  * Every gated capability this build ships.
  *
  * The `filter` is the single most important line here. The obvious form --
@@ -194,7 +222,7 @@ export function proCapabilities(): ProCapability[] {
 	const backends = ocrBackendEntries()
 		.filter((entry) => BACKEND_TIER[entry.id]?.paid)
 		.map(backendCapability);
-	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY];
+	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY, ZOTERO_CAPABILITY];
 }
 
 /**
@@ -225,6 +253,10 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	"src/frontmatter.ts": {
 		reads: 1,
 		why: "`frontmatterAllowed`, the frontmatter-properties gate. A gate, and it is in the list -- `main.ts` and the settings tab ask it rather than reading the tier themselves.",
+	},
+	"src/zotero-settings.ts": {
+		reads: 1,
+		why: "`zoteroAllowed`, the Zotero gate. A gate, and it is in the list -- `createZoteroClientFor` in the same file asks it, and `main.ts` and the settings tab ask that.",
 	},
 	"src/settings-tab.ts": {
 		reads: 4,

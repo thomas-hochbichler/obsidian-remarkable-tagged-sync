@@ -24,6 +24,7 @@ import type { BackendSettings } from "./ocr-registry";
 import { DEFAULT_SSH_SETTINGS, type SshSettings } from "./ssh-transport";
 import type { StoredHashes } from "./ssh-hash-cache";
 import type { StoredZoteroLinks } from "./zotero-links";
+import { DEFAULT_ZOTERO_SETTINGS, type ZoteroSettings } from "./zotero-settings";
 import { EMPTY_SYNC_INDEX, type SyncIndex, type SyncIndexRow } from "./sync-engine";
 import type { TransportId } from "./transport";
 import { mappingFingerprint, type TagFolderMap } from "./tag-router";
@@ -62,12 +63,16 @@ export interface TaggedSyncData {
 	 * inside it. Written back pruned after every run, so it tracks the device rather than growing.
 	 */
 	sshHashes: StoredHashes;
+	/** The two Zotero connections, and the keys the desktop app has granted (Zotero spec §2.1). */
+	zotero: ZoteroSettings;
 	/**
 	 * Which reMarkable document is which Zotero PDF, by document uuid (Zotero spec §2.2). Opaque
 	 * here; only `zotero-links.ts` reads inside it, and it validates one entry at a time so that a
 	 * link written by a newer install is carried across this one rather than dropped by it.
+	 *
+	 * The pair is `ssh` and `sshHashes` again: one block the user filled in, one the plugin keeps.
 	 */
-	zotero: StoredZoteroLinks;
+	zoteroLinks: StoredZoteroLinks;
 	tagFolderMap: TagFolderMap;
 	syncIndex: SyncIndex;
 	ocrBackend: OcrBackendId;
@@ -110,7 +115,8 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	fallbackTransport: null,
 	ssh: DEFAULT_SSH_SETTINGS,
 	sshHashes: {},
-	zotero: {},
+	zotero: DEFAULT_ZOTERO_SETTINGS,
+	zoteroLinks: {},
 	tagFolderMap: {},
 	syncIndex: EMPTY_SYNC_INDEX,
 	// Placeholder only -- the effective default is platform-derived on load (multi-provider spec §7).
@@ -209,9 +215,10 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 				: null,
 		ssh: { ...DEFAULT_SSH_SETTINGS, ...stored?.ssh },
 		sshHashes: stored?.sshHashes ?? {},
+		zotero: { ...DEFAULT_ZOTERO_SETTINGS, ...stored?.zotero },
 		// Carried whole, like `sshHashes` and `llmProviders` above it: this file is synced between
 		// machines, so a link this build cannot read still belongs to the install that wrote it.
-		zotero: stored?.zotero ?? {},
+		zoteroLinks: stored?.zoteroLinks ?? {},
 		tagFolderMap: stored?.tagFolderMap ?? {},
 		// A copy, not the constant. `onVaultRename` writes into `data.syncIndex.rows` in place, so
 		// handing a fresh install EMPTY_SYNC_INDEX itself means the next one starts with the last one's
