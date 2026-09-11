@@ -1,0 +1,467 @@
+# Zotero (spec `.scratch/zotero-integration/spec.md`), starting with the one place the plugin talks
+# to a Zotero library.
+#
+# Two connections, each sufficient alone: zotero.org for the user who has Zotero only in a browser,
+# the Zotero 10 desktop API for the one who has the app open. They answer the same JSON, so the reads
+# and the writes are written once and the rows below are mostly about the *differences* -- who
+# authenticates how, who knows a file path, and which failures mean "ask the other one".
+#
+# The load-bearing rows are Y3.1 (annotationType first, or Zotero's data layer throws) and Y4.5/Y4.6
+# (a version belongs to the connection that issued it). Both are silent when wrong: the first fails
+# only against a real Zotero, the second overwrites an edit the user made by hand or reports one they
+# never made.
+
+- feature: Y1
+  name: Reading a Zotero library
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y1.1
+      scenario: A library with more attachments than one page holds
+      expect: Paging follows `start=` until a page comes back short. The local API answers everything at once and the web API never does, so the loop has to end on the answer rather than on the connection
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > keeps asking for the next page until one comes back short"
+
+    - id: Y1.2
+      scenario: The library holds a PDF, an EPUB and a PDF in the trash
+      expect: Only the live PDF. EPUB items are refused by the spec (§1.3), and a trashed attachment is gone -- Zotero keeps answering for it, and writing into the trash would be worse than saying the item is no longer there
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > keeps only PDF attachments, and drops the ones in the trash"
+
+    - id: Y1.3
+      scenario: A linked file, which has a path instead of a filename
+      expect: The last segment of the path. It is what the filename row of the matching table compares against a tablet document name
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > names a linked file by the last segment of its path"
+
+    - id: Y1.4
+      scenario: The stored link points at an attachment that is no longer there
+      expect: '`null`, not a throw: §2.3 keeps the note and drops the Zotero part. Every other failure stays a throw, because it is repairable and the user has to be told which one it was'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > answers nothing for an attachment Zotero no longer has"
+
+    - id: Y1.5
+      scenario: An item with a free-text date and a Better BibTeX citation key in Extra
+      expect: Creator, four-digit year and citekey. Most citekeys in the wild are BBT's, written into Extra rather than into Zotero's own field -- reading both is what makes "only when set" true for real libraries
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > reads the creator, the year and the citation key Better BibTeX keeps in Extra"
+
+    - id: Y1.6
+      scenario: An item with no creator, no date and no citation key
+      expect: Three nulls. The note writes `citekey` only when Zotero has one, never invented (§4)
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > invents no citation key where Zotero has none"
+
+    - id: Y1.7
+      scenario: The send picker searches for a paper
+      expect: '`/items/top` with `qmode=titleCreatorYear` -- papers rather than their own PDFs, in the quick-search mode the user''s fingers know from Zotero itself'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > searches top-level items the way Zotero's own quick search does"
+
+- feature: Y2
+  name: Finding our own annotations again
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y2.1
+      scenario: Reading back what we wrote onto one attachment
+      expect: Filtered by the ownership tag on the server and by the parent here. `/items/<key>/children` answers **no** annotations at all on a live Zotero 10, which is the trap this row exists to stay out of
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "our own annotations > reads them by the ownership tag, never through the attachment's children"
+
+    - id: Y2.2
+      scenario: An annotation read over one connection, patched later
+      expect: It carries the connection that read it. A version is only comparable where it was issued -- one item stood at 246 locally and 986 on the web the same second
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "our own annotations > remembers which connection read them, because a version means nothing anywhere else"
+
+    - id: Y2.3
+      scenario: The user has put the `tagged-sync` tag on an ink annotation of their own
+      expect: It is dropped. Only the three kinds we write are ours to refresh, and re-adopting somebody else's drawing as a highlight would overwrite it on the next sync
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "our own annotations > drops a tagged row that is not one of the three kinds we write"
+
+    - id: Y2.4
+      scenario: An annotation whose position string cannot be parsed
+      expect: '`pageIndex: null`. Re-adoption matches on the page, and an unreadable one must fail to match rather than match everything on page 0'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "our own annotations > reads the page out of the position, and answers none where the position is unreadable"
+
+- feature: Y3
+  name: Writing annotations onto the wire
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y3.1
+      scenario: The JSON body of a created annotation
+      expect: "`annotationType` before every other `annotation*` key. Zotero's data layer loops over the keys as they arrive and every other setter throws `annotationType must be set before other annotation properties` -- a body built by spreading the caller's object passes every field assertion and fails against a real Zotero"
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > puts annotationType before every other annotation field"
+
+    - id: Y3.2
+      scenario: Every annotation this plugin creates
+      expect: The single tag `tagged-sync`, which is both the ownership marker and the read filter. No comment prefix -- the comment is the user's to edit
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > tags every annotation it creates as ours, and nothing else"
+
+    - id: Y3.3
+      scenario: A sticky note that was handed highlight text
+      expect: The text is dropped. Zotero refuses `annotationText` on a `note` and fails the whole batch it sits in, so one bad field would take eleven good annotations with it
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > never sends highlight text on a sticky note"
+
+    - id: Y3.4
+      scenario: Sixty annotations to create in one go
+      expect: Batches of 50 and 10, with every returned key still on its own annotation. Zotero refuses a body of more than 50, and position is the only identity a not-yet-created annotation has
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > splits a long run into batches Zotero accepts, and keeps every key on its own annotation"
+
+    - id: Y3.5
+      scenario: Zotero accepts one annotation of a batch and refuses the other
+      expect: The key for the one, a sentence for the other. Write-back is add-only, so a half-written batch is resumed next sync rather than rolled back (§3.4)
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > says which ones Zotero refused, and keeps the others' keys"
+
+    - id: Y3.6
+      scenario: A batch that has to be sent again
+      expect: A `Zotero-Write-Token` rides on it, so the retry does not write everything twice
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > sends a write token, so a retried batch is not written twice"
+
+    - id: Y3.7
+      scenario: Refreshing one field of an annotation we wrote earlier
+      expect: Only that field, under `If-Unmodified-Since-Version`. A PUT would overwrite the fields the user is allowed to edit
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > patches only the fields it was given, under the version it read"
+
+    - id: Y3.8
+      scenario: Refreshing every field a re-sync may touch
+      expect: Each one arrives under the name Zotero knows it by, and no others. A patch that quietly dropped one would leave a stale colour or page label in Zotero with nothing to show for it (§3.2)
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > maps each refreshable field onto the name Zotero knows it by"
+
+    - id: Y3.9
+      scenario: The annotation changed in Zotero since we read it
+      expect: "`conflict`, not a retry. 412 is the signature of the user having edited it themselves, and §3.3 gives the user's value the win"
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > reports a conflict rather than trying harder when the item changed underneath"
+
+- feature: Y4
+  name: Two connections, one client
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y4.1
+      scenario: Both the desktop app and an API key are configured
+      expect: The desktop answers. It is offline-capable, immediate, and knows the file path (§2.1)
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > asks the desktop first when both are configured"
+
+    - id: Y4.2
+      scenario: The desktop app is closed mid-run
+      expect: The web answers that call. Per call, not per run -- an app that opens ten minutes later should not leave the rest of the sync talking to zotero.org
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > falls back to the web when the desktop is not there"
+
+    - id: Y4.3
+      scenario: The desktop says the item is gone
+      expect: Nothing is asked of the web. "I could not ask" is worth asking elsewhere, "the answer is no" is not -- a second question could only find a copy that has not synced yet
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > does not ask the web a question the desktop already answered"
+
+    - id: Y4.4
+      scenario: Neither connection is configured
+      expect: No client at all, so every Zotero feature is off and the sync runs as it does today (§2.1)
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > is absent altogether when nothing is configured"
+
+    - id: Y4.5
+      scenario: An annotation read from the web is patched while both connections are up
+      expect: The patch goes to the web. Sent to the desktop, its version would be a precondition about a number that connection never issued -- too low is a 412 read as "the user edited this", too high is a silent overwrite of an edit they really made
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > sends a patch back to the connection whose version it is holding"
+
+    - id: Y4.6
+      scenario: The connection an annotation was read from is no longer configured
+      expect: The patch is refused rather than re-routed. Nothing is lost -- write-back is add-and-refresh, so the next sync does it
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > skips a patch whose connection is gone rather than sending its version to the other one"
+
+    - id: Y4.7
+      scenario: The settings status line
+      expect: Connected via desktop / via web / via desktop and web / not connected, in the spec's own words (§2.1)
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > says which connections answered, in the words the settings line uses"
+
+    - id: Y4.8
+      scenario: Every call the client offers
+      expect: Each one reaches the connection. A pass-through that quietly does not pass through hands the caller `undefined` where it expected an answer, and the feature is off with nothing said
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > hands every call through to the connection that answers it"
+
+- feature: Y5
+  name: What a failure is called
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y5.1
+      scenario: The API key is rejected
+      expect: '`unauthorized`, so the status line says the key was refused rather than that Zotero is down -- the two need different repairs (§3.4.2)'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "what comes back from Zotero > turns a rejected key into a word the status line can use"
+
+    - id: Y5.2
+      scenario: A 403 from the desktop and a 403 from the web
+      expect: '`not-enabled` for the one, `unauthorized` for the other. Sending a web-only user to a desktop checkbox they do not have would point them at nothing'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "what comes back from Zotero > tells a switched-off local API apart from a key that may not write"
+
+    - id: Y5.3
+      scenario: A server that answers a full page every time
+      expect: An error after the ceiling, not an endless loop. 10 000 attachments is past any personal library this feature is for
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "what comes back from Zotero > refuses to page forever when a server keeps answering full pages"
+
+    - id: Y5.4
+      scenario: A proxy answers HTML with a 200
+      expect: An error, rather than an empty library. Taking it for data would read as "you have no attachments" and silently unlink every note
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "what comes back from Zotero > does not take a non-JSON answer for data"
+
+    - id: Y5.5
+      scenario: A server that accepts the connection and never answers
+      expect: The call gives up. Write-back is awaited on the sync path, so a hanging socket would be a sync that never ends -- the shape `LICENCE_TIMEOUT_MS` was added for
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the timeout both connections share > stops waiting for a server that never answers"
+
+- feature: Y6
+  name: zotero.org
+  code: src/zotero-web.ts
+  tier: pro
+  scenarios:
+    - id: Y6.1
+      scenario: The first library call of a session
+      expect: '`/keys/current` once, then every path scoped to that numeric user. A Zotero key is issued to an account, and the account is the only thing that knows its own id'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > asks whose key this is once, and scopes every later path to that user"
+
+    - id: Y6.2
+      scenario: Every request
+      expect: The key and API version 3. Version 3 is the only one the local API speaks, so both connections are pinned to it
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > sends the key and pins the API version on every request"
+
+    - id: Y6.3
+      scenario: The key is wrong or read-only
+      expect: '`unauthorized`, with the repair on zotero.org'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > says the key was rejected rather than that Zotero is down"
+
+    - id: Y6.4
+      scenario: A user corrects the key in settings without restarting Obsidian
+      expect: The next call asks again. A cached rejection would mean a restart to fix a typo
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > asks again after a rejected key, so a corrected one works at once"
+
+    - id: Y6.5
+      scenario: The machine is offline
+      expect: '`unreachable` -- the one failure the client may retry on the desktop connection'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > reports a network failure as the one thing the other connection may be tried for"
+
+    - id: Y6.6
+      scenario: zotero.org answers 429 with a `Retry-After`
+      expect: One wait of exactly that long, then the request again (§3.4.4)
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "when zotero.org asks us to slow down > waits as long as it was told, once, and then asks again"
+
+    - id: Y6.7
+      scenario: It answers 429 a second time
+      expect: Reported, not retried. Add-and-refresh means the next sync picks it up, while a retry loop against a rate limit costs the user their API access
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "when zotero.org asks us to slow down > reports rather than retrying a second time"
+
+    - id: Y6.8
+      scenario: The `Retry-After` is ten minutes
+      expect: Not waited out. Past half a minute the honest answer is "Zotero is busy, the next sync will do it"
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "when zotero.org asks us to slow down > does not sit out a wait longer than the sync can afford"
+
+    - id: Y6.9
+      scenario: A successful response carries a `Backoff`
+      expect: The wait is paid on the way into the *next* request. Backoff asks for room ahead, not for the call that already answered
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "when zotero.org asks us to slow down > keeps a Backoff for the next request instead of the one that carried it"
+
+    - id: Y6.10
+      scenario: Send needs the PDF and Zotero has it online
+      expect: The bytes, from the attachment's `/file` (which redirects into storage)
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "the PDF itself > hands back the bytes Zotero has online"
+
+    - id: Y6.11
+      scenario: A linked file, or one the free tier never synced up
+      expect: '`null`, which the send command turns into "Zotero has no copy of this PDF online. Pick the file." (§2.4)'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "the PDF itself > answers nothing, not an error, when Zotero has no copy online"
+
+    - id: Y6.12
+      scenario: Asked where the file is on disk
+      expect: '`null`. Only the desktop can know, and saying so is what lets send fall through instead of failing'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "the PDF itself > knows no path on disk, which is what the desktop connection is for"
+
+- feature: Y7
+  name: The Zotero desktop app
+  code: src/zotero-local.ts
+  tier: pro
+  scenarios:
+    - id: Y7.1
+      scenario: Any request at all from inside Obsidian
+      expect: "`Zotero-Allowed-Request: 1`. Zotero *cancels* -- no response, no status -- anything whose user agent starts with `Mozilla/`, and Electron's does. Without it a running Zotero is indistinguishable from a closed one"
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "getting in at all > marks every request as one Zotero is allowed to answer"
+
+    - id: Y7.2
+      scenario: Two calls in a row
+      expect: The `Zotero-Server-ID` handshake happens once and rides on everything after. It follows the database, so it is also the right thing to key a stored key by
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "getting in at all > reads the database id once and sends it back on every request"
+
+    - id: Y7.3
+      scenario: Zotero is closed, and Zotero is open with the setting off
+      expect: '`unreachable` and `not-enabled`. One is nothing to act on, the other is one checkbox in Zotero''s settings'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "getting in at all > tells a closed Zotero apart from one with the setting switched off"
+
+    - id: Y7.4
+      scenario: Any library path
+      expect: '`/users/0`, the personal library. Group libraries are refused by the spec (§1.3)'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "getting in at all > asks the personal library, which is the only one this feature touches"
+
+    - id: Y7.5
+      scenario: Matching and the send picker on a Zotero that has granted nothing
+      expect: No dialog. Reads need no key, so permission is only ever asked for a write the user started
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the permission dialog > never opens for a read"
+
+    - id: Y7.6
+      scenario: Two write-backs in one session
+      expect: One dialog. The granted key is kept per database and reused
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the permission dialog > opens once for a write, and the granted key is kept for the next one"
+
+    - id: Y7.7
+      scenario: The dialog Zotero shows
+      expect: It names the plugin, because the user is being asked to trust a name they can recognise
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the permission dialog > says what it is, so the user reads the plugin's name in Zotero's dialog"
+
+    - id: Y7.8
+      scenario: The user clicked "Allow" instead of "Always Allow"
+      expect: The key serves one request, answers 401, and one fresh key is asked for. That button is right next to the one we want, so a 401 is the ordinary outcome of the wrong click rather than a broken install
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the permission dialog > re-asks after a key that was only good for one request"
+
+    - id: Y7.9
+      scenario: The second key is refused too
+      expect: Reported. Zotero shows at most five dialogs a minute, and a plugin that keeps asking is the reason for that limit
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the permission dialog > gives up after the second refusal instead of asking again and again"
+
+    - id: Y7.10
+      scenario: The user clicks Deny, which is Zotero's default button
+      expect: '`denied` -- a decision, worded so the status line can repeat it rather than a failure to retry'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the permission dialog > takes Deny for an answer"
+
+    - id: Y7.11
+      scenario: Send asks the desktop where the PDF is
+      expect: The decoded path from `/file/view/url`. No download, and it works for a linked file that was never in Zotero's storage
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the file on disk > hands back the real path, decoded"
+
+    - id: Y7.12
+      scenario: The key is not a file attachment
+      expect: '`null`, so send falls through to the web download and then to the file dialog (§2.4)'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the file on disk > answers nothing for an item that has no file, rather than failing the send"
+
+    - id: Y7.13
+      scenario: Asked for the bytes themselves
+      expect: '`null`. The caller reads the path, which keeps every filesystem call in one place instead of two'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the file on disk > hands out no bytes, because the caller reads the path itself"
+
+    - id: Y7.14
+      scenario: The note wants a zotero.org web link
+      expect: The numeric library id, read off an item. The local API answers `/users/0/` whoever is signed in, so the path can never say it
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "which library this is > reads the numeric library id off an item, since the path never says it"
+
+    - id: Y7.15
+      scenario: A library with nothing in it
+      expect: '`null`, and then the note simply has no web link (§4)'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "which library this is > says it does not know, on a library with nothing in it"
