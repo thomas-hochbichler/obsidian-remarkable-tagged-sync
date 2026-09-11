@@ -22,6 +22,9 @@
 				"renderVersion": 31,
 				"blockHash": "7e2fef62",
 				"highlightCount": 0,
+				"transcribedPages": [],
+				"transcribedWith": "82639f08",
+				"noteId": "67ba69a3-b014-4b17-8d1a-66a10b9e870a",
 				"folder": "Inbox"
 			},
 			"doc-notes:work": {
@@ -37,6 +40,9 @@
 				"renderVersion": 31,
 				"blockHash": "7e2fef62",
 				"highlightCount": 0,
+				"transcribedPages": [],
+				"transcribedWith": "82639f08",
+				"noteId": "5d201182-adae-41e0-82fe-21a2f9ac63d6",
 				"folder": "Work/Notes"
 			},
 			"doc-paper:read": {
@@ -52,6 +58,7 @@
 				"renderVersion": 31,
 				"blockHash": "94bed6a5",
 				"highlightCount": 0,
+				"noteId": "4eb35cb9-33db-4fa7-9709-6058d2336e52",
 				"folder": "Reading"
 			}
 		}
