@@ -56,6 +56,28 @@ export interface NoteFrontmatter {
 	 * two-mapped-tags document.
 	 */
 	noteId: string;
+	/**
+	 * The Zotero **item** this document is linked to (spec §4): a key writes it, `null` says the
+	 * document is not linked and the line must go, and **absent** says the caller does not know --
+	 * see {@link mergeKey}. The frontmatter backfill pass is the caller that does not know: it never
+	 * asks Zotero, and removing the key there would strip it off every linked note until that
+	 * document's next real sync put it back.
+	 *
+	 * The item and not the attachment. `zotero-key` is the vocabulary ZotLit and Zotero Integration
+	 * write into their literature notes and it names the paper there; an attachment key under that
+	 * name would make every query across the two kinds of note answer wrong -- and it is the key the
+	 * callout line looks a literature note up by.
+	 */
+	zoteroKey?: string | null;
+	/**
+	 * Zotero's own citation key, when it has one -- never invented, and never removed by us.
+	 *
+	 * The one key the plugin writes without owning: the value may well have been written by another
+	 * plugin, so `null` means the same as absent here (leave the line alone) rather than "remove it".
+	 * Taking it away when a document stops being linked, or when the frontmatter toggle goes off,
+	 * would delete someone else's key out of the user's note.
+	 */
+	citekey?: string | null;
 }
 
 /**
@@ -79,6 +101,13 @@ const MANAGED_KEYS = [
 	"remarkable-uuid",
 	"remarkable-note-id",
 ] as const;
+
+/**
+ * The two keys of spec §4, spelled the way ZotLit and Zotero Integration spell them -- the point is
+ * that a query across every literature note in the vault finds ours too.
+ */
+const ZOTERO_KEY = "zotero-key";
+const CITEKEY = "citekey";
 
 // Same shape note-builder matches: a leading `---` block closed by `---` on its own line.
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/;
@@ -201,6 +230,33 @@ function mergeTags(lines: string[], ownTags: string[], previousOwnTags: string[]
 	return [...lines.slice(0, index), "tags:", ...kept, ...lines.slice(end)];
 }
 
+/**
+ * Replaces, inserts or removes one `key: value` line, where **absent is not a value**: `undefined`
+ * leaves whatever the note has, `null` removes the line, a string writes it.
+ *
+ * That third state is what the `remarkable-*` keys do not need and the two Zotero keys do. Those two
+ * are shared vocabulary -- another plugin may have written the same key into the same note -- and a
+ * caller that does not know the answer has to be able to say so instead of saying "no".
+ */
+function mergeKey(lines: string[], key: string, value: string | null | undefined): string[] {
+	if (value === undefined) return lines;
+	const merged = [...lines];
+	const index = merged.findIndex((line) => line.startsWith(`${key}:`));
+	if (value === null) {
+		if (index !== -1) merged.splice(index, 1);
+		return merged;
+	}
+	const line = `${key}: ${yamlValue(value)}`;
+	if (index === -1) merged.push(line);
+	else merged[index] = line;
+	return merged;
+}
+
+/** The two keys of spec §4. `citekey` is never removed, so `null` there means the same as absent. */
+function mergeZoteroKeys(lines: string[], frontmatter: NoteFrontmatter): string[] {
+	return mergeKey(mergeKey(lines, ZOTERO_KEY, frontmatter.zoteroKey), CITEKEY, frontmatter.citekey ?? undefined);
+}
+
 /** Replaces, inserts, or removes the plugin's scalar lines; a line starting `<key>:` is the plugin's. */
 function mergeScalars(lines: string[], frontmatter: NoteFrontmatter): string[] {
 	const merged = [...lines];
@@ -232,11 +288,11 @@ export function applyFrontmatter(
 ): { content: string; ownTags: string[] } {
 	const match = content.match(FRONTMATTER_RE);
 	if (!match) {
-		const lines = mergeScalars(mergeTags([], frontmatter.tags, previousOwnTags), frontmatter);
+		const lines = mergeZoteroKeys(mergeScalars(mergeTags([], frontmatter.tags, previousOwnTags), frontmatter), frontmatter);
 		return { content: `---\n${lines.join("\n")}\n---\n${content}`, ownTags: frontmatter.tags };
 	}
 
-	const lines = mergeScalars(mergeTags(match[1].split("\n"), frontmatter.tags, previousOwnTags), frontmatter);
+	const lines = mergeZoteroKeys(mergeScalars(mergeTags(match[1].split("\n"), frontmatter.tags, previousOwnTags), frontmatter), frontmatter);
 	return {
 		content: `---\n${lines.join("\n")}\n---\n${content.slice(match[0].length)}`,
 		ownTags: frontmatter.tags,
@@ -247,13 +303,17 @@ export function applyFrontmatter(
  * The toggle-off cleanup for one note: removes the plugin's keys and its tracked tags, keeps every
  * user line, and drops the `---` block entirely when nothing of the user's is left in it. Returns
  * null when the note carries nothing of the plugin's -- the caller skips the write.
+ *
+ * `zotero-key` goes with them; `citekey` stays, like every other user line. It is the one key the
+ * plugin writes without owning (see {@link mergeZoteroKeys}), and a note whose citekey another
+ * plugin put there must not lose it because this plugin's toggle went off.
  */
 export function removeFrontmatter(content: string, ownTags: string[]): string | null {
 	const match = content.match(FRONTMATTER_RE);
 	if (!match) return null;
 
 	let lines = mergeTags(match[1].split("\n"), [], ownTags);
-	lines = lines.filter((line) => !MANAGED_KEYS.some((key) => line.startsWith(`${key}:`)));
+	lines = lines.filter((line) => ![...MANAGED_KEYS, ZOTERO_KEY].some((key) => line.startsWith(`${key}:`)));
 
 	const cleaned = lines.every((line) => line.trim() === "")
 		? content.slice(match[0].length)

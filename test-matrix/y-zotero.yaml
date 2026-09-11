@@ -1301,3 +1301,291 @@
       layer: unit
       file: src/zotero-writeback.test.ts
       test: "carrying out the plan > sends a patch back to the connection its version came from"
+
+- feature: Y15
+  name: The note a linked document gets
+  code: src/zotero-note.ts
+  tier: pro
+  scenarios:
+    - id: Y15.1
+      scenario: An item with a first creator, a year and a title
+      expect: '`Smith 2024 · Best Practices für Prompting` -- the citation a reader recognises, then what the paper is called'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "how the item is named in the note > is the first creator, the year and the title"
+
+    - id: Y15.2
+      scenario: A webpage saved without an author, and an item with no date
+      expect: The missing part is dropped, not filled in. A source without an author is not "Unknown 2024"; it is its title
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "how the item is named in the note > drops the parts Zotero does not have rather than filling them in"
+
+    - id: Y15.3
+      scenario: An item with no title, no creator and no year
+      expect: Its key. A link whose label is empty is a link nobody can see, and the key is at least the thing it opens
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "how the item is named in the note > falls back to the key for an item with no title at all"
+
+    - id: Y15.4
+      scenario: A title carrying square brackets -- `[Preprint]`, `[in press]`
+      expect: Escaped. Unescaped, the first `]` closes the link label early and leaves the `zotero://` URL standing in the note as text. Zotero titles carry these routinely
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "how the item is named in the note > escapes the brackets a Zotero title carries"
+
+    - id: Y15.5
+      scenario: A linked document, web connection configured, everything written back, a literature note in the vault
+      expect: The §4 sample line, byte for byte -- item link, web link, the write-back date, the literature note
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > is the line of the §4 sample"
+
+    - id: Y15.6
+      scenario: A user who has Zotero on the desktop and no API key
+      expect: No web link. The zotero.org URL needs a numeric user id we were never told, so the alternative is a guess that 404s for the one person who owns the library
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > offers no web link where the web connection is not configured"
+
+    - id: Y15.7
+      scenario: Write-back did not run at all
+      expect: '"not written back: <reason>" in place of the date. The note is the only surface left once the sync notice is gone'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > says why nothing was written back, where nothing was"
+
+    - id: Y15.8
+      scenario: Write-back stopped half way through
+      expect: Both numbers -- "12 of 30 highlights written back". The reader is otherwise told nothing about the eighteen of their own marks the paper is missing
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > names both numbers for a run that was cut short"
+
+    - id: Y15.9
+      scenario: A vault with no note about this paper
+      expect: The clause is absent, not empty. "literature note:" with nothing after it reads as a link that went missing
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > says nothing about a literature note where the vault has none"
+
+    - id: Y15.10
+      scenario: A ZotLit literature note carrying this item's `zotero-key`
+      expect: Pointed at with a wikilink. Found through the frontmatter alone -- the note is never read and never written
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the vault's own note about the paper > is the note carrying this item's key"
+
+    - id: Y15.11
+      scenario: A literature note that carries only a citekey
+      expect: Found by the citekey. Zotero Integration templates commonly write that key and not the item key
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the vault's own note about the paper > is found by the citekey where the note carries no item key"
+
+    - id: Y15.12
+      scenario: The notes this sync just wrote, which now carry `zotero-key` themselves
+      expect: Excluded. Otherwise a document synced under two mapped tags finds its own twin -- or itself -- and prints "literature note" pointing at a generated note
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the vault's own note about the paper > is never one of the notes this sync just wrote"
+
+    - id: Y15.13
+      scenario: Two notes in the vault carry the same item key
+      expect: The lowest path, whatever order they arrive in. Obsidian's cache has no order to promise, and the line must not change from one sync to the next because of it
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the vault's own note about the paper > picks the same one of several matches every time"
+
+    - id: Y15.14
+      scenario: An item with no citekey, and a note with no citekey
+      expect: 'No match. `null === null` would otherwise make every keyless note the literature note of every keyless item -- the same absent-value trap as the hash row of §2.3'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the vault's own note about the paper > never takes two missing citekeys for a match"
+
+    - id: Y15.15
+      scenario: A vault with no literature notes at all
+      expect: Null, and no clause in the line
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the vault's own note about the paper > finds nothing in a vault that has nothing"
+
+    - id: Y15.16
+      scenario: A sync at half past midnight
+      expect: The local calendar date, no time of day. The person reading it is sitting in front of the vault, and a second sync the same day says nothing new
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "a local calendar date > is the day the sync happened where the reader is sitting"
+
+    - id: Y15.17
+      scenario: A linked document with one written-back highlight
+      expect: The §4 sample note, byte for byte -- callout, Zotero line, embed, digest entry with both links and its block id
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the note of spec §4 > renders the sample"
+
+    - id: Y15.18
+      scenario: The sample's frontmatter block
+      expect: '`zotero-key` then `citekey`. The sample is abridged -- the same Pro toggle writes the `remarkable-*` keys above them, which `frontmatter.test.ts` owns'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the note of spec §4 > carries the sample's two keys, in its order"
+
+    - id: Y15.19
+      scenario: A note whose document is linked
+      expect: The line is the ownership callout's last line, inside it. Outside it would be a loose line above the embed that the reader cannot collapse, and the callout is already where the note says what it is
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "buildNoteContent > carries the Zotero line as the callout's last line"
+
+    - id: Y15.20
+      scenario: A note whose document is not linked to anything in Zotero
+      expect: The word does not appear in the note. Every vault that does not use Zotero gets exactly the note it got before
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "buildNoteContent > writes no Zotero line at all for a document that is not linked to one"
+
+    - id: Y15.21
+      scenario: A document that gains a Zotero link, or loses one
+      expect: A different managed-block hash. The line is part of the block, so the change registers and the note is rewritten instead of being read as already up to date
+      layer: unit
+      file: src/note-builder.test.ts
+      test: "buildNoteContent > changes the block hash when the Zotero line does"
+
+- feature: Y16
+  name: The two Zotero keys in the frontmatter
+  code: src/frontmatter.ts
+  tier: pro
+  scenarios:
+    - id: Y16.1
+      scenario: A linked document whose item has a citekey, frontmatter toggle on
+      expect: '`zotero-key` then `citekey`, after the plugin''s own keys. Both are spelled the way ZotLit and Zotero Integration spell them, so one query across the vault finds every kind of literature note including ours'
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > writes both, in the order of the §4 sample"
+
+    - id: Y16.2
+      scenario: A library without Better BibTeX, so the item has no citekey
+      expect: No `citekey` key at all (§4, "never invented"). A made-up one is indistinguishable from a real one to every query in the vault
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > invents no citekey where Zotero has none"
+
+    - id: Y16.3
+      scenario: A note that already carries a citekey another plugin wrote, for a document Zotero has no citekey for
+      expect: The line stays. It is shared vocabulary, not ours -- removing it because *this* document stopped being linked deletes another plugin's line out of the user's note
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > never takes a citekey out of a note"
+
+    - id: Y16.4
+      scenario: A citekey Zotero now spells differently
+      expect: Overwritten. The key is written but not owned; where Zotero has an answer, that answer is the current one
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > writes over a citekey Zotero now spells differently"
+
+    - id: Y16.5
+      scenario: A document that is no longer linked to a Zotero item
+      expect: '`zotero-key` removed. It is a claim about identity, and a false one would point queries and the literature-note lookup at the wrong paper'
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > removes the item key from a note whose document is no longer linked"
+
+    - id: Y16.8
+      scenario: A vault that does not use Zotero at all
+      expect: Neither key is written, and nothing is taken out. The frontmatter block is exactly what it was before this feature existed
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > writes nothing at all for a document that was never linked"
+
+    - id: Y16.6
+      scenario: The frontmatter backfill pass, which never asks Zotero
+      expect: Both lines left exactly as they stand. Absent means "I do not know"; read as "no link" it would strip the key off every linked note in the vault until each document's next real sync put it back
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > leaves both alone for a caller that does not know"
+
+    - id: Y16.7
+      scenario: The Pro frontmatter toggle is switched off
+      expect: '`zotero-key` goes with the plugin''s own keys; `citekey` stays, like every other user line'
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > takes its own key back on the toggle-off cleanup, and leaves the citekey standing"
+
+- feature: Y17
+  name: The link from a quote into Zotero
+  code: src/digest-builder.ts
+  tier: pro
+  scenarios:
+    - id: Y17.1
+      scenario: An annotation on the second sheet of the PDF
+      expect: '`?page=2` for page index 1. Zotero''s reader counts physical sheets; the `p. xii` beside it in the note is the document''s own printed label, and the two disagreeing is correct'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > opens the reader on the annotation's own physical page"
+
+    - id: Y17.2
+      scenario: A highlight that reached Zotero
+      expect: Its block id maps to the `zotero://open-pdf` URL of the annotation it became
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > is offered for every highlight that reached Zotero"
+
+    - id: Y17.3
+      scenario: A highlight write-back has not created yet -- a half-way failure, or a sync with no connection
+      expect: No link. The entry is in the note either way; only Zotero has nothing to open
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > is not offered for a highlight that has not been written back"
+
+    - id: Y17.4
+      scenario: An annotation the user deleted in Zotero
+      expect: No link. We remember it as deleted and never recreate it (§3.3), so the link would open the reader on nothing
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > is not offered for an annotation the user deleted in Zotero"
+
+    - id: Y17.5
+      scenario: An entry on a page the reader added on the device
+      expect: No link -- the page has no place in the source document, which is the same reason write-back skipped it
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > is not offered on a page the reader added on the device"
+
+    - id: Y17.6
+      scenario: A margin note, which does become a sticky in Zotero
+      expect: No link (§4). What a reader would follow it for -- their own handwriting -- is in the vault's own PDF, which the entry already points at
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > is not offered for a margin note"
+
+    - id: Y17.7
+      scenario: A quote under a section heading, written back
+      expect: The vault's page link first, then ` · [in Zotero](…)`. Label shown, physical page linked
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — the link into Zotero > follows the vault's page link with the annotation's own"
+
+    - id: Y17.8
+      scenario: A quote on a page with no section, where the page heading carries the locator
+      expect: The Zotero link is still on the entry. It points at one annotation, and a heading cannot carry that
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — the link into Zotero > is there on a page that is its own heading, where the entry carries no other link"
+
+    - id: Y17.9
+      scenario: Two quotes, one of them written back
+      expect: Only that one carries a link; the other is rendered exactly as it was
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — the link into Zotero > is absent from every entry that has no annotation of its own"
+
+    - id: Y17.10
+      scenario: A vault with no Zotero connection at all
+      expect: The digest is byte-for-byte what it was before this feature existed
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — the link into Zotero > leaves every entry as it was for a sync with nothing written back"

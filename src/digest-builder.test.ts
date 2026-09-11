@@ -598,6 +598,46 @@ describe("renderDigest — note anchors and regions", () => {
 	});
 });
 
+describe("renderDigest — the link into Zotero", () => {
+	// The vault's own page link first, then Zotero's. Two numbers on one line -- `p. 1` is the
+	// document's printed label, `page=2` is the sheet Zotero's reader turns to -- and that is right.
+	it("follows the vault's page link with the annotation's own", () => {
+		const rendered = renderDigest(
+			EMBED,
+			[page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz.", section: "First" })] })],
+			{ "hl-1": "zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1" },
+		);
+
+		expect(rendered.split("\n").slice(-2)).toEqual([
+			`Ein Satz. · [[${EMBED}#page=1|p. 1]] · [in Zotero](zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1)`,
+			"^hl-1",
+		]);
+	});
+
+	// The heading carries the page there, and a heading cannot carry a link to one mark: the entry has
+	// no locator of its own and still has an annotation to point at.
+	it("is there on a page that is its own heading, where the entry carries no other link", () => {
+		const rendered = renderDigest(EMBED, [page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz." })] })], {
+			"hl-1": "zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1",
+		});
+
+		expect(rendered).toContain("Ein Satz. · [in Zotero](zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1)\n^hl-1");
+	});
+
+	it("is absent from every entry that has no annotation of its own", () => {
+		const rendered = renderDigest(EMBED, [page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz." }), highlight({ id: "hl-2", sentence: "Noch einer." })] })], {
+			"hl-1": "zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1",
+		});
+
+		expect(rendered).toContain("Noch einer.\n^hl-2");
+	});
+
+	it("leaves every entry as it was for a sync with nothing written back", () => {
+		const pages = [page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz." })] })];
+		expect(renderDigest(EMBED, pages, {})).toBe(renderDigest(EMBED, pages));
+	});
+});
+
 describe("digestId", () => {
 	it("is `<prefix>-` plus six hex chars", () => {
 		expect(digestId("hl", "page-1", "0110")).toMatch(/^hl-[0-9a-f]{6}$/);

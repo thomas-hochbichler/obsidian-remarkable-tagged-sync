@@ -143,6 +143,16 @@ export interface DigestPage {
 	notes: (DigestNote & { section: string | null })[];
 }
 
+/**
+ * Block id -> the `zotero://open-pdf/…` URL of the annotation that entry became, for the ` · [in
+ * Zotero]` link a quote carries once it has been written back (spec §4).
+ *
+ * A plain record of strings rather than the link itself, so the one module that knows how a Zotero
+ * URL is spelled (`zotero-note.ts`) stays the only one: here it is a string to print. Empty for
+ * every sync that has nothing written back, which is most of them.
+ */
+export type ZoteroDigestLinks = Readonly<Record<string, string>>;
+
 /** How many words of the nearest line the `line` anchor quotes before trailing off. */
 const ANCHOR_LINE_WORDS = 4;
 
@@ -320,7 +330,7 @@ function renderNote(note: DigestNote, prefix: string, locator: string): string {
  * page alternate grey and blue for its whole length. With the box gone the fold it existed to keep
  * short goes too -- a long quote is now simply a long paragraph.
  */
-function renderHighlight(highlight: DigestHighlight, locator: string): string {
+function renderHighlight(highlight: DigestHighlight, locator: string, zoteroUrl: string | undefined): string {
 	// Escaped after marking, not before: the runs are matched against the raw sentence, and `==` is
 	// the digest's own markup rather than the document's, so it must survive untouched.
 	//
@@ -330,7 +340,12 @@ function renderHighlight(highlight: DigestHighlight, locator: string): string {
 	// every id visible. On its own line (no blank line, so it stays part of the entry) it is hidden
 	// again and still resolves as a link target. A note keeps its id on the last body line: inside
 	// the callout it was never visible.
-	const quote = `${escapeText(markSentence(highlight.sentence, highlight.marked))}${locator}\n^${highlight.id}`;
+	//
+	// The Zotero link follows the vault's own, and it is per entry rather than per page because it
+	// points at one annotation. So it is there even where the page heading carries the locator and
+	// the entry itself has none -- a heading cannot hold a link to a single mark.
+	const inZotero = zoteroUrl === undefined ? "" : ` · [in Zotero](${zoteroUrl})`;
+	const quote = `${escapeText(markSentence(highlight.sentence, highlight.marked))}${locator}${inZotero}\n^${highlight.id}`;
 	// A note anchored to this highlight follows it as a block of its own -- there is no callout left
 	// to nest inside. It repeats the locator rather than leaning on the quote above it: as a separate
 	// box it reads as an entry, and an entry whose title lacks the link every other one has reads as
@@ -357,12 +372,12 @@ interface DigestEntry {
  * Sections themselves run in the order their first entry appears top-down, which is the order of
  * their headings on the page -- the page carries no heading positions of its own.
  */
-function pageEntries(page: DigestPage): DigestEntry[] {
+function pageEntries(page: DigestPage, zotero: ZoteroDigestLinks): DigestEntry[] {
 	const entries: DigestEntry[] = [
 		...page.highlights.map((highlight) => ({
 			section: highlight.section,
 			top: highlight.top,
-			render: (locator: string) => renderHighlight(highlight, locator),
+			render: (locator: string) => renderHighlight(highlight, locator, zotero[highlight.id]),
 		})),
 		...page.notes.map((note) => ({
 			section: note.section,
@@ -393,13 +408,13 @@ function pageEntries(page: DigestPage): DigestEntry[] {
  * A page without a single entry contributes nothing, so it never appears as a bare heading: a page
  * with no annotation is not part of the digest.
  */
-export function renderDigest(embedPath: string, pages: DigestPage[]): string {
+export function renderDigest(embedPath: string, pages: DigestPage[], zotero: ZoteroDigestLinks = {}): string {
 	const blocks: string[] = [];
 	let heading: string | null = null;
 
 	for (const page of pages) {
 		const pageLink = (label: string) => `[[${embedPath}#page=${page.embedPage}|${label}]]`;
-		for (const entry of pageEntries(page)) {
+		for (const entry of pageEntries(page, zotero)) {
 			// Compared as the rendered line, which is what settles both cases at once: the same section
 			// twice running is one heading, while two pages without a section are two -- their headings
 			// differ, because each names its own page.

@@ -1093,6 +1093,9 @@ async function writeUnit(
 		highlights: params.highlights,
 		transcript: renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: transcriptHighlights, unitPages: params.unitPages }),
 		digest: params.digest,
+		// The Obsidian half completes first, always (spec §3.4): write-back runs after this note is
+		// written, so its line and its per-quote links can only be in the note the second write makes.
+		zoteroLine: null,
 	};
 
 	// Between building the block and writing it, the only moment both the finished note and the one it

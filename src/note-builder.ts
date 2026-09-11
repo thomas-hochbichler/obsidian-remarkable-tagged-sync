@@ -45,6 +45,12 @@ export interface NoteFields {
 	 * rendering those beside it would only duplicate them.
 	 */
 	digest: string;
+	/**
+	 * The `Zotero: …` line of the ownership callout, or null for a document that is not linked to a
+	 * Zotero item (spec §4). Built by `zotero-note.ts`; a finished line here, because what it says is
+	 * Zotero's business and where it goes is this module's.
+	 */
+	zoteroLine: string | null;
 }
 
 export interface NoteStore {
@@ -365,7 +371,12 @@ function pageBody(page: TranscriptPage, quotes: string[], typedLine: string): st
  * never renders a `## Highlights` section of its own (ticket 05).
  */
 function buildManagedBlock(fields: NoteFields): string {
-	const embed = `${OWNERSHIP_CALLOUT}\n\n![[${fields.embedPath}]]\n`;
+	// Inside the callout rather than beside it: the line is about this note's provenance, which is what
+	// the callout already says, and outside it would be a loose line above the embed that the reader
+	// cannot collapse. It is part of the managed block and therefore part of its hash, so a document
+	// that gains its Zotero link -- or loses it -- registers as a change and is rewritten.
+	const callout = fields.zoteroLine === null ? OWNERSHIP_CALLOUT : `${OWNERSHIP_CALLOUT}\n> ${fields.zoteroLine}`;
+	const embed = `${callout}\n\n![[${fields.embedPath}]]\n`;
 	const sections = [
 		fields.digest === "" ? renderHighlights(fields.embedPath, fields.highlights) : `## Digest\n${fields.digest}`,
 		// No transcript (backend off/unavailable, or OCR found nothing) -> no empty heading in the note.
