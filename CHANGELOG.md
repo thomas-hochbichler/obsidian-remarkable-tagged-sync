@@ -12,7 +12,7 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
-## [1.7.0] - 2026-09-10
+## [1.7.0] - 2026-09-11
 
 ### Added
 
