@@ -13,7 +13,7 @@
 // leaves the stroke a note.
 
 import type { DeviceCanvas, PdfRect } from "./pdf-renderer";
-import { sceneRectToPdf } from "./pdf-renderer";
+import { recordedColor, sceneRectToPdf } from "./pdf-renderer";
 import { quoteForRects, type PdfPageText, type PdfTextLine } from "./pdf-text";
 import type { RmStroke } from "./rm-parser";
 
@@ -238,7 +238,7 @@ export function findMarkerMarks(strokes: RmStroke[], page: PdfPageText, frame: D
 			marked: quote.marked,
 			top: box.minY,
 			pdfRect: rect,
-			color: stroke.colorRgba ?? null,
+			color: recordedColor(stroke),
 		});
 	}
 	return marks;

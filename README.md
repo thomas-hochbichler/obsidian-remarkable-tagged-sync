@@ -461,6 +461,23 @@ margin notes, into your own Zotero library, and to zotero.org if that is the con
 it. Setting up a connection above is what switches this on; there is no separate step, and with no
 connection nothing is sent at all.
 
+### Colours
+
+Your highlights arrive in Zotero in the colour you chose, in Zotero's own eight. A tablet colour
+goes to the Zotero colour of the same *hue*, not to the nearest by number — so the Paper Pro's
+pastel green stays green instead of turning grey. What a device can record differs:
+
+| Device | Records | Arrives in Zotero as |
+|---|---|---|
+| reMarkable 2 (firmware 3.1 sample) | yellow, green, pink — the device shows them as three greys, the desktop app in colour | yellow, green, red |
+| Paper Pro highlighter (firmware 3.14–3.15 samples, and the maintainer's own pages of August 2026) | yellow, blue, pink, orange, green, grey | yellow, blue, magenta, orange, green, gray |
+| Paper Pro shader | the pen palette | the Zotero colour of the same hue; black becomes gray |
+| Paper Pro, text selected by hand | yellow, green, pink, like the reMarkable 2 | yellow, green, red |
+| Paper Pure | not measured yet — a page from one is welcome | |
+
+A colour code planned on the laptop therefore has three colours on a reMarkable 2 and six on a
+Paper Pro. Recolouring in Zotero afterwards is safe: your edit of a colour wins from then on.
+
 ### When something does not reach Zotero
 
 Your notes are never held up by Zotero: the vault half of a sync always finishes first, and

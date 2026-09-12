@@ -532,6 +532,35 @@ describe("buildDigest sections across pages", () => {
 	});
 });
 
+describe("buildDigest marker colour", () => {
+	/** One page, one highlight over its one line of text, recorded with the given colour fields. */
+	function pageWith(sourceIndex: number, colour: Pick<RmHighlight, "color" | "colorRgba">) {
+		const text: PdfPageText = { label: String(sourceIndex + 1), width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: [textLine("Ein Satz auf dieser Seite.", 600, 10)] };
+		const rect = { x: (80 - PAGE_WIDTH_PT / 2) / PX_TO_PT, y: (PAGE_HEIGHT_PT - 600 - 10) / PX_TO_PT, width: 450 / PX_TO_PT, height: 10 / PX_TO_PT };
+		const scene: RmPage = { formatVersion: 2, layers: [], highlights: [{ id: `h${sourceIndex}`, text: "Ein Satz auf dieser Seite.", rects: [rect], ...colour }] };
+		const page: DigestPageInput = { pageId: `p${sourceIndex}`, sourceIndex, embedPage: sourceIndex + 1, scene };
+		return { page, text };
+	}
+
+	// Both conventions the devices use, read out of real files: the reMarkable 2 and the Paper Pro's
+	// selection gesture name a palette id (with no `color_rgba`, or an opaque-black one); the Paper
+	// Pro's highlighter names the HIGHLIGHT placeholder and the true colour.
+	it("takes the palette id the device named, and color_rgba only for the HIGHLIGHT placeholder", async () => {
+		const gesture = pageWith(0, { color: 3, colorRgba: { r: 0, g: 0, b: 0 } });
+		const rm2 = pageWith(1, { color: 4 });
+		const highlighter = pageWith(2, { color: 9, colorRgba: { r: 190, g: 234, b: 254 } });
+		const document = fakeTextDocument({ 0: gesture.text, 1: rm2.text, 2: highlighter.text });
+
+		const result = await build([gesture.page, rm2.page, highlighter.page], { loadText: async () => document });
+
+		expect(result.pages.map((page) => page.highlights[0].color)).toEqual([
+			{ r: 251, g: 247, b: 25 },
+			{ r: 0, g: 255, b: 0 },
+			{ r: 190, g: 234, b: 254 },
+		]);
+	});
+});
+
 describe("buildDigest merges highlights that share a sentence", () => {
 	const SENTENCE = "Wenn du eine harte Obergrenze benötigst, ist erweitertes Denken weiterhin funktionsfähig.";
 

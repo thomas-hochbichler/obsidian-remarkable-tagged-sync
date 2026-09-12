@@ -130,13 +130,51 @@ describe("the sort index Zotero will not do without", () => {
 });
 
 describe("the colour", () => {
-	it("is the nearest of the eight Zotero's reader offers", () => {
-		// Three of the reMarkable's own palette, each snapped to the nearest Zotero offers. Pink lands
-		// on Zotero's magenta rather than its red, which is what the numbers say and what the eye says.
-		expect(zoteroColor({ r: 255, g: 255, b: 0 })).toBe("#ffd400");
-		expect(zoteroColor({ r: 255, g: 192, b: 203 })).toBe("#e56eee");
-		expect(zoteroColor({ r: 0, g: 255, b: 0 })).toBe("#5fb236");
-		expect(zoteroColor({ r: 255, g: 0, b: 0 })).toBe("#ff6666");
+	// Every colour a device has been seen to record, read out of real files with `parseRmV6`:
+	// the reMarkable 2 (rmscene's Wikipedia_highlighted pages, firmware 3.1) and the Paper Pro's
+	// selection gesture write a palette id; the Paper Pro's highlighter and shader write the true
+	// colour (rmscene's Color_and_tool_v3.14.4 and More_color_highlight_shader_v3.15.4.2, the
+	// maintainer's own pages of 2026-08). Each row is what the eye calls that colour in Zotero's
+	// names -- a palette change on either side moves a row and fails here.
+	const RECORDED: [name: string, rgb: { r: number; g: number; b: number }, zotero: string][] = [
+		// palette ids, as `recordedColor` resolves them (reMarkable 2; Paper Pro gesture)
+		["palette 3 yellow", { r: 251, g: 247, b: 25 }, "#ffd400"],
+		["palette 4 green", { r: 0, g: 255, b: 0 }, "#5fb236"],
+		["palette 5 pink", { r: 255, g: 192, b: 203 }, "#ff6666"],
+		["palette 6 blue", { r: 78, g: 105, b: 201 }, "#2ea8e5"],
+		["palette 7 red", { r: 179, g: 62, b: 57 }, "#ff6666"],
+		["palette 10 green_2", { r: 161, g: 216, b: 125 }, "#5fb236"],
+		["palette 11 cyan", { r: 139, g: 208, b: 229 }, "#2ea8e5"],
+		["palette 12 magenta", { r: 183, g: 130, b: 205 }, "#e56eee"],
+		["palette 13 yellow_2", { r: 247, g: 232, b: 81 }, "#ffd400"],
+		// Paper Pro highlighter, id 9 + color_rgba
+		["highlighter yellow", { r: 255, g: 237, b: 117 }, "#ffd400"],
+		["highlighter blue", { r: 190, g: 234, b: 254 }, "#2ea8e5"],
+		["highlighter pink", { r: 242, g: 158, b: 255 }, "#e56eee"],
+		["highlighter orange", { r: 255, g: 195, b: 140 }, "#f19837"],
+		["highlighter green", { r: 172, g: 255, b: 133 }, "#5fb236"],
+		["highlighter grey", { r: 199, g: 199, b: 198 }, "#aaaaaa"],
+		// Paper Pro shader, id 9 + color_rgba
+		["shader black", { r: 33, g: 30, b: 28 }, "#aaaaaa"],
+		["shader amber", { r: 254, g: 178, b: 0 }, "#ffd400"],
+		["shader purple", { r: 192, g: 127, b: 210 }, "#e56eee"],
+		["shader blue", { r: 48, g: 74, b: 224 }, "#2ea8e5"],
+		["shader red", { r: 194, g: 49, b: 50 }, "#ff6666"],
+		["shader green", { r: 145, g: 218, b: 113 }, "#5fb236"],
+		["shader yellow", { r: 250, g: 231, b: 25 }, "#ffd400"],
+		["shader cyan", { r: 116, g: 210, b: 232 }, "#2ea8e5"],
+	];
+
+	it("is the one of Zotero's eight whose hue band the device colour falls in", () => {
+		for (const [name, rgb, zotero] of RECORDED) expect(zoteroColor(rgb), name).toBe(zotero);
+	});
+
+	// The nearest in RGB is not it: by squared distance the Paper Pro's pastel green and orange are
+	// nearer Zotero's grey than their namesakes, and its yellow is nearer orange. Pinned so a "simpler"
+	// metric cannot come back.
+	it("keeps a pastel with its namesake rather than with grey", () => {
+		expect(zoteroColor({ r: 172, g: 255, b: 133 })).not.toBe("#aaaaaa");
+		expect(zoteroColor({ r: 255, g: 237, b: 117 })).toBe("#ffd400");
 	});
 
 	it("is Zotero's own yellow for a mark that has no colour", () => {

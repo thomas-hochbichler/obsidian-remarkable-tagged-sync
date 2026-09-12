@@ -20,6 +20,8 @@ workflow publishes the section as the GitHub release body. See
   marked on the tablet is also written into Zotero as native highlights, underlines and comments
   (add-only, your edits in Zotero win), and the plugin can talk to the Zotero 10 desktop app as
   well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
+  Highlight colours arrive as the colour you chose, in Zotero's eight — matched by hue, so the
+  Paper Pro's pastel highlighters keep their names and the reMarkable 2's three arrive as three.
 - **A tag in Zotero sends the paper.** Name a send tag under Settings → Zotero (off until you
   do), tag a paper with it in Zotero, and the next sync puts its PDF on your tablet, in the same
   folder and with the same sync tag as *Send*. Nothing is written into Zotero and the tag stays;

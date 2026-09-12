@@ -21,8 +21,8 @@ import { DEFAULT_ANNOTATION_COLOR, type NewAnnotation, type ZoteroAnnotationType
  *
  * A colour off this list is not refused -- the data layer takes any `#rrggbb` -- but it is invisible
  * in the reader's colour filter and in its sidebar grouping, which is most of what a colour is *for*
- * in Zotero. The reMarkable's palette is a different eight, so every one of ours is snapped to the
- * nearest of these rather than carried across exactly.
+ * in Zotero. The reMarkable's colours are others, so every one of ours is put into the band of one of
+ * these ({@link zoteroColor}) rather than carried across exactly.
  */
 export const ZOTERO_COLORS = [
 	{ hex: "#ffd400", r: 255, g: 212, b: 0 },
@@ -93,20 +93,55 @@ export function sortIndex(pageIndex: number, heightPt: number, rect: PdfRect | n
 }
 
 /**
- * The nearest of {@link ZOTERO_COLORS} to what the reader drew with, as lowercase hex.
+ * The hue each of Zotero's chromatic colours owns, as the upper edge of its band in degrees, in the
+ * order the bands run round the circle. Grey is not a band: it is what a colour with no hue gets.
  *
- * Plain squared distance in RGB. A perceptual metric would be defensible and is not worth it: the two
- * palettes are eight saturated colours each, every one of ours is nearer to its own hue than to any
- * other, and the one judgement a user would notice -- yellow staying yellow -- is the same either way.
+ * The edges are where the measured device colours (`zotero-annotations.test.ts`, *the colour*) say
+ * the eye puts them. Two are not midpoints on purpose: blue runs to 245° because every blue a
+ * reMarkable records is a royal blue (227-231°) while Zotero's is an azure (200°), and yellow starts
+ * at 40° so that the Paper Pro's amber shader stays with the yellows it sits next to on the device.
+ */
+const HUE_BANDS: readonly { upTo: number; hex: string }[] = [
+	{ upTo: 15, hex: "#ff6666" }, // red
+	{ upTo: 40, hex: "#f19837" }, // orange
+	{ upTo: 75, hex: "#ffd400" }, // yellow
+	{ upTo: 165, hex: "#5fb236" }, // green
+	{ upTo: 245, hex: "#2ea8e5" }, // blue
+	{ upTo: 275, hex: "#a28ae5" }, // purple
+	{ upTo: 340, hex: "#e56eee" }, // magenta
+	{ upTo: 360, hex: "#ff6666" }, // red again
+];
+const ZOTERO_GRAY = "#aaaaaa";
+
+/**
+ * Below this spread between the strongest and weakest channel a colour has no hue worth the name:
+ * the Paper Pro's grey highlighter is 1, its black shader 5, and the palest colour any device records
+ * (the palette's pink, 255/192/203) is 63.
+ */
+const GREY_CHROMA = 32;
+
+/**
+ * The one of {@link ZOTERO_COLORS} the reader drew with, as lowercase hex: the colour whose hue band
+ * the device colour falls in, or grey for a colour with no hue.
+ *
+ * Not the nearest in RGB. Every highlighter colour a device records is pastel -- the Paper Pro's
+ * yellow is 255/237/117, its green 172/255/133 -- and by squared distance a pastel is nearer to
+ * Zotero's grey than to its own saturated namesake, which turned green and orange highlights grey
+ * and the yellow one orange. A colour's name is its hue; lightness is what the highlighter's
+ * translucency adds, and Zotero's reader adds its own.
  *
  * A highlight the device recorded without a colour, and every pen mark, is Zotero's default yellow:
  * the colour is not known to be anything else, and `#ffd400` is what Zotero itself fills in.
  */
 export function zoteroColor(color: { r: number; g: number; b: number } | null): string {
 	if (color === null) return DEFAULT_ANNOTATION_COLOR;
-	const distance = (candidate: (typeof ZOTERO_COLORS)[number]) =>
-		(candidate.r - color.r) ** 2 + (candidate.g - color.g) ** 2 + (candidate.b - color.b) ** 2;
-	return ZOTERO_COLORS.reduce((best, candidate) => (distance(candidate) < distance(best) ? candidate : best)).hex;
+	const { r, g, b } = color;
+	const max = Math.max(r, g, b);
+	const chroma = max - Math.min(r, g, b);
+	if (chroma < GREY_CHROMA) return ZOTERO_GRAY;
+	const sector = max === r ? (g - b) / chroma : max === g ? (b - r) / chroma + 2 : (r - g) / chroma + 4;
+	const hue = (sector * 60 + 360) % 360;
+	return HUE_BANDS.find((band) => hue < band.upTo)?.hex ?? ZOTERO_GRAY;
 }
 
 /**

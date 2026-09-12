@@ -868,6 +868,13 @@
       file: src/digest-pipeline.test.ts
       test: "buildDigest merges highlights that share a sentence > gives the merged entry every member's runs"
 
+    - id: Y11.8
+      scenario: Three highlights as the devices record them -- a Paper Pro gesture (palette id 3, opaque-black color_rgba), a reMarkable 2 green (palette id 4, no color_rgba), a Paper Pro highlighter (id 9, true colour)
+      expect: Palette yellow, palette green, the true colour. A named palette id is authoritative and color_rgba resolves only the HIGHLIGHT placeholder, the precedence the renderer already used; reading color_rgba first made the first black and the second colourless
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest marker colour > takes the palette id the device named, and color_rgba only for the HIGHLIGHT placeholder"
+
 - feature: Y12
   name: Which Zotero PDF a synced document is
   code: src/zotero-match.ts
@@ -1131,11 +1138,18 @@
       test: "the sort index Zotero will not do without > puts an entry with no rectangle at the top of its page rather than nowhere"
 
     - id: Y13.18
-      scenario: The reMarkable's palette
-      expect: Each colour snapped to the nearest of Zotero's eight. Off that list a colour is invisible in the reader's colour filter and its sidebar grouping, which is most of what a colour is for there
+      scenario: Every colour a device has been seen to record -- the reMarkable 2's three palette ids, the Paper Pro's gesture ids, highlighter and shader true colours
+      expect: The one of Zotero's eight whose hue band the colour falls in, per the measured table (ticket 27). Off that list a colour is invisible in the reader's colour filter and its sidebar grouping, which is most of what a colour is for there
       layer: unit
       file: src/zotero-annotations.test.ts
-      test: "the colour > is the nearest of the eight Zotero's reader offers"
+      test: "the colour > is the one of Zotero's eight whose hue band the device colour falls in"
+
+    - id: Y13.23
+      scenario: A pastel highlighter colour -- the Paper Pro's green 172/255/133, its yellow 255/237/117
+      expect: Its namesake, not grey or orange. By squared RGB distance a pastel is nearer Zotero's grey than its own saturated colour; the hue is what a colour's name is
+      layer: unit
+      file: src/zotero-annotations.test.ts
+      test: "the colour > keeps a pastel with its namesake rather than with grey"
 
     - id: Y13.19
       scenario: A pen mark, and a highlight the device recorded without a colour

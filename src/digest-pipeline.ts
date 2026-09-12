@@ -21,6 +21,7 @@ import {
 	annotatedPageFit,
 	isHighlighterOrShader,
 	notebookPageFrame,
+	recordedColor,
 	pageFrame,
 	resolveDeviceCanvas,
 	sceneRectToPdf,
@@ -322,7 +323,7 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
 				// device's own recorded text is still the truth about what was highlighted.
 				sentence: found?.sentence ?? oneLine(source.text),
 				marked: found?.marked ?? [],
-				color: source.colorRgba ?? null,
+				color: recordedColor(source),
 				notes: [],
 				section: null,
 				top: source.rects.length === 0 ? 0 : Math.min(...source.rects.map((rect) => rect.y)),
