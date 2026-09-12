@@ -1031,6 +1031,9 @@ describe("the Zotero section", () => {
 		choice.pick("#b");
 		await settle();
 		expect((plugin.data.zotero as { sendSyncTag: string | null }).sendSyncTag).toBe("#b");
+		choice.pick("");
+		await settle();
+		expect((plugin.data.zotero as { sendSyncTag: string | null }).sendSyncTag).toBeNull();
 	});
 
 	// What the step will actually use until the setting is made, shown rather than left blank.

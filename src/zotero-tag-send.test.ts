@@ -7,6 +7,7 @@ import { DEFAULT_DATA, type TaggedSyncData } from "./settings-store";
 import { type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroItem } from "./zotero-client";
 import { linkFor, type StoredZoteroLinks, type ZoteroLink } from "./zotero-links";
 import { SEND_COMMAND, type ZoteroHost } from "./zotero-plugin";
+import { zoteroSkipReason } from "./zotero-sync";
 import { SEND_NEEDS_A_TAG, SEND_NEEDS_TRANSPORT, type SendDocument, type SendTransport } from "./zotero-send";
 import {
 	NO_COPY_OF_PDF,
@@ -273,6 +274,61 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 		expect(takeModals()).toEqual([]);
 		expect(notices).toEqual([tagSendSkipNotice("Prompting", NO_COPY_OF_PDF)]);
 		expect(h.data.zoteroLinks).toEqual({});
+	});
+
+	it("counts the papers in the notice when the whole step stands down", async () => {
+		const h = harness({ tags: {}, client: fakeClient({ itemsWithTag: async () => [PAPER, SECOND] }) });
+
+		expect(await sendTaggedPapers(h.host, true)).toEqual([`Zotero: 2 papers tagged to-remarkable not sent. ${SEND_NEEDS_A_TAG}`]);
+	});
+
+	// The same fallbacks as Send: the folder setting left blank means the default folder, and a paper
+	// with no title is named by its key -- in the notice as well as on the tablet.
+	it("falls back to the default folder and the item key where the setting and the title are blank", async () => {
+		const h = harness({
+			zotero: { folder: "   " },
+			client: fakeClient({
+				itemsWithTag: async () => [{ ...PAPER, title: "  " }, SECOND],
+				attachments: async () => [attachment(), attachment({ key: "ATT1B" }), attachment({ key: "ATT2", parentKey: "ITEM2", filename: "retrieval.pdf" })],
+			}),
+		});
+		const notices = await sendTaggedPapers(h.host, false);
+
+		expect(h.sent.map((document) => document.folder)).toEqual(["Zotero"]);
+		expect(notices).toContain(tagSendSkipNotice("ITEM1", severalPdfs(2)));
+	});
+
+	it("names a paper whose upload failed with something that is not an Error", async () => {
+		const h = harness();
+		h.host = {
+			...h.host,
+			sendRoutes: () => ({
+				cloud: {
+					label: "reMarkable's cloud",
+					putPdf: async () => {
+						throw "the socket closed";
+					},
+				},
+				ssh: null,
+			}),
+		};
+
+		expect(await sendTaggedPapers(h.host, false)).toEqual([tagSendSkipNotice("Prompting", "the socket closed")]);
+	});
+
+	// Whatever went up before Zotero stopped answering stays sent and said; the rest is the next sync's.
+	it("says the step did not finish when Zotero fails after the listing", async () => {
+		const down = new ZoteroError("unreachable", "gone");
+		const h = harness({
+			client: fakeClient({
+				attachments: async () => {
+					throw down;
+				},
+			}),
+		});
+
+		expect(await sendTaggedPapers(h.host, false)).toEqual([`Zotero: papers tagged to-remarkable were not all sent — ${zoteroSkipReason(down)}. The next sync tries again.`]);
+		expect(h.sent).toEqual([]);
 	});
 
 	it("keeps sending the others when one paper's upload fails", async () => {

@@ -342,11 +342,12 @@ describe("two connections, one client", () => {
 		expect(await client?.attachments()).toEqual([]);
 		expect(await client?.parentItem("ITEM")).not.toBeNull();
 		expect(await client?.search("x")).toEqual([]);
+		expect(await client?.itemsWithTag("to-remarkable")).toEqual([]);
 		expect(await client?.filePath("ATT1")).toBe("/tmp/paper.pdf");
 		expect(await client?.fileBytes("ATT1")).toEqual(new Uint8Array([1]));
 		expect(await client?.ownAnnotations("ATT1")).toEqual([]);
 		expect((await client?.createAnnotations([{ type: "note", parentKey: "ATT1" }]))?.keys).toEqual([null]);
-		expect(asked).toHaveLength(5);
+		expect(asked).toHaveLength(6);
 	});
 });
 

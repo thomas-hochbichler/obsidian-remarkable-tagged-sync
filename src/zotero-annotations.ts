@@ -108,9 +108,9 @@ const HUE_BANDS: readonly { upTo: number; hex: string }[] = [
 	{ upTo: 165, hex: "#5fb236" }, // green
 	{ upTo: 245, hex: "#2ea8e5" }, // blue
 	{ upTo: 275, hex: "#a28ae5" }, // purple
-	{ upTo: 340, hex: "#e56eee" }, // magenta
-	{ upTo: 360, hex: "#ff6666" }, // red again
+	{ upTo: 340, hex: "#e56eee" }, // magenta -- and past it the circle closes on red again
 ];
+const ZOTERO_RED = "#ff6666";
 const ZOTERO_GRAY = "#aaaaaa";
 
 /**
@@ -141,7 +141,7 @@ export function zoteroColor(color: { r: number; g: number; b: number } | null): 
 	if (chroma < GREY_CHROMA) return ZOTERO_GRAY;
 	const sector = max === r ? (g - b) / chroma : max === g ? (b - r) / chroma + 2 : (r - g) / chroma + 4;
 	const hue = (sector * 60 + 360) % 360;
-	return HUE_BANDS.find((band) => hue < band.upTo)?.hex ?? ZOTERO_GRAY;
+	return HUE_BANDS.find((band) => hue < band.upTo)?.hex ?? ZOTERO_RED;
 }
 
 /**

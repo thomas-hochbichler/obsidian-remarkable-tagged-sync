@@ -3296,3 +3296,31 @@
       layer: unit
       file: src/zotero-tag-send.test.ts
       test: "when the whole step stands down > does nothing in a vault that has never named a send tag"
+
+    - id: Y31.31
+      scenario: "Two tagged papers and no mapped sync tag"
+      expect: "One notice, counting both: `2 papers tagged … not sent`. The step stands down as a whole, and says for how many"
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "a paper tagged in Zotero, at the start of a sync > counts the papers in the notice when the whole step stands down"
+
+    - id: Y31.32
+      scenario: "The tablet folder setting left blank, and a tagged paper with a blank title"
+      expect: "The default folder `Zotero`, and the paper named by its key -- the same fallbacks Send makes, in the notice as on the tablet"
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "a paper tagged in Zotero, at the start of a sync > falls back to the default folder and the item key where the setting and the title are blank"
+
+    - id: Y31.33
+      scenario: "An upload that throws something other than an Error"
+      expect: "The paper is named with that value as its reason, like any other per-item failure; the loop goes on"
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "a paper tagged in Zotero, at the start of a sync > names a paper whose upload failed with something that is not an Error"
+
+    - id: Y31.34
+      scenario: "Zotero stops answering after the tag listing -- the attachment listing throws"
+      expect: "One notice in the §3.4.2 wording, `were not all sent`, and nothing sent. Whatever went up before it stays sent and said; the next sync tries again"
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "a paper tagged in Zotero, at the start of a sync > says the step did not finish when Zotero fails after the listing"
