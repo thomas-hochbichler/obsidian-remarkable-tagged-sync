@@ -30,7 +30,7 @@ import { invalidateRenders } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
-import { zoteroAllowed } from "./zotero-settings";
+import { zoteroProAllowed } from "./zotero-settings";
 import { visionRunStats } from "./vision-ocr-backend";
 
 /**
@@ -528,8 +528,10 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	/**
 	 * Zotero: the two connections, and what is connected right now (spec §2.1).
 	 *
-	 * Shown to a free user, disabled, with "(Pro)" -- the same rule as the transport dropdown and the
-	 * frontmatter toggle above: a feature a free user cannot see is one they cannot decide to buy.
+	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (spec §5). The two Pro
+	 * rows -- the desktop app and Send over SSH -- are shown disabled with "(Pro)", the same rule as
+	 * the transport dropdown and the frontmatter toggle above: a feature a free user cannot see is one
+	 * they cannot decide to buy. Write-back has no switch; the connection sentence says whose it is.
 	 *
 	 * The privacy sentence sits here rather than in the README alone, beside the setting it is about
 	 * (spec §1.2): ink never leaves the machine, and with write-back on, the *transcribed text* of a
@@ -537,17 +539,17 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * so it is said where the switch is.
 	 */
 	private renderZotero(containerEl: HTMLElement): void {
-		const unlocked = zoteroAllowed(this.plugin.entitlement());
+		const pro = zoteroProAllowed(this.plugin.entitlement());
 		const settings = this.plugin.data.zotero;
 
-		new Setting(containerEl).setName(unlocked ? "Zotero" : "Zotero (Pro)").setHeading();
+		new Setting(containerEl).setName("Zotero").setHeading();
 
 		const status = new Setting(containerEl)
 			.setName("Connection")
 			.setDesc(
-				unlocked
+				pro
 					? "Either connection is enough on its own. The desktop app works offline and knows where your PDFs are; zotero.org works with Zotero closed."
-					: "Send Zotero PDFs to your tablet, and get your tablet highlights back as native Zotero annotations. Part of Tagged Sync Pro -- see below.",
+					: "A zotero.org API key is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro -- see below.",
 			);
 		// The four states of §2.1, and the client is what says which one it is -- it knows what answered,
 		// which is not the same question as what is configured. Asked once per render of this section;
@@ -556,7 +558,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		const client = this.plugin.zoteroClient();
 		if (client === null) {
-			line.setText(unlocked ? "Not connected." : "");
+			line.setText("Not connected.");
 		} else {
 			line.setText("Checking…");
 			// No rejection arm: `status()` is the one call on the client that answers instead of
@@ -569,7 +571,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.setDesc("From zotero.org → Settings → Feeds/API. Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
 			.addText((text) => {
 				text.inputEl.type = "password";
-				text.setDisabled(!unlocked);
 				// Debounced like the attachments folder: the in-memory value is current immediately, and
 				// `data.json` is not written on every keystroke of a 24-character key.
 				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
@@ -580,13 +581,13 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Use the Zotero desktop app")
+			.setName(pro ? "Use the Zotero desktop app" : "Use the Zotero desktop app (Pro)")
 			.setDesc(
 				'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). ' +
 					"Zotero asks your permission the first time this plugin writes something; choose Always Allow.",
 			)
 			.addToggle((toggle) => {
-				toggle.setValue(settings.useLocal).setDisabled(!unlocked);
+				toggle.setValue(settings.useLocal).setDisabled(!pro);
 				toggle.onChange(async (value) => {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
 					await this.plugin.saveData(this.plugin.data);
@@ -599,7 +600,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.setName("Tablet folder for sent PDFs")
 			.setDesc("Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.")
 			.addText((text) => {
-				text.setDisabled(!unlocked);
 				text.setPlaceholder(DEFAULT_SEND_FOLDER);
 				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
 				text.setValue(settings.folder).onChange((value) => {
@@ -611,27 +611,25 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Send over SSH when the cloud is not connected")
+			.setName(pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)")
 			// The spec's own wording, and it is here rather than in a notice afterwards because it is the
 			// one thing about this plugin that interrupts the person holding the tablet. They agree to it
 			// once, in advance, rather than finding out when their page closes.
 			.setDesc(`${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`)
 			.addToggle((toggle) => {
-				toggle.setValue(settings.sendOverSsh).setDisabled(!unlocked);
+				toggle.setValue(settings.sendOverSsh).setDisabled(!pro);
 				toggle.onChange(async (value) => {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendOverSsh: value };
 					await this.plugin.saveData(this.plugin.data);
 				});
 			});
 
-		if (unlocked) {
-			new Setting(containerEl)
-				.setName("What leaves your machine")
-				.setDesc(
-					"Your handwriting never does. With write-back on, the transcribed text of your margin notes is written into " +
-						"your own Zotero library -- and to zotero.org, if that is the connection carrying it.",
-				);
-		}
+		new Setting(containerEl)
+			.setName("What leaves your machine")
+			.setDesc(
+				"Your handwriting never does. With write-back (Tagged Sync Pro), the transcribed text of your margin notes is written into " +
+					"your own Zotero library -- and to zotero.org, if that is the connection carrying it.",
+			);
 	}
 
 	/**

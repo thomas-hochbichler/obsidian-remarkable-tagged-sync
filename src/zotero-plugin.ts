@@ -44,7 +44,7 @@ import {
 	type SendTransport,
 } from "./zotero-send";
 import { askWhatToSend, askWhereToSend, NO_PDF, type SendChoice } from "./zotero-send-dialog";
-import { zoteroAllowed, zoteroUnavailable } from "./zotero-settings";
+import { zoteroProAllowed, zoteroUnavailable } from "./zotero-settings";
 import { createZoteroPass, type ZoteroPass } from "./zotero-sync";
 
 /** The slice of the plugin this file reaches for. Narrow on purpose: a test builds it as a literal. */
@@ -100,6 +100,8 @@ export function zoteroPassFor(host: ZoteroHost, interactive: boolean): ZoteroPas
 		// ⚠️ Not in a background run. A picker nobody is there to answer would either hang the sync or
 		// have to be answered for them, and "ask once" (§2.3) means the one asking is spent for good.
 		ask: interactive ? (question) => askWhichAttachment(host.app, question) : undefined,
+		// Spec §5: the free half links and names the paper; only Pro writes into the library.
+		mayWriteBack: zoteroProAllowed(host.entitlement()),
 		now: () => host.now(),
 	});
 }
@@ -131,10 +133,13 @@ export function zoteroKeyedNotes(app: App): VaultNoteKeys[] {
 	return notes;
 }
 
-/** The three Zotero entry points, registered once and only for a vault that may have them. */
-export function registerZoteroCommands(host: ZoteroHost): boolean {
-	if (!zoteroAllowed(host.entitlement())) return false;
-
+/**
+ * The three Zotero entry points, registered once, for every vault.
+ *
+ * Not gated: Send and *Link to Zotero item…* are the free half (spec §5). A vault with nothing set
+ * up is told so by the command, in {@link zoteroUnavailable}'s words.
+ */
+export function registerZoteroCommands(host: ZoteroHost): void {
 	host.addCommand({
 		id: "zotero-send",
 		name: SEND_COMMAND,
@@ -168,13 +173,12 @@ export function registerZoteroCommands(host: ZoteroHost): boolean {
 			);
 		}),
 	);
-	return true;
 }
 
 /** The client, or the sentence saying why there is none. Every Zotero command starts here. */
 function clientOrNotice(host: ZoteroHost): ZoteroClient | null {
 	const client = host.zoteroClient();
-	if (client === null) new Notice(zoteroUnavailable(host.entitlement()), LONG_NOTICE_MS);
+	if (client === null) new Notice(zoteroUnavailable(host.data.zotero), LONG_NOTICE_MS);
 	return client;
 }
 

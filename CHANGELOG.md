@@ -12,6 +12,15 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Zotero.** Send a PDF from your Zotero library to the tablet, already carrying your sync tag;
+  after the sync the note knows which paper it is and links back to the item in Zotero and in your
+  web library. Both work with a zotero.org API key and no licence. With Tagged Sync Pro, what you
+  marked on the tablet is also written into Zotero as native highlights, underlines and comments
+  (add-only, your edits in Zotero win), and the plugin can talk to the Zotero 10 desktop app as
+  well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
+
 ## [1.7.0] - 2026-09-11
 
 ### Added

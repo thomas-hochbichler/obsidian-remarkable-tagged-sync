@@ -4,7 +4,7 @@ import {
 	zoteroUnavailable,
 	createZoteroClientFor,
 	DEFAULT_ZOTERO_SETTINGS,
-	zoteroAllowed,
+	zoteroProAllowed,
 	zoteroConfigured,
 	type ZoteroSettings,
 	zoteroSettingsStore,
@@ -30,24 +30,30 @@ const clientFor = (settings: ZoteroSettings, entitlement: Entitlement) =>
 const WEB_ONLY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" };
 const DESKTOP_ONLY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, useLocal: true };
 
-describe("who may use Zotero", () => {
+describe("who may use the Pro half of Zotero", () => {
 	it("is Pro, and a trial counts", () => {
-		expect(zoteroAllowed(BOUGHT)).toBe(true);
-		expect(zoteroAllowed(TRIAL)).toBe(true);
-		expect(zoteroAllowed(FREE)).toBe(false);
+		expect(zoteroProAllowed(BOUGHT)).toBe(true);
+		expect(zoteroProAllowed(TRIAL)).toBe(true);
+		expect(zoteroProAllowed(FREE)).toBe(false);
 	});
 
-	// The whole of "refused in place": no client, so there is nothing to match with, nothing to write
-	// back, and no Send command to register. A free vault syncs exactly as it did before.
-	it("hands a free vault no client, however well it is configured", () => {
-		expect(clientFor({ ...DEFAULT_ZOTERO_SETTINGS, apiKey: "key", useLocal: true }, FREE)).toBeNull();
+	// The free half (§5): zotero.org is enough to send, match and name the paper. A free vault with a
+	// key gets a client like anyone else.
+	it("hands a free vault a client over zotero.org", () => {
+		expect(clientFor(WEB_ONLY, FREE)).not.toBeNull();
+	});
+
+	// "Refused in place" for the connection half: the desktop toggle on its own buys a free vault
+	// nothing, and the value it gets is the one an unconfigured vault gets -- no `if` in any caller.
+	it("hands a free vault no client for the desktop app alone", () => {
+		expect(clientFor(DESKTOP_ONLY, FREE)).toBeNull();
 	});
 
 	// The lapsed-licence case (§5): the settings the buyer filled in are still in `data.json`, and are
 	// picked up again the moment the licence is renewed. Nothing is deleted on the way out.
-	it("comes back the moment a licence does, from the settings that were left alone", () => {
-		expect(clientFor(WEB_ONLY, FREE)).toBeNull();
-		expect(clientFor(WEB_ONLY, BOUGHT)).not.toBeNull();
+	it("gives the desktop app back the moment a licence does, from the settings that were left alone", () => {
+		expect(clientFor(DESKTOP_ONLY, FREE)).toBeNull();
+		expect(clientFor(DESKTOP_ONLY, BOUGHT)).not.toBeNull();
 	});
 });
 
@@ -156,13 +162,15 @@ describe("from the settings block to Zotero and back", () => {
 });
 
 describe("why a Zotero command has nothing to do", () => {
-	// Only ever reached by a command that was registered, so the two sentences are "you have not set
-	// it up" and "your licence ended" -- never "this is a paid feature you have not bought".
-	it("sends a Pro vault to the settings", () => {
-		expect(zoteroUnavailable(BOUGHT)).toContain("Settings");
+	// The two ways the factory answers `null`: nothing set up, or only the desktop app and this vault
+	// may not use it. The second names what still works -- a zotero.org key -- before anything else.
+	it("sends an unconfigured vault to the settings", () => {
+		expect(zoteroUnavailable(DEFAULT_ZOTERO_SETTINGS)).toContain("Settings");
 	});
 
-	it("tells a lapsed one that nothing in their library has been touched", () => {
-		expect(zoteroUnavailable(FREE)).toContain("Nothing in your library has been changed.");
+	it("tells a vault with only the desktop app that nothing in their library has been touched, and what still works", () => {
+		const sentence = zoteroUnavailable(DESKTOP_ONLY);
+		expect(sentence).toContain("Nothing in your library has been changed.");
+		expect(sentence).toContain("zotero.org API key");
 	});
 });

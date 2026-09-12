@@ -14,7 +14,7 @@
 - feature: Y1
   name: Reading a Zotero library
   code: src/zotero-client.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y1.1
       scenario: A library with more attachments than one page holds
@@ -169,7 +169,7 @@
 - feature: Y4
   name: Two connections, one client
   code: src/zotero-client.ts
-  tier: pro
+  tier: free + Pro
   scenarios:
     - id: Y4.1
       scenario: Both the desktop app and an API key are configured
@@ -230,7 +230,7 @@
 - feature: Y5
   name: What a failure is called
   code: src/zotero-client.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y5.1
       scenario: The API key is rejected
@@ -270,7 +270,7 @@
 - feature: Y6
   name: zotero.org
   code: src/zotero-web.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y6.1
       scenario: The first library call of a session
@@ -470,7 +470,7 @@
 - feature: Y8
   name: Which reMarkable document is which Zotero PDF
   code: src/zotero-links.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y8.1
       scenario: A link written and read back
@@ -623,28 +623,36 @@
 - feature: Y9
   name: Whether this vault has Zotero at all
   code: src/zotero-settings.ts
-  tier: pro
+  tier: free + Pro
   scenarios:
     - id: Y9.1
       scenario: A free vault, a bought one, and one in its trial
-      expect: Pro and trial may, free may not. The trial exists so Pro can be judged without paying, and a feature it skips is a feature nobody tries
+      expect: Pro and trial may use the Pro half (desktop app, write-back), free may not. The trial exists so Pro can be judged without paying, and a feature it skips is a feature nobody tries
       layer: unit
       file: src/zotero-settings.test.ts
-      test: "who may use Zotero > is Pro, and a trial counts"
+      test: "who may use the Pro half of Zotero > is Pro, and a trial counts"
 
     - id: Y9.2
-      scenario: A free vault with both connections filled in
-      expect: No client. That is the whole of "refused in place" (§5) -- nothing to match with, nothing to write back, no Send command -- and it is one `null` rather than an `if` in every caller
+      scenario: A free vault with a zotero.org key
+      expect: A client, like anyone else's. The free half of §5 -- Send over the cloud, matching, the note's Zotero line -- runs over zotero.org
+      tier: free
       layer: unit
       file: src/zotero-settings.test.ts
-      test: "who may use Zotero > hands a free vault no client, however well it is configured"
+      test: "who may use the Pro half of Zotero > hands a free vault a client over zotero.org"
+
+    - id: Y9.15
+      scenario: A free vault with only the desktop app switched on
+      expect: "No client -- the same `null` an unconfigured vault gets. Refused in place for the connection half (§5): no `if` in any caller, and the desktop toggle alone buys a free vault nothing"
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "who may use the Pro half of Zotero > hands a free vault no client for the desktop app alone"
 
     - id: Y9.3
-      scenario: A licence lapses and is renewed
-      expect: The client goes and comes back from the same stored settings. §5 keeps the links and the settings on the way out, so renewing is not a re-setup
+      scenario: A licence lapses and is renewed, in a vault that used the desktop app
+      expect: The desktop connection goes and comes back from the same stored settings. §5 keeps the links and the settings on the way out, so renewing is not a re-setup
       layer: unit
       file: src/zotero-settings.test.ts
-      test: "who may use Zotero > comes back the moment a licence does, from the settings that were left alone"
+      test: "who may use the Pro half of Zotero > gives the desktop app back the moment a licence does, from the settings that were left alone"
 
     - id: Y9.4
       scenario: Only an API key, only the desktop toggle, or neither
@@ -710,18 +718,18 @@
       test: "from the settings block to Zotero and back > stores a newly granted key where the next run will find it"
 
     - id: Y9.13
-      scenario: A Zotero command run in a vault that has Pro but no connection configured
-      expect: Sent to the settings. The command is registered on the capability, not on the configuration, so a Pro user who has not pasted a key yet is told what to do rather than finding nothing
+      scenario: A Zotero command run in a vault with no connection configured
+      expect: Sent to the settings. The command is registered for every vault, so a user who has not pasted a key yet is told what to do rather than finding nothing
       layer: unit
       file: src/zotero-settings.test.ts
-      test: "why a Zotero command has nothing to do > sends a Pro vault to the settings"
+      test: "why a Zotero command has nothing to do > sends an unconfigured vault to the settings"
 
     - id: Y9.14
-      scenario: A Zotero command run after the licence ended
-      expect: 'Says the licence ended **and** that nothing in the library was touched. The second half is the one the user actually wants: an add-only feature switching off must not read as something having been undone'
+      scenario: A Zotero command run in a free or lapsed vault that has only the desktop app switched on
+      expect: 'Says the desktop connection is Pro, that nothing in the library was touched, **and** that a zotero.org key keeps Zotero working. The middle sentence is the one a lapsed user actually wants: an add-only feature switching off must not read as something having been undone'
       layer: unit
       file: src/zotero-settings.test.ts
-      test: "why a Zotero command has nothing to do > tells a lapsed one that nothing in their library has been touched"
+      test: "why a Zotero command has nothing to do > tells a vault with only the desktop app that nothing in their library has been touched, and what still works"
 
 - feature: Y10
   name: The Zotero settings section
@@ -730,15 +738,15 @@
     - id: Y10.1
       tier: free
       scenario: A free vault opens the settings
-      expect: The section is there, headed "Zotero (Pro)", with both controls disabled and the sales sentence in the Connection row. Hidden, it would be a feature nobody could decide to buy -- the same rule the transport dropdown and the frontmatter toggle follow
+      expect: The section is headed "Zotero" like anyone's; the API key field is open, the desktop-app toggle is shown disabled as "(Pro)", and the Connection row says which half is Pro. Hidden, the Pro half would be a feature nobody could decide to buy -- the same rule the transport dropdown and the frontmatter toggle follow
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > shows a free user what Pro buys, and lets them change nothing"
+      test: "the Zotero section > opens zotero.org to a free user, shows the desktop app shut, and says which half is Pro"
 
     - id: Y10.2
       tier: pro
       scenario: A buyer opens the settings
-      expect: The heading loses its "(Pro)" and both connections can be set up
+      expect: The desktop-app row loses its "(Pro)" and both connections can be set up
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > drops the (Pro) and opens both connections for a buyer"
@@ -746,7 +754,7 @@
     - id: Y10.3
       tier: pro
       scenario: The privacy sentence
-      expect: Beside the switch it is about, for a buyer only. Write-back is the one thing in this plugin that sends transcribed text anywhere (§1.2), and for a free vault it is not running
+      expect: Beside the switch it is about, for every vault, naming write-back as the Pro half. Write-back is the one thing in this plugin that sends transcribed text anywhere (§1.2); a free vault's Zotero runs too, so the sentence has to be true there as well
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > says what leaves the machine, where the switch is"
@@ -856,7 +864,7 @@
 - feature: Y12
   name: Which Zotero PDF a synced document is
   code: src/zotero-match.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y12.1
       scenario: A document that is already linked, in a library that now holds a second file with the same bytes and name
@@ -1333,7 +1341,7 @@
 - feature: Y15
   name: The note a linked document gets
   code: src/zotero-note.ts
-  tier: pro
+  tier: free + Pro
   scenarios:
     - id: Y15.1
       scenario: An item with a first creator, a year and a title
@@ -1383,6 +1391,14 @@
       layer: unit
       file: src/zotero-note.test.ts
       test: "the Zotero line of the ownership callout > says why nothing was written back, where nothing was"
+
+    - id: Y15.24
+      scenario: The vault has the free half of Zotero (§5)
+      expect: '"highlights stay in the vault — writing them into Zotero is Tagged Sync Pro" in place of the date. Says where the highlights are before it says what would move them, so the sentence stays true for a reader who never buys Pro and never reads as an error'
+      tier: free
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > says where the highlights are for a vault that has the free half"
 
     - id: Y15.8
       scenario: Write-back stopped half way through
@@ -1635,7 +1651,7 @@
 - feature: Y18
   name: The one hash Zotero speaks
   code: src/file-md5.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y18.1
       scenario: 'Bytes whose MD5 is published'
@@ -1661,7 +1677,7 @@
 - feature: Y19
   name: What Send calls a document, and what it asks about it
   code: src/zotero-send.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y19.1
       scenario: 'An item with a title and an attachment called "Full Text PDF"'
@@ -1820,7 +1836,7 @@
 - feature: Y20
   name: Sending, and what it records
   code: src/zotero-send.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y20.1
       scenario: 'An attachment nobody has sent'
@@ -2054,7 +2070,7 @@
 - feature: Y22
   name: Send through the reMarkable cloud
   code: src/cloud-send.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y22.1
       scenario: 'An account that already has a Zotero folder'
@@ -2122,7 +2138,7 @@
 - feature: Y23
   name: The Send dialog
   code: src/zotero-send-dialog.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y23.1
       scenario: 'A title and an author typed into the dialog'
@@ -2253,7 +2269,7 @@
 - feature: Y24
   name: The Zotero send settings
   code: src/settings-tab.ts
-  tier: pro
+  tier: free + Pro
   scenarios:
     - id: Y24.1
       scenario: 'The switch that lets Send write over SSH'
@@ -2271,10 +2287,10 @@
 
     - id: Y24.3
       scenario: 'A free vault'
-      expect: 'Both send rows shown and disabled -- the same rule the rest of this section follows: what a free user cannot see is not something they can decide to buy'
+      expect: 'The folder row is open -- Send over the cloud is free (§5) -- and the SSH send toggle is shown disabled as "(Pro)": the SSH route is the Pro transport, and what a free user cannot see is not something they can decide to buy'
       layer: unit
       file: src/settings-tab.test.ts
-      test: 'the Zotero section > keeps both send rows shut for a free vault'
+      test: 'the Zotero section > opens the folder row to a free vault and keeps SSH send shut'
 
     - id: Y24.4
       scenario: 'The folder name emptied'
@@ -2302,7 +2318,7 @@
 - feature: Y25
   name: The Zotero half of a sync
   code: src/zotero-sync.ts
-  tier: pro
+  tier: free + Pro
   scenarios:
     - id: Y25.1
       scenario: A linked document whose highlights write back cleanly
@@ -2423,6 +2439,14 @@
       file: src/zotero-sync.test.ts
       test: "when Zotero says no > keeps the note's own identity and says in one clause why its marks are not there yet"
 
+    - id: Y25.24
+      scenario: A free vault's pass over a linked document (§5)
+      expect: 'The note names the paper, keeps its keys and carries the free clause; no `in Zotero` links; no notice. Not one write-shaped request reaches Zotero -- not even the listing of our own annotations, which is the call that needs a write-capable key'
+      tier: free
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "in a vault that has the free half > names the paper, writes nothing, and says where the highlights are"
+
     - id: Y25.18
       scenario: Zotero refuses some of a batch
       expect: '"N of M highlights written, retry on next sync" in both the note and the run. Add-and-refresh means nothing needs rolling back'
@@ -2468,7 +2492,7 @@
 - feature: Y26
   name: Which paper is this?
   code: src/zotero-link-dialog.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y26.1
       scenario: The sync's picker, opened on a filename match
@@ -2557,7 +2581,7 @@
 - feature: Y27
   name: Reaching the machine for a PDF
   code: src/desktop-files.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y27.1
       scenario: The absolute path Zotero's desktop connection answered
@@ -2611,7 +2635,7 @@
 - feature: Y28
   name: Where the run puts the Zotero half
   code: src/sync-engine.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y28.1
       scenario: A PDF-backed note being synced
@@ -2695,28 +2719,29 @@
 - feature: Y29
   name: The three Zotero entry points
   code: src/zotero-plugin.ts
-  tier: pro
+  tier: free + Pro
   scenarios:
     - id: Y29.1
-      scenario: A free vault
-      expect: Nothing registered -- no commands, no context action. §5 says the free plugin is unchanged, and a command that appears and then refuses is an advertisement
-      layer: unit
-      file: src/zotero-plugin.test.ts
-      test: 'what a vault gets registered > registers nothing at all in a free vault'
-
-    - id: Y29.2
-      scenario: A Pro vault
+      scenario: Any vault
       expect: Both commands and the file-menu action
       layer: unit
       file: src/zotero-plugin.test.ts
-      test: 'what a vault gets registered > registers the two commands and the context action for a Pro vault'
+      test: 'what a vault gets registered > registers the two commands and the context action'
 
-    - id: Y29.3
-      scenario: A Pro vault that has pasted no API key yet
-      expect: Registered all the same. The gate is the capability, not the configuration -- this user is told what to do rather than finding nothing
+    - id: Y29.2
+      scenario: A free vault
+      expect: The same two commands and the context action. Send and *Link to Zotero item…* are the free half (§5), so the free palette has them
+      tier: free
       layer: unit
       file: src/zotero-plugin.test.ts
-      test: 'what a vault gets registered > registers them for a Pro vault that has configured no connection'
+      test: 'what a vault gets registered > registers the same for a free vault'
+
+    - id: Y29.3
+      scenario: A vault that has pasted no API key yet
+      expect: Registered all the same. Registration hangs on nothing but the plugin loading -- this user is told what to do by the command rather than finding nothing
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > registers them for a vault that has configured no connection'
 
     - id: Y29.4
       scenario: Send run from the command palette
@@ -2928,6 +2953,14 @@
       file: src/zotero-plugin.test.ts
       test: "the run's Zotero half > prints no zotero.org link for a vault with no web connection"
 
+    - id: Y29.36
+      scenario: A free vault with a zotero.org key, over a linked document
+      expect: 'The pass links and names the paper -- web-library link and all -- and never calls a write; the note carries the free clause. This is where the licence is read into `mayWriteBack`, so it is pinned here and not only in the pass''s own tests'
+      tier: free
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the run's Zotero half > writes nothing into Zotero for a free vault, and says so in the note"
+
     - id: Y29.34
       scenario: A web connection that cannot name the library
       expect: No web link, rather than a URL with a hole in it
@@ -2945,14 +2978,15 @@
 - feature: Y30
   name: The Zotero commands in the shipped plugin
   code: src/main.ts
-  tier: pro
+  tier: free
   scenarios:
     - id: Y30.1
       scenario: The plugin loaded from a free vault's `data.json`
-      expect: No Zotero command in the palette at all (§5)
+      expect: Both Zotero commands in the palette -- Send and the link are the free half (§5)
+      tier: free
       layer: integration
       file: src/zotero-wiring.test.ts
-      test: 'the Zotero commands as the plugin registers them > registers none of them in a free vault'
+      test: 'the Zotero commands as the plugin registers them > registers both in a free vault'
 
     - id: Y30.2
       scenario: The plugin loaded from a Pro vault's

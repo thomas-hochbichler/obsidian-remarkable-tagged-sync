@@ -70,9 +70,10 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Re-transcribe notes you already synced](#re-transcribing) | ✓ | ✓ |
 | [Repair one note without re-running the whole vault](#re-transcribing) | ✓ | ✓ |
 | **Zotero** | | |
-| [Send a Zotero PDF to your tablet, tagged for sync](#zotero) | — | ✓ |
-| [Notes know their Zotero item — link, web library, in-Zotero jumps](#zotero) | — | ✓ |
-| [Your tablet highlights as native Zotero annotations](#zotero) | — | ✓ |
+| [Zotero connection](#connecting) | zotero.org | zotero.org + desktop app |
+| [Send a Zotero PDF to your tablet, tagged for sync](#zotero) | ✓ | ✓ |
+| [Notes know their Zotero item — link, web library](#zotero) | ✓ | ✓ |
+| [Your tablet highlights as native Zotero annotations, with a jump into Zotero from every quote](#zotero) | — | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
@@ -346,8 +347,9 @@ Everything described above is free and stays free. Two things are paid:
   tablet directly over USB or Wi-Fi.
 - **[Frontmatter properties](#frontmatter-properties-pro)** — each synced note carries its
   reMarkable tags and metadata as Obsidian properties, for Dataview and Bases queries.
-- **[Zotero](#zotero)** — send a paper to the tablet from your library, and get what you marked on
-  it back as native Zotero annotations.
+- **[Zotero write-back and the desktop app](#zotero)** — what you marked on the tablet lands in
+  Zotero as native annotations, and the plugin can talk to the Zotero desktop app instead of only
+  to zotero.org. Sending a paper to the tablet and the note's link to its Zotero item are free.
 
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
@@ -391,10 +393,14 @@ None of this changes your rights as a consumer under EU law.
 
 ## Zotero
 
-*[Tagged Sync Pro](#tagged-sync-pro).*
-
 Your reMarkable highlights land in Zotero as native annotations. No script, no Python, no Zotero
 plugin, no closed Zotero.
+
+What goes into your vault is free; what is written into Zotero is
+[Tagged Sync Pro](#tagged-sync-pro). In other words: sending a paper to the tablet and the note
+knowing which paper it is work with a zotero.org API key and no licence. Writing your highlights
+into Zotero, and talking to the Zotero desktop app, are the Pro half — covered by the 14-day trial
+like everything else.
 
 The loop is three steps:
 
@@ -402,9 +408,10 @@ The loop is three steps:
    remember the paper — half a title, an author, a year. The PDF lands on your tablet in a
    `Zotero` folder, already carrying your sync tag.
 2. Read it and mark it up: highlighter, pen underlines, notes in the margin.
-3. Sync. The [digest](#annotated-pdfs) arrives in your vault knowing which paper it is, and what
-   you marked appears in Zotero as real highlights and underlines you can click, colour, search
-   and cite. A margin note anchored to a passage becomes that annotation's comment.
+3. Sync. The [digest](#annotated-pdfs) arrives in your vault knowing which paper it is, and — with
+   Pro — what you marked appears in Zotero as real highlights and underlines you can click, colour,
+   search and cite. A margin note anchored to a passage becomes that annotation's comment. Without
+   Pro the note says so in its top line: *highlights stay in the vault*.
 
 Each half stands on its own. A PDF that reached the tablet some other way is recognised at sync
 time — by the file's own hash, or by asking you once — and a note gets its Zotero link whether or
@@ -412,7 +419,7 @@ not you ever use write-back. A note that is already in your vault can be pointed
 with **Link to Zotero item…**.
 
 **What the note gets.** One line in the block at the top, naming the paper and linking to it in
-Zotero, to your web library, and to your own literature note if you keep one. Every quote gets an
+Zotero, to your web library, and to your own literature note if you keep one. Once written back, every quote gets an
 `in Zotero` link that opens the reader at that annotation on that page. With [frontmatter
 properties](#frontmatter-properties-pro) on, the note also carries `zotero-key` and — if the item
 has one — `citekey`, which is the same vocabulary other Zotero tools in Obsidian use.
@@ -421,7 +428,7 @@ has one — `citekey`, which is the same vocabulary other Zotero tools in Obsidi
 
 Either connection is enough on its own, and you can have both:
 
-| | **zotero.org** | **The Zotero desktop app** |
+| | **zotero.org** | **The Zotero desktop app** ([Pro](#tagged-sync-pro)) |
 |---|---|---|
 | What you need | an API key from zotero.org, with read and write access to your personal library | Zotero 10 running, with *Allow other applications on this computer to communicate with Zotero* on |
 | Works with Zotero closed | ✓ | — |
@@ -800,16 +807,17 @@ This plugin makes network requests to exactly one place by default:
   connection at all. The root password you type while pairing is used for that one connection and
   is never stored.
 
-**Your Zotero library — only if you set it up** ([Zotero](#zotero), [Tagged Sync
-Pro](#tagged-sync-pro)):
+**Your Zotero library — only if you set it up** ([Zotero](#zotero)):
 
 - **`api.zotero.org`** — with your own API key, and only for your personal library. The plugin
-  searches it, reads your PDF attachments, and writes the annotations it made from your tablet
-  marks. Nothing you did not mark on the tablet is sent, and no annotation of yours is read.
-- **The Zotero desktop app on `127.0.0.1:23119`** — the same thing over your own machine's loopback
-  interface. This leaves nothing on your machine at all.
+  searches it, reads your PDF attachments, and — with [Tagged Sync Pro](#tagged-sync-pro) — writes
+  the annotations it made from your tablet marks. Nothing you did not mark on the tablet is sent,
+  and no annotation of yours is read. Without Pro the plugin only reads.
+- **The Zotero desktop app on `127.0.0.1:23119`** ([Pro](#tagged-sync-pro)) — the same thing over
+  your own machine's loopback interface. This leaves nothing on your machine at all.
 
-  Both are off unless you configure them, and a free user never causes either call.
+  Both are off unless you configure them; a vault with no Zotero API key and no desktop app
+  switched on never causes either call.
 
 **A transcription backend you choose yourself.** Which of these is contacted, if any, depends
 entirely on the backend selected in settings:

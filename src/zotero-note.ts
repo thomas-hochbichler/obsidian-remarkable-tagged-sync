@@ -30,7 +30,9 @@ export type ZoteroWriteBack =
 			readonly written: number;
 			readonly total: number;
 	  }
-	| { readonly kind: "not-written"; readonly reason: string };
+	| { readonly kind: "not-written"; readonly reason: string }
+	/** Write-back is Pro (spec §5) and this vault has the free half: nothing was tried. */
+	| { readonly kind: "free" };
 
 /** Everything the callout line needs. Assembled by the caller, because each part comes from elsewhere. */
 export interface ZoteroNoteInfo {
@@ -93,8 +95,12 @@ export function itemLabel(item: ZoteroItem): string {
  * one that was cut short, and the note is where the reader finds out that the paper in front of
  * them is missing eighteen of their own marks. It does not repeat the status line's "retry on next
  * sync" -- the note is a record of what happened, not a notice about what will.
+ *
+ * The free clause says where the highlights *are* before it says what would put them in Zotero: a
+ * reader who never buys Pro should still find the sentence true, and not an error message.
  */
 function writeBackPhrase(writeBack: ZoteroWriteBack): string {
+	if (writeBack.kind === "free") return "highlights stay in the vault — writing them into Zotero is Tagged Sync Pro";
 	if (writeBack.kind === "not-written") return `not written back: ${writeBack.reason}`;
 	const count = writeBack.written < writeBack.total ? `${writeBack.written} of ${writeBack.total} ` : "";
 	return `${count}highlights written back ${writeBack.date}`;

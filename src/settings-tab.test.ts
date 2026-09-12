@@ -263,7 +263,7 @@ describe("the shape of the settings screen", () => {
 			"Automatic sync",
 			// Between automatic sync and the Pro section: it is a Pro feature, set up once, and it reads
 			// as what it is where it sits next to the thing that unlocks it.
-			"Zotero (Pro)",
+			"Zotero",
 			"Tagged Sync Pro",
 			"Actions",
 		]);
@@ -845,7 +845,8 @@ describe("automatic sync", () => {
 });
 
 describe("the Zotero section", () => {
-	// Everything Zotero is Pro (spec §5), and the section is *shown* to a free user rather than
+	// Zotero is split (spec §5): zotero.org, Send and the note's Zotero line are free; the desktop
+	// app and Send over SSH are Pro, and those two rows are *shown* disabled with "(Pro)" rather than
 	// hidden -- the same rule as the transport dropdown and the frontmatter toggle. What a free user
 	// cannot see is not something they can decide to buy.
 	const PRO = {
@@ -857,21 +858,21 @@ describe("the Zotero section", () => {
 		},
 	};
 
-	it("shows a free user what Pro buys, and lets them change nothing", async () => {
+	it("opens zotero.org to a free user, shows the desktop app shut, and says which half is Pro", async () => {
 		const { tab } = await tabWith();
 		const drawn = draw(tab);
 
-		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).toContain("Zotero (Pro)");
-		expect(field(section(drawn, "Zotero (Pro)"), "Zotero API key").disabled).toBe(true);
-		expect(toggle(section(drawn, "Zotero (Pro)"), "Use the Zotero desktop app").disabled).toBe(true);
-		expect(row(drawn, "Connection").desc).toContain("Part of Tagged Sync Pro");
+		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).toContain("Zotero");
+		expect(field(section(drawn, "Zotero"), "Zotero API key").disabled).toBe(false);
+		expect(toggle(section(drawn, "Zotero"), "Use the Zotero desktop app (Pro)").disabled).toBe(true);
+		expect(row(drawn, "Connection").desc).toContain("part of Tagged Sync Pro");
 	});
 
 	it("drops the (Pro) and opens both connections for a buyer", async () => {
 		const { tab } = await tabWith(PRO);
 		const drawn = draw(tab);
 
-		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).toContain("Zotero");
+		expect(rowNames(drawn)).not.toContain("Use the Zotero desktop app (Pro)");
 		expect(field(drawn, "Zotero API key").disabled).toBe(false);
 		expect(toggle(drawn, "Use the Zotero desktop app").disabled).toBe(false);
 	});
@@ -884,9 +885,9 @@ describe("the Zotero section", () => {
 
 		expect(rowNames(section(bought, "Zotero"))).toContain("What leaves your machine");
 		expect(row(bought, "What leaves your machine").desc).toContain("handwriting never does");
-		// Nothing is being sent anywhere for a free vault, so the sentence would be describing a
-		// feature that is not running.
-		expect(rowNames(section(free, "Zotero (Pro)"))).not.toContain("What leaves your machine");
+		// A free vault's Zotero is running too, and the sentence names the half that sends text as
+		// Pro -- so it reads as true there as well, not as a feature that is not there.
+		expect(row(free, "What leaves your machine").desc).toContain("Tagged Sync Pro");
 	});
 
 	it("says nothing is connected until one of the two is set up", async () => {
@@ -951,11 +952,12 @@ describe("the Zotero section", () => {
 		expect((plugin.data.zotero as { sendOverSsh: boolean }).sendOverSsh).toBe(true);
 	});
 
-	it("keeps both send rows shut for a free vault", async () => {
+	// Send over the cloud is free (§5); the SSH route is the Pro transport, and its row says so.
+	it("opens the folder row to a free vault and keeps SSH send shut", async () => {
 		const drawn = draw((await tabWith()).tab);
 
-		expect(field(drawn, "Tablet folder for sent PDFs").disabled).toBe(true);
-		expect(toggle(drawn, "Send over SSH when the cloud is not connected").disabled).toBe(true);
+		expect(field(drawn, "Tablet folder for sent PDFs").disabled).toBe(false);
+		expect(toggle(drawn, "Send over SSH when the cloud is not connected (Pro)").disabled).toBe(true);
 	});
 
 	// A folder with no name would put every sent paper at the root of the tablet, where the user has

@@ -113,6 +113,12 @@ export interface ZoteroPassDeps {
 	webUserId(): Promise<string | null>;
 	/** Asks the user which attachment this is. Absent in a background run; see the file header. */
 	ask?(question: ZoteroQuestion): Promise<ZoteroAttachment | null>;
+	/**
+	 * May this vault write into Zotero (spec §5)? Matching and the note's Zotero line run either way;
+	 * with `false` the write step is skipped and the note says so. Read once per pass, because the
+	 * licence is re-asked per run, not per document.
+	 */
+	readonly mayWriteBack: boolean;
 	now(): Date;
 }
 
@@ -243,7 +249,11 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		// and says in one clause why its marks are not in the library yet (§3.4.2, §4).
 		let link = found.link;
 		let writeBack: ZoteroWriteBack;
-		try {
+		if (!deps.mayWriteBack) {
+			// The free half (§5): nothing is asked of Zotero here, not even the listing of our own
+			// annotations -- a free vault makes no write-shaped request at all.
+			writeBack = { kind: "free" };
+		} else try {
 			const existing = await deps.client.ownAnnotations(attachment.key);
 			const plan = planWriteBack({ pages: [...unit.pages], attachmentKey: attachment.key, link, existing });
 			const result = await executeWriteBack(deps.client, link, plan);

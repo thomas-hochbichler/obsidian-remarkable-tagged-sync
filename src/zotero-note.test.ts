@@ -66,6 +66,14 @@ describe("the Zotero line of the ownership callout", () => {
 		);
 	});
 
+	// A sentence that stays true for a reader who never buys Pro: it says where the highlights are
+	// before it says what would put them in Zotero.
+	it("says where the highlights are for a vault that has the free half", () => {
+		expect(zoteroCalloutLine(info({ writeBack: { kind: "free" } }))).toContain(
+			"· highlights stay in the vault — writing them into Zotero is Tagged Sync Pro ·",
+		);
+	});
+
 	// The note is where the reader finds out that the paper in front of them is missing eighteen of
 	// their own marks -- the status line is gone by the time they open it.
 	it("names both numbers for a run that was cut short", () => {

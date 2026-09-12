@@ -4,7 +4,7 @@ import { isGated } from "./ocr-resolution";
 import { ocrBackendEntries } from "./ocr-registry";
 import { allowedTransports } from "./ssh-transport";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
-import { createZoteroClientFor, DEFAULT_ZOTERO_SETTINGS, zoteroAllowed } from "./zotero-settings";
+import { createZoteroClientFor, DEFAULT_ZOTERO_SETTINGS, zoteroProAllowed } from "./zotero-settings";
 
 /**
  * Everything Tagged Sync Pro sells, in one list a test can walk.
@@ -185,25 +185,29 @@ const FRONTMATTER_CAPABILITY: ProCapability = {
 };
 
 /**
- * Zotero -- all three of its rows at once (spec §5), because they are one purchase and one switch.
+ * Zotero's Pro half (spec §5): the desktop-app connection and write-back. One capability for both,
+ * because they are one purchase and one gate function. Send over the cloud, matching and the note's
+ * Zotero line are free and are not in this list.
  *
- * `locked` asks the production gate, and `run` drives the production *factory*: a configured vault
- * either gets a client or gets `null`, and `null` is the whole of "refused in place" -- no matching,
- * no write-back, no Send command. Phrased against `zoteroAllowed` alone this would still pass if the
- * factory forgot to ask it, which is the mistake that gives the feature away.
+ * `locked` asks the production gate, and `run` drives the production *factory* for the half of it
+ * a unit test can reach: a vault with nothing but the desktop app switched on either gets a client
+ * or gets `null`. Phrased against `zoteroProAllowed` alone this would still pass if the factory
+ * forgot to ask it, which is the mistake that gives the feature away. The write-back half is the
+ * same predicate, read into `ZoteroPassDeps.mayWriteBack` by `zotero-plugin.ts zoteroPassFor` and
+ * pinned by `zotero-plugin.test.ts`.
  */
 const ZOTERO_CAPABILITY: ProCapability = {
 	id: "zotero-integration",
-	label: "Send Zotero PDFs to your tablet, and your tablet highlights back into Zotero as native annotations",
-	locked: (entitlement) => !zoteroAllowed(entitlement),
-	// The settings section is shown, disabled, with "(Pro)" -- the same rule as the transport dropdown
+	label: "Connect to the Zotero desktop app, and write your tablet highlights into Zotero as native annotations",
+	locked: (entitlement) => !zoteroProAllowed(entitlement),
+	// The desktop-app toggle is shown, disabled, with "(Pro)" -- the same rule as the transport dropdown
 	// and the frontmatter toggle: a feature a free user cannot see is one they cannot decide to buy.
 	whenLocked: "refused-in-place",
 	enforcedAt: {
-		site: "src/zotero-settings.ts createZoteroClientFor, called from src/main.ts zoteroClient and asked by src/settings-tab.ts renderZotero",
+		site: "src/zotero-settings.ts createZoteroClientFor (local connection) and src/zotero-plugin.ts zoteroPassFor (mayWriteBack)",
 		run: (entitlement) => {
 			const client = createZoteroClientFor(
-				{ settings: () => ({ ...DEFAULT_ZOTERO_SETTINGS, apiKey: "key", useLocal: true }), saveLocalKey: async () => {} },
+				{ settings: () => ({ ...DEFAULT_ZOTERO_SETTINGS, useLocal: true }), saveLocalKey: async () => {} },
 				entitlement,
 			);
 			return client === null ? "refused-in-place" : "allowed";
@@ -256,7 +260,7 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	},
 	"src/zotero-settings.ts": {
 		reads: 1,
-		why: "`zoteroAllowed`, the Zotero gate. A gate, and it is in the list -- `createZoteroClientFor` in the same file asks it, and `main.ts` and the settings tab ask that.",
+		why: "`zoteroProAllowed`, the gate of Zotero's Pro half. A gate, and it is in the list -- `createZoteroClientFor` in the same file asks it for the desktop connection, `zoteroPassFor` for write-back.",
 	},
 	"src/settings-tab.ts": {
 		reads: 4,

@@ -83,12 +83,11 @@ beforeEach(() => {
 });
 
 describe("the Zotero commands as the plugin registers them", () => {
-	// §5, refused in place. The free plugin is unchanged, so a free vault has no Zotero command to
-	// find -- not one that appears and then says no.
-	it("registers none of them in a free vault", async () => {
+	// §5: Send and the link are the free half, so a free vault's palette has both commands too.
+	it("registers both in a free vault", async () => {
 		const plugin = await load({ licence: NO_LICENCE, zotero: { apiKey: "key" } });
 
-		expect(zoteroCommands(plugin)).toEqual([]);
+		expect(zoteroCommands(plugin)).toEqual(["zotero-send", "zotero-link"]);
 	});
 
 	it("registers both in a Pro vault", async () => {

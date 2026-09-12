@@ -133,8 +133,6 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * from a run three weeks ago would be read as this one's.
 	 */
 	lastPageTranscriptions: { reused: number; total: number } | null = null;
-	/** Registered at most once per session; see `zotero-plugin.ts` for why it is a capability gate. */
-	private zoteroCommandsRegistered = false;
 	private autoSyncLaunchTimer: number | null = null;
 	private autoSyncIntervalTimer: number | null = null;
 
@@ -419,11 +417,10 @@ export default class TaggedSyncPlugin extends Plugin {
 			},
 		});
 
-		// Zotero is Pro and **refused in place** (spec §5): a vault that has never had a licence registers
-		// none of this, so the palette of a free plugin is exactly the palette it had before this feature
-		// existed. Re-asked after a licence check, so a user who buys Pro does not have to restart
-		// Obsidian to find the commands they just paid for.
-		this.zoteroCommandsRegistered = registerZoteroCommands(this.zoteroHost());
+		// Send and *Link to Zotero item…* are the free half of Zotero (spec §5), so every vault gets them.
+		// The Pro half -- the desktop-app connection and write-back -- is refused in place where it
+		// runs, not here.
+		registerZoteroCommands(this.zoteroHost());
 
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
@@ -648,9 +645,10 @@ export default class TaggedSyncPlugin extends Plugin {
 					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
 					// touching what is already in the vault -- a sync that keeps working, minus the Pro part.
 					frontmatter: frontmatterOn,
-					// Absent for a free vault, a lapsed licence and a vault with no Zotero connection, and
-					// that absence is the whole of §5: the sync runs exactly as it did before this feature
-					// existed. A note rewritten without it loses its Zotero callout line and keeps its keys.
+					// Absent for a vault with no Zotero connection it may use, and that absence means the
+					// sync runs exactly as it did before this feature existed. Present for a free vault with
+					// a zotero.org key: it links and names the paper, and the pass itself skips the write
+					// step (§5). A note rewritten without it loses its Zotero callout line and keeps its keys.
 					zotero: zoteroPassFor(this.zoteroHost(), !auto),
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),

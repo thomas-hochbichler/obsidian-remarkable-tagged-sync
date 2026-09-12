@@ -77,6 +77,7 @@ function harness({ links: stored, ...overrides }: Partial<Omit<ZoteroPassDeps, "
 			asked.push(question);
 			return question.candidates[0].attachment;
 		},
+		mayWriteBack: true,
 		now: () => new Date("2026-09-11T09:00:00"),
 		...overrides,
 	};
@@ -241,6 +242,26 @@ describe("matching a document nobody has linked", () => {
 		await pass.run(unit({ docId: "doc-2", notePath: "Papers/Other.md" }));
 
 		expect(attachments).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("in a vault that has the free half", () => {
+	// Spec §5: the note names the paper and keeps its keys; nothing write-shaped reaches Zotero -- not
+	// even the listing of our own annotations, which is the request that needs a write-capable key.
+	it("names the paper, writes nothing, and says where the highlights are", async () => {
+		const ownAnnotations = vi.fn(async (): Promise<ZoteroAnnotation[]> => []);
+		const createAnnotations = vi.fn(async (): Promise<AnnotationsCreated> => ({ keys: [], failures: [] }));
+		const { deps, saved } = harness({ links: linked(), client: client({ ownAnnotations, createAnnotations }), mayWriteBack: false });
+
+		const parts = await createZoteroPass(deps).run(unit());
+
+		expect(parts.line).toContain("highlights stay in the vault — writing them into Zotero is Tagged Sync Pro");
+		expect(parts.keys).toEqual({ zoteroKey: ITEM_KEY, citekey: "smith2024prompting" });
+		expect(parts.links).toEqual({});
+		expect(parts.notices).toEqual([]);
+		expect(ownAnnotations).not.toHaveBeenCalled();
+		expect(createAnnotations).not.toHaveBeenCalled();
+		expect((saved()["doc-1"] as ZoteroLink).annotations).toEqual({});
 	});
 });
 

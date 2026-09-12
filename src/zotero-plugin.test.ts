@@ -149,30 +149,33 @@ beforeEach(() => {
 });
 
 describe("what a vault gets registered", () => {
-	// §5, refused in place: the palette of a free plugin is exactly the palette it had before this
-	// feature existed. A command that is there and refuses would be an advertisement.
-	it("registers nothing at all in a free vault", () => {
-		const harnessed = harness({ entitlement: FREE });
-
-		expect(registerZoteroCommands(harnessed.host)).toBe(false);
-		expect(harnessed.commands).toEqual([]);
-		expect(harnessed.events).toEqual([]);
-	});
-
-	it("registers the two commands and the context action for a Pro vault", () => {
+	it("registers the two commands and the context action", () => {
 		const harnessed = harness();
 
-		expect(registerZoteroCommands(harnessed.host)).toBe(true);
+		registerZoteroCommands(harnessed.host);
+
 		expect(harnessed.commands.map((entry) => entry.id)).toEqual(["zotero-send", "zotero-link"]);
 		expect(harnessed.events).toHaveLength(1);
 	});
 
-	// The gate is the capability, not the configuration: a Pro user who has not pasted a key yet is
-	// told what to do rather than finding nothing.
-	it("registers them for a Pro vault that has configured no connection", () => {
+	// §5: Send and the link are the free half, so a free vault's palette has them too.
+	it("registers the same for a free vault", () => {
+		const harnessed = harness({ entitlement: FREE });
+
+		registerZoteroCommands(harnessed.host);
+
+		expect(harnessed.commands.map((entry) => entry.id)).toEqual(["zotero-send", "zotero-link"]);
+		expect(harnessed.events).toHaveLength(1);
+	});
+
+	// Registered on nothing but the plugin loading: a user who has not pasted a key yet is told what
+	// to do by the command rather than finding nothing.
+	it("registers them for a vault that has configured no connection", () => {
 		const harnessed = harness({ client: null });
 
-		expect(registerZoteroCommands(harnessed.host)).toBe(true);
+		registerZoteroCommands(harnessed.host);
+
+		expect(harnessed.commands).toHaveLength(2);
 	});
 
 	it("runs Send from the palette", async () => {
@@ -565,6 +568,24 @@ describe("the run's Zotero half", () => {
 		expect(parts.line).toContain("literature note: [[@smith2024]]");
 		expect(parts.line).toContain("written back 2026-09-11");
 		expect(harnessed.saves).toBe(1);
+	});
+
+	// The write-back half of §5, pinned where the licence is read into the pass: a free vault's pass
+	// links and names the paper and never calls a write. The capability walk in `pro-capabilities`
+	// drives the connection half; this is the other one.
+	it("writes nothing into Zotero for a free vault, and says so in the note", async () => {
+		const createAnnotations = vi.fn(async () => ({ keys: [], failures: [] }));
+		const harnessed = harness({
+			entitlement: FREE,
+			client: fakeClient({ createAnnotations }),
+			data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, apiKey: "key" } },
+		});
+
+		const parts = await runOver(harnessed);
+
+		expect(parts.line).toContain("[web library](https://www.zotero.org/users/1234567/items/ITEM1)");
+		expect(parts.line).toContain("highlights stay in the vault — writing them into Zotero is Tagged Sync Pro");
+		expect(createAnnotations).not.toHaveBeenCalled();
 	});
 
 	// The id can come from either connection -- the desktop app knows it too -- but a vault that only
