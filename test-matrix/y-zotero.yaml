@@ -2341,6 +2341,13 @@
       file: src/settings-tab.test.ts
       test: "the Zotero section > pre-selects the last manual send's tag until a choice is made"
 
+    - id: Y24.9
+      scenario: "The send tag row in a vault that has never touched it (§2.6)"
+      expect: "Empty -- the step is opt-in -- and the sentence names what naming a tag does: every sync, the automatic ones too, will put papers on the tablet. *Sync now* has meant 'read the tablet, write the vault'; a sync that pushes to the tablet is something the user has to have asked for"
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > starts the send tag empty and says what naming one does"
+
 # The wiring (spec §3.4, §5). Three features, and the order between them is the whole of §3.4.1: the
 # note is on disk before anything here talks to Zotero, so every way a library can fail costs the
 # Zotero part of one note and nothing else. Y25 is the policy, Y28 is where the run puts it, and Y26
@@ -3268,3 +3275,10 @@
       layer: unit
       file: src/zotero-tag-send.test.ts
       test: "a paper tagged in Zotero, at the start of a sync > sends a paper again whose document no listing has found in a day"
+
+    - id: Y31.30
+      scenario: "A vault with a Zotero key that has never named a send tag"
+      expect: "Nothing, and Zotero is not asked. The default is empty on purpose (decided 2026-09-12): the step is the one thing a sync does that puts something on the tablet, so it runs only for a vault that opted in"
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "when the whole step stands down > does nothing in a vault that has never named a send tag"

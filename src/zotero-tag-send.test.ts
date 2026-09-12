@@ -82,7 +82,8 @@ function harness(
 		tagFolderMap: options.tags ?? { sync: "Target" },
 		...options.data,
 	};
-	data.zotero = { ...data.zotero, apiKey: "key", ...options.zotero };
+	// The send tag is opt-in (empty by default); the harness opts in unless a test says otherwise.
+	data.zotero = { ...data.zotero, apiKey: "key", sendTag: "to-remarkable", ...options.zotero };
 	const sent: SendDocument[] = [];
 	const reports: string[] = [];
 	const client = options.client === undefined ? fakeClient() : options.client;
@@ -299,6 +300,17 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 });
 
 describe("when the whole step stands down", () => {
+	// Opt-in: *Sync now* has meant "read the tablet, write the vault" since the plugin existed, and
+	// a sync that puts something on the tablet is something the user has to have asked for.
+	it("does nothing in a vault that has never named a send tag", async () => {
+		const itemsWithTag = vi.fn(async () => [PAPER]);
+		const h = harness({ client: fakeClient({ itemsWithTag }), zotero: { sendTag: DEFAULT_DATA.zotero.sendTag } });
+
+		expect(DEFAULT_DATA.zotero.sendTag).toBe("");
+		expect(await sendTaggedPapers(h.host, true)).toEqual([]);
+		expect(itemsWithTag).not.toHaveBeenCalled();
+	});
+
 	it("does nothing, and asks Zotero nothing, with the send tag emptied", async () => {
 		const itemsWithTag = vi.fn(async () => [PAPER]);
 		const h = harness({ client: fakeClient({ itemsWithTag }), zotero: { sendTag: "  " } });

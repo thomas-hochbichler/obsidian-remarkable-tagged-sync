@@ -49,7 +49,7 @@ export const SEND_NEEDS_A_TAG = "Map a reMarkable tag to a vault folder first �
 /** The default tablet folder, and the name the setting starts at. */
 export const DEFAULT_SEND_FOLDER = "Zotero";
 
-/** The Zotero tag that sends a paper at the start of a sync (§2.6), and the name the setting starts at. */
+/** The name the setting for §2.6's send tag *suggests*. It starts empty: the step is opt-in. */
 export const DEFAULT_SEND_TAG = "to-remarkable";
 
 /**

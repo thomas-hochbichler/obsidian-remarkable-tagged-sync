@@ -18,7 +18,7 @@ import type { Entitlement } from "./licence-state";
 import { createZoteroClient, type ZoteroClient } from "./zotero-client";
 import { createZoteroLocalConnection, type LocalKeyStore } from "./zotero-local";
 import { createZoteroWebConnection } from "./zotero-web";
-import { DEFAULT_SEND_FOLDER, DEFAULT_SEND_TAG } from "./zotero-send";
+import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 
 export interface ZoteroSettings {
 	/** A zotero.org API key, or `null`. Read and write, personal library -- nothing else is asked for. */
@@ -49,9 +49,11 @@ export interface ZoteroSettings {
 	/** The sync tag the last send used, offered first the next time there is a choice (§2.4). */
 	lastTag: string | null;
 	/**
-	 * The Zotero tag that sends a paper to the tablet at the start of a sync (§2.6). Empty switches
-	 * the step off. On by default with a name nobody's library carries by accident: a tag has to be
-	 * put on a paper for anything to happen, so "on" costs one request per sync and nothing else.
+	 * The Zotero tag that sends a paper to the tablet at the end of a sync (§2.6). Empty -- the
+	 * default -- switches the step off. Opt-in on purpose: this is the one thing a sync does that
+	 * puts something on the tablet, and *Sync now* has meant "read the tablet, write the vault" since
+	 * the plugin existed. Whoever names a tag here has been told, in the setting's own sentence,
+	 * that every sync -- the automatic ones too -- will then send.
 	 */
 	sendTag: string;
 	/** Which mapped sync tag a paper sent that way gets, where the vault maps several (§2.6). `null` falls back to `lastTag`. */
@@ -65,7 +67,7 @@ export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
 	folder: DEFAULT_SEND_FOLDER,
 	sendOverSsh: false,
 	lastTag: null,
-	sendTag: DEFAULT_SEND_TAG,
+	sendTag: "",
 	sendSyncTag: null,
 };
 

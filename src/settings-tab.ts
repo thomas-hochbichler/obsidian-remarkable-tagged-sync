@@ -613,7 +613,10 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Send tag in Zotero")
-			.setDesc("Tag a paper in Zotero with this, and the next sync puts its PDF on your tablet. Tag the paper, not the PDF. Leave empty to switch this off.")
+			.setDesc(
+				"Off until you name a tag. With one, every sync -- the automatic ones too -- puts the PDF of any paper you tag with it in Zotero on your tablet, " +
+					"in the folder above and with your sync tag. Tag the paper, not the PDF. Nothing is ever taken off the tablet.",
+			)
 			.addText((text) => {
 				text.setPlaceholder(DEFAULT_SEND_TAG);
 				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);

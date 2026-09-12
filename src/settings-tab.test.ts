@@ -997,6 +997,16 @@ describe("the Zotero section", () => {
 		expect(plugin.saves).toHaveLength(1);
 	});
 
+	// Opt-in, and the sentence that turns it on names what it turns on: every sync, the automatic ones
+	// too, will put papers on the tablet.
+	it("starts the send tag empty and says what naming one does", async () => {
+		const sendTag = row(draw((await tabWith()).tab), "Send tag in Zotero");
+
+		expect(sendTag.setting.texts[0].getValue()).toBe("");
+		expect(sendTag.desc).toContain("Off until you name a tag");
+		expect(sendTag.desc).toContain("the automatic ones too");
+	});
+
 	// Empty is "off" here, unlike the folder: the way to stop the tag-driven send (§2.6) is to give it
 	// no tag to look for.
 	it("takes the send tag the user typed, and an emptied one as off", async () => {

@@ -20,9 +20,9 @@ workflow publishes the section as the GitHub release body. See
   marked on the tablet is also written into Zotero as native highlights, underlines and comments
   (add-only, your edits in Zotero win), and the plugin can talk to the Zotero 10 desktop app as
   well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
-- **A tag in Zotero sends the paper.** Tag a paper `to-remarkable` in Zotero and the next sync
-  puts its PDF on your tablet, in the same folder and with the same sync tag as *Send*. The tag's
-  name is a setting, and empty switches it off. Nothing is written into Zotero and the tag stays;
+- **A tag in Zotero sends the paper.** Name a send tag under Settings → Zotero (off until you
+  do), tag a paper with it in Zotero, and the next sync puts its PDF on your tablet, in the same
+  folder and with the same sync tag as *Send*. Nothing is written into Zotero and the tag stays;
   a paper already on the tablet is skipped, one with two PDFs is named and left for *Send*. Over
   SSH this runs only in a sync you start yourself, since that route restarts the tablet's reading
   app.
