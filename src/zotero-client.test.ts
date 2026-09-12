@@ -102,6 +102,14 @@ describe("reading the library", () => {
 		await api.search("prompting & co");
 		expect(calls[0].path).toBe("/items/top?q=prompting%20%26%20co&qmode=titleCreatorYear&limit=100&start=0");
 	});
+
+	// The paper is what gets tagged and what gets sent (§2.6). A tag on the PDF's own row is not
+	// found, on purpose: one tag placed two ways would otherwise send the same paper twice.
+	it("lists the papers carrying a tag, and only the papers", async () => {
+		const { api, calls } = connection(() => json([{ data: { key: "ITEM1", itemType: "journalArticle", title: "Prompting" } }]));
+		expect(await api.itemsWithTag("to remarkable")).toMatchObject([{ key: "ITEM1", title: "Prompting" }]);
+		expect(calls[0].path).toBe("/items/top?tag=to%20remarkable&limit=100&start=0");
+	});
 });
 
 describe("our own annotations", () => {

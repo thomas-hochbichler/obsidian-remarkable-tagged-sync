@@ -47,6 +47,7 @@ function client(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 		attachment: async () => attachment(),
 		parentItem: async () => ITEM,
 		search: async () => [ITEM],
+		itemsWithTag: async () => [],
 		filePath: async () => null,
 		fileBytes: async () => null,
 		ownAnnotations: async () => [],

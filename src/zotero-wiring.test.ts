@@ -31,6 +31,7 @@ function fakeClient(): ZoteroClient {
 		attachment: async () => ATTACHMENT,
 		parentItem: async () => ITEM,
 		search: async () => [ITEM],
+		itemsWithTag: async () => [],
 		filePath: async () => null,
 		fileBytes: async () => new Uint8Array([1, 2, 3]),
 		ownAnnotations: async () => [],

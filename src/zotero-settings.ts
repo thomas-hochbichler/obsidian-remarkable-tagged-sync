@@ -18,7 +18,7 @@ import type { Entitlement } from "./licence-state";
 import { createZoteroClient, type ZoteroClient } from "./zotero-client";
 import { createZoteroLocalConnection, type LocalKeyStore } from "./zotero-local";
 import { createZoteroWebConnection } from "./zotero-web";
-import { DEFAULT_SEND_FOLDER } from "./zotero-send";
+import { DEFAULT_SEND_FOLDER, DEFAULT_SEND_TAG } from "./zotero-send";
 
 export interface ZoteroSettings {
 	/** A zotero.org API key, or `null`. Read and write, personal library -- nothing else is asked for. */
@@ -48,6 +48,14 @@ export interface ZoteroSettings {
 	sendOverSsh: boolean;
 	/** The sync tag the last send used, offered first the next time there is a choice (§2.4). */
 	lastTag: string | null;
+	/**
+	 * The Zotero tag that sends a paper to the tablet at the start of a sync (§2.6). Empty switches
+	 * the step off. On by default with a name nobody's library carries by accident: a tag has to be
+	 * put on a paper for anything to happen, so "on" costs one request per sync and nothing else.
+	 */
+	sendTag: string;
+	/** Which mapped sync tag a paper sent that way gets, where the vault maps several (§2.6). `null` falls back to `lastTag`. */
+	sendSyncTag: string | null;
 }
 
 export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
@@ -57,6 +65,8 @@ export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
 	folder: DEFAULT_SEND_FOLDER,
 	sendOverSsh: false,
 	lastTag: null,
+	sendTag: DEFAULT_SEND_TAG,
+	sendSyncTag: null,
 };
 
 /**

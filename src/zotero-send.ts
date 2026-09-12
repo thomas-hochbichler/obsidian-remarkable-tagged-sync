@@ -49,6 +49,9 @@ export const SEND_NEEDS_A_TAG = "Map a reMarkable tag to a vault folder first �
 /** The default tablet folder, and the name the setting starts at. */
 export const DEFAULT_SEND_FOLDER = "Zotero";
 
+/** The Zotero tag that sends a paper at the start of a sync (§2.6), and the name the setting starts at. */
+export const DEFAULT_SEND_TAG = "to-remarkable";
+
 /**
  * How long a name the tablet gets. 120 characters, from §2.4.
  *
@@ -185,20 +188,35 @@ export interface SyncedDocument {
  * minutes of work in front of a person who pressed Send and expects a file dialog. What the sync
  * index holds is the same fact, one sync old.
  *
- * The second rule is what makes one-sync-old good enough: a document sent *since* the last completed
- * sync counts as present. It has not had a chance to appear in the index yet, and the alternative is
- * worse in exactly the case that matters -- a send, then a second send before the first has ever
- * synced, would otherwise read as "it vanished", drop the link, and leave two documents on the
- * tablet with one mapping between them.
+ * The second rule is what makes one-sync-old good enough: a document that was **sent within the
+ * last day and has no row yet** counts as present. Both halves of that are load-bearing.
+ *
+ * *No row yet*, rather than "sent since the last completed sync" as this first read: the listing
+ * right after a send does not always have the document (seen live 2026-09-12 -- uploaded 08:23:50,
+ * absent from a listing at 08:23:55; the cloud's root lags, there is no client cache), so a send
+ * kept reading as "vanished" and §2.6 put a second copy on the tablet per run. A document is gone
+ * once a sync has seen it and seen it leave -- an orphaned row -- or once a day has passed with no
+ * listing ever finding it.
+ *
+ * *Within the last day*, rather than for ever: a document deleted on the tablet before any listing
+ * caught it would otherwise stay "present" for good, and the tag-driven send would never bring the
+ * paper back. A day and not an hour because the send and the sync can travel different roads -- a
+ * cloud send with an SSH-read tablet turns up only when the tablet next pulls from the cloud, and a
+ * tablet asleep in a bag for an afternoon must not earn a second copy per hour.
  */
-export function documentsOnTablet(rows: readonly SyncedDocument[], links: StoredZoteroLinks, lastSyncAt: string | null): Set<string> {
+export function documentsOnTablet(rows: readonly SyncedDocument[], links: StoredZoteroLinks, now: Date): Set<string> {
+	const seen = new Set(rows.map((row) => row.docId));
 	const present = new Set(rows.filter((row) => row.status === "active").map((row) => row.docId));
 	for (const docId of Object.keys(links)) {
 		const sentAt = linkFor(links, docId)?.sentAt;
-		if (sentAt !== undefined && (lastSyncAt === null || sentAt >= lastSyncAt)) present.add(docId);
+		if (sentAt === undefined || seen.has(docId)) continue;
+		if (now.getTime() - Date.parse(sentAt) < SENT_GRACE_MS) present.add(docId);
 	}
 	return present;
 }
+
+/** How long a sent document that no sync has listed yet is still taken to be on the tablet. See {@link documentsOnTablet}. */
+export const SENT_GRACE_MS = 24 * 60 * 60 * 1000;
 
 /** How the bytes were come by, for the one sentence the send reports afterwards. */
 export type BytesSource = "file" | "download" | "picked";

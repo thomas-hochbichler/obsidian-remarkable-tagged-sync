@@ -47,6 +47,7 @@ import type { ZoteroClient } from "./zotero-client";
 import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
+import { sendTaggedPapers } from "./zotero-tag-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
@@ -668,6 +669,13 @@ export default class TaggedSyncPlugin extends Plugin {
 			const speak = !auto || result.stopped;
 
 			this.data.syncIndex = result.index;
+
+			// Zotero spec §2.6: papers tagged in Zotero go to the tablet *after* the tablet has been read,
+			// because the decision "is it still there?" is made on the index the run has just refreshed.
+			// Never throws; its sentences are the run's, in a run the user is watching.
+			for (const notice of await sendTaggedPapers(this.zoteroHost(), !auto)) {
+				if (speak) new Notice(notice, LONG_NOTICE_MS);
+			}
 
 			// The one-time pass that brings already-written notes up to the current managed key set
 			// (#107, #109). Without it a vault that has settled would never receive a new key at all:

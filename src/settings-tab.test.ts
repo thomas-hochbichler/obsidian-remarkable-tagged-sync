@@ -997,6 +997,41 @@ describe("the Zotero section", () => {
 		expect(plugin.saves).toHaveLength(1);
 	});
 
+	// Empty is "off" here, unlike the folder: the way to stop the tag-driven send (§2.6) is to give it
+	// no tag to look for.
+	it("takes the send tag the user typed, and an emptied one as off", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		field(draw(tab), "Send tag in Zotero").type(" lesen ");
+		expect((plugin.data.zotero as { sendTag: string }).sendTag).toBe("lesen");
+
+		field(draw(tab), "Send tag in Zotero").type("");
+		expect((plugin.data.zotero as { sendTag: string }).sendTag).toBe("");
+		vi.useRealTimers();
+	});
+
+	// With one mapped tag it is the one, and a dropdown with one entry is a question already answered.
+	it("offers the sync tag for Zotero sends only where the vault maps several, and saves the pick", async () => {
+		const one = draw((await tabWith({ tagFolderMap: { "#a": "A" } })).tab);
+		expect(rowNames(one)).not.toContain("Sync tag for Zotero sends");
+
+		const { plugin, tab } = await tabWith({ tagFolderMap: { "#b": "B", "#a": "A" } });
+		const choice = dropdown(draw(tab), "Sync tag for Zotero sends");
+		expect(choice.options).toEqual({ "": "Choose a tag…", "#a": "#a", "#b": "#b" });
+		choice.pick("#b");
+		await settle();
+		expect((plugin.data.zotero as { sendSyncTag: string | null }).sendSyncTag).toBe("#b");
+	});
+
+	// What the step will actually use until the setting is made, shown rather than left blank.
+	it("pre-selects the last manual send's tag until a choice is made", async () => {
+		const { tab } = await tabWith({ tagFolderMap: { "#a": "A", "#b": "B" }, zotero: { lastTag: "#b" } });
+		const choice = dropdown(draw(tab), "Sync tag for Zotero sends");
+
+		expect(choice.getValue()).toBe("#b");
+		expect(choice.options).toEqual({ "#a": "#a", "#b": "#b" });
+	});
+
 	it("reads a cleared field as no key at all, rather than as an empty one", async () => {
 		// `""` would be a configured connection that answers 401 on every call -- and the status line
 		// would say "not connected" for a vault that is, as far as the settings go, set up.

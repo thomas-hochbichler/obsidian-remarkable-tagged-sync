@@ -309,36 +309,49 @@ describe("sending", () => {
 
 describe("what is still on the tablet", () => {
 	const link = { attachmentKey: "ATT1", library: "user" as const, annotations: {} };
+	const now = new Date("2026-09-11T12:00:00.000Z");
 
 	it("counts a document the last sync saw", () => {
 		const rows = [{ docId: "doc-1", status: "active" as const }];
 
-		expect([...documentsOnTablet(rows, { "doc-1": link }, "2026-09-11T09:00:00.000Z")]).toEqual(["doc-1"]);
+		expect([...documentsOnTablet(rows, { "doc-1": link }, now)]).toEqual(["doc-1"]);
 	});
 
 	it("does not count one whose row was orphaned -- that is a document that left the device", () => {
 		const rows = [{ docId: "doc-1", status: "orphaned" as const }];
 
-		expect(documentsOnTablet(rows, { "doc-1": link }, "2026-09-11T09:00:00.000Z").has("doc-1")).toBe(false);
+		expect(documentsOnTablet(rows, { "doc-1": link }, now).has("doc-1")).toBe(false);
 	});
 
 	// Otherwise a second Send before the first has ever synced reads as "it vanished": the link would
 	// be dropped, and two documents on the tablet would share one mapping between them.
-	it("counts one sent since the last sync, which has had no chance to appear yet", () => {
+	it("counts one that was sent and no sync has listed yet", () => {
 		const sent = { ...link, sentAt: "2026-09-11T10:00:00.000Z" };
 
-		expect(documentsOnTablet([], { "doc-1": sent }, "2026-09-11T09:00:00.000Z").has("doc-1")).toBe(true);
+		expect(documentsOnTablet([], { "doc-1": sent }, now).has("doc-1")).toBe(true);
 	});
 
-	it("counts one sent into a vault that has never completed a sync at all", () => {
+	// Seen live 2026-09-12: a listing five seconds after an upload did not have it. Counting by
+	// "sent since the last sync" read that as vanished and put a second copy on the tablet per run.
+	it("keeps counting one that was sent, synced past, and has not turned up within the day", () => {
 		const sent = { ...link, sentAt: "2026-09-11T10:00:00.000Z" };
+		const rows = [{ docId: "doc-other", status: "active" as const }];
 
-		expect(documentsOnTablet([], { "doc-1": sent }, null).has("doc-1")).toBe(true);
+		expect(documentsOnTablet(rows, { "doc-1": sent }, now).has("doc-1")).toBe(true);
 	});
 
-	it("does not count one that was sent, synced past, and never turned up", () => {
-		const sent = { ...link, sentAt: "2026-09-01T10:00:00.000Z" };
+	// Otherwise a document deleted on the tablet before any listing caught it stays "present" for
+	// good, and the tag-driven send never brings the paper back.
+	it("lets go of one that no listing has found in a day", () => {
+		const sent = { ...link, sentAt: "2026-09-10T11:00:00.000Z" };
 
-		expect(documentsOnTablet([], { "doc-1": sent }, "2026-09-11T09:00:00.000Z").has("doc-1")).toBe(false);
+		expect(documentsOnTablet([], { "doc-1": sent }, now).has("doc-1")).toBe(false);
+	});
+
+	it("does not count a sent document once a sync has seen it leave", () => {
+		const sent = { ...link, sentAt: "2026-09-11T11:59:00.000Z" };
+		const rows = [{ docId: "doc-1", status: "orphaned" as const }];
+
+		expect(documentsOnTablet(rows, { "doc-1": sent }, now).has("doc-1")).toBe(false);
 	});
 });

@@ -23,6 +23,7 @@ import { BACKGROUND_CONSENT_NAME, ocrBackendEntries, ocrBackendEntry } from "./o
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
 import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
 import { SSH_SEND_RESTART_NOTE } from "./ssh-send";
+import { DEFAULT_SEND_TAG } from "./zotero-send";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
@@ -609,6 +610,38 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					persist();
 				});
 			});
+
+		new Setting(containerEl)
+			.setName("Send tag in Zotero")
+			.setDesc("Tag a paper in Zotero with this, and the next sync puts its PDF on your tablet. Tag the paper, not the PDF. Leave empty to switch this off.")
+			.addText((text) => {
+				text.setPlaceholder(DEFAULT_SEND_TAG);
+				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+				// Empty is "off" here, unlike the folder: a tag has to be put on a paper for anything to
+				// happen, so the way to stop the step is to give it no tag to look for.
+				text.setValue(settings.sendTag).onChange((value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendTag: value.trim() };
+					persist();
+				});
+			});
+
+		// Only where there is a choice (§2.6): with one mapped tag it is the one, and a dropdown with one
+		// entry is a question that has already been answered.
+		const mapped = Object.keys(this.plugin.data.tagFolderMap).sort((a, b) => (a < b ? -1 : 1));
+		if (mapped.length > 1) {
+			const chosen = [settings.sendSyncTag, settings.lastTag].find((tag): tag is string => tag !== null && mapped.includes(tag)) ?? "";
+			new Setting(containerEl)
+				.setName("Sync tag for Zotero sends")
+				.setDesc("Which of your mapped tags a paper sent from Zotero gets. Until you choose, the tag of your last manual send is used.")
+				.addDropdown((dropdown) => {
+					if (chosen === "") dropdown.addOption("", "Choose a tag…");
+					for (const tag of mapped) dropdown.addOption(tag, tag);
+					dropdown.setValue(chosen).onChange(async (value) => {
+						this.plugin.data.zotero = { ...this.plugin.data.zotero, sendSyncTag: value === "" ? null : value };
+						await this.plugin.saveData(this.plugin.data);
+					});
+				});
+		}
 
 		new Setting(containerEl)
 			.setName(pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)")

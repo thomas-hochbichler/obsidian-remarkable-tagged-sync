@@ -189,6 +189,8 @@ export interface ZoteroConnection {
 	parentItem(key: string): Promise<ZoteroItem | null>;
 	/** Top-level items for the send picker: `q=`, `qmode=titleCreatorYear` (spec §2.4). */
 	search(query: string): Promise<ZoteroItem[]>;
+	/** Top-level items carrying one tag, for the tag-driven send (spec §2.6). A tag on a PDF's own row is not seen -- on purpose. */
+	itemsWithTag(tag: string): Promise<ZoteroItem[]>;
 	/** Where the PDF sits on this machine, or `null` when this connection cannot know. */
 	filePath(key: string): Promise<string | null>;
 	/** The PDF itself, or `null` when Zotero has no copy to hand out. */
@@ -512,6 +514,13 @@ export function createZoteroConnection(
 			const rows = await listAll(request, `/items/top?q=${encodeURIComponent(query)}&qmode=titleCreatorYear`);
 			return rows.map((row) => toItem(asRecord(row.data)));
 		},
+		async itemsWithTag(tag) {
+			// `/items/top` again, and for the same reason: the paper is what gets tagged and what gets
+			// sent. A tag on the attachment row is not found here, and §2.6 says so rather than
+			// searching both -- one tag placed two ways would otherwise send the same paper twice.
+			const rows = await listAll(request, `/items/top?tag=${encodeURIComponent(tag)}`);
+			return rows.map((row) => toItem(asRecord(row.data)));
+		},
 		filePath: (key) => files.path(key),
 		fileBytes: (key) => files.bytes(key),
 		async ownAnnotations(parentKey) {
@@ -611,6 +620,7 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 		attachment: (key) => call((connection) => connection.attachment(key)),
 		parentItem: (key) => call((connection) => connection.parentItem(key)),
 		search: (query) => call((connection) => connection.search(query)),
+		itemsWithTag: (tag) => call((connection) => connection.itemsWithTag(tag)),
 		filePath: (key) => call((connection) => connection.filePath(key)),
 		fileBytes: (key) => call((connection) => connection.fileBytes(key)),
 		ownAnnotations: (parentKey) => call((connection) => connection.ownAnnotations(parentKey)),

@@ -28,6 +28,7 @@ function fakeClient(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 		attachment: async () => attachment(),
 		parentItem: async () => ITEM,
 		search: async () => [ITEM],
+		itemsWithTag: async () => [],
 		filePath: async () => null,
 		fileBytes: async () => new Uint8Array([1, 2, 3]),
 		ownAnnotations: async () => [],
@@ -346,11 +347,15 @@ describe("a paper that is already on the tablet (§2.5)", () => {
 		expect(Object.keys(harnessed.data.zoteroLinks).sort()).toEqual(["doc-1", "doc-9"]);
 	});
 
+	// "No longer on the tablet" is an orphaned row: a sync saw the document and then saw it leave. A
+	// sent document no sync has listed yet is still counted as there (see `documentsOnTablet`).
 	it("replaces the mapping of a document that is no longer on the tablet, without asking", async () => {
+		const index = syncedAs("Target/Prompting.md");
+		index.rows["doc-9:sync"] = { ...index.rows["doc-9:sync"], status: "orphaned" };
 		const harnessed = harness({
 			data: {
 				zoteroLinks: { "doc-9": { attachmentKey: "ATT1", library: "user", sentAt: "2026-09-01T09:00:00.000Z", annotations: {} } },
-				lastSyncAt: "2026-09-05T09:00:00.000Z",
+				syncIndex: index,
 			},
 		});
 

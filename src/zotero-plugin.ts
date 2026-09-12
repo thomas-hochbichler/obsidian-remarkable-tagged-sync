@@ -241,7 +241,7 @@ async function putOnTablet(host: ZoteroHost, client: ZoteroClient, transport: Se
 	const folder = host.data.zotero.folder.trim() === "" ? DEFAULT_SEND_FOLDER : host.data.zotero.folder;
 	const links: StoredZoteroLinks = host.data.zoteroLinks;
 	const rows: SyncIndexRow[] = Object.values(host.data.syncIndex.rows);
-	const state = sendState(links, choice.attachment.key, documentsOnTablet(rows, links, host.data.lastSyncAt));
+	const state = sendState(links, choice.attachment.key, documentsOnTablet(rows, links, host.now()));
 	const name = tabletName(choice.item, choice.attachment);
 	if (state.present.length > 0) {
 		const again = await confirmDialog(

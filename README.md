@@ -413,6 +413,17 @@ The loop is three steps:
    search and cite. A margin note anchored to a passage becomes that annotation's comment. Without
    Pro the note says so in its top line: *highlights stay in the vault*.
 
+**Or start in Zotero.** Tag a paper `to-remarkable` in Zotero and the next sync puts its PDF on
+your tablet, same folder, same sync tag — so the whole loop reads: *tag a paper in Zotero, it is
+on your tablet; mark it up on the tablet, your marks are in your vault* (and, with Pro, in Zotero).
+Tag the paper, not the PDF. Nothing is ever taken off the tablet, and the tag is left where you put
+it; a paper that is already there is simply skipped. A paper with two PDFs, or one Zotero has no
+copy of, is named in the notice and waits for **Send Zotero PDF to reMarkable…**, which is where
+questions get asked. The tag's name is a setting (*Send tag in Zotero*, empty switches it off); if
+you map several sync tags, *Sync tag for Zotero sends* says which one a paper sent this way gets.
+Over SSH this happens only in a sync you start yourself, because that route restarts the tablet's
+reading app.
+
 Each half stands on its own. A PDF that reached the tablet some other way is recognised at sync
 time — by the file's own hash, or by asking you once — and a note gets its Zotero link whether or
 not you ever use write-back. A note that is already in your vault can be pointed at an item by hand
