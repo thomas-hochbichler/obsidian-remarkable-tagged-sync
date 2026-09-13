@@ -12,6 +12,14 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **A large reMarkable account no longer fails its first sync with "This plugin did not expect the
+  answer it got from reMarkable's cloud".** Listing the account asked for every document's files at
+  the same moment, and past a few hundred documents Electron refused to open one more connection
+  (`net::ERR_INSUFFICIENT_RESOURCES`). The plugin now keeps at most eight requests open at once, which
+  also covers rendering a notebook with hundreds of pages and *Discover tags* in the settings. (#160)
+
 ## [1.7.1] - 2026-09-13
 
 ### Changed

@@ -127,6 +127,27 @@
       file: src/obsidian-fetch.test.ts
       test: "the Response it hands back > cannot hand back status 103 at all, whatever the body says"
 
+    - id: A6.17
+      scenario: A first sync lists an account of 300 documents, and the runtime allows only so many requests open at once (issue #160)
+      expect: 'The listing completes and never has more requests in flight than the runtime allows. rmapi-js fetches every document''s file list, metadata and content in one `Promise.all`, so an unpaced shim puts 3 x N requests out at once and Electron answers `net::ERR_INSUFFICIENT_RESOURCES` -- which the user then read as "reMarkable changed their service"'
+      layer: unit
+      file: src/cloud-listing-fan-out.test.ts
+      test: "listing a large account > survives a runtime that allows only so many requests at once"
+
+    - id: A6.18
+      scenario: More requests are started at once than the shim allows out
+      expect: The ones past the limit wait, and each goes out only when one of the others has answered. This is the one door every request goes through, so the bound lives here -- rmapi-js's own `Promise.all`s cannot be reached from outside
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "how many it lets out at once > holds the request past the limit back until one of the others has answered"
+
+    - id: A6.19
+      scenario: A request fails while holding a slot
+      expect: The slot is given back. A leaked slot per failure would stall the plugin for good after a handful of dropped connections
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "how many it lets out at once > gives a slot back when the request fails, rather than leaking it"
+
 - feature: A1
   name: Connect with one-time code -- when the cloud says no
   code: src/remarkable-auth.ts
