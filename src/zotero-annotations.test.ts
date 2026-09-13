@@ -140,7 +140,7 @@ describe("the colour", () => {
 		// palette ids, as `recordedColor` resolves them (reMarkable 2; Paper Pro gesture)
 		["palette 3 yellow", { r: 251, g: 247, b: 25 }, "#ffd400"],
 		["palette 4 green", { r: 0, g: 255, b: 0 }, "#5fb236"],
-		["palette 5 pink", { r: 255, g: 192, b: 203 }, "#ff6666"],
+		["palette 5 pink", { r: 255, g: 192, b: 203 }, "#e56eee"],
 		["palette 6 blue", { r: 78, g: 105, b: 201 }, "#2ea8e5"],
 		["palette 7 red", { r: 179, g: 62, b: 57 }, "#ff6666"],
 		["palette 10 green_2", { r: 161, g: 216, b: 125 }, "#5fb236"],

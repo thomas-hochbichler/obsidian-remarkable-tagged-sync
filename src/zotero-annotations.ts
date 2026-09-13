@@ -97,9 +97,12 @@ export function sortIndex(pageIndex: number, heightPt: number, rect: PdfRect | n
  * order the bands run round the circle. Grey is not a band: it is what a colour with no hue gets.
  *
  * The edges are where the measured device colours (`zotero-annotations.test.ts`, *the colour*) say
- * the eye puts them. Two are not midpoints on purpose: blue runs to 245° because every blue a
- * reMarkable records is a royal blue (227-231°) while Zotero's is an azure (200°), and yellow starts
- * at 40° so that the Paper Pro's amber shader stays with the yellows it sits next to on the device.
+ * the eye puts them. Three are not midpoints on purpose: blue runs to 245° because every blue a
+ * reMarkable records is a royal blue (227-231°) while Zotero's is an azure (200°); yellow starts at
+ * 40° so that the Paper Pro's amber shader stays with the yellows it sits next to on the device; and
+ * magenta runs to 355° so that the palette's pink (255/192/203, hue 350°) -- what a reMarkable 2 and,
+ * on current firmware, the Paper Pro's highlighter record for "pink" -- is Zotero's magenta like the
+ * lilac pink (242/158/255) older Paper Pro firmware writes, not its red. Reds proper sit at 0-2°.
  */
 const HUE_BANDS: readonly { upTo: number; hex: string }[] = [
 	{ upTo: 15, hex: "#ff6666" }, // red
@@ -108,7 +111,7 @@ const HUE_BANDS: readonly { upTo: number; hex: string }[] = [
 	{ upTo: 165, hex: "#5fb236" }, // green
 	{ upTo: 245, hex: "#2ea8e5" }, // blue
 	{ upTo: 275, hex: "#a28ae5" }, // purple
-	{ upTo: 340, hex: "#e56eee" }, // magenta -- and past it the circle closes on red again
+	{ upTo: 355, hex: "#e56eee" }, // magenta -- and past it the circle closes on red again
 ];
 const ZOTERO_RED = "#ff6666";
 const ZOTERO_GRAY = "#aaaaaa";
