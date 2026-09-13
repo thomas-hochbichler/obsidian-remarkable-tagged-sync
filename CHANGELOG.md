@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-09-13
+
 ### Fixed
 
 - **A large reMarkable account no longer fails its first sync with "This plugin did not expect the
