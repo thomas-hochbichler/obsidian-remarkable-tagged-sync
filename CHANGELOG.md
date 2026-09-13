@@ -10,6 +10,13 @@ time. At release time that heading is renamed to `## [<version>] - <date>`, and 
 workflow publishes the section as the GitHub release body. See
 [docs/RELEASING.md](docs/RELEASING.md).
 
+### Fixed
+
+- **Section headings from a font that speaks in glyph ids.** Some PDFs embed a heading font that
+  pdf.js can only read as glyph numbers, so the digest filed quotes under `,QWURGXFWLRQ` instead
+  of `Introduction`. Such text is now read back as the characters it draws; quotes set in such a
+  font gain the same.
+
 ## [Unreleased]
 
 ### Added

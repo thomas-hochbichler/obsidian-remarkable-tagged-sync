@@ -293,3 +293,22 @@
       layer: unit
       file: src/digest-pipeline.test.ts
       test: "buildDigest merges highlights that share a sentence > merges runs that already carry several rectangles by their outermost lines"
+
+- feature: F22
+  name: A text layer whose font speaks in glyph ids
+  code: src/pdf-text.ts
+  tier: free
+  scenarios:
+    - id: F22.1
+      scenario: "A heading font pdf.js returns as glyph ids -- \",QWURGXFWLRQ\\u0003\" for \"Introduction \", every character 29 too low, \\u0003 for the space (a 2008 Springer paper, live 2026-09-12)"
+      expect: "Read back as the characters: the section heading is \"Introduction\", not noise, and a quote in that font would be too"
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "repairGlyphIdText > reads a heading font's glyph ids back as the characters they draw"
+
+    - id: F22.2
+      scenario: "Ordinary text; text that merely looks shifted but carries no \\u0003; text with the control character but a code outside the shifted range"
+      expect: "Left exactly as pdf.js gave it. The control character where the spaces are is the tell, and a wrong repair is worse than none"
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "repairGlyphIdText > leaves ordinary text alone, and anything that only looks shifted"

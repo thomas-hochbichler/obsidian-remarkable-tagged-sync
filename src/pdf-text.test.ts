@@ -11,6 +11,7 @@ import {
 	type PdfTextLine,
 	type RawTextItem,
 	sentenceAround,
+	repairGlyphIdText,
 } from "./pdf-text";
 
 function item(text: string, x: number, y: number, size: number, width = text.length * size * 0.5): RawTextItem {
@@ -910,5 +911,22 @@ describe("cleanHeadingTitle", () => {
 	it("returns nothing for a title that holds nothing but junk", () => {
 		expect(cleanHeadingTitle("■")).toBe("");
 		expect(cleanHeadingTitle("   ")).toBe("");
+	});
+});
+
+describe("repairGlyphIdText", () => {
+	// The strings are what pdf.js returned for the heading font of a 2008 Springer paper, live on
+	// 2026-09-12: the bold font speaks in glyph ids, 29 below the character, with \u0003 for a space.
+	it("reads a heading font's glyph ids back as the characters they draw", () => {
+		expect(repairGlyphIdText(",QWURGXFWLRQ\u0003")).toBe("Introduction ");
+		expect(repairGlyphIdText("$\u0003%XVLQHVV\u00033URFHVV\u0010%DVHG")).toBe("A Business Process-Based");
+	});
+
+	// The tell is the control character where the spaces are; without it, or with any code outside
+	// the shifted range, the text is left exactly as pdf.js gave it -- a wrong repair is worse than none.
+	it("leaves ordinary text alone, and anything that only looks shifted", () => {
+		expect(repairGlyphIdText("Introduction")).toBe("Introduction");
+		expect(repairGlyphIdText("QWURGXFWLRQ")).toBe("QWURGXFWLRQ");
+		expect(repairGlyphIdText("a\u0003b~")).toBe("a\u0003b~");
 	});
 });
