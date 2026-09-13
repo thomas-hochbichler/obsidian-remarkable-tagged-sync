@@ -78,6 +78,13 @@
       file: src/remarkable-metadata.test.ts
       test: "parseMetadataText > still rejects a parent that is present but not a string"
 
+    - id: A5.13
+      scenario: A notebook's .content carries only coverPageNumber, cPages, fileType, formatVersion, orientation and pageCount (issue #156)
+      expect: The notebook is listed with its tags -- one slim document does not stop discovery for the whole account
+      layer: unit
+      file: src/remarkable-session.test.ts
+      test: "openSession > lists a notebook whose .content has only the six keys from issue #156"
+
 - feature: B2
   name: Map a tag to a vault folder
   code: src/tag-routing-view.ts
