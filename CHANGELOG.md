@@ -16,6 +16,11 @@ workflow publishes the section as the GitHub release body. See
   pdf.js can only read as glyph numbers, so the digest filed quotes under `,QWURGXFWLRQ` instead
   of `Introduction`. Such text is now read back as the characters it draws; quotes set in such a
   font gain the same.
+- **Empty code blocks in a transcript.** A local model was seen answering a one-word margin note
+  with hundreds of empty ```` ```text ```` blocks before the word, which reached the note's callout
+  and, with Zotero write-back, the annotation's comment. Empty blocks are dropped; a block with
+  content is left alone.
+
 
 ## [Unreleased]
 

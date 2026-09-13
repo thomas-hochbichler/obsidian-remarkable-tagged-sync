@@ -479,3 +479,14 @@
       file: src/localhost-register.test.ts
       test: "the localhost backends' registration > says what a background run costs, rather than leaving the toggle bare"
 
+- feature: E41
+  name: Empty fenced blocks in a transcript are dropped
+  code: src/llm-transcript.ts
+  tier: free
+  scenarios:
+    - id: E41.1
+      scenario: "A local model answers a one-word margin note with a run of empty ```text / ``` pairs before the word (seen live 2026-09-12: two hundred of them, written into the note's callout and into the Zotero comment)"
+      expect: "Only the word. An empty block carries nothing of the user's, so dropping it cannot corrupt a note; a block with content, and the outer-fence and preamble rules, are untouched"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "sanitizeTranscript > drops empty fenced blocks wherever they are"

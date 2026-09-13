@@ -244,7 +244,21 @@ export function sanitizeTranscript(text: string): string {
 		}
 	}
 
-	return lines.join("\n").trim();
+	// 3. Empty fenced blocks, anywhere: an opener with nothing but its closer after it. A local model
+	//    was seen answering a one-word margin note with two hundred "```text" / "```" pairs before the
+	//    word; an empty block carries nothing of the user's, so dropping it cannot corrupt a note.
+	const kept: string[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		let next = i + 1;
+		while (next < lines.length && lines[next].trim() === "") next++;
+		if (/^```\w*$/.test(lines[i].trim()) && lines[next]?.trim() === "```") {
+			i = next;
+			continue;
+		}
+		kept.push(lines[i]);
+	}
+
+	return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // --- the OpenAI-compatible call machinery ----------------------------------------------------

@@ -93,6 +93,13 @@ describe("sanitizeTranscript", () => {
 		expect(sanitizeTranscript("```\n# Title\n```")).toBe("# Title");
 	});
 
+	// Seen live on 2026-09-12 from a local model reading a one-word margin note: two hundred empty
+	// "```text" blocks, then the word. An empty block carries nothing of the user's.
+	it("drops empty fenced blocks wherever they are", () => {
+		expect(sanitizeTranscript("```text\n```\n```text\n```\n\nTest")).toBe("Test");
+		expect(sanitizeTranscript("- milk\n\n```\n\n```\n- eggs")).toBe("- milk\n\n- eggs");
+	});
+
 	// Biased to under-strip: a stray line is a cheap failure, corrupting a note is not.
 	it("never touches a real code block the user wrote on the page", () => {
 		const withCode = "Notes:\n\n```python\nprint(1)\n```\n\nmore";
