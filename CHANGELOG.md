@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-09-13
+
 ### Changed
 
 - **A Windows PC with an Intel or AMD processor is now told what does work.** The Backend list
