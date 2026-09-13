@@ -12,6 +12,16 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **A Windows PC with an Intel or AMD processor is now told what does work.** The Backend list
+  answered *needs Apple Silicon or Windows on ARM*, which reads as "buy another machine" — and it is
+  not true of those PCs. They run the model perfectly well; what the plugin cannot do there is install
+  the engine without a virus scanner quarantining it. The same models are reachable through a server
+  you run yourself, which this plugin already supports, so the entry now reads *not yet on Windows
+  x64; use a localhost backend (Ollama, LM Studio)*. An Intel Mac keeps the old sentence, because
+  there it really is the machine.
+
 ### Fixed
 
 - **A document with a slim `.content` file no longer stops the whole cloud sync.** The reMarkable
