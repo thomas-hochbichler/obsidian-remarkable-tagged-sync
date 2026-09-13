@@ -190,8 +190,7 @@ describe("the Response it hands back", () => {
 	});
 });
 
-// Issue #160. rmapi-js lists an account with one `Promise.all` over every document, and a notebook's
-// pages are rendered the same way -- so this shim is the only place a bound can go, and these two
+// Issue #160. Why the bound is here and why it is eight: see `MAX_REQUESTS_IN_FLIGHT`. These two
 // tests are what keep it there.
 describe("how many it lets out at once", () => {
 	/** Lets every queued promise callback run. */

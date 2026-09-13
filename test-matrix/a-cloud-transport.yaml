@@ -129,14 +129,14 @@
 
     - id: A6.17
       scenario: A first sync lists an account of 300 documents, and the runtime allows only so many requests open at once (issue #160)
-      expect: 'The listing completes and never has more requests in flight than the runtime allows. rmapi-js fetches every document''s file list, metadata and content in one `Promise.all`, so an unpaced shim puts 3 x N requests out at once and Electron answers `net::ERR_INSUFFICIENT_RESOURCES` -- which the user then read as "reMarkable changed their service"'
+      expect: 'The listing completes, and the peak of requests in flight is exactly the shim''s bound -- not merely under the runtime''s, which a bound that drifted upward would still satisfy. rmapi-js lists with one `Promise.all` over every document, so an unpaced shim puts N file-list requests out at once and Electron answers `net::ERR_INSUFFICIENT_RESOURCES` -- which the user then read as "reMarkable changed their service"'
       layer: unit
       file: src/cloud-listing-fan-out.test.ts
       test: "listing a large account > survives a runtime that allows only so many requests at once"
 
     - id: A6.18
       scenario: More requests are started at once than the shim allows out
-      expect: The ones past the limit wait, and each goes out only when one of the others has answered. This is the one door every request goes through, so the bound lives here -- rmapi-js's own `Promise.all`s cannot be reached from outside
+      expect: The ones past the limit wait, and each goes out only when one of the others has answered. Why the bound lives in the shim is told at `MAX_REQUESTS_IN_FLIGHT`
       layer: unit
       file: src/obsidian-fetch.test.ts
       test: "how many it lets out at once > holds the request past the limit back until one of the others has answered"

@@ -27,16 +27,18 @@ function requestUrlOf(input: RequestInfo | URL): string {
 /**
  * How many requests may be open at once, across everything in the plugin that talks to a server.
  *
- * rmapi-js lists an account by fetching every document's file list, metadata and content in one
- * `Promise.all`, so a first sync on an account of N documents used to put 3 x N requests out at the
- * same moment -- and a notebook's pages are rendered the same way, one request per page. Electron's
- * net stack refuses past some limit with `net::ERR_INSUFFICIENT_RESOURCES`, which the user then read
- * as "reMarkable changed their service" (issue #160). The bound lives here and not at the call
- * sites because rmapi-js's own fan-outs cannot be reached from outside, and this is the one door
- * every request goes through.
+ * rmapi-js lists an account with one `Promise.all` over every document -- each document's file
+ * list first, then its metadata and content -- so a first sync on an account of N documents used to
+ * put N requests out at the same moment and up to 2 x N a moment later. A notebook's pages are
+ * rendered the same way, one request per page. Electron's net stack refuses past some limit with
+ * `net::ERR_INSUFFICIENT_RESOURCES`, which the user then read as "reMarkable changed their service"
+ * (issue #160). The bound lives here and not at the call sites because rmapi-js's own fan-outs
+ * cannot be reached from outside, and this is the one door every request goes through.
  *
  * Eight: Chromium opens at most six connections to one host, so anything above that only queues
- * one layer down; a little over it keeps the queue fed while an answer is being read.
+ * one layer down; a little over it keeps the queue fed while an answer is being read. The bound is
+ * one for the whole plugin, not one per host -- the runtime's limit is per process, and the cloud,
+ * an OCR provider and the licence server rarely have a request open at the same time.
  */
 export const MAX_REQUESTS_IN_FLIGHT = 8;
 

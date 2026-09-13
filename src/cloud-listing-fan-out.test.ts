@@ -1,12 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { obsidianFetch } from "./obsidian-fetch";
+import { MAX_REQUESTS_IN_FLIGHT, obsidianFetch } from "./obsidian-fetch";
 import { openSession } from "./remarkable-session";
 
-// Issue #160. A first sync on a large account died with `net::ERR_INSUFFICIENT_RESOURCES` -- Electron's
-// net stack refusing to open one more request -- and the user was told that reMarkable had changed
-// their service. Nothing had changed: rmapi-js's `listItems()` fetches every document's file list,
-// metadata and content in one `Promise.all`, so an account of N documents puts up to 3 x N requests
-// in flight at once, every one of them through `obsidianFetch`, which paces nothing.
+// Issue #160, the reporter's case end to end: the real rmapi-js listing a large account through the
+// shim. Why the shim carries the bound is told once, at `MAX_REQUESTS_IN_FLIGHT`.
 //
 // The cloud below is a fake with one property of the real thing: a finite number of requests can be
 // open at the same time. The bound is far lower than Electron's, because the number is not the point;
@@ -96,6 +93,8 @@ describe("listing a large account", () => {
 		const api = openSession("session-token");
 
 		await expect(api.listItems()).resolves.toHaveLength(DOCUMENTS_IN_THE_ACCOUNT);
-		expect(cloud.peakInFlight).toBeLessThanOrEqual(CONCURRENT_REQUESTS_THE_RUNTIME_ALLOWS);
+		// Exactly the shim's bound, not merely under the runtime's: with 300 file lists queued at once
+		// the shim is full from the first moment, so a bound that drifted upward would show here.
+		expect(cloud.peakInFlight).toBe(MAX_REQUESTS_IN_FLIGHT);
 	});
 });
