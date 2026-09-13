@@ -1542,8 +1542,8 @@ async function planUnits(
 /**
  * How wide the pre-scan fans out. One round trip per candidate walked serially is seconds of dead air
  * before the bar can appear, and a bound of 6 is strictly more conservative than what already ships:
- * a notebook's pages are rendered with an unbounded `Promise.all`. The scan only reads, so a partial
- * failure costs nothing written.
+ * a notebook's pages are rendered with an unbounded `Promise.all` (paced one layer down, by
+ * `obsidianFetch`, since issue #160). The scan only reads, so a partial failure costs nothing written.
  */
 const SCAN_PARALLELISM = 6;
 
