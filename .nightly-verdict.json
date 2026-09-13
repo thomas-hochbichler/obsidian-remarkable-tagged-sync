@@ -1,13 +1,13 @@
 {
 	"schema": 1,
-	"commit": "4f0576c73de67232e06f4f69b0513ccddd90ef80",
-	"runId": "34681650907",
-	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/34681650907",
+	"commit": "c3ac6a44bf346afd0770241c22bd43a08b94250a",
+	"runId": "34746971032",
+	"runUrl": "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/actions/runs/34746971032",
 	"parts": {
 		"ocr": {
 			"status": "pass",
-			"measuredAt": "2026-09-12T07:57:55.049Z",
-			"lastMeasuredAt": "2026-09-12T07:57:55.049Z",
+			"measuredAt": "2026-09-13T08:19:18.191Z",
+			"lastMeasuredAt": "2026-09-13T08:19:18.191Z",
 			"detail": {
 				"promptSha": "635b0b92a4432be2",
 				"renderVersion": 31,
@@ -16,19 +16,19 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.005945303210463734,
+								"cer": 0.007134363852556481,
 								"structure": {},
 								"envelope": {
 									"endpoint": "anthropic",
 									"servedBy": "Anthropic",
 									"promptTokens": 2095,
-									"completionTokens": 423,
+									"completionTokens": 422,
 									"reasoningTokens": 0,
-									"cost": 0.00842
+									"cost": 0.00841
 								}
 							},
 							"11": {
-								"cer": 0.03768115942028986,
+								"cer": 0.034782608695652174,
 								"structure": {},
 								"envelope": {
 									"endpoint": "anthropic",
@@ -40,15 +40,15 @@
 								}
 							},
 							"12": {
-								"cer": 0.014005602240896359,
+								"cer": 0.025210084033613446,
 								"structure": {},
 								"envelope": {
 									"endpoint": "anthropic",
 									"servedBy": "Anthropic",
 									"promptTokens": 1924,
-									"completionTokens": 203,
+									"completionTokens": 206,
 									"reasoningTokens": 0,
-									"cost": 0.005878
+									"cost": 0.005908
 								}
 							},
 							"13": {
@@ -100,7 +100,7 @@
 								}
 							},
 							"02": {
-								"cer": 0,
+								"cer": 0.006,
 								"structure": {},
 								"envelope": {
 									"endpoint": "anthropic",
@@ -126,7 +126,7 @@
 								}
 							},
 							"04": {
-								"cer": 0,
+								"cer": 0.03205128205128205,
 								"structure": {
 									"list": "ok"
 								},
@@ -134,13 +134,13 @@
 									"endpoint": "anthropic",
 									"servedBy": "Anthropic",
 									"promptTokens": 1475,
-									"completionTokens": 117,
+									"completionTokens": 120,
 									"reasoningTokens": 0,
-									"cost": 0.00412
+									"cost": 0.00415
 								}
 							},
 							"05": {
-								"cer": 0.018404907975460124,
+								"cer": 0.03067484662576687,
 								"structure": {
 									"table": "ok"
 								},
@@ -148,9 +148,9 @@
 									"endpoint": "anthropic",
 									"servedBy": "Anthropic",
 									"promptTokens": 772,
-									"completionTokens": 118,
+									"completionTokens": 116,
 									"reasoningTokens": 0,
-									"cost": 0.002724
+									"cost": 0.002704
 								}
 							},
 							"06": {
@@ -166,15 +166,15 @@
 								}
 							},
 							"07": {
-								"cer": 0.00477326968973747,
+								"cer": 0,
 								"structure": {},
 								"envelope": {
 									"endpoint": "anthropic",
 									"servedBy": "Anthropic",
 									"promptTokens": 1742,
-									"completionTokens": 205,
+									"completionTokens": 203,
 									"reasoningTokens": 0,
-									"cost": 0.005534
+									"cost": 0.005514
 								}
 							},
 							"08": {
@@ -202,7 +202,7 @@
 								}
 							}
 						},
-						"medianCer": 0.014005602240896359,
+						"medianCer": 0.025210084033613446,
 						"model": "anthropic/claude-sonnet-5",
 						"endpoint": "anthropic"
 					},
@@ -210,31 +210,31 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.005945303210463734,
+								"cer": 0.019024970273483946,
 								"structure": {},
 								"envelope": {
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 1539,
-									"completionTokens": 208,
+									"completionTokens": 206,
 									"reasoningTokens": 0,
-									"cost": 0.0059275
+									"cost": 0.0059075
 								}
 							},
 							"11": {
-								"cer": 0.028985507246376812,
+								"cer": 0.03188405797101449,
 								"structure": {},
 								"envelope": {
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 859,
-									"completionTokens": 136,
+									"completionTokens": 137,
 									"reasoningTokens": 0,
-									"cost": 0.0035075
+									"cost": 0.0035175
 								}
 							},
 							"12": {
-								"cer": 0.025210084033613446,
+								"cer": 0.03081232492997199,
 								"structure": {},
 								"envelope": {
 									"endpoint": "openai",
@@ -252,9 +252,9 @@
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 1199,
-									"completionTokens": 61,
+									"completionTokens": 69,
 									"reasoningTokens": 0,
-									"cost": 0.0036075
+									"cost": 0.0036875
 								}
 							},
 							"14": {
@@ -270,7 +270,7 @@
 								}
 							},
 							"15": {
-								"cer": 0.06976744186046512,
+								"cer": 0.059800664451827246,
 								"structure": {},
 								"envelope": {
 									"endpoint": "openai",
@@ -294,15 +294,15 @@
 								}
 							},
 							"02": {
-								"cer": 0.028,
+								"cer": 0.022,
 								"structure": {},
 								"envelope": {
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 1199,
-									"completionTokens": 121,
+									"completionTokens": 120,
 									"reasoningTokens": 0,
-									"cost": 0.0042075
+									"cost": 0.0041975
 								}
 							},
 							"03": {
@@ -320,7 +320,7 @@
 								}
 							},
 							"04": {
-								"cer": 0.01282051282051282,
+								"cer": 0.009615384615384616,
 								"structure": {
 									"list": "ok"
 								},
@@ -328,9 +328,9 @@
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 1199,
-									"completionTokens": 83,
+									"completionTokens": 84,
 									"reasoningTokens": 0,
-									"cost": 0.0038275
+									"cost": 0.0038375
 								}
 							},
 							"05": {
@@ -342,21 +342,21 @@
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 519,
-									"completionTokens": 98,
+									"completionTokens": 95,
 									"reasoningTokens": 0,
-									"cost": 0.0022775
+									"cost": 0.0022475
 								}
 							},
 							"06": {
-								"cer": 0.2916666666666667,
+								"cer": 0.2857142857142857,
 								"structure": {},
 								"envelope": {
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 859,
-									"completionTokens": 77,
+									"completionTokens": 78,
 									"reasoningTokens": 0,
-									"cost": 0.0029175
+									"cost": 0.0029275
 								}
 							},
 							"07": {
@@ -372,15 +372,15 @@
 								}
 							},
 							"08": {
-								"cer": 0.22916666666666666,
+								"cer": 0.16666666666666666,
 								"structure": {},
 								"envelope": {
 									"endpoint": "openai",
 									"servedBy": "OpenAI",
 									"promptTokens": 519,
-									"completionTokens": 20,
+									"completionTokens": 17,
 									"reasoningTokens": 0,
-									"cost": 0.0014975
+									"cost": 0.0014675
 								}
 							},
 							"09": {
@@ -396,7 +396,7 @@
 								}
 							}
 						},
-						"medianCer": 0.025210084033613446,
+						"medianCer": 0.022,
 						"model": "openai/gpt-4o",
 						"endpoint": "openai"
 					},
@@ -404,19 +404,19 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.0035671819262782403,
+								"cer": 0.005945303210463734,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 242,
+									"completionTokens": 216,
 									"reasoningTokens": 0,
-									"cost": 0.0007082
+									"cost": 0.0006432
 								}
 							},
 							"11": {
-								"cer": 0.03188405797101449,
+								"cer": 0.03768115942028986,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
@@ -452,19 +452,19 @@
 								}
 							},
 							"14": {
-								"cer": 0.20256410256410257,
+								"cer": 0.2,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 88,
+									"completionTokens": 104,
 									"reasoningTokens": 0,
-									"cost": 0.0003232
+									"cost": 0.0003632
 								}
 							},
 							"15": {
-								"cer": 0.019933554817275746,
+								"cer": 0.013289036544850499,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
@@ -482,9 +482,9 @@
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 146,
+									"completionTokens": 145,
 									"reasoningTokens": 0,
-									"cost": 0.0004682
+									"cost": 0.0004657
 								}
 							},
 							"02": {
@@ -494,13 +494,13 @@
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 144,
+									"completionTokens": 146,
 									"reasoningTokens": 0,
-									"cost": 0.0004632
+									"cost": 0.0004682
 								}
 							},
 							"03": {
-								"cer": 0.01020408163265306,
+								"cer": 0.015306122448979591,
 								"structure": {
 									"list": "ok"
 								},
@@ -514,7 +514,7 @@
 								}
 							},
 							"04": {
-								"cer": 0.009615384615384616,
+								"cer": 0,
 								"structure": {
 									"list": "ok"
 								},
@@ -522,9 +522,9 @@
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 84,
+									"completionTokens": 87,
 									"reasoningTokens": 0,
-									"cost": 0.0003132
+									"cost": 0.0003207
 								}
 							},
 							"05": {
@@ -536,21 +536,21 @@
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 118,
+									"completionTokens": 115,
 									"reasoningTokens": 0,
-									"cost": 0.0003982
+									"cost": 0.0003907
 								}
 							},
 							"06": {
-								"cer": 0.023809523809523808,
+								"cer": 0.047619047619047616,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 61,
+									"completionTokens": 58,
 									"reasoningTokens": 0,
-									"cost": 0.0002557
+									"cost": 0.0002482
 								}
 							},
 							"07": {
@@ -566,15 +566,15 @@
 								}
 							},
 							"08": {
-								"cer": 0.1875,
+								"cer": 0.14583333333333334,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 344,
-									"completionTokens": 18,
+									"completionTokens": 16,
 									"reasoningTokens": 0,
-									"cost": 0.0001482
+									"cost": 0.0001432
 								}
 							},
 							"09": {
@@ -590,7 +590,7 @@
 								}
 							}
 						},
-						"medianCer": 0.019933554817275746,
+						"medianCer": 0.015306122448979591,
 						"model": "google/gemini-2.5-flash",
 						"endpoint": "google-ai-studio"
 					},
@@ -598,15 +598,15 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.005945303210463734,
+								"cer": 0.0023781212841854932,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1190,
-									"completionTokens": 213,
+									"completionTokens": 211,
 									"reasoningTokens": 0,
-									"cost": 0.000617
+									"cost": 0.000614
 								}
 							},
 							"11": {
@@ -634,15 +634,15 @@
 								}
 							},
 							"13": {
-								"cer": 0.18584070796460178,
+								"cer": 0.11504424778761062,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1178,
-									"completionTokens": 69,
+									"completionTokens": 56,
 									"reasoningTokens": 0,
-									"cost": 0.000398
+									"cost": 0.0003785
 								}
 							},
 							"14": {
@@ -682,15 +682,15 @@
 								}
 							},
 							"02": {
-								"cer": 0.01,
+								"cer": 0.008,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1193,
-									"completionTokens": 147,
+									"completionTokens": 148,
 									"reasoningTokens": 0,
-									"cost": 0.00051875
+									"cost": 0.00052025
 								}
 							},
 							"03": {
@@ -702,13 +702,13 @@
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1166,
-									"completionTokens": 55,
+									"completionTokens": 54,
 									"reasoningTokens": 0,
-									"cost": 0.000374
+									"cost": 0.0003725
 								}
 							},
 							"04": {
-								"cer": 0.00641025641025641,
+								"cer": 0.02564102564102564,
 								"structure": {
 									"list": "ok"
 								},
@@ -716,9 +716,9 @@
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1178,
-									"completionTokens": 87,
+									"completionTokens": 93,
 									"reasoningTokens": 0,
-									"cost": 0.000425
+									"cost": 0.000434
 								}
 							},
 							"05": {
@@ -730,13 +730,13 @@
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1190,
-									"completionTokens": 104,
+									"completionTokens": 107,
 									"reasoningTokens": 0,
-									"cost": 0.0004535
+									"cost": 0.000458
 								}
 							},
 							"06": {
-								"cer": 0.017857142857142856,
+								"cer": 0.023809523809523808,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
@@ -760,31 +760,31 @@
 								}
 							},
 							"08": {
-								"cer": 0.2708333333333333,
+								"cer": 0.25,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1190,
-									"completionTokens": 23,
+									"completionTokens": 21,
 									"reasoningTokens": 0,
-									"cost": 0.000332
+									"cost": 0.000329
 								}
 							},
 							"09": {
-								"cer": 0,
+								"cer": 0.045454545454545456,
 								"structure": {},
 								"envelope": {
 									"endpoint": "google-ai-studio",
 									"servedBy": "Google AI Studio",
 									"promptTokens": 1130,
-									"completionTokens": 5,
+									"completionTokens": 4,
 									"reasoningTokens": 0,
-									"cost": 0.00029
+									"cost": 0.0002885
 								}
 							}
 						},
-						"medianCer": 0.013289036544850499,
+						"medianCer": 0.025210084033613446,
 						"model": "google/gemini-3.1-flash-lite",
 						"endpoint": "google-ai-studio"
 					},
@@ -792,7 +792,7 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.0035671819262782403,
+								"cer": 0.0023781212841854932,
 								"structure": {},
 								"envelope": {
 									"endpoint": "deepinfra/fp8",
@@ -804,19 +804,19 @@
 								}
 							},
 							"11": {
-								"cer": 0.03188405797101449,
+								"cer": 0.034782608695652174,
 								"structure": {},
 								"envelope": {
 									"endpoint": "deepinfra/fp8",
 									"servedBy": "DeepInfra",
 									"promptTokens": 1422,
-									"completionTokens": 189,
+									"completionTokens": 186,
 									"reasoningTokens": 0,
-									"cost": 0.00045072
+									"cost": 0.00044808
 								}
 							},
 							"12": {
-								"cer": 0.036414565826330535,
+								"cer": 0.03361344537815126,
 								"structure": {},
 								"envelope": {
 									"endpoint": "deepinfra/fp8",
@@ -840,7 +840,7 @@
 								}
 							},
 							"14": {
-								"cer": 0.05641025641025641,
+								"cer": 0.05897435897435897,
 								"structure": {},
 								"envelope": {
 									"endpoint": "deepinfra/fp8",
@@ -852,7 +852,7 @@
 								}
 							},
 							"15": {
-								"cer": 0.03322259136212625,
+								"cer": 0.013289036544850499,
 								"structure": {},
 								"envelope": {
 									"endpoint": "deepinfra/fp8",
@@ -888,7 +888,7 @@
 								}
 							},
 							"03": {
-								"cer": 0.01020408163265306,
+								"cer": 0.00510204081632653,
 								"structure": {
 									"list": "ok"
 								},
@@ -896,9 +896,9 @@
 									"endpoint": "deepinfra/fp8",
 									"servedBy": "DeepInfra",
 									"promptTokens": 768,
-									"completionTokens": 72,
+									"completionTokens": 70,
 									"reasoningTokens": 0,
-									"cost": 0.00021696
+									"cost": 0.0002152
 								}
 							},
 							"04": {
@@ -924,9 +924,9 @@
 									"endpoint": "deepinfra/fp8",
 									"servedBy": "DeepInfra",
 									"promptTokens": 576,
-									"completionTokens": 104,
+									"completionTokens": 105,
 									"reasoningTokens": 0,
-									"cost": 0.00020672
+									"cost": 0.0002076
 								}
 							},
 							"06": {
@@ -978,7 +978,7 @@
 								}
 							}
 						},
-						"medianCer": 0.03188405797101449,
+						"medianCer": 0.013289036544850499,
 						"model": "qwen/qwen3-vl-235b-a22b-instruct",
 						"endpoint": "deepinfra/fp8"
 					},
@@ -986,15 +986,15 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.02140309155766944,
+								"cer": 0.013079667063020214,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
 									"servedBy": "Chutes",
 									"promptTokens": 364,
-									"completionTokens": 213,
+									"completionTokens": 244,
 									"reasoningTokens": 0,
-									"cost": 0.00011277
+									"cost": 0.000133528
 								}
 							},
 							"11": {
@@ -1004,37 +1004,37 @@
 									"endpoint": "chutes/fp4",
 									"servedBy": "Chutes",
 									"promptTokens": 355,
-									"completionTokens": 189,
+									"completionTokens": 188,
 									"reasoningTokens": 0,
-									"cost": 0.000112098
+									"cost": 0.000111728
 								}
 							},
 							"12": {
-								"cer": 0.0392156862745098,
+								"cer": 0.036414565826330535,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
 									"servedBy": "Chutes",
 									"promptTokens": 352,
-									"completionTokens": 129,
+									"completionTokens": 120,
 									"reasoningTokens": 0,
-									"cost": 0.000089538
+									"cost": 0.000086208
 								}
 							},
 							"13": {
-								"cer": 0.12831858407079647,
+								"cer": 0.11504424778761062,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
 									"servedBy": "Chutes",
 									"promptTokens": 373,
-									"completionTokens": 63,
+									"completionTokens": 57,
 									"reasoningTokens": 0,
-									"cost": 0.000067638
+									"cost": 0.00005613
 								}
 							},
 							"14": {
-								"cer": 0.2,
+								"cer": 0.20256410256410257,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
@@ -1042,11 +1042,11 @@
 									"promptTokens": 352,
 									"completionTokens": 89,
 									"reasoningTokens": 0,
-									"cost": 0.000074738
+									"cost": 0.00006545
 								}
 							},
 							"15": {
-								"cer": 0.0664451827242525,
+								"cer": 0.08305647840531562,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
@@ -1054,11 +1054,11 @@
 									"promptTokens": 370,
 									"completionTokens": 10,
 									"reasoningTokens": 0,
-									"cost": 0.000047668
+									"cost": 0.00003838
 								}
 							},
 							"01": {
-								"cer": 0.006,
+								"cer": 0.002,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
@@ -1070,7 +1070,7 @@
 								}
 							},
 							"02": {
-								"cer": 0.01,
+								"cer": 0.016,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
@@ -1092,11 +1092,11 @@
 									"promptTokens": 370,
 									"completionTokens": 68,
 									"reasoningTokens": 0,
-									"cost": 0.000069128
+									"cost": 0.00005984
 								}
 							},
 							"04": {
-								"cer": 0.01282051282051282,
+								"cer": 0.009615384615384616,
 								"structure": {
 									"list": "ok"
 								},
@@ -1106,7 +1106,7 @@
 									"promptTokens": 366,
 									"completionTokens": 86,
 									"reasoningTokens": 0,
-									"cost": 0.000075308
+									"cost": 0.00006602
 								}
 							},
 							"05": {
@@ -1118,21 +1118,21 @@
 									"endpoint": "chutes/fp4",
 									"servedBy": "Chutes",
 									"promptTokens": 376,
-									"completionTokens": 108,
+									"completionTokens": 102,
 									"reasoningTokens": 0,
-									"cost": 0.00007536
+									"cost": 0.00007314
 								}
 							},
 							"06": {
-								"cer": 0.20238095238095238,
+								"cer": 0.17857142857142858,
 								"structure": {},
 								"envelope": {
 									"endpoint": "chutes/fp4",
 									"servedBy": "Chutes",
 									"promptTokens": 372,
-									"completionTokens": 81,
+									"completionTokens": 77,
 									"reasoningTokens": 0,
-									"cost": 0.000074178
+									"cost": 0.00006341
 								}
 							},
 							"07": {
@@ -1144,7 +1144,7 @@
 									"promptTokens": 360,
 									"completionTokens": 98,
 									"reasoningTokens": 0,
-									"cost": 0.000079028
+									"cost": 0.00006974
 								}
 							},
 							"08": {
@@ -1154,9 +1154,9 @@
 									"endpoint": "chutes/fp4",
 									"servedBy": "Chutes",
 									"promptTokens": 364,
-									"completionTokens": 25,
+									"completionTokens": 26,
 									"reasoningTokens": 0,
-									"cost": 0.00004321
+									"cost": 0.000052868
 								}
 							},
 							"09": {
@@ -1168,7 +1168,7 @@
 									"promptTokens": 358,
 									"completionTokens": 6,
 									"reasoningTokens": 0,
-									"cost": 0.00003546
+									"cost": 0.000044748
 								}
 							}
 						},
@@ -1180,15 +1180,15 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.0178359096313912,
+								"cer": 0.052318668252080855,
 								"structure": {},
 								"envelope": {
 									"endpoint": "parasail/bf16",
 									"servedBy": "Parasail",
 									"promptTokens": 1526,
-									"completionTokens": 249,
+									"completionTokens": 252,
 									"reasoningTokens": 0,
-									"cost": 0.00055785
+									"cost": 0.0005601
 								}
 							},
 							"11": {
@@ -1204,15 +1204,15 @@
 								}
 							},
 							"12": {
-								"cer": 0.04481792717086835,
+								"cer": 0.056022408963585436,
 								"structure": {},
 								"envelope": {
 									"endpoint": "parasail/bf16",
 									"servedBy": "Parasail",
 									"promptTokens": 1412,
-									"completionTokens": 128,
+									"completionTokens": 123,
 									"reasoningTokens": 0,
-									"cost": 0.0004386
+									"cost": 0.00043485
 								}
 							},
 							"13": {
@@ -1228,7 +1228,7 @@
 								}
 							},
 							"14": {
-								"cer": 0.06153846153846154,
+								"cer": 0.05897435897435897,
 								"structure": {},
 								"envelope": {
 									"endpoint": "parasail/bf16",
@@ -1252,7 +1252,7 @@
 								}
 							},
 							"01": {
-								"cer": 0.016,
+								"cer": 0.014,
 								"structure": {},
 								"envelope": {
 									"endpoint": "parasail/bf16",
@@ -1264,15 +1264,15 @@
 								}
 							},
 							"02": {
-								"cer": 0.118,
+								"cer": 0.08,
 								"structure": {},
 								"envelope": {
 									"endpoint": "parasail/bf16",
 									"servedBy": "Parasail",
 									"promptTokens": 1632,
-									"completionTokens": 163,
+									"completionTokens": 166,
 									"reasoningTokens": 0,
-									"cost": 0.00051985
+									"cost": 0.0005221
 								}
 							},
 							"03": {
@@ -1366,7 +1366,7 @@
 								}
 							}
 						},
-						"medianCer": 0.017857142857142856,
+						"medianCer": 0.034782608695652174,
 						"model": "qwen/qwen3-vl-8b-instruct",
 						"endpoint": "parasail/bf16"
 					},
@@ -1374,31 +1374,31 @@
 						"status": "pass",
 						"pages": {
 							"10": {
-								"cer": 0.007134363852556481,
+								"cer": 0.01070154577883472,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1324,
-									"completionTokens": 247,
+									"completionTokens": 248,
 									"reasoningTokens": 0,
-									"cost": 0.0002391
+									"cost": 0.0002398
 								}
 							},
 							"11": {
-								"cer": 0.06666666666666667,
+								"cer": 0.0782608695652174,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1321,
-									"completionTokens": 195,
+									"completionTokens": 194,
 									"reasoningTokens": 0,
-									"cost": 0.00020255
+									"cost": 0.00020185
 								}
 							},
 							"12": {
-								"cer": 0.028011204481792718,
+								"cer": 0.025210084033613446,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
@@ -1410,67 +1410,67 @@
 								}
 							},
 							"13": {
-								"cer": 0.1592920353982301,
+								"cer": 0.1902654867256637,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1036,
-									"completionTokens": 70,
+									"completionTokens": 77,
 									"reasoningTokens": 0,
-									"cost": 0.0001008
+									"cost": 0.0001057
 								}
 							},
 							"14": {
-								"cer": 0.05641025641025641,
+								"cer": 0.19743589743589743,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1348,
-									"completionTokens": 102,
+									"completionTokens": 88,
 									"reasoningTokens": 0,
-									"cost": 0.0001388
+									"cost": 0.000129
 								}
 							},
 							"15": {
-								"cer": 0.32558139534883723,
+								"cer": 0.016611295681063124,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 185,
-									"completionTokens": 18,
+									"completionTokens": 10,
 									"reasoningTokens": 0,
-									"cost": 0.00002185
+									"cost": 0.00001625
 								}
 							},
 							"01": {
-								"cer": 0.008,
+								"cer": 0.012,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1342,
-									"completionTokens": 126,
+									"completionTokens": 148,
 									"reasoningTokens": 0,
-									"cost": 0.0001553
+									"cost": 0.0001707
 								}
 							},
 							"02": {
-								"cer": 0.02,
+								"cer": 0.018,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1332,
-									"completionTokens": 150,
+									"completionTokens": 149,
 									"reasoningTokens": 0,
-									"cost": 0.0001716
+									"cost": 0.0001709
 								}
 							},
 							"03": {
-								"cer": 0.00510204081632653,
+								"cer": 0.015306122448979591,
 								"structure": {
 									"list": "ok"
 								},
@@ -1478,13 +1478,13 @@
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 772,
-									"completionTokens": 58,
+									"completionTokens": 60,
 									"reasoningTokens": 0,
-									"cost": 0.0000792
+									"cost": 0.0000806
 								}
 							},
 							"04": {
-								"cer": 0,
+								"cer": 0.0641025641025641,
 								"structure": {
 									"list": "ok"
 								},
@@ -1492,9 +1492,9 @@
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1099,
-									"completionTokens": 89,
+									"completionTokens": 91,
 									"reasoningTokens": 0,
-									"cost": 0.00011725
+									"cost": 0.00011865
 								}
 							},
 							"05": {
@@ -1506,61 +1506,61 @@
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 580,
-									"completionTokens": 117,
+									"completionTokens": 105,
 									"reasoningTokens": 0,
-									"cost": 0.0001109
+									"cost": 0.0001025
 								}
 							},
 							"06": {
-								"cer": 0.2916666666666667,
+								"cer": 0.19047619047619047,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 828,
-									"completionTokens": 79,
+									"completionTokens": 75,
 									"reasoningTokens": 0,
-									"cost": 0.0000967
+									"cost": 0.0000939
 								}
 							},
 							"07": {
-								"cer": 0.011933174224343675,
+								"cer": 0.028639618138424822,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 1304,
-									"completionTokens": 94,
+									"completionTokens": 112,
 									"reasoningTokens": 0,
-									"cost": 0.000131
+									"cost": 0.0001436
 								}
 							},
 							"08": {
-								"cer": 0.041666666666666664,
+								"cer": 0.08333333333333333,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 438,
-									"completionTokens": 18,
+									"completionTokens": 22,
 									"reasoningTokens": 0,
-									"cost": 0.0000345
+									"cost": 0.0000373
 								}
 							},
 							"09": {
-								"cer": 0.045454545454545456,
+								"cer": 0,
 								"structure": {},
 								"envelope": {
 									"endpoint": "darkbloom/fp4",
 									"servedBy": "Darkbloom",
 									"promptTokens": 160,
-									"completionTokens": 5,
+									"completionTokens": 6,
 									"reasoningTokens": 0,
-									"cost": 0.0000115
+									"cost": 0.0000122
 								}
 							}
 						},
-						"medianCer": 0.03067484662576687,
+						"medianCer": 0.028639618138424822,
 						"model": "qwen/qwen3.6-35b-a3b",
 						"endpoint": "darkbloom/fp4"
 					}
@@ -1569,12 +1569,12 @@
 		},
 		"perf": {
 			"status": "pass",
-			"measuredAt": "2026-09-12T07:48:18.584Z",
-			"lastMeasuredAt": "2026-09-12T07:48:18.584Z",
+			"measuredAt": "2026-09-13T08:09:31.664Z",
+			"lastMeasuredAt": "2026-09-13T08:09:31.664Z",
 			"detail": {
 				"metrics": {
-					"renderPagesToPdfMs": 306,
-					"rasterizePageMs": 129
+					"renderPagesToPdfMs": 411,
+					"rasterizePageMs": 144
 				},
 				"page": "2000 strokes x 50 points",
 				"node": "v22.23.2"
@@ -1582,8 +1582,8 @@
 		},
 		"vision": {
 			"status": "pass",
-			"measuredAt": "2026-09-12T07:48:31.406Z",
-			"lastMeasuredAt": "2026-09-12T07:48:31.406Z",
+			"measuredAt": "2026-09-13T08:10:12.207Z",
+			"lastMeasuredAt": "2026-09-13T08:10:12.207Z",
 			"detail": {
 				"renderVersion": 31,
 				"backends": {
@@ -1661,7 +1661,7 @@
 						"visionRevision": "3",
 						"unreadableInkRegions": 1,
 						"macos": "darwin 25.6.0",
-						"totalMs": 11168
+						"totalMs": 17307
 					}
 				}
 			}

@@ -1400,3 +1400,138 @@ measured_at,run_id,backend,page,trait,cer,problem,structure,backend_status,promp
 2026-09-12T07:57:55.049Z,34681650907,openrouter/qwen/qwen3.6-35b-a3b,13,corrections,0.159292,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1036,70,0,0.00010080
 2026-09-12T07:57:55.049Z,34681650907,openrouter/qwen/qwen3.6-35b-a3b,14,margin-note,0.056410,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1348,102,0,0.00013880
 2026-09-12T07:57:55.049Z,34681650907,openrouter/qwen/qwen3.6-35b-a3b,15,tall-scrolled,0.325581,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,185,18,0,0.00002185
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,01,clean-prose,0.124000,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,02,rushed-prose,0.292000,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,03,bulleted-list,0.137755,,list:ok,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,04,numbered-list,0.060897,,list:ok,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,05,table,0.717791,,table:lost,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,06,formula,0.261905,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,07,mixed-language,0.128878,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,08,diagram,0.562500,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,09,nearly-empty,0.409091,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,10,dense,0.248514,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,11,numbers,0.156522,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,12,special-chars,0.114846,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,13,corrections,0.225664,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,14,margin-note,0.146154,,,pass,,31,,,,,,
+2026-09-13T08:10:12.207Z,34746971032,vision/apple,15,tall-scrolled,0.086379,,,pass,,31,,,,,,
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,01,clean-prose,0.000000,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,2046,247,0,0.00656200
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,02,rushed-prose,0.006000,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,2214,262,0,0.00704800
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,03,bulleted-list,0.005102,,list:ok,pass,635b0b92a4432be2,31,anthropic,Anthropic,1066,111,0,0.00324200
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,04,numbered-list,0.032051,,list:ok,pass,635b0b92a4432be2,31,anthropic,Anthropic,1475,120,0,0.00415000
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,05,table,0.030675,,table:ok,pass,635b0b92a4432be2,31,anthropic,Anthropic,772,116,0,0.00270400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,06,formula,0.023810,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,1102,81,0,0.00301400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,07,mixed-language,0.000000,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,1742,203,0,0.00551400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,08,diagram,0.375000,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,592,39,0,0.00157400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,09,nearly-empty,0.000000,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,234,12,0,0.00058800
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,10,dense,0.007134,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,2095,422,0,0.00841000
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,11,numbers,0.034783,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,1942,209,0,0.00597400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,12,special-chars,0.025210,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,1924,206,0,0.00590800
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,13,corrections,0.185841,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,1402,146,0,0.00426400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,14,margin-note,0.189744,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,2464,197,0,0.00689800
+2026-09-13T08:19:18.191Z,34746971032,openrouter/anthropic/claude-sonnet-5,15,tall-scrolled,0.083056,,,pass,635b0b92a4432be2,31,anthropic,Anthropic,262,14,0,0.00066400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,01,clean-prose,0.000000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,145,0,0.00046570
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,02,rushed-prose,0.010000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,146,0,0.00046820
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,03,bulleted-list,0.015306,,list:ok,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,53,0,0.00023570
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,04,numbered-list,0.000000,,list:ok,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,87,0,0.00032070
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,05,table,0.036810,,table:ok,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,115,0,0.00039070
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,06,formula,0.047619,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,58,0,0.00024820
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,07,mixed-language,0.004773,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,113,0,0.00038570
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,08,diagram,0.145833,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,16,0,0.00014320
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,09,nearly-empty,0.000000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,5,0,0.00011570
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,10,dense,0.005945,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,216,0,0.00064320
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,11,numbers,0.037681,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,186,0,0.00056820
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,12,special-chars,0.025210,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,125,0,0.00041570
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,13,corrections,0.084071,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,55,0,0.00024070
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,14,margin-note,0.200000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,104,0,0.00036320
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-2.5-flash,15,tall-scrolled,0.013289,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,344,9,0,0.00012570
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,01,clean-prose,0.000000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1204,148,0,0.00052300
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,02,rushed-prose,0.008000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1193,148,0,0.00052025
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,03,bulleted-list,0.010204,,list:ok,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1166,54,0,0.00037250
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,04,numbered-list,0.025641,,list:ok,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1178,93,0,0.00043400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,05,table,0.030675,,table:ok,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1190,107,0,0.00045800
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,06,formula,0.023810,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1174,62,0,0.00038650
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,07,mixed-language,0.000000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1152,96,0,0.00043200
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,08,diagram,0.250000,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1190,21,0,0.00032900
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,09,nearly-empty,0.045455,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1130,4,0,0.00028850
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,10,dense,0.002378,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1190,211,0,0.00061400
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,11,numbers,0.028986,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1171,188,0,0.00057475
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,12,special-chars,0.025210,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1161,127,0,0.00048075
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,13,corrections,0.115044,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1178,56,0,0.00037850
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,14,margin-note,0.189744,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1159,88,0,0.00042175
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemini-3.1-flash-lite,15,tall-scrolled,0.013289,,,pass,635b0b92a4432be2,31,google-ai-studio,Google AI Studio,1184,9,0,0.00030950
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,01,clean-prose,0.002000,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,373,150,0,0.00009983
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,02,rushed-prose,0.016000,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,360,147,0,0.00009716
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,03,bulleted-list,0.132653,,list:ok,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,370,68,0,0.00005984
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,04,numbered-list,0.009615,,list:ok,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,366,86,0,0.00006602
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,05,table,0.030675,,table:ok,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,376,102,0,0.00007314
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,06,formula,0.178571,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,372,77,0,0.00006341
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,07,mixed-language,0.000000,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,360,98,0,0.00006974
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,08,diagram,0.937500,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,364,26,0,0.00005287
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,09,nearly-empty,0.000000,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,358,6,0,0.00004475
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,10,dense,0.013080,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,364,244,0,0.00013353
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,11,numbers,0.026087,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,355,188,0,0.00011173
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,12,special-chars,0.036415,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,352,120,0,0.00008621
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,13,corrections,0.115044,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,373,57,0,0.00005613
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,14,margin-note,0.202564,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,352,89,0,0.00006545
+2026-09-13T08:19:18.191Z,34746971032,openrouter/google/gemma-4-31b-it,15,tall-scrolled,0.083056,,,pass,635b0b92a4432be2,31,chutes/fp4,Chutes,370,10,0,0.00003838
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,01,clean-prose,0.000000,,,pass,635b0b92a4432be2,31,openai,OpenAI,1199,120,0,0.00419750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,02,rushed-prose,0.022000,,,pass,635b0b92a4432be2,31,openai,OpenAI,1199,120,0,0.00419750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,03,bulleted-list,0.005102,,list:ok,pass,635b0b92a4432be2,31,openai,OpenAI,859,57,0,0.00271750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,04,numbered-list,0.009615,,list:ok,pass,635b0b92a4432be2,31,openai,OpenAI,1199,84,0,0.00383750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,05,table,0.000000,,table:ok,pass,635b0b92a4432be2,31,openai,OpenAI,519,95,0,0.00224750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,06,formula,0.285714,,,pass,635b0b92a4432be2,31,openai,OpenAI,859,78,0,0.00292750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,07,mixed-language,0.000000,,,pass,635b0b92a4432be2,31,openai,OpenAI,1199,92,0,0.00391750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,08,diagram,0.166667,,,pass,635b0b92a4432be2,31,openai,OpenAI,519,17,0,0.00146750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,09,nearly-empty,0.000000,,,pass,635b0b92a4432be2,31,openai,OpenAI,519,5,0,0.00134750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,10,dense,0.019025,,,pass,635b0b92a4432be2,31,openai,OpenAI,1539,206,0,0.00590750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,11,numbers,0.031884,,,pass,635b0b92a4432be2,31,openai,OpenAI,859,137,0,0.00351750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,12,special-chars,0.030812,,,pass,635b0b92a4432be2,31,openai,OpenAI,1199,108,0,0.00407750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,13,corrections,0.146018,,,pass,635b0b92a4432be2,31,openai,OpenAI,1199,69,0,0.00368750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,14,margin-note,0.046154,,,pass,635b0b92a4432be2,31,openai,OpenAI,859,86,0,0.00300750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/openai/gpt-4o,15,tall-scrolled,0.059801,,,pass,635b0b92a4432be2,31,openai,OpenAI,519,9,0,0.00138750
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,01,clean-prose,0.012000,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1488,146,0,0.00042608
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,02,rushed-prose,0.006000,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1632,147,0,0.00045576
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,03,bulleted-list,0.005102,,list:ok,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,768,70,0,0.00021520
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,04,numbered-list,0.012821,,list:ok,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1095,83,0,0.00029204
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,05,table,0.049080,,table:ok,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,576,105,0,0.00020760
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,06,formula,0.220238,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,824,77,0,0.00023256
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,07,mixed-language,0.002387,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1300,107,0,0.00035416
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,08,diagram,0.270833,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,434,23,0,0.00010704
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,09,nearly-empty,0.000000,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,180,6,0,0.00004128
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,10,dense,0.002378,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1526,247,0,0.00052256
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,11,numbers,0.034783,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1422,186,0,0.00044808
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,12,special-chars,0.033613,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1412,129,0,0.00039592
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,13,corrections,0.115044,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1032,75,0,0.00027240
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,14,margin-note,0.058974,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,1835,105,0,0.00045940
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-235b-a22b-instruct,15,tall-scrolled,0.013289,,,pass,635b0b92a4432be2,31,deepinfra/fp8,DeepInfra,181,10,0,0.00004500
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,01,clean-prose,0.014000,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1488,148,0,0.00048300
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,02,rushed-prose,0.080000,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1632,166,0,0.00052210
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,03,bulleted-list,0.010204,,list:ok,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,768,69,0,0.00023335
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,04,numbered-list,0.012821,,list:ok,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1095,83,0,0.00032560
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,05,table,0.042945,,table:ok,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,576,104,0,0.00021160
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,06,formula,0.017857,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,824,64,0,0.00024360
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,07,mixed-language,0.002387,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1300,107,0,0.00039485
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,08,diagram,0.291667,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,434,24,0,0.00011610
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,09,nearly-empty,0.000000,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,180,6,0,0.00003910
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,10,dense,0.052319,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1526,252,0,0.00056010
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,11,numbers,0.034783,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1422,187,0,0.00048535
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,12,special-chars,0.056022,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1412,123,0,0.00043485
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,13,corrections,0.154867,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1032,75,0,0.00030385
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,14,margin-note,0.058974,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,1835,103,0,0.00052560
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3-vl-8b-instruct,15,tall-scrolled,0.009967,,,pass,635b0b92a4432be2,31,parasail/bf16,Parasail,181,10,0,0.00004235
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,01,clean-prose,0.012000,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1342,148,0,0.00017070
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,02,rushed-prose,0.018000,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1332,149,0,0.00017090
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,03,bulleted-list,0.015306,,list:ok,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,772,60,0,0.00008060
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,04,numbered-list,0.064103,,list:ok,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1099,91,0,0.00011865
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,05,table,0.030675,,table:ok,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,580,105,0,0.00010250
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,06,formula,0.190476,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,828,75,0,0.00009390
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,07,mixed-language,0.028640,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1304,112,0,0.00014360
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,08,diagram,0.083333,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,438,22,0,0.00003730
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,09,nearly-empty,0.000000,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,160,6,0,0.00001220
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,10,dense,0.010702,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1324,248,0,0.00023980
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,11,numbers,0.078261,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1321,194,0,0.00020185
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,12,special-chars,0.025210,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1342,126,0,0.00015530
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,13,corrections,0.190265,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1036,77,0,0.00010570
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,14,margin-note,0.197436,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,1348,88,0,0.00012900
+2026-09-13T08:19:18.191Z,34746971032,openrouter/qwen/qwen3.6-35b-a3b,15,tall-scrolled,0.016611,,,pass,635b0b92a4432be2,31,darkbloom/fp4,Darkbloom,185,10,0,0.00001625
