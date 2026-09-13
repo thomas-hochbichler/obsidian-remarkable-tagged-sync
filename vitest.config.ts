@@ -16,6 +16,10 @@ export default defineConfig({
 		// outside the coverage numbers below.
 		include: ["src/**/*.test.ts", "pro/**/*.test.ts", "scripts/**/*.test.mjs", "test-stubs/**/*.test.ts", "test-support/**/*.test.ts"],
 
+		// Externalised dependencies bypass the alias above; rmapi-js has to go through Vite for the
+		// `crc-32/crc32c` rewrite to reach its import.
+		server: { deps: { inline: ["rmapi-js"] } },
+
 		coverage: {
 			provider: "v8",
 
@@ -37,6 +41,12 @@ export default defineConfig({
 	resolve: {
 		// `obsidian` ships no resolvable entry point outside the app, so anything reachable from a test
 		// gets the stub instead. See test-stubs/obsidian.ts for what it deliberately does not do.
-		alias: { obsidian: new URL("./test-stubs/obsidian.ts", import.meta.url).pathname },
+		alias: {
+			obsidian: new URL("./test-stubs/obsidian.ts", import.meta.url).pathname,
+			// rmapi-js imports `crc-32/crc32c` without the `.js` that Node's ESM resolver insists on;
+			// esbuild forgives that in the shipped bundle, Node does not in a test. Spelled out here so
+			// a test can run the real library -- its parsing is what issue #156 is about.
+			"crc-32/crc32c": "crc-32/crc32c.js",
+		},
 	},
 });

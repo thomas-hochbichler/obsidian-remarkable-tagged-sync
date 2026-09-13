@@ -22,6 +22,16 @@ workflow publishes the section as the GitHub release body. See
   x64; use a localhost backend (Ollama, LM Studio)*. An Intel Mac keeps the old sentence, because
   there it really is the machine.
 
+### Fixed
+
+- **A document with a slim `.content` file no longer stops the whole cloud sync.** The reMarkable
+  cloud can hold a document whose `.content` carries only six fields -- `coverPageNumber`,
+  `cPages`, `fileType`, `formatVersion`, `orientation`, `pageCount` -- and rmapi-js rejects it for
+  lacking six more it never reads. Because the whole library is listed in one go, that single
+  document surfaced as *"This plugin did not expect the answer it got from the reMarkable cloud"*
+  and took tag discovery and sync down for the entire account. Such a document is now read for
+  the fields this plugin actually uses. (#156)
+
 ## [1.7.0] - 2026-09-11
 
 ### Added

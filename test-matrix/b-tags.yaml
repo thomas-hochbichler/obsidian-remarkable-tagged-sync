@@ -78,6 +78,62 @@
       file: src/remarkable-metadata.test.ts
       test: "parseMetadataText > still rejects a parent that is present but not a string"
 
+    - id: A5.13
+      scenario: A notebook's .content carries only coverPageNumber, cPages, fileType, formatVersion, orientation and pageCount (issue #156)
+      expect: The notebook is listed with its tags -- one slim document does not stop discovery for the whole account
+      layer: unit
+      file: src/remarkable-session.test.ts
+      test: "openSession > lists a notebook whose .content has only the six keys from issue #156"
+
+    - id: A5.14
+      scenario: The lenient content parse reads the six-key .content on its own
+      expect: fileType and cPages come through; nothing the plugin does not read is required
+      layer: unit
+      file: src/remarkable-content.test.ts
+      test: "parseContentText > reads a .content that has only the six keys from issue #156"
+
+    - id: A5.15
+      scenario: The content file does not hold a JSON object at all
+      expect: Rejected as not an object
+      layer: unit
+      file: src/remarkable-content.test.ts
+      test: "parseContentText > rejects content that is not an object"
+
+    - id: A5.16
+      scenario: fileType is present but not a string
+      expect: Rejected -- the tolerance is for absent fields, not for malformed ones the plugin reads
+      layer: unit
+      file: src/remarkable-content.test.ts
+      test: "parseContentText > rejects a fileType that is not a string"
+
+    - id: A5.17
+      scenario: tags is present but not an array
+      expect: Rejected, naming the field
+      layer: unit
+      file: src/remarkable-content.test.ts
+      test: "parseContentText > rejects tags that are not an array"
+
+    - id: A5.18
+      scenario: cPages is present without a pages array
+      expect: Rejected, naming cPages.pages -- the sync's page order reads it
+      layer: unit
+      file: src/remarkable-content.test.ts
+      test: "parseContentText > rejects cPages without a pages array"
+
+    - id: A5.19
+      scenario: rmapi-js asks for content after the patch is applied
+      expect: getContent goes through the lenient parse, not the intolerant upstream schema
+      layer: unit
+      file: src/remarkable-content.test.ts
+      test: "tolerateSlimContent > routes getContent through the lenient parse"
+
+    - id: A5.20
+      scenario: rmapi-js's own shipped source is read for the member the content patch replaces
+      expect: '`raw.getContent` is still what the library calls -- otherwise the patch is a no-op and issue #156 returns with every test green'
+      layer: unit
+      file: src/remarkable-content.test.ts
+      test: "the assumption the content patch rests on > still has rmapi-js reach content through `raw.getContent`"
+
 - feature: B2
   name: Map a tag to a vault folder
   code: src/tag-routing-view.ts
