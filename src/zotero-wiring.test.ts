@@ -37,12 +37,13 @@ function fakeClient(): ZoteroClient {
 		ownAnnotations: async () => [],
 		createAnnotations: async () => ({ keys: [], failures: [] }),
 		patchAnnotation: async () => "written",
+		trashAnnotation: async () => "written",
 	} as ZoteroClient;
 }
 
 interface LoadedPlugin {
 	commands: Command[];
-	saved: { zoteroLinks?: Record<string, unknown>; zotero?: { lastTag: string | null } };
+	saved: { zoteroLinks?: Record<string, unknown> };
 	zoteroClient(): ZoteroClient | null;
 }
 
@@ -86,13 +87,13 @@ beforeEach(() => {
 describe("the Zotero commands as the plugin registers them", () => {
 	// §5: Send and the link are the free half, so a free vault's palette has both commands too.
 	it("registers both in a free vault", async () => {
-		const plugin = await load({ licence: NO_LICENCE, zotero: { apiKey: "key" } });
+		const plugin = await load({ licence: NO_LICENCE, zotero: { useWeb: true, apiKey: "key" } });
 
 		expect(zoteroCommands(plugin)).toEqual(["zotero-send", "zotero-link"]);
 	});
 
 	it("registers both in a Pro vault", async () => {
-		const plugin = await load({ licence: PRO, zotero: { apiKey: "key" } });
+		const plugin = await load({ licence: PRO, zotero: { useWeb: true, apiKey: "key" } });
 
 		expect(zoteroCommands(plugin)).toEqual(["zotero-send", "zotero-link"]);
 	});
@@ -100,7 +101,7 @@ describe("the Zotero commands as the plugin registers them", () => {
 	// The host is wired to the plugin's own transports: with neither connected there is no route, and
 	// Send says so before it opens anything.
 	it("reads this vault's transports when Send asks for a route", async () => {
-		const plugin = await load({ licence: PRO, zotero: { apiKey: "key" }, tagFolderMap: { sync: "Target" } });
+		const plugin = await load({ licence: PRO, zotero: { useWeb: true, apiKey: "key" }, tagFolderMap: { sync: "Target" } });
 
 		plugin.commands.find((command) => command.id === "zotero-send")!.callback!();
 		await vi.advanceTimersByTimeAsync(1);
@@ -113,7 +114,7 @@ describe("the Zotero commands as the plugin registers them", () => {
 	it("takes the SSH route when it is switched on and the cloud is not connected", async () => {
 		const plugin = await load({
 			licence: PRO,
-			zotero: { apiKey: "key", sendOverSsh: true },
+			zotero: { useWeb: true, apiKey: "key", sendOverSsh: true },
 			tagFolderMap: { sync: "Target" },
 			ssh: { host: "10.11.99.1", port: 22, privateKey: "key", hostKeyFingerprint: "SHA256:x" },
 		});
@@ -137,7 +138,7 @@ describe("the Zotero commands as the plugin registers them", () => {
 	// The whole wiring in one press: the plugin's client, its tag map, its cloud transport, its clock
 	// and its `data.json`. The transport is replaced because the real one talks to reMarkable.
 	it("sends through the plugin's own transport and saves the link in its own data", async () => {
-		const plugin = await load({ licence: PRO, zotero: { apiKey: "key" }, tagFolderMap: { sync: "Target" }, deviceToken: "device-token" });
+		const plugin = await load({ licence: PRO, zotero: { useWeb: true, apiKey: "key" }, tagFolderMap: { sync: "Target" }, deviceToken: "device-token" });
 		const sent: SendDocument[] = [];
 		plugin.zoteroClient = () => fakeClient();
 		(plugin as unknown as { cloudTransport: unknown }).cloudTransport = {
@@ -153,6 +154,5 @@ describe("the Zotero commands as the plugin registers them", () => {
 
 		expect(sent).toHaveLength(1);
 		expect(linkFor(plugin.saved.zoteroLinks ?? {}, "doc-1")?.attachmentKey).toBe("ATT1");
-		expect(plugin.saved.zotero?.lastTag).toBe("sync");
 	});
 });

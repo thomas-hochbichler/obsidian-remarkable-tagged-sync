@@ -234,12 +234,12 @@ describe("buildDigest with the fixture page's text layer", () => {
 
 		// The wrapped runs merge into one marked range spanning the printed line break.
 		expect(result.markdown).toContain(
-			"on ==a shelf of rock that the sea had spent a long time deciding not to take.==",
+			'on <mark class="tagged-sync-hl-magenta">a shelf of rock that the sea had spent a long time deciding not to take.</mark>',
 		);
-		expect(result.markdown).toContain("somewhere where the ==readings matter more than the reader.==");
+		expect(result.markdown).toContain('somewhere where the <mark class="tagged-sync-hl-yellow">readings matter more than the reader.</mark>');
 		// A run that covers its whole sentence marks nothing: the quote IS the run.
 		expect(result.markdown).toContain("He missed eleven readings in nineteen years.");
-		expect(result.markdown).not.toContain("==He missed");
+		expect(result.markdown).not.toContain(">He missed");
 		expect(result.warnings).toEqual([]);
 	});
 
@@ -267,7 +267,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 		it("re-spells a damaged quote in the book's own words, and keeps the run marked", async () => {
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => BOOK);
 
-			expect(result.markdown).toContain("in February of nineteen seventy-four, when ==the roof came== off.");
+			expect(result.markdown).toContain('in February of nineteen seventy-four, when <mark class="tagged-sync-hl-blue">the roof came</mark> off.');
 			expect(result.markdown).not.toContain("Febrnary");
 		});
 
@@ -948,7 +948,7 @@ describe("buildDigest resilience", () => {
 		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(6);
 		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(6);
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(4);
-		expect(result.markdown).toContain("somewhere where the ==readings matter more than the reader.==");
+		expect(result.markdown).toContain('somewhere where the <mark class="tagged-sync-hl-yellow">readings matter more than the reader.</mark>');
 	});
 
 	it("turns a throwing OCR backend into warnings and entries rather than an exception", async () => {
@@ -1208,13 +1208,13 @@ describe("typed text as the document", () => {
 		// The whole sentence, with the covered run marked inside it -- and the sentence runs across the
 		// line the highlight sits on, so it was read out of the page's own typed text rather than out of
 		// anything the device recorded with the highlight (which is nothing: its `text` is empty).
-		const marked = /==([^=]+)==/.exec(result.markdown)?.[1] ?? "";
+		const marked = /(?:==|<mark[^>]*>)([^=<]+)(?:==|<\/mark>)/.exec(result.markdown)?.[1] ?? "";
 		// What was marked came off the line the rectangle covers, rounded back to whole words...
 		expect(marked).not.toBe("");
 		expect(layoutText(scene.text!).lines[2].text.startsWith(marked)).toBe(true);
 		// ...and the quote around it is the whole sentence, which runs past that line in both
 		// directions -- so it was read from the page's typed text, not from the one line.
-		expect(result.markdown.replace(/==/g, "")).toContain(SENTENCE.trim());
+		expect(result.markdown.replace(/==|<\/?mark[^>]*>/g, "")).toContain(SENTENCE.trim());
 		expect(result.warnings).toEqual([]);
 	});
 

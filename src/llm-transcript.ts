@@ -244,17 +244,23 @@ export function sanitizeTranscript(text: string): string {
 		}
 	}
 
-	// 3. Empty fenced blocks, anywhere: an opener with nothing but its closer after it. A local model
-	//    was seen answering a one-word margin note with two hundred "```text" / "```" pairs before the
-	//    word; an empty block carries nothing of the user's, so dropping it cannot corrupt a note.
+	// 3. Fence debris, anywhere. A local model was seen answering a one-word margin note with two
+	//    hundred "```text" / "```" pairs before the word, and a stroke with no words in it with a lone
+	//    "```text" over a broken "``". An empty block, an opener no closer ever follows, and a line of
+	//    nothing but backticks carry nothing of the user's, so dropping them cannot corrupt a note. A
+	//    block with anything inside it is kept whole, whatever its info string.
 	const kept: string[] = [];
 	for (let i = 0; i < lines.length; i++) {
-		let next = i + 1;
-		while (next < lines.length && lines[next].trim() === "") next++;
-		if (/^```\w*$/.test(lines[i].trim()) && lines[next]?.trim() === "```") {
-			i = next;
+		const line = lines[i].trim();
+		if (/^```\w*$/.test(line)) {
+			const closer = lines.findIndex((candidate, index) => index > i && candidate.trim() === "```");
+			if (closer === -1) continue;
+			const inside = lines.slice(i + 1, closer);
+			if (inside.some((candidate) => candidate.trim() !== "")) kept.push(...lines.slice(i, closer + 1));
+			i = closer;
 			continue;
 		}
+		if (/^`{1,3}$/.test(line)) continue;
 		kept.push(lines[i]);
 	}
 

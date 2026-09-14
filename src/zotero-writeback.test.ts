@@ -73,9 +73,10 @@ const WRITTEN = {
 	position: '{"pageIndex":1,"rects":[[72,700,300,712]]}',
 };
 
-const plan = (overrides: { pages?: DigestPage[]; link?: ZoteroLink; existing?: ZoteroAnnotation[] } = {}): WriteBackPlan =>
+const plan = (overrides: { pages?: DigestPage[]; covered?: number[]; link?: ZoteroLink; existing?: ZoteroAnnotation[] } = {}): WriteBackPlan =>
 	planWriteBack({
 		pages: overrides.pages ?? [page()],
+		covered: overrides.covered ?? [SOURCE.index],
 		attachmentKey: ATTACHMENT,
 		link: overrides.link ?? link(),
 		existing: overrides.existing ?? [],
@@ -233,15 +234,81 @@ describe("what is not written at all", () => {
 		expect(planned.patches).toEqual([]);
 		expect(planned.vanished).toEqual([]);
 	});
+});
 
-	// A highlight removed on the tablet is simply no longer a digest entry, so nothing in the plan
-	// mentions it -- and "never delete" costs no code at all.
-	it("leaves an annotation in place when its highlight is gone from the tablet", () => {
-		const stored = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN } } });
+describe("a highlight the reader erased on the tablet", () => {
+	const stored = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN } } });
+
+	it("is trashed while it still reads exactly as we wrote it", () => {
 		const planned = plan({ link: stored, existing: [inZotero({ key: "OLD1" })] });
 
+		expect(planned.trashes.map((trash) => trash.annotation)).toEqual([{ key: "OLD1", version: 246, source: "local" }]);
+		expect(planned.trashes[0].record).toEqual({ key: "OLD1", written: WRITTEN, deleted: true });
 		expect(planned.vanished).toEqual([]);
-		expect(planned.patches).toEqual([]);
+	});
+
+	// The trash is for what is still only ours. A comment, a colour, a page label the user changed
+	// in Zotero is something they built on the highlight, and erasing the ink does not take it back.
+	it("stays when the user has built on it in Zotero, and is remembered as theirs", () => {
+		const planned = plan({ link: stored, existing: [inZotero({ key: "OLD1", comment: "meine eigene Notiz" })] });
+
+		expect(planned.trashes).toEqual([]);
+		expect(planned.unchanged).toEqual([{ blockId: "hl-old", annotation: { key: "OLD1", written: WRITTEN, userEdited: ["comment"] } }]);
+	});
+
+	it("stays when a field was already surrendered on an earlier sync", () => {
+		const surrendered = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN, userEdited: ["color"] } } });
+		const planned = plan({ link: surrendered, existing: [inZotero({ key: "OLD1" })] });
+
+		expect(planned.trashes).toEqual([]);
+	});
+
+	it("is only remembered as gone when Zotero no longer has it either", () => {
+		const planned = plan({ link: stored, existing: [] });
+
+		expect(planned.trashes).toEqual([]);
+		expect(planned.vanished).toEqual([{ blockId: "hl-old", annotation: { key: "OLD1", written: WRITTEN, deleted: true } }]);
+	});
+
+	it("is not trashed twice, or recreated, once it is in the trash", () => {
+		const trashed = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN, deleted: true } } });
+		const planned = plan({ link: trashed, existing: [] });
+
+		expect(planned.trashes).toEqual([]);
+		expect(planned.vanished).toEqual([]);
+		expect(planned.creates.map((create) => create.blockId)).toEqual(["hl-9f21c4"]);
+	});
+
+	// ⚠️ "Not in the digest" and "not offered to Zotero" are different facts. A highlight on a page
+	// whose text layer could not be read, or one with no rectangles, is skipped -- and still on the
+	// tablet. Trashing it would remove an annotation for a highlight the reader can see.
+	it("is told apart from a highlight that is still there but could not be offered", () => {
+		const kept = link({ annotations: { "hl-9f21c4": { key: "TNZQQNN3", written: WRITTEN }, "nt-4c8a17": { key: "NOTE1", written: { comment: "eine Randnotiz" } } } });
+		const unreadable = page({ source: null, highlights: [highlight()], notes: [note() as DigestNote & { section: string | null }] });
+		const planned = plan({ pages: [unreadable], link: kept, existing: [inZotero(), inZotero({ key: "NOTE1", type: "note", text: "", comment: "eine Randnotiz" })] });
+
+		expect(planned.trashes).toEqual([]);
+		expect(planned.skipped).toBe(2);
+	});
+
+	// ⚠️ A digest that failed to build speaks for no page, and one page of a page-scoped document
+	// speaks for that page only: a highlight it does not mention may be on a page it never saw.
+	it("is never decided on a page the digest was not given", () => {
+		const failed = plan({ pages: [], covered: [], link: stored, existing: [inZotero({ key: "OLD1" })] });
+		expect(failed.trashes).toEqual([]);
+		expect(failed.unchanged).toEqual([]);
+
+		// A page-scoped unit for page 0, while the annotation was written on page 1.
+		const otherPage = plan({ pages: [], covered: [0], link: stored, existing: [inZotero({ key: "OLD1" })] });
+		expect(otherPage.trashes).toEqual([]);
+	});
+
+	// The reader cleared the page. It produces no digest entry at all, and it is still a page the
+	// digest was given -- which is the only thing that lets the last highlight on a page be erased.
+	it("is decided on a page the digest was given even when that page has nothing left on it", () => {
+		const planned = plan({ pages: [], covered: [1], link: stored, existing: [inZotero({ key: "OLD1" })] });
+
+		expect(planned.trashes.map((trash) => trash.blockId)).toEqual(["hl-old"]);
 	});
 });
 
@@ -250,6 +317,7 @@ describe("carrying out the plan", () => {
 		return {
 			createAnnotations: vi.fn(async (items: unknown[]) => ({ keys: items.map((_item, index) => `NEW${index}`), failures: [] })),
 			patchAnnotation: vi.fn(async () => "written" as const),
+			trashAnnotation: vi.fn(async () => "written" as const),
 			...overrides,
 		} as unknown as ZoteroClient;
 	}
@@ -332,6 +400,28 @@ describe("carrying out the plan", () => {
 
 		expect(client.createAnnotations as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
 		expect(client.patchAnnotation as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+	});
+
+	it("records a trashed annotation as deleted, so it is never recreated", async () => {
+		const client = fakeClient();
+		const stored = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN } } });
+		const result = await executeWriteBack(client, stored, plan({ pages: [page({ highlights: [] })], link: stored, existing: [inZotero({ key: "OLD1" })] }));
+
+		expect(client.trashAnnotation).toHaveBeenCalledWith({ key: "OLD1", version: 246, source: "local" });
+		expect(result.annotations["hl-old"]).toEqual({ key: "OLD1", written: WRITTEN, deleted: true });
+		expect(result.written).toBe(1);
+	});
+
+	// Between our read and the trash the user touched it: the same 412 a patch gets, with the same
+	// answer. Nothing is recorded, and the next sync reads the edit and keeps the annotation for good.
+	it("leaves an annotation alone when it changed under us on the way to the trash", async () => {
+		const client = fakeClient({ trashAnnotation: vi.fn(async () => "conflict" as const) });
+		const stored = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN } } });
+		const result = await executeWriteBack(client, stored, plan({ pages: [page({ highlights: [] })], link: stored, existing: [inZotero({ key: "OLD1" })] }));
+
+		expect(result.annotations["hl-old"]).toEqual({ key: "OLD1", written: WRITTEN });
+		expect(result.written).toBe(0);
+		expect(result.total).toBe(1);
 	});
 
 	it("sends a patch back to the connection its version came from", async () => {

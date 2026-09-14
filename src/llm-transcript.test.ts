@@ -100,6 +100,14 @@ describe("sanitizeTranscript", () => {
 		expect(sanitizeTranscript("- milk\n\n```\n\n```\n- eggs")).toBe("- milk\n\n- eggs");
 	});
 
+	// The second live shape, 2026-09-13: a stroke with no words in it came back as "```text" over
+	// "``" -- an opener nothing closes, and a line of backticks. Neither is the user's.
+	it("drops an opener no closer follows, and a line of nothing but backticks", () => {
+		expect(sanitizeTranscript("```text\n``")).toBe("");
+		expect(sanitizeTranscript("```text\nTest")).toBe("Test");
+		expect(sanitizeTranscript("Notes\n```\n- a\n```")).toBe("Notes\n```\n- a\n```");
+	});
+
 	// Biased to under-strip: a stray line is a cheap failure, corrupting a note is not.
 	it("never touches a real code block the user wrote on the page", () => {
 		const withCode = "Notes:\n\n```python\nprint(1)\n```\n\nmore";

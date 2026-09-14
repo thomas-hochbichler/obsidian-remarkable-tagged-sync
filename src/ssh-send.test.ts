@@ -32,7 +32,7 @@ function device(files: Record<string, Uint8Array> = {}) {
 	return { target, written, commands, newId: () => `id-${++ids}` };
 }
 
-const document: SendDocument = { visibleName: "Best Practices für Prompting", bytes: new Uint8Array([37, 80, 68, 70]), folder: "Zotero", tag: "#papers" };
+const document: SendDocument = { visibleName: "Best Practices für Prompting", bytes: new Uint8Array([37, 80, 68, 70]), folder: "Zotero" };
 
 describe("the tablet's Zotero folder", () => {
 	it("is the one that is there, found by its name", async () => {
@@ -106,14 +106,14 @@ describe("putting a PDF on the tablet", () => {
 		});
 	});
 
-	// The tag is how the document comes back: without it the reader annotates a paper the plugin never
-	// looks at again.
-	it("carries the sync tag, in the shape a cloud upload has", async () => {
+	// No tag (2026-09-13): the reader tags the document on the tablet when they want it back, and
+	// `.content` carries the empty list xochitl writes for an untagged document.
+	it("carries no tag, in the shape a cloud upload has", async () => {
 		const tablet = device();
 		const { docId } = await sendOverSsh(tablet.target, document, tablet.newId);
 		const content = parse(tablet.written.get(`${docId}.content`)!);
 
-		expect(content.tags).toEqual([{ name: "#papers", timestamp: expect.any(Number) }]);
+		expect(content.tags).toEqual([]);
 		expect(content).toMatchObject({ fileType: "pdf", formatVersion: 1, pageCount: 1, sizeInBytes: "4" });
 	});
 

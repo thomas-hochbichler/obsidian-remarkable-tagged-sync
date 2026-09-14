@@ -47,6 +47,7 @@ import type { ZoteroClient } from "./zotero-client";
 import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
+import { markListed } from "./zotero-send";
 import { sendTaggedPapers } from "./zotero-tag-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
@@ -669,9 +670,13 @@ export default class TaggedSyncPlugin extends Plugin {
 			const speak = !auto || result.stopped;
 
 			this.data.syncIndex = result.index;
+			// What the listing found is what the Zotero links judge presence by (spec §2.5): a sent
+			// document is on the tablet while listings keep finding it, tagged or not. `null` means the
+			// run never listed -- the root hash was unchanged, so nothing on the tablet moved.
+			if (result.documentIds !== null) this.data.zoteroLinks = markListed(this.data.zoteroLinks, result.documentIds, this.nowIso());
 
 			// Zotero spec §2.6: papers tagged in Zotero go to the tablet *after* the tablet has been read,
-			// because the decision "is it still there?" is made on the index the run has just refreshed.
+			// because the decision "is it still there?" is made on what the run has just listed.
 			// Never throws; its sentences are the run's, in a run the user is watching.
 			for (const notice of await sendTaggedPapers(this.zoteroHost(), !auto)) {
 				if (speak) new Notice(notice, LONG_NOTICE_MS);

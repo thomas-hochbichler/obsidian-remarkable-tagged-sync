@@ -212,6 +212,13 @@ function row(drawn: Drawn[], name: string): Extract<Drawn, { kind: "row" }> {
 	return found;
 }
 
+/** The live line inside a row's description -- the connection verdict under Zotero. */
+function verdict(found: Extract<Drawn, { kind: "row" }>): FakeEl {
+	const line = found.setting.descEl.children.find((child) => child.classes.has("tagged-sync-verdict"));
+	if (!line) throw new Error(`no verdict line under "${found.name}"`);
+	return line;
+}
+
 function rowNames(drawn: Drawn[]): string[] {
 	return drawn.filter((item) => item.kind === "row").map((item) => item.name);
 }
@@ -264,6 +271,11 @@ describe("the shape of the settings screen", () => {
 			// Between automatic sync and the Pro section: it is a Pro feature, set up once, and it reads
 			// as what it is where it sits next to the thing that unlocks it.
 			"Zotero",
+			// One heading per connection, so a switch says whether anything goes over the internet, and
+			// one for the tablet rows that follow.
+			"Zotero cloud",
+			"Zotero local",
+			"Zotero on the tablet",
 			"Tagged Sync Pro",
 			"Actions",
 		]);
@@ -862,9 +874,12 @@ describe("the Zotero section", () => {
 		const { tab } = await tabWith();
 		const drawn = draw(tab);
 
-		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).toContain("Zotero");
-		expect(field(section(drawn, "Zotero"), "Zotero API key").disabled).toBe(false);
-		expect(toggle(section(drawn, "Zotero"), "Use the Zotero desktop app (Pro)").disabled).toBe(true);
+		const headings = drawn.filter((item) => item.kind === "heading").map((item) => item.name);
+		expect(headings).toContain("Zotero");
+		expect(headings.indexOf("Zotero cloud")).toBeGreaterThan(headings.indexOf("Zotero"));
+		expect(headings.indexOf("Zotero local")).toBeGreaterThan(headings.indexOf("Zotero cloud"));
+		expect(toggle(section(drawn, "Zotero cloud"), "Use zotero.org").disabled).toBe(false);
+		expect(toggle(section(drawn, "Zotero local"), "Use the Zotero desktop app (Pro)").disabled).toBe(true);
 		expect(row(drawn, "Connection").desc).toContain("part of Tagged Sync Pro");
 	});
 
@@ -873,8 +888,47 @@ describe("the Zotero section", () => {
 		const drawn = draw(tab);
 
 		expect(rowNames(drawn)).not.toContain("Use the Zotero desktop app (Pro)");
-		expect(field(drawn, "Zotero API key").disabled).toBe(false);
+		expect(toggle(drawn, "Use zotero.org").disabled).toBe(false);
 		expect(toggle(drawn, "Use the Zotero desktop app").disabled).toBe(false);
+	});
+
+	// One switch per connection (desk test 2026-09-13): whether anything goes over the internet is
+	// then one visible thing, not "is the key field empty". The key row belongs to the switch.
+	it("shows the key row only while zotero.org is switched on, under its own heading", async () => {
+		const off = draw((await tabWith(PRO)).tab);
+		expect(row(off, "Zotero API key").setting.settingEl.visible).toBe(false);
+
+		const on = draw((await tabWith({ ...PRO, zotero: { useWeb: true } })).tab);
+		expect(row(on, "Zotero API key").setting.settingEl.visible).toBe(true);
+		expect(rowNames(section(on, "Zotero cloud"))).toEqual(["Use zotero.org", "Zotero API key"]);
+		expect(rowNames(section(on, "Zotero local"))).toEqual(["Use the Zotero desktop app"]);
+		expect(rowNames(section(on, "Zotero on the tablet"))).toContain("Tablet folder for sent PDFs");
+	});
+
+	it("saves the cloud switch, shows the key row and asks the status line again", async () => {
+		const { plugin, tab } = await tabWith(PRO);
+		const drawn = draw(tab);
+		toggle(drawn, "Use zotero.org").toggle(true);
+		await settle();
+
+		expect((plugin.data.zotero as { useWeb: boolean }).useWeb).toBe(true);
+		expect(plugin.saves).toHaveLength(1);
+		expect(row(drawn, "Zotero API key").setting.settingEl.visible).toBe(true);
+		// On with no key yet is still nothing: the line was asked again and says so.
+		expect(verdict(row(drawn, "Connection")).text).toBe("Not connected.");
+	});
+
+	// A key left in place with the switch off is kept, and reaches nothing: the line says so without
+	// a single request going out.
+	it("reads a key with zotero.org switched off as not connected, without asking zotero.org", async () => {
+		const fetched = vi.fn(async () => new Response("[]", { status: 200 }));
+		vi.stubGlobal("fetch", fetched);
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: false, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		await settle();
+
+		expect(verdict(row(drawn, "Connection")).text).toBe("Not connected.");
+		expect(fetched).not.toHaveBeenCalled();
 	});
 
 	// The privacy sentence sits beside the switch it is about, not only in the README (spec §1.2):
@@ -883,7 +937,7 @@ describe("the Zotero section", () => {
 		const free = draw((await tabWith()).tab);
 		const bought = draw((await tabWith(PRO)).tab);
 
-		expect(rowNames(section(bought, "Zotero"))).toContain("What leaves your machine");
+		expect(rowNames(section(bought, "Zotero on the tablet"))).toContain("What leaves your machine");
 		expect(row(bought, "What leaves your machine").desc).toContain("handwriting never does");
 		// A free vault's Zotero is running too, and the sentence names the half that sends text as
 		// Pro -- so it reads as true there as well, not as a feature that is not there.
@@ -895,7 +949,9 @@ describe("the Zotero section", () => {
 
 		// The line is drawn inside the row's own description, not as a sibling below it: Obsidian 1.13
 		// draws each setting as a card, and a loose note lands in the gap between two of them.
-		expect(row(draw(tab), "Connection").setting.descEl.allText()).toContain("Not connected.");
+		const line = verdict(row(draw(tab), "Connection"));
+		expect(line.text).toBe("Not connected.");
+		expect(line.style["color"]).toBe("var(--text-error)");
 	});
 
 	// The four states of §2.1 come from the client, because what *answered* is not the same question
@@ -907,22 +963,27 @@ describe("the Zotero section", () => {
 				? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 })
 				: new Response("[]", { status: 200 }),
 		);
-		const { tab } = await tabWith({ ...PRO, zotero: { apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
 		const drawn = draw(tab);
+		expect(verdict(row(drawn, "Connection")).style["color"]).toBe("");
 		await settle();
 
-		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Connected via web.");
+		const line = verdict(row(drawn, "Connection"));
+		expect(line.text).toBe("Connected via web.");
+		expect(line.style["color"]).toBe("var(--text-success)");
 	});
 
 	it("says not connected when the connection that is set up does not answer", async () => {
 		vi.stubGlobal("fetch", async () => {
 			throw new TypeError("fetch failed");
 		});
-		const { tab } = await tabWith({ ...PRO, zotero: { apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
 		const drawn = draw(tab);
 		await settle();
 
-		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Not connected.");
+		const line = verdict(row(drawn, "Connection"));
+		expect(line.text).toBe("Not connected.");
+		expect(line.style["color"]).toBe("var(--text-error)");
 	});
 
 	it("saves the desktop switch and redraws, because the status line is now about something else", async () => {
@@ -1020,36 +1081,46 @@ describe("the Zotero section", () => {
 		vi.useRealTimers();
 	});
 
-	// With one mapped tag it is the one, and a dropdown with one entry is a question already answered.
-	it("offers the sync tag for Zotero sends only where the vault maps several, and saves the pick", async () => {
-		const one = draw((await tabWith({ tagFolderMap: { "#a": "A" } })).tab);
-		expect(rowNames(one)).not.toContain("Sync tag for Zotero sends");
+	// Found in the desk test of 2026-09-13: the line was computed once at draw, so a key changed to a
+	// wrong one kept reading "Connected via web." until the tab was reopened.
+	it("asks again when the key changes, so a wrong key reads as not connected at once", async () => {
+		vi.useFakeTimers();
+		let accepted = true;
+		// A good answer is held back while `held` is set, so a slow probe can be overtaken by a later one.
+		const held: (() => void)[] = [];
+		let holding = false;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (!accepted) return new Response("Forbidden", { status: 403 });
+			if (holding && String(input).includes("/items/top")) await new Promise<void>((resolve) => held.push(resolve));
+			return String(input).endsWith("/keys/current") ? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 }) : new Response("[]", { status: 200 });
+		});
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Connected via web.");
 
-		const { plugin, tab } = await tabWith({ tagFolderMap: { "#b": "B", "#a": "A" } });
-		const choice = dropdown(draw(tab), "Sync tag for Zotero sends");
-		expect(choice.options).toEqual({ "": "Choose a tag…", "#a": "#a", "#b": "#b" });
-		choice.pick("#b");
-		await settle();
-		expect((plugin.data.zotero as { sendSyncTag: string | null }).sendSyncTag).toBe("#b");
-		choice.pick("");
-		await settle();
-		expect((plugin.data.zotero as { sendSyncTag: string | null }).sendSyncTag).toBeNull();
-	});
+		// A second good key whose probe is slow, then a wrong key whose probe answers first.
+		holding = true;
+		field(drawn, "Zotero API key").type("ANOTHERGOODKEYANOTHERGOO");
+		await vi.advanceTimersByTimeAsync(700);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Checking…");
 
-	// What the step will actually use until the setting is made, shown rather than left blank.
-	it("pre-selects the last manual send's tag until a choice is made", async () => {
-		const { tab } = await tabWith({ tagFolderMap: { "#a": "A", "#b": "B" }, zotero: { lastTag: "#b" } });
-		const choice = dropdown(draw(tab), "Sync tag for Zotero sends");
+		accepted = false;
+		field(drawn, "Zotero API key").type("WRONGKEYWRONGKEYWRONGKEY");
+		await vi.advanceTimersByTimeAsync(700);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Not connected.");
 
-		expect(choice.getValue()).toBe("#b");
-		expect(choice.options).toEqual({ "#a": "#a", "#b": "#b" });
+		// The slow answer arrives last and lands nowhere: the line belongs to the newest probe.
+		for (const release of held.splice(0)) release();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Not connected.");
 	});
 
 	it("reads a cleared field as no key at all, rather than as an empty one", async () => {
 		// `""` would be a configured connection that answers 401 on every call -- and the status line
 		// would say "not connected" for a vault that is, as far as the settings go, set up.
 		vi.useFakeTimers();
-		const { plugin, tab } = await tabWith({ ...PRO, zotero: { apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
 		field(draw(tab), "Zotero API key").type("");
 		vi.advanceTimersByTime(500);
 

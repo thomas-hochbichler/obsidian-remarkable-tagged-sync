@@ -35,7 +35,7 @@ function page(overrides: Partial<DigestPage> = {}): DigestPage {
 }
 
 function unit(overrides: Partial<ZoteroUnit> = {}): ZoteroUnit {
-	return { docId: "doc-1", visibleName: "Best Practices für Prompting", notePath: "Papers/Prompting.md", pages: [page()], md5: async () => MD5, ...overrides };
+	return { docId: "doc-1", visibleName: "Best Practices für Prompting", notePath: "Papers/Prompting.md", pages: [page()], covered: [1], md5: async () => MD5, ...overrides };
 }
 
 /** A client that answers everything the pass may ask, and records what it was asked. */

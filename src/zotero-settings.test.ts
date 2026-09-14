@@ -5,7 +5,7 @@ import {
 	createZoteroClientFor,
 	DEFAULT_ZOTERO_SETTINGS,
 	zoteroProAllowed,
-	zoteroConfigured,
+	webConfigured, zoteroConfigured,
 	type ZoteroSettings,
 	zoteroSettingsStore,
 } from "./zotero-settings";
@@ -27,7 +27,9 @@ const TRIAL = entitlementOf(startTrial(NO_LICENCE, new Date(NOW.getTime() - 2 * 
 const clientFor = (settings: ZoteroSettings, entitlement: Entitlement) =>
 	createZoteroClientFor({ settings: () => settings, saveLocalKey: async () => {} }, entitlement);
 
-const WEB_ONLY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" };
+const WEB_ONLY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" };
+/** A key pasted, the switch left off: kept, and not a connection. */
+const WEB_OFF: ZoteroSettings = { ...WEB_ONLY, useWeb: false };
 const DESKTOP_ONLY: ZoteroSettings = { ...DEFAULT_ZOTERO_SETTINGS, useLocal: true };
 
 describe("who may use the Pro half of Zotero", () => {
@@ -98,6 +100,16 @@ describe("what counts as set up", () => {
 		expect(zoteroConfigured(DESKTOP_ONLY)).toBe(true);
 	});
 
+	// The switch is what says whether anything goes to zotero.org (desk test 2026-09-13): a key with
+	// the switch off is kept for later and reaches nothing -- not a connection, not a client, and no
+	// zotero.org link in a note.
+	it("counts a key with zotero.org switched off as nothing", () => {
+		expect(webConfigured(WEB_OFF)).toBe(false);
+		expect(webConfigured(WEB_ONLY)).toBe(true);
+		expect(zoteroConfigured(WEB_OFF)).toBe(false);
+		expect(clientFor(WEB_OFF, BOUGHT)).toBeNull();
+	});
+
 	it("builds a client for either one alone", () => {
 		expect(clientFor(WEB_ONLY, BOUGHT)).not.toBeNull();
 		expect(clientFor(DESKTOP_ONLY, BOUGHT)).not.toBeNull();
@@ -110,7 +122,7 @@ describe("what counts as set up", () => {
 	// A vault that has never been near Zotero must be indistinguishable from the plugin as it shipped
 	// before this feature -- which is what "the free plugin is unchanged" (§5) means in practice.
 	it("starts switched off entirely", () => {
-		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, lastTag: null, sendTag: "", sendSyncTag: null });
+		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ useWeb: false, apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, sendTag: "" });
 	});
 });
 

@@ -181,7 +181,7 @@ const NOTE_P2 = P2.replace(" · ", " ");
 const FIXTURE_MARKDOWN = `
 ### Allgemeine Prinzipien
 
-Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für alle aktuellen Claude-Modelle,== einschließlich Claude Fable 5 und Claude Mythos 5.${P2}
+Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten <mark class="tagged-sync-hl-yellow">für alle aktuellen Claude-Modelle,</mark> einschließlich Claude Fable 5 und Claude Mythos 5.${P2}
 ^hl-9f21c4
 
 ### Sei klar und direkt
@@ -512,10 +512,39 @@ describe("renderDigest — highlight quotes", () => {
 		);
 	});
 
-	it("does not render the marker color (F9)", () => {
-		expect(quoteBody({ sentence: "Gelb ist die Farbe hier.", marked: ["Gelb"], color: { r: 255, g: 207, b: 0 } })).toBe(
-			"==Gelb== ist die Farbe hier.",
+	// F9 revised 2026-09-13 (desk test: Zotero showed the colours, the note showed all yellow): a
+	// coloured mark is a `<mark>` named for the Zotero colour of the same hue, painted by the
+	// plugin's own stylesheet, so the note and the library show the same green. The name is the
+	// one table `zotero-annotations.ts` uses -- the Paper Pro's pastel green is green here too.
+	it("paints a coloured mark with the name of the Zotero colour it becomes", () => {
+		expect(quoteBody({ sentence: "Grün ist die Farbe hier.", marked: ["Grün"], color: { r: 172, g: 255, b: 133 } })).toBe(
+			'<mark class="tagged-sync-hl-green">Grün</mark> ist die Farbe hier.',
 		);
+		expect(quoteBody({ sentence: "Pink ist die Farbe hier.", marked: ["Pink"], color: { r: 255, g: 192, b: 203 } })).toBe(
+			'<mark class="tagged-sync-hl-magenta">Pink</mark> ist die Farbe hier.',
+		);
+		expect(quoteBody({ sentence: "Grau ist die Farbe hier.", marked: ["Grau"], color: { r: 200, g: 200, b: 201 } })).toBe(
+			'<mark class="tagged-sync-hl-gray">Grau</mark> ist die Farbe hier.',
+		);
+	});
+
+	// A pen mark, and a marker an older device recorded without a colour, read exactly as before.
+	it("keeps Markdown's own mark for a highlight with no recorded colour", () => {
+		expect(quoteBody({ sentence: "Gelb ist die Farbe hier.", marked: ["Gelb"], color: null })).toBe("==Gelb== ist die Farbe hier.");
+	});
+
+	// The text is escaped run by run: escaping the finished line would turn the `<mark>` itself into
+	// text, and not escaping the marked run would let a tag in the document open raw HTML.
+	it("escapes the text inside a coloured mark and leaves the mark itself alone", () => {
+		expect(quoteBody({ sentence: "Nutze <tag> & mehr.", marked: ["<tag>"], color: { r: 255, g: 207, b: 0 } })).toBe(
+			'Nutze <mark class="tagged-sync-hl-yellow">\\<tag></mark> \\& mehr.',
+		);
+	});
+
+	// The coverage rule is about the marks, not the colour: a quote that is all mark carries none,
+	// and so no colour either -- the sentence is the highlight.
+	it("drops the colour with the marks when the runs cover the whole quote", () => {
+		expect(quoteBody({ sentence: "Alles markiert hier.", marked: ["Alles markiert hier."], color: { r: 172, g: 255, b: 133 } })).toBe("Alles markiert hier.");
 	});
 });
 

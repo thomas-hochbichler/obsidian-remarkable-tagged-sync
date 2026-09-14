@@ -1,19 +1,25 @@
 /**
  * Highlights from the tablet as native Zotero annotations: spec §3.3 and §3.4.
  *
- * The policy is **add and refresh, never delete**, and every rule in it exists because the user's
- * library is not ours. What we wrote is ours to keep up to date; what they did to it afterwards is
- * theirs, and the four ways they can disagree with us each have an answer:
+ * The policy is **add and refresh, and trash only what is still ours**, and every rule in it exists
+ * because the user's library is not ours. What we wrote is ours to keep up to date; what they did to
+ * it afterwards is theirs, and the four ways they can disagree with us each have an answer:
  *
  * | They did | We do |
  * |---|---|
  * | edited one of our fields in Zotero | never write that field again |
  * | deleted one of our annotations | leave it deleted, and remember that we did |
- * | removed the highlight on the tablet | leave the annotation where it is |
+ * | removed the highlight on the tablet | trash the annotation if untouched in Zotero; else leave it |
  * | highlighted something themselves | never read it, never touch it |
  *
  * The last one is bought by the ownership tag alone: the annotations we read back are filtered by it
  * on the server, so nothing else in the library is ever in hand to get wrong.
+ *
+ * The one thing ever removed goes to Zotero's **trash**, never past it, and only when every field
+ * still reads exactly as we wrote it: an annotation the user commented on, recoloured or otherwise
+ * built on in Zotero stays, whatever the tablet says (§3.3). And it is only decided for the pages
+ * the digest actually looked at ({@link WriteBackInput.covered}): "not in the digest" means "erased
+ * on the tablet" only on a page the digest had in hand.
  *
  * Split in two on purpose. {@link planWriteBack} is arithmetic over what is already known -- the
  * digest, what we recorded last time, and what stands in Zotero now -- and every rule above is a
@@ -48,9 +54,18 @@ export interface PlannedPatch {
 	readonly userEdited: readonly string[];
 }
 
+/** An annotation whose highlight was erased on the tablet and that the user never touched in Zotero. */
+export interface PlannedTrash {
+	readonly blockId: string;
+	readonly annotation: ZoteroAnnotationRef;
+	/** What to remember once it is in the trash: the key, marked deleted, so it is never recreated (§3.3). */
+	readonly record: LinkedAnnotation;
+}
+
 export interface WriteBackPlan {
 	readonly creates: PlannedCreate[];
 	readonly patches: PlannedPatch[];
+	readonly trashes: PlannedTrash[];
 	/**
 	 * Entries whose annotation is already exactly what it should be, with what to remember about them.
 	 *
@@ -66,6 +81,14 @@ export interface WriteBackPlan {
 
 export interface WriteBackInput {
 	readonly pages: DigestPage[];
+	/**
+	 * The source page indexes the digest spoke for -- every page it was given, whether or not the
+	 * page produced an entry. An annotation whose block id is nowhere in `pages` is one the reader
+	 * erased only when its page is in here: a page-scoped unit speaks for one page of the document,
+	 * and a failed digest build for none, and trashing beyond that would empty the library of every
+	 * highlight the digest never saw.
+	 */
+	readonly covered: readonly number[];
 	readonly attachmentKey: string;
 	readonly link: ZoteroLink;
 	/** Our own annotations as they stand in Zotero now, read by the ownership tag. */
@@ -78,11 +101,17 @@ interface Entry {
 	readonly annotation: NewAnnotation;
 }
 
-/** Every entry of the digest that can become an annotation, in reading order. */
-function entriesOf(pages: DigestPage[], attachmentKey: string): { entries: Entry[]; skipped: number } {
+/**
+ * Every entry of the digest that can become an annotation, in reading order -- and, separately, the
+ * id of every entry the digest has at all. A skipped entry is still on the tablet, so the second set
+ * is the one "erased on the tablet" is measured against, never the first.
+ */
+function entriesOf(pages: DigestPage[], attachmentKey: string): { entries: Entry[]; present: Set<string>; skipped: number } {
 	const entries: Entry[] = [];
+	const present = new Set<string>();
 	let skipped = 0;
 	for (const page of pages) {
+		for (const item of [...page.highlights, ...page.notes]) present.add(item.id);
 		const source = page.source;
 		// A page the reader added on the device is not a page of this PDF, and a page whose text layer
 		// could not be read has no coordinates in it. Both are the same fact -- see `DigestPage.source`
@@ -102,7 +131,7 @@ function entriesOf(pages: DigestPage[], attachmentKey: string): { entries: Entry
 			else entries.push({ blockId: note.id, annotation });
 		}
 	}
-	return { entries, skipped };
+	return { entries, present, skipped };
 }
 
 /** The annotation's fields as we would have them, as the flat record the store keeps. */
@@ -155,8 +184,18 @@ function adopt(entry: Entry, existing: ZoteroAnnotation[], taken: Set<string>): 
  * deleted whatever the tablet now says; a field the user edited is theirs from then on; everything
  * else is refreshed to what the tablet says today.
  */
-export function planWriteBack({ pages, attachmentKey, link, existing }: WriteBackInput): WriteBackPlan {
-	const { entries, skipped } = entriesOf(pages, attachmentKey);
+/** The page one of our annotations was written on, read off the position we wrote; `null` when that cannot be read. */
+function writtenPageIndex(stored: LinkedAnnotation): number | null {
+	try {
+		const position = JSON.parse(stored.written.position ?? "") as { pageIndex?: unknown };
+		return typeof position.pageIndex === "number" ? position.pageIndex : null;
+	} catch {
+		return null;
+	}
+}
+
+export function planWriteBack({ pages, covered, attachmentKey, link, existing }: WriteBackInput): WriteBackPlan {
+	const { entries, present, skipped } = entriesOf(pages, attachmentKey);
 	const byKey = new Map(existing.map((annotation) => [annotation.key, annotation]));
 	// Two entries must never adopt the same annotation: the second would patch what the first just
 	// claimed, and one of the two highlights would end up describing the other.
@@ -164,8 +203,41 @@ export function planWriteBack({ pages, attachmentKey, link, existing }: WriteBac
 
 	const creates: PlannedCreate[] = [];
 	const patches: PlannedPatch[] = [];
+	const trashes: PlannedTrash[] = [];
 	const unchanged: { blockId: string; annotation: LinkedAnnotation }[] = [];
 	const vanished: { blockId: string; annotation: LinkedAnnotation }[] = [];
+
+	// Erased on the tablet: written once, on a page the digest looked at, no longer anywhere in the
+	// digest. Trashed only while it still reads exactly as we wrote it -- a single field of theirs
+	// keeps the whole annotation, and is remembered as theirs so that a later sync does not re-ask.
+	{
+		const coveredPages = new Set(covered);
+		for (const [blockId, stored] of Object.entries(link.annotations)) {
+			if (present.has(blockId) || stored.deleted) continue;
+			const pageIndex = writtenPageIndex(stored);
+			if (pageIndex === null || !coveredPages.has(pageIndex)) continue;
+			const known = byKey.get(stored.key);
+			if (known === undefined) {
+				// Gone from Zotero as well: whoever removed it there, nothing is left to trash.
+				vanished.push({ blockId, annotation: { key: stored.key, written: stored.written, deleted: true } });
+				continue;
+			}
+			const theirs = REFRESHABLE.filter((field) => {
+				const ours = stored.written[field];
+				return ours !== undefined && currentValue(known, field) !== ours;
+			});
+			const surrendered = new Set<string>([...(stored.userEdited ?? []), ...theirs]);
+			if (surrendered.size > 0) {
+				unchanged.push({ blockId, annotation: { key: stored.key, written: stored.written, userEdited: [...surrendered] } });
+				continue;
+			}
+			trashes.push({
+				blockId,
+				annotation: { key: known.key, version: known.version, source: known.source },
+				record: { key: stored.key, written: stored.written, deleted: true },
+			});
+		}
+	}
 
 	for (const entry of entries) {
 		const stored = link.annotations[entry.blockId];
@@ -230,7 +302,7 @@ export function planWriteBack({ pages, attachmentKey, link, existing }: WriteBac
 		}
 	}
 
-	return { creates, patches, unchanged, vanished, skipped };
+	return { creates, patches, trashes, unchanged, vanished, skipped };
 }
 
 /** What happened, for `data.json` and for the status line. */
@@ -246,7 +318,7 @@ export interface WriteBackResult {
 
 /**
  * Carries out a plan. Add-and-refresh means there is nothing to roll back: whatever landed is
- * recorded, whatever did not is created or refreshed on the next sync.
+ * recorded, whatever did not is created, refreshed or trashed on the next sync.
  *
  * A `ZoteroError` ends the run for this document rather than being retried here -- the client has
  * already honoured whatever wait the server asked for, and hammering a rejected key or a closed
@@ -257,9 +329,23 @@ export async function executeWriteBack(client: ZoteroClient, link: ZoteroLink, p
 	const annotations: Record<string, LinkedAnnotation> = { ...link.annotations };
 	for (const { blockId, annotation } of [...plan.unchanged, ...plan.vanished]) annotations[blockId] = annotation;
 
-	const total = plan.creates.length + plan.patches.length;
+	const total = plan.creates.length + plan.patches.length + plan.trashes.length;
 	let written = 0;
 	const failures: string[] = [];
+
+	for (const trash of plan.trashes) {
+		try {
+			const outcome = await client.trashAnnotation(trash.annotation);
+			// A conflict is the user editing it between our read and now, and an edited annotation is
+			// theirs to keep: nothing is recorded, and the next sync sees the edit for what it is.
+			if (outcome === "conflict") continue;
+			annotations[trash.blockId] = trash.record;
+			written++;
+		} catch (error) {
+			failures.push(describeZoteroError(error));
+			return { annotations, written, total, failures };
+		}
+	}
 
 	if (plan.creates.length > 0) {
 		try {

@@ -50,6 +50,8 @@ vi.mock("./scene-text", async (importOriginal) => {
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
 const PAGE_BYTES = new Uint8Array(readFileSync(FIXTURE_PATH));
+/** A v6 page file with nothing after its header: what a page whose layers were all deleted parses to -- no strokes, no highlights, no text. */
+const BLANK_PAGE_BYTES = new TextEncoder().encode("reMarkable .lines file, version=6          ");
 // A page whose nodes carry no anchor, so nothing about it is placed -- unlike FIXTURE_PATH, whose two
 // group nodes are anchored to its typed text.
 const UNANCHORED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/color-and-tool-v3.14.4.rm"));
@@ -619,6 +621,8 @@ describe("runSync", () => {
 
 		expect(result.notesWritten).toBe(0);
 		expect(result.index).toBe(previousIndex);
+		// No listing, so nothing to say about what is on the tablet: the Zotero links keep what they know.
+		expect(result.documentIds).toBeNull();
 		expect(api.raw.getRootHash).toHaveBeenCalledTimes(1);
 		expect(api.listItems).not.toHaveBeenCalled();
 		expect(api.getContent).not.toHaveBeenCalled();
@@ -673,6 +677,8 @@ describe("runSync", () => {
 
 		expect(result.notesWritten).toBe(1);
 		expect(result.index.mappings).toBe(mappingFingerprint({ sync: "Target" }));
+		// The run listed, and says so: every document the listing found, for the Zotero links to judge by.
+		expect(result.documentIds).toEqual(["doc-1"]);
 	});
 
 	it("self-heals: recreates a note the user deleted by hand, even though the root hash is unchanged", async () => {
@@ -2713,6 +2719,29 @@ describe("a unit that would be written with neither section", () => {
 		expect(await first.noteStore.read(path)).toContain("real text");
 		expect(result.documentsSkipped).toBe(1);
 		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
+	});
+
+	// Desk test 2026-09-13: the reader deleted a page's whole annotation layer; the render came back
+	// blank and the note kept quoting the old marks, because the net took the empty block for a loss.
+	// A unit that is blank on the tablet is the explanation it lacked: there is nothing left that
+	// the render, drawn from the same scene, does not also lack -- so the note follows the tablet.
+	it("rewrites the note when the pages themselves are empty now, and says why the sections went", async () => {
+		const first = { ...baseDeps(onePageNotebook("root-04-g", "hash-1"), { sync: "Target" }), ocrBackend: perPageOcrBackend("real text") };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const path = synced.index.rows[KEY].notePath;
+		expect(await first.noteStore.read(path)).toContain("real text");
+
+		// The page is still there but carries nothing any more -- what a deleted layer leaves behind.
+		const erased = onePageNotebook("root-04-g2", "hash-2");
+		erased.raw.getHash.mockResolvedValue(BLANK_PAGE_BYTES);
+		const second = { ...baseDeps(erased, { sync: "Target" }), noteStore: first.noteStore, ocrBackend: emptyPerPageOcrBackend() };
+		const result = await runSync(second, synced.index);
+
+		expect(await first.noteStore.read(path)).not.toContain("real text");
+		expect(result.notesWritten).toBe(1);
+		expect(result.documentsSkipped).toBe(0);
+		expect(result.skipErrors).toContainEqual(expect.stringContaining("its pages are empty on the tablet now"));
+		expect(result.index.rows[KEY].entryHash).toBe("hash-2");
 	});
 
 	// "Never replace content with nothing", not "never write nothing". Refusing here would leave a

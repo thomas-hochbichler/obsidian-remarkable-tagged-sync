@@ -62,7 +62,7 @@ async function folderId(api: CloudSendApi, name: string): Promise<string> {
 export async function sendToCloud(api: CloudSendApi, document: SendDocument): Promise<{ docId: string }> {
 	const parent = await folderId(api, document.folder);
 	const entry = await withGenerationRetries((refresh) =>
-		api.putPdf(document.visibleName, document.bytes, { parent, tags: [document.tag], refresh }),
+		api.putPdf(document.visibleName, document.bytes, { parent, tags: [], refresh }),
 	);
 	return { docId: entry.id };
 }

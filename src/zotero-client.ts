@@ -199,13 +199,15 @@ export interface ZoteroConnection {
 	ownAnnotations(parentKey: string): Promise<ZoteroAnnotation[]>;
 	createAnnotations(items: NewAnnotation[]): Promise<AnnotationsCreated>;
 	patchAnnotation(key: string, version: number, fields: AnnotationFields): Promise<PatchOutcome>;
+	/** Into Zotero's trash, never erased: `DELETE` on the local API is a permanent erase, and the trash is what makes this reversible (§3.3). */
+	trashAnnotation(key: string, version: number): Promise<PatchOutcome>;
 }
 
 /**
  * Everything a caller may do. One connection's shape, minus the parts that are about *being* a
  * connection -- and with the one call that cannot be routed freely spelled out differently.
  */
-export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "patchAnnotation"> {
+export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "patchAnnotation" | "trashAnnotation"> {
 	/**
 	 * Which connections answered, for the settings line. **Never rejects** -- it is built out of
 	 * {@link ZoteroConnection.probe}, and "nothing answered" is one of its answers rather than a
@@ -214,6 +216,8 @@ export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "p
 	status(): Promise<ZoteroStatus>;
 	/** Goes to the connection the annotation was read from, or fails. Never to the other one -- see {@link ZoteroAnnotation.version}. */
 	patchAnnotation(annotation: ZoteroAnnotationRef, fields: AnnotationFields): Promise<PatchOutcome>;
+	/** Same routing as {@link ZoteroClient.patchAnnotation}, for the same reason. */
+	trashAnnotation(annotation: ZoteroAnnotationRef): Promise<PatchOutcome>;
 }
 
 // --- The wire, written once ------------------------------------------------------------------
@@ -560,21 +564,26 @@ export function createZoteroConnection(
 			}
 			return { keys, failures };
 		},
-		async patchAnnotation(key, version, fields) {
-			const response = await request({
-				method: "PATCH",
-				path: `/items/${key}`,
-				body: patchBody(fields),
-				// The precondition is the whole point of patching rather than putting: an annotation the
-				// user edited in Zotero since we read it comes back 412, and 412 means "leave it alone"
-				// (§3.3), not "try harder".
-				headers: { "If-Unmodified-Since-Version": String(version) },
-			});
-			if (response.status === 412) return "conflict";
-			if (!response.ok) throw await failureFor(response);
-			return "written";
-		},
+		patchAnnotation: (key, version, fields) => patchUnderVersion(key, version, patchBody(fields)),
+		// `deleted: true` is how both APIs move an item to the trash; the same precondition guards it,
+		// because an annotation the user touched since we read it is theirs to keep (§3.3).
+		trashAnnotation: (key, version) => patchUnderVersion(key, version, { deleted: true }),
 	};
+
+	async function patchUnderVersion(key: string, version: number, body: Json): Promise<PatchOutcome> {
+		const response = await request({
+			method: "PATCH",
+			path: `/items/${key}`,
+			body,
+			// The precondition is the whole point of patching rather than putting: an annotation the
+			// user edited in Zotero since we read it comes back 412, and 412 means "leave it alone"
+			// (§3.3), not "try harder".
+			headers: { "If-Unmodified-Since-Version": String(version) },
+		});
+		if (response.status === 412) return "conflict";
+		if (!response.ok) throw await failureFor(response);
+		return "written";
+	}
 }
 
 /**
@@ -637,22 +646,28 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 		 * patch is skipped and reported -- the next sync patches it, because write-back is add-and-
 		 * refresh and nothing was lost (§3.3).
 		 */
-		async patchAnnotation(annotation, fields) {
-			const connection = order.find((candidate) => candidate.id === annotation.source);
-			if (connection === undefined) {
-				throw new ZoteroError("unreachable", `That annotation was read from ${annotation.source === "local" ? "the Zotero desktop app" : "zotero.org"}, which is not connected now.`);
-			}
-			return await connection.patchAnnotation(annotation.key, annotation.version, fields);
-		},
+		patchAnnotation: async (annotation, fields) => await sourceOf(annotation).patchAnnotation(annotation.key, annotation.version, fields),
+		trashAnnotation: async (annotation) => await sourceOf(annotation).trashAnnotation(annotation.key, annotation.version),
 	};
+
+	function sourceOf(annotation: ZoteroAnnotationRef): ZoteroConnection {
+		const connection = order.find((candidate) => candidate.id === annotation.source);
+		if (connection === undefined) {
+			throw new ZoteroError("unreachable", `That annotation was read from ${annotation.source === "local" ? "the Zotero desktop app" : "zotero.org"}, which is not connected now.`);
+		}
+		return connection;
+	}
 }
 
 /** The failures that mean "this connection could not answer", as opposed to "this is the answer". */
 const CAN_FALL_BACK: ZoteroFailure[] = ["unreachable", "not-enabled", "denied", "unauthorized", "rate-limited"];
 
-/** The settings line's four states, in the spec's words (§2.1). */
+/**
+ * The settings line's four states, in the spec's words (§2.1). With both up it also says which one
+ * is asked (desk test 2026-09-13: a green line naming two connections says nothing about the order).
+ */
 function statusSummary(local: boolean, web: boolean): string {
-	if (local && web) return "Connected via desktop and web.";
+	if (local && web) return "Connected via desktop and web. The desktop app is asked first; zotero.org answers when it is closed.";
 	if (local) return "Connected via desktop.";
 	if (web) return "Connected via web.";
 	return "Not connected.";

@@ -1,8 +1,8 @@
 /**
  * What this vault has been told about Zotero, and whether it may use it.
  *
- * Two settings and a gate. The settings are the two connections of spec §2.1 -- an API key for
- * zotero.org, a toggle for the desktop app -- and neither is required: each connection is enough on
+ * Two connections and a gate. The connections are the two of spec §2.1 -- a switch and an API key
+ * for zotero.org, a switch for the desktop app -- and neither is required: each connection is enough on
  * its own, and with neither of them the plugin has no Zotero client at all and every Zotero feature
  * is simply not there (§2.1).
  *
@@ -21,6 +21,12 @@ import { createZoteroWebConnection } from "./zotero-web";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 
 export interface ZoteroSettings {
+	/**
+	 * Talk to zotero.org. A switch of its own, beside the key, so that whether anything goes over the
+	 * internet is one visible thing rather than "is the key field empty" (asked for in the desk test
+	 * of 2026-09-13, to sit next to the desktop-app switch). Off, a pasted key is kept and unused.
+	 */
+	useWeb: boolean;
 	/** A zotero.org API key, or `null`. Read and write, personal library -- nothing else is asked for. */
 	apiKey: string | null;
 	/** Talk to the Zotero 10 desktop app on this machine. */
@@ -46,8 +52,6 @@ export interface ZoteroSettings {
 	 * needs no such permission and is therefore tried first.
 	 */
 	sendOverSsh: boolean;
-	/** The sync tag the last send used, offered first the next time there is a choice (§2.4). */
-	lastTag: string | null;
 	/**
 	 * The Zotero tag that sends a paper to the tablet at the end of a sync (§2.6). Empty -- the
 	 * default -- switches the step off. Opt-in on purpose: this is the one thing a sync does that
@@ -56,19 +60,16 @@ export interface ZoteroSettings {
 	 * that every sync -- the automatic ones too -- will then send.
 	 */
 	sendTag: string;
-	/** Which mapped sync tag a paper sent that way gets, where the vault maps several (§2.6). `null` falls back to `lastTag`. */
-	sendSyncTag: string | null;
 }
 
 export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
+	useWeb: false,
 	apiKey: null,
 	useLocal: false,
 	localKeys: {},
 	folder: DEFAULT_SEND_FOLDER,
 	sendOverSsh: false,
-	lastTag: null,
 	sendTag: "",
-	sendSyncTag: null,
 };
 
 /**
@@ -100,7 +101,12 @@ export function zoteroUnavailable(settings: ZoteroSettings): string {
 
 /** Has the user set up either connection? Says nothing about whether it answers. */
 export function zoteroConfigured(settings: ZoteroSettings): boolean {
-	return settings.apiKey !== null || settings.useLocal;
+	return webConfigured(settings) || settings.useLocal;
+}
+
+/** Is zotero.org switched on *and* given a key? Either alone is not a connection. */
+export function webConfigured(settings: ZoteroSettings): boolean {
+	return settings.useWeb && settings.apiKey !== null;
 }
 
 /** Reads and writes the granted local keys wherever the plugin keeps its settings. */
@@ -145,6 +151,6 @@ export function createZoteroClientFor(store: ZoteroSettingsStore, entitlement: E
 	};
 	return createZoteroClient({
 		local: settings.useLocal && zoteroProAllowed(entitlement) ? createZoteroLocalConnection(keyStore) : undefined,
-		web: settings.apiKey === null ? undefined : createZoteroWebConnection(settings.apiKey),
+		web: settings.useWeb && settings.apiKey !== null ? createZoteroWebConnection(settings.apiKey) : undefined,
 	});
 }

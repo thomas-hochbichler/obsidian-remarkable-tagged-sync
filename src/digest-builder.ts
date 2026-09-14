@@ -10,6 +10,7 @@
 
 import type { DigestAnchor } from "./digest-anchoring";
 import { hashString } from "./note-builder";
+import { highlightColorName } from "./highlight-color";
 import type { PdfRect } from "./pdf-text";
 
 /**
@@ -96,10 +97,12 @@ export interface DigestHighlight {
 	 */
 	tool: "marker" | "pen";
 	/**
-	 * The marker's color. Carried through the model but deliberately never rendered: F9 keeps every
-	 * highlight a uniform `==...==`, because color semantics ("yellow = important") is the user's
-	 * private convention and guessing at it would put meaning in the note that nobody stated. Do not
-	 * "fix" this by rendering it -- changing it needs a spec decision, not a patch.
+	 * The marker's color, or `null` for a pen mark and for a marker the device recorded without one.
+	 *
+	 * Rendered since F9 was revised (2026-09-13): a coloured mark is a `<mark>` carrying the name of the
+	 * Zotero colour it becomes in the library, so the note and Zotero show the same green. F9 had
+	 * kept every highlight a uniform `==...==` because colour *semantics* is the reader's private
+	 * convention -- that still holds: the note shows the colour and says nothing about what it means.
 	 */
 	color: { r: number; g: number; b: number } | null;
 	/** Notes anchored to this highlight, nested inside its callout (F5). */
@@ -234,8 +237,17 @@ function anchorTitle(anchor: DigestAnchor): string {
 const FULLY_MARKED_COVERAGE = 0.75;
 
 /**
- * Wraps every run in `==...==` at its first occurrence, or leaves the sentence plain when the runs
- * cover {@link FULLY_MARKED_COVERAGE} of it.
+ * The class a coloured mark carries: the Zotero colour's name, painted by the plugin's own
+ * `styles.css`, so the reader needs no snippet and a theme can still override it.
+ */
+const MARK_CLASS_PREFIX = "tagged-sync-hl-";
+
+/**
+ * Wraps every run at its first occurrence -- in `==...==`, or in a `<mark>` named for its colour when
+ * the marker had one -- or leaves the sentence plain when the runs cover {@link FULLY_MARKED_COVERAGE}
+ * of it. Escapes the text on the way out, run by run: the runs are matched against the raw sentence,
+ * and the markup is the digest's own rather than the document's, so `escapeText` cannot run over the
+ * whole result -- it would turn the `<mark>` into text.
  *
  * The runs are separate selections over one passage, so they overlap, repeat and touch each other.
  * They are resolved to non-overlapping character ranges first: nested or crossing `==` markers are
@@ -246,7 +258,7 @@ const FULLY_MARKED_COVERAGE = 0.75;
  * plain sentence still says what the highlight was about, while throwing would drop the annotation
  * entirely.
  */
-function markSentence(sentence: string, marked: string[]): string {
+function markSentence(sentence: string, marked: string[], color: DigestHighlight["color"]): string {
 	const found = marked
 		.map((run) => ({ start: run === "" ? -1 : sentence.indexOf(run), length: run.length }))
 		.filter((range) => range.start >= 0)
@@ -265,15 +277,18 @@ function markSentence(sentence: string, marked: string[]): string {
 	// Over the resolved ranges, not over `marked`, whose runs overlap and repeat -- counting those
 	// would put the coverage of an adjusted selection over 100 %.
 	const covered = ranges.reduce((sum, range) => sum + (range.end - range.start), 0);
-	if (covered >= FULLY_MARKED_COVERAGE * sentence.length) return sentence;
+	if (covered >= FULLY_MARKED_COVERAGE * sentence.length) return escapeText(sentence);
 
+	// Markdown's own mark where the colour is not known; HTML only where there is a colour to name,
+	// so a pen mark and an older device read exactly as before.
+	const [open, close] = color === null ? ["==", "=="] : [`<mark class="${MARK_CLASS_PREFIX}${highlightColorName(color)}">`, "</mark>"];
 	let quoted = "";
 	let cut = 0;
 	for (const { start, end } of ranges) {
-		quoted += `${sentence.slice(cut, start)}==${sentence.slice(start, end)}==`;
+		quoted += `${escapeText(sentence.slice(cut, start))}${open}${escapeText(sentence.slice(start, end))}${close}`;
 		cut = end;
 	}
-	return quoted + sentence.slice(cut);
+	return quoted + escapeText(sentence.slice(cut));
 }
 
 /** The block id (F7) terminates the entry's last text line -- it has to sit on content, not on a callout's title line and not on a code fence. */
@@ -331,9 +346,6 @@ function renderNote(note: DigestNote, prefix: string, locator: string): string {
  * short goes too -- a long quote is now simply a long paragraph.
  */
 function renderHighlight(highlight: DigestHighlight, locator: string, zoteroUrl: string | undefined): string {
-	// Escaped after marking, not before: the runs are matched against the raw sentence, and `==` is
-	// the digest's own markup rather than the document's, so it must survive untouched.
-	//
 	// The block id goes on a line of its own, which is what keeps F7's "invisible in reading view"
 	// true. Measured in a real Reading View: Obsidian hides a trailing `^id` inside a callout but
 	// prints it as grey text at the end of a paragraph -- so moving the quote out of its callout made
@@ -345,7 +357,7 @@ function renderHighlight(highlight: DigestHighlight, locator: string, zoteroUrl:
 	// points at one annotation. So it is there even where the page heading carries the locator and
 	// the entry itself has none -- a heading cannot hold a link to a single mark.
 	const inZotero = zoteroUrl === undefined ? "" : ` · [in Zotero](${zoteroUrl})`;
-	const quote = `${escapeText(markSentence(highlight.sentence, highlight.marked))}${locator}${inZotero}\n^${highlight.id}`;
+	const quote = `${markSentence(highlight.sentence, highlight.marked, highlight.color)}${locator}${inZotero}\n^${highlight.id}`;
 	// A note anchored to this highlight follows it as a block of its own -- there is no callout left
 	// to nest inside. It repeats the locator rather than leaning on the quote above it: as a separate
 	// box it reads as an entry, and an entry whose title lacks the link every other one has reads as

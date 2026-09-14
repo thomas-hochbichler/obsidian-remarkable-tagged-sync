@@ -71,7 +71,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Repair one note without re-running the whole vault](#re-transcribing) | ✓ | ✓ |
 | **Zotero** | | |
 | [Zotero connection](#connecting) | zotero.org | zotero.org + desktop app |
-| [Send a Zotero PDF to your tablet, tagged for sync](#zotero) | ✓ | ✓ |
+| [Send a Zotero PDF to your tablet](#zotero) | ✓ | ✓ |
 | [Notes know their Zotero item — link, web library](#zotero) | ✓ | ✓ |
 | [Your tablet highlights as native Zotero annotations, with a jump into Zotero from every quote](#zotero) | — | ✓ |
 | **Organization** | | |
@@ -406,8 +406,9 @@ The loop is three steps:
 
 1. In Obsidian, run **Send Zotero PDF to reMarkable…** and search your library the way you
    remember the paper — half a title, an author, a year. The PDF lands on your tablet in a
-   `Zotero` folder, already carrying your sync tag.
-2. Read it and mark it up: highlighter, pen underlines, notes in the margin.
+   `Zotero` folder, untagged: the plugin never puts a tag on a document for you.
+2. On the tablet, give it your sync tag, then read it and mark it up: highlighter, pen underlines,
+   notes in the margin.
 3. Sync. The [digest](#annotated-pdfs) arrives in your vault knowing which paper it is, and — with
    Pro — what you marked appears in Zotero as real highlights and underlines you can click, colour,
    search and cite. A margin note anchored to a passage becomes that annotation's comment. Without
@@ -415,15 +416,15 @@ The loop is three steps:
 
 **Or start in Zotero.** Name a send tag under Settings → Zotero — say `to-remarkable`; it is off
 until you do — and from then on every sync, the automatic ones too, puts the PDF of any paper you
-tag with it on your tablet, same folder, same sync tag — so the whole loop reads: *tag a paper in Zotero, it is
-on your tablet; mark it up on the tablet, your marks are in your vault* (and, with Pro, in Zotero).
-Tag the paper, not the PDF. Nothing is ever taken off the tablet, and the tag is left where you put
-it; a paper that is already there is simply skipped. A paper with two PDFs, or one Zotero has no
-copy of, is named in the notice and waits for **Send Zotero PDF to reMarkable…**, which is where
-questions get asked. Emptying *Send tag in Zotero* switches it off again; if you map several sync
-tags, *Sync tag for Zotero sends* says which one a paper sent this way gets.
-Over SSH this happens only in a sync you start yourself, because that route restarts the tablet's
-reading app.
+tag with it on your tablet, in the same folder as *Send* and, like *Send*, without a sync tag.
+Tag the paper on the tablet when you want it back, and the loop closes: *tag a paper in Zotero, it
+is on your tablet; tag it on the tablet and mark it up, your marks are in your vault* (and, with
+Pro, in Zotero). Tag the paper in Zotero, not the PDF. Nothing is ever taken off the tablet, and the
+Zotero tag is left where you put it; a paper that is already there is simply skipped. A paper with
+two PDFs, or one Zotero has no copy of, is named in the notice and waits for **Send Zotero PDF to
+reMarkable…**, which is where questions get asked. Emptying *Send tag in Zotero* switches it off
+again. Over SSH this happens only in a sync you start yourself, because that route restarts the
+tablet's reading app.
 
 Each half stands on its own. A PDF that reached the tablet some other way is recognised at sync
 time — by the file's own hash, or by asking you once — and a note gets its Zotero link whether or
@@ -442,13 +443,15 @@ Either connection is enough on its own, and you can have both:
 
 | | **zotero.org** | **The Zotero desktop app** ([Pro](#tagged-sync-pro)) |
 |---|---|---|
-| What you need | an API key from zotero.org, with read and write access to your personal library | Zotero 10 running, with *Allow other applications on this computer to communicate with Zotero* on |
+| What you need | *Use zotero.org* switched on, and an API key from zotero.org with read and write access to your personal library | *Use the Zotero desktop app* switched on, Zotero 10 running, with *Allow other applications on this computer to communicate with Zotero* on |
 | Works with Zotero closed | ✓ | — |
 | Finds your PDFs | the copies synced to zotero.org | any file on your disk |
 
-With both set up the desktop app is asked first and zotero.org is the fallback, so a paper Zotero
-never uploaded still gets sent. If neither is set up, nothing Zotero-related runs and your sync is
-exactly what it was.
+Each connection has its own switch under Settings → Zotero, so whether anything goes over the
+internet is one thing to look at: with *Use zotero.org* off, nothing Zotero-related leaves your
+machine, whatever key is stored. With both set up the desktop app is asked first and zotero.org is
+the fallback, so a paper Zotero never uploaded still gets sent. If neither is set up, nothing
+Zotero-related runs and your sync is exactly what it was.
 
 Sending needs a way onto the tablet: the reMarkable cloud, or [a paired
 tablet](#syncing-without-the-cloud) with **Send over SSH** switched on. Sending over SSH restarts
@@ -476,7 +479,8 @@ pastel green stays green instead of turning grey. What a device can record diffe
 | Paper Pure | not measured yet — a page from one is welcome | |
 
 A colour code planned on the laptop therefore has three colours on a reMarkable 2 and six on a
-Paper Pro. Recolouring in Zotero afterwards is safe: your edit of a colour wins from then on.
+Paper Pro. The digest in your vault uses the same names, so a mark is the same green in the note
+and in Zotero. Recolouring in Zotero afterwards is safe: your edit of a colour wins from then on.
 
 ### When something does not reach Zotero
 
@@ -497,14 +501,16 @@ happens the note says so in its own top line, in place of the write-back date:
 - *Zotero answered with an error* — its end, not yours.
 
 Every one of these is retried by the next sync, and there is nothing to clean up first: write-back
-only ever adds. If half the highlights of a document made it, the rest are written next time; the
-ones already there are not written twice.
+adds, refreshes and trashes, and each of those is safe to repeat. If half the highlights of a
+document made it, the rest are written next time; the ones already there are not written twice.
 
 **Zotero is never the truth for your note.** The annotations this plugin creates are a copy, marked
 with a `tagged-sync` tag. Edit one in Zotero and your version wins from then on — that field is
 never overwritten again. Delete one and it stays deleted. Your own highlights, made in Zotero, are
-never read and never touched. On the tablet side nothing is ever removed: a highlight you erase
-disappears from the Obsidian note and stays in Zotero, where you may already have built on it.
+never read and never touched. Erase a highlight on the tablet and its annotation goes to Zotero's
+trash on the next sync — unless you have edited it in Zotero, in which case it stays: what you built
+on there is yours. Nothing is ever erased for good; the trash keeps it. On the tablet side nothing is
+ever removed.
 
 ## Syncing without the cloud
 
@@ -571,6 +577,10 @@ Paper Pro's shader — and one you underlined or circled with the pen arrive the
 with its surrounding sentence, the section it sits under, and a link to the page. Marking with the
 pen used to reach your vault as nothing at all.
 
+**Your colours come with it.** A mark you made in green is green in the note, in the same eight
+colours Zotero uses (the [table below](#colours)) — no snippet to install; a theme can restyle them.
+A pen mark, which has no colour, is Obsidian's ordinary highlight.
+
 **None of this goes through transcription.** The words come from the PDF's own text, not from a
 picture of it, so the digest works the same on Windows and Linux as it does on a Mac — and no marked
 word can come out misspelled.
@@ -628,8 +638,6 @@ Three things worth knowing before you rely on it:
   and a PDF you only wrote on syncs with the render and no text at all.
 - **It reads the PDF's own text layer.** A scanned page without one gives less: highlights arrive as
   the words your tablet recorded, and pen marks are not recognised as marks at all.
-- **Marker colour is not carried over.** Every mark reads the same in the note; the colours stay in
-  the embedded render.
 
 Section headings come from the PDF's own outline where it has one, and from a font-size guess where
 it does not — so a document without bookmarks can file a quote under the wrong heading.

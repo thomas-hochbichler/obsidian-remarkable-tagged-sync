@@ -107,6 +107,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * records are rejoined, and closing punctuation stays with the sentence it ends, which had been
  * printing a parenthetical twice, once behind a stranded closing quote -- and a margin note's clip
  * now spans the paragraph the ink sits beside, so the picture carries the context the note is about.
+ *
+ * Not bumped for a change in how the note *reads* (decided 2026-09-13, when the digest gained the
+ * marker's colour): a bump re-renders every note, and on the way re-transcribes typed-text pages and
+ * every margin note through a backend the user may be paying for. A cosmetic change waits for the
+ * document's next real change; only a change to what is *drawn* earns a bump.
  */
 export const RENDER_VERSION = 31;
 
@@ -326,6 +331,13 @@ export interface SyncDeps {
 
 export interface SyncResult {
 	index: SyncIndex;
+	/**
+	 * Every document the run's listing found on the tablet, trash excluded, tagged or not -- or `null`
+	 * when the run never listed, because the root hash was unchanged and nothing on the tablet moved.
+	 * The Zotero links judge by it whether a sent document is still there (spec §2.5): a document
+	 * sent without a sync tag never earns an index row, so the rows cannot say.
+	 */
+	documentIds: string[] | null;
 	/**
 	 * The run ended because `shouldStop` said so, not because it ran out of documents. Its `index`
 	 * deliberately carries the *previous* `rootHash`/`mappings` (as a checkpoint does), so a caller
@@ -887,6 +899,11 @@ interface UnitParams {
 	/** How many pages the whole *unit* has, which a digest can make more than `ocrPages.length`. Decides whether the transcript prints page headings. */
 	unitPages: number;
 	/**
+	 * True when no page of the unit carries anything at all -- see {@link isBlankUnit}. What tells
+	 * "the reader erased everything" from "the parse lost everything" in `emptyBlockReport`.
+	 */
+	blank: boolean;
+	/**
 	 * A transcript to keep instead of producing one, for a unit being rebuilt only because the
 	 * renderer changed. Already rendered -- it was read back out of the note -- so it is written
 	 * through as-is rather than laid out again. See `reusableTranscript` for when that is safe.
@@ -948,6 +965,8 @@ interface UnitParams {
 	zotero?: {
 		/** The digest's own entries: the rectangles that go into Zotero, and the block ids its links hang on. */
 		readonly pages: readonly DigestPage[];
+		/** The source page indexes the digest was given. Only on those may it say what the reader erased. */
+		readonly covered: readonly number[];
 		/** MD5 of the source PDF the tablet holds -- what §2.3 matches on. Read only when something asks. */
 		md5(): Promise<string | null>;
 	};
@@ -1013,6 +1032,21 @@ interface WriteUnitResult {
  * Costs a vault read, and it is paid only in the branch where the new block came out empty, so the
  * ordinary path never pays it.
  */
+/**
+ * Whether every page of a unit is empty on the tablet: no stroke, no highlight, no typed text, no
+ * picture -- and a page with no scene at all, which is one never drawn on.
+ *
+ * The question `emptyBlockReport` could not answer before 2026-09-13 (desk test): the reader deleted
+ * a page's whole annotation layer, the render came back blank, and the note kept the old digest,
+ * because an empty block over a note with sections was taken for the parse having lost them. An
+ * empty *scene* is the explanation the net was missing -- there is nothing to lose that the render,
+ * written from the same scene, does not also lack. Judged on what the device sent, not on what the
+ * digest or the backend made of it, so a parse that drops ink still trips the net.
+ */
+function isBlankUnit(pages: OcrPage[]): boolean {
+	return pages.every(({ scene }) => scene === null || (scene.layers.every((layer) => layer.strokes.length === 0) && (scene.highlights ?? []).length === 0 && (scene.images ?? []).length === 0 && !scene.text));
+}
+
 async function hasSectionsToLose(noteStore: NoteStore, row: SyncIndexRow | undefined): Promise<boolean> {
 	if (row === undefined) return false;
 	const content = await noteStore.read(row.notePath);
@@ -1040,6 +1074,10 @@ async function hasSectionsToLose(noteStore: NoteStore, row: SyncIndexRow | undef
  * note yet -- or one whose note is already empty -- writes the empty note and only reports it.
  * Refusing there would leave a freshly tagged, genuinely blank notebook with no note at all, a skip
  * notice on every run forever, and an OCR call per run spent on a page that has nothing to read.
+ *
+ * Nor is it refused for a unit that is *blank on the tablet* ({@link isBlankUnit}): the reader took
+ * every mark off, the render is already blank, and a note still quoting them would be the lie. The
+ * write goes through and the line says why the sections went, so it is still not silent.
  */
 async function emptyBlockReport(
 	noteStore: NoteStore,
@@ -1052,9 +1090,10 @@ async function emptyBlockReport(
 	if (params.digestOcr === null || ocrStatus === "unavailable" || ocrStatus === "failed") return null;
 	if (nothingReported) return null;
 
-	return (await hasSectionsToLose(noteStore, params.previous))
-		? { line: `${params.unit} would have been written with neither a digest nor a transcript; the note was left as it was`, refuse: true }
-		: { line: `${params.unit} was written with neither a digest nor a transcript`, refuse: false };
+	if (!(await hasSectionsToLose(noteStore, params.previous))) return { line: `${params.unit} was written with neither a digest nor a transcript`, refuse: false };
+	return params.blank
+		? { line: `${params.unit} was written with neither a digest nor a transcript: its pages are empty on the tablet now, so the old sections went with them`, refuse: false }
+		: { line: `${params.unit} would have been written with neither a digest nor a transcript; the note was left as it was`, refuse: true };
 }
 
 /**
@@ -1149,7 +1188,7 @@ async function writeUnit(
 	let withZotero = fields;
 	if (params.zotero !== undefined && deps.zotero !== undefined) {
 		const unit = params.zotero;
-		zotero = await deps.zotero.run({ docId: params.docId, visibleName: params.source, notePath, pages: unit.pages, md5: () => unit.md5() });
+		zotero = await deps.zotero.run({ docId: params.docId, visibleName: params.source, notePath, pages: unit.pages, covered: unit.covered, md5: () => unit.md5() });
 		// Rewritten only where there is something to add. A vault with no Zotero, a document that is
 		// not linked and a licence that lapsed all arrive here with nothing, and the note keeps the
 		// one write it already had.
@@ -1780,7 +1819,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
+		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -1832,10 +1871,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	 * skipped by construction: a run that walked only part of the enumeration has no business deciding
 	 * which units have disappeared.
 	 */
+	let documentIds: string[] | null = null;
 	const stopHere = async (): Promise<SyncResult> => {
 		await checkpoint();
 		return {
 			index: { rootHash: previousIndex.rootHash, mappings: previousIndex.mappings, rows },
+			documentIds,
 			stopped: true,
 			notesWritten,
 			unavailableOcrUnits,
@@ -1858,6 +1899,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// with the next cloud sync) and its own tags and page tags are still in its `.content`, so
 	// without this it would keep writing notes -- and the orphan sweep below would keep it alive.
 	const documents = entries.filter((entry) => entry.type === "DocumentType" && !isInTrash(entry, entriesById));
+	documentIds = documents.map((entry) => entry.id);
 
 	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop);
 	// Nothing has been written yet, so there is nothing to checkpoint -- but the caller still has to
@@ -1986,7 +2028,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			pageId: string | null,
 			pages: DigestPageInput[],
 			unit: string,
-		): Promise<{ markdown: string; ocr: OcrStatus | null; covered: number[]; pages: DigestPage[] }> => {
+		): Promise<{ markdown: string; ocr: OcrStatus | null; covered: number[]; pages: DigestPage[]; failed?: true }> => {
 			try {
 				const build = await buildDigest(
 					// The tick comes from the pipeline's page loop rather than from the backend: it
@@ -2006,9 +2048,16 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to build the digest for ${unit}, the note keeps its highlights`, error);
 				skipErrors.push(`failed to build the digest for ${unit}: ${errorText(error)}`);
-				return { markdown: "", ocr: null, covered: [], pages: [] };
+				// `failed` keeps the Zotero half from reading an empty page list as "everything erased".
+				return { markdown: "", ocr: null, covered: [], pages: [], failed: true };
 			}
 		};
+
+		// The source pages a digest spoke for: every page it was given, whether or not one produced an
+		// entry -- a page the reader cleared produces none and is still a page it looked at. None at
+		// all when the build failed, so an empty page list is never read as "everything erased".
+		const coveredPages = (input: DigestPageInput[] | null, digest: { failed?: true }): number[] =>
+			input === null || digest.failed ? [] : input.map((page) => page.sourceIndex);
 
 		// A tagged page's change-detection hash: its own `.rm` hash for handwritten pages, else the
 		// whole-doc hash -- for a PDF page (no `.rm`) or a blank page (never drawn), the page changes
@@ -2092,6 +2141,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				{
 					ocrPages: split.transcribe,
 					unitPages: ocrPages.length,
+					blank: isBlankUnit(ocrPages),
 					reused: store.reused,
 					pageContentHash: store.hashOf,
 					transcriptFingerprint: store.key,
@@ -2112,7 +2162,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					frontmatter: unitFrontmatter(tag, null),
 					previous: unit.writtenRow,
 					onPage: bar.page,
-					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, md5: zoteroMd5 },
+					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, covered: coveredPages(digestPages, digest), md5: zoteroMd5 },
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2210,6 +2260,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				{
 					ocrPages: split.transcribe,
 					unitPages: ocrPages.length,
+					blank: isBlankUnit(ocrPages),
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.pageHash === pageHash, ocrPages),
 					pdfBytes,
 					highlights,
@@ -2227,7 +2278,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					frontmatter: unitFrontmatter(tag, unit.pageId),
 					previous: unit.writtenRow,
 					onPage: bar.page,
-					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, md5: zoteroMd5 },
+					// One page of the document: what this digest lacks may be on the pages it was not given.
+					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, covered: coveredPages(digestPages, digest), md5: zoteroMd5 },
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2290,7 +2342,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings, zoteroNotices };
+	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings, zoteroNotices };
 }
 
 export interface ReTranscribeDeps {

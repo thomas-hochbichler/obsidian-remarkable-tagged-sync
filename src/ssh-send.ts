@@ -118,7 +118,7 @@ async function writeDocument(device: DeviceSendTarget, docId: string, document: 
 			pages: [newId()],
 			redirectionPageMap: [0],
 			sizeInBytes: String(document.bytes.length),
-			tags: [{ name: document.tag, timestamp: now }],
+			tags: [],
 			textAlignment: "justify",
 			textScale: 1,
 			zoomMode: "bestFit",

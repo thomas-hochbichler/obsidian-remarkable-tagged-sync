@@ -67,6 +67,16 @@ export interface ZoteroLink {
 	/** The MD5 Send uploaded, which is what a later match can recognise the file by without asking Zotero. */
 	readonly sentMd5?: string;
 	/**
+	 * The last sync listing that found this document on the tablet, tagged or not. Absent until one
+	 * has -- a listing right after a send can lag the upload (seen 2026-09-12).
+	 */
+	readonly seenAt?: string;
+	/**
+	 * The first listing that missed the document after {@link seenAt}: it left the tablet, and Send
+	 * or the tag-driven send may bring the paper back (§2.5). Cleared if a listing finds it again.
+	 */
+	readonly goneAt?: string;
+	/**
 	 * Present only on a link this plugin made **without asking** -- the hash row of §2.3.
 	 *
 	 * It is what keeps that row's "note says: matched by file hash" true for longer than the one sync
@@ -149,6 +159,8 @@ export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | n
 		library: "user",
 		...(asString(stored.sentAt) === undefined ? {} : { sentAt: asString(stored.sentAt) }),
 		...(asString(stored.sentMd5) === undefined ? {} : { sentMd5: asString(stored.sentMd5) }),
+		...(asString(stored.seenAt) === undefined ? {} : { seenAt: asString(stored.seenAt) }),
+		...(asString(stored.goneAt) === undefined ? {} : { goneAt: asString(stored.goneAt) }),
 		...(stored.matchedBy === "hash" ? { matchedBy: "hash" as const } : {}),
 		annotations: annotationsOf(stored.annotations),
 	};

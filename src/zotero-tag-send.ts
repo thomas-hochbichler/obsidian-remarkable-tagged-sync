@@ -8,7 +8,11 @@
  * tag is never taken off: items are the user's, and removing a tag would be the first write to an
  * item we only ever read.
  *
- * **No dialog, ever.** Send asks three things -- which PDF, which sync tag, pick the file -- and a
+ * **No sync tag on the tablet**, like Send (decided 2026-09-13, after the live test: a tag the user
+ * never chose turned up on the tablet with no setting to explain it). The paper is on the tablet;
+ * whether and when it syncs back is the reader's to say, by tagging it there.
+ *
+ * **No dialog, ever.** Send asks two things -- which PDF, pick the file -- and a
  * sync has nobody there to answer. Every one of those questions is a skip with a reason here, said
  * in the notice, and the manual command stays the place where questions get answered.
  *
@@ -18,26 +22,20 @@
  */
 
 import { readLocalFile } from "./desktop-files";
-import type { SyncIndexRow } from "./sync-engine";
 import type { ZoteroItem } from "./zotero-client";
 import { SEND_COMMAND, type ZoteroHost } from "./zotero-plugin";
 import {
 	DEFAULT_SEND_FOLDER,
 	documentsOnTablet,
 	pdfChoice,
-	SEND_NEEDS_A_TAG,
 	SEND_NEEDS_TRANSPORT,
 	sendState,
 	sendToTablet,
 	tabletName,
-	tagChoice,
 	type SendRoutes,
 	type SendTransport,
 } from "./zotero-send";
 import { zoteroSkipReason } from "./zotero-sync";
-
-/** Said when the vault maps several tags and has never said which one a tagged paper gets. */
-export const SEND_NEEDS_A_CHOICE = "Choose the sync tag for Zotero sends under Settings → Zotero — this vault maps several.";
 
 /** The per-item reasons, each the clause after `was not sent — `. Exported so a test can name them rather than match them. */
 export const NO_PDF_IN_ZOTERO = "it has no PDF in Zotero";
@@ -54,29 +52,13 @@ export function tagSendRoute(routes: SendRoutes, interactive: boolean): TagSendR
 	return interactive ? { kind: "use", transport: routes.ssh } : { kind: "later" };
 }
 
-/**
- * Which sync tag a tagged paper gets, with nobody to ask (§2.6).
- *
- * One mapped tag is the answer. Several are the setting's to decide, then the last manual send's;
- * a preference that has since been unmapped counts for nothing, like in {@link tagChoice}. With
- * neither the step does not guess: a document sent under the wrong tag lands in the wrong folder
- * for good, and the setting is one dropdown away.
- */
-export type TagSendTag = { readonly kind: "use"; readonly tag: string } | { readonly kind: "none"; readonly reason: string };
-
-export function tagSendTag(mapped: readonly string[], chosen: string | null, last: string | null): TagSendTag {
-	const preferred = [chosen, last].find((tag): tag is string => tag !== null && mapped.includes(tag)) ?? null;
-	const choice = tagChoice(mapped, preferred);
-	if (choice.kind === "none") return { kind: "none", reason: SEND_NEEDS_A_TAG };
-	if (choice.kind === "use") return { kind: "use", tag: choice.tag };
-	return choice.preferred === null ? { kind: "none", reason: SEND_NEEDS_A_CHOICE } : { kind: "use", tag: choice.preferred };
-}
-
-/** The one sentence for what went up, or `null` when nothing did. */
-export function tagSendNotice(names: readonly string[], tag: string): string | null {
+/** The one sentence for what went up, or `null` when nothing did. It ends with the one thing left to do, because nothing tagged the document. */
+export function tagSendNotice(names: readonly string[]): string | null {
 	if (names.length === 0) return null;
 	const quoted = names.map((name) => `"${name}"`).join(", ");
-	return names.length === 1 ? `1 Zotero paper is on your reMarkable, tagged ${tag}: ${quoted}.` : `${names.length} Zotero papers are on your reMarkable, tagged ${tag}: ${quoted}.`;
+	return names.length === 1
+		? `1 Zotero paper is on your reMarkable: ${quoted}. Tag it there to sync it back.`
+		: `${names.length} Zotero papers are on your reMarkable: ${quoted}. Tag them there to sync them back.`;
 }
 
 /** One sentence per paper that stayed behind, in the shape of §3.4.2's skip notice. */
@@ -84,7 +66,7 @@ export function tagSendSkipNotice(title: string, reason: string): string {
 	return `Zotero: "${title}" was not sent — ${reason}.`;
 }
 
-/** The whole step refused at once: the tag, the route, or Zotero itself. */
+/** The whole step refused at once: the route, or Zotero itself. */
 function stepSkipped(count: number, sendTag: string, reason: string): string {
 	return `Zotero: ${count} ${count === 1 ? "paper" : "papers"} tagged ${sendTag} not sent. ${reason}`;
 }
@@ -92,10 +74,10 @@ function stepSkipped(count: number, sendTag: string, reason: string): string {
 /**
  * The step, at the end of a sync. Never throws: it answers the sentences the run should say.
  *
- * After the reMarkable half and not before it, because what this decides on is the sync index, and
- * the index is only as fresh as the listing that just ran: a document the user deleted from the
- * tablet is an orphaned row *after* the run and still an active one before it. Before the run, a
- * paper deleted on purpose would come back one sync late.
+ * After the reMarkable half and not before it, because what this decides on is what the run's
+ * listing recorded on the links (`markListed`): a document the user deleted from the tablet is gone
+ * *after* the run and still present before it. Before the run, a paper deleted on purpose would
+ * come back one sync late.
  *
  * Zotero is asked first and the vault's own state only if there is something tagged -- a vault
  * with the tag on nothing gets no notice about routes or tags it has not set up. Items already on
@@ -116,8 +98,6 @@ export async function sendTaggedPapers(host: ZoteroHost, interactive: boolean): 
 	}
 	if (items.length === 0) return [];
 
-	const tag = tagSendTag(Object.keys(host.data.tagFolderMap), host.data.zotero.sendSyncTag, host.data.zotero.lastTag);
-	if (tag.kind === "none") return [stepSkipped(items.length, sendTag, tag.reason)];
 	const route = tagSendRoute(host.sendRoutes(), interactive);
 	if (route.kind === "none") return [stepSkipped(items.length, sendTag, SEND_NEEDS_TRANSPORT)];
 
@@ -125,8 +105,7 @@ export async function sendTaggedPapers(host: ZoteroHost, interactive: boolean): 
 	const skipped: string[] = [];
 	try {
 		const attachments = await client.attachments();
-		const rows: SyncIndexRow[] = Object.values(host.data.syncIndex.rows);
-		const onTablet = documentsOnTablet(rows, host.data.zoteroLinks, host.now());
+		const onTablet = documentsOnTablet(host.data.zoteroLinks, host.now());
 		const folder = host.data.zotero.folder.trim() === "" ? DEFAULT_SEND_FOLDER : host.data.zotero.folder;
 
 		for (const item of items) {
@@ -156,7 +135,7 @@ export async function sendTaggedPapers(host: ZoteroHost, interactive: boolean): 
 					// `pickFile` answers "no" without asking: the one dialog Send may open is the one this
 					// step may not (file header), so a PDF Zotero cannot hand over stays behind, named.
 					{ client, transport: route.transport, readFile: readLocalFile, pickFile: async () => null, now: () => host.now() },
-					{ attachment: pdf.attachment, item, folder, tag: tag.tag, links, replacing: state.vanished },
+					{ attachment: pdf.attachment, item, folder, links, replacing: state.vanished },
 				);
 				if (result === null) {
 					skipped.push(tagSendSkipNotice(title, NO_COPY_OF_PDF));
@@ -175,6 +154,6 @@ export async function sendTaggedPapers(host: ZoteroHost, interactive: boolean): 
 		skipped.push(`Zotero: papers tagged ${sendTag} were not all sent — ${zoteroSkipReason(error)}. The next sync tries again.`);
 	}
 
-	const notice = tagSendNotice(sent, tag.tag);
+	const notice = tagSendNotice(sent);
 	return notice === null ? skipped : [notice, ...skipped];
 }

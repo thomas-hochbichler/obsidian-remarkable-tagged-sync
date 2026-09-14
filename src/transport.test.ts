@@ -81,7 +81,7 @@ describe("sending a PDF through the cloud", () => {
 		const session = vi.fn(async () => "token");
 		const cloud = cloudWith({ isConnected: () => true, session });
 
-		expect(await cloud.putPdf({ visibleName: "Prompting", bytes: new Uint8Array([37]), folder: "Zotero", tag: "#papers" })).toEqual({ docId: "doc-1" });
+		expect(await cloud.putPdf({ visibleName: "Prompting", bytes: new Uint8Array([37]), folder: "Zotero" })).toEqual({ docId: "doc-1" });
 		expect(session).toHaveBeenCalled();
 	});
 });

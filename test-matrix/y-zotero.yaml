@@ -173,6 +173,20 @@
       file: src/zotero-client.test.ts
       test: "writing annotations > reports a conflict rather than trying harder when the item changed underneath"
 
+    - id: Y3.10
+      scenario: An annotation whose highlight was erased on the tablet is removed
+      expect: "`PATCH` with `deleted: true` under the version it was read at -- Zotero's trash on both APIs. Never `DELETE`: on the local API that is a permanent erase, and the trash is what lets the user take it back"
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > trashes an annotation rather than erasing it, under the version it read"
+
+    - id: Y3.11
+      scenario: The annotation changed in Zotero between the read and the trash
+      expect: "`conflict`, as for a patch: an annotation the user just touched is theirs to keep"
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "writing annotations > reports a conflict on the way to the trash, like a patch would"
+
 - feature: Y4
   name: Two connections, one client
   code: src/zotero-client.ts
@@ -220,9 +234,16 @@
       file: src/zotero-client.test.ts
       test: "two connections, one client > skips a patch whose connection is gone rather than sending its version to the other one"
 
+    - id: Y4.9
+      scenario: A trash, with both connections up or with the source connection gone
+      expect: Routed like a patch, for the same reason -- to the connection whose version it carries, and refused rather than re-routed when that one is gone
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > sends a trash to the connection whose version it is holding, and nowhere else"
+
     - id: Y4.7
       scenario: The settings status line
-      expect: Connected via desktop / via web / via desktop and web / not connected, in the spec's own words (§2.1)
+      expect: Connected via desktop / via web / via desktop and web / not connected, in the spec's own words (§2.1); with both up the line adds that the desktop app is asked first and zotero.org answers when it is closed
       layer: unit
       file: src/zotero-client.test.ts
       test: "two connections, one client > says which connections answered, in the words the settings line uses"
@@ -662,11 +683,18 @@
       test: "who may use the Pro half of Zotero > gives the desktop app back the moment a licence does, from the settings that were left alone"
 
     - id: Y9.4
-      scenario: Only an API key, only the desktop toggle, or neither
+      scenario: Only zotero.org (switch and key), only the desktop toggle, or neither
       expect: Each connection alone counts as set up; neither does not (§2.1)
       layer: unit
       file: src/zotero-settings.test.ts
       test: "what counts as set up > takes either connection alone, and neither as nothing"
+
+    - id: Y9.16
+      scenario: An API key pasted, the zotero.org switch left off (desk test 2026-09-13)
+      expect: Not a connection, no client, and no zotero.org link in a note. The switch is what says whether anything goes over the internet; the key is kept for the day it is switched on
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "what counts as set up > counts a key with zotero.org switched off as nothing"
 
     - id: Y9.5
       scenario: A buyer with one connection configured
@@ -745,7 +773,7 @@
     - id: Y10.1
       tier: free
       scenario: A free vault opens the settings
-      expect: The section is headed "Zotero" like anyone's; the API key field is open, the desktop-app toggle is shown disabled as "(Pro)", and the Connection row says which half is Pro. Hidden, the Pro half would be a feature nobody could decide to buy -- the same rule the transport dropdown and the frontmatter toggle follow
+      expect: The section is headed "Zotero" like anyone's, with one heading per connection below it -- "Zotero cloud" then "Zotero local"; the zotero.org switch is open, the desktop-app toggle is shown disabled as "(Pro)", and the Connection row says which half is Pro. Hidden, the Pro half would be a feature nobody could decide to buy -- the same rule the transport dropdown and the frontmatter toggle follow
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > opens zotero.org to a free user, shows the desktop app shut, and says which half is Pro"
@@ -753,7 +781,7 @@
     - id: Y10.2
       tier: pro
       scenario: A buyer opens the settings
-      expect: The desktop-app row loses its "(Pro)" and both connections can be set up
+      expect: The desktop-app row loses its "(Pro)" and both switches are open
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > drops the (Pro) and opens both connections for a buyer"
@@ -769,7 +797,7 @@
     - id: Y10.4
       tier: pro
       scenario: Neither connection is set up yet
-      expect: '"Not connected.", inside the row''s own description rather than as a loose note between two cards'
+      expect: '"Not connected." in the theme''s error colour, inside the row''s own description rather than as a loose note between two cards'
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > says nothing is connected until one of the two is set up"
@@ -801,7 +829,7 @@
     - id: Y10.8
       tier: pro
       scenario: A configured connection answers
-      expect: The "Checking…" line is replaced by what actually answered. What is *configured* is not the same question as what *answered* -- a key that is set up and rejected has to read as "not connected", which is the state that sends the user to fix it
+      expect: The uncoloured "Checking…" line is replaced by what actually answered, in the theme's success colour. What is *configured* is not the same question as what *answered* -- a key that is set up and rejected has to read as "not connected", which is the state that sends the user to fix it
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > replaces the line with what actually answered"
@@ -809,10 +837,34 @@
     - id: Y10.9
       tier: pro
       scenario: The configured connection does not answer
-      expect: '"Not connected." -- `status()` answers rather than throwing, which is why the line has no second arm'
+      expect: '"Not connected." in the error colour -- `status()` answers rather than throwing, which is why the line has no second arm'
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > says not connected when the connection that is set up does not answer"
+
+    - id: Y10.10
+      tier: pro
+      scenario: The zotero.org switch is off, then on (desk test 2026-09-13)
+      expect: 'Off, the key row is hidden -- not removed, so a pasted key stays for the day the switch comes back on. On, the "Zotero cloud" heading holds the switch and the key row, "Zotero local" the desktop switch, and "Zotero on the tablet" the sending rows. One switch per connection, so whether anything goes over the internet is one visible thing rather than "is the key field empty"'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > shows the key row only while zotero.org is switched on, under its own heading"
+
+    - id: Y10.11
+      tier: pro
+      scenario: The zotero.org switch is flipped on
+      expect: Saved, the key row shown, and the status line asked again -- it is now about a different set of connections. No redraw, unlike the desktop switch, so the page does not jump
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > saves the cloud switch, shows the key row and asks the status line again"
+
+    - id: Y10.12
+      tier: pro
+      scenario: A key is stored but the zotero.org switch is off
+      expect: '"Not connected.", and no request goes to zotero.org. The key is kept for the day the switch is turned on; until then nothing leaves the machine, which is what the switch is for'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > reads a key with zotero.org switched off as not connected, without asking zotero.org"
 
 - feature: Y11
   name: Where a digest entry sits on the source page
@@ -1180,7 +1232,7 @@
       test: "the page label > is empty where the document does not number its pages"
 
 - feature: Y14
-  name: Add and refresh, never delete
+  name: Add and refresh, trash only what is still ours
   code: src/zotero-writeback.ts
   tier: pro
   scenarios:
@@ -1297,11 +1349,74 @@
       test: "what is not written at all > never touches an annotation that is not one of ours"
 
     - id: Y14.16
-      scenario: A highlight the reader removed on the tablet
-      expect: 'Its annotation stays where it is. "Never delete" costs no code: it is simply no longer a digest entry (§3.3)'
+      scenario: A highlight the reader erased on the tablet, untouched in Zotero
+      expect: Planned for the trash under the version it was read at, and to be remembered as deleted so it is never recreated (§3.3)
       layer: unit
       file: src/zotero-writeback.test.ts
-      test: "what is not written at all > leaves an annotation in place when its highlight is gone from the tablet"
+      test: "a highlight the reader erased on the tablet > is trashed while it still reads exactly as we wrote it"
+
+    - id: Y14.26
+      scenario: The erased highlight's annotation carries a comment the user wrote in Zotero
+      expect: Not trashed, and the field is remembered as theirs. Erasing the ink does not take back what they built on it in Zotero
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > stays when the user has built on it in Zotero, and is remembered as theirs"
+
+    - id: Y14.27
+      scenario: The erased highlight's annotation had a field surrendered on an earlier sync
+      expect: Not trashed. A surrender is for good, whether or not the field still differs today
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > stays when a field was already surrendered on an earlier sync"
+
+    - id: Y14.28
+      scenario: Erased on the tablet and already gone from Zotero
+      expect: Remembered as deleted, no request. Nothing is left to trash
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > is only remembered as gone when Zotero no longer has it either"
+
+    - id: Y14.29
+      scenario: The sync after the trash
+      expect: Neither trashed again nor recreated -- the `deleted` record answers both, as it does for a deletion the user made in Zotero
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > is not trashed twice, or recreated, once it is in the trash"
+
+    - id: Y14.30
+      scenario: A highlight still on the tablet, on a page whose text layer could not be read
+      expect: Skipped, not trashed. "Not in the digest" and "not offered to Zotero" are different facts, and only the first means erased
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > is told apart from a highlight that is still there but could not be offered"
+
+    - id: Y14.31
+      scenario: The digest was not given the annotation's page -- a failed build, or a page-scoped unit for another page
+      expect: Nothing is trashed and nothing is remembered. What the digest never saw is not evidence of anything erased
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > is never decided on a page the digest was not given"
+
+    - id: Y14.34
+      scenario: The reader erased the last highlight on a page, so the page has no digest entry at all
+      expect: Trashed. The page was given to the digest, so its silence is evidence -- otherwise the last highlight on any page could never be taken back. Live 2026-09-13 on a page-scoped unit, where a whole-document guard blocked exactly this
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > is decided on a page the digest was given even when that page has nothing left on it"
+
+    - id: Y14.32
+      scenario: Carrying out a trash
+      expect: The client is asked with the annotation's own version and source; the record is stored as deleted and counted as written
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > records a trashed annotation as deleted, so it is never recreated"
+
+    - id: Y14.33
+      scenario: Zotero answers 412 to the trash
+      expect: Nothing recorded, not counted as written. The user touched it in the window between read and write, and the next sync reads that edit and keeps the annotation for good
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > leaves an annotation alone when it changed under us on the way to the trash"
 
     - id: Y14.17
       scenario: A batch of new annotations
@@ -1770,34 +1885,6 @@
       file: src/zotero-send.test.ts
       test: 'which PDF of an item is meant > is nothing for an item whose attachments are all somebody else''s'
 
-    - id: Y19.11
-      scenario: 'A vault with exactly one mapped tag'
-      expect: 'No question (§2.4)'
-      layer: unit
-      file: src/zotero-send.test.ts
-      test: 'which tag the document is sent with > asks nothing where the vault maps exactly one tag'
-
-    - id: Y19.12
-      scenario: 'A vault with two, and a remembered last choice'
-      expect: 'A question, with last time''s answer offered first'
-      layer: unit
-      file: src/zotero-send.test.ts
-      test: 'which tag the document is sent with > asks, and offers last time''s answer first'
-
-    - id: Y19.13
-      scenario: 'A remembered tag the user has since unmapped'
-      expect: 'Forgotten. Offering it would send the document with a tag that routes to no folder at all'
-      layer: unit
-      file: src/zotero-send.test.ts
-      test: 'which tag the document is sent with > forgets last time''s answer once that tag is no longer mapped'
-
-    - id: Y19.14
-      scenario: 'A vault that maps no tags at all'
-      expect: 'Nothing to offer -- the command refuses (`SEND_NEEDS_A_TAG`) rather than sending. Not in the spec: a document sent without a sync tag is one the plugin never looks at again'
-      layer: unit
-      file: src/zotero-send.test.ts
-      test: 'which tag the document is sent with > has nothing to offer a vault that maps no tags at all'
-
     - id: Y19.15
       scenario: 'A vault with both the cloud and a paired tablet'
       expect: 'The cloud. Not about speed: the SSH route ends in a restart of the tablet''s reading app, which closes whatever the reader has open'
@@ -1820,32 +1907,25 @@
       test: 'which route the send takes > is nothing for a vault with neither'
 
     - id: Y19.18
-      scenario: A linked document with an active row in the sync index
-      expect: Counted as still on the tablet. §2.5 needs that answer before it can offer *Send another copy*, and the last sync is the cheapest place it exists -- listing the account costs a round trip on the cloud and a whole index pass over SSH
+      scenario: A linked document the last sync's listing found
+      expect: Counted as still on the tablet. §2.5 needs that answer before it can offer *Send another copy*, and the last sync's listing is the cheapest place it exists -- listing the account costs a round trip on the cloud and a full index-and-hash pass over SSH, in front of a person who pressed Send. Judged by the listing and not by the index rows since 2026-09-13, because a document sent without a sync tag never earns a row
       layer: unit
       file: src/zotero-send.test.ts
-      test: "what is still on the tablet > counts a document the last sync saw"
+      test: "what is still on the tablet > counts a document the last listing found"
 
     - id: Y19.19
-      scenario: A linked document whose row was orphaned
-      expect: Not counted. An orphaned row is exactly what a document leaving the device looks like, and §2.5 then replaces the mapping rather than asking
+      scenario: A linked document a listing found once and the last listing missed
+      expect: "Not counted: that is a document leaving the tablet, and §2.5 then replaces the mapping rather than asking. Deleted today means back on the next sync, not tomorrow (asked in the desk test of 2026-09-13)"
       layer: unit
       file: src/zotero-send.test.ts
-      test: "what is still on the tablet > does not count one whose row was orphaned -- that is a document that left the device"
+      test: "what is still on the tablet > does not count one a listing has missed since -- that is a document that left the tablet"
 
     - id: Y19.20
-      scenario: A paper sent, and no sync has listed its document yet
-      expect: Counted, so the user is asked. Without this rule the first copy reads as vanished, its link is dropped, and two documents on the tablet share one mapping between them
+      scenario: A paper sent within the day, and no listing has found its document yet
+      expect: "Counted, so the user is asked. Without this rule the first copy reads as vanished, its link is dropped, and two documents on the tablet share one mapping between them. Seen live 2026-09-12: a listing five seconds after an upload did not have the document -- the cloud's root lagged -- and counting by 'sent since the last sync' put a second copy on the tablet per run"
       layer: unit
       file: src/zotero-send.test.ts
-      test: "what is still on the tablet > counts one that was sent and no sync has listed yet"
-
-    - id: Y19.21
-      scenario: A paper sent hours ago, several syncs completed since, and its document still in no row
-      expect: "Still counted. Seen live 2026-09-12: a listing five seconds after an upload did not have the document -- the cloud's root lagged. Counting by 'sent since the last sync' read that as vanished and the tag-driven send put a second copy on the tablet per run"
-      layer: unit
-      file: src/zotero-send.test.ts
-      test: "what is still on the tablet > keeps counting one that was sent, synced past, and has not turned up within the day"
+      test: "what is still on the tablet > counts one that was sent and no listing has found yet, for a day"
 
     - id: Y19.22
       scenario: A paper sent more than a day ago that no listing has ever found
@@ -1854,12 +1934,12 @@
       file: src/zotero-send.test.ts
       test: "what is still on the tablet > lets go of one that no listing has found in a day"
 
-    - id: Y19.23
-      scenario: A paper sent whose row has since been orphaned
-      expect: Not counted -- the user deleted it on the tablet. The send replaces the mapping (§2.5)
+    - id: Y19.24
+      scenario: A sync's listing, laid over the links -- one found, one found before and missing now, one sent minutes ago and not found, one gone that is back, one gone and still missing, one declined question
+      expect: "`seenAt` stamped on the found one; `goneAt` stamped on the one that was found before; the fresh send left alone (the day's grace, Y19.20, is its answer); the returned one seen again with `goneAt` cleared; the one already gone keeps its first miss; the declined marker is not a link and is left as it is. Every document the listing had, tagged or not, and no link added or dropped"
       layer: unit
       file: src/zotero-send.test.ts
-      test: "what is still on the tablet > does not count a sent document once a sync has seen it leave"
+      test: "what is still on the tablet > records what a listing found, what it has stopped finding, and what came back"
 
 - feature: Y20
   name: Sending, and what it records
@@ -1924,10 +2004,10 @@
 
     - id: Y20.9
       scenario: 'A send that goes through'
-      expect: 'The transport gets the name, the folder and the tag, and nothing else'
+      expect: 'The transport gets the name and the folder, and nothing else -- no sync tag (decided 2026-09-13 after the live test: a tag put on by the plugin is one the reader never chose, and with one mapped tag it went on without a question). The reader tags the document on the tablet when they want it back'
       layer: unit
       file: src/zotero-send.test.ts
-      test: 'sending > hands the transport the name, the folder and the tag'
+      test: 'sending > hands the transport the name and the folder, and no tag'
 
     - id: Y20.10
       scenario: 'The link written afterwards (§2.4)'
@@ -2033,11 +2113,11 @@
       test: 'putting a PDF on the tablet > writes the three files xochitl needs, into the folder'
 
     - id: Y21.10
-      scenario: 'The sync tag'
-      expect: 'In `.content`, in the shape a cloud upload has. Without it the reader annotates a paper the plugin never looks at again'
+      scenario: 'The tags of a sent document'
+      expect: 'None: `.content` carries the empty list xochitl writes for an untagged document, in the shape a cloud upload has. The reader tags it on the tablet when they want it back (2026-09-13)'
       layer: unit
       file: src/ssh-send.test.ts
-      test: 'putting a PDF on the tablet > carries the sync tag, in the shape a cloud upload has'
+      test: 'putting a PDF on the tablet > carries no tag, in the shape a cloud upload has'
 
     - id: Y21.11
       scenario: 'A connection that drops part-way through a send'
@@ -2102,7 +2182,7 @@
   scenarios:
     - id: Y22.1
       scenario: 'An account that already has a Zotero folder'
-      expect: 'That one, by name. No folder is created'
+      expect: 'That one, by name. No folder is created, and the upload carries an empty tag list -- no sync tag is put on (2026-09-13)'
       layer: unit
       file: src/cloud-send.test.ts
       test: 'the cloud''s Zotero folder > is the one that is there, found by its name'
@@ -2245,54 +2325,12 @@
       file: src/zotero-send-dialog.test.ts
       test: 'choosing the PDF > names a PDF with no filename by its Zotero title'
 
-    - id: Y23.12
-      scenario: 'A vault with one mapped tag'
-      expect: 'No tag step (§2.4)'
-      layer: unit
-      file: src/zotero-send-dialog.test.ts
-      test: 'choosing the tag > is not asked where the vault maps one tag'
-
-    - id: Y23.13
-      scenario: 'A vault with two, and a remembered choice'
-      expect: 'Both offered, last time''s selected'
-      layer: unit
-      file: src/zotero-send-dialog.test.ts
-      test: 'choosing the tag > offers the mapped tags, with last time''s answer selected'
-
-    - id: Y23.14
-      scenario: 'The user picking the other tag'
-      expect: 'That one is what the send carries'
-      layer: unit
-      file: src/zotero-send-dialog.test.ts
-      test: 'choosing the tag > sends with the tag the user picked instead'
-
     - id: Y23.15
       scenario: 'A dialog dismissed with Escape or the background'
       expect: 'Nothing chosen. Escape, the background and a Cancel button are one path in Obsidian, so the answer starts at nothing and only a choice moves it -- the rule `confirm-modal` already follows'
       layer: unit
       file: src/zotero-send-dialog.test.ts
       test: 'closing the dialog > answers nothing when it is dismissed'
-
-    - id: Y23.16
-      scenario: The context action on a note that names its paper, in a vault with one mapped tag
-      expect: No dialog at all. Everything the dialog asks is already answered, and a window showing somebody a single answer they cannot change is not a question
-      layer: unit
-      file: src/zotero-send-dialog.test.ts
-      test: "the context action, which already knows the paper and the PDF > opens nothing where there is nothing left to ask"
-
-    - id: Y23.17
-      scenario: The same action in a vault with two mapped tags
-      expect: Only the tag step, with the last-used tag selected. The paper and the PDF are known; the tag is the one thing that is not
-      layer: unit
-      file: src/zotero-send-dialog.test.ts
-      test: "the context action, which already knows the paper and the PDF > asks only the tag where there is a choice of them, offering the last one first"
-
-    - id: Y23.18
-      scenario: The last-used tag is not mapped any more
-      expect: The first mapped tag instead. Pre-selecting an unmapped one would send the document with a tag that routes nowhere
-      layer: unit
-      file: src/zotero-send-dialog.test.ts
-      test: "the context action, which already knows the paper and the PDF > falls back to the first mapped tag where the last one is not mapped any more"
 
 - feature: Y24
   name: The Zotero send settings
@@ -2341,26 +2379,19 @@
       file: src/settings-tab.test.ts
       test: "the Zotero section > takes the send tag the user typed, and an emptied one as off"
 
-    - id: Y24.7
-      scenario: A vault mapping one tag, then one mapping two
-      expect: "The *Sync tag for Zotero sends* dropdown appears only with two or more mapped tags, offers them sorted behind a *Choose a tag…* entry, and a pick is saved. With one mapped tag it is the one, and a dropdown with one entry is a question already answered"
-      layer: unit
-      file: src/settings-tab.test.ts
-      test: "the Zotero section > offers the sync tag for Zotero sends only where the vault maps several, and saves the pick"
-
-    - id: Y24.8
-      scenario: Two mapped tags, the last manual send used one of them, nothing chosen yet
-      expect: "That tag pre-selected, and no *Choose a tag…* entry. It is what the step will use until the setting is made, so it is shown rather than left blank"
-      layer: unit
-      file: src/settings-tab.test.ts
-      test: "the Zotero section > pre-selects the last manual send's tag until a choice is made"
-
     - id: Y24.9
       scenario: "The send tag row in a vault that has never touched it (§2.6)"
       expect: "Empty -- the step is opt-in -- and the sentence names what naming a tag does: every sync, the automatic ones too, will put papers on the tablet. *Sync now* has meant 'read the tablet, write the vault'; a sync that pushes to the tablet is something the user has to have asked for"
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > starts the send tag empty and says what naming one does"
+
+    - id: Y24.10
+      scenario: "The API key is changed to a wrong one while the settings tab is open (desk test 2026-09-13)"
+      expect: "The connection line is asked again once the key settles and reads \"Not connected.\" -- not the \"Connected via web.\" it showed at draw time. A slower, stale answer never lands on top of a newer one"
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > asks again when the key changes, so a wrong key reads as not connected at once"
 
 # The wiring (spec §3.4, §5). Three features, and the order between them is the whole of §3.4.1: the
 # note is on disk before anything here talks to Zotero, so every way a library can fail costs the
@@ -2827,19 +2858,12 @@
       file: src/zotero-plugin.test.ts
       test: 'what Send refuses before it opens anything > refuses a vault with no route to a tablet'
 
-    - id: Y29.8
-      scenario: Send in a vault that maps no reMarkable tag to a folder
-      expect: Refused. A document sent without a sync tag is annotated once and never looked at again -- sending it would keep the promise of the command and break the promise of the loop
-      layer: unit
-      file: src/zotero-plugin.test.ts
-      test: 'what Send refuses before it opens anything > refuses a vault that maps no tag at all'
-
     - id: Y29.9
       scenario: A paper chosen in the dialog
-      expect: Uploaded into the tablet folder with the sync tag, the link written, the tag remembered, and one sentence saying what to do next
+      expect: Uploaded into the tablet folder without a sync tag, the link written, and one sentence saying what to do next -- tag it there, annotate it, then sync. Untagged since 2026-09-13, when the live test turned up a tag the user never chose on the tablet
       layer: unit
       file: src/zotero-plugin.test.ts
-      test: 'sending a paper > puts it in the tablet folder, tagged, and records the link'
+      test: 'sending a paper > puts it in the tablet folder, untagged, and records the link'
 
     - id: Y29.10
       scenario: The folder setting emptied
@@ -3108,40 +3132,12 @@
       file: src/zotero-tag-send.test.ts
       test: "which route a tagged paper takes > has no route for a vault with neither"
 
-    - id: Y31.4
-      scenario: "One mapped tag, whatever the setting and the last send say"
-      expect: "That tag. One is not a question"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "which sync tag a tagged paper gets > is the one mapped tag, whatever the settings say"
-
-    - id: Y31.5
-      scenario: "Several mapped tags"
-      expect: "The setting's choice, then the last manual send's; a preference that has since been unmapped counts for nothing, as in `tagChoice`"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "which sync tag a tagged paper gets > is the setting's choice among several, then the last manual send's"
-
-    - id: Y31.6
-      scenario: "Several mapped tags and no preference that is still mapped"
-      expect: "No guess: `SEND_NEEDS_A_CHOICE`. A document sent under the wrong tag lands in the wrong folder for good, and the setting is one dropdown away"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "which sync tag a tagged paper gets > does not guess between several with no preference left"
-
-    - id: Y31.7
-      scenario: "No mapped tag at all"
-      expect: "`SEND_NEEDS_A_TAG`, the same refusal Send makes"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "which sync tag a tagged paper gets > has nothing for a vault that maps no tag"
-
     - id: Y31.8
       scenario: "An unlinked paper carrying the send tag, cloud connected, one mapped tag"
-      expect: "Sent through the same pipeline as Send: the tablet folder, the item's title, the sync tag, `sentAt` and `sentMd5` on the link, one save, the status line naming the route, and the one-sentence notice"
+      expect: "Sent through the same pipeline as Send: the tablet folder, the item's title, `sentAt` and `sentMd5` on the link, one save, the status line naming the route, and the one-sentence notice -- which ends by saying to tag it on the tablet. **No sync tag on the document** (decided 2026-09-13 after the live test, for Send and this step alike): a tag the user never chose turned up on the tablet with no setting to explain it. Whether the paper syncs back is the reader's to say, by tagging it there"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > goes to the tablet through the same pipeline as Send, and the link is recorded"
+      test: "a paper tagged in Zotero, at the start of a sync > goes to the tablet through the same pipeline as Send, untagged, and the link is recorded"
 
     - id: Y31.9
       scenario: "Two tagged papers"
@@ -3229,31 +3225,10 @@
 
     - id: Y31.21
       scenario: "A tagged paper in a vault that maps no tag"
-      expect: "Nothing sent, one notice counting the papers and carrying `SEND_NEEDS_A_TAG`"
+      expect: "Sent, untagged. Nothing here puts a tag on, so the vault's tag mapping is none of this step's business"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > sends nothing from a vault that maps no tag, and says why"
-
-    - id: Y31.22
-      scenario: "Several mapped tags and the setting made"
-      expect: "The setting's tag on the document"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > uses the setting's sync tag where the vault maps several"
-
-    - id: Y31.23
-      scenario: "Several mapped tags, no setting, a last manual send"
-      expect: "The last send's tag, until the setting is made"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > falls back to the last manual send's tag until the setting is made"
-
-    - id: Y31.24
-      scenario: "Several mapped tags and no preference"
-      expect: "Nothing sent, one notice pointing at the setting"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > sends nothing between several tags with no preference, and points at the setting"
+      test: "when the whole step stands down > sends in a vault that maps no tag, since the tag is the reader's to put on"
 
     - id: Y31.25
       scenario: "A tagged paper in a vault with no route to a tablet"
@@ -3298,7 +3273,7 @@
       test: "when the whole step stands down > does nothing in a vault that has never named a send tag"
 
     - id: Y31.31
-      scenario: "Two tagged papers and no mapped sync tag"
+      scenario: "Two tagged papers and no route to a tablet"
       expect: "One notice, counting both: `2 papers tagged … not sent`. The step stands down as a whole, and says for how many"
       layer: unit
       file: src/zotero-tag-send.test.ts
@@ -3324,3 +3299,39 @@
       layer: unit
       file: src/zotero-tag-send.test.ts
       test: "a paper tagged in Zotero, at the start of a sync > says the step did not finish when Zotero fails after the listing"
+
+# The marker's colour in the note (F9 revised 2026-09-13). Found in the desk test: Zotero showed six
+# colours, the digest showed every mark yellow. One table -- `highlight-color.ts` -- names the colour
+# for both, so the note and the library cannot disagree.
+- feature: Y32
+  name: The marker's colour in the digest
+  code: src/digest-builder.ts
+  tier: free
+  scenarios:
+    - id: Y32.1
+      scenario: A highlight the device recorded in colour
+      expect: 'A `<mark>` carrying the name of the Zotero colour of the same hue (`tagged-sync-hl-green`, `-magenta`, `-gray`, …), painted by the plugin''s own `styles.css` -- no snippet to install, and a theme may override it. Same table as the annotation written into Zotero, so the Paper Pro''s pastel green is green in both places'
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — highlight quotes > paints a coloured mark with the name of the Zotero colour it becomes"
+
+    - id: Y32.2
+      scenario: A pen mark, or a marker recorded without a colour
+      expect: 'Markdown''s own `==...==`, exactly as before: the colour is not known to be anything, and Obsidian''s default mark says so'
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — highlight quotes > keeps Markdown's own mark for a highlight with no recorded colour"
+
+    - id: Y32.3
+      scenario: A coloured mark over text that carries `<` or `&`
+      expect: 'The text inside the mark is escaped, the mark itself is not. Escaping the finished line would turn the `<mark>` into text; not escaping the run would let a tag in the document open raw HTML (the XML-tag case that once stopped the whole digest)'
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — highlight quotes > escapes the text inside a coloured mark and leaves the mark itself alone"
+
+    - id: Y32.4
+      scenario: The runs cover the whole quote (the 75 % rule)
+      expect: 'No mark and so no colour: the rule is about the marks, and a quote that is all mark is the highlight. Colour would need a mark to sit on, and a striped slab in green is still a striped slab'
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — highlight quotes > drops the colour with the marks when the runs cover the whole quote"

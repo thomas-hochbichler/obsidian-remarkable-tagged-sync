@@ -10,7 +10,7 @@ vi.mock("rmapi-js", () => ({ GenerationError: class GenerationError extends Erro
 
 const { GenerationError } = (await import("rmapi-js")) as unknown as { GenerationError: new () => Error };
 
-const document: SendDocument = { visibleName: "Best Practices für Prompting", bytes: new Uint8Array([37, 80, 68, 70]), folder: "Zotero", tag: "#papers" };
+const document: SendDocument = { visibleName: "Best Practices für Prompting", bytes: new Uint8Array([37, 80, 68, 70]), folder: "Zotero" };
 
 function folder(overrides: Partial<Entry> = {}): Entry {
 	return { id: "f-1", hash: "h", visibleName: "Zotero", lastModified: "0", pinned: false, parent: "", type: "CollectionType", tags: [] } as Entry;
@@ -32,7 +32,8 @@ describe("the cloud's Zotero folder", () => {
 		await sendToCloud(api({ listItems: async () => [folder()], putFolder, putPdf }), document);
 
 		expect(putFolder).not.toHaveBeenCalled();
-		expect(putPdf).toHaveBeenCalledWith(document.visibleName, document.bytes, { parent: "f-1", tags: ["#papers"], refresh: false });
+		// No tag (2026-09-13): the reader tags the document on the tablet.
+		expect(putPdf).toHaveBeenCalledWith(document.visibleName, document.bytes, { parent: "f-1", tags: [], refresh: false });
 	});
 
 	it("is created where the account has none", async () => {

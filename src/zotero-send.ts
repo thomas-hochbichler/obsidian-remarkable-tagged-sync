@@ -23,8 +23,9 @@ export interface SendDocument {
 	readonly bytes: Uint8Array;
 	/** The tablet folder, by name. Created when it is not there; looked up by name, never renamed (§2.4). */
 	readonly folder: string;
-	/** The sync tag, so the document comes back the moment it is annotated. */
-	readonly tag: string;
+	// No sync tag, on purpose (decided 2026-09-13, after the live test): a tag put on by the plugin is
+	// one the reader never chose, and with one mapped tag it went on without a question. The paper is
+	// on the tablet; the reader tags it there when they want it back, like every other document.
 }
 
 export interface SendTransport {
@@ -36,15 +37,6 @@ export interface SendTransport {
 
 /** Said when the vault has no route to a tablet at all (§2.4, last line). */
 export const SEND_NEEDS_TRANSPORT = "Send needs the reMarkable cloud connection or an SSH-paired tablet.";
-
-/**
- * Said when the vault has no mapped tag to send *with*.
- *
- * Not in the spec, and it is the one refusal this module adds. A document sent without a sync tag is
- * a document the plugin will never look at again: the reader annotates it, and nothing comes back.
- * Sending it anyway would keep the promise of the command and break the promise of the loop.
- */
-export const SEND_NEEDS_A_TAG = "Map a reMarkable tag to a vault folder first — a document sent without one never syncs back.";
 
 /** The default tablet folder, and the name the setting starts at. */
 export const DEFAULT_SEND_FOLDER = "Zotero";
@@ -130,25 +122,6 @@ export function pdfChoice(attachments: readonly ZoteroAttachment[], itemKey: str
 	return { kind: "ask", options: mine };
 }
 
-/** What the send dialog does about the sync tag (§2.4): nothing to ask, one answer, or a question. */
-export type TagChoice =
-	| { readonly kind: "none" }
-	| { readonly kind: "use"; readonly tag: string }
-	| { readonly kind: "ask"; readonly options: string[]; readonly preferred: string | null };
-
-/**
- * One mapped tag is not a question. Several are, and the last answer is offered first.
- *
- * `last` is only a preference: a tag the user has since unmapped is not in the list any more, and
- * pre-selecting it would send the document with a tag that routes nowhere.
- */
-export function tagChoice(mapped: readonly string[], last: string | null): TagChoice {
-	const options = [...mapped].sort((a, b) => (a < b ? -1 : 1));
-	if (options.length === 0) return { kind: "none" };
-	if (options.length === 1) return { kind: "use", tag: options[0] };
-	return { kind: "ask", options, preferred: last !== null && options.includes(last) ? last : null };
-}
-
 /**
  * What this attachment already is on the tablet (§2.5).
  *
@@ -174,48 +147,62 @@ export function sendState(links: StoredZoteroLinks, attachmentKey: string, onTab
 	return { present, vanished };
 }
 
-/** As much of a sync-index row as "is this document still there?" needs. */
-export interface SyncedDocument {
-	readonly docId: string;
-	readonly status: "active" | "orphaned";
+/**
+ * What the run's listing says about the linked documents: the ones it found are marked seen, the
+ * ones it had found before and finds no more are marked gone.
+ *
+ * Read off the listing every sync already makes rather than by asking again, and off the *whole*
+ * listing rather than the index: a document sent without a sync tag (which is every document Send
+ * puts there, since 2026-09-13) never earns an index row, so the rows cannot say whether it is
+ * still there. A link never seen is left alone -- the listing right after a send can lag the upload
+ * (seen live 2026-09-12: uploaded 08:23:50, absent at 08:23:55), and {@link documentsOnTablet} gives
+ * such a link a day. A gone link that turns up again is seen again: the user put it back.
+ */
+export function markListed(links: StoredZoteroLinks, documentIds: readonly string[], nowIso: string): StoredZoteroLinks {
+	const listed = new Set(documentIds);
+	let next = links;
+	for (const docId of Object.keys(links)) {
+		const link = linkFor(links, docId);
+		if (link === null) continue;
+		if (listed.has(docId)) {
+			const { goneAt: _back, ...seen } = link;
+			next = withLink(next, docId, { ...seen, seenAt: nowIso });
+		} else if (link.seenAt !== undefined && link.goneAt === undefined) {
+			next = withLink(next, docId, { ...link, goneAt: nowIso });
+		}
+	}
+	return next;
 }
 
 /**
  * Which linked documents are still on the tablet -- the `onTablet` set {@link sendState} asks for.
  *
- * Read off what the last sync saw rather than by listing the account, and that is a deliberate
- * trade. Listing costs a round trip on the cloud and a full index-and-hash pass over SSH, which is
- * minutes of work in front of a person who pressed Send and expects a file dialog. What the sync
- * index holds is the same fact, one sync old.
+ * Judged from what the syncs' listings recorded on the links ({@link markListed}) rather than by
+ * listing now, and that is a deliberate trade: listing costs a round trip on the cloud and a full
+ * index-and-hash pass over SSH, minutes of work in front of a person who pressed Send. What the
+ * last sync saw is the same fact, one sync old -- and a document deleted on the tablet is missed by
+ * the very next listing, so the paper comes back on the next sync, not a day later.
  *
- * The second rule is what makes one-sync-old good enough: a document that was **sent within the
- * last day and has no row yet** counts as present. Both halves of that are load-bearing.
- *
- * *No row yet*, rather than "sent since the last completed sync" as this first read: the listing
- * right after a send does not always have the document (seen live 2026-09-12 -- uploaded 08:23:50,
- * absent from a listing at 08:23:55; the cloud's root lags, there is no client cache), so a send
- * kept reading as "vanished" and §2.6 put a second copy on the tablet per run. A document is gone
- * once a sync has seen it and seen it leave -- an orphaned row -- or once a day has passed with no
- * listing ever finding it.
- *
- * *Within the last day*, rather than for ever: a document deleted on the tablet before any listing
- * caught it would otherwise stay "present" for good, and the tag-driven send would never bring the
- * paper back. A day and not an hour because the send and the sync can travel different roads -- a
- * cloud send with an SSH-read tablet turns up only when the tablet next pulls from the cloud, and a
- * tablet asleep in a bag for an afternoon must not earn a second copy per hour.
+ * The second rule is what makes that safe: a link **no listing has found yet** counts as present
+ * for a day after its send. Without it the listing lag of 2026-09-12 read every fresh send as
+ * vanished and the tag-driven send put a second copy on the tablet per run. A day and not an hour
+ * because the send and the sync can travel different roads -- a cloud send read back over SSH turns
+ * up only when the tablet next pulls from the cloud, and a tablet asleep in a bag for an afternoon
+ * must not earn a second copy per hour. After the day, a document no listing ever found is let go,
+ * so a paper deleted before any listing caught it does come back.
  */
-export function documentsOnTablet(rows: readonly SyncedDocument[], links: StoredZoteroLinks, now: Date): Set<string> {
-	const seen = new Set(rows.map((row) => row.docId));
-	const present = new Set(rows.filter((row) => row.status === "active").map((row) => row.docId));
+export function documentsOnTablet(links: StoredZoteroLinks, now: Date): Set<string> {
+	const present = new Set<string>();
 	for (const docId of Object.keys(links)) {
-		const sentAt = linkFor(links, docId)?.sentAt;
-		if (sentAt === undefined || seen.has(docId)) continue;
-		if (now.getTime() - Date.parse(sentAt) < SENT_GRACE_MS) present.add(docId);
+		const link = linkFor(links, docId);
+		if (link === null || link.goneAt !== undefined) continue;
+		if (link.seenAt !== undefined) present.add(docId);
+		else if (link.sentAt !== undefined && now.getTime() - Date.parse(link.sentAt) < SENT_GRACE_MS) present.add(docId);
 	}
 	return present;
 }
 
-/** How long a sent document that no sync has listed yet is still taken to be on the tablet. See {@link documentsOnTablet}. */
+/** How long a sent document that no listing has found yet is still taken to be on the tablet. See {@link documentsOnTablet}. */
 export const SENT_GRACE_MS = 24 * 60 * 60 * 1000;
 
 /** How the bytes were come by, for the one sentence the send reports afterwards. */
@@ -265,7 +252,6 @@ export interface SendRequest {
 	readonly attachment: ZoteroAttachment;
 	readonly item: ZoteroItem | null;
 	readonly folder: string;
-	readonly tag: string;
 	readonly links: StoredZoteroLinks;
 	/** The links this send replaces -- `vanished` from {@link sendState}, and nothing else. */
 	readonly replacing?: readonly string[];
@@ -294,7 +280,7 @@ export async function sendToTablet(deps: SendDeps, request: SendRequest): Promis
 	if (bytes === null) return null;
 
 	const visibleName = tabletName(request.item, request.attachment);
-	const { docId } = await deps.transport.putPdf({ visibleName, bytes: bytes.bytes, folder: request.folder, tag: request.tag });
+	const { docId } = await deps.transport.putPdf({ visibleName, bytes: bytes.bytes, folder: request.folder });
 
 	const link: ZoteroLink = {
 		attachmentKey: request.attachment.key,

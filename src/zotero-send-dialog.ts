@@ -1,10 +1,10 @@
 /**
  * The *Send Zotero PDF to reMarkable…* dialog (spec §2.4).
  *
- * Three questions, asked only where they are questions: which paper, which of its PDFs, and which
- * sync tag. A library with one PDF per item and one mapped tag therefore answers two of them by
- * itself, and the reader searches, presses Send, and is done -- which is the shape the command has
- * to have to be worth a command.
+ * Two questions, asked only where they are questions: which paper, and which of its PDFs. A library
+ * with one PDF per item therefore answers the second by itself, and the reader searches, presses
+ * Choose, and is done -- which is the shape the command has to have to be worth a command. No sync
+ * tag is asked for or put on (2026-09-13): the reader tags the document on the tablet.
  *
  * The search is Zotero's own (`q=`, `qmode=titleCreatorYear`, in `zotero-client.ts`), not a filter
  * over a list we hold: a real library is thousands of items, and the person looking for one of them
@@ -14,21 +14,13 @@
 import { type App, debounce, Modal, Setting } from "obsidian";
 import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
 import { itemLabel } from "./zotero-note";
-import { pdfChoice, type TagChoice } from "./zotero-send";
+import { pdfChoice } from "./zotero-send";
 
 /** What the dialog needs to be able to ask. A `ZoteroClient` satisfies the first two. */
 export interface SendDialogDeps {
 	search(query: string): Promise<ZoteroItem[]>;
 	/** Every PDF attachment in the library -- the same listing the matcher reads. */
 	attachments(): Promise<ZoteroAttachment[]>;
-	/**
-	 * Which tag the document gets, decided before the dialog opens.
-	 *
-	 * Decided outside because `none` -- a vault that maps no tag at all -- is not a question this
-	 * dialog can ask: there is nothing to offer, and a document sent without a sync tag never comes
-	 * back. The command refuses with `SEND_NEEDS_A_TAG` instead, before anything is opened.
-	 */
-	tag: Exclude<TagChoice, { kind: "none" }>;
 	/** How long typing settles before the library is searched. Injectable so a test need not wait. */
 	searchDelayMs?: number;
 }
@@ -37,7 +29,6 @@ export interface SendDialogDeps {
 export interface SendChoice {
 	readonly item: ZoteroItem;
 	readonly attachment: ZoteroAttachment;
-	readonly tag: string;
 }
 
 const SEARCH_DELAY_MS = 300;
@@ -49,18 +40,14 @@ export const NO_PDF = "That item has no PDF attachment.";
 /**
  * Which question is on screen, and everything that question needs.
  *
- * A union rather than a step name beside four nullable fields: the later steps cannot be rendered
- * without the item and the attachment, and carrying them here means there is no state in which the
- * dialog has to check whether it knows what it is sending.
+ * A union rather than a step name beside nullable fields: the later steps cannot be rendered without
+ * the item, and carrying it here means there is no state in which the dialog has to check whether it
+ * knows what it is sending.
  */
-type Step =
-	| { readonly kind: "search" }
-	| { readonly kind: "no-pdf"; readonly item: ZoteroItem }
-	| { readonly kind: "pdf"; readonly item: ZoteroItem; readonly options: ZoteroAttachment[] }
-	| { readonly kind: "tag"; readonly item: ZoteroItem; readonly attachment: ZoteroAttachment; readonly options: string[]; tag: string };
+type Step = { readonly kind: "search" } | { readonly kind: "no-pdf"; readonly item: ZoteroItem } | { readonly kind: "pdf"; readonly item: ZoteroItem; readonly options: ZoteroAttachment[] };
 
 class SendDialog extends Modal {
-	private step: Step;
+	private step: Step = { kind: "search" };
 	private query = "";
 	private results: ZoteroItem[] = [];
 	private searched = false;
@@ -70,10 +57,8 @@ class SendDialog extends Modal {
 		app: App,
 		private readonly deps: SendDialogDeps,
 		private readonly onChoice: (choice: SendChoice | null) => void,
-		start: Step = { kind: "search" },
 	) {
 		super(app);
-		this.step = start;
 	}
 
 	onOpen(): void {
@@ -92,8 +77,7 @@ class SendDialog extends Modal {
 		const step = this.step;
 		if (step.kind === "search") this.renderSearch();
 		else if (step.kind === "no-pdf") this.renderNoPdf();
-		else if (step.kind === "pdf") this.renderPdfs(step);
-		else this.renderTag(step);
+		else this.renderPdfs(step);
 	}
 
 	private renderSearch(): void {
@@ -150,7 +134,7 @@ class SendDialog extends Modal {
 		if (choice.kind === "none") this.step = { kind: "no-pdf", item };
 		else if (choice.kind === "ask") this.step = { kind: "pdf", item, options: choice.options };
 		else {
-			this.afterPdf(item, choice.attachment);
+			this.finish({ item, attachment: choice.attachment });
 			return;
 		}
 		this.render();
@@ -173,38 +157,9 @@ class SendDialog extends Modal {
 				button
 					.setButtonText("Choose")
 					.setCta()
-					.onClick(() => this.afterPdf(step.item, attachment)),
+					.onClick(() => this.finish({ item: step.item, attachment })),
 			);
 		}
-	}
-
-	/** One mapped tag is not a question (§2.4), so that dialog step is skipped rather than pre-filled. */
-	private afterPdf(item: ZoteroItem, attachment: ZoteroAttachment): void {
-		const choice = this.deps.tag;
-		if (choice.kind === "use") {
-			this.finish({ item, attachment, tag: choice.tag });
-			return;
-		}
-		this.step = { kind: "tag", item, attachment, options: choice.options, tag: choice.preferred ?? choice.options[0] };
-		this.render();
-	}
-
-	private renderTag(step: Extract<Step, { kind: "tag" }>): void {
-		new Setting(this.contentEl)
-			.setName("Sync tag")
-			.setDesc("The tag this document carries on the tablet, so what you write in it comes back into the vault.")
-			.addDropdown((dropdown) => {
-				for (const tag of step.options) dropdown.addOption(tag, tag);
-				dropdown.setValue(step.tag);
-				dropdown.onChange((value) => (step.tag = value));
-			});
-
-		new Setting(this.contentEl).addButton((button) =>
-			button
-				.setButtonText("Send")
-				.setCta()
-				.onClick(() => this.finish({ item: step.item, attachment: step.attachment, tag: step.tag })),
-		);
 	}
 
 	private finish(choice: SendChoice): void {
@@ -216,19 +171,4 @@ class SendDialog extends Modal {
 /** Opens the dialog and resolves to what the user chose, or `null` if they closed it. */
 export function askWhatToSend(app: App, deps: SendDialogDeps): Promise<SendChoice | null> {
 	return new Promise((resolve) => new SendDialog(app, deps, resolve).open());
-}
-
-/**
- * The same dialog entered where the caller already knows the paper and the PDF -- the context action
- * on a note that carries `zotero-key` (§2.4).
- *
- * Which is usually **no dialog at all**: a vault with one mapped tag has nothing left to ask, and
- * opening a window to show somebody a single answer they cannot change is not a question. That is
- * the same rule the search path follows one step earlier, applied to the one step that is left.
- */
-export function askWhereToSend(app: App, deps: SendDialogDeps, item: ZoteroItem, attachment: ZoteroAttachment): Promise<SendChoice | null> {
-	const tag = deps.tag;
-	if (tag.kind === "use") return Promise.resolve({ item, attachment, tag: tag.tag });
-	const start: Step = { kind: "tag", item, attachment, options: tag.options, tag: tag.preferred ?? tag.options[0] };
-	return new Promise((resolve) => new SendDialog(app, deps, resolve, start).open());
 }

@@ -529,6 +529,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	/**
 	 * Zotero: the two connections, and what is connected right now (spec §2.1).
 	 *
+	 * Four headings: *Zotero* with the connection line, then one heading per connection -- *Zotero
+	 * cloud* with its switch and key, *Zotero local* with its switch -- then *Zotero on the tablet* for
+	 * the sending rows. Each connection has a switch (asked for in the desk test of 2026-09-13): whether
+	 * anything goes over the internet is then one visible thing, not "is the key field empty". The key
+	 * row is shown only while the cloud switch is on.
+	 *
 	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (spec §5). The two Pro
 	 * rows -- the desktop app and Send over SSH -- are shown disabled with "(Pro)", the same rule as
 	 * the transport dropdown and the frontmatter toggle above: a feature a free user cannot see is one
@@ -550,24 +556,49 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.setDesc(
 				pro
 					? "Either connection is enough on its own. The desktop app works offline and knows where your PDFs are; zotero.org works with Zotero closed."
-					: "A zotero.org API key is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro -- see below.",
+					: "zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro -- see below.",
 			);
 		// The four states of §2.1, and the client is what says which one it is -- it knows what answered,
-		// which is not the same question as what is configured. Asked once per render of this section;
-		// the answer replaces the line when it arrives, and a render that has been superseded drops its
-		// own answer on the floor (`display()` empties the container and draws a new one).
+		// which is not the same question as what is configured. Asked at draw and again after the key
+		// changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading
+		// "Connected via web." until the tab was reopened). Each probe is numbered, so a slow answer
+		// never lands on top of a newer one; a render that has been superseded drops its own answer on
+		// the floor (`display()` empties the container and draws a new one).
 		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
-		const client = this.plugin.zoteroClient();
-		if (client === null) {
-			line.setText("Not connected.");
-		} else {
-			line.setText("Checking…");
+		// Coloured like the vision verdict under Model (asked for in the desk test of 2026-09-13): the
+		// theme's own success and error tones, through a variable, so the answer reads at a glance.
+		const paint = (text: string, color: string) => {
+			line.setText(text);
+			line.style.color = color;
+		};
+		let probe = 0;
+		const refreshStatus = () => {
+			const client = this.plugin.zoteroClient();
+			const mine = ++probe;
+			if (client === null) {
+				paint("Not connected.", "var(--text-error)");
+				return;
+			}
+			paint("Checking…", "");
 			// No rejection arm: `status()` is the one call on the client that answers instead of
 			// throwing -- a probe is a question, and "nothing answered" is one of its answers.
-			void client.status().then((reached) => line.setText(reached.summary));
-		}
+			void client.status().then((reached) => {
+				if (mine === probe) paint(reached.summary, reached.web || reached.local ? "var(--text-success)" : "var(--text-error)");
+			});
+		};
+		refreshStatus();
+		const recheck = debounce(refreshStatus, 600, true);
 
-		new Setting(containerEl)
+		new Setting(containerEl).setName("Zotero cloud").setHeading();
+
+		const cloud = new Setting(containerEl)
+			.setName("Use zotero.org")
+			.setDesc(
+				"Your library is read over the internet, at zotero.org, and with write-back your highlights are written there. " +
+					"Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.",
+			);
+
+		const keyRow = new Setting(containerEl)
 			.setName("Zotero API key")
 			.setDesc("From zotero.org → Settings → Feeds/API. Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
 			.addText((text) => {
@@ -578,8 +609,25 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				text.setValue(settings.apiKey ?? "").onChange((value) => {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, apiKey: value === "" ? null : value };
 					persist();
+					recheck();
 				});
 			});
+		// The key row belongs to the switch: shown while it is on, hidden -- not removed -- while it is
+		// off, so a pasted key stays where it was for the day the switch is turned back on.
+		keyRow.settingEl.toggle(settings.useWeb);
+
+		cloud.addToggle((toggle) => {
+			toggle.setValue(settings.useWeb);
+			toggle.onChange(async (value) => {
+				this.plugin.data.zotero = { ...this.plugin.data.zotero, useWeb: value };
+				await this.plugin.saveData(this.plugin.data);
+				keyRow.settingEl.toggle(value);
+				// The status line is now about a different set of connections.
+				refreshStatus();
+			});
+		});
+
+		new Setting(containerEl).setName("Zotero local").setHeading();
 
 		new Setting(containerEl)
 			.setName(pro ? "Use the Zotero desktop app" : "Use the Zotero desktop app (Pro)")
@@ -596,6 +644,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.display();
 				});
 			});
+
+		new Setting(containerEl).setName("Zotero on the tablet").setHeading();
 
 		new Setting(containerEl)
 			.setName("Tablet folder for sent PDFs")
@@ -615,7 +665,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.setName("Send tag in Zotero")
 			.setDesc(
 				"Off until you name a tag. With one, every sync -- the automatic ones too -- puts the PDF of any paper you tag with it in Zotero on your tablet, " +
-					"in the folder above and with your sync tag. Tag the paper, not the PDF. Nothing is ever taken off the tablet.",
+					"in the folder above, without a sync tag: tag it on the tablet when you want it back. Tag the paper, not the PDF. Nothing is ever taken off the tablet.",
 			)
 			.addText((text) => {
 				text.setPlaceholder(DEFAULT_SEND_TAG);
@@ -627,24 +677,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					persist();
 				});
 			});
-
-		// Only where there is a choice (§2.6): with one mapped tag it is the one, and a dropdown with one
-		// entry is a question that has already been answered.
-		const mapped = Object.keys(this.plugin.data.tagFolderMap).sort((a, b) => (a < b ? -1 : 1));
-		if (mapped.length > 1) {
-			const chosen = [settings.sendSyncTag, settings.lastTag].find((tag): tag is string => tag !== null && mapped.includes(tag)) ?? "";
-			new Setting(containerEl)
-				.setName("Sync tag for Zotero sends")
-				.setDesc("Which of your mapped tags a paper sent from Zotero gets. Until you choose, the tag of your last manual send is used.")
-				.addDropdown((dropdown) => {
-					if (chosen === "") dropdown.addOption("", "Choose a tag…");
-					for (const tag of mapped) dropdown.addOption(tag, tag);
-					dropdown.setValue(chosen).onChange(async (value) => {
-						this.plugin.data.zotero = { ...this.plugin.data.zotero, sendSyncTag: value === "" ? null : value };
-						await this.plugin.saveData(this.plugin.data);
-					});
-				});
-		}
 
 		new Setting(containerEl)
 			.setName(pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)")

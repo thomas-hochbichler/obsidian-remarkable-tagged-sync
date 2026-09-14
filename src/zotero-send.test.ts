@@ -4,13 +4,13 @@ import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client
 import { linkFor, type StoredZoteroLinks } from "./zotero-links";
 import {
 	documentsOnTablet,
+	markListed,
 	pdfChoice,
 	sendBytes,
 	sendState,
 	sendToTablet,
 	sendTransport,
 	tabletName,
-	tagChoice,
 	type SendDeps,
 	type SendDocument,
 	type SendTransport,
@@ -77,29 +77,6 @@ describe("which PDF of an item is meant", () => {
 	it("is nothing for an item whose attachments are all somebody else's", () => {
 		expect(pdfChoice([attachment({ parentKey: "OTHER" })], "ITEM1")).toEqual({ kind: "none" });
 		expect(pdfChoice([], "ITEM1")).toEqual({ kind: "none" });
-	});
-});
-
-describe("which tag the document is sent with", () => {
-	it("asks nothing where the vault maps exactly one tag", () => {
-		expect(tagChoice(["#papers"], null)).toEqual({ kind: "use", tag: "#papers" });
-	});
-
-	it("asks, and offers last time's answer first", () => {
-		expect(tagChoice(["#read", "#papers"], "#read")).toEqual({ kind: "ask", options: ["#papers", "#read"], preferred: "#read" });
-	});
-
-	// A tag the user has since unmapped routes nowhere: offering it first would send the document with
-	// a tag that brings it back to no folder at all.
-	it("forgets last time's answer once that tag is no longer mapped", () => {
-		expect(tagChoice(["#papers"], "#gone")).toEqual({ kind: "use", tag: "#papers" });
-		expect(tagChoice(["#papers", "#read"], "#gone")).toEqual({ kind: "ask", options: ["#papers", "#read"], preferred: null });
-	});
-
-	// Not in the spec, and the one refusal this module adds: a document sent without a sync tag is one
-	// the plugin never looks at again.
-	it("has nothing to offer a vault that maps no tags at all", () => {
-		expect(tagChoice([], "#read")).toEqual({ kind: "none" });
 	});
 });
 
@@ -213,7 +190,8 @@ describe("sending", () => {
 		};
 	}
 
-	it("hands the transport the name, the folder and the tag", async () => {
+	// No tag (2026-09-13): the reader tags the document on the tablet when they want it back.
+	it("hands the transport the name and the folder, and no tag", async () => {
 		const sent: SendDocument[] = [];
 		const transport: SendTransport = {
 			label: "cloud",
@@ -223,9 +201,9 @@ describe("sending", () => {
 			},
 		};
 
-		await sendToTablet(deps(transport), { attachment: attachment(), item: ITEM, folder: "Zotero", tag: "#papers", links: {} });
+		await sendToTablet(deps(transport), { attachment: attachment(), item: ITEM, folder: "Zotero", links: {} });
 
-		expect(sent).toEqual([{ visibleName: "Best Practices für Prompting", bytes, folder: "Zotero", tag: "#papers" }]);
+		expect(sent).toEqual([{ visibleName: "Best Practices für Prompting", bytes, folder: "Zotero" }]);
 	});
 
 	// The link is the claim "this document on the tablet is that Zotero item", and `sentMd5` is the
@@ -236,7 +214,6 @@ describe("sending", () => {
 			attachment: attachment(),
 			item: ITEM,
 			folder: "Zotero",
-			tag: "#papers",
 			links: {},
 		});
 
@@ -256,7 +233,7 @@ describe("sending", () => {
 				throw new Error("the cloud said no");
 			},
 		};
-		await expect(sendToTablet(deps(transport), { attachment: attachment(), item: ITEM, folder: "Zotero", tag: "#papers", links: {} })).rejects.toThrow(
+		await expect(sendToTablet(deps(transport), { attachment: attachment(), item: ITEM, folder: "Zotero", links: {} })).rejects.toThrow(
 			"the cloud said no",
 		);
 	});
@@ -264,7 +241,7 @@ describe("sending", () => {
 	it("does nothing at all when the user closes the file dialog", async () => {
 		const putPdf = vi.fn();
 		const never = deps({ label: "cloud", putPdf }, { client: { filePath: async () => null, fileBytes: async () => null } as unknown as ZoteroClient });
-		expect(await sendToTablet(never, { attachment: attachment(), item: ITEM, folder: "Zotero", tag: "#papers", links: {} })).toBeNull();
+		expect(await sendToTablet(never, { attachment: attachment(), item: ITEM, folder: "Zotero", links: {} })).toBeNull();
 		expect(putPdf).not.toHaveBeenCalled();
 	});
 
@@ -281,7 +258,6 @@ describe("sending", () => {
 			attachment: attachment(),
 			item: ITEM,
 			folder: "Zotero",
-			tag: "#papers",
 			links,
 			replacing: ["old-1", "old-2"],
 		});
@@ -298,7 +274,6 @@ describe("sending", () => {
 			attachment: attachment(),
 			item: ITEM,
 			folder: "Zotero",
-			tag: "#papers",
 			links,
 		});
 
@@ -311,33 +286,27 @@ describe("what is still on the tablet", () => {
 	const link = { attachmentKey: "ATT1", library: "user" as const, annotations: {} };
 	const now = new Date("2026-09-11T12:00:00.000Z");
 
-	it("counts a document the last sync saw", () => {
-		const rows = [{ docId: "doc-1", status: "active" as const }];
+	it("counts a document the last listing found", () => {
+		const seen = { ...link, seenAt: "2026-09-11T11:00:00.000Z" };
 
-		expect([...documentsOnTablet(rows, { "doc-1": link }, now)]).toEqual(["doc-1"]);
+		expect([...documentsOnTablet({ "doc-1": seen }, now)]).toEqual(["doc-1"]);
 	});
 
-	it("does not count one whose row was orphaned -- that is a document that left the device", () => {
-		const rows = [{ docId: "doc-1", status: "orphaned" as const }];
+	// Deleted on the tablet: the very next listing misses it, and the paper comes back on the next
+	// sync rather than a day later (asked in the desk test of 2026-09-13).
+	it("does not count one a listing has missed since -- that is a document that left the tablet", () => {
+		const gone = { ...link, seenAt: "2026-09-11T10:00:00.000Z", goneAt: "2026-09-11T11:00:00.000Z" };
 
-		expect(documentsOnTablet(rows, { "doc-1": link }, now).has("doc-1")).toBe(false);
+		expect(documentsOnTablet({ "doc-1": gone }, now).has("doc-1")).toBe(false);
 	});
 
-	// Otherwise a second Send before the first has ever synced reads as "it vanished": the link would
-	// be dropped, and two documents on the tablet would share one mapping between them.
-	it("counts one that was sent and no sync has listed yet", () => {
+	// Otherwise a second Send before any listing has found the first reads as "it vanished": the link
+	// would be dropped, and two documents on the tablet would share one mapping between them. Seen
+	// live 2026-09-12: a listing five seconds after an upload did not have it.
+	it("counts one that was sent and no listing has found yet, for a day", () => {
 		const sent = { ...link, sentAt: "2026-09-11T10:00:00.000Z" };
 
-		expect(documentsOnTablet([], { "doc-1": sent }, now).has("doc-1")).toBe(true);
-	});
-
-	// Seen live 2026-09-12: a listing five seconds after an upload did not have it. Counting by
-	// "sent since the last sync" read that as vanished and put a second copy on the tablet per run.
-	it("keeps counting one that was sent, synced past, and has not turned up within the day", () => {
-		const sent = { ...link, sentAt: "2026-09-11T10:00:00.000Z" };
-		const rows = [{ docId: "doc-other", status: "active" as const }];
-
-		expect(documentsOnTablet(rows, { "doc-1": sent }, now).has("doc-1")).toBe(true);
+		expect(documentsOnTablet({ "doc-1": sent }, now).has("doc-1")).toBe(true);
 	});
 
 	// Otherwise a document deleted on the tablet before any listing caught it stays "present" for
@@ -345,13 +314,30 @@ describe("what is still on the tablet", () => {
 	it("lets go of one that no listing has found in a day", () => {
 		const sent = { ...link, sentAt: "2026-09-10T11:00:00.000Z" };
 
-		expect(documentsOnTablet([], { "doc-1": sent }, now).has("doc-1")).toBe(false);
+		expect(documentsOnTablet({ "doc-1": sent }, now).has("doc-1")).toBe(false);
 	});
 
-	it("does not count a sent document once a sync has seen it leave", () => {
-		const sent = { ...link, sentAt: "2026-09-11T11:59:00.000Z" };
-		const rows = [{ docId: "doc-1", status: "orphaned" as const }];
+	// The whole listing, tagged or not: a document sent without a sync tag never earns an index row.
+	it("records what a listing found, what it has stopped finding, and what came back", () => {
+		const links = {
+			"doc-listed": { ...link, sentAt: "2026-09-11T09:00:00.000Z" },
+			"doc-left": { ...link, seenAt: "2026-09-10T09:00:00.000Z" },
+			"doc-lagging": { ...link, sentAt: "2026-09-11T11:59:00.000Z" },
+			"doc-back": { ...link, seenAt: "2026-09-09T09:00:00.000Z", goneAt: "2026-09-10T09:00:00.000Z" },
+			"doc-still-gone": { ...link, seenAt: "2026-09-08T09:00:00.000Z", goneAt: "2026-09-09T09:00:00.000Z" },
+			// A question the user closed (§2.3): not a link, and not touched.
+			"doc-declined": { declined: true },
+		};
 
-		expect(documentsOnTablet(rows, { "doc-1": sent }, now).has("doc-1")).toBe(false);
+		const marked = markListed(links, ["doc-listed", "doc-back", "doc-unlinked"], now.toISOString());
+
+		expect(linkFor(marked, "doc-listed")).toMatchObject({ seenAt: now.toISOString() });
+		expect(linkFor(marked, "doc-left")).toMatchObject({ seenAt: "2026-09-10T09:00:00.000Z", goneAt: now.toISOString() });
+		expect(linkFor(marked, "doc-lagging")).toEqual(links["doc-lagging"]);
+		expect(linkFor(marked, "doc-back")).toEqual({ ...link, seenAt: now.toISOString() });
+		// Already gone: the first miss is the date that matters, and it is kept.
+		expect(linkFor(marked, "doc-still-gone")).toEqual(links["doc-still-gone"]);
+		expect(marked["doc-declined"]).toEqual({ declined: true });
+		expect(Object.keys(marked).sort()).toEqual(["doc-back", "doc-declined", "doc-lagging", "doc-left", "doc-listed", "doc-still-gone"]);
 	});
 });

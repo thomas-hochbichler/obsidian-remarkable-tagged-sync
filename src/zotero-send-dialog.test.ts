@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { asApp, FakeApp, takeModals, takeSettings } from "../test-stubs/fake-obsidian";
 import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
-import { askWhatToSend, askWhereToSend, NO_PDF, NO_RESULTS, type SendChoice, type SendDialogDeps } from "./zotero-send-dialog";
+import { askWhatToSend, NO_PDF, NO_RESULTS, type SendChoice, type SendDialogDeps } from "./zotero-send-dialog";
 
 const ITEM: ZoteroItem = { key: "ITEM1", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
 const OTHER: ZoteroItem = { key: "ITEM2", title: "Etwas anderes", creator: null, year: null, citationKey: null };
@@ -14,7 +14,6 @@ function open(overrides: Partial<SendDialogDeps> = {}): { choice: Promise<SendCh
 	const deps: SendDialogDeps = {
 		search: async () => [ITEM],
 		attachments: async () => [attachment()],
-		tag: { kind: "use", tag: "#papers" },
 		searchDelayMs: 0,
 		...overrides,
 	};
@@ -85,7 +84,7 @@ describe("finding the paper", () => {
 	// library of thousands is a request the answer to which is already stale.
 	it("waits for the typing to settle before it asks at all", async () => {
 		const search = vi.fn(async () => [ITEM]);
-		const deps: SendDialogDeps = { search, attachments: async () => [attachment()], tag: { kind: "use", tag: "#papers" } };
+		const deps: SendDialogDeps = { search, attachments: async () => [attachment()] };
 		askWhatToSend(asApp(new FakeApp()), deps);
 
 		takeSettings().flatMap((setting) => setting.texts)[0].type("smith");
@@ -131,7 +130,7 @@ describe("choosing the PDF", () => {
 		press("Smith 2024 · Best Practices für Prompting");
 		await Promise.resolve();
 
-		expect(await dialog.choice).toEqual({ item: ITEM, attachment: attachment(), tag: "#papers" });
+		expect(await dialog.choice).toEqual({ item: ITEM, attachment: attachment() });
 	});
 
 	// A preprint beside the published version: the one the reader annotates is the one the highlights
@@ -176,46 +175,6 @@ describe("choosing the PDF", () => {
 	});
 });
 
-describe("choosing the tag", () => {
-	// §2.4: one mapped tag is not a question.
-	it("is not asked where the vault maps one tag", async () => {
-		const dialog = open();
-		await type("s");
-		press("Smith 2024 · Best Practices für Prompting");
-		await Promise.resolve();
-
-		expect((await dialog.choice)?.tag).toBe("#papers");
-	});
-
-	it("offers the mapped tags, with last time's answer selected", async () => {
-		const dialog = open({ tag: { kind: "ask", options: ["#papers", "#read"], preferred: "#read" } });
-		await type("s");
-		press("Smith 2024 · Best Practices für Prompting");
-		await Promise.resolve();
-
-		const rows = takeSettings();
-		const dropdown = rows.flatMap((setting) => setting.dropdowns)[0];
-		expect(dropdown.options).toEqual({ "#papers": "#papers", "#read": "#read" });
-		expect(dropdown.value).toBe("#read");
-
-		press(undefined, rows);
-		expect((await dialog.choice)?.tag).toBe("#read");
-	});
-
-	it("sends with the tag the user picked instead", async () => {
-		const dialog = open({ tag: { kind: "ask", options: ["#papers", "#read"], preferred: null } });
-		await type("s");
-		press("Smith 2024 · Best Practices für Prompting");
-		await Promise.resolve();
-
-		const rows = takeSettings();
-		rows.flatMap((setting) => setting.dropdowns)[0].pick("#read");
-		press(undefined, rows);
-
-		expect((await dialog.choice)?.tag).toBe("#read");
-	});
-});
-
 describe("closing the dialog", () => {
 	// The same rule `confirm-modal` follows: Escape, the background and a Cancel button are one path in
 	// Obsidian, so the answer starts at "nothing" and only a choice moves it.
@@ -223,37 +182,5 @@ describe("closing the dialog", () => {
 		const dialog = open();
 		takeModals()[0].close();
 		expect(await dialog.choice).toBeNull();
-	});
-});
-
-describe("the context action, which already knows the paper and the PDF", () => {
-	const deps = (tag: SendDialogDeps["tag"]): SendDialogDeps => ({ search: async () => [ITEM], attachments: async () => [attachment()], tag, searchDelayMs: 0 });
-
-	// One mapped tag is not a question, and a window that shows somebody a single answer they cannot
-	// change is not a dialog. Nothing opens at all here.
-	it("opens nothing where there is nothing left to ask", async () => {
-		const choice = await askWhereToSend(asApp(new FakeApp()), deps({ kind: "use", tag: "#papers" }), ITEM, attachment());
-
-		expect(choice).toEqual({ item: ITEM, attachment: attachment(), tag: "#papers" });
-		expect(takeModals()).toEqual([]);
-	});
-
-	it("asks only the tag where there is a choice of them, offering the last one first", async () => {
-		const choice = askWhereToSend(asApp(new FakeApp()), deps({ kind: "ask", options: ["#papers", "#reading"], preferred: "#reading" }), ITEM, attachment());
-		const rows = takeSettings();
-
-		expect(rows[0].name).toBe("Sync tag");
-		expect(rows[0].dropdowns[0].value).toBe("#reading");
-		press("Send", rows);
-		expect(await choice).toEqual({ item: ITEM, attachment: attachment(), tag: "#reading" });
-	});
-
-	it("falls back to the first mapped tag where the last one is not mapped any more", async () => {
-		const choice = askWhereToSend(asApp(new FakeApp()), deps({ kind: "ask", options: ["#papers", "#reading"], preferred: null }), ITEM, attachment());
-		const rows = takeSettings();
-
-		expect(rows[0].dropdowns[0].value).toBe("#papers");
-		press("Send", rows);
-		expect(await choice).toEqual({ item: ITEM, attachment: attachment(), tag: "#papers" });
 	});
 });

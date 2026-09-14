@@ -9,7 +9,7 @@ import { DEFAULT_DATA, type TaggedSyncData } from "./settings-store";
 import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client";
 import { linkFor } from "./zotero-links";
 import { registerZoteroCommands, SEND_COMMAND, sendZoteroPdf, zoteroKeyedNotes, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
-import { PICK_THE_FILE, SEND_NEEDS_A_TAG, SEND_NEEDS_TRANSPORT, type SendDocument, type SendTransport } from "./zotero-send";
+import { PICK_THE_FILE, SEND_NEEDS_TRANSPORT, type SendDocument, type SendTransport } from "./zotero-send";
 
 const PRO: Entitlement = { tier: "pro", since: "2026-09-01T00:00:00.000Z", stale: false };
 const FREE = entitlementOf(NO_LICENCE, new Date("2026-09-11T09:00:00.000Z"));
@@ -215,27 +215,20 @@ describe("what Send refuses before it opens anything", () => {
 
 		expect(notices()).toEqual([SEND_NEEDS_TRANSPORT]);
 	});
-
-	// Not in the spec, and the one refusal this feature adds: a document sent without a sync tag is
-	// annotated and never looked at again.
-	it("refuses a vault that maps no tag at all", async () => {
-		await sendZoteroPdf(harness({ tags: {} }).host);
-
-		expect(notices()).toEqual([SEND_NEEDS_A_TAG]);
-	});
 });
 
 describe("sending a paper", () => {
-	it("puts it in the tablet folder, tagged, and records the link", async () => {
+	// Untagged (2026-09-13): a tag put on by the plugin is one the reader never chose -- with one mapped
+	// tag it went on without a question. The notice says what is left to do.
+	it("puts it in the tablet folder, untagged, and records the link", async () => {
 		const harnessed = harness();
 
 		await sendThrough(harnessed);
 
-		expect(harnessed.sent).toEqual([{ visibleName: "Prompting", bytes: new Uint8Array([1, 2, 3]), folder: "Zotero", tag: "sync" }]);
+		expect(harnessed.sent).toEqual([{ visibleName: "Prompting", bytes: new Uint8Array([1, 2, 3]), folder: "Zotero" }]);
 		expect(linkFor(harnessed.data.zoteroLinks, "doc-1")?.attachmentKey).toBe("ATT1");
-		expect(harnessed.data.zotero.lastTag).toBe("sync");
 		expect(harnessed.saves).toBe(1);
-		expect(notices()[0]).toContain("is on your reMarkable, tagged sync");
+		expect(notices()[0]).toContain("is on your reMarkable. Tag it there, annotate it, then sync.");
 	});
 
 	it("falls back to the default folder when the setting was emptied", async () => {
@@ -303,11 +296,11 @@ describe("sending a paper", () => {
 });
 
 describe("a paper that is already on the tablet (§2.5)", () => {
-	/** A vault that sent this attachment before, and whose last sync saw the document. */
+	/** A vault that sent this attachment before, and whose last sync's listing found the document. */
 	function alreadySent(): Harness {
 		return harness({
 			data: {
-				zoteroLinks: { "doc-9": { attachmentKey: "ATT1", library: "user", sentAt: "2026-09-01T09:00:00.000Z", annotations: {} } },
+				zoteroLinks: { "doc-9": { attachmentKey: "ATT1", library: "user", sentAt: "2026-09-01T09:00:00.000Z", seenAt: "2026-09-05T09:00:00.000Z", annotations: {} } },
 				syncIndex: syncedAs("Target/Prompting.md"),
 				lastSyncAt: "2026-09-05T09:00:00.000Z",
 			},
@@ -555,6 +548,7 @@ describe("the run's Zotero half", () => {
 			visibleName: "Prompting",
 			notePath: "Target/Prompting.md",
 			pages: [],
+			covered: [],
 			md5: async () => null,
 		});
 
@@ -563,7 +557,7 @@ describe("the run's Zotero half", () => {
 	});
 
 	it("reads this vault's links, its notes and its user id, and writes back into the same data", async () => {
-		const harnessed = harness({ data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, apiKey: "key" } } });
+		const harnessed = harness({ data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, useWeb: true, apiKey: "key" } } });
 		const literature = harnessed.app.vault.seed("Literature/@smith2024.md");
 		harnessed.app.metadataCache.frontmatter.set(literature.path, { "zotero-key": "ITEM1" });
 
@@ -583,7 +577,7 @@ describe("the run's Zotero half", () => {
 		const harnessed = harness({
 			entitlement: FREE,
 			client: fakeClient({ createAnnotations }),
-			data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, apiKey: "key" } },
+			data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, useWeb: true, apiKey: "key" } },
 		});
 
 		const parts = await runOver(harnessed);
@@ -606,7 +600,7 @@ describe("the run's Zotero half", () => {
 	it("opens the picker for an ambiguous document in a watched run, and never in a background one", async () => {
 		const twins = [attachment(), attachment({ key: "ATT2", parentKey: "ITEM2" })].map((entry) => ({ ...entry, md5: "same" }));
 		const harnessed = harness({ client: fakeClient({ attachments: async () => twins }) });
-		const ambiguous = { docId: "doc-1", visibleName: "Prompting", notePath: "Target/Prompting.md", pages: [], md5: async () => "same" };
+		const ambiguous = { docId: "doc-1", visibleName: "Prompting", notePath: "Target/Prompting.md", pages: [], covered: [], md5: async () => "same" };
 
 		const watched = zoteroPassFor(harnessed.host, true)!.run(ambiguous);
 		await vi.advanceTimersByTimeAsync(1);
@@ -620,7 +614,7 @@ describe("the run's Zotero half", () => {
 	});
 
 	it("says nothing about a web library Zotero cannot name", async () => {
-		const harnessed = harness({ client: fakeClient({ libraryId: async () => null }), data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, apiKey: "key" } } });
+		const harnessed = harness({ client: fakeClient({ libraryId: async () => null }), data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, useWeb: true, apiKey: "key" } } });
 
 		expect((await runOver(harnessed)).line).not.toContain("web library");
 	});

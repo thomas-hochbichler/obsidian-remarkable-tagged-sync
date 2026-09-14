@@ -10,8 +10,42 @@ time. At release time that heading is renamed to `## [<version>] - <date>`, and 
 workflow publishes the section as the GitHub release body. See
 [docs/RELEASING.md](docs/RELEASING.md).
 
+## [Unreleased]
+
+### Added
+
+- **Zotero.** Send a PDF from your Zotero library to the tablet (untagged — you give it your sync
+  tag on the tablet, the plugin never tags a document for you); after the sync the note knows
+  which paper it is and links back to the item in Zotero and in your
+  web library. Both work with zotero.org switched on under Settings → Zotero, an API key, and no
+  licence; each connection has its own switch, so whether anything goes over the internet is one
+  thing to look at. With Tagged Sync Pro, what you
+  marked on the tablet is also written into Zotero as native highlights, underlines and comments
+  (your edits in Zotero win; a highlight you erase on the tablet goes to Zotero's trash, unless
+  you edited it there), and the plugin can talk to the Zotero 10 desktop app as
+  well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
+  Highlight colours arrive as the colour you chose, in Zotero's eight — matched by hue, so the
+  Paper Pro's pastel highlighters keep their names and the reMarkable 2's three arrive as three.
+- **A tag in Zotero sends the paper.** Name a send tag under Settings → Zotero (off until you
+  do), tag a paper with it in Zotero, and the next sync puts its PDF on your tablet, in the same
+  folder as *Send* but without a sync tag — you tag it on the tablet when you want it back. Nothing
+  is written into Zotero and the tag there stays; a paper already on the tablet is skipped, one
+  with two PDFs is named and left for *Send*. Over
+  SSH this runs only in a sync you start yourself, since that route restarts the tablet's reading
+  app.
+
+- **Marker colours in the digest.** A highlight you made in green is green in the note — the
+  same eight colours Zotero uses, painted by the plugin's own stylesheet, so nothing to install and
+  a theme can restyle them. A pen mark stays Obsidian's ordinary highlight. An existing digest
+  picks the colours up the next time its document changes.
+
 ### Fixed
 
+- **A page you cleared on the tablet cleared its note too.** Deleting every mark on a page (the
+  whole layer, say) left the render blank but the note still quoting the old highlights, because
+  the plugin refuses to replace a note's content with nothing -- a guard against losing marks to a
+  parse error. A page that is empty on the tablet now writes an empty note; the guard still holds
+  where the page plainly carries ink.
 - **Section headings from a font that speaks in glyph ids.** Some PDFs embed a heading font that
   pdf.js can only read as glyph numbers, so the digest filed quotes under `,QWURGXFWLRQ` instead
   of `Introduction`. Such text is now read back as the characters it draws; quotes set in such a
@@ -20,26 +54,6 @@ workflow publishes the section as the GitHub release body. See
   with hundreds of empty ```` ```text ```` blocks before the word, which reached the note's callout
   and, with Zotero write-back, the annotation's comment. Empty blocks are dropped; a block with
   content is left alone.
-
-
-## [Unreleased]
-
-### Added
-
-- **Zotero.** Send a PDF from your Zotero library to the tablet, already carrying your sync tag;
-  after the sync the note knows which paper it is and links back to the item in Zotero and in your
-  web library. Both work with a zotero.org API key and no licence. With Tagged Sync Pro, what you
-  marked on the tablet is also written into Zotero as native highlights, underlines and comments
-  (add-only, your edits in Zotero win), and the plugin can talk to the Zotero 10 desktop app as
-  well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
-  Highlight colours arrive as the colour you chose, in Zotero's eight — matched by hue, so the
-  Paper Pro's pastel highlighters keep their names and the reMarkable 2's three arrive as three.
-- **A tag in Zotero sends the paper.** Name a send tag under Settings → Zotero (off until you
-  do), tag a paper with it in Zotero, and the next sync puts its PDF on your tablet, in the same
-  folder and with the same sync tag as *Send*. Nothing is written into Zotero and the tag stays;
-  a paper already on the tablet is skipped, one with two PDFs is named and left for *Send*. Over
-  SSH this runs only in a sync you start yourself, since that route restarts the tablet's reading
-  app.
 
 ## [1.7.0] - 2026-09-11
 

@@ -39,6 +39,8 @@ export interface ZoteroUnit {
 	readonly notePath: string;
 	/** The digest's own entries, as `buildDigest` handed them out. Empty for a unit with no digest. */
 	readonly pages: readonly DigestPage[];
+	/** The source page indexes the digest was given -- see `WriteBackInput.covered`. */
+	readonly covered: readonly number[];
 	/**
 	 * MD5 of the source PDF the tablet holds, or `null` where there is none.
 	 *
@@ -255,7 +257,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			writeBack = { kind: "free" };
 		} else try {
 			const existing = await deps.client.ownAnnotations(attachment.key);
-			const plan = planWriteBack({ pages: [...unit.pages], attachmentKey: attachment.key, link, existing });
+			const plan = planWriteBack({ pages: [...unit.pages], covered: unit.covered, attachmentKey: attachment.key, link, existing });
 			const result = await executeWriteBack(deps.client, link, plan);
 			link = { ...link, annotations: result.annotations };
 			await deps.saveLinks(withLink(deps.links(), unit.docId, link));

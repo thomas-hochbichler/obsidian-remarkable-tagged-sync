@@ -21,7 +21,6 @@ import { pickPdfFile, readLocalFile } from "./desktop-files";
 import type { Entitlement } from "./licence-state";
 import { rowForNotePath } from "./note-rename";
 import { NOTE_NOT_SYNCED_NOTICE } from "./re-transcribe-prompt";
-import type { SyncIndexRow } from "./sync-engine";
 import { LONG_NOTICE_MS } from "./sync-notices";
 import type { TaggedSyncData } from "./settings-store";
 import type { ZoteroClient } from "./zotero-client";
@@ -33,18 +32,16 @@ import {
 	documentsOnTablet,
 	pdfChoice,
 	PICK_THE_FILE,
-	SEND_NEEDS_A_TAG,
 	SEND_NEEDS_TRANSPORT,
 	sendState,
 	sendToTablet,
 	sendTransport,
 	tabletName,
-	tagChoice,
 	type SendRoutes,
 	type SendTransport,
 } from "./zotero-send";
-import { askWhatToSend, askWhereToSend, NO_PDF, type SendChoice } from "./zotero-send-dialog";
-import { zoteroProAllowed, zoteroUnavailable } from "./zotero-settings";
+import { askWhatToSend, NO_PDF, type SendChoice } from "./zotero-send-dialog";
+import { webConfigured, zoteroProAllowed, zoteroUnavailable } from "./zotero-settings";
 import { createZoteroPass, type ZoteroPass } from "./zotero-sync";
 
 /** The slice of the plugin this file reaches for. Narrow on purpose: a test builds it as a literal. */
@@ -93,7 +90,7 @@ export function zoteroPassFor(host: ZoteroHost, interactive: boolean): ZoteroPas
 		// desktop app knows it too -- but a vault that only talks to Zotero on this machine has no
 		// business printing a zotero.org URL into a note.
 		webUserId: async () => {
-			if (host.data.zotero.apiKey === null) return null;
+			if (!webConfigured(host.data.zotero)) return null;
 			const id = await client.libraryId();
 			return id === null ? null : String(id);
 		},
@@ -185,9 +182,12 @@ function clientOrNotice(host: ZoteroHost): ZoteroClient | null {
 /**
  * *Send Zotero PDF to reMarkable…* (spec §2.4, §2.5), from the palette or from a note.
  *
- * Everything it refuses, it refuses **before** opening anything: no route to a tablet, and no mapped
- * tag to send with. A dialog that asks a reader to find their paper and then says it cannot deliver
- * it has wasted the one thing this command exists to save.
+ * Everything it refuses, it refuses **before** opening anything: no route to a tablet. A dialog that
+ * asks a reader to find their paper and then says it cannot deliver it has wasted the one thing this
+ * command exists to save.
+ *
+ * The document goes up **without a sync tag** (decided 2026-09-13; see `SendDocument`). The reader
+ * tags it on the tablet when they want it back, and the notice says so.
  */
 export async function sendZoteroPdf(host: ZoteroHost, itemKey?: string): Promise<void> {
 	const client = clientOrNotice(host);
@@ -197,15 +197,10 @@ export async function sendZoteroPdf(host: ZoteroHost, itemKey?: string): Promise
 		new Notice(SEND_NEEDS_TRANSPORT, LONG_NOTICE_MS);
 		return;
 	}
-	const tag = tagChoice(Object.keys(host.data.tagFolderMap), host.data.zotero.lastTag);
-	if (tag.kind === "none") {
-		new Notice(SEND_NEEDS_A_TAG, LONG_NOTICE_MS);
-		return;
-	}
 
 	try {
-		const deps = { search: (query: string) => client.search(query), attachments: () => client.attachments(), tag };
-		const choice = itemKey === undefined ? await askWhatToSend(host.app, deps) : await askWhichOfItem(host, client, deps, itemKey);
+		const deps = { search: (query: string) => client.search(query), attachments: () => client.attachments() };
+		const choice = itemKey === undefined ? await askWhatToSend(host.app, deps) : await askWhichOfItem(host, client, itemKey);
 		if (choice === null) return;
 		await putOnTablet(host, client, transport, choice);
 	} catch (error) {
@@ -214,8 +209,11 @@ export async function sendZoteroPdf(host: ZoteroHost, itemKey?: string): Promise
 	}
 }
 
-/** The context action's half of the question: this paper's PDF, and the tag if there is a choice. */
-async function askWhichOfItem(host: ZoteroHost, client: ZoteroClient, deps: Parameters<typeof askWhereToSend>[1], itemKey: string): Promise<SendChoice | null> {
+/**
+ * The context action's half of the question: this paper's PDF, where it has several. Usually no
+ * dialog at all -- a window showing somebody a single answer they cannot change is not a question.
+ */
+async function askWhichOfItem(host: ZoteroHost, client: ZoteroClient, itemKey: string): Promise<SendChoice | null> {
 	const item = await client.parentItem(itemKey);
 	if (item === null) {
 		new Notice(ITEM_GONE, LONG_NOTICE_MS);
@@ -227,7 +225,7 @@ async function askWhichOfItem(host: ZoteroHost, client: ZoteroClient, deps: Para
 		return null;
 	}
 	const attachment = pdf.kind === "use" ? pdf.attachment : await askWhichPdf(host.app, item, pdf.options);
-	return attachment === null ? null : await askWhereToSend(host.app, deps, item, attachment);
+	return attachment === null ? null : { item, attachment };
 }
 
 /**
@@ -240,8 +238,7 @@ async function askWhichOfItem(host: ZoteroHost, client: ZoteroClient, deps: Para
 async function putOnTablet(host: ZoteroHost, client: ZoteroClient, transport: SendTransport, choice: SendChoice): Promise<void> {
 	const folder = host.data.zotero.folder.trim() === "" ? DEFAULT_SEND_FOLDER : host.data.zotero.folder;
 	const links: StoredZoteroLinks = host.data.zoteroLinks;
-	const rows: SyncIndexRow[] = Object.values(host.data.syncIndex.rows);
-	const state = sendState(links, choice.attachment.key, documentsOnTablet(rows, links, host.now()));
+	const state = sendState(links, choice.attachment.key, documentsOnTablet(links, host.now()));
 	const name = tabletName(choice.item, choice.attachment);
 	if (state.present.length > 0) {
 		const again = await confirmDialog(
@@ -265,7 +262,7 @@ async function putOnTablet(host: ZoteroHost, client: ZoteroClient, transport: Se
 			},
 			now: () => host.now(),
 		},
-		{ attachment: choice.attachment, item: choice.item, folder, tag: choice.tag, links, replacing: state.vanished },
+		{ attachment: choice.attachment, item: choice.item, folder, links, replacing: state.vanished },
 	);
 	// The user closed the file dialog, which is an answer and not a failure (§2.4).
 	if (result === null) {
@@ -273,10 +270,9 @@ async function putOnTablet(host: ZoteroHost, client: ZoteroClient, transport: Se
 		return;
 	}
 	host.data.zoteroLinks = result.links;
-	host.data.zotero = { ...host.data.zotero, lastTag: choice.tag };
 	await host.save();
 	host.report("ok", `Tagged Sync: sent "${result.visibleName}"`);
-	new Notice(`"${result.visibleName}" is on your reMarkable, tagged ${choice.tag}. Annotate it, then sync.`, LONG_NOTICE_MS);
+	new Notice(`"${result.visibleName}" is on your reMarkable. Tag it there, annotate it, then sync.`, LONG_NOTICE_MS);
 }
 
 /**

@@ -255,6 +255,20 @@ describe("writing annotations", () => {
 		]);
 	});
 
+	// ⚠️ Never `DELETE`: on the local API that is a permanent erase. `deleted: true` is the trash on
+	// both APIs, and the trash is what makes an erased highlight a thing the user can take back.
+	it("trashes an annotation rather than erasing it, under the version it read", async () => {
+		const { api, calls } = connection(() => new Response(null, { status: 204 }));
+		expect(await api.trashAnnotation("ANN1", 246)).toBe("written");
+		expect(calls[0]).toMatchObject({ method: "PATCH", path: "/items/ANN1", body: { deleted: true } });
+		expect(calls[0].headers?.["If-Unmodified-Since-Version"]).toBe("246");
+	});
+
+	it("reports a conflict on the way to the trash, like a patch would", async () => {
+		const { api } = connection(() => new Response(null, { status: 412 }));
+		expect(await api.trashAnnotation("ANN1", 246)).toBe("conflict");
+	});
+
 	// 412 is Zotero saying the item moved under us, which is the signature of the user having edited
 	// it themselves -- and §3.3 gives the user's value the win.
 	it("reports a conflict rather than trying harder when the item changed underneath", async () => {
@@ -308,6 +322,16 @@ describe("two connections, one client", () => {
 		expect(web.calls).toHaveLength(1);
 	});
 
+	it("sends a trash to the connection whose version it is holding, and nowhere else", async () => {
+		const local = connection(() => new Response(null, { status: 204 }), "local");
+		const web = connection(() => new Response(null, { status: 204 }), "web");
+		const client = createZoteroClient({ local: local.api, web: web.api });
+		await client?.trashAnnotation({ key: "ANN1", version: 986, source: "web" });
+		expect(local.calls).toHaveLength(0);
+		expect(web.calls).toHaveLength(1);
+		await expect(createZoteroClient({ web: web.api })?.trashAnnotation({ key: "ANN1", version: 246, source: "local" })).rejects.toThrow(ZoteroError);
+	});
+
 	it("skips a patch whose connection is gone rather than sending its version to the other one", async () => {
 		const client = createZoteroClient({ web: upConnection("web", []) });
 		await expect(client?.patchAnnotation({ key: "ANN1", version: 246, source: "local" }, { comment: "x" })).rejects.toThrow(ZoteroError);
@@ -318,7 +342,7 @@ describe("two connections, one client", () => {
 		const localOnly = createZoteroClient({ local: upConnection("local", []) });
 		const webOnly = createZoteroClient({ local: downConnection("local"), web: upConnection("web", []) });
 		const neither = createZoteroClient({ local: downConnection("local") });
-		expect((await both?.status())?.summary).toBe("Connected via desktop and web.");
+		expect((await both?.status())?.summary).toBe("Connected via desktop and web. The desktop app is asked first; zotero.org answers when it is closed.");
 		expect((await localOnly?.status())?.summary).toBe("Connected via desktop.");
 		expect((await webOnly?.status())?.summary).toBe("Connected via web.");
 		expect((await neither?.status())?.summary).toBe("Not connected.");
