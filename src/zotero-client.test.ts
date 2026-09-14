@@ -39,7 +39,7 @@ describe("reading the library", () => {
 	it("keeps asking for the next page until one comes back short", async () => {
 		const pages = [Array.from({ length: 100 }, (_row, index) => attachmentRow({ key: `A${index}` })), [attachmentRow({ key: "LAST" })]];
 		const { api, calls } = connection(() => json(pages.shift() ?? []));
-		const attachments = await api.attachments();
+		const attachments = await api.attachments("user");
 		expect(attachments).toHaveLength(101);
 		expect(calls.map((call) => call.path)).toEqual([
 			"/items?itemType=attachment&limit=100&start=0",
@@ -58,17 +58,17 @@ describe("reading the library", () => {
 				attachmentRow({ key: "TRASHED", deleted: 1 }),
 			]),
 		);
-		expect((await api.attachments()).map((attachment) => attachment.key)).toEqual(["PDF"]);
+		expect((await api.attachments("user")).map((attachment) => attachment.key)).toEqual(["PDF"]);
 	});
 
 	it("names a linked file by the last segment of its path", async () => {
 		const { api } = connection(() => json([attachmentRow({ filename: undefined, path: "/Users/me/Papers/linked copy.pdf" })]));
-		expect((await api.attachments())[0].filename).toBe("linked copy.pdf");
+		expect((await api.attachments("user"))[0].filename).toBe("linked copy.pdf");
 	});
 
 	it("answers nothing for an attachment Zotero no longer has", async () => {
 		const { api } = connection(() => json({ error: "Not found" }, 404));
-		expect(await api.attachment("GONE")).toBeNull();
+		expect(await api.attachment("GONE", "user")).toBeNull();
 	});
 
 	it("reads the creator, the year and the citation key Better BibTeX keeps in Extra", async () => {
@@ -83,8 +83,9 @@ describe("reading the library", () => {
 				},
 			}),
 		);
-		expect(await api.parentItem("ITEM")).toEqual({
+		expect(await api.parentItem("ITEM", "user")).toEqual({
 			key: "ITEM",
+			library: "user",
 			title: "Best Practices für Prompting",
 			creator: "Smith",
 			year: "2024",
@@ -94,12 +95,12 @@ describe("reading the library", () => {
 
 	it("invents no citation key where Zotero has none", async () => {
 		const { api } = connection(() => json({ data: { key: "ITEM", title: "Untitled", creators: [], date: "" } }));
-		expect(await api.parentItem("ITEM")).toMatchObject({ citationKey: null, creator: null, year: null });
+		expect(await api.parentItem("ITEM", "user")).toMatchObject({ citationKey: null, creator: null, year: null });
 	});
 
 	it("searches top-level items the way Zotero's own quick search does", async () => {
 		const { api, calls } = connection(() => json([]));
-		await api.search("prompting & co");
+		await api.search("prompting & co", "user");
 		expect(calls[0].path).toBe("/items/top?q=prompting%20%26%20co&qmode=titleCreatorYear&limit=100&start=0");
 	});
 
@@ -107,7 +108,7 @@ describe("reading the library", () => {
 	// found, on purpose: one tag placed two ways would otherwise send the same paper twice.
 	it("lists the papers carrying a tag, and only the papers", async () => {
 		const { api, calls } = connection(() => json([{ data: { key: "ITEM1", itemType: "journalArticle", title: "Prompting" } }]));
-		expect(await api.itemsWithTag("to remarkable")).toMatchObject([{ key: "ITEM1", title: "Prompting" }]);
+		expect(await api.itemsWithTag("to remarkable", "user")).toMatchObject([{ key: "ITEM1", title: "Prompting" }]);
 		expect(calls[0].path).toBe("/items/top?tag=to%20remarkable&limit=100&start=0");
 	});
 });
@@ -135,7 +136,7 @@ describe("our own annotations", () => {
 	// from the user's.
 	it("reads them by the ownership tag, never through the attachment's children", async () => {
 		const { api, calls } = connection(() => json([annotationRow({}), annotationRow({ key: "OTHER", parentItem: "ATT9" })]));
-		const mine = await api.ownAnnotations("ATT1");
+		const mine = await api.ownAnnotations("ATT1", "user");
 		expect(mine.map((annotation) => annotation.key)).toEqual(["ANN1"]);
 		expect(calls[0].path).toBe(`/items?itemType=annotation&tag=${OWNERSHIP_TAG}&limit=100&start=0`);
 		expect(calls.every((call) => !call.path.includes("children"))).toBe(true);
@@ -143,7 +144,7 @@ describe("our own annotations", () => {
 
 	it("remembers which connection read them, because a version means nothing anywhere else", async () => {
 		const { api } = connection(() => json([annotationRow({})]), "web");
-		expect(await api.ownAnnotations("ATT1")).toMatchObject([{ source: "web", version: 246 }]);
+		expect(await api.ownAnnotations("ATT1", "user")).toMatchObject([{ source: "web", version: 246 }]);
 	});
 
 	// The tag is the only thing that says an annotation is ours, and a user is free to put it on one
@@ -157,12 +158,12 @@ describe("our own annotations", () => {
 				annotationRow({ key: "ORPHAN", parentItem: undefined }),
 			]),
 		);
-		expect((await api.ownAnnotations("ATT1")).map((annotation) => annotation.key)).toEqual(["ANN1"]);
+		expect((await api.ownAnnotations("ATT1", "user")).map((annotation) => annotation.key)).toEqual(["ANN1"]);
 	});
 
 	it("reads the page out of the position, and answers none where the position is unreadable", async () => {
 		const { api } = connection(() => json([annotationRow({}), annotationRow({ key: "BROKEN", annotationPosition: "not json" })]));
-		expect((await api.ownAnnotations("ATT1")).map((annotation) => annotation.pageIndex)).toEqual([1, null]);
+		expect((await api.ownAnnotations("ATT1", "user")).map((annotation) => annotation.pageIndex)).toEqual([1, null]);
 	});
 });
 
@@ -183,7 +184,7 @@ describe("writing annotations", () => {
 	// pass every test that checks fields and fail against a real Zotero.
 	it("puts annotationType before every other annotation field", async () => {
 		const { api, calls } = connection(() => json({ success: { "0": "NEW1" } }));
-		await api.createAnnotations([highlight]);
+		await api.createAnnotations([highlight], "user");
 		const sent = (calls[0].body as Record<string, unknown>[])[0];
 		const annotationKeys = Object.keys(sent).filter((key) => key.startsWith("annotation"));
 		expect(annotationKeys[0]).toBe("annotationType");
@@ -191,7 +192,7 @@ describe("writing annotations", () => {
 
 	it("tags every annotation it creates as ours, and nothing else", async () => {
 		const { api, calls } = connection(() => json({ success: { "0": "NEW1" } }));
-		await api.createAnnotations([highlight]);
+		await api.createAnnotations([highlight], "user");
 		expect((calls[0].body as Record<string, unknown>[])[0].tags).toEqual([{ tag: OWNERSHIP_TAG }]);
 	});
 
@@ -199,7 +200,7 @@ describe("writing annotations", () => {
 	// field is dropped here rather than taking eleven good annotations down with it.
 	it("never sends highlight text on a sticky note", async () => {
 		const { api, calls } = connection(() => json({ success: { "0": "NEW1" } }));
-		await api.createAnnotations([{ ...highlight, type: "note", text: "should not be sent" }]);
+		await api.createAnnotations([{ ...highlight, type: "note", text: "should not be sent" }], "user");
 		expect((calls[0].body as Record<string, unknown>[])[0]).not.toHaveProperty("annotationText");
 	});
 
@@ -208,7 +209,7 @@ describe("writing annotations", () => {
 			const batch = request.body as unknown[];
 			return json({ success: Object.fromEntries(batch.map((_item, index) => [String(index), `K${index}`])) });
 		});
-		const created = await api.createAnnotations(Array.from({ length: 60 }, () => highlight));
+		const created = await api.createAnnotations(Array.from({ length: 60 }, () => highlight), "user");
 		expect((calls[0].body as unknown[]).length).toBe(50);
 		expect((calls[1].body as unknown[]).length).toBe(10);
 		expect(created.keys).toHaveLength(60);
@@ -217,18 +218,18 @@ describe("writing annotations", () => {
 
 	it("says which ones Zotero refused, and keeps the others' keys", async () => {
 		const { api } = connection(() => json({ success: { "0": "NEW1" }, failed: { "1": { code: 400, message: "parentItem not found" } } }));
-		expect(await api.createAnnotations([highlight, highlight])).toEqual({ keys: ["NEW1", null], failures: ["parentItem not found"] });
+		expect(await api.createAnnotations([highlight, highlight], "user")).toEqual({ keys: ["NEW1", null], failures: ["parentItem not found"] });
 	});
 
 	it("sends a write token, so a retried batch is not written twice", async () => {
 		const { api, calls } = connection(() => json({ success: { "0": "NEW1" } }));
-		await api.createAnnotations([highlight]);
+		await api.createAnnotations([highlight], "user");
 		expect(calls[0].headers?.["Zotero-Write-Token"]).toMatch(/^\w{5,32}$/);
 	});
 
 	it("patches only the fields it was given, under the version it read", async () => {
 		const { api, calls } = connection(() => new Response(null, { status: 204 }));
-		expect(await api.patchAnnotation("ANN1", 246, { comment: "changed" })).toBe("written");
+		expect(await api.patchAnnotation("ANN1", 246, { comment: "changed" }, "user")).toBe("written");
 		expect(calls[0].body).toEqual({ annotationComment: "changed" });
 		expect(calls[0].headers?.["If-Unmodified-Since-Version"]).toBe("246");
 	});
@@ -244,7 +245,7 @@ describe("writing annotations", () => {
 			pageLabel: "xii",
 			sortIndex: "00001|000000|00080",
 			position: '{"pageIndex":1,"rects":[]}',
-		});
+		}, "user");
 		expect(Object.keys(calls[0].body as object)).toEqual([
 			"annotationText",
 			"annotationComment",
@@ -259,21 +260,21 @@ describe("writing annotations", () => {
 	// both APIs, and the trash is what makes an erased highlight a thing the user can take back.
 	it("trashes an annotation rather than erasing it, under the version it read", async () => {
 		const { api, calls } = connection(() => new Response(null, { status: 204 }));
-		expect(await api.trashAnnotation("ANN1", 246)).toBe("written");
+		expect(await api.trashAnnotation("ANN1", 246, "user")).toBe("written");
 		expect(calls[0]).toMatchObject({ method: "PATCH", path: "/items/ANN1", body: { deleted: true } });
 		expect(calls[0].headers?.["If-Unmodified-Since-Version"]).toBe("246");
 	});
 
 	it("reports a conflict on the way to the trash, like a patch would", async () => {
 		const { api } = connection(() => new Response(null, { status: 412 }));
-		expect(await api.trashAnnotation("ANN1", 246)).toBe("conflict");
+		expect(await api.trashAnnotation("ANN1", 246, "user")).toBe("conflict");
 	});
 
 	// 412 is Zotero saying the item moved under us, which is the signature of the user having edited
 	// it themselves -- and §3.3 gives the user's value the win.
 	it("reports a conflict rather than trying harder when the item changed underneath", async () => {
 		const { api } = connection(() => new Response(null, { status: 412 }));
-		expect(await api.patchAnnotation("ANN1", 246, { comment: "changed" })).toBe("conflict");
+		expect(await api.patchAnnotation("ANN1", 246, { comment: "changed" }, "user")).toBe("conflict");
 	});
 });
 
@@ -302,7 +303,7 @@ describe("two connections, one client", () => {
 		const local = connection(() => json({ error: "Not found" }, 404), "local");
 		const web = connection(() => json(attachmentRow({})), "web");
 		const client = createZoteroClient({ local: local.api, web: web.api });
-		expect(await client?.attachment("GONE")).toBeNull();
+		expect(await client?.attachment("GONE", "user")).toBeNull();
 		expect(web.calls).toHaveLength(0);
 	});
 
@@ -317,7 +318,7 @@ describe("two connections, one client", () => {
 		const local = connection(() => new Response(null, { status: 204 }), "local");
 		const web = connection(() => new Response(null, { status: 204 }), "web");
 		const client = createZoteroClient({ local: local.api, web: web.api });
-		await client?.patchAnnotation({ key: "ANN1", version: 986, source: "web" }, { comment: "x" });
+		await client?.patchAnnotation({ key: "ANN1", version: 986, source: "web", library: "user" }, { comment: "x" });
 		expect(local.calls).toHaveLength(0);
 		expect(web.calls).toHaveLength(1);
 	});
@@ -326,15 +327,15 @@ describe("two connections, one client", () => {
 		const local = connection(() => new Response(null, { status: 204 }), "local");
 		const web = connection(() => new Response(null, { status: 204 }), "web");
 		const client = createZoteroClient({ local: local.api, web: web.api });
-		await client?.trashAnnotation({ key: "ANN1", version: 986, source: "web" });
+		await client?.trashAnnotation({ key: "ANN1", version: 986, source: "web", library: "user" });
 		expect(local.calls).toHaveLength(0);
 		expect(web.calls).toHaveLength(1);
-		await expect(createZoteroClient({ web: web.api })?.trashAnnotation({ key: "ANN1", version: 246, source: "local" })).rejects.toThrow(ZoteroError);
+		await expect(createZoteroClient({ web: web.api })?.trashAnnotation({ key: "ANN1", version: 246, source: "local", library: "user" })).rejects.toThrow(ZoteroError);
 	});
 
 	it("skips a patch whose connection is gone rather than sending its version to the other one", async () => {
 		const client = createZoteroClient({ web: upConnection("web", []) });
-		await expect(client?.patchAnnotation({ key: "ANN1", version: 246, source: "local" }, { comment: "x" })).rejects.toThrow(ZoteroError);
+		await expect(client?.patchAnnotation({ key: "ANN1", version: 246, source: "local", library: "user" }, { comment: "x" })).rejects.toThrow(ZoteroError);
 	});
 
 	it("says which connections answered, in the words the settings line uses", async () => {
@@ -364,13 +365,13 @@ describe("two connections, one client", () => {
 		const client = createZoteroClient({ local: api });
 		expect(await client?.libraryId()).toBe(1597773);
 		expect(await client?.attachments()).toEqual([]);
-		expect(await client?.parentItem("ITEM")).not.toBeNull();
+		expect(await client?.parentItem("ITEM", "user")).not.toBeNull();
 		expect(await client?.search("x")).toEqual([]);
 		expect(await client?.itemsWithTag("to-remarkable")).toEqual([]);
-		expect(await client?.filePath("ATT1")).toBe("/tmp/paper.pdf");
-		expect(await client?.fileBytes("ATT1")).toEqual(new Uint8Array([1]));
-		expect(await client?.ownAnnotations("ATT1")).toEqual([]);
-		expect((await client?.createAnnotations([{ type: "note", parentKey: "ATT1" }]))?.keys).toEqual([null]);
+		expect(await client?.filePath("ATT1", "user")).toBe("/tmp/paper.pdf");
+		expect(await client?.fileBytes("ATT1", "user")).toEqual(new Uint8Array([1]));
+		expect(await client?.ownAnnotations("ATT1", "user")).toEqual([]);
+		expect((await client?.createAnnotations([{ type: "note", parentKey: "ATT1" }], "user"))?.keys).toEqual([null]);
 		expect(asked).toHaveLength(6);
 	});
 });
@@ -378,7 +379,7 @@ describe("two connections, one client", () => {
 describe("what comes back from Zotero", () => {
 	it("turns a rejected key into a word the status line can use", async () => {
 		const { api } = connection(() => json({ error: "Invalid key" }, 401));
-		await expect(api.attachments()).rejects.toMatchObject({ reason: "unauthorized" });
+		await expect(api.attachments("user")).rejects.toMatchObject({ reason: "unauthorized" });
 	});
 
 	// 403 is two answers: the desktop's "the local API is off", which a user can fix in Zotero's
@@ -387,19 +388,19 @@ describe("what comes back from Zotero", () => {
 	it("tells a switched-off local API apart from a key that may not write", async () => {
 		const off = connection(() => new Response("Local API is not enabled", { status: 403 }));
 		const readOnly = connection(() => new Response("Forbidden", { status: 403 }), "web");
-		await expect(off.api.attachments()).rejects.toMatchObject({ reason: "not-enabled" });
-		await expect(readOnly.api.attachments()).rejects.toMatchObject({ reason: "unauthorized" });
+		await expect(off.api.attachments("user")).rejects.toMatchObject({ reason: "not-enabled" });
+		await expect(readOnly.api.attachments("user")).rejects.toMatchObject({ reason: "unauthorized" });
 	});
 
 	it("refuses to page forever when a server keeps answering full pages", async () => {
 		const { api, calls } = connection(() => json(Array.from({ length: 100 }, () => attachmentRow({}))));
-		await expect(api.attachments()).rejects.toMatchObject({ reason: "server" });
+		await expect(api.attachments("user")).rejects.toMatchObject({ reason: "server" });
 		expect(calls.length).toBeLessThanOrEqual(100);
 	});
 
 	it("does not take a non-JSON answer for data", async () => {
 		const { api } = connection(() => new Response("<html>proxy error</html>", { status: 200 }));
-		await expect(api.attachments()).rejects.toMatchObject({ reason: "server" });
+		await expect(api.attachments("user")).rejects.toMatchObject({ reason: "server" });
 	});
 });
 
@@ -412,5 +413,63 @@ describe("the timeout both connections share", () => {
 		const { withZoteroTimeout } = await import("./zotero-client");
 		await expect(withZoteroTimeout(new Promise(() => {}), 5, "zotero.org")).rejects.toMatchObject({ reason: "unreachable" });
 		vi.unstubAllGlobals();
+	});
+});
+
+describe("group libraries (ticket 26)", () => {
+	const GROUP = { group: 4711 };
+	const LAB = { id: 4711, name: "Lab reading group" };
+	const groupRow = (id: number, name: string) => ({ id, version: 1, data: { id, name, description: "" } });
+
+	it("lists the groups a connection can see, by id and name, under the user prefix", async () => {
+		const { api, calls } = connection(() => json([groupRow(4711, "Lab reading group"), { id: 12, data: {} }]));
+		expect(await api.groups()).toEqual([LAB]);
+		expect(calls[0]).toMatchObject({ library: "user", path: "/groups?limit=100&start=0" });
+	});
+
+	// A key is unique only within a library, so every row says which one it came from, and every
+	// request says which one it is for -- the connection turns that into the prefix.
+	it("asks each enabled library on its own prefix and stamps every row with where it came from", async () => {
+		const { api, calls } = connection(() => json([attachmentRow({})]));
+		const client = createZoteroClient({ local: api, groups: [LAB] });
+		expect((await client?.attachments())?.map((attachment) => attachment.library)).toEqual(["user", GROUP]);
+		expect(calls.map((call) => call.library)).toEqual(["user", GROUP]);
+		expect((await client?.search("x"))?.map((item) => item.library)).toEqual(["user", GROUP]);
+		expect((await client?.itemsWithTag("t"))?.map((item) => item.library)).toEqual(["user", GROUP]);
+		expect(client?.libraries).toEqual(["user", GROUP]);
+	});
+
+	// The desktop app holds only the groups it syncs, so "not found" on a group listing is the one
+	// not-found that is about the connection rather than about the item.
+	it("falls through to the web for a group the desktop app does not hold, and lists it empty when nobody holds it", async () => {
+		const local = connection((request) => (request.library === "user" ? json([attachmentRow({})]) : json({ error: "Not found" }, 404)), "local");
+		const web = connection((request) => (request.library === "user" ? json([]) : json([attachmentRow({ key: "G1" })])), "web");
+		expect((await createZoteroClient({ local: local.api, web: web.api, groups: [LAB] })?.attachments())?.map((attachment) => attachment.key)).toEqual(["ATT1", "G1"]);
+		expect((await createZoteroClient({ local: local.api, groups: [LAB] })?.attachments())?.map((attachment) => attachment.key)).toEqual(["ATT1"]);
+	});
+
+	// 403 on a write is the library's answer -- the desktop's `Write access denied` for a group the
+	// user may only read -- and the other connection would say the same. A refused *read* is still
+	// the key, and still worth asking the other connection.
+	it("reads a refused write as read-only and never tries the other connection with it", async () => {
+		const local = connection(() => new Response("Write access denied", { status: 403 }), "local");
+		const web = connection(() => json({ success: { "0": "NEW" } }), "web");
+		const client = createZoteroClient({ local: local.api, web: web.api });
+		await expect(client?.createAnnotations([{ type: "note", parentKey: "ATT1" }], GROUP)).rejects.toMatchObject({ reason: "read-only" });
+		expect(web.calls).toHaveLength(0);
+		await expect(local.api.attachments("user")).rejects.toMatchObject({ reason: "unauthorized" });
+	});
+
+	it("routes a patch by the annotation's library as well as by its source", async () => {
+		const { api, calls } = connection(() => new Response(null, { status: 204 }));
+		await createZoteroClient({ local: api })?.patchAnnotation({ key: "ANN1", version: 1, source: "local", library: GROUP }, { comment: "x" });
+		expect(calls[0]).toMatchObject({ library: GROUP, path: "/items/ANN1" });
+	});
+
+	it("names a library the way a person would", () => {
+		const client = createZoteroClient({ local: connection(() => json([])).api, groups: [LAB] });
+		expect(client?.libraryName("user")).toBe("your library");
+		expect(client?.libraryName(GROUP)).toBe("Lab reading group");
+		expect(client?.libraryName({ group: 99 })).toBe("group 99");
 	});
 });

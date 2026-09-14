@@ -110,7 +110,7 @@ export async function sendTaggedPapers(host: ZoteroHost, interactive: boolean): 
 
 		for (const item of items) {
 			const title = item.title.trim() === "" ? item.key : item.title;
-			const pdf = pdfChoice(attachments, item.key);
+			const pdf = pdfChoice(attachments, item);
 			if (pdf.kind === "none") {
 				skipped.push(tagSendSkipNotice(title, NO_PDF_IN_ZOTERO));
 				continue;
@@ -121,7 +121,7 @@ export async function sendTaggedPapers(host: ZoteroHost, interactive: boolean): 
 			}
 			// Re-read per item: every successful send below writes it.
 			const links = host.data.zoteroLinks;
-			const state = sendState(links, pdf.attachment.key, onTablet);
+			const state = sendState(links, pdf.attachment, onTablet);
 			if (state.present.length > 0) continue;
 			if (route.kind === "later") {
 				skipped.push(tagSendSkipNotice(title, WAITING_FOR_A_SYNC_YOU_START));

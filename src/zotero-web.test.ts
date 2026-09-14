@@ -49,8 +49,8 @@ describe("talking to zotero.org", () => {
 	it("asks whose key this is once, and scopes every later path to that user", async () => {
 		const { impl, calls } = stubFetch(whoami(), attachments(), attachments());
 		const api = createZoteroWebConnection(KEY, impl, sleep);
-		await api.attachments();
-		await api.attachments();
+		await api.attachments("user");
+		await api.attachments("user");
 		expect(calls[0].url).toBe("https://api.zotero.org/keys/current");
 		expect(calls[1].url).toBe("https://api.zotero.org/users/1597773/items?itemType=attachment&limit=100&start=0");
 		expect(calls.filter((call) => call.url.endsWith("/keys/current"))).toHaveLength(1);
@@ -58,14 +58,14 @@ describe("talking to zotero.org", () => {
 
 	it("sends the key and pins the API version on every request", async () => {
 		const { impl, calls } = stubFetch(whoami(), attachments());
-		await createZoteroWebConnection(KEY, impl, sleep).attachments();
+		await createZoteroWebConnection(KEY, impl, sleep).attachments("user");
 		expect(calls.every((call) => call.headers["zotero-api-key"] === KEY)).toBe(true);
 		expect(calls.every((call) => call.headers["zotero-api-version"] === "3")).toBe(true);
 	});
 
 	it("says the key was rejected rather than that Zotero is down", async () => {
 		const { impl } = stubFetch(new Response("Invalid key", { status: 403 }));
-		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments()).rejects.toMatchObject({ reason: "unauthorized" });
+		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments("user")).rejects.toMatchObject({ reason: "unauthorized" });
 	});
 
 	// A key pasted into the settings while Obsidian is running has to work without a restart, so a
@@ -73,8 +73,8 @@ describe("talking to zotero.org", () => {
 	it("asks again after a rejected key, so a corrected one works at once", async () => {
 		const { impl, calls } = stubFetch(new Response("Invalid key", { status: 403 }), whoami(), attachments());
 		const api = createZoteroWebConnection(KEY, impl, sleep);
-		await api.attachments().catch(() => undefined);
-		await api.attachments();
+		await api.attachments("user").catch(() => undefined);
+		await api.attachments("user");
 		expect(calls.filter((call) => call.url.endsWith("/keys/current"))).toHaveLength(2);
 	});
 
@@ -82,14 +82,14 @@ describe("talking to zotero.org", () => {
 		const impl = (async () => {
 			throw new TypeError("fetch failed");
 		}) as unknown as typeof fetch;
-		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments()).rejects.toMatchObject({ reason: "unreachable" });
+		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments("user")).rejects.toMatchObject({ reason: "unreachable" });
 	});
 });
 
 describe("when zotero.org asks us to slow down", () => {
 	it("waits as long as it was told, once, and then asks again", async () => {
 		const { impl, calls } = stubFetch(whoami(), new Response(null, { status: 429, headers: { "Retry-After": "2" } }), attachments());
-		await createZoteroWebConnection(KEY, impl, sleep).attachments();
+		await createZoteroWebConnection(KEY, impl, sleep).attachments("user");
 		expect(slept).toEqual([2000]);
 		expect(calls).toHaveLength(3);
 	});
@@ -99,12 +99,12 @@ describe("when zotero.org asks us to slow down", () => {
 	it("reports rather than retrying a second time", async () => {
 		const busy = () => new Response(null, { status: 429, headers: { "Retry-After": "1" } });
 		const { impl } = stubFetch(whoami(), busy(), busy());
-		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments()).rejects.toMatchObject({ reason: "rate-limited" });
+		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments("user")).rejects.toMatchObject({ reason: "rate-limited" });
 	});
 
 	it("does not sit out a wait longer than the sync can afford", async () => {
 		const { impl } = stubFetch(whoami(), new Response(null, { status: 503, headers: { "Retry-After": "600" } }));
-		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments()).rejects.toMatchObject({ reason: "rate-limited" });
+		await expect(createZoteroWebConnection(KEY, impl, sleep).attachments("user")).rejects.toMatchObject({ reason: "rate-limited" });
 		expect(slept).toEqual([]);
 	});
 
@@ -113,9 +113,9 @@ describe("when zotero.org asks us to slow down", () => {
 	it("keeps a Backoff for the next request instead of the one that carried it", async () => {
 		const { impl } = stubFetch(whoami(), json([], { headers: { Backoff: "3" } }), attachments());
 		const api = createZoteroWebConnection(KEY, impl, sleep);
-		await api.attachments();
+		await api.attachments("user");
 		expect(slept).toEqual([]);
-		await api.attachments();
+		await api.attachments("user");
 		expect(slept).toHaveLength(1);
 		expect(slept[0]).toBeGreaterThan(2000);
 	});
@@ -124,7 +124,7 @@ describe("when zotero.org asks us to slow down", () => {
 describe("the PDF itself", () => {
 	it("hands back the bytes Zotero has online", async () => {
 		const { impl, calls } = stubFetch(whoami(), new Response(new Uint8Array([37, 80, 68, 70])));
-		expect(await createZoteroWebConnection(KEY, impl, sleep).fileBytes("ATT1")).toEqual(new Uint8Array([37, 80, 68, 70]));
+		expect(await createZoteroWebConnection(KEY, impl, sleep).fileBytes("ATT1", "user")).toEqual(new Uint8Array([37, 80, 68, 70]));
 		expect(calls[1].url).toBe("https://api.zotero.org/users/1597773/items/ATT1/file");
 	});
 
@@ -132,11 +132,31 @@ describe("the PDF itself", () => {
 	// command turns into "Zotero has no copy of this PDF online. Pick the file."
 	it("answers nothing, not an error, when Zotero has no copy online", async () => {
 		const { impl } = stubFetch(whoami(), new Response(null, { status: 404 }));
-		expect(await createZoteroWebConnection(KEY, impl, sleep).fileBytes("ATT1")).toBeNull();
+		expect(await createZoteroWebConnection(KEY, impl, sleep).fileBytes("ATT1", "user")).toBeNull();
 	});
 
 	it("knows no path on disk, which is what the desktop connection is for", async () => {
 		const { impl } = stubFetch();
-		expect(await createZoteroWebConnection(KEY, impl, sleep).filePath("ATT1")).toBeNull();
+		expect(await createZoteroWebConnection(KEY, impl, sleep).filePath("ATT1", "user")).toBeNull();
+	});
+});
+
+describe("group libraries (ticket 26)", () => {
+	it("asks a group under its own prefix, which needs no account lookup at all", async () => {
+		const { impl, calls } = stubFetch(attachments());
+		await createZoteroWebConnection(KEY, impl, sleep).attachments({ group: 4711 });
+		expect(calls[0].url).toBe("https://api.zotero.org/groups/4711/items?itemType=attachment&limit=100&start=0");
+	});
+
+	it("lists the key's groups under the account the key belongs to", async () => {
+		const { impl, calls } = stubFetch(whoami(), json([{ id: 4711, version: 3, data: { id: 4711, name: "Lab reading group" } }]));
+		expect(await createZoteroWebConnection(KEY, impl, sleep).groups()).toEqual([{ id: 4711, name: "Lab reading group" }]);
+		expect(calls[1].url).toBe("https://api.zotero.org/users/1597773/groups?limit=100&start=0");
+	});
+
+	it("downloads a group's PDF from the group's own path", async () => {
+		const { impl, calls } = stubFetch(new Response(new Uint8Array([1]), { status: 200 }));
+		await createZoteroWebConnection(KEY, impl, sleep).fileBytes("ATT1", { group: 4711 });
+		expect(calls[0].url).toBe("https://api.zotero.org/groups/4711/items/ATT1/file");
 	});
 });

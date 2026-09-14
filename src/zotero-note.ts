@@ -18,8 +18,16 @@
  */
 
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
-import type { ZoteroItem } from "./zotero-client";
+import type { ZoteroItem, ZoteroLibrary } from "./zotero-client";
 import type { ZoteroLink } from "./zotero-links";
+
+/**
+ * The library half of a `zotero://` URL: `library` for the personal one, `groups/<id>` for a group
+ * (ticket 26). Zotero's own spelling, on both the `select` and the `open-pdf` scheme.
+ */
+function librarySegment(library: ZoteroLibrary): string {
+	return library === "user" ? "library" : `groups/${library.group}`;
+}
 
 /** What the callout line says about write-back, which is the one part of it that is about *us*. */
 export type ZoteroWriteBack =
@@ -114,8 +122,14 @@ function writeBackPhrase(writeBack: ZoteroWriteBack): string {
  * already says what it is and who wrote it.
  */
 export function zoteroCalloutLine(info: ZoteroNoteInfo): string {
-	const parts = [`[${escapeLabel(itemLabel(info.item))}](zotero://select/library/items/${info.item.key})`];
-	if (info.webUserId !== null) parts.push(`[web library](https://www.zotero.org/users/${info.webUserId}/items/${info.item.key})`);
+	const { item } = info;
+	const parts = [`[${escapeLabel(itemLabel(item))}](zotero://select/${librarySegment(item.library)}/items/${item.key})`];
+	// A group's web page needs no user id, but the same gate holds: a vault that does not talk to
+	// zotero.org has no business printing a zotero.org URL into a note.
+	if (info.webUserId !== null) {
+		const web = item.library === "user" ? `users/${info.webUserId}` : `groups/${item.library.group}`;
+		parts.push(`[web library](https://www.zotero.org/${web}/items/${item.key})`);
+	}
 	if (info.matchedByHash === true) parts.push("matched by file hash");
 	parts.push(writeBackPhrase(info.writeBack));
 	if (info.literatureNote !== null) parts.push(`literature note: [[${info.literatureNote}]]`);
@@ -157,8 +171,8 @@ export function findLiteratureNote(notes: readonly VaultNoteKeys[], item: Zotero
 }
 
 /** Where Zotero's reader opens for one annotation. `page` is the physical sheet, 1-based; see the file header. */
-export function openPdfUrl(attachmentKey: string, pageIndex: number, annotationKey: string): string {
-	return `zotero://open-pdf/library/items/${attachmentKey}?page=${pageIndex + 1}&annotation=${annotationKey}`;
+export function openPdfUrl(attachmentKey: string, pageIndex: number, annotationKey: string, library: ZoteroLibrary = "user"): string {
+	return `zotero://open-pdf/${librarySegment(library)}/items/${attachmentKey}?page=${pageIndex + 1}&annotation=${annotationKey}`;
 }
 
 /**
@@ -180,7 +194,7 @@ export function zoteroDigestLinks(link: ZoteroLink, pages: readonly DigestPage[]
 		for (const highlight of page.highlights) {
 			const annotation = link.annotations[highlight.id];
 			if (annotation === undefined || annotation.deleted === true) continue;
-			links[highlight.id] = openPdfUrl(link.attachmentKey, source.index, annotation.key);
+			links[highlight.id] = openPdfUrl(link.attachmentKey, source.index, annotation.key, link.library);
 		}
 	}
 	return links;

@@ -10,7 +10,7 @@ import { matchZoteroAttachment, type MatchInput } from "./zotero-match";
 const MD5 = "2de21c18668a0faba572b4c7f7ecd1f5";
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", parentKey: "ITEM1", filename: "paper.pdf", md5: MD5, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: MD5, title: "Full Text PDF", ...overrides };
 }
 
 function link(overrides: Partial<ZoteroLink> = {}): ZoteroLink {

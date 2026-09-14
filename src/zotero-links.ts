@@ -21,6 +21,8 @@
  * where it is rather than dropped, because dropping it would delete what a newer install wrote.
  */
 
+import type { ZoteroLibrary } from "./zotero-client";
+
 /** The whole map, as `data.json` carries it: reMarkable document uuid -> a link this build may or may not understand. */
 export type StoredZoteroLinks = Record<string, unknown>;
 
@@ -60,8 +62,12 @@ export interface LinkedAnnotation {
 /** One reMarkable document's link to one Zotero attachment. */
 export interface ZoteroLink {
 	readonly attachmentKey: string;
-	/** Personal library only; group libraries are refused (spec §1.3). A link that says otherwise is not ours to act on. */
-	readonly library: "user";
+	/**
+	 * Which library the attachment is in: `"user"`, or `{ group: <id> }` (ticket 26). Stored, not
+	 * looked up, because the key alone does not say -- and a build older than groups reads a group
+	 * link as one it does not handle rather than as a personal-library key.
+	 */
+	readonly library: ZoteroLibrary;
 	/** When Send put this file on the tablet. Absent on a document that arrived some other way and was matched. */
 	readonly sentAt?: string;
 	/** The MD5 Send uploaded, which is what a later match can recognise the file by without asking Zotero. */
@@ -140,23 +146,31 @@ function annotationsOf(value: unknown): Record<string, LinkedAnnotation> {
 	return annotations;
 }
 
+/** `"user"` or `{ group: <positive integer> }`; anything else is a library this build does not handle. */
+function libraryOf(value: unknown): ZoteroLibrary | undefined {
+	if (value === "user") return "user";
+	const group = asRecord(value).group;
+	return typeof group === "number" && Number.isInteger(group) && group > 0 ? { group } : undefined;
+}
+
 /**
  * The link for one reMarkable document, or `null` when there is none this build can act on.
  *
  * Total: any stored value at all -- absent, a string, an array, a link written by a version that
- * knows about group libraries -- answers `null` rather than throwing. `null` means exactly what the
- * matcher needs it to mean: *this document is not linked*, so it is matched again (§2.3), and the
- * note is written without a Zotero part until it is.
+ * knows about a kind of library this one does not -- answers `null` rather than throwing. `null`
+ * means exactly what the matcher needs it to mean: *this document is not linked*, so it is matched
+ * again (§2.3), and the note is written without a Zotero part until it is.
  */
 export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | null {
 	const stored = asRecord(links[docId]);
 	const attachmentKey = asString(stored.attachmentKey);
+	const library = libraryOf(stored.library);
 	// A library this build does not handle is not an error and not ours to repair: it stays in the
 	// file untouched, and this document simply reads as unlinked here.
-	if (attachmentKey === undefined || stored.library !== "user") return null;
+	if (attachmentKey === undefined || library === undefined) return null;
 	return {
 		attachmentKey,
-		library: "user",
+		library,
 		...(asString(stored.sentAt) === undefined ? {} : { sentAt: asString(stored.sentAt) }),
 		...(asString(stored.sentMd5) === undefined ? {} : { sentMd5: asString(stored.sentMd5) }),
 		...(asString(stored.seenAt) === undefined ? {} : { seenAt: asString(stored.seenAt) }),

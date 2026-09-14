@@ -164,3 +164,23 @@ describe("a link the plugin made by itself", () => {
 		expect(linkFor({ [DOC]: { ...link, matchedBy: "something else" } }, DOC)?.matchedBy).toBeUndefined();
 	});
 });
+
+describe("a link into a group library (ticket 26)", () => {
+	it("round-trips the group id", () => {
+		const grouped: ZoteroLink = { ...link, library: { group: 4711 } };
+		expect(linkFor(withLink({}, DOC, grouped), DOC)).toEqual(grouped);
+	});
+
+	// Anything but the personal library or a whole positive group id is a library this build does
+	// not handle: not acted on, and not dropped either.
+	it.each([
+		["a group id given as text", { group: "4711" }],
+		["a group id that is not a whole number", { group: 4.5 }],
+		["a group id of zero", { group: 0 }],
+		["a word this build does not know", "shared"],
+	])("does not act on %s, and does not drop it either", (_case, library) => {
+		const stored = { [DOC]: { attachmentKey: "ABC", library, annotations: {} } };
+		expect(linkFor(stored, DOC)).toBeNull();
+		expect(withLink(stored, "another-doc", link)[DOC]).toBe(stored[DOC]);
+	});
+});

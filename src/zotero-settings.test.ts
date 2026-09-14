@@ -122,7 +122,7 @@ describe("what counts as set up", () => {
 	// A vault that has never been near Zotero must be indistinguishable from the plugin as it shipped
 	// before this feature -- which is what "the free plugin is unchanged" (§5) means in practice.
 	it("starts switched off entirely", () => {
-		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ useWeb: false, apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, sendTag: "" });
+		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ useWeb: false, apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, sendTag: "", groups: [] });
 	});
 });
 
@@ -150,7 +150,7 @@ describe("from the settings block to Zotero and back", () => {
 
 	const write = async (data: { zotero: ZoteroSettings }, saved: { count: number }) => {
 		const client = createZoteroClientFor(zoteroSettingsStore(data, async () => void saved.count++), BOUGHT);
-		await client?.createAnnotations([{ type: "note", parentKey: "ATT1", comment: "x" }]);
+		await client?.createAnnotations([{ type: "note", parentKey: "ATT1", comment: "x" }], "user");
 	};
 
 	it("writes with the key this Zotero database granted earlier, without asking again", async () => {
@@ -184,5 +184,16 @@ describe("why a Zotero command has nothing to do", () => {
 		const sentence = zoteroUnavailable(DESKTOP_ONLY);
 		expect(sentence).toContain("Nothing in your library has been changed.");
 		expect(sentence).toContain("zotero.org API key");
+	});
+});
+
+describe("group libraries (ticket 26)", () => {
+	const WITH_GROUP: ZoteroSettings = { ...WEB_ONLY, groups: [{ id: 4711, name: "Lab reading group" }] };
+
+	// The Pro half, refused in place like the desktop app: the free vault's client simply has no
+	// group in it, and the setting is left where it is for the day a licence arrives.
+	it("reach a Pro vault's client and not a free vault's", () => {
+		expect(clientFor(WITH_GROUP, BOUGHT)?.libraries).toEqual(["user", { group: 4711 }]);
+		expect(clientFor(WITH_GROUP, FREE)?.libraries).toEqual(["user"]);
 	});
 });

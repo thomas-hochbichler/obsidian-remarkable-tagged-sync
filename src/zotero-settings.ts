@@ -15,7 +15,7 @@
  */
 
 import type { Entitlement } from "./licence-state";
-import { createZoteroClient, type ZoteroClient } from "./zotero-client";
+import { createZoteroClient, type ZoteroClient, type ZoteroGroup } from "./zotero-client";
 import { createZoteroLocalConnection, type LocalKeyStore } from "./zotero-local";
 import { createZoteroWebConnection } from "./zotero-web";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
@@ -60,6 +60,14 @@ export interface ZoteroSettings {
 	 * that every sync -- the automatic ones too -- will then send.
 	 */
 	sendTag: string;
+	/**
+	 * The group libraries this vault reads, sends from and writes into, beside the personal one
+	 * (ticket 26). Empty by default: a group is other people's work, and highlights written into it
+	 * are visible to everyone in it, so each one is switched on by name. The name is stored with the
+	 * id so a note can say which group refused a write while the connection is down. **Pro** (§5):
+	 * the client factory hands a free vault the personal library alone, whatever stands here.
+	 */
+	groups: ZoteroGroup[];
 }
 
 export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
@@ -70,6 +78,7 @@ export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
 	folder: DEFAULT_SEND_FOLDER,
 	sendOverSsh: false,
 	sendTag: "",
+	groups: [],
 };
 
 /**
@@ -149,8 +158,12 @@ export function createZoteroClientFor(store: ZoteroSettingsStore, entitlement: E
 		read: (serverId) => settings.localKeys[serverId] ?? null,
 		write: (serverId, key) => store.saveLocalKey(serverId, key),
 	};
+	const pro = zoteroProAllowed(entitlement);
 	return createZoteroClient({
-		local: settings.useLocal && zoteroProAllowed(entitlement) ? createZoteroLocalConnection(keyStore) : undefined,
+		local: settings.useLocal && pro ? createZoteroLocalConnection(keyStore) : undefined,
 		web: settings.useWeb && settings.apiKey !== null ? createZoteroWebConnection(settings.apiKey) : undefined,
+		// Group libraries are the Pro half too, and refused the same way: a free vault's client simply
+		// has no group in it, and every link into one reads as "library switched off" downstream.
+		groups: pro ? settings.groups : [],
 	});
 }

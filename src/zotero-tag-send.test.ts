@@ -21,16 +21,19 @@ import {
 const PRO: Entitlement = { tier: "pro", since: "2026-09-01T00:00:00.000Z", stale: false };
 const NOW = "2026-09-12T09:00:00.000Z";
 
-const PAPER: ZoteroItem = { key: "ITEM1", title: "Prompting", creator: "Smith", year: "2024", citationKey: null };
-const SECOND: ZoteroItem = { key: "ITEM2", title: "Retrieval", creator: "Lee", year: "2025", citationKey: null };
+const PAPER: ZoteroItem = { key: "ITEM1", library: "user", title: "Prompting", creator: "Smith", year: "2024", citationKey: null };
+const SECOND: ZoteroItem = { key: "ITEM2", library: "user", title: "Retrieval", creator: "Lee", year: "2025", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
 }
 
 function fakeClient(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 	return {
 		status: async () => ({ web: true, local: false, summary: "" }),
+		libraries: ["user"],
+		libraryName: () => "your library",
+		groups: async () => [],
 		libraryId: async () => 1234567,
 		attachments: async () => [attachment()],
 		attachment: async () => attachment(),
@@ -157,6 +160,18 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 		expect(h.saves).toBe(1);
 		expect(h.reports).toEqual(['Tagged Sync: sending "Prompting" to reMarkable\'s cloud…']);
 		expect(notices).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
+	});
+
+	// Ticket 26: a paper tagged in a group is fetched from the group and linked into it.
+	it("sends a paper tagged in a group from the group", async () => {
+		const GROUP = { group: 4711 };
+		const fileBytes = vi.fn(async () => new Uint8Array([1]));
+		const h = harness({ client: fakeClient({ itemsWithTag: async () => [{ ...PAPER, library: GROUP }], attachments: async () => [attachment(), attachment({ library: GROUP })], fileBytes }) });
+		await sendTaggedPapers(h.host, false);
+
+		expect(fileBytes).toHaveBeenCalledWith("ATT1", GROUP);
+		expect(h.sent).toHaveLength(1);
+		expect(linkFor(h.data.zoteroLinks, "doc-1")?.library).toEqual(GROUP);
 	});
 
 	it("names every paper it sent in one sentence", async () => {

@@ -23,7 +23,7 @@ import { rowForNotePath } from "./note-rename";
 import { NOTE_NOT_SYNCED_NOTICE } from "./re-transcribe-prompt";
 import { LONG_NOTICE_MS } from "./sync-notices";
 import type { TaggedSyncData } from "./settings-store";
-import type { ZoteroClient } from "./zotero-client";
+import { sameLibrary, type ZoteroClient, type ZoteroLibrary } from "./zotero-client";
 import { askWhichAttachment, askWhichPdf, askZoteroItem } from "./zotero-link-dialog";
 import { linkFor, type StoredZoteroLinks, withLink } from "./zotero-links";
 import type { VaultNoteKeys } from "./zotero-note";
@@ -110,6 +110,22 @@ function frontmatterString(frontmatter: Record<string, unknown> | undefined, key
 }
 
 /**
+ * The library a note's `zotero-library` names (ticket 26): a group id, or the personal library when
+ * the key is absent. YAML reads `zotero-library: 12345` as a number and a quoted one as a string;
+ * the note wrote a group id either way, so both are read.
+ */
+export function libraryOfNote(frontmatter: Record<string, unknown> | undefined): ZoteroLibrary {
+	const raw = frontmatter?.["zotero-library"];
+	const group = typeof raw === "number" ? raw : Number(typeof raw === "string" && raw !== "" ? raw : NaN);
+	return Number.isInteger(group) && group > 0 ? { group } : "user";
+}
+
+/** The dialogs' `libraryName`, given only where there is more than one library to tell apart (ticket 26). */
+function libraryNamer(client: ZoteroClient): { libraryName?(library: ZoteroLibrary): string } {
+	return client.libraries.length > 1 ? { libraryName: (library) => client.libraryName(library) } : {};
+}
+
+/**
  * The vault's own notes about papers, for the note's `literature note:` link (spec §4).
  *
  * Read off `metadataCache`, never by opening a file, and **our own notes are filtered out here**:
@@ -160,13 +176,14 @@ export function registerZoteroCommands(host: ZoteroHost): void {
 	host.registerEvent(
 		host.app.workspace.on("file-menu", (menu: Menu, file) => {
 			if (!(file instanceof TFile)) return;
-			const key = frontmatterString(host.app.metadataCache.getFileCache(file)?.frontmatter, "zotero-key");
+			const frontmatter = host.app.metadataCache.getFileCache(file)?.frontmatter;
+			const key = frontmatterString(frontmatter, "zotero-key");
 			if (key === null) return;
 			menu.addItem((item) =>
 				item
 					.setTitle(SEND_COMMAND)
 					.setIcon("send")
-					.onClick(() => void sendZoteroPdf(host, key)),
+					.onClick(() => void sendZoteroPdf(host, { key, library: libraryOfNote(frontmatter) })),
 			);
 		}),
 	);
@@ -189,7 +206,7 @@ function clientOrNotice(host: ZoteroHost): ZoteroClient | null {
  * The document goes up **without a sync tag** (decided 2026-09-13; see `SendDocument`). The reader
  * tags it on the tablet when they want it back, and the notice says so.
  */
-export async function sendZoteroPdf(host: ZoteroHost, itemKey?: string): Promise<void> {
+export async function sendZoteroPdf(host: ZoteroHost, item?: { key: string; library: ZoteroLibrary }): Promise<void> {
 	const client = clientOrNotice(host);
 	if (client === null) return;
 	const transport = sendTransport(host.sendRoutes());
@@ -199,8 +216,8 @@ export async function sendZoteroPdf(host: ZoteroHost, itemKey?: string): Promise
 	}
 
 	try {
-		const deps = { search: (query: string) => client.search(query), attachments: () => client.attachments() };
-		const choice = itemKey === undefined ? await askWhatToSend(host.app, deps) : await askWhichOfItem(host, client, itemKey);
+		const deps = { search: (query: string) => client.search(query), attachments: () => client.attachments(), ...libraryNamer(client) };
+		const choice = item === undefined ? await askWhatToSend(host.app, deps) : await askWhichOfItem(host, client, item.key, item.library);
 		if (choice === null) return;
 		await putOnTablet(host, client, transport, choice);
 	} catch (error) {
@@ -213,13 +230,13 @@ export async function sendZoteroPdf(host: ZoteroHost, itemKey?: string): Promise
  * The context action's half of the question: this paper's PDF, where it has several. Usually no
  * dialog at all -- a window showing somebody a single answer they cannot change is not a question.
  */
-async function askWhichOfItem(host: ZoteroHost, client: ZoteroClient, itemKey: string): Promise<SendChoice | null> {
-	const item = await client.parentItem(itemKey);
+async function askWhichOfItem(host: ZoteroHost, client: ZoteroClient, itemKey: string, library: ZoteroLibrary): Promise<SendChoice | null> {
+	const item = await client.parentItem(itemKey, library);
 	if (item === null) {
 		new Notice(ITEM_GONE, LONG_NOTICE_MS);
 		return null;
 	}
-	const pdf = pdfChoice(await client.attachments(), itemKey);
+	const pdf = pdfChoice(await client.attachments(), item);
 	if (pdf.kind === "none") {
 		new Notice(NO_PDF, LONG_NOTICE_MS);
 		return null;
@@ -238,7 +255,7 @@ async function askWhichOfItem(host: ZoteroHost, client: ZoteroClient, itemKey: s
 async function putOnTablet(host: ZoteroHost, client: ZoteroClient, transport: SendTransport, choice: SendChoice): Promise<void> {
 	const folder = host.data.zotero.folder.trim() === "" ? DEFAULT_SEND_FOLDER : host.data.zotero.folder;
 	const links: StoredZoteroLinks = host.data.zoteroLinks;
-	const state = sendState(links, choice.attachment.key, documentsOnTablet(links, host.now()));
+	const state = sendState(links, choice.attachment, documentsOnTablet(links, host.now()));
 	const name = tabletName(choice.item, choice.attachment);
 	if (state.present.length > 0) {
 		const again = await confirmDialog(
@@ -290,14 +307,15 @@ export async function linkNoteToZotero(host: ZoteroHost, file: TFile): Promise<v
 		new Notice(NOTE_NOT_SYNCED_NOTICE);
 		return;
 	}
-	const attachment = await askZoteroItem(host.app, { search: (query) => client.search(query), attachments: () => client.attachments() });
+	const attachment = await askZoteroItem(host.app, { search: (query) => client.search(query), attachments: () => client.attachments(), ...libraryNamer(client) });
 	if (attachment === null) return;
 
 	const existing = linkFor(host.data.zoteroLinks, row.docId);
+	const same = existing !== null && existing.attachmentKey === attachment.key && sameLibrary(existing.library, attachment.library);
 	host.data.zoteroLinks = withLink(host.data.zoteroLinks, row.docId, {
 		attachmentKey: attachment.key,
-		library: "user",
-		annotations: existing?.attachmentKey === attachment.key ? existing.annotations : {},
+		library: attachment.library,
+		annotations: same ? existing.annotations : {},
 	});
 	await host.save();
 	new Notice(LINKED, LONG_NOTICE_MS);

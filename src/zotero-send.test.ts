@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "../test-stubs/fake-obsidian";
 import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client";
-import { linkFor, type StoredZoteroLinks } from "./zotero-links";
+import { linkFor, type StoredZoteroLinks, type ZoteroLink } from "./zotero-links";
 import {
 	documentsOnTablet,
 	markListed,
@@ -16,10 +16,10 @@ import {
 	type SendTransport,
 } from "./zotero-send";
 
-const ITEM: ZoteroItem = { key: "ITEM1", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
+const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", parentKey: "ITEM1", filename: "paper.pdf", md5: "2de21c18668a0faba572b4c7f7ecd1f5", title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: "2de21c18668a0faba572b4c7f7ecd1f5", title: "Full Text PDF", ...overrides };
 }
 
 describe("what the document is called on the tablet", () => {
@@ -64,19 +64,19 @@ describe("what the document is called on the tablet", () => {
 
 describe("which PDF of an item is meant", () => {
 	it("is the only one, where there is only one", () => {
-		expect(pdfChoice([attachment()], "ITEM1")).toEqual({ kind: "use", attachment: attachment() });
+		expect(pdfChoice([attachment()], ITEM)).toEqual({ kind: "use", attachment: attachment() });
 	});
 
 	// A preprint beside the published version. The one the reader annotates is the one the highlights
 	// go back onto, and the two do not have the same pages.
 	it("is a question where an item has two", () => {
 		const second = attachment({ key: "ATT2", filename: "preprint.pdf" });
-		expect(pdfChoice([attachment(), second], "ITEM1")).toEqual({ kind: "ask", options: [attachment(), second] });
+		expect(pdfChoice([attachment(), second], ITEM)).toEqual({ kind: "ask", options: [attachment(), second] });
 	});
 
 	it("is nothing for an item whose attachments are all somebody else's", () => {
-		expect(pdfChoice([attachment({ parentKey: "OTHER" })], "ITEM1")).toEqual({ kind: "none" });
-		expect(pdfChoice([], "ITEM1")).toEqual({ kind: "none" });
+		expect(pdfChoice([attachment({ parentKey: "OTHER" })], ITEM)).toEqual({ kind: "none" });
+		expect(pdfChoice([], ITEM)).toEqual({ kind: "none" });
 	});
 });
 
@@ -103,24 +103,24 @@ describe("what this attachment already is on the tablet", () => {
 	const links: StoredZoteroLinks = { "doc-1": link("ATT1"), "doc-2": link("ATT2"), "doc-3": link("ATT1") };
 
 	it("is nothing at all for an attachment nobody has sent", () => {
-		expect(sendState(links, "ATT9", new Set(["doc-1"]))).toEqual({ present: [], vanished: [] });
+		expect(sendState(links, attachment({ key: "ATT9" }), new Set(["doc-1"]))).toEqual({ present: [], vanished: [] });
 	});
 
 	// §2.5: the user is asked, and *Send another copy* is a second document with its own mapping.
 	it("names the document that is still there, so the user can be asked", () => {
-		expect(sendState(links, "ATT1", new Set(["doc-1", "doc-2"]))).toEqual({ present: ["doc-1"], vanished: ["doc-3"] });
+		expect(sendState(links, attachment(), new Set(["doc-1", "doc-2"]))).toEqual({ present: ["doc-1"], vanished: ["doc-3"] });
 	});
 
 	// A document deleted on the tablet leaves a link pointing at nothing, and a send is the only moment
 	// anything is in a position to notice.
 	it("reports a mapping whose document is gone as one to replace", () => {
-		expect(sendState(links, "ATT1", new Set())).toEqual({ present: [], vanished: ["doc-1", "doc-3"] });
+		expect(sendState(links, attachment(), new Set())).toEqual({ present: [], vanished: ["doc-1", "doc-3"] });
 	});
 
 	// An entry a newer build wrote, which this one cannot read, is not this attachment's -- and it is
 	// left exactly where it is (see `zotero-links.ts`).
 	it("passes over an entry this build cannot read", () => {
-		expect(sendState({ "doc-x": "not a link" }, "ATT1", new Set(["doc-x"]))).toEqual({ present: [], vanished: [] });
+		expect(sendState({ "doc-x": "not a link" }, attachment(), new Set(["doc-x"]))).toEqual({ present: [], vanished: [] });
 	});
 });
 
@@ -339,5 +339,35 @@ describe("what is still on the tablet", () => {
 		expect(linkFor(marked, "doc-still-gone")).toEqual(links["doc-still-gone"]);
 		expect(marked["doc-declined"]).toEqual({ declined: true });
 		expect(Object.keys(marked).sort()).toEqual(["doc-back", "doc-declined", "doc-lagging", "doc-left", "doc-listed", "doc-still-gone"]);
+	});
+});
+
+describe("group libraries (ticket 26)", () => {
+	const GROUP = { group: 4711 };
+
+	// A key is unique only within a library: `ITEM1` in a group is another paper.
+	it("takes only the PDFs of the item's own library", () => {
+		const twin = attachment({ library: GROUP });
+		expect(pdfChoice([attachment(), twin], ITEM)).toEqual({ kind: "use", attachment: attachment() });
+		expect(pdfChoice([attachment(), twin], { ...ITEM, library: GROUP })).toEqual({ kind: "use", attachment: twin });
+	});
+
+	it("tells a group's copy on the tablet apart from the personal library's", () => {
+		const links: StoredZoteroLinks = {
+			"doc-1": { attachmentKey: "ATT1", library: "user", annotations: {} },
+			"doc-2": { attachmentKey: "ATT1", library: GROUP, annotations: {} },
+		};
+		expect(sendState(links, attachment({ library: GROUP }), new Set(["doc-1", "doc-2"]))).toEqual({ present: ["doc-2"], vanished: [] });
+	});
+
+	it("fetches the PDF from the group and records the group on the link", async () => {
+		const fileBytes = vi.fn(async () => new Uint8Array([1, 2, 3]));
+		const client = { filePath: async () => null, fileBytes } as unknown as ZoteroClient;
+		const result = await sendToTablet(
+			{ client, transport: { label: "cloud", putPdf: async () => ({ docId: "doc-1" }) }, readFile: async () => null, pickFile: async () => null, now: () => new Date("2026-09-14T10:00:00.000Z") },
+			{ attachment: attachment({ library: GROUP }), item: { ...ITEM, library: GROUP }, folder: "Zotero", links: {} },
+		);
+		expect(fileBytes).toHaveBeenCalledWith("ATT1", GROUP);
+		expect((result?.links["doc-1"] as ZoteroLink).library).toEqual(GROUP);
 	});
 });

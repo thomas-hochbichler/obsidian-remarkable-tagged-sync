@@ -6,7 +6,7 @@ import type { ZoteroItem } from "./zotero-client";
 import type { ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, itemLabel, openPdfUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo } from "./zotero-note";
 
-const ITEM: ZoteroItem = { key: "KX7Q2R4M", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
+const ITEM: ZoteroItem = { key: "KX7Q2R4M", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
 
 function info(overrides: Partial<ZoteroNoteInfo> = {}): ZoteroNoteInfo {
 	return {
@@ -283,3 +283,17 @@ const FRONTMATTER = {
 	uuid: "aaaa0002-0000-0000-0000-000000000000",
 	noteId: "n0000001",
 };
+
+describe("an item in a group library (ticket 26)", () => {
+	const GROUPED = { ...ITEM, library: { group: 4711 } };
+
+	it("links into the group in Zotero and on the web", () => {
+		const line = zoteroCalloutLine(info({ item: GROUPED }));
+		expect(line).toContain("](zotero://select/groups/4711/items/KX7Q2R4M)");
+		expect(line).toContain("[web library](https://www.zotero.org/groups/4711/items/KX7Q2R4M)");
+	});
+
+	it("opens the reader on the group's copy of the PDF", () => {
+		expect(openPdfUrl("A9B3C1DE", 1, "Q1H4T7K2", { group: 4711 })).toBe("zotero://open-pdf/groups/4711/items/A9B3C1DE?page=2&annotation=Q1H4T7K2");
+	});
+});

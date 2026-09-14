@@ -32,6 +32,7 @@ import { planTagRouting } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
 import { zoteroProAllowed } from "./zotero-settings";
+import type { ZoteroGroup } from "./zotero-client";
 import { visionRunStats } from "./vision-ocr-backend";
 
 /**
@@ -645,6 +646,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				});
 			});
 
+		this.renderZoteroLibraries(containerEl, pro);
+
 		new Setting(containerEl).setName("Zotero on the tablet").setHeading();
 
 		new Setting(containerEl)
@@ -698,6 +701,75 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				"Your handwriting never does. With write-back (Tagged Sync Pro), the transcribed text of your margin notes is written into " +
 					"your own Zotero library -- and to zotero.org, if that is the connection carrying it.",
 			);
+	}
+
+	/** What `client.groups()` last answered while this tab was open, or `null` before it has. See {@link renderZoteroLibraries}. */
+	private zoteroGroups: ZoteroGroup[] | null = null;
+
+	/**
+	 * The libraries (ticket 26): the personal one fixed on, then one switch per group library, all
+	 * off until switched on by name -- a group is other people's work, and what write-back puts
+	 * there is visible to everyone in it, which the row says.
+	 *
+	 * The groups are Zotero's to name, so they are asked for when the tab is drawn and the tab is
+	 * drawn again once the answer changes what it would show. Rows are drawn from what is *stored*
+	 * as well as from what was found: a group switched on stays a row while Zotero is closed, so it
+	 * can be switched off again, and the name stored beside its id is what the row and the note
+	 * call it meanwhile. Pro (§5), and shown shut to a free vault like the desktop-app switch.
+	 */
+	private renderZoteroLibraries(containerEl: HTMLElement, pro: boolean): void {
+		new Setting(containerEl).setName("Zotero libraries").setHeading();
+
+		new Setting(containerEl)
+			.setName("Your library")
+			.setDesc("Always on.")
+			.addToggle((toggle) => toggle.setValue(true).setDisabled(true));
+
+		const groupsRow = new Setting(containerEl)
+			.setName(pro ? "Group libraries" : "Group libraries (Pro)")
+			.setDesc(
+				"A group you switch on is searched, sent from and, with write-back, written into like your own library. " +
+					"Highlights written into a group library are visible to everyone in that group.",
+			);
+		const status = groupsRow.descEl.createDiv({ cls: "tagged-sync-verdict" });
+		if (!pro) return;
+
+		const enabled = this.plugin.data.zotero.groups;
+		const client = this.plugin.zoteroClient();
+		if (client === null) {
+			status.setText("Set up a connection above to see your groups.");
+		} else if (this.zoteroGroups === null) {
+			status.setText("Looking up your groups…");
+			client.groups().then(
+				(found) => {
+					const known = this.zoteroGroups;
+					this.zoteroGroups = found;
+					// Drawn again only when the answer adds a row: the same list twice is not a reason to
+					// pull the screen out from under a person reading it.
+					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.display();
+				},
+				(error: unknown) => status.setText(`Could not list your groups: ${error instanceof Error ? error.message : String(error)}`),
+			);
+		} else if (this.zoteroGroups.length === 0 && enabled.length === 0) {
+			status.setText("You are in no group.");
+		}
+
+		// Switched-on groups first, in the order they were switched on, then the rest as Zotero lists them.
+		const rows = [...enabled, ...(this.zoteroGroups ?? []).filter((group) => !enabled.some((on) => on.id === group.id))];
+		for (const group of rows) {
+			const on = enabled.some((candidate) => candidate.id === group.id);
+			new Setting(containerEl)
+				.setName(group.name)
+				.setDesc(this.zoteroGroups !== null && !this.zoteroGroups.some((found) => found.id === group.id) ? "Not listed by Zotero right now; switched on earlier." : "")
+				.addToggle((toggle) => {
+					toggle.setValue(on);
+					toggle.onChange(async (value) => {
+						const others = this.plugin.data.zotero.groups.filter((candidate) => candidate.id !== group.id);
+						this.plugin.data.zotero = { ...this.plugin.data.zotero, groups: value ? [...others, group] : others };
+						await this.plugin.saveData(this.plugin.data);
+					});
+				});
+		}
 	}
 
 	/**

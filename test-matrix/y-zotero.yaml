@@ -3335,3 +3335,268 @@
       layer: unit
       file: src/digest-builder.test.ts
       test: "renderDigest — highlight quotes > drops the colour with the marks when the runs cover the whole quote"
+
+- feature: Y33
+  name: Group libraries
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y33.1
+      scenario: "The connection is asked which groups it can see"
+      expect: 'A list of `{ id, name }` read off `/users/<id>/groups` (`/users/0/groups` locally) -- membership, not write access; a row with no id or no name is not a library anyone can switch on'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > lists the groups a connection can see, by id and name, under the user prefix"
+
+    - id: Y33.2
+      scenario: "The desktop app is asked for a group's items"
+      expect: '`/api/groups/<id>/…`, the same shape zotero.org uses, so the reads and writes stay written once'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "group libraries (ticket 26) > asks a group on its own prefix"
+
+    - id: Y33.3
+      scenario: "The desktop app is asked which groups it holds"
+      expect: '`/api/users/0/groups` -- the local API mirrors the web''s group endpoints (proven in `omni.ja` of the installed Zotero 10, research/26)'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "group libraries (ticket 26) > lists the groups this database holds under the personal prefix"
+
+    - id: Y33.4
+      scenario: "A write into a group the desktop app may only read"
+      expect: '`Write access denied` (403) comes back as `read-only`'
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "group libraries (ticket 26) > reports a group it may only read as read-only when written into"
+
+    - id: Y33.5
+      scenario: "zotero.org is asked for a group's items"
+      expect: '`/groups/<id>/…` straight away: a group path needs no user id, so `/keys/current` is not asked first'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "group libraries (ticket 26) > asks a group under its own prefix, which needs no account lookup at all"
+
+    - id: Y33.6
+      scenario: "zotero.org is asked which groups the key can see"
+      expect: '`/users/<userID>/groups`, under the account the key belongs to'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "group libraries (ticket 26) > lists the key's groups under the account the key belongs to"
+
+    - id: Y33.7
+      scenario: "A group's PDF is downloaded from zotero.org"
+      expect: '`/groups/<id>/items/<key>/file`, not the personal library''s path with the same key'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "group libraries (ticket 26) > downloads a group's PDF from the group's own path"
+
+    - id: Y33.8
+      scenario: "A client over the personal library and one enabled group lists, searches or reads a tag"
+      expect: 'Every enabled library in turn, each on its own prefix, and every row stamped with the library it came from -- a key is unique only within a library. `libraries` says which, in setting order'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > asks each enabled library on its own prefix and stamps every row with where it came from"
+
+    - id: Y33.9
+      scenario: "The desktop app does not hold an enabled group (404 on its listing); or no connection does"
+      expect: 'The one not-found that is about the connection rather than the item: it falls through to zotero.org like an outage would, and a group nobody holds lists as empty rather than failing every document of the run'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > falls through to the web for a group the desktop app does not hold, and lists it empty when nobody holds it"
+
+    - id: Y33.10
+      scenario: "A write is refused with 403"
+      expect: '`read-only`, never fallen back on: the other connection would refuse the same way, and the write is never re-routed into another library. A refused *read* stays `unauthorized` -- that is the key, and worth asking the other connection'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > reads a refused write as read-only and never tries the other connection with it"
+
+    - id: Y33.11
+      scenario: "A patch on an annotation read from a group"
+      expect: 'Routed by the annotation''s library as well as by its source: the same key in the personal library is another annotation'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > routes a patch by the annotation's library as well as by its source"
+
+    - id: Y33.12
+      scenario: "A library is named in a sentence"
+      expect: '`your library`, the group''s name as the setting stored it, or `group <id>` for one the setting no longer holds'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > names a library the way a person would"
+
+    - id: Y33.13
+      scenario: "A vault with a group switched on, with and without Pro"
+      expect: 'The Pro half, refused in place like the desktop app: a Pro vault''s client reads the personal library and the group, a free vault''s the personal library alone, and the setting is left where it is'
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "group libraries (ticket 26) > reach a Pro vault's client and not a free vault's"
+
+    - id: Y33.14
+      scenario: "A link into a group is stored and read back"
+      expect: '`library: { group: <id> }` round-trips through `data.json`'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a link into a group library (ticket 26) > round-trips the group id"
+
+    - id: Y33.15
+      scenario: "A stored link whose group id is text"
+      expect: 'Not acted on -- read as not linked -- and not dropped either: a shape this build does not handle is another build''s'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a link into a group library (ticket 26) > does not act on a group id given as text, and does not drop it either"
+
+    - id: Y33.16
+      scenario: "A stored link whose group id is not a whole number"
+      expect: 'Same as Y33.15'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a link into a group library (ticket 26) > does not act on a group id that is not a whole number, and does not drop it either"
+
+    - id: Y33.17
+      scenario: "A stored link whose group id is zero"
+      expect: 'Same as Y33.15'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a link into a group library (ticket 26) > does not act on a group id of zero, and does not drop it either"
+
+    - id: Y33.18
+      scenario: "A stored link whose library is a word this build does not know"
+      expect: 'Same as Y33.15'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "a link into a group library (ticket 26) > does not act on a word this build does not know, and does not drop it either"
+
+    - id: Y33.19
+      scenario: "An item's PDFs are looked up while a group holds an item with the same key"
+      expect: 'Only the PDFs of the item''s own library: `ITEM1` in a group is another paper'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "group libraries (ticket 26) > takes only the PDFs of the item's own library"
+
+    - id: Y33.20
+      scenario: "The personal library's copy and a group's copy of the same key are both on the tablet"
+      expect: 'Told apart by the library: sending the group''s again asks about the group''s document only'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "group libraries (ticket 26) > tells a group's copy on the tablet apart from the personal library's"
+
+    - id: Y33.21
+      scenario: "A group's PDF is sent"
+      expect: 'The bytes are fetched from the group, and the link records the group'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "group libraries (ticket 26) > fetches the PDF from the group and records the group on the link"
+
+    - id: Y33.22
+      scenario: "The same file hashes to an attachment in the personal library and to one in a group"
+      expect: 'Not a silent match: the one question of §2.3, with the library named beside each candidate -- the answers are told apart by nothing else'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "group libraries (ticket 26) > asks, naming the library beside each candidate, when the same file is in the personal library and in a group"
+
+    - id: Y33.23
+      scenario: "The same question while only the personal library is read"
+      expect: 'No library named: with one there is nothing to tell apart, and every row would say the same thing'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "group libraries (ticket 26) > names no library while only the personal one is read"
+
+    - id: Y33.24
+      scenario: "A document matched to a group's PDF"
+      expect: 'The link carries the group; the callout links `zotero://select/groups/<id>/…` and `https://www.zotero.org/groups/<id>/…`; every quote opens `zotero://open-pdf/groups/<id>/…`; the keys carry `zoteroLibrary: "<id>"`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "group libraries (ticket 26) > links a group's paper into the group, in every link the note carries"
+
+    - id: Y33.25
+      scenario: "Write-back into a group the user may only read"
+      expect: 'One create, into the group, and no retry into the personal library; the note says `not written back: no write access to <Group name>` and the run says the same (§3.4.2)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "group libraries (ticket 26) > writes into the group and nowhere else, and names the group it may only read"
+
+    - id: Y33.26
+      scenario: "A link into a group the vault has since switched off"
+      expect: 'Left exactly as it is, nothing read for it -- not even the listing -- and the note says `Zotero: library switched off` with its keys left alone; "gone" would be the wrong word for a library that is merely off'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "group libraries (ticket 26) > leaves a link into a group that was switched off alone, and says so"
+
+    - id: Y33.27
+      scenario: "A library refuses writes half-way through a plan"
+      expect: '`executeWriteBack` gives up with the `read-only` error rather than counting `0 of 12 written, retry on next sync`: nothing after it can land either, and the pass names the group'
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > gives up on a library that refuses writes, so the pass can name it"
+
+    - id: Y33.28
+      scenario: "The callout line for an item in a group"
+      expect: '`zotero://select/groups/<id>/items/<key>` and `https://www.zotero.org/groups/<id>/items/<key>` -- Zotero''s own spelling on both'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "an item in a group library (ticket 26) > links into the group in Zotero and on the web"
+
+    - id: Y33.29
+      scenario: "The per-quote link for a group's PDF"
+      expect: '`zotero://open-pdf/groups/<id>/items/<attKey>?page=…&annotation=…`'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "an item in a group library (ticket 26) > opens the reader on the group's copy of the PDF"
+
+    - id: Y33.30
+      scenario: "Frontmatter for an item in a group, then for one in the personal library, then the toggle-off cleanup"
+      expect: '`zotero-library: <id>` beside `zotero-key` for a group only; `null` takes the line out, so a query on `zotero-key` alone keeps working; the cleanup removes it with the key'
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "the two Zotero keys > names the group library only where the item is in one, and takes the line out with the key"
+
+    - id: Y33.31
+      scenario: "Send from the context menu of a note whose frontmatter carries `zotero-library`"
+      expect: 'The item is asked for in that group (a YAML number or a quoted string alike), its PDF sent from there, and the link records the group'
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the context action on a note that names its paper > sends a group's paper from the group, read off the note's zotero-library"
+
+    - id: Y33.32
+      scenario: "The send picker's results while more than one library is searched"
+      expect: 'The library''s name under each result; with the personal library alone no name at all'
+      layer: unit
+      file: src/zotero-send-dialog.test.ts
+      test: "group libraries (ticket 26) > names the library under each result only when it was given names to use"
+
+    - id: Y33.33
+      scenario: "The §2.3 picker's candidates from more than one library"
+      expect: '`<filename> · <library>` under each -- the same file in two libraries is told apart by nothing else'
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "group libraries (ticket 26) > names the library after the file where the candidates come from more than one"
+
+    - id: Y33.34
+      scenario: "A paper carrying the send tag in a group"
+      expect: 'Fetched from the group and linked into it, through the same pipeline as Send'
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "a paper tagged in Zotero, at the start of a sync > sends a paper tagged in a group from the group"
+
+    - id: Y33.35
+      scenario: "The settings tab of a Pro vault whose connection names a group"
+      expect: '*Zotero libraries*: *Your library* fixed on, the visibility sentence, then one switch per group Zotero names; switching one on stores `{ id, name }`'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > lists the groups Zotero names as switches, the personal library fixed on above them"
+
+    - id: Y33.36
+      scenario: "A group switched on earlier that Zotero does not list right now"
+      expect: 'Still a row, marked as not listed, so it can be switched off; the stored name is what it is called meanwhile'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > keeps a switched-on group on the screen while Zotero does not list it, so it can be switched off"
+
+    - id: Y33.37
+      scenario: "The settings tab of a free vault"
+      expect: '*Group libraries (Pro)* shown shut, like the desktop-app switch, and Zotero is not asked for its groups'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > shows the group switches shut to a free vault, without asking Zotero for its groups"
+

@@ -12,7 +12,7 @@
  */
 
 import { type App, debounce, Modal, Setting } from "obsidian";
-import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
+import type { ZoteroAttachment, ZoteroItem, ZoteroLibrary } from "./zotero-client";
 import { itemLabel } from "./zotero-note";
 import { pdfChoice } from "./zotero-send";
 
@@ -21,6 +21,12 @@ export interface SendDialogDeps {
 	search(query: string): Promise<ZoteroItem[]>;
 	/** Every PDF attachment in the library -- the same listing the matcher reads. */
 	attachments(): Promise<ZoteroAttachment[]>;
+	/**
+	 * Names a result's library under it (ticket 26). Given only when more than one library is
+	 * searched -- with the personal one alone there is nothing to tell apart, and every row would
+	 * say the same thing.
+	 */
+	libraryName?(library: ZoteroLibrary): string;
 	/** How long typing settles before the library is searched. Injectable so a test need not wait. */
 	searchDelayMs?: number;
 }
@@ -98,12 +104,13 @@ class SendDialog extends Modal {
 		});
 
 		for (const item of this.results) {
-			new Setting(this.contentEl).setName(itemLabel(item)).addButton((button) =>
+			const row = new Setting(this.contentEl).setName(itemLabel(item)).addButton((button) =>
 				button
 					.setButtonText("Choose")
 					.setCta()
 					.onClick(() => void this.chooseItem(item)),
 			);
+			if (this.deps.libraryName !== undefined) row.setDesc(this.deps.libraryName(item.library));
 		}
 		// Only after a search has come back: an empty dialog that says "nothing matches" before the user
 		// has typed anything is telling them about a search they did not make.
@@ -130,7 +137,7 @@ class SendDialog extends Modal {
 	}
 
 	private async chooseItem(item: ZoteroItem): Promise<void> {
-		const choice = pdfChoice(await this.deps.attachments(), item.key);
+		const choice = pdfChoice(await this.deps.attachments(), item);
 		if (choice.kind === "none") this.step = { kind: "no-pdf", item };
 		else if (choice.kind === "ask") this.step = { kind: "pdf", item, options: choice.options };
 		else {

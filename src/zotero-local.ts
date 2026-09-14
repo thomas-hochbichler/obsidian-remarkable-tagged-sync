@@ -25,6 +25,7 @@
 
 import {
 	createZoteroConnection,
+	libraryPath,
 	withZoteroTimeout,
 	ZoteroError,
 	type ZoteroConnection,
@@ -34,8 +35,8 @@ import {
 /** Zotero's HTTP server. Fixed: the port is a preference nobody changes, and 127.0.0.1 is the only host it binds. */
 const LOCAL_API = "http://localhost:23119/api";
 
-/** The personal library. The local API answers `0` for "whoever is signed in here". */
-const LIBRARY_PREFIX = "/users/0";
+/** The personal library. The local API answers `0` for "whoever is signed in here"; a group is `/groups/<id>`, as on the web. */
+const USER_PREFIX = "/users/0";
 
 /** What the authorize dialog calls us. The user reads this sentence in Zotero, so it is the plugin's real name. */
 const APP_NAME = "Tagged Sync for reMarkable";
@@ -144,9 +145,9 @@ export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fet
 		return store.read(id) ?? (await authorize(id));
 	};
 
-	const requester = async ({ method = "GET", path, body, headers }: ZoteroRequest): Promise<Response> => {
+	const requester = async ({ method = "GET", library, path, body, headers }: ZoteroRequest): Promise<Response> => {
 		const id = await knownServerId();
-		const url = `${LOCAL_API}${LIBRARY_PREFIX}${path}`;
+		const url = `${LOCAL_API}${libraryPath(library, USER_PREFIX)}${path}`;
 		const call = async (key: string | null): Promise<Response> =>
 			await send(
 				url,
@@ -183,7 +184,7 @@ export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fet
 	 * needs. An empty library answers nothing, and then the note simply has no web link (spec §4).
 	 */
 	const libraryId = async (): Promise<number | null> => {
-		const response = await requester({ path: "/items/top?limit=1" });
+		const response = await requester({ library: "user", path: "/items/top?limit=1" });
 		if (!response.ok) return null;
 		const rows = (await response.json()) as { library?: { id?: unknown } }[];
 		const id = Array.isArray(rows) ? rows[0]?.library?.id : undefined;
@@ -198,8 +199,8 @@ export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fet
 		 * `/file/view/url` answers a percent-encoded `file://` URL as plain text; 400 is Zotero's answer
 		 * for an item that is not a file attachment, and `null` lets the caller fall through.
 		 */
-		async path(key) {
-			const response = await requester({ path: `/items/${key}/file/view/url` });
+		async path(key, library) {
+			const response = await requester({ library, path: `/items/${key}/file/view/url` });
 			if (!response.ok) return null;
 			const url = (await response.text()).trim();
 			if (!url.startsWith("file://")) return null;

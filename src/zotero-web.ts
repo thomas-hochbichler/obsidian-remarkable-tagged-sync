@@ -13,9 +13,11 @@
 
 import {
 	createZoteroConnection,
+	libraryPath,
 	withZoteroTimeout,
 	ZoteroError,
 	type ZoteroConnection,
+	type ZoteroLibrary,
 	type ZoteroRequest,
 } from "./zotero-client";
 
@@ -123,15 +125,17 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = fet
 		return await userId;
 	};
 
-	const prefix = async (): Promise<string> => {
+	/** `/users/<id>` for the personal library -- the key's own account -- or `/groups/<id>`, which needs no account at all. */
+	const prefix = async (library: ZoteroLibrary): Promise<string> => {
+		if (library !== "user") return `${ZOTERO_API}${libraryPath(library, "")}`;
 		const id = await libraryId();
 		if (id === null) throw new ZoteroError("unauthorized", "This Zotero API key is not tied to a personal library.");
 		return `${ZOTERO_API}/users/${id}`;
 	};
 
-	const requester = async ({ method = "GET", path, body, headers: extra }: ZoteroRequest): Promise<Response> =>
+	const requester = async ({ method = "GET", library, path, body, headers: extra }: ZoteroRequest): Promise<Response> =>
 		await request(
-			`${await prefix()}${path}`,
+			`${await prefix(library)}${path}`,
 			{ method, headers: { ...headers(method !== "GET"), ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
 			ZOTERO_WEB_TIMEOUT_MS,
 		);
@@ -140,10 +144,10 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = fet
 		// Only Zotero's own storage has the bytes, and only the desktop knows a path. Saying so here is
 		// what lets the send command ask the user for the file instead of failing (spec §2.4).
 		path: async () => null,
-		async bytes(key) {
+		async bytes(key, library) {
 			// No timeout: this is a file, and a slow download is not a hung server. `requestUrl` follows
 			// the 302 into S3 on its own.
-			const response = await request(`${await prefix()}/items/${key}/file`, { headers: headers(false) }, null);
+			const response = await request(`${await prefix(library)}/items/${key}/file`, { headers: headers(false) }, null);
 			// 404 is the answer for a linked file and for one that has not synced up -- "Zotero has no
 			// copy of this PDF online", which the caller turns into the file dialog.
 			if (response.status === 404) return null;

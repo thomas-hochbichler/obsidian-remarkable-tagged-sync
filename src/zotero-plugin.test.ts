@@ -14,15 +14,18 @@ import { PICK_THE_FILE, SEND_NEEDS_TRANSPORT, type SendDocument, type SendTransp
 const PRO: Entitlement = { tier: "pro", since: "2026-09-01T00:00:00.000Z", stale: false };
 const FREE = entitlementOf(NO_LICENCE, new Date("2026-09-11T09:00:00.000Z"));
 
-const ITEM: ZoteroItem = { key: "ITEM1", title: "Prompting", creator: "Smith", year: "2024", citationKey: null };
+const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Prompting", creator: "Smith", year: "2024", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
 }
 
 function fakeClient(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 	return {
 		status: async () => ({ web: true, local: false, summary: "" }),
+		libraries: ["user"],
+		libraryName: () => "your library",
+		groups: async () => [],
 		libraryId: async () => 1234567,
 		attachments: async () => [attachment()],
 		attachment: async () => attachment(),
@@ -401,10 +404,25 @@ describe("the context action on a note that names its paper", () => {
 		expect(takeSettings()).toEqual([]);
 	});
 
+	// Ticket 26: the note says which library its paper is in, and the send reads it from there.
+	it("sends a group's paper from the group, read off the note's zotero-library", async () => {
+		const parentItem = vi.fn(async () => ({ ...ITEM, library: { group: 4711 } }));
+		const harnessed = harness({ client: fakeClient({ parentItem, attachments: async () => [attachment({ library: { group: 4711 } })] }) });
+		registerZoteroCommands(harnessed.host);
+
+		menuFor(harnessed, noteWith(harnessed, { "zotero-key": "ITEM1", "zotero-library": 4711 })).click(SEND_COMMAND);
+		await vi.advanceTimersByTimeAsync(10);
+		await vi.advanceTimersByTimeAsync(10);
+
+		expect(parentItem).toHaveBeenCalledWith("ITEM1", { group: 4711 });
+		expect(harnessed.sent).toHaveLength(1);
+		expect(linkFor(harnessed.data.zoteroLinks, "doc-1")?.library).toEqual({ group: 4711 });
+	});
+
 	it("says so when the item has left the library", async () => {
 		const harnessed = harness({ client: fakeClient({ parentItem: async () => null }) });
 
-		await sendZoteroPdf(harnessed.host, "ITEM1");
+		await sendZoteroPdf(harnessed.host, { key: "ITEM1", library: "user" });
 
 		expect(notices()[0]).toContain("no longer in your library");
 	});
@@ -412,7 +430,7 @@ describe("the context action on a note that names its paper", () => {
 	it("says so when the item has no PDF", async () => {
 		const harnessed = harness({ client: fakeClient({ attachments: async () => [] }) });
 
-		await sendZoteroPdf(harnessed.host, "ITEM1");
+		await sendZoteroPdf(harnessed.host, { key: "ITEM1", library: "user" });
 
 		expect(notices()[0]).toContain("no PDF attachment");
 	});
@@ -421,7 +439,7 @@ describe("the context action on a note that names its paper", () => {
 		const second = attachment({ key: "ATT2", filename: "preprint.pdf" });
 		const harnessed = harness({ client: fakeClient({ attachments: async () => [attachment(), second] }) });
 
-		const done = sendZoteroPdf(harnessed.host, "ITEM1");
+		const done = sendZoteroPdf(harnessed.host, { key: "ITEM1", library: "user" });
 		await vi.advanceTimersByTimeAsync(1);
 		const rows = takeSettings();
 		expect(rows.map((row) => row.desc)).toContain("preprint.pdf");
@@ -435,7 +453,7 @@ describe("the context action on a note that names its paper", () => {
 		const second = attachment({ key: "ATT2", filename: "preprint.pdf" });
 		const harnessed = harness({ client: fakeClient({ attachments: async () => [attachment(), second] }) });
 
-		const done = sendZoteroPdf(harnessed.host, "ITEM1");
+		const done = sendZoteroPdf(harnessed.host, { key: "ITEM1", library: "user" });
 		await vi.advanceTimersByTimeAsync(1);
 		takeModals()[0].close();
 		await done;

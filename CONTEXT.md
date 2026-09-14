@@ -12,7 +12,8 @@ the person using it lives in [README.md](README.md).
   around each one, the margin notes placed at the passage they point at, each linked back to its
   page. A digest is not a transcript of the document — nothing you did not mark appears in it.
 - **Zotero-linked document** — a synced reMarkable document matched to exactly one Zotero PDF
-  attachment. The link is by attachment key and lives in `data.json`; nothing is written into the
+  attachment, in the personal library or in a group library the vault has switched on. The link
+  is by attachment key *and* library and lives in `data.json`; nothing is written into the
   document's name on the tablet, so renaming it there costs nothing.
 - **Send** — the Obsidian command that puts a Zotero PDF onto the tablet, already tagged for sync.
   Send only ever *adds* a file: nothing on the tablet is changed, deleted, moved, renamed or

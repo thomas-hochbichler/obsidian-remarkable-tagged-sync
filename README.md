@@ -74,6 +74,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Send a Zotero PDF to your tablet](#zotero) | ✓ | ✓ |
 | [Notes know their Zotero item — link, web library](#zotero) | ✓ | ✓ |
 | [Your tablet highlights as native Zotero annotations, with a jump into Zotero from every quote](#zotero) | — | ✓ |
+| [Group libraries — search, send from and write into a group you switch on](#zotero) | — | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
@@ -435,7 +436,8 @@ with **Link to Zotero item…**.
 Zotero, to your web library, and to your own literature note if you keep one. Once written back, every quote gets an
 `in Zotero` link that opens the reader at that annotation on that page. With [frontmatter
 properties](#frontmatter-properties-pro) on, the note also carries `zotero-key` and — if the item
-has one — `citekey`, which is the same vocabulary other Zotero tools in Obsidian use.
+has one — `citekey`, which is the same vocabulary other Zotero tools in Obsidian use; a paper in a
+group library adds `zotero-library` with the group's id.
 
 ### Connecting
 
@@ -452,6 +454,16 @@ internet is one thing to look at: with *Use zotero.org* off, nothing Zotero-rela
 machine, whatever key is stored. With both set up the desktop app is asked first and zotero.org is
 the fallback, so a paper Zotero never uploaded still gets sent. If neither is set up, nothing
 Zotero-related runs and your sync is exactly what it was.
+
+**Group libraries** ([Pro](#tagged-sync-pro)). Your own library is always on. Under Settings →
+Zotero → *Zotero libraries*, every group your account is in is a switch of its own, off until you
+name it — a group is other people's work, and **highlights written into a group library are
+visible to everyone in that group.** A group you switch on is searched by *Send*, sent from by the
+send tag, matched against at sync time and, with write-back, written into like your own library;
+the note then links into the group. Where the same PDF is in your library and in a group, you are
+asked which, once, with the library named. A group you may only read is named in the note — *no
+write access to …* — and nothing is written into your own library instead. Both connections
+handle groups; the desktop app knows the groups it syncs, zotero.org the ones your key can read.
 
 Sending needs a way onto the tablet: the reMarkable cloud, or [a paired
 tablet](#syncing-without-the-cloud) with **Send over SSH** switched on. Sending over SSH restarts
@@ -780,8 +792,6 @@ stays where it is and is still preserved on every sync — new notes just no lon
   deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
 - [Zotero](#zotero) works with **PDF attachments only** — an EPUB in your library cannot be sent,
   and a book you read on the tablet is not matched to one.
-- [Zotero](#zotero) works with your **personal library only.** Group libraries are not searched,
-  sent from, or written to.
 - One tag → folder mapping.
 - Transcription with Apple Vision requires **macOS 13 or later**, and its transcripts are flat
   text — no headings, lists, task lists, or tables.

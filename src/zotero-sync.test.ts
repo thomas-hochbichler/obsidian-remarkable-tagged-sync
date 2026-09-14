@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DigestHighlight, DigestPage } from "./digest-builder";
-import { type AnnotationsCreated, type ZoteroAnnotation, type ZoteroAttachment, ZoteroError, type ZoteroClient, type ZoteroItem } from "./zotero-client";
+import { type AnnotationsCreated, type NewAnnotation, type ZoteroAnnotation, type ZoteroAttachment, ZoteroError, type ZoteroClient, type ZoteroItem, type ZoteroLibrary } from "./zotero-client";
 import type { StoredZoteroLinks, ZoteroLink } from "./zotero-links";
 import type { VaultNoteKeys } from "./zotero-note";
-import { createZoteroPass, type ZoteroPassDeps, type ZoteroQuestion, type ZoteroUnit, ZOTERO_GONE_LINE, zoteroPartialNotice, zoteroSkipNotice, zoteroSkipReason } from "./zotero-sync";
+import { createZoteroPass, LIBRARY_OFF, type ZoteroPassDeps, type ZoteroQuestion, type ZoteroUnit, ZOTERO_GONE_LINE, ZOTERO_LIBRARY_OFF_LINE, zoteroPartialNotice, zoteroSkipNotice, zoteroSkipReason } from "./zotero-sync";
 
 const ATTACHMENT_KEY = "ATT1";
 const ITEM_KEY = "ITEM1";
 const MD5 = "0f0e3fbc4e2bd4bd16b2ab4a45f4e8a5";
 
-const ITEM: ZoteroItem = { key: ITEM_KEY, title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
+const ITEM: ZoteroItem = { key: ITEM_KEY, library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: ATTACHMENT_KEY, parentKey: ITEM_KEY, filename: "prompting.pdf", md5: MD5, title: "Full Text PDF", ...overrides };
+	return { key: ATTACHMENT_KEY, library: "user", parentKey: ITEM_KEY, filename: "prompting.pdf", md5: MD5, title: "Full Text PDF", ...overrides };
 }
 
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
@@ -42,6 +42,9 @@ function unit(overrides: Partial<ZoteroUnit> = {}): ZoteroUnit {
 function client(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 	return {
 		status: async () => ({ web: true, local: false, summary: "" }),
+		libraries: ["user"],
+		libraryName: () => "your library",
+		groups: async () => [],
 		libraryId: async () => 1234567,
 		attachments: async () => [attachment()],
 		attachment: async () => attachment(),
@@ -114,7 +117,7 @@ describe("what the pass does for one written note", () => {
 
 		const parts = await createZoteroPass(deps).run(unit());
 
-		expect(parts.keys).toEqual({ zoteroKey: ITEM_KEY, citekey: "smith2024prompting" });
+		expect(parts.keys).toEqual({ zoteroKey: ITEM_KEY, zoteroLibrary: null, citekey: "smith2024prompting" });
 	});
 
 	it("remembers what it wrote, so the next sync refreshes rather than duplicates", async () => {
@@ -231,7 +234,7 @@ describe("matching a document nobody has linked", () => {
 
 		const parts = await createZoteroPass(deps).run(unit({ md5: async () => null }));
 
-		expect(parts).toEqual({ line: null, links: {}, keys: { zoteroKey: null, citekey: null }, notices: [] });
+		expect(parts).toEqual({ line: null, links: {}, keys: { zoteroKey: null, zoteroLibrary: null, citekey: null }, notices: [] });
 	});
 
 	it("reads the library once however many notes the run writes", async () => {
@@ -257,7 +260,7 @@ describe("in a vault that has the free half", () => {
 		const parts = await createZoteroPass(deps).run(unit());
 
 		expect(parts.line).toContain("highlights stay in the vault — writing them into Zotero is Tagged Sync Pro");
-		expect(parts.keys).toEqual({ zoteroKey: ITEM_KEY, citekey: "smith2024prompting" });
+		expect(parts.keys).toEqual({ zoteroKey: ITEM_KEY, zoteroLibrary: null, citekey: "smith2024prompting" });
 		expect(parts.links).toEqual({});
 		expect(parts.notices).toEqual([]);
 		expect(ownAnnotations).not.toHaveBeenCalled();
@@ -318,7 +321,7 @@ describe("when Zotero says no", () => {
 
 describe("what a failure is called", () => {
 	it("has a sentence for every way Zotero can say no", () => {
-		const reasons = (["unreachable", "not-enabled", "denied", "unauthorized", "rate-limited", "not-found", "server"] as const).map((reason) =>
+		const reasons = (["unreachable", "not-enabled", "denied", "unauthorized", "rate-limited", "not-found", "read-only", "server"] as const).map((reason) =>
 			zoteroSkipReason(new ZoteroError(reason, "raw")),
 		);
 
@@ -338,4 +341,65 @@ describe("what a failure is called", () => {
 
 beforeEach(() => {
 	vi.restoreAllMocks();
+});
+
+describe("group libraries (ticket 26)", () => {
+	const GROUP = { group: 4711 };
+	const grouped = (overrides: Partial<ZoteroAttachment> = {}) => attachment({ library: GROUP, ...overrides });
+	const twoLibraries = (overrides: Partial<ZoteroClient> = {}) =>
+		client({ libraries: ["user", GROUP], libraryName: (library) => (library === "user" ? "your library" : "Lab reading group"), ...overrides });
+
+	// The same PDF in the personal library and in a group is not a silent match: it is the one
+	// question of §2.3, and the answers are told apart by nothing but the library.
+	it("asks, naming the library beside each candidate, when the same file is in the personal library and in a group", async () => {
+		const { deps, asked, saved } = harness({ client: twoLibraries({ attachments: async () => [attachment(), grouped()] }) });
+		await createZoteroPass(deps).run(unit());
+		expect(asked[0].candidates.map((candidate) => candidate.library)).toEqual(["your library", "Lab reading group"]);
+		expect((saved()["doc-1"] as ZoteroLink).library).toBe("user");
+	});
+
+	it("names no library while only the personal one is read", async () => {
+		const twin = attachment({ key: "ATT2", parentKey: "ITEM2" });
+		const { deps, asked } = harness({ client: client({ attachments: async () => [attachment(), twin] }) });
+		await createZoteroPass(deps).run(unit());
+		expect(asked[0].candidates.map((candidate) => candidate.library)).toEqual([undefined, undefined]);
+	});
+
+	it("links a group's paper into the group, in every link the note carries", async () => {
+		const { deps, saved } = harness({ client: twoLibraries({ attachments: async () => [grouped()], parentItem: async () => ({ ...ITEM, library: GROUP }) }) });
+		const parts = await createZoteroPass(deps).run(unit());
+		expect((saved()["doc-1"] as ZoteroLink).library).toEqual(GROUP);
+		expect(parts.line).toContain("](zotero://select/groups/4711/items/ITEM1)");
+		expect(parts.line).toContain("[web library](https://www.zotero.org/groups/4711/items/ITEM1)");
+		expect(parts.links).toEqual({ "hl-9f21c4": "zotero://open-pdf/groups/4711/items/ATT1?page=2&annotation=KEY0" });
+		expect(parts.keys).toEqual({ zoteroKey: ITEM_KEY, zoteroLibrary: "4711", citekey: "smith2024prompting" });
+	});
+
+	// A read-only membership answers 403 on the write. The note names the group, and nothing is
+	// retried into the personal library instead.
+	it("writes into the group and nowhere else, and names the group it may only read", async () => {
+		const createAnnotations = vi.fn(async (_items: NewAnnotation[], _library: ZoteroLibrary): Promise<AnnotationsCreated> => {
+			throw new ZoteroError("read-only", "Zotero refused to write into that library.");
+		});
+		const { deps } = harness({
+			links: { "doc-1": { attachmentKey: ATTACHMENT_KEY, library: GROUP, annotations: {} } },
+			client: twoLibraries({ attachments: async () => [grouped()], createAnnotations }),
+		});
+		const parts = await createZoteroPass(deps).run(unit());
+		expect(createAnnotations).toHaveBeenCalledTimes(1);
+		expect(createAnnotations.mock.calls[0][1]).toEqual(GROUP);
+		expect(parts.line).toContain("not written back: no write access to Lab reading group");
+		expect(parts.notices).toEqual([zoteroSkipNotice("Best Practices für Prompting", "no write access to Lab reading group")]);
+	});
+
+	// Unticked in the settings: the link stays for the day it is ticked again, and meanwhile nothing
+	// is read for it -- "gone" would be the wrong word for a library that is merely off.
+	it("leaves a link into a group that was switched off alone, and says so", async () => {
+		const attachments = vi.fn(async () => [attachment()]);
+		const { deps, saved } = harness({ links: { "doc-1": { attachmentKey: ATTACHMENT_KEY, library: GROUP, annotations: {} } }, client: client({ attachments }) });
+		const parts = await createZoteroPass(deps).run(unit());
+		expect(parts).toEqual({ line: ZOTERO_LIBRARY_OFF_LINE, links: {}, keys: {}, notices: [zoteroSkipNotice("Best Practices für Prompting", LIBRARY_OFF)] });
+		expect(attachments).not.toHaveBeenCalled();
+		expect((saved()["doc-1"] as ZoteroLink).library).toEqual(GROUP);
+	});
 });

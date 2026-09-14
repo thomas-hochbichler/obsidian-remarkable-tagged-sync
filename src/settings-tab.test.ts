@@ -275,6 +275,7 @@ describe("the shape of the settings screen", () => {
 			// one for the tablet rows that follow.
 			"Zotero cloud",
 			"Zotero local",
+			"Zotero libraries",
 			"Zotero on the tablet",
 			"Tagged Sync Pro",
 			"Actions",
@@ -971,6 +972,54 @@ describe("the Zotero section", () => {
 		const line = verdict(row(drawn, "Connection"));
 		expect(line.text).toBe("Connected via web.");
 		expect(line.style["color"]).toBe("var(--text-success)");
+	});
+
+	// Ticket 26: the personal library is fixed on; each group the connection can see is a switch of
+	// its own, off until named -- what write-back puts into a group is visible to everyone in it.
+	const WEB = { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} };
+	const zoteroAnswering = (groups: unknown[]) => async (input: RequestInfo | URL) => {
+		const url = String(input);
+		if (url.endsWith("/keys/current")) return new Response(JSON.stringify({ userID: 1597773 }), { status: 200 });
+		if (url.includes("/groups?")) return new Response(JSON.stringify(groups), { status: 200 });
+		return new Response("[]", { status: 200 });
+	};
+
+	it("lists the groups Zotero names as switches, the personal library fixed on above them", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: WEB });
+		draw(tab);
+		await settle();
+
+		const libraries = section(draw(tab), "Zotero libraries");
+		expect(rowNames(libraries)).toEqual(["Your library", "Group libraries", "Lab reading group"]);
+		expect(toggle(libraries, "Your library").disabled).toBe(true);
+		expect(row(libraries, "Group libraries").desc).toContain("visible to everyone in that group");
+		toggle(libraries, "Lab reading group").toggle(true);
+		await settle();
+		expect((plugin.data.zotero as { groups: unknown }).groups).toEqual([{ id: 4711, name: "Lab reading group" }]);
+	});
+
+	it("keeps a switched-on group on the screen while Zotero does not list it, so it can be switched off", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([]));
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
+		draw(tab);
+		await settle();
+
+		const libraries = section(draw(tab), "Zotero libraries");
+		expect(row(libraries, "Lab reading group").desc).toContain("Not listed by Zotero right now");
+		toggle(libraries, "Lab reading group").toggle(false);
+		await settle();
+		expect((plugin.data.zotero as { groups: unknown }).groups).toEqual([]);
+	});
+
+	it("shows the group switches shut to a free vault, without asking Zotero for its groups", async () => {
+		const fetched = vi.fn(zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		vi.stubGlobal("fetch", fetched);
+		const drawn = draw((await tabWith({ zotero: WEB })).tab);
+		await settle();
+
+		expect(rowNames(section(drawn, "Zotero libraries"))).toEqual(["Your library", "Group libraries (Pro)"]);
+		expect(fetched.mock.calls.map((call) => String(call[0]))).not.toContainEqual(expect.stringContaining("/groups"));
 	});
 
 	it("says not connected when the connection that is set up does not answer", async () => {

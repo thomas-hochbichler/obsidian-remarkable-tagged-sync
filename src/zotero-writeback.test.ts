@@ -48,6 +48,7 @@ function link(overrides: Partial<ZoteroLink> = {}): ZoteroLink {
 function inZotero(overrides: Partial<ZoteroAnnotation> = {}): ZoteroAnnotation {
 	return {
 		key: "TNZQQNN3",
+		library: "user",
 		source: "local",
 		parentKey: ATTACHMENT,
 		type: "highlight",
@@ -116,7 +117,7 @@ describe("a highlight that is already in Zotero", () => {
 
 		expect(planned.patches).toHaveLength(1);
 		expect(planned.patches[0].fields).toEqual({ comment: "später dazugeschrieben" });
-		expect(planned.patches[0].annotation).toEqual({ key: "TNZQQNN3", version: 246, source: "local" });
+		expect(planned.patches[0].annotation).toEqual({ key: "TNZQQNN3", version: 246, source: "local", library: "user" });
 	});
 
 	// ⚠️ §3.3's one-way door. The comparison is against **what we wrote**, not against what we would
@@ -242,7 +243,7 @@ describe("a highlight the reader erased on the tablet", () => {
 	it("is trashed while it still reads exactly as we wrote it", () => {
 		const planned = plan({ link: stored, existing: [inZotero({ key: "OLD1" })] });
 
-		expect(planned.trashes.map((trash) => trash.annotation)).toEqual([{ key: "OLD1", version: 246, source: "local" }]);
+		expect(planned.trashes.map((trash) => trash.annotation)).toEqual([{ key: "OLD1", version: 246, source: "local", library: "user" }]);
 		expect(planned.trashes[0].record).toEqual({ key: "OLD1", written: WRITTEN, deleted: true });
 		expect(planned.vanished).toEqual([]);
 	});
@@ -321,6 +322,17 @@ describe("carrying out the plan", () => {
 			...overrides,
 		} as unknown as ZoteroClient;
 	}
+
+	// Ticket 26: a library that refuses writes is not one failed request. Nothing after it can land
+	// either, so the run ends as a skip the pass can name, not as "0 of 12 written, retry next sync".
+	it("gives up on a library that refuses writes, so the pass can name it", async () => {
+		const client = fakeClient({
+			createAnnotations: vi.fn(async () => {
+				throw new ZoteroError("read-only", "Zotero refused to write into that library.");
+			}),
+		});
+		await expect(executeWriteBack(client, link(), plan())).rejects.toMatchObject({ reason: "read-only" });
+	});
 
 	it("records the key Zotero gave each new annotation", async () => {
 		const result = await executeWriteBack(fakeClient(), link(), plan());
@@ -407,7 +419,7 @@ describe("carrying out the plan", () => {
 		const stored = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN } } });
 		const result = await executeWriteBack(client, stored, plan({ pages: [page({ highlights: [] })], link: stored, existing: [inZotero({ key: "OLD1" })] }));
 
-		expect(client.trashAnnotation).toHaveBeenCalledWith({ key: "OLD1", version: 246, source: "local" });
+		expect(client.trashAnnotation).toHaveBeenCalledWith({ key: "OLD1", version: 246, source: "local", library: "user" });
 		expect(result.annotations["hl-old"]).toEqual({ key: "OLD1", written: WRITTEN, deleted: true });
 		expect(result.written).toBe(1);
 	});
@@ -435,6 +447,6 @@ describe("carrying out the plan", () => {
 		const stored = link({ annotations: { "hl-9f21c4": { key: "TNZQQNN3", written: { ...WRITTEN, comment: "alt" } } } });
 		await executeWriteBack(client, stored, plan({ link: stored, existing: [inZotero({ comment: "alt", source: "web", version: 986 })] }));
 
-		expect(sent[0].ref).toEqual({ key: "TNZQQNN3", version: 986, source: "web" });
+		expect(sent[0].ref).toEqual({ key: "TNZQQNN3", version: 986, source: "web", library: "user" });
 	});
 });

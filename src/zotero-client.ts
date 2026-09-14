@@ -18,8 +18,31 @@
  * PDF bytes -- is all a connection has to answer.
  */
 
-/** The one library this feature touches. Group libraries are refused (spec §1.3). */
-export const ZOTERO_LIBRARY = "user";
+/**
+ * Which library an item lives in: the personal one, or a group by Zotero's numeric id (ticket 26).
+ *
+ * On every attachment, item and annotation the client hands out, and on every request a connection
+ * makes, because a key is only unique *within* a library -- `ATT1` in the personal library and
+ * `ATT1` in a group are two files. The link in `data.json` stores it in this shape, so a link says
+ * which library it is into, and a build that predates groups reads a group link as "not ours to
+ * act on" rather than as a personal-library key it would then write into.
+ */
+export type ZoteroLibrary = "user" | { readonly group: number };
+
+/** A group library a connection can see: Zotero's id, and the name people in it call it. */
+export interface ZoteroGroup {
+	readonly id: number;
+	readonly name: string;
+}
+
+export function sameLibrary(a: ZoteroLibrary, b: ZoteroLibrary): boolean {
+	return a === "user" ? b === "user" : b !== "user" && a.group === b.group;
+}
+
+/** The segment a library's items hang under, the same on both APIs: `/users/<id>` or `/groups/<id>`. */
+export function libraryPath(library: ZoteroLibrary, userSegment: string): string {
+	return library === "user" ? userSegment : `/groups/${library.group}`;
+}
 
 /**
  * The tag that says an annotation is ours, and the only marker there is.
@@ -46,6 +69,7 @@ export type ZoteroAnnotationType = "highlight" | "underline" | "note";
  */
 export interface ZoteroAttachment {
 	readonly key: string;
+	readonly library: ZoteroLibrary;
 	/** The bibliographic item this PDF hangs under, or `null` for a standalone attachment. */
 	readonly parentKey: string | null;
 	/** Stored files carry `filename`, linked files a path; this is the last segment either way. */
@@ -57,6 +81,7 @@ export interface ZoteroAttachment {
 /** A bibliographic item, in the four fields the note and the picker need (spec §4). */
 export interface ZoteroItem {
 	readonly key: string;
+	readonly library: ZoteroLibrary;
 	readonly title: string;
 	/** First creator's family name, for `Smith 2024 · Title`. */
 	readonly creator: string | null;
@@ -68,6 +93,7 @@ export interface ZoteroItem {
 /** One of *our* annotations, as it stands in Zotero now -- the input to "did the user edit it?" (§3.3). */
 export interface ZoteroAnnotation {
 	readonly key: string;
+	readonly library: ZoteroLibrary;
 	/**
 	 * Which connection read it, and therefore the only one its {@link ZoteroAnnotation.version} means
 	 * anything to. See the warning on `version`.
@@ -97,8 +123,8 @@ export interface ZoteroAnnotation {
 	readonly version: number;
 }
 
-/** What a patch needs to know about the annotation it is changing -- including which connection may take it. */
-export type ZoteroAnnotationRef = Pick<ZoteroAnnotation, "key" | "version" | "source">;
+/** What a patch needs to know about the annotation it is changing -- including which connection may take it, and which library it is in. */
+export type ZoteroAnnotationRef = Pick<ZoteroAnnotation, "key" | "version" | "source" | "library">;
 
 /** The fields of an annotation we set. Everything else Zotero fills in. */
 export interface AnnotationFields {
@@ -160,6 +186,12 @@ export type ZoteroFailure =
 	| "rate-limited"
 	/** The item is gone: trashed, deleted, or never there. */
 	| "not-found"
+	/**
+	 * The library takes no writes from this user or key -- a group they may only read (ticket 26).
+	 * An answer about the library, not about the connection: the other one would refuse the same
+	 * way, so it is never fallen back on, and the write is never re-routed into another library.
+	 */
+	| "read-only"
 	/** Anything the server said that we have no better word for. */
 	| "server";
 
@@ -182,38 +214,56 @@ export interface ZoteroConnection {
 	probe(): Promise<boolean>;
 	/** The numeric user id, for the web-library URL (spec §4). `null` when this connection cannot say. */
 	libraryId(): Promise<number | null>;
-	/** Every PDF attachment in the personal library. The matcher's whole input (§2.3). */
-	attachments(): Promise<ZoteroAttachment[]>;
+	/** The group libraries this connection can see (ticket 26). Membership only: whether it may *write* into one is answered by the write. */
+	groups(): Promise<ZoteroGroup[]>;
+	/** Every PDF attachment in one library. The matcher's whole input (§2.3), library by library. */
+	attachments(library: ZoteroLibrary): Promise<ZoteroAttachment[]>;
 	/** One attachment, or `null` when it is trashed or gone -- the "no longer found" row of §2.3. */
-	attachment(key: string): Promise<ZoteroAttachment | null>;
-	parentItem(key: string): Promise<ZoteroItem | null>;
+	attachment(key: string, library: ZoteroLibrary): Promise<ZoteroAttachment | null>;
+	parentItem(key: string, library: ZoteroLibrary): Promise<ZoteroItem | null>;
 	/** Top-level items for the send picker: `q=`, `qmode=titleCreatorYear` (spec §2.4). */
-	search(query: string): Promise<ZoteroItem[]>;
+	search(query: string, library: ZoteroLibrary): Promise<ZoteroItem[]>;
 	/** Top-level items carrying one tag, for the tag-driven send (spec §2.6). A tag on a PDF's own row is not seen -- on purpose. */
-	itemsWithTag(tag: string): Promise<ZoteroItem[]>;
+	itemsWithTag(tag: string, library: ZoteroLibrary): Promise<ZoteroItem[]>;
 	/** Where the PDF sits on this machine, or `null` when this connection cannot know. */
-	filePath(key: string): Promise<string | null>;
+	filePath(key: string, library: ZoteroLibrary): Promise<string | null>;
 	/** The PDF itself, or `null` when Zotero has no copy to hand out. */
-	fileBytes(key: string): Promise<Uint8Array | null>;
+	fileBytes(key: string, library: ZoteroLibrary): Promise<Uint8Array | null>;
 	/** Our own annotations on one attachment, read by the ownership tag -- never through `/children`, which returns none. */
-	ownAnnotations(parentKey: string): Promise<ZoteroAnnotation[]>;
-	createAnnotations(items: NewAnnotation[]): Promise<AnnotationsCreated>;
-	patchAnnotation(key: string, version: number, fields: AnnotationFields): Promise<PatchOutcome>;
+	ownAnnotations(parentKey: string, library: ZoteroLibrary): Promise<ZoteroAnnotation[]>;
+	/** All into one library: a batch is one attachment's annotations, and an attachment is in one library. */
+	createAnnotations(items: NewAnnotation[], library: ZoteroLibrary): Promise<AnnotationsCreated>;
+	patchAnnotation(key: string, version: number, fields: AnnotationFields, library: ZoteroLibrary): Promise<PatchOutcome>;
 	/** Into Zotero's trash, never erased: `DELETE` on the local API is a permanent erase, and the trash is what makes this reversible (§3.3). */
-	trashAnnotation(key: string, version: number): Promise<PatchOutcome>;
+	trashAnnotation(key: string, version: number, library: ZoteroLibrary): Promise<PatchOutcome>;
 }
 
 /**
  * Everything a caller may do. One connection's shape, minus the parts that are about *being* a
- * connection -- and with the one call that cannot be routed freely spelled out differently.
+ * connection, with the listings widened over every enabled library -- and with the one call that
+ * cannot be routed freely spelled out differently.
  */
-export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "patchAnnotation" | "trashAnnotation"> {
+export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "attachments" | "search" | "itemsWithTag" | "patchAnnotation" | "trashAnnotation"> {
 	/**
 	 * Which connections answered, for the settings line. **Never rejects** -- it is built out of
 	 * {@link ZoteroConnection.probe}, and "nothing answered" is one of its answers rather than a
 	 * failure. The settings tab relies on that: it has no second arm to fall back to.
 	 */
 	status(): Promise<ZoteroStatus>;
+	/**
+	 * The libraries this client reads and writes: the personal one, then the groups this vault
+	 * switched on, in the setting's order (ticket 26). A dialog that lists items from more than one
+	 * of them names the library beside each; with one there is nothing to tell apart.
+	 */
+	readonly libraries: readonly ZoteroLibrary[];
+	/** A library as a person reads it: "your library", or the group's name as the setting stored it. */
+	libraryName(library: ZoteroLibrary): string;
+	/** Every PDF attachment of every enabled library. The matcher's whole input (§2.3). */
+	attachments(): Promise<ZoteroAttachment[]>;
+	/** The send picker's search, over every enabled library. */
+	search(query: string): Promise<ZoteroItem[]>;
+	/** The tag-driven send's listing, over every enabled library. */
+	itemsWithTag(tag: string): Promise<ZoteroItem[]>;
 	/** Goes to the connection the annotation was read from, or fails. Never to the other one -- see {@link ZoteroAnnotation.version}. */
 	patchAnnotation(annotation: ZoteroAnnotationRef, fields: AnnotationFields): Promise<PatchOutcome>;
 	/** Same routing as {@link ZoteroClient.patchAnnotation}, for the same reason. */
@@ -224,7 +274,9 @@ export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "p
 
 export interface ZoteroRequest {
 	readonly method?: "GET" | "POST" | "PATCH";
-	/** Library-relative: `/items?itemType=attachment`. The connection puts its own prefix in front. */
+	/** Which library `path` is relative to. The connection turns it into `/users/<id>` or `/groups/<id>`. */
+	readonly library: ZoteroLibrary;
+	/** Library-relative: `/items?itemType=attachment`. The connection puts the library's prefix in front. */
 	readonly path: string;
 	readonly body?: unknown;
 	readonly headers?: Record<string, string>;
@@ -241,8 +293,8 @@ export type ZoteroRequester = (request: ZoteroRequest) => Promise<Response>;
 
 /** How the PDF is reached, which is the second thing the two connections genuinely disagree on. */
 export interface ZoteroFiles {
-	path(key: string): Promise<string | null>;
-	bytes(key: string): Promise<Uint8Array | null>;
+	path(key: string, library: ZoteroLibrary): Promise<string | null>;
+	bytes(key: string, library: ZoteroLibrary): Promise<Uint8Array | null>;
 }
 
 /**
@@ -295,15 +347,19 @@ function asString(value: unknown): string | null {
  *
  * 403 is read as "not enabled" only when Zotero says so in the body: the same status is how the web
  * API refuses a read-only key, and telling a web user to switch on a desktop setting they do not
- * have would send them somewhere there is nothing to fix.
+ * have would send them somewhere there is nothing to fix. On a *write*, 403 is the library's answer
+ * -- the desktop app's `Write access denied` for a group the user may only read, zotero.org's for a
+ * key that reads it -- and the other connection would say the same, so it is `read-only`, which
+ * the client never falls back on (ticket 26).
  */
-async function failureFor(response: Response): Promise<ZoteroError> {
+async function failureFor(response: Response, write: boolean): Promise<ZoteroError> {
 	const body = await response.text().catch(() => "");
 	if (response.status === 401) return new ZoteroError("unauthorized", "Zotero rejected the API key.");
 	if (response.status === 403) {
-		return body.includes("Local API is not enabled")
-			? new ZoteroError("not-enabled", 'Zotero is running with "Allow other applications" switched off.')
-			: new ZoteroError("unauthorized", "This Zotero API key may not write to the library.");
+		if (body.includes("Local API is not enabled")) return new ZoteroError("not-enabled", 'Zotero is running with "Allow other applications" switched off.');
+		return write
+			? new ZoteroError("read-only", "Zotero refused to write into that library.")
+			: new ZoteroError("unauthorized", "This Zotero API key may not read the library.");
 	}
 	if (response.status === 404) return new ZoteroError("not-found", "Zotero does not have that item any more.");
 	if (response.status === 429 || response.status === 503) {
@@ -312,8 +368,8 @@ async function failureFor(response: Response): Promise<ZoteroError> {
 	return new ZoteroError("server", `Zotero answered ${response.status}${body === "" ? "" : `: ${body.slice(0, 200)}`}`);
 }
 
-async function readJson(response: Response): Promise<unknown> {
-	if (!response.ok) throw await failureFor(response);
+async function readJson(response: Response, write = false): Promise<unknown> {
+	if (!response.ok) throw await failureFor(response, write);
 	try {
 		return await response.json();
 	} catch {
@@ -322,11 +378,11 @@ async function readJson(response: Response): Promise<unknown> {
 }
 
 /** Every row of a list endpoint, following `start=` until a page comes back short. */
-async function listAll(request: ZoteroRequester, path: string): Promise<Json[]> {
+async function listAll(request: ZoteroRequester, library: ZoteroLibrary, path: string): Promise<Json[]> {
 	const rows: Json[] = [];
 	for (let page = 0; page < MAX_PAGES; page++) {
 		const separator = path.includes("?") ? "&" : "?";
-		const body = await readJson(await request({ path: `${path}${separator}limit=${PAGE_SIZE}&start=${page * PAGE_SIZE}` }));
+		const body = await readJson(await request({ library, path: `${path}${separator}limit=${PAGE_SIZE}&start=${page * PAGE_SIZE}` }));
 		if (!Array.isArray(body)) throw new ZoteroError("server", "Zotero answered a list request with something else.");
 		rows.push(...body.map(asRecord));
 		if (body.length < PAGE_SIZE) return rows;
@@ -346,12 +402,13 @@ function isUsablePdf(data: Json): boolean {
 	return data.contentType === "application/pdf" && !data.deleted;
 }
 
-function toAttachment(data: Json): ZoteroAttachment {
+function toAttachment(data: Json, library: ZoteroLibrary): ZoteroAttachment {
 	// A linked file has `path` instead of `filename`, and the path may carry a `attachments:` prefix
 	// or be absolute. Only the last segment is ever compared against a tablet document name (§2.3).
 	const path = asString(data.path);
 	return {
 		key: asString(data.key) ?? "",
+		library,
 		parentKey: asString(data.parentItem),
 		filename: asString(data.filename) ?? (path === null ? null : (path.split("/").pop() ?? null)),
 		md5: asString(data.md5),
@@ -373,13 +430,14 @@ function citationKeyOf(data: Json): string | null {
 	return extra === null ? null : (/^Citation Key:\s*(\S+)$/m.exec(extra)?.[1] ?? null);
 }
 
-function toItem(data: Json): ZoteroItem {
+function toItem(data: Json, library: ZoteroLibrary): ZoteroItem {
 	const creators = Array.isArray(data.creators) ? data.creators.map(asRecord) : [];
 	const first = creators[0];
 	// A creator is either a two-field person or a single-field institution; both print as one name.
 	const creator = first === undefined ? null : (asString(first.lastName) ?? asString(first.name));
 	return {
 		key: asString(data.key) ?? "",
+		library,
 		title: typeof data.title === "string" ? data.title : "",
 		creator,
 		// Zotero's `date` is free text ("2024-06", "June 2024", "in press"), so the year is taken as
@@ -389,7 +447,18 @@ function toItem(data: Json): ZoteroItem {
 	};
 }
 
-function toAnnotation(data: Json, source: "local" | "web"): ZoteroAnnotation | null {
+/**
+ * A group row, from either API: the web nests the name under `data`, and the id sits at the top of
+ * the row and again inside. A row with no usable id or name is not a library anyone can switch on.
+ */
+function toGroup(row: Json): ZoteroGroup | null {
+	const data = asRecord(row.data);
+	const id = typeof row.id === "number" ? row.id : typeof data.id === "number" ? data.id : null;
+	const name = asString(data.name);
+	return id === null || name === null ? null : { id, name };
+}
+
+function toAnnotation(data: Json, source: "local" | "web", library: ZoteroLibrary): ZoteroAnnotation | null {
 	const type = data.annotationType;
 	if (type !== "highlight" && type !== "underline" && type !== "note") return null;
 	const parentKey = asString(data.parentItem);
@@ -397,6 +466,7 @@ function toAnnotation(data: Json, source: "local" | "web"): ZoteroAnnotation | n
 	const position = typeof data.annotationPosition === "string" ? data.annotationPosition : "";
 	return {
 		key: asString(data.key) ?? "",
+		library,
 		source,
 		parentKey,
 		type,
@@ -476,9 +546,9 @@ export function createZoteroConnection(
 	files: ZoteroFiles,
 	libraryIdOf: () => Promise<number | null>,
 ): ZoteroConnection {
-	const itemData = async (key: string): Promise<Json | null> => {
+	const itemData = async (key: string, library: ZoteroLibrary): Promise<Json | null> => {
 		try {
-			return asRecord(asRecord(await readJson(await request({ path: `/items/${key}` }))).data);
+			return asRecord(asRecord(await readJson(await request({ library, path: `/items/${key}` }))).data);
 		} catch (error) {
 			// "Gone" is an answer, not a failure: §2.3 keeps the note and drops the Zotero part. Every
 			// other reason -- offline, a rejected key -- stays a throw, because it is repairable and the
@@ -493,50 +563,60 @@ export function createZoteroConnection(
 		label,
 		async probe() {
 			try {
-				await request({ path: "/items/top?limit=1" });
+				await request({ library: "user", path: "/items/top?limit=1" });
 				return true;
 			} catch {
 				return false;
 			}
 		},
 		libraryId: libraryIdOf,
-		async attachments() {
-			const rows = await listAll(request, "/items?itemType=attachment");
-			return rows.map((row) => asRecord(row.data)).filter(isUsablePdf).map(toAttachment);
+		async groups() {
+			// Hangs under the *user* prefix on both APIs -- `/users/0/groups` locally, `/users/<id>/groups`
+			// on the web -- and lists membership, not write access: the desktop app answers every group
+			// its database holds, zotero.org every group the key may read.
+			const rows = await listAll(request, "user", "/groups");
+			return rows.map(toGroup).filter((group): group is ZoteroGroup => group !== null);
 		},
-		async attachment(key) {
-			const data = await itemData(key);
-			return data === null || !isUsablePdf(data) ? null : toAttachment(data);
+		async attachments(library) {
+			const rows = await listAll(request, library, "/items?itemType=attachment");
+			return rows
+				.map((row) => asRecord(row.data))
+				.filter(isUsablePdf)
+				.map((data) => toAttachment(data, library));
 		},
-		async parentItem(key) {
-			const data = await itemData(key);
-			return data === null ? null : toItem(data);
+		async attachment(key, library) {
+			const data = await itemData(key, library);
+			return data === null || !isUsablePdf(data) ? null : toAttachment(data, library);
 		},
-		async search(query) {
+		async parentItem(key, library) {
+			const data = await itemData(key, library);
+			return data === null ? null : toItem(data, library);
+		},
+		async search(query, library) {
 			// `/items/top`, so the picker lists papers rather than their own PDFs; `titleCreatorYear` is
 			// the quick-search mode a user's fingers already know from Zotero itself (spec §2.4).
-			const rows = await listAll(request, `/items/top?q=${encodeURIComponent(query)}&qmode=titleCreatorYear`);
-			return rows.map((row) => toItem(asRecord(row.data)));
+			const rows = await listAll(request, library, `/items/top?q=${encodeURIComponent(query)}&qmode=titleCreatorYear`);
+			return rows.map((row) => toItem(asRecord(row.data), library));
 		},
-		async itemsWithTag(tag) {
+		async itemsWithTag(tag, library) {
 			// `/items/top` again, and for the same reason: the paper is what gets tagged and what gets
 			// sent. A tag on the attachment row is not found here, and §2.6 says so rather than
 			// searching both -- one tag placed two ways would otherwise send the same paper twice.
-			const rows = await listAll(request, `/items/top?tag=${encodeURIComponent(tag)}`);
-			return rows.map((row) => toItem(asRecord(row.data)));
+			const rows = await listAll(request, library, `/items/top?tag=${encodeURIComponent(tag)}`);
+			return rows.map((row) => toItem(asRecord(row.data), library));
 		},
-		filePath: (key) => files.path(key),
-		fileBytes: (key) => files.bytes(key),
-		async ownAnnotations(parentKey) {
+		filePath: (key, library) => files.path(key, library),
+		fileBytes: (key, library) => files.bytes(key, library),
+		async ownAnnotations(parentKey, library) {
 			// Filtered by the ownership tag on the server and by the parent here, because Zotero has no
 			// server-side filter for "annotations of this attachment" -- `/children` answers none at all
 			// ([research/10] §6), which is the trap this row exists to stay out of.
-			const rows = await listAll(request, `/items?itemType=annotation&tag=${encodeURIComponent(OWNERSHIP_TAG)}`);
+			const rows = await listAll(request, library, `/items?itemType=annotation&tag=${encodeURIComponent(OWNERSHIP_TAG)}`);
 			return rows
-				.map((row) => toAnnotation(asRecord(row.data), id))
+				.map((row) => toAnnotation(asRecord(row.data), id, library))
 				.filter((annotation): annotation is ZoteroAnnotation => annotation !== null && annotation.parentKey === parentKey);
 		},
-		async createAnnotations(items) {
+		async createAnnotations(items, library) {
 			const keys: (string | null)[] = [];
 			const failures: string[] = [];
 			// Chunked here rather than by the caller: "at most 50 per request" is a fact about Zotero's
@@ -546,10 +626,12 @@ export function createZoteroConnection(
 				const body = await readJson(
 					await request({
 						method: "POST",
+						library,
 						path: "/items",
 						body: batch.map(annotationBody),
 						headers: { "Zotero-Write-Token": writeToken() },
 					}),
+					true,
 				);
 				const success = asRecord(asRecord(body).success);
 				const failed = asRecord(asRecord(body).failed);
@@ -564,15 +646,16 @@ export function createZoteroConnection(
 			}
 			return { keys, failures };
 		},
-		patchAnnotation: (key, version, fields) => patchUnderVersion(key, version, patchBody(fields)),
+		patchAnnotation: (key, version, fields, library) => patchUnderVersion(key, version, patchBody(fields), library),
 		// `deleted: true` is how both APIs move an item to the trash; the same precondition guards it,
 		// because an annotation the user touched since we read it is theirs to keep (§3.3).
-		trashAnnotation: (key, version) => patchUnderVersion(key, version, { deleted: true }),
+		trashAnnotation: (key, version, library) => patchUnderVersion(key, version, { deleted: true }, library),
 	};
 
-	async function patchUnderVersion(key: string, version: number, body: Json): Promise<PatchOutcome> {
+	async function patchUnderVersion(key: string, version: number, body: Json, library: ZoteroLibrary): Promise<PatchOutcome> {
 		const response = await request({
 			method: "PATCH",
+			library,
 			path: `/items/${key}`,
 			body,
 			// The precondition is the whole point of patching rather than putting: an annotation the
@@ -581,7 +664,7 @@ export function createZoteroConnection(
 			headers: { "If-Unmodified-Since-Version": String(version) },
 		});
 		if (response.status === 412) return "conflict";
-		if (!response.ok) throw await failureFor(response);
+		if (!response.ok) throw await failureFor(response, true);
 		return "written";
 	}
 }
@@ -598,13 +681,21 @@ export function createZoteroConnection(
  * setting switched off, a denied or rejected key. It never happens on an answer: an item the desktop
  * says is gone is gone, and asking the web the same question would only find the copy that has not
  * synced yet.
+ *
+ * **Libraries** (ticket 26): the personal one and the groups the vault switched on, listed one after
+ * the other by every call that lists. A group is the one library a connection may honestly not
+ * *have* -- the desktop app holds only the groups it syncs -- so for a group, "not found" on a
+ * listing falls through to the other connection like an outage would, and a group no connection
+ * holds lists as empty rather than failing every document of the run.
  */
-export function createZoteroClient(connections: { local?: ZoteroConnection; web?: ZoteroConnection }): ZoteroClient | null {
+export function createZoteroClient(connections: { local?: ZoteroConnection; web?: ZoteroConnection; groups?: readonly ZoteroGroup[] }): ZoteroClient | null {
 	const { local, web } = connections;
 	if (local === undefined && web === undefined) return null;
 	const order = [local, web].filter((connection): connection is ZoteroConnection => connection !== undefined);
+	const groups = connections.groups ?? [];
+	const libraries: ZoteroLibrary[] = ["user", ...groups.map((group) => ({ group: group.id }))];
 
-	async function call<T>(work: (connection: ZoteroConnection) => Promise<T>): Promise<T> {
+	async function call<T>(work: (connection: ZoteroConnection) => Promise<T>, fallsThrough: (error: ZoteroError) => boolean = canFallBack): Promise<T> {
 		let last: unknown;
 		for (const connection of order) {
 			try {
@@ -612,32 +703,53 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 			} catch (error) {
 				// Only "we could not use this connection" falls through. A 404, a refused write body, a
 				// malformed answer -- those are answers, and the second connection would answer the same.
-				if (!(error instanceof ZoteroError) || !CAN_FALL_BACK.includes(error.reason)) throw error;
+				if (!(error instanceof ZoteroError) || !fallsThrough(error)) throw error;
 				last = error;
 			}
 		}
 		throw last;
 	}
 
+	/** One listing over every enabled library, in order. See the header on a group a connection does not hold. */
+	async function listEach<T>(work: (connection: ZoteroConnection, library: ZoteroLibrary) => Promise<T[]>): Promise<T[]> {
+		const rows: T[] = [];
+		for (const library of libraries) {
+			try {
+				rows.push(...(await call((connection) => work(connection, library), (error) => canFallBack(error) || (library !== "user" && error.reason === "not-found"))));
+			} catch (error) {
+				if (library === "user" || !(error instanceof ZoteroError) || error.reason !== "not-found") throw error;
+			}
+		}
+		return rows;
+	}
+
 	return {
+		libraries,
+		libraryName(library) {
+			if (library === "user") return "your library";
+			// The name the setting stored when the group was switched on; a link into a group that has
+			// since been unticked is named by its number, which is still something to look up.
+			return groups.find((group) => group.id === library.group)?.name ?? `group ${library.group}`;
+		},
 		async status() {
 			const [localUp, webUp] = await Promise.all([local?.probe() ?? Promise.resolve(false), web?.probe() ?? Promise.resolve(false)]);
 			return { local: localUp, web: webUp, summary: statusSummary(localUp, webUp) };
 		},
 		libraryId: () => call((connection) => connection.libraryId()),
-		attachments: () => call((connection) => connection.attachments()),
-		attachment: (key) => call((connection) => connection.attachment(key)),
-		parentItem: (key) => call((connection) => connection.parentItem(key)),
-		search: (query) => call((connection) => connection.search(query)),
-		itemsWithTag: (tag) => call((connection) => connection.itemsWithTag(tag)),
-		filePath: (key) => call((connection) => connection.filePath(key)),
-		fileBytes: (key) => call((connection) => connection.fileBytes(key)),
-		ownAnnotations: (parentKey) => call((connection) => connection.ownAnnotations(parentKey)),
+		groups: () => call((connection) => connection.groups()),
+		attachments: () => listEach((connection, library) => connection.attachments(library)),
+		attachment: (key, library) => call((connection) => connection.attachment(key, library)),
+		parentItem: (key, library) => call((connection) => connection.parentItem(key, library)),
+		search: (query) => listEach((connection, library) => connection.search(query, library)),
+		itemsWithTag: (tag) => listEach((connection, library) => connection.itemsWithTag(tag, library)),
+		filePath: (key, library) => call((connection) => connection.filePath(key, library)),
+		fileBytes: (key, library) => call((connection) => connection.fileBytes(key, library)),
+		ownAnnotations: (parentKey, library) => call((connection) => connection.ownAnnotations(parentKey, library)),
 		// ⚠️ Not falling back mid-batch: if the desktop accepted twelve of fifty and then went away, the
 		// web must not be handed the same fifty. `call` re-runs the *whole* work function, so a create
 		// that got as far as an answer keeps its answer, and only one that never reached Zotero at all
 		// is tried again elsewhere.
-		createAnnotations: (items) => call((connection) => connection.createAnnotations(items)),
+		createAnnotations: (items, library) => call((connection) => connection.createAnnotations(items, library)),
 		/**
 		 * Routed by the annotation's own source, and not routed anywhere else.
 		 *
@@ -646,8 +758,8 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 		 * patch is skipped and reported -- the next sync patches it, because write-back is add-and-
 		 * refresh and nothing was lost (§3.3).
 		 */
-		patchAnnotation: async (annotation, fields) => await sourceOf(annotation).patchAnnotation(annotation.key, annotation.version, fields),
-		trashAnnotation: async (annotation) => await sourceOf(annotation).trashAnnotation(annotation.key, annotation.version),
+		patchAnnotation: async (annotation, fields) => await sourceOf(annotation).patchAnnotation(annotation.key, annotation.version, fields, annotation.library),
+		trashAnnotation: async (annotation) => await sourceOf(annotation).trashAnnotation(annotation.key, annotation.version, annotation.library),
 	};
 
 	function sourceOf(annotation: ZoteroAnnotationRef): ZoteroConnection {
@@ -661,6 +773,7 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 
 /** The failures that mean "this connection could not answer", as opposed to "this is the answer". */
 const CAN_FALL_BACK: ZoteroFailure[] = ["unreachable", "not-enabled", "denied", "unauthorized", "rate-limited"];
+const canFallBack = (error: ZoteroError): boolean => CAN_FALL_BACK.includes(error.reason);
 
 /**
  * The settings line's four states, in the spec's words (§2.1). With both up it also says which one

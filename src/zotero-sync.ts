@@ -25,7 +25,7 @@
 
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import { type MatchEvidence, matchZoteroAttachment } from "./zotero-match";
-import { type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem } from "./zotero-client";
+import { sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary } from "./zotero-client";
 import { linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, type VaultNoteKeys, zoteroCalloutLine, zoteroDigestLinks, type ZoteroWriteBack } from "./zotero-note";
 import { executeWriteBack, planWriteBack } from "./zotero-writeback";
@@ -51,9 +51,11 @@ export interface ZoteroUnit {
 	md5(): Promise<string | null>;
 }
 
-/** The two frontmatter keys of §4, in the three states `frontmatter.ts` reads (a key, `null`, absent). */
+/** The frontmatter keys of §4, in the three states `frontmatter.ts` reads (a key, `null`, absent). */
 export interface ZoteroKeys {
 	readonly zoteroKey?: string | null;
+	/** The group's id for an item in a group library, `null` for the personal one (ticket 26). */
+	readonly zoteroLibrary?: string | null;
 	readonly citekey?: string | null;
 }
 
@@ -69,7 +71,7 @@ export interface ZoteroNoteParts {
 }
 
 /** A note with no Zotero part at all: not linked, not asked, or nothing here may run. */
-const NOTHING: ZoteroNoteParts = { line: null, links: {}, keys: { zoteroKey: null, citekey: null }, notices: [] };
+const NOTHING: ZoteroNoteParts = { line: null, links: {}, keys: { zoteroKey: null, zoteroLibrary: null, citekey: null }, notices: [] };
 
 /**
  * A note whose Zotero identity we cannot tell either way, so the keys it already carries stay.
@@ -97,6 +99,8 @@ export interface ZoteroQuestion {
 export interface ZoteroCandidate {
 	readonly attachment: ZoteroAttachment;
 	readonly item: ZoteroItem | null;
+	/** Which library it is in, said only when the client reads more than one (ticket 26): the same file in the personal library and in a group is two answers. */
+	readonly library?: string;
 }
 
 export interface ZoteroPassDeps {
@@ -140,8 +144,14 @@ const REASONS: Record<ZoteroFailure, string> = {
 	unauthorized: "Zotero rejected the API key",
 	"rate-limited": "Zotero asked for a pause",
 	"not-found": "the Zotero item was no longer found",
+	"read-only": "no write access to the library",
 	server: "Zotero answered with an error",
 };
+
+/** The `read-only` clause with the library named (ticket 26): "no write access to Lab reading group". */
+export function noWriteAccess(libraryName: string): string {
+	return `no write access to ${libraryName}`;
+}
 
 /** What went wrong, in the note's words. Anything that is not a {@link ZoteroError} keeps its own message. */
 export function zoteroSkipReason(error: unknown): string {
@@ -161,6 +171,14 @@ export function zoteroPartialNotice(visibleName: string, written: number, total:
 
 /** The line a note gets when the attachment it is linked to is not in the library any more (§2.3). */
 export const ZOTERO_GONE_LINE = "Zotero: item no longer found";
+
+/**
+ * The line and the reason for a link into a group library the vault has since switched off
+ * (ticket 26). The link stays -- switching the group back on is all it takes -- and nothing is
+ * matched, read or written meanwhile: a library that is off is off for reading too.
+ */
+export const ZOTERO_LIBRARY_OFF_LINE = "Zotero: library switched off";
+export const LIBRARY_OFF = "its Zotero library is switched off";
 
 // --- the pass ----------------------------------------------------------------------------------
 
@@ -182,19 +200,24 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 
 	/** The paper this attachment hangs under, or the attachment standing in for one (§4 names a paper). */
 	const itemOf = async (attachment: ZoteroAttachment): Promise<ZoteroItem> => {
-		const parent = attachment.parentKey === null ? null : await deps.client.parentItem(attachment.parentKey);
+		const parent = attachment.parentKey === null ? null : await deps.client.parentItem(attachment.parentKey, attachment.library);
 		// A standalone PDF *is* the item in Zotero, and `zotero://select` opens it by its own key. The
 		// same fallback covers a parent that has been deleted out from under a file Zotero still has.
-		return parent ?? { key: attachment.key, title: attachment.title, creator: null, year: null, citationKey: null };
+		return parent ?? { key: attachment.key, library: attachment.library, title: attachment.title, creator: null, year: null, citationKey: null };
 	};
 
+	const libraryOn = (library: ZoteroLibrary): boolean => deps.client.libraries.some((enabled) => sameLibrary(enabled, library));
+
 	/** Which attachment this document is, asking the user at most once (§2.3). `null` = no Zotero part. */
-	const identify = async (unit: ZoteroUnit): Promise<{ attachment: ZoteroAttachment; link: ZoteroLink } | "gone" | null> => {
+	const identify = async (unit: ZoteroUnit): Promise<{ attachment: ZoteroAttachment; link: ZoteroLink } | "gone" | "off" | null> => {
 		const links = deps.links();
 		const link = linkFor(links, unit.docId);
 		const declined = wasDeclined(links, unit.docId);
 		// Asked and refused: nothing more to do, and nothing to read the library for.
 		if (link === null && declined) return null;
+		// A link into a group the vault switched off (ticket 26): left as it is, and not matched again
+		// -- the listing would not hold its attachment, and "gone" would be the wrong word for it.
+		if (link !== null && !libraryOn(link.library)) return "off";
 
 		const match = matchZoteroAttachment({
 			link,
@@ -213,7 +236,16 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 
 		// A question, and only where there is somebody to answer it.
 		if (deps.ask === undefined) return null;
-		const candidates = await Promise.all(match.candidates.map(async (attachment) => ({ attachment, item: await itemOf(attachment) })));
+		// The library is named beside each candidate only when there is more than one to name: with
+		// groups on, the same PDF in the personal library and in a group is exactly this question.
+		const named = deps.client.libraries.length > 1;
+		const candidates = await Promise.all(
+			match.candidates.map(async (attachment) => ({
+				attachment,
+				item: await itemOf(attachment),
+				...(named ? { library: deps.client.libraryName(attachment.library) } : {}),
+			})),
+		);
 		const chosen = await deps.ask({ visibleName: unit.visibleName, evidence: match.evidence, candidates });
 		if (chosen === null) {
 			// Closed without answering. Remembered, or the same picker opens on every sync from here on.
@@ -227,7 +259,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 	const store = async (unit: ZoteroUnit, attachment: ZoteroAttachment, matchedBy: "hash" | null): Promise<ZoteroLink> => {
 		const link: ZoteroLink = {
 			attachmentKey: attachment.key,
-			library: "user",
+			library: attachment.library,
 			...(matchedBy === null ? {} : { matchedBy }),
 			annotations: {},
 		};
@@ -242,6 +274,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			// §2.3: the note keeps everything it has and loses its Zotero part, apart from this sentence.
 			return { line: ZOTERO_GONE_LINE, links: {}, keys: keysUnknown, notices: [zoteroSkipNotice(unit.visibleName, REASONS["not-found"])] };
 		}
+		if (found === "off") return { line: ZOTERO_LIBRARY_OFF_LINE, links: {}, keys: keysUnknown, notices: [zoteroSkipNotice(unit.visibleName, LIBRARY_OFF)] };
 
 		const { attachment } = found;
 		const item = await itemOf(attachment);
@@ -256,7 +289,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			// annotations -- a free vault makes no write-shaped request at all.
 			writeBack = { kind: "free" };
 		} else try {
-			const existing = await deps.client.ownAnnotations(attachment.key);
+			const existing = await deps.client.ownAnnotations(attachment.key, attachment.library);
 			const plan = planWriteBack({ pages: [...unit.pages], covered: unit.covered, attachmentKey: attachment.key, link, existing });
 			const result = await executeWriteBack(deps.client, link, plan);
 			link = { ...link, annotations: result.annotations };
@@ -264,7 +297,9 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			writeBack = { kind: "written", date: formatLocalDate(deps.now()), written: result.written, total: result.total };
 			if (result.written < result.total) notices.push(zoteroPartialNotice(unit.visibleName, result.written, result.total));
 		} catch (error) {
-			const reason = zoteroSkipReason(error);
+			// A refused write names the library it was refused by (ticket 26): "no write access to
+			// Lab reading group" is something to act on, "to the library" is not.
+			const reason = error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(attachment.library)) : zoteroSkipReason(error);
 			writeBack = { kind: "not-written", reason };
 			notices.push(zoteroSkipNotice(unit.visibleName, reason));
 		}
@@ -276,7 +311,12 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			literatureNote: findLiteratureNote(deps.vaultNotes(), item, new Set([unit.notePath])),
 			matchedByHash: found.link.matchedBy === "hash",
 		});
-		return { line, links: zoteroDigestLinks(link, unit.pages), keys: { zoteroKey: item.key, citekey: item.citationKey }, notices };
+		return {
+			line,
+			links: zoteroDigestLinks(link, unit.pages),
+			keys: { zoteroKey: item.key, zoteroLibrary: item.library === "user" ? null : String(item.library.group), citekey: item.citationKey },
+			notices,
+		};
 	};
 
 	return {

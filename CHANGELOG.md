@@ -34,6 +34,14 @@ workflow publishes the section as the GitHub release body. See
   SSH this runs only in a sync you start yourself, since that route restarts the tablet's reading
   app.
 
+- **Group libraries** (Tagged Sync Pro). Under Settings → Zotero → *Zotero libraries*, switch on
+  any group your Zotero account is in, by name. A group switched on is searched by *Send*, sent
+  from by the send tag, matched against at sync time and -- with write-back -- written into like
+  your own library; a note whose paper is in a group links into the group, and its frontmatter
+  carries `zotero-library` beside `zotero-key`. Highlights written into a group library are
+  visible to everyone in that group, which the setting says. A group you may only read is named
+  in the note (*no write access to …*) rather than retried into your own library. Works over both
+  connections.
 - **Marker colours in the digest.** A highlight you made in green is green in the note — the
   same eight colours Zotero uses, painted by the plugin's own stylesheet, so nothing to install and
   a theme can restyle them. A pen mark stays Obsidian's ordinary highlight. An existing digest

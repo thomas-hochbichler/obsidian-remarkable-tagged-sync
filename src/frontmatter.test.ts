@@ -176,6 +176,16 @@ describe("the two Zotero keys", () => {
 		expect(content).not.toContain("citekey");
 	});
 
+	// Ticket 26: the group's id beside the key, only for a group -- a query on `zotero-key` alone
+	// keeps working, and the line is absent exactly where it would say nothing.
+	it("names the group library only where the item is in one, and takes the line out with the key", () => {
+		const grouped = applyFrontmatter(BODY, fields({ zoteroKey: "KX7Q2R4M", zoteroLibrary: "4711" }), []);
+		expect(grouped.content).toContain("zotero-key: KX7Q2R4M\nzotero-library: 4711\n");
+		const personal = applyFrontmatter(grouped.content, fields({ zoteroKey: "KX7Q2R4M", zoteroLibrary: null }), []);
+		expect(personal.content).not.toContain("zotero-library");
+		expect(removeFrontmatter(grouped.content, grouped.ownTags)).not.toContain("zotero-library");
+	});
+
 	// ⚠️ The value may be ZotLit's or the user's own -- the key is shared vocabulary, not ours. Taking
 	// it away because *this* document stopped being linked deletes another plugin's line.
 	it("never takes a citekey out of a note", () => {

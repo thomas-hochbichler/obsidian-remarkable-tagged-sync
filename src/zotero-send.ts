@@ -13,7 +13,7 @@
  */
 
 import { md5Hex } from "./file-md5";
-import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client";
+import { sameLibrary, type ZoteroAttachment, type ZoteroClient, type ZoteroItem } from "./zotero-client";
 import { linkFor, withLink, withoutLink, type StoredZoteroLinks, type ZoteroLink } from "./zotero-links";
 
 /** One document, as it is handed to a transport. Add-only: see the file header. */
@@ -115,8 +115,9 @@ export type PdfChoice =
  * the one the highlights go back onto. Picking either for them would put a page number on a passage
  * that is on another page in the file they meant.
  */
-export function pdfChoice(attachments: readonly ZoteroAttachment[], itemKey: string): PdfChoice {
-	const mine = attachments.filter((attachment) => attachment.parentKey === itemKey);
+export function pdfChoice(attachments: readonly ZoteroAttachment[], item: ZoteroItem): PdfChoice {
+	// The item's own library as well as its key: a key is unique only within a library (ticket 26).
+	const mine = attachments.filter((attachment) => attachment.parentKey === item.key && sameLibrary(attachment.library, item.library));
 	if (mine.length === 0) return { kind: "none" };
 	if (mine.length === 1) return { kind: "use", attachment: mine[0] };
 	return { kind: "ask", options: mine };
@@ -137,11 +138,12 @@ export interface SendState {
 	readonly vanished: string[];
 }
 
-export function sendState(links: StoredZoteroLinks, attachmentKey: string, onTablet: ReadonlySet<string>): SendState {
+export function sendState(links: StoredZoteroLinks, attachment: ZoteroAttachment, onTablet: ReadonlySet<string>): SendState {
 	const present: string[] = [];
 	const vanished: string[] = [];
 	for (const docId of Object.keys(links)) {
-		if (linkFor(links, docId)?.attachmentKey !== attachmentKey) continue;
+		const link = linkFor(links, docId);
+		if (link === null || link.attachmentKey !== attachment.key || !sameLibrary(link.library, attachment.library)) continue;
 		(onTablet.has(docId) ? present : vanished).push(docId);
 	}
 	return { present, vanished };
@@ -237,11 +239,11 @@ export interface SendDeps {
  * `null` means the user closed the dialog, which is an answer and not a failure.
  */
 export async function sendBytes(deps: SendDeps, attachment: ZoteroAttachment): Promise<SendBytes | null> {
-	const path = await deps.client.filePath(attachment.key);
+	const path = await deps.client.filePath(attachment.key, attachment.library);
 	const onDisk = path === null ? null : await deps.readFile(path);
 	if (onDisk !== null) return { bytes: onDisk, source: "file" };
 
-	const downloaded = await deps.client.fileBytes(attachment.key);
+	const downloaded = await deps.client.fileBytes(attachment.key, attachment.library);
 	if (downloaded !== null) return { bytes: downloaded, source: "download" };
 
 	const picked = await deps.pickFile();
@@ -284,7 +286,7 @@ export async function sendToTablet(deps: SendDeps, request: SendRequest): Promis
 
 	const link: ZoteroLink = {
 		attachmentKey: request.attachment.key,
-		library: "user",
+		library: request.attachment.library,
 		sentAt: deps.now().toISOString(),
 		sentMd5: md5Hex(bytes.bytes),
 		annotations: {},

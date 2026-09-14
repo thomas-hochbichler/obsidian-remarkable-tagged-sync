@@ -13,7 +13,7 @@
  */
 
 import { type App, debounce, Modal, Setting } from "obsidian";
-import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
+import type { ZoteroAttachment, ZoteroItem, ZoteroLibrary } from "./zotero-client";
 import { itemLabel } from "./zotero-note";
 import { pdfChoice } from "./zotero-send";
 import type { ZoteroCandidate, ZoteroQuestion } from "./zotero-sync";
@@ -33,6 +33,8 @@ export interface LinkDialogDeps {
 	search?(query: string): Promise<ZoteroItem[]>;
 	/** Every PDF attachment in the library -- needed only to find the PDFs of a searched-for item. */
 	attachments?(): Promise<ZoteroAttachment[]>;
+	/** Names a result's library under it; given only when more than one is searched (ticket 26), as in the send dialog. */
+	libraryName?(library: ZoteroLibrary): string;
 	/** How long typing settles before the library is searched. Injectable so a test need not wait. */
 	searchDelayMs?: number;
 }
@@ -97,12 +99,13 @@ class LinkDialog extends Modal {
 		});
 
 		for (const item of this.results) {
-			new Setting(this.contentEl).setName(itemLabel(item)).addButton((button) =>
+			const row = new Setting(this.contentEl).setName(itemLabel(item)).addButton((button) =>
 				button
 					.setButtonText("Choose")
 					.setCta()
 					.onClick(() => void this.chooseItem(item)),
 			);
+			if (this.deps.libraryName !== undefined) row.setDesc(this.deps.libraryName(item.library));
 		}
 		// Only after a search has come back: "nothing matches" before anything was typed is an answer to
 		// a question the user never asked.
@@ -126,7 +129,7 @@ class LinkDialog extends Modal {
 	}
 
 	private async chooseItem(item: ZoteroItem): Promise<void> {
-		const choice = pdfChoice(await this.deps.attachments!(), item.key);
+		const choice = pdfChoice(await this.deps.attachments!(), item);
 		if (choice.kind === "none") this.step = { kind: "no-pdf" };
 		else if (choice.kind === "use") return this.finish(choice.attachment);
 		else this.step = { kind: "choose", why: "Which PDF is the one on your tablet?", candidates: choice.options.map((attachment) => ({ attachment, item })) };
@@ -148,8 +151,10 @@ class LinkDialog extends Modal {
 		for (const candidate of step.candidates) {
 			new Setting(this.contentEl)
 				.setName(candidate.item === null ? candidate.attachment.title : itemLabel(candidate.item))
-				// The filename below the paper, because two PDFs of one item are told apart by nothing else.
-				.setDesc(candidate.attachment.filename ?? candidate.attachment.title)
+				// The filename below the paper, because two PDFs of one item are told apart by nothing else;
+				// the library after it where more than one is on, because the same file in two of them is
+				// told apart by nothing else either (ticket 26).
+				.setDesc([candidate.attachment.filename ?? candidate.attachment.title, candidate.library].filter((part) => part !== undefined).join(" · "))
 				.addButton((button) =>
 					button
 						.setButtonText("Choose")
@@ -188,6 +193,6 @@ export function askWhichPdf(app: App, item: ZoteroItem, options: readonly Zotero
 }
 
 /** The *Link to Zotero item…* command: the same question with nothing to go on, so it starts at a search field. */
-export function askZoteroItem(app: App, deps: Required<Omit<LinkDialogDeps, "searchDelayMs">> & Pick<LinkDialogDeps, "searchDelayMs">): Promise<ZoteroAttachment | null> {
+export function askZoteroItem(app: App, deps: Required<Omit<LinkDialogDeps, "searchDelayMs" | "libraryName">> & Pick<LinkDialogDeps, "searchDelayMs" | "libraryName">): Promise<ZoteroAttachment | null> {
 	return new Promise((resolve) => new LinkDialog(app, deps, { kind: "search" }, "Link this note to a Zotero item", resolve).open());
 }

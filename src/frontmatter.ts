@@ -70,6 +70,13 @@ export interface NoteFrontmatter {
 	 */
 	zoteroKey?: string | null;
 	/**
+	 * The group library the item is in, by Zotero's numeric id -- only for a group (ticket 26). A
+	 * personal-library item writes `null`, which takes the line out, so a query on `zotero-key` alone
+	 * keeps working and the key is absent exactly where it would say nothing. Same three states as
+	 * `zoteroKey`, and removed with it.
+	 */
+	zoteroLibrary?: string | null;
+	/**
 	 * Zotero's own citation key, when it has one -- never invented, and never removed by us.
 	 *
 	 * The one key the plugin writes without owning: the value may well have been written by another
@@ -107,6 +114,7 @@ const MANAGED_KEYS = [
  * that a query across every literature note in the vault finds ours too.
  */
 const ZOTERO_KEY = "zotero-key";
+const ZOTERO_LIBRARY = "zotero-library";
 const CITEKEY = "citekey";
 
 // Same shape note-builder matches: a leading `---` block closed by `---` on its own line.
@@ -252,9 +260,10 @@ function mergeKey(lines: string[], key: string, value: string | null | undefined
 	return merged;
 }
 
-/** The two keys of spec §4. `citekey` is never removed, so `null` there means the same as absent. */
+/** The keys of spec §4. `citekey` is never removed, so `null` there means the same as absent. */
 function mergeZoteroKeys(lines: string[], frontmatter: NoteFrontmatter): string[] {
-	return mergeKey(mergeKey(lines, ZOTERO_KEY, frontmatter.zoteroKey), CITEKEY, frontmatter.citekey ?? undefined);
+	const keyed = mergeKey(mergeKey(lines, ZOTERO_KEY, frontmatter.zoteroKey), ZOTERO_LIBRARY, frontmatter.zoteroLibrary);
+	return mergeKey(keyed, CITEKEY, frontmatter.citekey ?? undefined);
 }
 
 /** Replaces, inserts, or removes the plugin's scalar lines; a line starting `<key>:` is the plugin's. */
@@ -313,7 +322,7 @@ export function removeFrontmatter(content: string, ownTags: string[]): string | 
 	if (!match) return null;
 
 	let lines = mergeTags(match[1].split("\n"), [], ownTags);
-	lines = lines.filter((line) => ![...MANAGED_KEYS, ZOTERO_KEY].some((key) => line.startsWith(`${key}:`)));
+	lines = lines.filter((line) => ![...MANAGED_KEYS, ZOTERO_KEY, ZOTERO_LIBRARY].some((key) => line.startsWith(`${key}:`)));
 
 	const cleaned = lines.every((line) => line.trim() === "")
 		? content.slice(match[0].length)

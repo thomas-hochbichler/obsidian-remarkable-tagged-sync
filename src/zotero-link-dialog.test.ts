@@ -4,11 +4,11 @@ import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
 import { askWhichAttachment, askWhichPdf, askZoteroItem, EVIDENCE, ITEM_HAS_NO_PDF, NOTHING_FOUND } from "./zotero-link-dialog";
 import type { ZoteroQuestion } from "./zotero-sync";
 
-const ITEM: ZoteroItem = { key: "ITEM1", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
-const OTHER: ZoteroItem = { key: "ITEM2", title: "Etwas anderes", creator: null, year: null, citationKey: null };
+const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
+const OTHER: ZoteroItem = { key: "ITEM2", library: "user", title: "Etwas anderes", creator: null, year: null, citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
 }
 
 function question(overrides: Partial<ZoteroQuestion> = {}): ZoteroQuestion {
@@ -202,6 +202,25 @@ describe("the Link to Zotero item… command", () => {
 
 		expect(takeSettings()).toEqual([]);
 		takeModals()[0].close();
+		await answer;
+	});
+});
+
+describe("group libraries (ticket 26)", () => {
+	// The same file in the personal library and in a group is told apart by nothing but the library.
+	it("names the library after the file where the candidates come from more than one", async () => {
+		const named = question({
+			candidates: [
+				{ attachment: attachment(), item: ITEM, library: "your library" },
+				{ attachment: attachment({ library: { group: 4711 } }), item: ITEM, library: "Lab reading group" },
+			],
+		});
+		const answer = askWhichAttachment(asApp(new FakeApp()), named);
+		const rows = takeSettings();
+
+		expect(rows[1].desc).toBe("prompting.pdf · your library");
+		expect(rows[2].desc).toBe("prompting.pdf · Lab reading group");
+		press("None of these", rows);
 		await answer;
 	});
 });

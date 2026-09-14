@@ -233,7 +233,7 @@ export function planWriteBack({ pages, covered, attachmentKey, link, existing }:
 			}
 			trashes.push({
 				blockId,
-				annotation: { key: known.key, version: known.version, source: known.source },
+				annotation: { key: known.key, version: known.version, source: known.source, library: known.library },
 				record: { key: stored.key, written: stored.written, deleted: true },
 			});
 		}
@@ -294,7 +294,7 @@ export function planWriteBack({ pages, covered, attachmentKey, link, existing }:
 		else {
 			patches.push({
 				blockId: entry.blockId,
-				annotation: { key: known.key, version: known.version, source: known.source },
+				annotation: { key: known.key, version: known.version, source: known.source, library: known.library },
 				fields,
 				written,
 				userEdited: [...surrendered],
@@ -333,6 +333,16 @@ export async function executeWriteBack(client: ZoteroClient, link: ZoteroLink, p
 	let written = 0;
 	const failures: string[] = [];
 
+	/**
+	 * A failed request ends the run with what landed counted; a library that refuses writes ends it
+	 * as a *skip* (ticket 26): nothing after it can land either, and "0 of 12 written, retry on next
+	 * sync" would promise a retry that the next sync refuses the same way. The pass names the group.
+	 */
+	const giveUp = (error: unknown): void => {
+		if (error instanceof ZoteroError && error.reason === "read-only") throw error;
+		failures.push(describeZoteroError(error));
+	};
+
 	for (const trash of plan.trashes) {
 		try {
 			const outcome = await client.trashAnnotation(trash.annotation);
@@ -342,14 +352,16 @@ export async function executeWriteBack(client: ZoteroClient, link: ZoteroLink, p
 			annotations[trash.blockId] = trash.record;
 			written++;
 		} catch (error) {
-			failures.push(describeZoteroError(error));
+			giveUp(error);
 			return { annotations, written, total, failures };
 		}
 	}
 
 	if (plan.creates.length > 0) {
 		try {
-			const created = await client.createAnnotations(plan.creates.map((create) => create.annotation));
+			// Into the link's library and no other: a `read-only` answer from a group is reported, never
+			// retried into the personal library (ticket 26).
+			const created = await client.createAnnotations(plan.creates.map((create) => create.annotation), link.library);
 			plan.creates.forEach((create, index) => {
 				const key = created.keys[index];
 				// A key or nothing: an annotation Zotero refused is simply not recorded, so the next sync
@@ -360,7 +372,7 @@ export async function executeWriteBack(client: ZoteroClient, link: ZoteroLink, p
 			});
 			failures.push(...created.failures);
 		} catch (error) {
-			failures.push(describeZoteroError(error));
+			giveUp(error);
 			return { annotations, written, total, failures };
 		}
 	}
@@ -385,7 +397,7 @@ export async function executeWriteBack(client: ZoteroClient, link: ZoteroLink, p
 			};
 			written++;
 		} catch (error) {
-			failures.push(describeZoteroError(error));
+			giveUp(error);
 			return { annotations, written, total, failures };
 		}
 	}

@@ -3,11 +3,11 @@ import { asApp, FakeApp, takeModals, takeSettings } from "../test-stubs/fake-obs
 import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
 import { askWhatToSend, NO_PDF, NO_RESULTS, type SendChoice, type SendDialogDeps } from "./zotero-send-dialog";
 
-const ITEM: ZoteroItem = { key: "ITEM1", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
-const OTHER: ZoteroItem = { key: "ITEM2", title: "Etwas anderes", creator: null, year: null, citationKey: null };
+const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
+const OTHER: ZoteroItem = { key: "ITEM2", library: "user", title: "Etwas anderes", creator: null, year: null, citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", parentKey: "ITEM1", filename: "paper.pdf", md5: null, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: null, title: "Full Text PDF", ...overrides };
 }
 
 function open(overrides: Partial<SendDialogDeps> = {}): { choice: Promise<SendChoice | null> } {
@@ -182,5 +182,21 @@ describe("closing the dialog", () => {
 		const dialog = open();
 		takeModals()[0].close();
 		expect(await dialog.choice).toBeNull();
+	});
+});
+
+describe("group libraries (ticket 26)", () => {
+	const IN_GROUP = { ...ITEM, key: "G1", library: { group: 4711 } };
+
+	// Only where there is more than one library to tell apart: with the personal one alone every
+	// row would say the same thing.
+	it("names the library under each result only when it was given names to use", async () => {
+		open({ search: async () => [ITEM, IN_GROUP], libraryName: (library) => (library === "user" ? "your library" : "Lab reading group") });
+		await type("smith");
+		expect(takeSettings().map((setting) => setting.desc)).toEqual(expect.arrayContaining(["your library", "Lab reading group"]));
+
+		open({ search: async () => [ITEM, IN_GROUP] });
+		await type("smith");
+		expect(takeSettings().map((setting) => setting.desc)).not.toContain("your library");
 	});
 });
