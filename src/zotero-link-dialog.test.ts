@@ -223,4 +223,19 @@ describe("group libraries (ticket 26)", () => {
 		press("None of these", rows);
 		await answer;
 	});
+
+	it("names the library under each search result when it was given names to use", async () => {
+		const inGroup: ZoteroItem = { ...ITEM, key: "G1", library: { group: 4711 } };
+		const answer = askZoteroItem(asApp(new FakeApp()), {
+			search: async () => [ITEM, inGroup],
+			attachments: async () => [attachment()],
+			searchDelayMs: 0,
+			libraryName: (library) => (library === "user" ? "your library" : "Lab reading group"),
+		});
+		await type("smith");
+
+		expect(takeSettings().map((setting) => setting.desc)).toEqual(expect.arrayContaining(["your library", "Lab reading group"]));
+		takeModals()[0].close();
+		await answer;
+	});
 });

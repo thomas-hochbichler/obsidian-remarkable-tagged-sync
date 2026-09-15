@@ -311,6 +311,22 @@ describe("a highlight the reader erased on the tablet", () => {
 
 		expect(planned.trashes.map((trash) => trash.blockId)).toEqual(["hl-old"]);
 	});
+
+	// A mapping written before positions were remembered, or one whose position says no page, cannot
+	// say which page it sits on -- and "erased" is only decided for pages the digest looked at.
+	it("leaves alone an annotation whose written page cannot be read", () => {
+		const { position: _position, ...withoutPosition } = WRITTEN;
+		const unplaced = link({
+			annotations: {
+				"hl-old": { key: "OLD1", written: withoutPosition },
+				"hl-older": { key: "OLD2", written: { ...WRITTEN, position: '{"rects":[]}' } },
+			},
+		});
+		const planned = plan({ link: unplaced, existing: [inZotero({ key: "OLD1" }), inZotero({ key: "OLD2" })] });
+
+		expect(planned.trashes).toEqual([]);
+		expect(planned.vanished).toEqual([]);
+	});
 });
 
 describe("carrying out the plan", () => {
@@ -448,5 +464,20 @@ describe("carrying out the plan", () => {
 		await executeWriteBack(client, stored, plan({ link: stored, existing: [inZotero({ comment: "alt", source: "web", version: 986 })] }));
 
 		expect(sent[0].ref).toEqual({ key: "TNZQQNN3", version: 986, source: "web", library: "user" });
+	});
+
+	it("stops at a trash that fails, with the failure named", async () => {
+		const client = fakeClient({
+			trashAnnotation: vi.fn(async () => {
+				throw new ZoteroError("unreachable", "The Zotero desktop app is not running.");
+			}),
+		});
+		const stored = link({ annotations: { "hl-old": { key: "OLD1", written: WRITTEN } } });
+		const planned = plan({ link: stored, existing: [inZotero({ key: "OLD1" })] });
+		const result = await executeWriteBack(client, stored, planned);
+
+		expect(result.written).toBe(0);
+		expect(result.failures).toEqual(["The Zotero desktop app is not running."]);
+		expect(result.annotations["hl-old"]).toEqual({ key: "OLD1", written: WRITTEN });
 	});
 });

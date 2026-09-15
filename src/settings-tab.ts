@@ -30,6 +30,7 @@ import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
+import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
 import { zoteroProAllowed } from "./zotero-settings";
 import type { ZoteroGroup } from "./zotero-client";
@@ -748,7 +749,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					// pull the screen out from under a person reading it.
 					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.display();
 				},
-				(error: unknown) => status.setText(`Could not list your groups: ${error instanceof Error ? error.message : String(error)}`),
+				(error: unknown) => status.setText(`Could not list your groups: ${describeZoteroError(error)}`),
 			);
 		} else if (this.zoteroGroups.length === 0 && enabled.length === 0) {
 			status.setText("You are in no group.");

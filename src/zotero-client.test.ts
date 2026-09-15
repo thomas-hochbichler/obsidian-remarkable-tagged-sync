@@ -472,4 +472,37 @@ describe("group libraries (ticket 26)", () => {
 		expect(client?.libraryName(GROUP)).toBe("Lab reading group");
 		expect(client?.libraryName({ group: 99 })).toBe("group 99");
 	});
+
+	// The web API puts the id on the row and again inside `data`; the local API's rows differ in
+	// what they carry. Either place will do; no id or no name is not a library anyone can switch on.
+	it("takes a group's id from inside the row where the outer one is missing, and drops a row without a name", async () => {
+		const { api } = connection(() => json([{ data: { id: 4711, name: "Lab reading group" } }, { id: 5, data: {} }, { data: { name: "unnumbered" } }]));
+		expect(await api.groups()).toEqual([LAB]);
+	});
+
+	it("answers one attachment by key, and nothing for an item that is not a usable PDF", async () => {
+		const pdf = connection(() => json(attachmentRow({})));
+		expect(await pdf.api.attachment("ATT1", GROUP)).toMatchObject({ key: "ATT1", library: GROUP });
+		const epub = connection(() => json(attachmentRow({ contentType: "application/epub+zip" })));
+		expect(await epub.api.attachment("ATT1", "user")).toBeNull();
+		const gone = connection(() => json({ error: "Not found" }, 404));
+		expect(await gone.api.parentItem("GONE", "user")).toBeNull();
+	});
+
+	it("reads a refused patch as the library's answer, not as a conflict", async () => {
+		const { api } = connection(() => new Response("Internal Server Error", { status: 500 }));
+		await expect(api.patchAnnotation("ANN1", 1, { comment: "x" }, "user")).rejects.toBeInstanceOf(ZoteroError);
+	});
+
+	// "Not found" on a group is the connection not holding it (see above); anything else a group
+	// listing says is an answer about the request, and is reported rather than read as an empty group.
+	it("reports a group listing that fails for any reason but not-found", async () => {
+		const { api } = connection((request) => (request.library === "user" ? json([]) : new Response("Internal Server Error", { status: 500 })));
+		await expect(createZoteroClient({ local: api, groups: [LAB] })?.attachments()).rejects.toBeInstanceOf(ZoteroError);
+	});
+
+	it("refuses to patch an annotation read from a connection that is no longer set up", async () => {
+		const client = createZoteroClient({ local: connection(() => json([])).api });
+		await expect(client?.patchAnnotation({ key: "ANN1", version: 1, source: "web", library: "user" }, { comment: "x" })).rejects.toMatchObject({ reason: "unreachable" });
+	});
 });

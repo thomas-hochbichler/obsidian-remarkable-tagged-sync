@@ -3599,4 +3599,82 @@
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > shows the group switches shut to a free vault, without asking Zotero for its groups"
+    - id: Y33.38
+      scenario: "The settings tab drawn twice while one group listing is in flight"
+      expect: 'Redrawn once, for the answer that adds a row; the same list a second time redraws nothing'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > redraws once for the answer that adds groups, and not again for the same list"
+    - id: Y33.39
+      scenario: "The group listing fails"
+      expect: 'The *Group libraries* row says *Could not list your groups:* and why'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > says why when the groups cannot be listed"
+    - id: Y33.40
+      scenario: "A switched-on group, before Zotero has answered the listing"
+      expect: 'Its switch is on the screen from the first draw'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > shows a switched-on group before Zotero has answered"
+    - id: Y33.41
+      scenario: "A group row with the id only inside `data`, one with no name"
+      expect: 'Id read from inside; the nameless row is no library'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > takes a group's id from inside the row where the outer one is missing, and drops a row without a name"
+    - id: Y33.42
+      scenario: "One attachment asked for by key and library"
+      expect: 'The PDF comes back stamped with its library; an EPUB or a gone item is null'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > answers one attachment by key, and nothing for an item that is not a usable PDF"
+    - id: Y33.43
+      scenario: "A patch Zotero refuses with anything but 412"
+      expect: 'Thrown as a Zotero error, not read as a conflict'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > reads a refused patch as the library's answer, not as a conflict"
+    - id: Y33.44
+      scenario: "A group listing that fails for a reason other than not-found"
+      expect: 'The error is reported; the group is not read as empty'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > reports a group listing that fails for any reason but not-found"
+    - id: Y33.45
+      scenario: "A patch for an annotation read over a connection that is switched off now"
+      expect: 'Refused as `unreachable`; nothing is sent over the other connection'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > refuses to patch an annotation read from a connection that is no longer set up"
+    - id: Y33.46
+      scenario: "The *Link to Zotero item…* search over two libraries"
+      expect: 'Each result names its library beneath it'
+      layer: unit
+      file: src/zotero-link-dialog.test.ts
+      test: "group libraries (ticket 26) > names the library under each search result when it was given names to use"
+    - id: Y33.47
+      scenario: "`zotero-library` in a note's frontmatter, as number, string, empty or missing"
+      expect: 'A positive whole number names the group; anything else is the personal library'
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "which library a note's paper is in (ticket 26) > reads zotero-library as a group id whether it was parsed as a number or typed as a string"
+    - id: Y33.48
+      scenario: "Send's search with a group switched on"
+      expect: 'Each result names its library; with the personal library alone no name is shown'
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "which library a note's paper is in (ticket 26) > names the library under each search result of Send once there is more than one to tell apart"
+    - id: Y33.49
+      scenario: "A stored annotation whose written position is missing or names no page"
+      expect: 'Neither trashed nor marked vanished: its page is unknown, so it is not one the digest looked at'
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight the reader erased on the tablet > leaves alone an annotation whose written page cannot be read"
+    - id: Y33.50
+      scenario: "A trash request that fails"
+      expect: 'The run stops there, the failure is named, the mapping keeps the annotation as it was'
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "carrying out the plan > stops at a trash that fails, with the failure named"
 

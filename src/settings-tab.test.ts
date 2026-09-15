@@ -1175,6 +1175,41 @@ describe("the Zotero section", () => {
 
 		expect((plugin.data.zotero as { apiKey: string | null }).apiKey).toBeNull();
 	});
+
+	// The listing runs once per draw and answers late; two draws in flight would otherwise redraw
+	// twice for one list. Only an answer that adds a row is a reason to redraw.
+	it("redraws once for the answer that adds groups, and not again for the same list", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		const { tab } = await tabWith({ ...PRO, zotero: WEB });
+		draw(tab);
+		draw(tab);
+		const redraws = vi.spyOn(tab, "display");
+		await settle();
+		await settle();
+
+		expect(redraws).toHaveBeenCalledTimes(1);
+	});
+
+	it("says why when the groups cannot be listed", async () => {
+		const answering = zoteroAnswering([]);
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (String(input).includes("/groups?")) throw new TypeError("fetch failed");
+			return answering(input);
+		});
+		const { tab } = await tabWith({ ...PRO, zotero: WEB });
+		const drawn = draw(tab);
+		await settle();
+
+		expect(verdict(row(section(drawn, "Zotero libraries"), "Group libraries")).text).toContain("Could not list your groups:");
+	});
+
+	// A group the user switched on is theirs to see and to switch off before Zotero has said a word.
+	it("shows a switched-on group before Zotero has answered", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([]));
+		const { tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
+
+		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Your library", "Group libraries", "Lab reading group"]);
+	});
 });
 
 describe("the Tagged Sync Pro section", () => {

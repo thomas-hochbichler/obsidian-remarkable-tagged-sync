@@ -387,8 +387,16 @@
 			"branches": 2
 		},
 		"src/zotero-client.ts": {
-			"lines": 3,
-			"branches": 29
+			"lines": 1,
+			"branches": 20
+		},
+		"src/zotero-link-dialog.ts": {
+			"lines": 0,
+			"branches": 0
+		},
+		"src/zotero-plugin.ts": {
+			"lines": 0,
+			"branches": 0
 		},
 		"src/zotero-local.ts": {
 			"lines": 0,

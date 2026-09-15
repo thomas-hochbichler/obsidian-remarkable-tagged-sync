@@ -8,7 +8,7 @@ import type { SyncIndexRow } from "./sync-engine";
 import { DEFAULT_DATA, type TaggedSyncData } from "./settings-store";
 import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client";
 import { linkFor } from "./zotero-links";
-import { registerZoteroCommands, SEND_COMMAND, sendZoteroPdf, zoteroKeyedNotes, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
+import { libraryOfNote, registerZoteroCommands, SEND_COMMAND, sendZoteroPdf, zoteroKeyedNotes, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { PICK_THE_FILE, SEND_NEEDS_TRANSPORT, type SendDocument, type SendTransport } from "./zotero-send";
 
 const PRO: Entitlement = { tier: "pro", since: "2026-09-01T00:00:00.000Z", stale: false };
@@ -635,5 +635,37 @@ describe("the run's Zotero half", () => {
 		const harnessed = harness({ client: fakeClient({ libraryId: async () => null }), data: { ...LINKED_DOC, zotero: { ...DEFAULT_DATA.zotero, useWeb: true, apiKey: "key" } } });
 
 		expect((await runOver(harnessed)).line).not.toContain("web library");
+	});
+});
+
+describe("which library a note's paper is in (ticket 26)", () => {
+	// Frontmatter is hand-editable: the number Obsidian parses, the string a person types, and an
+	// emptied value all have to mean something, and only a positive whole number names a group.
+	it("reads zotero-library as a group id whether it was parsed as a number or typed as a string", () => {
+		expect(libraryOfNote({ "zotero-library": 4711 })).toEqual({ group: 4711 });
+		expect(libraryOfNote({ "zotero-library": "4711" })).toEqual({ group: 4711 });
+		expect(libraryOfNote({ "zotero-library": "" })).toBe("user");
+		expect(libraryOfNote({ "zotero-library": "lab" })).toBe("user");
+		expect(libraryOfNote({ "zotero-library": 0 })).toBe("user");
+		expect(libraryOfNote({})).toBe("user");
+		expect(libraryOfNote(undefined)).toBe("user");
+	});
+
+	it("names the library under each search result of Send once there is more than one to tell apart", async () => {
+		const inGroup: ZoteroItem = { ...ITEM, key: "G1", library: { group: 4711 } };
+		const harnessed = harness({
+			client: fakeClient({
+				libraries: ["user", { group: 4711 }],
+				libraryName: (library) => (library === "user" ? "your library" : "Lab reading group"),
+				search: async () => [ITEM, inGroup],
+			}),
+		});
+		const done = sendZoteroPdf(harnessed.host);
+		await vi.advanceTimersByTimeAsync(1);
+		await search("smith");
+
+		expect(takeSettings().map((setting) => setting.desc)).toEqual(expect.arrayContaining(["your library", "Lab reading group"]));
+		takeModals()[0].close();
+		await done;
 	});
 });

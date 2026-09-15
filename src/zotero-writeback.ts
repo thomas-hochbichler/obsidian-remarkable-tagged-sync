@@ -405,6 +405,7 @@ export async function executeWriteBack(client: ZoteroClient, link: ZoteroLink, p
 	return { annotations, written, total, failures };
 }
 
-function describeZoteroError(error: unknown): string {
+/** The one line a failed Zotero request is reported as, wherever the plugin reports one. */
+export function describeZoteroError(error: unknown): string {
 	return error instanceof ZoteroError ? error.message : error instanceof Error ? error.message : String(error);
 }
