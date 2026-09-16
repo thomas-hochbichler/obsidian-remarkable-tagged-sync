@@ -34,6 +34,12 @@ export interface RunConditions {
 	readonly running: boolean;
 	/** The selected backend is one only a licence unlocks, so its state is worth re-reading first. */
 	readonly backendRequiresLicence: boolean;
+	/**
+	 * A trial or licence has ended and the user has not been told yet. The re-read carries that one
+	 * sentence, and without this it would only ever be carried on a cloud backend -- a trial that
+	 * lapsed on Apple Vision ended in silence. Costs no call: there is no key to check.
+	 */
+	readonly licenceNoticeDue: boolean;
 }
 
 export type Preflight =
@@ -48,7 +54,7 @@ export type Preflight =
 export function preflightRun(conditions: RunConditions): Preflight {
 	if (!conditions.connected) return { start: false, notice: conditions.connectNotice ?? NOT_CONNECTED_NOTICE };
 	if (conditions.running) return { start: false, notice: ALREADY_RUNNING_NOTICE };
-	return { start: true, refreshLicence: conditions.backendRequiresLicence };
+	return { start: true, refreshLicence: conditions.backendRequiresLicence || conditions.licenceNoticeDue };
 }
 
 /**
