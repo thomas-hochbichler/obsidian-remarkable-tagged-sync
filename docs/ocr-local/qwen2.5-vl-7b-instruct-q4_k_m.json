@@ -1,0 +1,119 @@
+{
+	"schema": 1,
+	"measuredAt": "2026-09-09T07:18:48.014Z",
+	"generation": "qwen2.5-vl-7b-instruct-q4_k_m",
+	"label": "Qwen2.5-VL-7B-Instruct",
+	"modelSha256": "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392",
+	"mmprojSha256": "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506",
+	"runtime": "b10295",
+	"machine": {
+		"cpu": "Apple M2 Max",
+		"memoryGb": 64,
+		"os": "macOS 26.5.2"
+	},
+	"promptSha": "635b0b92a4432be2",
+	"renderVersion": 31,
+	"contextTokens": null,
+	"splitsTallPages": true,
+	"status": "pass",
+	"medianCer": 0.04318936877076412,
+	"pages": {
+		"10": {
+			"cer": 0.041617122473246136,
+			"structure": {},
+			"ms": 13946,
+			"peakRssBytes": 13877641216
+		},
+		"11": {
+			"cer": 0.04057971014492753,
+			"structure": {},
+			"ms": 11566,
+			"peakRssBytes": 13748994048
+		},
+		"12": {
+			"cer": 0.10084033613445378,
+			"structure": {},
+			"ms": 10386,
+			"peakRssBytes": 13756547072
+		},
+		"13": {
+			"cer": 0.13274336283185842,
+			"structure": {},
+			"ms": 7508,
+			"peakRssBytes": 13418070016
+		},
+		"14": {
+			"cer": 0.19743589743589743,
+			"structure": {},
+			"ms": 12357,
+			"peakRssBytes": 14233272320
+		},
+		"15": {
+			"cer": 0.04318936877076412,
+			"structure": {},
+			"ms": 22204,
+			"peakRssBytes": 16199729152
+		},
+		"01": {
+			"cer": 0.022,
+			"structure": {},
+			"ms": 19819,
+			"peakRssBytes": 13424164864
+		},
+		"02": {
+			"cer": 0.106,
+			"structure": {},
+			"ms": 12272,
+			"peakRssBytes": 13954793472
+		},
+		"03": {
+			"cer": 0.025510204081632654,
+			"structure": {
+				"list": "ok"
+			},
+			"ms": 6354,
+			"peakRssBytes": 13265354752
+		},
+		"04": {
+			"cer": 0.009615384615384616,
+			"structure": {
+				"list": "ok"
+			},
+			"ms": 7975,
+			"peakRssBytes": 13466337280
+		},
+		"05": {
+			"cer": 0.7423312883435583,
+			"structure": {
+				"table": "ok"
+			},
+			"ms": 5988,
+			"peakRssBytes": 13163954176
+		},
+		"06": {
+			"cer": 0.16071428571428573,
+			"structure": {},
+			"ms": 6382,
+			"peakRssBytes": 13299318784
+		},
+		"07": {
+			"cer": 0.00477326968973747,
+			"structure": {},
+			"ms": 9550,
+			"peakRssBytes": 13668794368
+		},
+		"08": {
+			"cer": 0.3125,
+			"structure": {},
+			"ms": 3629,
+			"peakRssBytes": 13124648960
+		},
+		"09": {
+			"cer": 0,
+			"structure": {},
+			"ms": 2318,
+			"peakRssBytes": 13065584640
+		}
+	},
+	"note": "Carried over from the 2026-09-09 run of the prototype this tool grew from: the plugin's own hash-verified download of this generation, the same runtime pin, the same argv (no context pin, tall pages split), the same prompt and raster. The file hashes are the pins the download was verified against, not a hash taken on that day."
+}

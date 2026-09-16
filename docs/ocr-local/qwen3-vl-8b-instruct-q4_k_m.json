@@ -1,0 +1,118 @@
+{
+	"schema": 1,
+	"measuredAt": "2026-09-16T19:01:13.689Z",
+	"generation": "qwen3-vl-8b-instruct-q4_k_m",
+	"label": "Qwen3-VL-8B-Instruct",
+	"modelSha256": "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
+	"mmprojSha256": "ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38",
+	"runtime": "b10295",
+	"machine": {
+		"cpu": "Apple M2 Max",
+		"memoryGb": 64,
+		"os": "macOS 26.5.2"
+	},
+	"promptSha": "635b0b92a4432be2",
+	"renderVersion": 31,
+	"contextTokens": 8192,
+	"splitsTallPages": true,
+	"status": "pass",
+	"medianCer": 0.017857142857142856,
+	"pages": {
+		"10": {
+			"cer": 0.05112960760998811,
+			"structure": {},
+			"ms": 12171,
+			"peakRssBytes": 8100397056
+		},
+		"11": {
+			"cer": 0.03188405797101449,
+			"structure": {},
+			"ms": 10182,
+			"peakRssBytes": 8071315456
+		},
+		"12": {
+			"cer": 0.056022408963585436,
+			"structure": {},
+			"ms": 9147,
+			"peakRssBytes": 8072347648
+		},
+		"13": {
+			"cer": 0.1592920353982301,
+			"structure": {},
+			"ms": 6256,
+			"peakRssBytes": 7979106304
+		},
+		"14": {
+			"cer": 0.07692307692307693,
+			"structure": {},
+			"ms": 10500,
+			"peakRssBytes": 8132837376
+		},
+		"15": {
+			"cer": 0.013289036544850499,
+			"structure": {},
+			"ms": 11349,
+			"peakRssBytes": 7759265792
+		},
+		"01": {
+			"cer": 0.014,
+			"structure": {},
+			"ms": 9778,
+			"peakRssBytes": 8084504576
+		},
+		"02": {
+			"cer": 0.104,
+			"structure": {},
+			"ms": 10567,
+			"peakRssBytes": 8125218816
+		},
+		"03": {
+			"cer": 0.01020408163265306,
+			"structure": {
+				"list": "ok"
+			},
+			"ms": 4947,
+			"peakRssBytes": 7899824128
+		},
+		"04": {
+			"cer": 0.01282051282051282,
+			"structure": {
+				"list": "ok"
+			},
+			"ms": 6604,
+			"peakRssBytes": 7994376192
+		},
+		"05": {
+			"cer": 0.006134969325153374,
+			"structure": {
+				"table": "ok"
+			},
+			"ms": 4948,
+			"peakRssBytes": 7847378944
+		},
+		"06": {
+			"cer": 0.017857142857142856,
+			"structure": {},
+			"ms": 5113,
+			"peakRssBytes": 7905902592
+		},
+		"07": {
+			"cer": 0.002386634844868735,
+			"structure": {},
+			"ms": 8016,
+			"peakRssBytes": 8019984384
+		},
+		"08": {
+			"cer": 0.2916666666666667,
+			"structure": {},
+			"ms": 2930,
+			"peakRssBytes": 7748108288
+		},
+		"09": {
+			"cer": 0,
+			"structure": {},
+			"ms": 1591,
+			"peakRssBytes": 7625179136
+		}
+	}
+}

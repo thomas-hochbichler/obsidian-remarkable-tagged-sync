@@ -123,7 +123,7 @@ const QWEN3_VL_8B: ModelGeneration = {
 			sha256: "ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38",
 		},
 	],
-	measured: { medianCer: 0.0179, on: "2026-09-09" },
+	measured: { medianCer: 0.0179, on: "2026-09-16" },
 	peakRssBytes: 8_579_448_832,
 	// **Only true with `contextTokens` pinned.** Unpinned this model peaks at 42.82 GB, and the floor
 	// below would invite a 16 GB Mac to start it.
@@ -204,7 +204,7 @@ const QWEN3_VL_2B: ModelGeneration = {
 			sha256: "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82",
 		},
 	],
-	measured: { medianCer: 0.0655, on: "2026-09-10" },
+	measured: { medianCer: 0.0655, on: "2026-09-16" },
 	peakRssBytes: 3_107_241_984,
 	// 2.89 GiB + 4 GiB = 6.89 GiB, against the 7 GiB an 8 GB Mac reports: **114 MB of margin**, the
 	// thinnest of any tier and set by one page. Windows is 16 GB and is **derived, never measured** --
@@ -322,7 +322,7 @@ export function offeredGeneration(inUse: ModelGeneration, present: readonly Mode
 }
 
 /** llama.cpp release b10295 (2026-08-06T12:56:29Z). */
-const RUNTIME_RELEASE = "b10295";
+export const RUNTIME_RELEASE = "b10295";
 
 function llamaReleaseUrl(asset: string): string {
 	return `https://github.com/ggml-org/llama.cpp/releases/download/${RUNTIME_RELEASE}/${asset}`;
