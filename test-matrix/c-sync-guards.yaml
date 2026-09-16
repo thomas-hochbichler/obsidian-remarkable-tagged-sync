@@ -210,6 +210,55 @@
       file: src/sync-guards.test.ts
       test: "preflightRun > asks for a licence re-read on a backend that needs one"
 
+    - id: I7.7
+      scenario: The pre-flight is asked about an ungated backend while an ended trial has not been announced
+      expect: It asks for the re-read anyway. The one sentence about the ended trial rides on it, and before this it only ever rode on a cloud backend -- a trial that lapsed on Apple Vision ended in silence
+      layer: unit
+      file: src/sync-guards.test.ts
+      test: "preflightRun > asks for the re-read that carries an ended licence's notice, whatever the backend"
+
+    - id: I7.8
+      scenario: A sync is started on `off` in a vault whose trial ran out weeks ago and was never announced
+      expect: Exactly one loud re-read. It makes no call -- there is no key -- so the promise in I7.2 still holds; what it does is say the sentence
+      layer: vault
+      file: src/sync-preflight.test.ts
+      test: "what has to be true before a sync starts > re-reads once for a trial that ended unannounced, even on a backend that needs none"
+
+    - id: I7.9
+      scenario: The trial is a day from its end, and then at it
+      expect: Nothing is owed a day before; the sentence is owed the moment the trial ends
+      layer: unit
+      file: src/licence-state.test.ts
+      test: "endedUnannounced > is owed once the trial has run out, and only then"
+
+    - id: I7.10
+      scenario: A licence was revoked
+      expect: The sentence is owed for a revocation too -- same notice, same one-time rule
+      layer: unit
+      file: src/licence-state.test.ts
+      test: "endedUnannounced > is owed after a revocation too"
+
+    - id: I7.11
+      scenario: The ended trial's sentence has already been said
+      expect: Nothing is owed. A reminder on every sync was rejected; the flag that settles it is the same one `checkLicence` sets
+      layer: unit
+      file: src/licence-state.test.ts
+      test: "endedUnannounced > is settled once the sentence has been said"
+
+    - id: I7.12
+      scenario: A vault that never started a trial, and a vault with a live licence
+      expect: Nothing is owed to either. The pre-flight's new predicate must not make a never-bought user's sync ask for a re-read
+      layer: unit
+      file: src/licence-state.test.ts
+      test: "endedUnannounced > owes nothing to someone who never had Pro, or still has it"
+
+    - id: I7.13
+      scenario: The ended-trial notice is rendered, and the refund notice beside it
+      expect: The trial's says the tag cap, the price and the way to Buy -- the user has just had all of Pro and is losing it. The refund's says none of that
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "the messages that appear once > names the price and the way to it when a trial ends, and not after a refund"
+
 - feature: C24
   name: A refusal names the source the vault actually syncs from
   code: src/sync-guards.ts

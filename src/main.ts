@@ -15,7 +15,7 @@ import { confirmDialog } from "./confirm-modal";
 import { isIntervalSyncDue } from "./auto-sync";
 import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-check";
 import { createPolarLicenceApi } from "./licence-client";
-import { type Entitlement, entitlementOf } from "./licence-state";
+import { endedUnannounced, type Entitlement, entitlementOf } from "./licence-state";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import { remapRows, rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
@@ -250,6 +250,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			connectNotice: status.connectNotice,
 			running: this.syncing,
 			backendRequiresLicence: this.backendRequiresLicence(),
+			licenceNoticeDue: endedUnannounced(this.data.licence, new Date()),
 		};
 	}
 
