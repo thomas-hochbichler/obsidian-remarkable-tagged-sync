@@ -302,3 +302,10 @@
       layer: unit
       file: scripts/bundled-scripts.test.mjs
       test: "the scripts that bundle > resolves every import of images:update"
+
+    - id: R4.10
+      scenario: The local-figure measurement entry point
+      expect: The same -- it reaches the artefact catalogue, the store's path helper, the runtime's own argv builder and the nightly scorer, so a rename in any of them is caught here rather than on a Mac two minutes into a run
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of measure:local"

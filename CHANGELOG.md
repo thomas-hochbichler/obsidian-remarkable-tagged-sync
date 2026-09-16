@@ -12,6 +12,17 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **The accuracy figure the settings card quotes for each downloadable model is now a committed
+  measurement, checked on every build.** `docs/ocr-local/` holds one file per model generation --
+  error rate per reference page, peak memory, and the prompt, raster, runtime and model-file pins it
+  was measured with -- and a test refuses a build whose pins have moved past it. The figures
+  themselves are unchanged (Qwen3-VL-8B 1.79 %, Qwen3-VL-2B 6.55 %, Qwen2.5-VL-7B 4.32 %); the card's
+  "measured on" date moves to 16 September 2026 for the two re-measured through the new tool,
+  `npm run measure:local`. The published series (`docs/ocr-series.csv`) carries these rows too, under
+  `local/<generation>`.
+
 ## [1.7.2] - 2026-09-13
 
 ### Fixed

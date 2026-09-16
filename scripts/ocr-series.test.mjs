@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCsv, toRows, traitsFromFilenames } from "./ocr-series.mjs";
+import { localRows, toCsv, toRows, traitsFromFilenames } from "./ocr-series.mjs";
 
 const traits = traitsFromFilenames(["01-clean-prose-de.md", "07-mixed-language.md", "13-corrections-de.md"]);
 
@@ -45,5 +45,19 @@ describe("the published series", () => {
 		expect(row).toMatchObject({ trait: "corrections", prompt_sha: "abc123", render_version: 31 });
 		expect(traits["07"]).toBe("mixed-language");
 		expect(toCsv([row]).split("\n")[1]).toContain(",corrections,0.180000,");
+	});
+	// Nobody hosts the models a laptop can run, so their rows come from a Mac rather than from a
+	// night; the series carries them under their own backend name, with the runtime where an
+	// endpoint would be and the machine where a provider would.
+	it("appends the local figures as rows of their own backend, with the runtime and the machine in place of an endpoint and a provider", () => {
+		const figure = {
+			measuredAt: "2026-09-16T10:00:00.000Z", generation: "qwen3-vl-8b-instruct-q4_k_m", runtime: "b10295",
+			machine: { cpu: "Apple M2 Max", memoryGb: 64, os: "macOS 26.5.2" }, promptSha: "abc123", renderVersion: 31, status: "pass",
+			pages: { "13": { cer: 0.159, structure: {}, ms: 9000, peakRssBytes: 1 }, "01": { cer: 0.014, structure: { list: "ok" }, ms: 8000, peakRssBytes: 1 } },
+		};
+		const rows = localRows([figure], traits);
+		expect(rows.map((r) => r.page)).toEqual(["01", "13"]);
+		expect(rows[1]).toMatchObject({ backend: "local/qwen3-vl-8b-instruct-q4_k_m", run_id: "", trait: "corrections", cer: "0.159000", endpoint: "llama.cpp b10295", served_by: "Apple M2 Max · 64 GB · macOS 26.5.2", prompt_tokens: "", cost: "" });
+		expect(toCsv(rows).split("\n")[1]).not.toMatch(/"/);
 	});
 });

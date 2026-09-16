@@ -509,6 +509,13 @@
       file: scripts/ocr-series.test.mjs
       test: "the published series > carries the request envelope, and leaves it empty for every night measured before it existed"
 
+    - id: N10.6
+      scenario: A local figure sits in docs/ocr-local beside the nightly's history
+      expect: Its pages become rows under `local/<generation>`, sorted into the series, with the runtime where an endpoint would be and the machine where a provider would, the envelope columns empty and nothing quoted -- the models a laptop can run are the ones nobody hosts, so their rows come from a Mac or not at all
+      layer: unit
+      file: scripts/ocr-series.test.mjs
+      test: "the published series > appends the local figures as rows of their own backend, with the runtime and the machine in place of an endpoint and a provider"
+
 - feature: N11
   name: Every measured backend names the endpoint it was measured on
   code: test-support/nightly/ocr.ts
@@ -527,3 +534,50 @@
       layer: unit
       file: test-support/nightly/ocr.test.ts
       test: "NIGHTLY_BACKENDS > keys every backend by its route, so no entry can inherit another's baseline"
+
+- feature: N12
+  name: The local figures -- one committed measurement per model generation, pinned to what the build ships
+  code: test-support/local-ocr/figures.ts
+  tier: free
+  scenarios:
+    - id: N12.1
+      scenario: A figure was measured with the prompt, raster, runtime, model files, context pin and splitting this build ships
+      expect: No problems -- the figure may stand, and re-measuring it would only reproduce the file (temp 0, seed 42)
+      layer: unit
+      file: test-support/local-ocr/figures.test.ts
+      test: "a local figure > stands when every pin it was measured with is the one this build ships"
+
+    - id: N12.2
+      scenario: Every pin moved past the figure at once
+      expect: Seven problems, each naming the pin and both values -- a moved pin is a baseline-moving event (spec §3.4), and the fix is named, not guessed
+      layer: unit
+      file: test-support/local-ocr/figures.test.ts
+      test: "a local figure > names each pin that moved past it -- prompt, raster, runtime, model files, context, splitting"
+
+    - id: N12.3
+      scenario: The settings card quotes a median or a day other than the figure's
+      expect: Refused with both numbers -- the card says "measured on these files", and a card that drifts from its measurement is the claim this file exists to prevent
+      layer: unit
+      file: test-support/local-ocr/figures.test.ts
+      test: "a local figure > is refused when the settings card quotes a different number or day than it measured"
+
+    - id: N12.4
+      scenario: A figure names a generation the build does not ship; a generation the build ships has no figure
+      expect: The first is refused by name; the second is listed as missing -- a model offered without a number is a claim
+      layer: unit
+      file: test-support/local-ocr/figures.test.ts
+      test: "a local figure > is refused for a generation this build does not know, and is missed for one it does"
+
+    - id: N12.5
+      scenario: The committed docs/ocr-local files, against this build's pins
+      expect: Every one passes N12.1's check, with the fix in the failure message -- run measure:local on a Mac and commit. A test rather than a release check, for the reference images' reason -- it runs on the commit that moved the pin
+      layer: integration
+      file: test-support/local-ocr/local-figures.test.ts
+      test: "local figures > were each measured against the prompt, raster, runtime and model files this build ships"
+
+    - id: N12.6
+      scenario: The committed docs/ocr-local files, against MODEL_GENERATIONS
+      expect: One file per generation the plugin can fetch -- the 7B an old install keeps included, because its card quotes a number too
+      layer: integration
+      file: test-support/local-ocr/local-figures.test.ts
+      test: "local figures > exist for every model generation the plugin can fetch"
