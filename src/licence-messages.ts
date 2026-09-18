@@ -122,6 +122,8 @@ export function trialStartFailed(reason: TrialStartFailure): string {
 			return "Starting the trial needs a connection to taggedsync.com, once. Nothing was started — try again when you are online.";
 		case "no-vault-id":
 			return "Obsidian gave this vault no id, so a trial cannot be issued for it. Write to support@hochbichler.com.";
+		case "server-error":
+			return "taggedsync.com answered, but not with a trial ticket. Nothing was started — try again in a few minutes, or write to support@hochbichler.com.";
 		case "bad-ticket":
 			return "taggedsync.com answered with a ticket this plugin could not verify. Nothing was started — try again, or write to support@hochbichler.com.";
 	}

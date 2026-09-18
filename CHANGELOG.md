@@ -12,6 +12,15 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Start free trial" no longer blames your network for a fault at `taggedsync.com`.** Every
+  failure read the same: *"Starting the trial needs a connection to taggedsync.com … try again when
+  you are online."* When the server answered but could not issue a ticket — a 500, or an answer with
+  nothing in it — that sentence sent people looking at their own connection. A server that answers
+  wrong now says so, and points at a retry in a few minutes or at support. Nothing is stored either
+  way, and a real lack of connection still reads as before.
+
 ## [1.8.1] - 2026-09-18
 
 ### Changed

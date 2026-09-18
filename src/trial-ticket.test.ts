@@ -103,6 +103,13 @@ describe("startTrial", () => {
 		await expect(startTrial(NO_LICENCE, VAULT, issuer, PUBLIC)).rejects.toMatchObject({ reason: "unreachable" });
 	});
 
+	// The reason travels: the tab's sentence is chosen from it, and "you are offline" for a server
+	// that answered 500 is what made the 2026-09-18 outage invisible for two hours.
+	it("keeps the issuer's own reason when the server answered something other than a ticket", async () => {
+		const issuer = issuerOf(() => Promise.reject(new TrialStartError("server-error", "taggedsync.com answered 500")));
+		await expect(startTrial(NO_LICENCE, VAULT, issuer, PUBLIC)).rejects.toMatchObject({ reason: "server-error" });
+	});
+
 	it("starts nothing on a ticket it cannot verify", async () => {
 		const issuer = issuerOf(() => signed("ffffffffffff", STARTED));
 		await expect(startTrial(NO_LICENCE, VAULT, issuer, PUBLIC)).rejects.toMatchObject({ reason: "bad-ticket" });
@@ -169,13 +176,21 @@ describe("createTrialIssuer", () => {
 		expect(await createTrialIssuer(impl).issue(VAULT)).toEqual({ startedAt: STARTED, signature: "sig" });
 	});
 
-	it("rejects a refusal, so the click reports no connection rather than storing a 400 page", async () => {
+	it("rejects a refusal as a server error, not as a missing connection", async () => {
 		const { impl } = stubFetch(new Response("bad request", { status: 400 }));
-		await expect(createTrialIssuer(impl).issue(VAULT)).rejects.toThrow("400");
+		// The status stays in the message, where a diagnostics copy can find it; the reason is what
+		// the tab reads.
+		await expect(createTrialIssuer(impl).issue(VAULT)).rejects.toMatchObject({
+			reason: "server-error",
+			message: expect.stringContaining("400"),
+		});
 	});
 
-	it("rejects an answer with no ticket in it", async () => {
+	it("rejects an answer with no ticket in it, and says the server answered", async () => {
 		const { impl } = stubFetch(new Response(JSON.stringify({ hello: "world" }), { status: 200 }));
-		await expect(createTrialIssuer(impl).issue(VAULT)).rejects.toThrow("without a ticket");
+		await expect(createTrialIssuer(impl).issue(VAULT)).rejects.toMatchObject({
+			reason: "server-error",
+			message: expect.stringContaining("without a ticket"),
+		});
 	});
 });

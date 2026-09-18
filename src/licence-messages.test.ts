@@ -202,6 +202,18 @@ describe("why Start free trial did nothing", () => {
 		expect(trialStartFailed("no-vault-id")).toContain("support@hochbichler.com");
 	});
 
+	// Two different repairs: one waits for the network to come back, the other waits for the server.
+	// Telling someone who is online that they are offline is why the outage on 2026-09-18 went
+	// unreported -- the message named their side as the cause and they closed the tab.
+	it("does not blame the connection when taggedsync.com answered something that is not a ticket", () => {
+		const text = trialStartFailed("server-error");
+		expect(text).toContain("taggedsync.com answered");
+		expect(text).toContain("try again");
+		expect(text).toContain("support@hochbichler.com");
+		expect(text).not.toContain("online");
+		expect(text).not.toBe(trialStartFailed("unreachable"));
+	});
+
 	it("says the answer could not be verified, and offers both a retry and support", () => {
 		const text = trialStartFailed("bad-ticket");
 		expect(text).toContain("could not verify");

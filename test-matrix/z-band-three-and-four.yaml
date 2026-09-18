@@ -161,6 +161,13 @@
       file: src/licence-messages.test.ts
       test: "why Start free trial did nothing > says the answer could not be verified, and offers both a retry and support"
 
+    - id: I2.18
+      scenario: taggedsync.com answered, but not with a ticket -- a 500, or a 200 with nothing in it
+      expect: The sentence says the server answered and offers a retry and support. It must not say "online" -- on 2026-09-18 that sent the one person who hit it looking at their own network while the endpoint sat there failing
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "why Start free trial did nothing > does not blame the connection when taggedsync.com answered something that is not a ticket"
+
 
 - feature: I16
   name: The trial ticket -- the start date is signed by taggedsync.com
@@ -222,6 +229,13 @@
       layer: unit
       file: src/trial-ticket.test.ts
       test: "startTrial > starts nothing when taggedsync.com cannot be reached, and says so"
+
+    - id: I16.20
+      scenario: The click, with the server answering something other than a ticket
+      expect: Nothing started; the issuer's `server-error` survives the catch rather than collapsing into `unreachable`
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "startTrial > keeps the issuer's own reason when the server answered something other than a ticket"
 
     - id: I16.9
       scenario: The click, with an answer the plugin cannot verify
@@ -288,17 +302,17 @@
 
     - id: I16.18
       scenario: The server refuses
-      expect: Rejected, so the click reports no connection rather than storing an error page as a ticket
+      expect: Rejected as `server-error`, with the status kept in the message for a diagnostics copy -- not as a missing connection, and never stored as a ticket
       layer: unit
       file: src/trial-ticket.test.ts
-      test: "createTrialIssuer > rejects a refusal, so the click reports no connection rather than storing a 400 page"
+      test: "createTrialIssuer > rejects a refusal as a server error, not as a missing connection"
 
     - id: I16.19
       scenario: An answer with no ticket in it
-      expect: Rejected
+      expect: Rejected as `server-error` -- a 200 carrying nothing is the server answering, not the network failing
       layer: unit
       file: src/trial-ticket.test.ts
-      test: "createTrialIssuer > rejects an answer with no ticket in it"
+      test: "createTrialIssuer > rejects an answer with no ticket in it, and says the server answered"
 
 
 - feature: B8
