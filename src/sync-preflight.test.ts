@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../test-stubs/fake-clock";
 import { FakeApp, takeNotices, takeSettings } from "../test-stubs/fake-obsidian";
+import type { LicenceApi } from "./licence-check";
+import { type LicenceState, NO_LICENCE, startTrial } from "./licence-state";
 import { EMPTY_SYNC_INDEX } from "./sync-engine";
 
 // Gap G15 -- one run at a time. Both long jobs share a single `syncing` flag and a single sync
@@ -70,7 +72,7 @@ function activeRow(notePath: string) {
 	return { docId: "doc-1", unitId: "unit-1", notePath, status: "active" };
 }
 
-async function pluginWith(setup: { connected?: boolean; backend?: string; rows?: number } = {}): Promise<Plugin> {
+async function pluginWith(setup: { connected?: boolean; backend?: string; rows?: number; licence?: LicenceState; realLicence?: boolean } = {}): Promise<Plugin> {
 	const { default: TaggedSyncPlugin } = await import("./entry");
 	const plugin = new (TaggedSyncPlugin as unknown as new (a: unknown, m: unknown) => Plugin & { saved: unknown })(
 		new FakeApp(),
@@ -82,20 +84,35 @@ async function pluginWith(setup: { connected?: boolean; backend?: string; rows?:
 		deviceToken: setup.connected === false ? null : "device-token",
 		ocrBackend: setup.backend ?? "off",
 		syncIndex: { ...EMPTY_SYNC_INDEX, rows },
+		licence: setup.licence ?? NO_LICENCE,
 	};
 	// A clock nobody moves: the interval backstop arms and never fires.
 	(plugin as unknown as { scheduler: FakeClock }).scheduler = new FakeClock();
 	await (plugin as unknown as { onload(): Promise<void> }).onload();
 
 	// Swapped rather than spied on: the real one talks to Polar, and what this file needs to know is
-	// only whether the pre-flight asked and how loudly.
+	// only whether the pre-flight asked and how loudly. The tests about the promise itself -- that a
+	// free vault never talks to Polar -- keep the real one and watch the API instead.
 	licenceChecks = [];
-	plugin.refreshLicence = async (silent = false) => {
-		licenceChecks.push(silent);
-		return { tier: "free" };
-	};
+	if (setup.realLicence !== true) {
+		plugin.refreshLicence = async (silent = false) => {
+			licenceChecks.push(silent);
+			return { tier: "free" };
+		};
+	}
 	takeNotices();
 	return plugin;
+}
+
+/** Every method of the plugin's Polar client replaced by one that records the call and fails it. */
+function watchPolar(plugin: Plugin): { calls: number } {
+	const seen = { calls: 0 };
+	const refuse = async () => {
+		seen.calls += 1;
+		throw new Error("Polar must not be called");
+	};
+	(plugin as unknown as { licenceApi: LicenceApi }).licenceApi = { activate: refuse, validate: refuse, deactivate: refuse };
+	return seen;
 }
 
 function deferred(): { promise: Promise<void>; open: () => void } {
@@ -201,12 +218,36 @@ describe("what has to be true before a sync starts", () => {
 	});
 
 	it("causes no licence call at all on a backend that needs none", async () => {
-		// The promise a free user never talks to Polar. `off` and `vision` are both ungated.
-		const plugin = await pluginWith({ backend: "off" });
+		// The promise a free user never talks to Polar. `off` and `vision` are both ungated. The local
+		// check does run -- it is where an ended trial is announced -- but it is arithmetic over the
+		// stored state, and the Polar client is never asked.
+		const plugin = await pluginWith({ backend: "off", realLicence: true });
+		const polar = watchPolar(plugin);
 
 		await plugin.syncNow();
 
-		expect(licenceChecks).toEqual([]);
+		expect(engine.syncRuns).toBe(1);
+		expect(polar.calls).toBe(0);
+		expect(takeNotices().filter((notice) => notice.includes("Tagged Sync Pro"))).toEqual([]);
+	});
+
+	it("announces an ended trial on the first sync after it, once, on a backend that needed no licence", async () => {
+		// e2e 2026-09-18: trial over on a Windows vault with local transcription, Zotero write-back
+		// silently gone, and no sentence -- the check only ran before a spending backend.
+		const ended = startTrial(NO_LICENCE, new Date(Date.now() - 15 * 24 * 60 * 60 * 1000));
+		const plugin = await pluginWith({ backend: "off", licence: ended, realLicence: true });
+		const polar = watchPolar(plugin);
+
+		const licenceNotices = () => takeNotices().filter((notice) => notice.includes("Tagged Sync Pro"));
+
+		await plugin.syncNow();
+		expect(licenceNotices()).toEqual([
+			"Your Tagged Sync Pro trial has ended. Highlights stay in the vault and the desktop app is off until you buy a key — Settings → Tagged Sync Pro.",
+		]);
+
+		await plugin.syncNow();
+		expect(licenceNotices()).toEqual([]);
+		expect(polar.calls).toBe(0);
 	});
 
 	it("re-reads the licence before a re-transcribe too", async () => {

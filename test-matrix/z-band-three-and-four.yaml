@@ -126,6 +126,34 @@
       file: src/licence-messages.test.ts
       test: "dates and counting > rounds a part-day up, because part of a day left is a day the trial still works"
 
+    - id: I2.7
+      scenario: The trial ran out since the last check
+      expect: One sentence, once, and no call to Polar for it -- a trial has no key to validate
+      layer: unit
+      file: src/licence-check.test.ts
+      test: "checkLicence > announces an ended trial once, without any call at all"
+
+    - id: I2.8
+      scenario: The trial ran out on a vault whose backend never needed the licence
+      expect: 'The sentence names what the ending took instead of transcription: `Highlights stay in the vault and the desktop app is off until you buy a key — Settings → Tagged Sync Pro.`'
+      layer: unit
+      file: src/licence-check.test.ts
+      test: "checkLicence > says what the ending took when transcription was never gated"
+
+    - id: I2.9
+      scenario: The ended-licence sentence on a gated backend
+      expect: It names the backend transcription fell back to
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "the messages that appear once > names the backend transcription fell back to"
+
+    - id: I2.10
+      scenario: The ended-licence sentence on an ungated backend
+      expect: No word about transcription, which did not change; it points at the settings section where a key is bought
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "the messages that appear once > names the rest of Pro when transcription was never the gated part"
+
 
 - feature: B8
   name: Folder tags are inherited -- where the chain stops

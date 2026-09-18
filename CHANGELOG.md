@@ -62,6 +62,12 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **An ended trial went unannounced on a vault whose transcription never needed the licence.**
+  The one-time "trial has ended" sentence was only ever asked for before a run that spends on a
+  Pro backend, so a vault on Apple Vision or local transcription found out by a highlight that
+  never reached Zotero. The first sync after the end now says it — and, where transcription is
+  not what changed, says what did: highlights stay in the vault and the desktop app is off until
+  a key is bought. Still once, never as a reminder, and still without a call to Polar.
 - **A highlight that started at a paragraph's first word printed without its colour.** A quote
   three-quarters marked was printed plain, for contrast. With coloured marks that dropped the one
   thing the colour said, so the rule is gone: what you marked is marked, whole quote or not.

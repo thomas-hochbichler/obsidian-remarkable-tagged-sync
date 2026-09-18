@@ -34,6 +34,14 @@ export interface RunConditions {
 	readonly running: boolean;
 	/** The selected backend is one only a licence unlocks, so its state is worth re-reading first. */
 	readonly backendRequiresLicence: boolean;
+	/**
+	 * The licence check would make no call at all -- no key stored, a key already withdrawn, or one
+	 * validated recently enough. Such a check costs a free user nothing and keeps the promise that
+	 * their sync never talks to Polar; and it is the one place an ended trial is announced, which a
+	 * vault on an ungated backend otherwise never hears (e2e 2026-09-18: trial over, Zotero
+	 * write-back silently gone, no sentence).
+	 */
+	readonly licenceCheckIsLocal: boolean;
 }
 
 export type Preflight =
@@ -48,7 +56,7 @@ export type Preflight =
 export function preflightRun(conditions: RunConditions): Preflight {
 	if (!conditions.connected) return { start: false, notice: conditions.connectNotice ?? NOT_CONNECTED_NOTICE };
 	if (conditions.running) return { start: false, notice: ALREADY_RUNNING_NOTICE };
-	return { start: true, refreshLicence: conditions.backendRequiresLicence };
+	return { start: true, refreshLicence: conditions.backendRequiresLicence || conditions.licenceCheckIsLocal };
 }
 
 /**

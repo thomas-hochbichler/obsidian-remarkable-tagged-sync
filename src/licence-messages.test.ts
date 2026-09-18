@@ -91,6 +91,11 @@ describe("the messages that appear once", () => {
 		expect(licenceEndedNotice("trial-ended", "Apple Vision")).toContain("trial has ended");
 	});
 
+	it("names the rest of Pro when transcription was never the gated part", () => {
+		expect(licenceEndedNotice("trial-ended", null)).not.toContain("Transcription");
+		expect(licenceEndedNotice("trial-ended", null)).toContain("Settings → Tagged Sync Pro");
+	});
+
 	it("is honest when there is nothing to fall back to", () => {
 		expect(gatedBackendMessage("OpenRouter", "Apple Vision")).toBe(
 			"OpenRouter needs Tagged Sync Pro. Using Apple Vision instead.",

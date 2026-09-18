@@ -6,7 +6,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date("2026-08-14T10:00:00.000Z");
 const daysBefore = (days: number) => new Date(NOW.getTime() - days * DAY_MS).toISOString();
 
-const ctx: LicenceContext = { label: "Work vault", now: NOW, fallbackBackend: "Apple Vision" };
+const ctx: LicenceContext = { label: "Work vault", now: NOW, fallbackBackend: "Apple Vision", transcriptionGated: true };
 
 const active: LicenceState = {
 	...NO_LICENCE,
@@ -103,6 +103,14 @@ describe("checkLicence", () => {
 		expect(polar.validate).not.toHaveBeenCalled();
 		expect(result.notice).toContain("trial has ended");
 		expect((await checkLicence(result.state, polar, ctx)).notice).toBeNull();
+	});
+
+	it("says what the ending took when transcription was never gated", async () => {
+		const ended = startTrial(NO_LICENCE, new Date("2026-07-01T00:00:00.000Z"));
+		const result = await checkLicence(ended, api(), { ...ctx, transcriptionGated: false });
+		expect(result.notice).toBe(
+			"Your Tagged Sync Pro trial has ended. Highlights stay in the vault and the desktop app is off until you buy a key — Settings → Tagged Sync Pro.",
+		);
 	});
 
 	it("arms the notice again for a licence that comes back", async () => {

@@ -40,6 +40,8 @@ export interface LicenceContext {
 	now: Date;
 	/** What transcription falls back to, or null where there is none — Windows without a local server. */
 	fallbackBackend: string | null;
+	/** The selected backend needs the licence, so an ended one changes what transcribes. Off, the ended notice names what else Pro was doing instead. */
+	transcriptionGated: boolean;
 }
 
 export interface LicenceCheck {
@@ -137,7 +139,7 @@ function finish(before: LicenceState, after: LicenceState, ctx: LicenceContext):
 		return {
 			state: { ...after, endedNoticeShown: true },
 			entitlement,
-			notice: licenceEndedNotice(ended, ctx.fallbackBackend ?? "no transcription"),
+			notice: licenceEndedNotice(ended, ctx.transcriptionGated ? (ctx.fallbackBackend ?? "no transcription") : null),
 			changed: true,
 		};
 	}

@@ -11,7 +11,7 @@ import {
 // a vault. `sync-preflight.test.ts` is the other half -- that the shipped commands ask this, and act
 // on the answer.
 
-const READY: RunConditions = { connected: true, running: false, backendRequiresLicence: false };
+const READY: RunConditions = { connected: true, running: false, backendRequiresLicence: false, licenceCheckIsLocal: false };
 
 describe("preflightRun", () => {
 	it("lets a run start when nothing is in the way", () => {
@@ -44,7 +44,7 @@ describe("preflightRun", () => {
 	it("names the connection first when both are wrong", () => {
 		// The order is the decision. "A sync is already running" would send someone who has just been
 		// unpaired looking for a run they cannot see, while the thing stopping them is the token.
-		expect(preflightRun({ connected: false, running: true, backendRequiresLicence: true })).toEqual({
+		expect(preflightRun({ connected: false, running: true, backendRequiresLicence: true, licenceCheckIsLocal: false })).toEqual({
 			start: false,
 			notice: NOT_CONNECTED_NOTICE,
 		});
@@ -62,6 +62,15 @@ describe("preflightRun", () => {
 		expect(preflightRun({ ...READY, backendRequiresLicence: false })).toEqual({
 			start: true,
 			refreshLicence: false,
+		});
+	});
+
+	it("asks for the re-read whenever it would make no call", () => {
+		// No key, or nothing due: the check is arithmetic over the stored state, and it is the one
+		// place an ended trial is said out loud -- a vault on an ungated backend heard nothing before.
+		expect(preflightRun({ ...READY, licenceCheckIsLocal: true })).toEqual({
+			start: true,
+			refreshLicence: true,
 		});
 	});
 
