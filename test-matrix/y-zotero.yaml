@@ -3717,7 +3717,7 @@
 
     - id: Y33.53
       scenario: The per-quote link for a group's PDF, in a vault with only the web reader
-      expect: '`https://www.zotero.org/groups/<id>/items/<itemKey>/attachment/<attKey>/reader` -- the group id where the personal library has the username. Unverified against zotero.org (2026-09-18); the personal form is'
+      expect: '`https://www.zotero.org/groups/<id>/items/<itemKey>/attachment/<attKey>/reader` -- the group id where the personal library has the username. Both forms opened zotero.org''s reader in the user''s e-2-e run (2026-09-18)'
       layer: unit
       file: src/zotero-note.test.ts
       test: "an item in a group library (ticket 26) > opens the web reader on the group's copy of the PDF"
