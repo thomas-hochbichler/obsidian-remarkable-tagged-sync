@@ -2374,17 +2374,17 @@
 
     - id: Y24.6
       scenario: The send tag typed, then emptied (§2.6)
-      expect: "Trimmed and saved; empty is *off*. Unlike the folder, there is no default to fall back to here -- the way to stop the step is to give it no tag to look for"
+      expect: "Trimmed and saved; an emptied one stays empty, and the command then says where to name one (Y31.17). Unlike the folder, no silent fall-back to the default: what the field shows is what the command looks for"
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > takes the send tag the user typed, and an emptied one as off"
+      test: "the Zotero section > takes the send tag the user typed, trimmed, and keeps an emptied one empty"
 
     - id: Y24.9
       scenario: "The send tag row in a vault that has never touched it (§2.6)"
-      expect: "Empty -- the step is opt-in -- and the sentence names what naming a tag does: every sync, the automatic ones too, will put papers on the tablet. *Sync now* has meant 'read the tablet, write the vault'; a sync that pushes to the tablet is something the user has to have asked for"
+      expect: "Prefilled `to-remarkable`, and the sentence names the command that uses it and says that no sync sends (decided 2026-09-18). *Sync now* reads the tablet and writes the vault; the one thing that puts a file on the tablet is a command the user runs"
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > starts the send tag empty and says what naming one does"
+      test: "the Zotero section > starts the send tag at to-remarkable and names the command that uses it"
 
     - id: Y24.10
       scenario: "The API key is changed to a wrong one while the settings tab is open (desk test 2026-09-13)"
@@ -2810,14 +2810,14 @@
   scenarios:
     - id: Y29.1
       scenario: Any vault
-      expect: Both commands and the file-menu action
+      expect: The three commands -- Send, Send tagged, Link -- and the file-menu action
       layer: unit
       file: src/zotero-plugin.test.ts
-      test: 'what a vault gets registered > registers the two commands and the context action'
+      test: 'what a vault gets registered > registers the three commands and the context action'
 
     - id: Y29.2
       scenario: A free vault
-      expect: The same two commands and the context action. Send and *Link to Zotero item…* are the free half (§5), so the free palette has them
+      expect: The same three commands and the context action. Send, the tag command and *Link to Zotero item…* are the free half (§5), so the free palette has them
       tier: free
       layer: unit
       file: src/zotero-plugin.test.ts
@@ -3041,6 +3041,20 @@
       file: src/zotero-plugin.test.ts
       test: "the run's Zotero half > writes nothing into Zotero for a free vault, and says so in the note"
 
+    - id: Y29.37
+      scenario: "*Send tagged Zotero papers to reMarkable* pressed in a vault with one tagged paper (decided 2026-09-18: a command, not a sync step)"
+      expect: "The paper goes up through the host's own route, the link is saved, the notice is `zotero-tag-send.ts`'s sentence, and the status line closes on it"
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > runs Send tagged Zotero papers from the palette, and shows what it did'
+
+    - id: Y29.38
+      scenario: "The tag command pressed in a vault with no Zotero connection"
+      expect: "The same door as Send: told what to set up in `zoteroUnavailable`'s words, nothing asked of Zotero, nothing sent"
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: 'what a vault gets registered > tells a vault with no connection what to set up when the tag command runs'
+
     - id: Y29.34
       scenario: A web connection that cannot name the library
       expect: No web link, rather than a URL with a hole in it
@@ -3062,18 +3076,18 @@
   scenarios:
     - id: Y30.1
       scenario: The plugin loaded from a free vault's `data.json`
-      expect: Both Zotero commands in the palette -- Send and the link are the free half (§5)
+      expect: All three Zotero commands in the palette -- Send, the tag command and the link are the free half (§5)
       tier: free
       layer: integration
       file: src/zotero-wiring.test.ts
-      test: 'the Zotero commands as the plugin registers them > registers both in a free vault'
+      test: 'the Zotero commands as the plugin registers them > registers all three in a free vault'
 
     - id: Y30.2
       scenario: The plugin loaded from a Pro vault's
-      expect: Both commands
+      expect: All three commands
       layer: integration
       file: src/zotero-wiring.test.ts
-      test: 'the Zotero commands as the plugin registers them > registers both in a Pro vault'
+      test: 'the Zotero commands as the plugin registers them > registers all three in a Pro vault'
 
     - id: Y30.3
       scenario: Send pressed with neither transport connected
@@ -3096,15 +3110,25 @@
       file: src/zotero-wiring.test.ts
       test: "the Zotero commands as the plugin registers them > sends through the plugin's own transport and saves the link in its own data"
 
+    - id: Y30.6
+      scenario: "*Send tagged Zotero papers to reMarkable* pressed in the shipped plugin, setting untouched, cloud connected"
+      expect: "Zotero is asked for `to-remarkable` -- the tag in the plugin's own `data.json` -- the PDF goes through the plugin's cloud transport, the link lands in its data, and no sync is involved"
+      layer: integration
+      file: src/zotero-wiring.test.ts
+      test: "the Zotero commands as the plugin registers them > sends the tagged papers through the plugin's own transport, in one press"
+
 # A tag in Zotero sends the paper (spec §2.6). Send started from the other end: the person deciding
 # what to read next is sitting in Zotero, and every bridge the community built starts from a tag
-# there for that reason. Same pipeline as Y19–Y22 -- folder, name, transport order, link -- with two
-# rules of its own: no dialog, ever (every question Send asks is a skip with a reason here), and the
-# SSH route only in a sync the user started, because it restarts the tablet's reading app.
+# there for that reason. Same pipeline as Y19–Y22 -- folder, name, transport order, link -- with one
+# rule of its own: no dialog, ever (every question Send asks is a skip with a reason here).
+#
+# A command since 2026-09-18 (*Send tagged Zotero papers to reMarkable*), no longer a step at the end
+# of the sync: "Sync never writes to your tablet" is the promise, and the one thing that puts a file
+# on the tablet is a command the user runs. So every row answers a press -- there is always a
+# sentence, never silence -- and the SSH route needs no background-run guard any more.
 #
 # The load-bearing rows are Y31.13 and Y31.15 (the two places Send would open a dialog, and this
-# step must not) and Y31.26 (a background run that restarts the reader mid-page is the surprise the
-# SSH setting promised would not happen).
+# command must not).
 
 - feature: Y31
   name: A tag in Zotero sends the paper
@@ -3112,22 +3136,15 @@
   tier: free
   scenarios:
     - id: Y31.1
-      scenario: "A vault with the cloud connected, with or without SSH"
-      expect: "The cloud, in any run. It costs the reader nothing"
+      scenario: "A vault with the cloud connected, with or without SSH; a vault with only SSH"
+      expect: "The cloud when it is connected, else the tablet over SSH -- Send's order (§2.4). The SSH restart needs no guard here: a command always has the person holding the tablet at the keyboard"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "which route a tagged paper takes > takes the cloud in any run"
-
-    - id: Y31.2
-      scenario: "A vault with only the SSH route, in a sync the user started / in a background run"
-      expect: "The tablet in the user's own run; `later` in a background one. The SSH route restarts the tablet's reading app, and a page closing under the reader in a run nobody started is exactly the surprise the SSH setting promised would not happen unnoticed"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "which route a tagged paper takes > takes the tablet only in a sync the user started"
+      test: "which route a tagged paper takes > takes the cloud first, then the tablet over SSH"
 
     - id: Y31.3
       scenario: "Neither route"
-      expect: "`none`"
+      expect: "`null`"
       layer: unit
       file: src/zotero-tag-send.test.ts
       test: "which route a tagged paper takes > has no route for a vault with neither"
@@ -3137,168 +3154,168 @@
       expect: "Sent through the same pipeline as Send: the tablet folder, the item's title, `sentAt` and `sentMd5` on the link, one save, the status line naming the route, and the one-sentence notice -- which ends by saying to tag it on the tablet. **No sync tag on the document** (decided 2026-09-13 after the live test, for Send and this step alike): a tag the user never chose turned up on the tablet with no setting to explain it. Whether the paper syncs back is the reader's to say, by tagging it there"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > goes to the tablet through the same pipeline as Send, untagged, and the link is recorded"
+      test: "a paper tagged in Zotero, when the command runs > goes to the tablet through the same pipeline as Send, untagged, and the link is recorded"
 
     - id: Y31.9
       scenario: "Two tagged papers"
       expect: "One sentence naming both, in the plural"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > names every paper it sent in one sentence"
+      test: "a paper tagged in Zotero, when the command runs > names every paper it sent in one sentence"
 
     - id: Y31.10
       scenario: "Any run of the step"
       expect: "No write reaches Zotero -- not an annotation, not a patch -- and the tag stays on the item. Items are the user's; removing a tag would be the first write to an item we only ever read"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > writes nothing into Zotero, and leaves the tag where it found it"
+      test: "a paper tagged in Zotero, when the command runs > writes nothing into Zotero, and leaves the tag where it found it"
 
     - id: Y31.11
       scenario: "A tagged paper whose document is still on the tablet"
-      expect: "Skipped in silence: nothing sent, no notice, link untouched. Idempotence comes from the link store (§2.5), not from Zotero, and the tag staying on a paper sent last week is the normal state"
+      expect: "Nothing sent, link untouched, and one sentence for the press: 'the paper tagged … is on your reMarkable already'. Idempotence comes from the link store (§2.5), not from Zotero, and the tag staying on a paper sent last week is the normal state"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > skips a paper that is already on the tablet, in silence"
+      test: "a paper tagged in Zotero, when the command runs > skips a paper that is already on the tablet, and says so once"
+
+    - id: Y31.35
+      scenario: "Two tagged papers, both still on the tablet"
+      expect: "Nothing sent and one sentence counting them: 'all 2 papers tagged … are on your reMarkable already'"
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "a paper tagged in Zotero, when the command runs > counts the papers that are on the tablet already, in one sentence"
 
     - id: Y31.12
       scenario: "A tagged paper whose document has vanished from the tablet"
       expect: "Sent again and the mapping replaced -- §2.5, unchanged"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > sends a paper whose document has vanished from the tablet again, and replaces the mapping"
+      test: "a paper tagged in Zotero, when the command runs > sends a paper whose document has vanished from the tablet again, and replaces the mapping"
 
     - id: Y31.13
       scenario: "A tagged paper with two PDFs"
       expect: "Skipped and named, with the command's name in the reason; no picker opened. The one question Send asks about a paper, and nobody is there to answer it"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > skips a paper with two PDFs, names it, and opens no dialog"
+      test: "a paper tagged in Zotero, when the command runs > skips a paper with two PDFs, names it, and opens no dialog"
 
     - id: Y31.14
       scenario: "A tagged paper with no PDF"
       expect: "Skipped and named"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > skips a paper that has no PDF in Zotero"
+      test: "a paper tagged in Zotero, when the command runs > skips a paper that has no PDF in Zotero"
 
     - id: Y31.15
       scenario: "A tagged paper Zotero has no copy of, on disk or online"
       expect: "Skipped and named, no link written, and no file dialog. Send's third path opens one; this step may not"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > skips a paper Zotero has no copy of, rather than asking for the file"
+      test: "a paper tagged in Zotero, when the command runs > skips a paper Zotero has no copy of, rather than asking for the file"
 
     - id: Y31.16
       scenario: "Two tagged papers, and the upload of the first throws"
       expect: "The second is still sent; the first is named with the transport's own message. One paper's failure is not the run's"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > keeps sending the others when one paper's upload fails"
+      test: "a paper tagged in Zotero, when the command runs > keeps sending the others when one paper's upload fails"
 
     - id: Y31.17
-      scenario: "The send tag emptied in the settings"
-      expect: "Nothing happens, and Zotero is not even asked"
+      scenario: "The send tag emptied in the settings, then the command pressed"
+      expect: "One sentence saying where to name a tag; Zotero is not even asked. The setting is prefilled, so an empty one is the user's doing (a vault with no client is Y29.38's door)"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > does nothing, and asks Zotero nothing, with the send tag emptied"
-
-    - id: Y31.18
-      scenario: "A vault with no Zotero client"
-      expect: "Nothing happens"
-      layer: unit
-      file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > does nothing for a vault with no Zotero client"
+      test: "when the whole command stands down > says where to name a tag when the setting was emptied, and asks Zotero nothing"
 
     - id: Y31.19
       scenario: "No paper carries the tag, in a vault that also maps no tag and has no route"
-      expect: "Nothing, and no notice about routes or tags it has not set up. Zotero is asked first and the vault's own state only if there is something tagged"
+      expect: "'No paper carries the tag …' and nothing about routes or tags it has not set up. Zotero is asked first and the vault's own state only if there is something tagged; somebody pressed the command, so an empty answer is a sentence, not silence"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > says nothing when no paper carries the tag, whatever else is missing"
+      test: "when the whole command stands down > says that no paper carries the tag, before anything about routes"
 
     - id: Y31.20
       scenario: "A send tag renamed in the settings"
       expect: "That is the tag Zotero is asked for"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > asks Zotero for the tag the setting names"
+      test: "when the whole command stands down > asks Zotero for the tag the setting names"
 
     - id: Y31.21
       scenario: "A tagged paper in a vault that maps no tag"
       expect: "Sent, untagged. Nothing here puts a tag on, so the vault's tag mapping is none of this step's business"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > sends in a vault that maps no tag, since the tag is the reader's to put on"
+      test: "when the whole command stands down > sends in a vault that maps no tag, since the tag is the reader's to put on"
 
     - id: Y31.25
       scenario: "A tagged paper in a vault with no route to a tablet"
       expect: "Nothing sent, one notice carrying `SEND_NEEDS_TRANSPORT`"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > sends nothing from a vault with no route to a tablet, and says so"
+      test: "when the whole command stands down > sends nothing from a vault with no route to a tablet, and says so"
 
     - id: Y31.26
-      scenario: "SSH the only route: a background run, then a sync the user starts"
-      expect: "Held and named in the background run ('waits for a sync you start'); sent over the tablet, with the status line naming that route, in the user's own run"
+      scenario: "SSH the only route"
+      expect: "Sent over the tablet in the same press, the status line naming that route. The restart of the reading app is the SSH setting's own sentence, agreed to in advance, and the person pressing the command is the person holding the tablet"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > holds an SSH-only send for a sync the user starts, and names the paper"
+      test: "when the whole command stands down > sends over SSH when the cloud is not connected, in the same press"
 
     - id: Y31.27
       scenario: "Zotero answers 401 to the tag listing"
-      expect: "Nothing sent; one notice in the §3.4.2 shape -- which tag, Zotero's reason in the note's words, and that the next sync tries again"
+      expect: "Nothing sent; one notice in the §3.4.2 shape -- which tag, Zotero's reason in the note's words, in Zotero's words"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > says in Zotero's own words why nothing was sent when Zotero does not answer"
+      test: "when the whole command stands down > says in Zotero's own words why nothing was sent when Zotero does not answer"
 
     - id: Y31.28
       scenario: "A tagged paper sent an hour ago whose document no sync has listed yet, `lastSyncAt` past `sentAt`"
       expect: "Nothing sent, nothing said, link untouched. The live bug of 2026-09-12: the listing right after a send lagged, 'sent since the last sync' read the send as vanished, and every run put another copy on the tablet"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > does not send a paper again while no sync has listed its document yet"
+      test: "a paper tagged in Zotero, when the command runs > does not send a paper again while no sync has listed its document yet"
 
     - id: Y31.29
       scenario: "A tagged paper sent two days ago whose document no listing has ever found"
       expect: "Sent again, the old link replaced. Deleted on the tablet before any listing caught it; without the day's limit it would stay present for good and never come back"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > sends a paper again whose document no listing has found in a day"
+      test: "a paper tagged in Zotero, when the command runs > sends a paper again whose document no listing has found in a day"
 
     - id: Y31.30
-      scenario: "A vault with a Zotero key that has never named a send tag"
-      expect: "Nothing, and Zotero is not asked. The default is empty on purpose (decided 2026-09-12): the step is the one thing a sync does that puts something on the tablet, so it runs only for a vault that opted in"
+      scenario: "A vault that has never touched the send tag"
+      expect: "`to-remarkable`, prefilled (decided 2026-09-18, reversing 2026-09-12's empty default): nothing happens until the command is run, so the tag is a name, not a switch"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "when the whole step stands down > does nothing in a vault that has never named a send tag"
+      test: "when the whole command stands down > starts with the tag the setting suggests"
 
     - id: Y31.31
       scenario: "Two tagged papers and no route to a tablet"
       expect: "One notice, counting both: `2 papers tagged … not sent`. The step stands down as a whole, and says for how many"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > counts the papers in the notice when the whole step stands down"
+      test: "a paper tagged in Zotero, when the command runs > counts the papers in the notice when the whole command stands down"
 
     - id: Y31.32
       scenario: "The tablet folder setting left blank, and a tagged paper with a blank title"
       expect: "The default folder `Zotero`, and the paper named by its key -- the same fallbacks Send makes, in the notice as on the tablet"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > falls back to the default folder and the item key where the setting and the title are blank"
+      test: "a paper tagged in Zotero, when the command runs > falls back to the default folder and the item key where the setting and the title are blank"
 
     - id: Y31.33
       scenario: "An upload that throws something other than an Error"
       expect: "The paper is named with that value as its reason, like any other per-item failure; the loop goes on"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > names a paper whose upload failed with something that is not an Error"
+      test: "a paper tagged in Zotero, when the command runs > names a paper whose upload failed with something that is not an Error"
 
     - id: Y31.34
       scenario: "Zotero stops answering after the tag listing -- the attachment listing throws"
       expect: "One notice in the §3.4.2 wording, `were not all sent`, and nothing sent. Whatever went up before it stays sent and said; the next sync tries again"
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > says the step did not finish when Zotero fails after the listing"
+      test: "a paper tagged in Zotero, when the command runs > says the command did not finish when Zotero fails after the listing"
 
 # The marker's colour in the note (F9 revised 2026-09-13). Found in the desk test: Zotero showed six
 # colours, the digest showed every mark yellow. One table -- `highlight-color.ts` -- names the colour
@@ -3577,7 +3594,7 @@
       expect: 'Fetched from the group and linked into it, through the same pipeline as Send'
       layer: unit
       file: src/zotero-tag-send.test.ts
-      test: "a paper tagged in Zotero, at the start of a sync > sends a paper tagged in a group from the group"
+      test: "a paper tagged in Zotero, when the command runs > sends a paper tagged in a group from the group"
 
     - id: Y33.35
       scenario: "The settings tab of a Pro vault whose connection names a group"

@@ -39,8 +39,10 @@ import {
 	tabletName,
 	type SendRoutes,
 	type SendTransport,
+	SEND_COMMAND,
 } from "./zotero-send";
 import { askWhatToSend, NO_PDF, type SendChoice } from "./zotero-send-dialog";
+import { sendTaggedPapers } from "./zotero-tag-send";
 import { webConfigured, zoteroProAllowed, zoteroUnavailable } from "./zotero-settings";
 import { createZoteroPass, type ZoteroPass } from "./zotero-sync";
 
@@ -63,7 +65,8 @@ export interface ZoteroHost {
 	registerEvent(ref: EventRef): void;
 }
 
-export const SEND_COMMAND = "Send Zotero PDF to reMarkable…";
+export { SEND_COMMAND } from "./zotero-send";
+export const SEND_TAGGED_COMMAND = "Send tagged Zotero papers to reMarkable";
 const ITEM_GONE = "That Zotero item is no longer in your library.";
 const LINKED = "Linked. The next sync writes this note's highlights into your Zotero library.";
 
@@ -147,16 +150,21 @@ export function zoteroKeyedNotes(app: App): VaultNoteKeys[] {
 }
 
 /**
- * The three Zotero entry points, registered once, for every vault.
+ * The Zotero entry points, registered once, for every vault.
  *
- * Not gated: Send and *Link to Zotero item…* are the free half (spec §5). A vault with nothing set
- * up is told so by the command, in {@link zoteroUnavailable}'s words.
+ * Not gated: Send, the tag command and *Link to Zotero item…* are the free half (spec §5). A vault
+ * with nothing set up is told so by the command, in {@link zoteroUnavailable}'s words.
  */
 export function registerZoteroCommands(host: ZoteroHost): void {
 	host.addCommand({
 		id: "zotero-send",
 		name: SEND_COMMAND,
 		callback: () => void sendZoteroPdf(host),
+	});
+	host.addCommand({
+		id: "zotero-send-tagged",
+		name: SEND_TAGGED_COMMAND,
+		callback: () => void sendTaggedZoteroPapers(host),
 	});
 	host.addCommand({
 		id: "zotero-link",
@@ -194,6 +202,19 @@ function clientOrNotice(host: ZoteroHost): ZoteroClient | null {
 	const client = host.zoteroClient();
 	if (client === null) new Notice(zoteroUnavailable(host.data.zotero), LONG_NOTICE_MS);
 	return client;
+}
+
+/**
+ * *Send tagged Zotero papers to reMarkable* (spec §2.6): every paper carrying the send tag that is
+ * not on the tablet yet, in one press, no questions. The sentences are `zotero-tag-send.ts`'s; this
+ * only shows them, and closes the status line the sends opened.
+ */
+export async function sendTaggedZoteroPapers(host: ZoteroHost): Promise<void> {
+	const client = clientOrNotice(host);
+	if (client === null) return;
+	const notices = await sendTaggedPapers(host, client);
+	host.report("ok", `Tagged Sync: ${notices[0]}`);
+	for (const notice of notices) new Notice(notice, LONG_NOTICE_MS);
 }
 
 /**

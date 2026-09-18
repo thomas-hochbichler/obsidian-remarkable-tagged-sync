@@ -35,8 +35,9 @@ it does on a Mac.
 <sub>PDF shown: Kang et al., <a href="https://arxiv.org/abs/2510.00615">ACON: Optimizing Context
 Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
-**Desktop only** · **one-way** (reMarkable → Obsidian, and → Zotero) · nothing on your tablet is
-changed, deleted, moved or renamed.
+**Desktop only** · **one-way** (reMarkable → Obsidian, and → Zotero) · **Sync never writes to
+your tablet.** Send puts a PDF on it only when you run it — and only adds, never changes, deletes
+or moves anything.
 
 ## What makes it different
 
@@ -46,7 +47,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 |---|:---:|:---:|
 | **Direction & safety** | | |
 | [reMarkable → Obsidian sync](#how-it-works) | ✓ | ✓ |
-| [One-way by design — Send only ever adds to your tablet](#what-gets-synced) | ✓ | ✓ |
+| [One-way by design — Sync never writes to your tablet; Send only adds, and only when you run it](#what-gets-synced) | ✓ | ✓ |
 | [No reMarkable Connect subscription needed](#install-and-set-up) | ✓ | ✓ |
 | [Sync straight from the tablet, without the reMarkable cloud](#syncing-without-the-cloud) | — | ✓ |
 | [Your edits are never silently overwritten](#writing-your-own-notes) | ✓ | ✓ |
@@ -415,17 +416,14 @@ The loop is three steps:
    search and cite. A margin note anchored to a passage becomes that annotation's comment. Without
    Pro the note says so in its top line: *highlights stay in the vault*.
 
-**Or start in Zotero.** Name a send tag under Settings → Zotero — say `to-remarkable`; it is off
-until you do — and from then on every sync, the automatic ones too, puts the PDF of any paper you
-tag with it on your tablet, in the same folder as *Send* and, like *Send*, without a sync tag.
-Tag the paper on the tablet when you want it back, and the loop closes: *tag a paper in Zotero, it
-is on your tablet; tag it on the tablet and mark it up, your marks are in your vault* (and, with
-Pro, in Zotero). Tag the paper in Zotero, not the PDF. Nothing is ever taken off the tablet, and the
-Zotero tag is left where you put it; a paper that is already there is simply skipped. A paper with
-two PDFs, or one Zotero has no copy of, is named in the notice and waits for **Send Zotero PDF to
-reMarkable…**, which is where questions get asked. Emptying *Send tag in Zotero* switches it off
-again. Over SSH this happens only in a sync you start yourself, because that route restarts the
-tablet's reading app.
+**Or start in Zotero.** Tag the paper `to-remarkable` (the tag under Settings → Zotero, change it if
+you like), then run **Send tagged Zotero papers to reMarkable**. Every paper carrying the tag lands
+on your tablet, in the same `Zotero` folder as *Send* and without a sync tag — you tag it on the
+tablet when you want it back. Tag the paper in Zotero, not the PDF. Nothing is ever taken off the
+tablet, and the Zotero tag is left where you put it; a paper that is already there is simply
+skipped, and the notice says so. A paper with two PDFs, or one Zotero has no copy of, is named in
+the notice and waits for **Send Zotero PDF to reMarkable…**, which is where questions get asked.
+No sync sends: only that command does, so the scheduler never puts anything on your tablet.
 
 Each half stands on its own. A PDF that reached the tablet some other way is recognised at sync
 time — by the file's own hash, or by asking you once — and a note gets its Zotero link whether or
@@ -459,7 +457,7 @@ Zotero-related runs and your sync is exactly what it was.
 Zotero → *Zotero libraries*, every group your account is in is a switch of its own, off until you
 name it — a group is other people's work, and **highlights written into a group library are
 visible to everyone in that group.** A group you switch on is searched by *Send*, sent from by the
-send tag, matched against at sync time and, with write-back, written into like your own library;
+tag command, matched against at sync time and, with write-back, written into like your own library;
 the note then links into the group. Where the same PDF is in your library and in a group, you are
 asked which, once, with the library named. A group you may only read is named in the note — *no
 write access to …* — and nothing is written into your own library instead. Both connections

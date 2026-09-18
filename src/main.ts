@@ -48,7 +48,6 @@ import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
 import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
-import { sendTaggedPapers } from "./zotero-tag-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
@@ -674,13 +673,6 @@ export default class TaggedSyncPlugin extends Plugin {
 			// document is on the tablet while listings keep finding it, tagged or not. `null` means the
 			// run never listed -- the root hash was unchanged, so nothing on the tablet moved.
 			if (result.documentIds !== null) this.data.zoteroLinks = markListed(this.data.zoteroLinks, result.documentIds, this.nowIso());
-
-			// Zotero spec §2.6: papers tagged in Zotero go to the tablet *after* the tablet has been read,
-			// because the decision "is it still there?" is made on what the run has just listed.
-			// Never throws; its sentences are the run's, in a run the user is watching.
-			for (const notice of await sendTaggedPapers(this.zoteroHost(), !auto)) {
-				if (speak) new Notice(notice, LONG_NOTICE_MS);
-			}
 
 			// The one-time pass that brings already-written notes up to the current managed key set
 			// (#107, #109). Without it a vault that has settled would never receive a new key at all:

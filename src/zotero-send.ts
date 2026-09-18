@@ -41,8 +41,10 @@ export const SEND_NEEDS_TRANSPORT = "Send needs the reMarkable cloud connection 
 /** The default tablet folder, and the name the setting starts at. */
 export const DEFAULT_SEND_FOLDER = "Zotero";
 
-/** The name the setting for §2.6's send tag *suggests*. It starts empty: the step is opt-in. */
+/** The tag §2.6's command looks for unless the setting says otherwise; prefilled, because the command is the consent. */
 export const DEFAULT_SEND_TAG = "to-remarkable";
+/** The palette name of the single-paper command; here rather than in `zotero-plugin.ts` so the tag command can name it without importing its caller. */
+export const SEND_COMMAND = "Send Zotero PDF to reMarkable…";
 
 /**
  * How long a name the tablet gets. 120 characters, from §2.4.

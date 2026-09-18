@@ -668,14 +668,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Send tag in Zotero")
 			.setDesc(
-				"Off until you name a tag. With one, every sync -- the automatic ones too -- puts the PDF of any paper you tag with it in Zotero on your tablet, " +
-					"in the folder above, without a sync tag: tag it on the tablet when you want it back. Tag the paper, not the PDF. Nothing is ever taken off the tablet.",
+				"Tag a paper with it in Zotero, then run Send tagged Zotero papers to reMarkable: every paper carrying the tag goes to your tablet, " +
+					"in the folder above, without a sync tag -- tag it on the tablet when you want it back. Tag the paper, not the PDF. No sync sends; only that command does.",
 			)
 			.addText((text) => {
 				text.setPlaceholder(DEFAULT_SEND_TAG);
 				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				// Empty is "off" here, unlike the folder: a tag has to be put on a paper for anything to
-				// happen, so the way to stop the step is to give it no tag to look for.
 				text.setValue(settings.sendTag).onChange((value) => {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendTag: value.trim() };
 					persist();

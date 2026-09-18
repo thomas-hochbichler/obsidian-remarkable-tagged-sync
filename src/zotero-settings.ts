@@ -18,7 +18,7 @@ import type { Entitlement } from "./licence-state";
 import { createZoteroClient, type ZoteroClient, type ZoteroGroup } from "./zotero-client";
 import { createZoteroLocalConnection, type LocalKeyStore } from "./zotero-local";
 import { createZoteroWebConnection } from "./zotero-web";
-import { DEFAULT_SEND_FOLDER } from "./zotero-send";
+import { DEFAULT_SEND_FOLDER, DEFAULT_SEND_TAG } from "./zotero-send";
 
 export interface ZoteroSettings {
 	/**
@@ -53,11 +53,11 @@ export interface ZoteroSettings {
 	 */
 	sendOverSsh: boolean;
 	/**
-	 * The Zotero tag that sends a paper to the tablet at the end of a sync (§2.6). Empty -- the
-	 * default -- switches the step off. Opt-in on purpose: this is the one thing a sync does that
-	 * puts something on the tablet, and *Sync now* has meant "read the tablet, write the vault" since
-	 * the plugin existed. Whoever names a tag here has been told, in the setting's own sentence,
-	 * that every sync -- the automatic ones too -- will then send.
+	 * The Zotero tag the command *Send tagged Zotero papers to reMarkable* looks for (§2.6). Prefilled
+	 * `to-remarkable`: nothing happens until the user runs the command, so the tag is a name, not a
+	 * switch. Emptied, the command says where to name one. Since 2026-09-18 no sync reads this --
+	 * *Sync now* reads the tablet and writes the vault, and the one thing that puts a file on the
+	 * tablet is a command the user runs.
 	 */
 	sendTag: string;
 	/**
@@ -77,7 +77,7 @@ export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
 	localKeys: {},
 	folder: DEFAULT_SEND_FOLDER,
 	sendOverSsh: false,
-	sendTag: "",
+	sendTag: DEFAULT_SEND_TAG,
 	groups: [],
 };
 

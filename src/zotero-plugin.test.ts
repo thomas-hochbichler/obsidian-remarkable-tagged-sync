@@ -10,6 +10,7 @@ import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client
 import { linkFor } from "./zotero-links";
 import { libraryOfNote, registerZoteroCommands, SEND_COMMAND, sendZoteroPdf, zoteroKeyedNotes, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { PICK_THE_FILE, SEND_NEEDS_TRANSPORT, type SendDocument, type SendTransport } from "./zotero-send";
+import { zoteroUnavailable } from "./zotero-settings";
 
 const PRO: Entitlement = { tier: "pro", since: "2026-09-01T00:00:00.000Z", stale: false };
 const FREE = entitlementOf(NO_LICENCE, new Date("2026-09-11T09:00:00.000Z"));
@@ -153,12 +154,12 @@ beforeEach(() => {
 });
 
 describe("what a vault gets registered", () => {
-	it("registers the two commands and the context action", () => {
+	it("registers the three commands and the context action", () => {
 		const harnessed = harness();
 
 		registerZoteroCommands(harnessed.host);
 
-		expect(harnessed.commands.map((entry) => entry.id)).toEqual(["zotero-send", "zotero-link"]);
+		expect(harnessed.commands.map((entry) => entry.id)).toEqual(["zotero-send", "zotero-send-tagged", "zotero-link"]);
 		expect(harnessed.events).toHaveLength(1);
 	});
 
@@ -168,7 +169,7 @@ describe("what a vault gets registered", () => {
 
 		registerZoteroCommands(harnessed.host);
 
-		expect(harnessed.commands.map((entry) => entry.id)).toEqual(["zotero-send", "zotero-link"]);
+		expect(harnessed.commands.map((entry) => entry.id)).toEqual(["zotero-send", "zotero-send-tagged", "zotero-link"]);
 		expect(harnessed.events).toHaveLength(1);
 	});
 
@@ -179,7 +180,7 @@ describe("what a vault gets registered", () => {
 
 		registerZoteroCommands(harnessed.host);
 
-		expect(harnessed.commands).toHaveLength(2);
+		expect(harnessed.commands).toHaveLength(3);
 	});
 
 	it("runs Send from the palette", async () => {
@@ -190,6 +191,33 @@ describe("what a vault gets registered", () => {
 		await vi.advanceTimersByTimeAsync(1);
 
 		expect(notices()).toEqual([SEND_NEEDS_TRANSPORT]);
+	});
+
+	// The tag command in one press: the vault's client, its routes, its clock, its `data.json` -- and
+	// the sentences shown are `zotero-tag-send.ts`'s, the status line closed on the first of them.
+	it("runs Send tagged Zotero papers from the palette, and shows what it did", async () => {
+		const harnessed = harness({ client: fakeClient({ itemsWithTag: async () => [ITEM] }) });
+		registerZoteroCommands(harnessed.host);
+
+		command(harnessed, "send-tagged").callback!();
+		await vi.advanceTimersByTimeAsync(1);
+
+		expect(harnessed.sent.map((document) => document.visibleName)).toEqual(["Prompting"]);
+		expect(harnessed.saves).toBe(1);
+		expect(notices()).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
+		expect(harnessed.reports.at(-1)).toBe('Tagged Sync: 1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.');
+	});
+
+	// Same door as Send: a vault with no connection is told what to set up, and nothing is asked of Zotero.
+	it("tells a vault with no connection what to set up when the tag command runs", async () => {
+		const harnessed = harness({ client: null });
+		registerZoteroCommands(harnessed.host);
+
+		command(harnessed, "send-tagged").callback!();
+		await vi.advanceTimersByTimeAsync(1);
+
+		expect(notices()).toEqual([zoteroUnavailable(harnessed.data.zotero)]);
+		expect(harnessed.sent).toEqual([]);
 	});
 
 	it("offers Link to Zotero item… on a Markdown note and nowhere else", () => {

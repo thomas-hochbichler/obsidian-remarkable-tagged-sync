@@ -1107,19 +1107,18 @@ describe("the Zotero section", () => {
 		expect(plugin.saves).toHaveLength(1);
 	});
 
-	// Opt-in, and the sentence that turns it on names what it turns on: every sync, the automatic ones
-	// too, will put papers on the tablet.
-	it("starts the send tag empty and says what naming one does", async () => {
+	// Prefilled: nothing happens until the command is run, so the tag is a name, not a switch -- and the
+	// sentence names the command and says that no sync sends (decided 2026-09-18).
+	it("starts the send tag at to-remarkable and names the command that uses it", async () => {
 		const sendTag = row(draw((await tabWith()).tab), "Send tag in Zotero");
 
-		expect(sendTag.setting.texts[0].getValue()).toBe("");
-		expect(sendTag.desc).toContain("Off until you name a tag");
-		expect(sendTag.desc).toContain("the automatic ones too");
+		expect(sendTag.setting.texts[0].getValue()).toBe("to-remarkable");
+		expect(sendTag.desc).toContain("Send tagged Zotero papers to reMarkable");
+		expect(sendTag.desc).toContain("No sync sends");
+		expect(sendTag.desc).not.toContain("automatic");
 	});
 
-	// Empty is "off" here, unlike the folder: the way to stop the tag-driven send (§2.6) is to give it
-	// no tag to look for.
-	it("takes the send tag the user typed, and an emptied one as off", async () => {
+	it("takes the send tag the user typed, trimmed, and keeps an emptied one empty", async () => {
 		vi.useFakeTimers();
 		const { plugin, tab } = await tabWith(PRO);
 		field(draw(tab), "Send tag in Zotero").type(" lesen ");

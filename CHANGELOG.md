@@ -26,17 +26,17 @@ workflow publishes the section as the GitHub release body. See
   well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
   Highlight colours arrive as the colour you chose, in Zotero's eight — matched by hue, so the
   Paper Pro's pastel highlighters keep their names and the reMarkable 2's three arrive as three.
-- **A tag in Zotero sends the paper.** Name a send tag under Settings → Zotero (off until you
-  do), tag a paper with it in Zotero, and the next sync puts its PDF on your tablet, in the same
-  folder as *Send* but without a sync tag — you tag it on the tablet when you want it back. Nothing
-  is written into Zotero and the tag there stays; a paper already on the tablet is skipped, one
-  with two PDFs is named and left for *Send*. Over
-  SSH this runs only in a sync you start yourself, since that route restarts the tablet's reading
-  app.
+- **A tag in Zotero sends the paper.** Tag a paper `to-remarkable` in Zotero (the tag is a setting
+  under Settings → Zotero) and run *Send tagged Zotero papers to reMarkable*: every paper carrying
+  the tag goes to your tablet, in the same folder as *Send* but without a sync tag — you tag it on
+  the tablet when you want it back. Nothing is written into Zotero and the tag there stays; a paper
+  already on the tablet is skipped, one with two PDFs is named and left for *Send*. It is a command
+  on purpose, not part of the sync: **Sync never writes to your tablet**, and the scheduler never
+  sends — only you do, by running it.
 
 - **Group libraries** (Tagged Sync Pro). Under Settings → Zotero → *Zotero libraries*, switch on
   any group your Zotero account is in, by name. A group switched on is searched by *Send*, sent
-  from by the send tag, matched against at sync time and -- with write-back -- written into like
+  from by the tag command, matched against at sync time and -- with write-back -- written into like
   your own library; a note whose paper is in a group links into the group, and its frontmatter
   carries `zotero-library` beside `zotero-key`. Highlights written into a group library are
   visible to everyone in that group, which the setting says. A group you may only read is named

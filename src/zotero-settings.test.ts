@@ -122,7 +122,7 @@ describe("what counts as set up", () => {
 	// A vault that has never been near Zotero must be indistinguishable from the plugin as it shipped
 	// before this feature -- which is what "the free plugin is unchanged" (§5) means in practice.
 	it("starts switched off entirely", () => {
-		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ useWeb: false, apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, sendTag: "", groups: [] });
+		expect(DEFAULT_ZOTERO_SETTINGS).toEqual({ useWeb: false, apiKey: null, useLocal: false, localKeys: {}, folder: "Zotero", sendOverSsh: false, sendTag: "to-remarkable", groups: [] });
 	});
 });
 

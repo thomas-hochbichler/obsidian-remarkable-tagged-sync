@@ -8,15 +8,7 @@ import { linkFor, type StoredZoteroLinks, type ZoteroLink } from "./zotero-links
 import { SEND_COMMAND, type ZoteroHost } from "./zotero-plugin";
 import { zoteroSkipReason } from "./zotero-sync";
 import { SEND_NEEDS_TRANSPORT, type SendDocument, type SendTransport } from "./zotero-send";
-import {
-	NO_COPY_OF_PDF,
-	NO_PDF_IN_ZOTERO,
-	sendTaggedPapers,
-	severalPdfs,
-	tagSendRoute,
-	tagSendSkipNotice,
-	WAITING_FOR_A_SYNC_YOU_START,
-} from "./zotero-tag-send";
+import { NO_COPY_OF_PDF, NO_PDF_IN_ZOTERO, NO_SEND_TAG, nothingToSend, sendTaggedPapers, severalPdfs, tagSendRoute, tagSendSkipNotice } from "./zotero-tag-send";
 
 const PRO: Entitlement = { tier: "pro", since: "2026-09-01T00:00:00.000Z", stale: false };
 const NOW = "2026-09-12T09:00:00.000Z";
@@ -83,7 +75,6 @@ function harness(
 		tagFolderMap: options.tags ?? { sync: "Target" },
 		...options.data,
 	};
-	// The send tag is opt-in (empty by default); the harness opts in unless a test says otherwise.
 	data.zotero = { ...data.zotero, useWeb: true, apiKey: "key", sendTag: "to-remarkable", ...options.zotero };
 	const sent: SendDocument[] = [];
 	const reports: string[] = [];
@@ -128,29 +119,25 @@ describe("which route a tagged paper takes", () => {
 	const cloud = route("cloud", []);
 	const ssh = route("ssh", []);
 
-	it("takes the cloud in any run", () => {
-		expect(tagSendRoute({ cloud, ssh }, false)).toEqual({ kind: "use", transport: cloud });
-		expect(tagSendRoute({ cloud, ssh: null }, false)).toEqual({ kind: "use", transport: cloud });
-	});
-
-	// The SSH route restarts the tablet's reading app. In a run nobody started, that is a page
-	// closing under the reader for no reason they can see.
-	it("takes the tablet only in a sync the user started", () => {
-		expect(tagSendRoute({ cloud: null, ssh }, true)).toEqual({ kind: "use", transport: ssh });
-		expect(tagSendRoute({ cloud: null, ssh }, false)).toEqual({ kind: "later" });
+	// Same order as Send (§2.4): the cloud when it is connected, the tablet over SSH otherwise. The
+	// command always has a person at the keyboard, so the SSH restart is never sprung on a reader.
+	it("takes the cloud first, then the tablet over SSH", () => {
+		expect(tagSendRoute({ cloud, ssh })).toBe(cloud);
+		expect(tagSendRoute({ cloud, ssh: null })).toBe(cloud);
+		expect(tagSendRoute({ cloud: null, ssh })).toBe(ssh);
 	});
 
 	it("has no route for a vault with neither", () => {
-		expect(tagSendRoute({ cloud: null, ssh: null }, true)).toEqual({ kind: "none" });
+		expect(tagSendRoute({ cloud: null, ssh: null })).toBeNull();
 	});
 });
 
-describe("a paper tagged in Zotero, at the start of a sync", () => {
+describe("a paper tagged in Zotero, when the command runs", () => {
 	// No sync tag on the document (decided 2026-09-13), like Send: a tag put on here would be one the
 	// user never chose. The notice says what is left to do instead.
 	it("goes to the tablet through the same pipeline as Send, untagged, and the link is recorded", async () => {
 		const h = harness();
-		const notices = await sendTaggedPapers(h.host, false);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent).toEqual([{ visibleName: "Prompting", bytes: new Uint8Array([1, 2, 3]), folder: "Zotero" }]);
 		const link = linkFor(h.data.zoteroLinks, "doc-1") as ZoteroLink;
@@ -167,7 +154,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 		const GROUP = { group: 4711 };
 		const fileBytes = vi.fn(async () => new Uint8Array([1]));
 		const h = harness({ client: fakeClient({ itemsWithTag: async () => [{ ...PAPER, library: GROUP }], attachments: async () => [attachment(), attachment({ library: GROUP })], fileBytes }) });
-		await sendTaggedPapers(h.host, false);
+		await sendTaggedPapers(h.host, h.client);
 
 		expect(fileBytes).toHaveBeenCalledWith("ATT1", GROUP);
 		expect(h.sent).toHaveLength(1);
@@ -181,7 +168,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 				attachments: async () => [attachment(), attachment({ key: "ATT2", parentKey: "ITEM2", filename: "retrieval.pdf" })],
 			}),
 		});
-		const notices = await sendTaggedPapers(h.host, false);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent.map((document) => document.visibleName)).toEqual(["Prompting", "Retrieval"]);
 		expect(notices).toEqual(['2 Zotero papers are on your reMarkable: "Prompting", "Retrieval". Tag them there to sync them back.']);
@@ -191,7 +178,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 	// first write to an item we only ever read.
 	it("writes nothing into Zotero, and leaves the tag where it found it", async () => {
 		const h = harness();
-		await sendTaggedPapers(h.host, false);
+		await sendTaggedPapers(h.host, h.client);
 
 		expect(h.client.createAnnotations).not.toHaveBeenCalled();
 		expect(h.client.patchAnnotation).not.toHaveBeenCalled();
@@ -199,23 +186,34 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 
 	// Idempotence comes from the link store (§2.5), not from Zotero: the tag staying on a paper sent
 	// last week is the normal state, not a complaint.
-	it("skips a paper that is already on the tablet, in silence", async () => {
+	it("skips a paper that is already on the tablet, and says so once", async () => {
 		const h = harness({ data: { zoteroLinks: linked("doc-9", "ATT1", undefined, SEEN) } });
-		const notices = await sendTaggedPapers(h.host, false);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent).toEqual([]);
-		expect(notices).toEqual([]);
+		expect(notices).toEqual([nothingToSend(1, "to-remarkable")]);
+		expect(notices).toEqual(["Zotero: the paper tagged to-remarkable is on your reMarkable already."]);
 		expect(h.data.zoteroLinks).toEqual(linked("doc-9", "ATT1", undefined, SEEN));
+	});
+
+	it("counts the papers that are on the tablet already, in one sentence", async () => {
+		const h = harness({
+			client: fakeClient({ itemsWithTag: async () => [PAPER, SECOND], attachments: async () => [attachment(), attachment({ key: "ATT2", parentKey: "ITEM2" })] }),
+			data: { zoteroLinks: { ...linked("doc-8", "ATT1", undefined, SEEN), ...linked("doc-9", "ATT2", undefined, SEEN) } },
+		});
+
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual(["Zotero: all 2 papers tagged to-remarkable are on your reMarkable already."]);
+		expect(h.sent).toEqual([]);
 	});
 
 	// The live bug of 2026-09-12: the sync right after a send listed a root the cloud had not updated
 	// yet, so no listing had the document, `lastSyncAt` had moved past `sentAt`, and every run sent again.
 	it("does not send a paper again while no sync has listed its document yet", async () => {
 		const h = harness({ data: { zoteroLinks: linked("doc-9"), lastSyncAt: "2026-09-12T08:30:00.000Z" } });
-		const notices = await sendTaggedPapers(h.host, true);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent).toEqual([]);
-		expect(notices).toEqual([]);
+		expect(notices).toEqual([nothingToSend(1, "to-remarkable")]);
 		expect(h.data.zoteroLinks).toEqual(linked("doc-9"));
 	});
 
@@ -223,7 +221,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 	// paper comes back. Without this it would stay "present" for good.
 	it("sends a paper again whose document no listing has found in a day", async () => {
 		const h = harness({ data: { zoteroLinks: linked("doc-9", "ATT1", "2026-09-10T09:00:00.000Z") } });
-		await sendTaggedPapers(h.host, true);
+		await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent).toHaveLength(1);
 		expect(Object.keys(h.data.zoteroLinks)).toEqual(["doc-1"]);
@@ -233,7 +231,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 	// next sync, not a day later (asked in the desk test of 2026-09-13).
 	it("sends a paper whose document has vanished from the tablet again, and replaces the mapping", async () => {
 		const h = harness({ data: { zoteroLinks: linked("doc-9", "ATT1", undefined, GONE), lastSyncAt: "2026-09-10T09:00:00.000Z" } });
-		await sendTaggedPapers(h.host, false);
+		await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent).toHaveLength(1);
 		expect(Object.keys(h.data.zoteroLinks)).toEqual(["doc-1"]);
@@ -243,7 +241,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 	// the command's name, and no picker is opened.
 	it("skips a paper with two PDFs, names it, and opens no dialog", async () => {
 		const h = harness({ client: fakeClient({ attachments: async () => [attachment(), attachment({ key: "ATT2", filename: "preprint.pdf" })] }) });
-		const notices = await sendTaggedPapers(h.host, true);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent).toEqual([]);
 		expect(takeModals()).toEqual([]);
@@ -253,14 +251,14 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 
 	it("skips a paper that has no PDF in Zotero", async () => {
 		const h = harness({ client: fakeClient({ attachments: async () => [] }) });
-		expect(await sendTaggedPapers(h.host, true)).toEqual([tagSendSkipNotice("Prompting", NO_PDF_IN_ZOTERO)]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual([tagSendSkipNotice("Prompting", NO_PDF_IN_ZOTERO)]);
 		expect(h.sent).toEqual([]);
 	});
 
 	// Send's third path opens a file dialog. This step may not, so the paper stays behind and is named.
 	it("skips a paper Zotero has no copy of, rather than asking for the file", async () => {
 		const h = harness({ client: fakeClient({ filePath: async () => null, fileBytes: async () => null }) });
-		const notices = await sendTaggedPapers(h.host, true);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent).toEqual([]);
 		expect(takeModals()).toEqual([]);
@@ -268,10 +266,10 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 		expect(h.data.zoteroLinks).toEqual({});
 	});
 
-	it("counts the papers in the notice when the whole step stands down", async () => {
+	it("counts the papers in the notice when the whole command stands down", async () => {
 		const h = harness({ cloud: false, client: fakeClient({ itemsWithTag: async () => [PAPER, SECOND] }) });
 
-		expect(await sendTaggedPapers(h.host, true)).toEqual([`Zotero: 2 papers tagged to-remarkable not sent. ${SEND_NEEDS_TRANSPORT}`]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual([`Zotero: 2 papers tagged to-remarkable not sent. ${SEND_NEEDS_TRANSPORT}`]);
 	});
 
 	// The same fallbacks as Send: the folder setting left blank means the default folder, and a paper
@@ -284,7 +282,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 				attachments: async () => [attachment(), attachment({ key: "ATT1B" }), attachment({ key: "ATT2", parentKey: "ITEM2", filename: "retrieval.pdf" })],
 			}),
 		});
-		const notices = await sendTaggedPapers(h.host, false);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent.map((document) => document.folder)).toEqual(["Zotero"]);
 		expect(notices).toContain(tagSendSkipNotice("ITEM1", severalPdfs(2)));
@@ -305,11 +303,11 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 			}),
 		};
 
-		expect(await sendTaggedPapers(h.host, false)).toEqual([tagSendSkipNotice("Prompting", "the socket closed")]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual([tagSendSkipNotice("Prompting", "the socket closed")]);
 	});
 
-	// Whatever went up before Zotero stopped answering stays sent and said; the rest is the next sync's.
-	it("says the step did not finish when Zotero fails after the listing", async () => {
+	// Whatever went up before Zotero stopped answering stays sent and said; the rest waits for the next press.
+	it("says the command did not finish when Zotero fails after the listing", async () => {
 		const down = new ZoteroError("unreachable", "gone");
 		const h = harness({
 			client: fakeClient({
@@ -319,7 +317,7 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 			}),
 		});
 
-		expect(await sendTaggedPapers(h.host, false)).toEqual([`Zotero: papers tagged to-remarkable were not all sent — ${zoteroSkipReason(down)}. The next sync tries again.`]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual([`Zotero: papers tagged to-remarkable were not all sent — ${zoteroSkipReason(down)}.`]);
 		expect(h.sent).toEqual([]);
 	});
 
@@ -340,48 +338,39 @@ describe("a paper tagged in Zotero, at the start of a sync", () => {
 			}),
 		});
 		h.host = { ...h.host, sendRoutes: () => ({ cloud: failing, ssh: null }) };
-		const notices = await sendTaggedPapers(h.host, false);
+		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(sent.map((document) => document.visibleName)).toEqual(["Retrieval"]);
 		expect(notices).toEqual(['1 Zotero paper is on your reMarkable: "Retrieval". Tag it there to sync it back.', tagSendSkipNotice("Prompting", "generation mismatch")]);
 	});
 });
 
-describe("when the whole step stands down", () => {
-	// Opt-in: *Sync now* has meant "read the tablet, write the vault" since the plugin existed, and
-	// a sync that puts something on the tablet is something the user has to have asked for.
-	it("does nothing in a vault that has never named a send tag", async () => {
-		const itemsWithTag = vi.fn(async () => [PAPER]);
-		const h = harness({ client: fakeClient({ itemsWithTag }), zotero: { sendTag: DEFAULT_DATA.zotero.sendTag } });
-
-		expect(DEFAULT_DATA.zotero.sendTag).toBe("");
-		expect(await sendTaggedPapers(h.host, true)).toEqual([]);
-		expect(itemsWithTag).not.toHaveBeenCalled();
-	});
-
-	it("does nothing, and asks Zotero nothing, with the send tag emptied", async () => {
+describe("when the whole command stands down", () => {
+	// The setting is prefilled, so an empty one is the user's doing; the command says where to name one
+	// rather than looking for nothing and saying nothing.
+	it("says where to name a tag when the setting was emptied, and asks Zotero nothing", async () => {
 		const itemsWithTag = vi.fn(async () => [PAPER]);
 		const h = harness({ client: fakeClient({ itemsWithTag }), zotero: { sendTag: "  " } });
 
-		expect(await sendTaggedPapers(h.host, true)).toEqual([]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual([NO_SEND_TAG]);
 		expect(itemsWithTag).not.toHaveBeenCalled();
 	});
 
-	it("does nothing for a vault with no Zotero client", async () => {
-		const h = harness({ client: null });
-		expect(await sendTaggedPapers(h.host, true)).toEqual([]);
+	it("starts with the tag the setting suggests", () => {
+		expect(DEFAULT_DATA.zotero.sendTag).toBe("to-remarkable");
 	});
 
-	// A vault with the tag on nothing gets no notice about routes or tags it has not set up.
-	it("says nothing when no paper carries the tag, whatever else is missing", async () => {
+	// Somebody pressed the command: an empty library answer is a sentence, not silence, and it comes
+	// before any complaint about routes.
+	it("says that no paper carries the tag, before anything about routes", async () => {
 		const h = harness({ client: fakeClient({ itemsWithTag: async () => [] }), tags: {}, cloud: false });
-		expect(await sendTaggedPapers(h.host, true)).toEqual([]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual(["Zotero: no paper carries the tag to-remarkable."]);
 	});
 
 	it("asks Zotero for the tag the setting names", async () => {
 		const itemsWithTag = vi.fn(async () => []);
 		const h = harness({ client: fakeClient({ itemsWithTag }), zotero: { sendTag: "lesen" } });
-		await sendTaggedPapers(h.host, true);
+		await sendTaggedPapers(h.host, h.client);
 
 		expect(itemsWithTag).toHaveBeenCalledWith("lesen");
 	});
@@ -390,27 +379,26 @@ describe("when the whole step stands down", () => {
 	// goes up, and syncing back starts when the reader tags it on the tablet.
 	it("sends in a vault that maps no tag, since the tag is the reader's to put on", async () => {
 		const h = harness({ tags: {} });
-		await sendTaggedPapers(h.host, true);
+		await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent.map((document) => document.visibleName)).toEqual(["Prompting"]);
 	});
 
 	it("sends nothing from a vault with no route to a tablet, and says so", async () => {
 		const h = harness({ cloud: false });
-		expect(await sendTaggedPapers(h.host, true)).toEqual([`Zotero: 1 paper tagged to-remarkable not sent. ${SEND_NEEDS_TRANSPORT}`]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual([`Zotero: 1 paper tagged to-remarkable not sent. ${SEND_NEEDS_TRANSPORT}`]);
 	});
 
-	it("holds an SSH-only send for a sync the user starts, and names the paper", async () => {
+	// The SSH route restarts the tablet's reading app (§2.4). Fine in a command: the person pressing
+	// it is the person holding the tablet, and the SSH setting's sentence told them.
+	it("sends over SSH when the cloud is not connected, in the same press", async () => {
 		const h = harness({ cloud: false, ssh: true });
 
-		expect(await sendTaggedPapers(h.host, false)).toEqual([tagSendSkipNotice("Prompting", WAITING_FOR_A_SYNC_YOU_START)]);
-		expect(h.sent).toEqual([]);
-
-		expect(await sendTaggedPapers(h.host, true)).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
 		expect(h.reports.at(-1)).toBe('Tagged Sync: sending "Prompting" to your reMarkable…');
 	});
 
-	// The §3.4.2 wording: which document, why, and that the next sync tries again.
+	// The §3.4.2 wording: which tag, and why, in Zotero's words.
 	it("says in Zotero's own words why nothing was sent when Zotero does not answer", async () => {
 		const h = harness({
 			client: fakeClient({
@@ -420,7 +408,7 @@ describe("when the whole step stands down", () => {
 			}),
 		});
 
-		expect(await sendTaggedPapers(h.host, true)).toEqual(["Zotero: papers tagged to-remarkable were not sent — Zotero rejected the API key. The next sync tries again."]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual(["Zotero: papers tagged to-remarkable were not sent — Zotero rejected the API key."]);
 		expect(h.sent).toEqual([]);
 	});
 });

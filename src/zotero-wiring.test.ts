@@ -88,17 +88,17 @@ beforeEach(() => {
 });
 
 describe("the Zotero commands as the plugin registers them", () => {
-	// §5: Send and the link are the free half, so a free vault's palette has both commands too.
-	it("registers both in a free vault", async () => {
+	// §5: Send, the tag command and the link are the free half, so a free vault's palette has all three.
+	it("registers all three in a free vault", async () => {
 		const plugin = await load({ licence: NO_LICENCE, zotero: { useWeb: true, apiKey: "key" } });
 
-		expect(zoteroCommands(plugin)).toEqual(["zotero-send", "zotero-link"]);
+		expect(zoteroCommands(plugin)).toEqual(["zotero-send", "zotero-send-tagged", "zotero-link"]);
 	});
 
-	it("registers both in a Pro vault", async () => {
+	it("registers all three in a Pro vault", async () => {
 		const plugin = await load({ licence: PRO, zotero: { useWeb: true, apiKey: "key" } });
 
-		expect(zoteroCommands(plugin)).toEqual(["zotero-send", "zotero-link"]);
+		expect(zoteroCommands(plugin)).toEqual(["zotero-send", "zotero-send-tagged", "zotero-link"]);
 	});
 
 	// The host is wired to the plugin's own transports: with neither connected there is no route, and
@@ -157,5 +157,31 @@ describe("the Zotero commands as the plugin registers them", () => {
 
 		expect(sent).toHaveLength(1);
 		expect(linkFor(plugin.saved.zoteroLinks ?? {}, "doc-1")?.attachmentKey).toBe("ATT1");
+	});
+
+	// The tag command through the same wiring, with the setting as it ships: the tag it asks Zotero
+	// for is the one in the plugin's own `data.json`, the upload goes through the plugin's transport,
+	// and the link lands in its data -- no sync involved.
+	it("sends the tagged papers through the plugin's own transport, in one press", async () => {
+		const plugin = await load({ licence: NO_LICENCE, zotero: { useWeb: true, apiKey: "key" }, deviceToken: "device-token" });
+		const sent: SendDocument[] = [];
+		const itemsWithTag = vi.fn(async () => [ITEM]);
+		plugin.zoteroClient = () => ({ ...fakeClient(), itemsWithTag }) as ZoteroClient;
+		(plugin as unknown as { cloudTransport: unknown }).cloudTransport = {
+			label: "reMarkable's cloud",
+			status: () => ({ connected: true, summary: "Connected.", connectNotice: "" }),
+			putPdf: async (document: SendDocument) => {
+				sent.push(document);
+				return { docId: "doc-7" };
+			},
+		};
+
+		plugin.commands.find((command) => command.id === "zotero-send-tagged")!.callback!();
+		await vi.advanceTimersByTimeAsync(10);
+
+		expect(itemsWithTag).toHaveBeenCalledWith("to-remarkable");
+		expect(sent.map((document) => document.visibleName)).toEqual(["Prompting"]);
+		expect(linkFor(plugin.saved.zoteroLinks ?? {}, "doc-7")?.attachmentKey).toBe("ATT1");
+		expect(notices()).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
 	});
 });
