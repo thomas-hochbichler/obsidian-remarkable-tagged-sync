@@ -974,8 +974,12 @@ async function readTextItems(page: PdfJsPage): Promise<RawTextItem[]> {
 		const item = entry as { str?: unknown; transform?: unknown; width?: unknown; height?: unknown };
 		if (typeof item.str !== "string" || item.str.length === 0) continue;
 		if (!Array.isArray(item.transform) || item.transform.length < 6) continue;
-		const [x, y] = [item.transform[4], item.transform[5]] as unknown[];
+		const [a, b, , , x, y] = item.transform as unknown[];
 		if (typeof x !== "number" || typeof y !== "number") continue;
+		// Text running up or down the page -- arXiv's stamp in the left margin, a rotated figure label --
+		// is not prose, and its box read as horizontal lands it in the middle of the line whose
+		// baseline it happens to start at (live, 2026-09-18: "No- … arXiv:2510.00615v3 … 2026tably").
+		if (typeof a === "number" && typeof b === "number" && Math.abs(b) > Math.abs(a)) continue;
 		// `transform[3]` is the vertical font scale, i.e. the font size -- the fallback for the builds
 		// that leave `height` at 0.
 		const scale = typeof item.transform[3] === "number" ? Math.abs(item.transform[3]) : 0;

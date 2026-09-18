@@ -200,6 +200,13 @@
       file: src/pdf-text.test.ts
       test: "paragraphBounds > returns null for a span that touches no line"
 
+    - id: F3.7
+      scenario: "A text item running up the page -- arXivs stamp in the left margin, whose transform is a 90° rotation"
+      expect: "Left out of the text layer. Read as a horizontal box it starts at the baseline of whichever body line it meets and sorts in by x, and the live digest of 2026-09-18 quoted `No- … arXiv:2510.00615v3 [cs.AI] 1 Jun 2026tably` mid-sentence"
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "loadPdfText > leaves out text that runs up or down the page"
+
 - feature: A5
   name: Old documents don't break the account -- the assumption the patch rests on
   code: src/remarkable-metadata.ts
@@ -293,6 +300,20 @@
       layer: unit
       file: src/digest-pipeline.test.ts
       test: "buildDigest merges highlights that share a sentence > merges runs that already carry several rectangles by their outermost lines"
+
+    - id: F4.8
+      scenario: "A two-column page: a highlight in the abstract (left column, low on the page) and one in the introduction (right column, high on the page)"
+      expect: "The abstracts entry first, under its page heading, then `### 1 Einleitung`. Sorted by `top` the introduction printed first (live, 2026-09-18); the pipeline hands the builder the reading index it already measures for the section lookup"
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest sections across pages > prints the left column's lower highlight before the right column's higher one"
+
+    - id: F4.9
+      scenario: "Entries carrying a reading `order` that disagrees with their `top`"
+      expect: "Sections and the entries within them follow `order`; `top` only stands in where there is none and breaks a tie on one line"
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest > orders sections and their entries by reading order where the page has one, not by height on the page"
 
 - feature: F22
   name: A text layer whose font speaks in glyph ids

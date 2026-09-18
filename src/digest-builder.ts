@@ -110,6 +110,8 @@ export interface DigestHighlight {
 	/** Nearest section heading. */
 	section: string | null;
 	top: number;
+	/** Where the highlight sits in the page's reading order, where the page has one; `top` otherwise. See `pageEntries`. */
+	order?: number;
 }
 
 /**
@@ -142,8 +144,8 @@ export interface DigestPage {
 	/** Which page of the source document this is, or `null` when it is not a page of it. */
 	source: DigestPageSource | null;
 	highlights: DigestHighlight[];
-	/** Notes not nested under a highlight, each with its own `section`. */
-	notes: (DigestNote & { section: string | null })[];
+	/** Notes not nested under a highlight, each with its own `section` and, where the page has a text layer, its reading `order`. */
+	notes: (DigestNote & { section: string | null; order?: number })[];
 }
 
 /**
@@ -369,41 +371,49 @@ function renderHighlight(highlight: DigestHighlight, locator: string, zoteroUrl:
 interface DigestEntry {
 	section: string | null;
 	top: number;
+	order?: number;
 	/** `locator` is the entry's trailing page link, "" where the page is the heading and carries it. */
 	render(locator: string): string;
 }
 
 /**
- * Reading order: section first, then top-down within the section.
+ * Reading order: section first, then along the page's reading order within the section.
  *
  * Sorting by `top` alone does not reproduce the sample. A note written *at* a heading sits slightly
  * above that heading's baseline, so by position it still belongs to the section above it and would be
  * printed before the section heading it introduces. Grouping by section fixes that, and it also settles the
  * exact `top` tie a heading produces between the last entry of one section and the first of the next.
  *
- * Sections themselves run in the order their first entry appears top-down, which is the order of
- * their headings on the page -- the page carries no heading positions of its own.
+ * Sections themselves run in the order their first entry appears in the reading order -- the page
+ * carries no heading positions of its own. Reading order and not `top`: on a two-column page the
+ * abstract sits *below* the introduction's first lines and comes before them, and by `top` the
+ * abstract's highlight printed after the introduction's (live, 2026-09-18). `order` is the reading
+ * index the pipeline measured against the text layer; `top` stands in where there is none, and
+ * breaks the tie of two entries on one line.
  */
 function pageEntries(page: DigestPage, zotero: ZoteroDigestLinks): DigestEntry[] {
 	const entries: DigestEntry[] = [
 		...page.highlights.map((highlight) => ({
 			section: highlight.section,
 			top: highlight.top,
+			order: highlight.order,
 			render: (locator: string) => renderHighlight(highlight, locator, zotero[highlight.id]),
 		})),
 		...page.notes.map((note) => ({
 			section: note.section,
 			top: note.top,
+			order: note.order,
 			render: (locator: string) => renderNote(note, "> ", locator),
 		})),
 	];
 
+	const rank = (entry: DigestEntry) => entry.order ?? entry.top;
 	const sectionOrder = new Map<string | null, number>();
-	for (const entry of [...entries].sort((a, b) => a.top - b.top)) {
+	for (const entry of [...entries].sort((a, b) => rank(a) - rank(b) || a.top - b.top)) {
 		if (!sectionOrder.has(entry.section)) sectionOrder.set(entry.section, sectionOrder.size);
 	}
 	return entries.sort(
-		(a, b) => (sectionOrder.get(a.section) ?? 0) - (sectionOrder.get(b.section) ?? 0) || a.top - b.top,
+		(a, b) => (sectionOrder.get(a.section) ?? 0) - (sectionOrder.get(b.section) ?? 0) || rank(a) - rank(b) || a.top - b.top,
 	);
 }
 

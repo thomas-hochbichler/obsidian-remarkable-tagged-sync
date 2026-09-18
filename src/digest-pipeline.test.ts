@@ -519,6 +519,44 @@ describe("buildDigest sections across pages", () => {
 		expect(result.markdown).not.toContain("2 Methode");
 	});
 
+	// Live, 2026-09-18: a highlight in the abstract (left column, low on the page) printed after the
+	// introduction's highlights (right column, high on the page).
+	it("prints the left column's lower highlight before the right column's higher one", async () => {
+		const column = (text: string, x: number, y: number, height: number): PdfTextLine => ({ text, x, y, width: 200, height });
+		const abstract = "Ein Satz im Abstract.";
+		const intro = "Ein Satz in der Einleitung.";
+		const text: PdfPageText = {
+			label: "1",
+			width: PAGE_WIDTH_PT,
+			height: PAGE_HEIGHT_PT,
+			lines: [column(abstract, 80, 400, 10), column("1 Einleitung", 330, 700, 12), column(intro, 330, 680, 10)],
+		};
+		const rect = (x: number, y: number) => ({
+			x: (x - PAGE_WIDTH_PT / 2) / PX_TO_PT,
+			y: (PAGE_HEIGHT_PT - y - 10) / PX_TO_PT,
+			width: 200 / PX_TO_PT,
+			height: 10 / PX_TO_PT,
+		});
+		const page: DigestPageInput = {
+			pageId: "p0",
+			sourceIndex: 0,
+			embedPage: 1,
+			scene: {
+				formatVersion: 2,
+				layers: [],
+				highlights: [
+					{ id: "h0", color: 0, text: intro, rects: [rect(330, 680)] },
+					{ id: "h1", color: 0, text: abstract, rects: [rect(80, 400)] },
+				],
+			},
+		};
+		const document = fakeTextDocument({ 0: text }, [{ pageIndex: 0, x: 330, y: 700, title: "1 Einleitung" }]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.markdown.indexOf(abstract)).toBeLessThan(result.markdown.indexOf("### 1 Einleitung"));
+	});
+
 	it("renders no section at all for a document without headings", async () => {
 		const first = sectionPage(0, 600);
 		const second = sectionPage(1, 600);

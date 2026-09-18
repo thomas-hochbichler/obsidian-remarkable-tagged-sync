@@ -51,6 +51,13 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **Two-column papers: the abstract's highlight printed after the introduction's.** Digest entries
+  were ordered by height on the page, and on a two-column page the right column's first lines sit
+  higher than the left column's last. Entries now follow the page's reading order, the same order
+  the section lookup already used.
+- **A rotated margin stamp landed mid-sentence in a quote.** Text running up the page — arXiv's
+  `arXiv:2510.00615v3 [cs.AI]` in the left margin — was read as a horizontal line and sorted into
+  the body text at whatever baseline it started. Rotated text is left out of the text layer.
 - **A page you cleared on the tablet cleared its note too.** Deleting every mark on a page (the
   whole layer, say) left the render blank but the note still quoting the old highlights, because
   the plugin refuses to replace a note's content with nothing -- a guard against losing marks to a

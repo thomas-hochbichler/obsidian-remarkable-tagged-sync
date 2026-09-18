@@ -337,6 +337,20 @@ Three. · [[${EMBED}#page=3|p. 3]]
 		expect(rendered.match(/^### .*$/gm)).toEqual([`### [[${EMBED}#page=4|Page iv]]`, `### [[${EMBED}#page=7|Page 7]]`]);
 	});
 
+	// A two-column page: the abstract's highlight sits lower on the page than the introduction's and
+	// comes before it. The pipeline measured that as `order`; `top` alone printed it second.
+	it("orders sections and their entries by reading order where the page has one, not by height on the page", () => {
+		const rendered = renderDigest(EMBED, [
+			page({
+				highlights: [
+					highlight({ id: "hl-1", sentence: "Intro.", section: "1 Introduction", top: 10, order: 30 }),
+					highlight({ id: "hl-2", sentence: "Abstract.", section: null, top: 40, order: 12 }),
+				],
+			}),
+		]);
+		expect(rendered.indexOf("Abstract.")).toBeLessThan(rendered.indexOf("### 1 Introduction"));
+	});
+
 	it("groups entries by section rather than by position, so a heading-anchored note lands under its section heading", () => {
 		// The note sits *above* the heading it belongs to, i.e. above the second section's highlight
 		// but below the first section's. Sorting by `top` alone would print it before its section heading.

@@ -618,6 +618,18 @@ function singlePageDoc(page: FakePage, extras: Partial<FakeDocument> = {}): Fake
 const BYTES = new Uint8Array([1, 2, 3]);
 
 describe("loadPdfText", () => {
+	// arXiv's stamp runs up the left margin. Read as a horizontal box it starts at the baseline of
+	// whichever body line it happens to meet, and sorted in by x it printed in the middle of that
+	// line's text (live, 2026-09-18).
+	it("leaves out text that runs up or down the page", async () => {
+		const stamp = { str: "arXiv:2510.00615v3 [cs.AI] 1 Jun 2026", width: 180, height: 10, transform: [0, 10, -10, 0, 40, 400] };
+		const page = fakePage([textItem("Notably, it enables", 100, 400, 10), stamp, textItem("smaller LMs", 100, 388, 10)]);
+
+		const text = await (await loadPdfText(BYTES, fakeLoader(singlePageDoc(page))))?.page(0);
+
+		expect(text?.lines.map((line) => line.text)).toEqual(["Notably, it enables", "smaller LMs"]);
+	});
+
 	it("returns null when Obsidian does not expose pdf.js", async () => {
 		expect(await loadPdfText(BYTES)).toBeNull();
 	});

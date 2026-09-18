@@ -594,6 +594,14 @@ function pageRank(pageText: PdfPageText | null, x: number | null, y: number): nu
 }
 
 /**
+ * The entry's place in the page's reading order, for `pageEntries` in digest-builder.ts to sort by;
+ * undefined without a text layer, where `top` is all there is. The same rank `sectionAt` weighs.
+ */
+function readingOrder(pageText: PdfPageText | null, x: number, y: number): number | undefined {
+	return pageText && pageText.lines.length > 0 ? pageRank(pageText, x, y) : undefined;
+}
+
+/**
  * The section an entry belongs to: the last heading that comes at or before it *in the document*,
  * not on its page. A page's first annotation usually sits above that page's first heading, and the
  * section it belongs to is then the one still open from an earlier page.
@@ -737,14 +745,14 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// page next to which the note was written.
 	const notes = await buildNotes({ ...state, page, geometry, highlights: placed }, clusters);
 	const { highlights, survivorOf } = mergeBySentence(placed);
-	const standalone: (DigestNote & { section: string | null })[] = [];
+	const standalone: (DigestNote & { section: string | null; order?: number })[] = [];
 	for (const { note, anchor, pdfLeft, pdfTop } of notes) {
 		const hostId = anchor.kind === "highlight" ? survivorOf.get(anchor.highlightId) : undefined;
 		const host = hostId === undefined ? undefined : highlights.find((item) => item.highlight.id === hostId);
 		if (host) host.highlight.notes.push({ ...note, anchor: { kind: "highlight", highlightId: host.highlight.id } });
 		else {
 			const section = anchor.kind === "heading" ? anchor.heading : sectionAt(page.sourceIndex, pdfLeft, pdfTop, geometry.documentHeadings, geometry.pageText);
-			standalone.push({ ...note, section });
+			standalone.push({ ...note, section, order: readingOrder(geometry.pageText, pdfLeft, pdfTop) });
 		}
 	}
 
@@ -754,6 +762,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		const top = pdfRect ? pdfRect.y + pdfRect.height : geometry.frame.heightPt;
 		const left = pdfRect ? pdfRect.x : 0;
 		highlight.section = sectionAt(page.sourceIndex, left, top, geometry.documentHeadings, geometry.pageText);
+		highlight.order = readingOrder(geometry.pageText, left, top);
 	}
 
 	return {
