@@ -46,6 +46,7 @@ function client(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 		libraryName: () => "your library",
 		groups: async () => [],
 		libraryId: async () => 1234567,
+		username: async () => null,
 		attachments: async () => [attachment()],
 		attachment: async () => attachment(),
 		parentItem: async () => ITEM,
@@ -77,6 +78,7 @@ function harness({ links: stored, ...overrides }: Partial<Omit<ZoteroPassDeps, "
 		},
 		vaultNotes: () => [],
 		webUserId: async () => "1234567",
+		webReaderUser: async () => null,
 		ask: async (question) => {
 			asked.push(question);
 			return question.candidates[0].attachment;
@@ -110,6 +112,14 @@ describe("what the pass does for one written note", () => {
 		const parts = await createZoteroPass(deps).run(unit());
 
 		expect(parts.links).toEqual({ "hl-9f21c4": "zotero://open-pdf/library/items/ATT1?page=2&annotation=KEY0" });
+	});
+
+	it("sends the quotes to zotero.org's reader where no desktop app is there to open them", async () => {
+		const { deps } = harness({ links: linked(), webReaderUser: async () => "someone" });
+
+		const parts = await createZoteroPass(deps).run(unit());
+
+		expect(parts.links).toEqual({ "hl-9f21c4": "https://www.zotero.org/someone/items/ITEM1/attachment/ATT1/reader" });
 	});
 
 	it("hands back the two frontmatter keys of the item, not of the attachment", async () => {

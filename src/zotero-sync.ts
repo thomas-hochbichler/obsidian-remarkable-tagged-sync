@@ -117,6 +117,12 @@ export interface ZoteroPassDeps {
 	vaultNotes(): readonly VaultNoteKeys[];
 	/** The account's numeric user id, or `null` when the web connection is not configured -- then there is no web link (§4). */
 	webUserId(): Promise<string | null>;
+	/**
+	 * The zotero.org username, only for a vault whose one reader is the web one: then every quote
+	 * links into zotero.org's reader, because a `zotero://` link has nothing to open it. `null` where
+	 * the desktop app is connected, and the quotes keep their `zotero://open-pdf` link.
+	 */
+	webReaderUser(): Promise<string | null>;
 	/** Asks the user which attachment this is. Absent in a background run; see the file header. */
 	ask?(question: ZoteroQuestion): Promise<ZoteroAttachment | null>;
 	/**
@@ -202,9 +208,11 @@ export const LIBRARY_OFF = "its Zotero library is switched off";
 export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 	let attachments: Promise<ZoteroAttachment[]> | null = null;
 	let webUserId: Promise<string | null> | null = null;
+	let webReaderUser: Promise<string | null> | null = null;
 
 	const library = (): Promise<ZoteroAttachment[]> => (attachments ??= deps.client.attachments());
 	const userId = (): Promise<string | null> => (webUserId ??= deps.webUserId());
+	const readerUser = (): Promise<string | null> => (webReaderUser ??= deps.webReaderUser());
 
 	/** The paper this attachment hangs under, or the attachment standing in for one (§4 names a paper). */
 	const itemOf = async (attachment: ZoteroAttachment): Promise<ZoteroItem> => {
@@ -320,9 +328,10 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			literatureNote: findLiteratureNote(deps.vaultNotes(), item, new Set([unit.notePath])),
 			matchedByHash: found.link.matchedBy === "hash",
 		});
+		const username = await readerUser();
 		return {
 			line,
-			links: zoteroDigestLinks(link, unit.pages),
+			links: zoteroDigestLinks(link, unit.pages, username === null ? null : { username, itemKey: item.key }),
 			keys: { zoteroKey: item.key, zoteroLibrary: item.library === "user" ? null : String(item.library.group), citekey: item.citationKey },
 			notices,
 		};

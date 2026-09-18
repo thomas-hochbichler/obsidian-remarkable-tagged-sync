@@ -31,7 +31,7 @@ function connection(handler: (request: ZoteroRequest) => Response | Promise<Resp
 	const api = createZoteroConnection(id, id === "local" ? "your Zotero desktop app" : "zotero.org", requester, {
 		path: async () => null,
 		bytes: async () => null,
-	}, async () => 42);
+	}, async () => ({ id: 42, username: null }));
 	return { api, calls };
 }
 
@@ -352,6 +352,13 @@ describe("two connections, one client", () => {
 	// A pass-through that quietly does not pass through is invisible: the caller gets `undefined`
 	// where it expected an answer, and the feature is off with nothing said. Walked rather than
 	// listed, so a call added to the interface and forgotten here fails by name.
+	it("has neither id nor username where the account is unknown", async () => {
+		const { requester } = stub(() => json([]));
+		const api = createZoteroConnection("web", "zotero.org", requester, { path: async () => null, bytes: async () => null }, async () => null);
+		expect(await api.libraryId()).toBeNull();
+		expect(await api.username()).toBeNull();
+	});
+
 	it("hands every call through to the connection that answers it", async () => {
 		const asked: string[] = [];
 		const { requester } = stub((request) => {
@@ -361,9 +368,12 @@ describe("two connections, one client", () => {
 		const api = createZoteroConnection("local", "your Zotero desktop app", requester, {
 			path: async () => "/tmp/paper.pdf",
 			bytes: async () => new Uint8Array([1]),
-		}, async () => 1597773);
+		}, async () => ({ id: 1597773, username: null }));
 		const client = createZoteroClient({ local: api });
 		expect(await client?.libraryId()).toBe(1597773);
+		// The one call that is not handed through: the username is zotero.org's alone, and a client
+		// with only the desktop app simply has none rather than asking a connection that cannot know.
+		expect(await client?.username()).toBeNull();
 		expect(await client?.attachments()).toEqual([]);
 		expect(await client?.parentItem("ITEM", "user")).not.toBeNull();
 		expect(await client?.search("x")).toEqual([]);

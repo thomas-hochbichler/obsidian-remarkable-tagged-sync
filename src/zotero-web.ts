@@ -15,6 +15,7 @@ import {
 	createZoteroConnection,
 	libraryPath,
 	withZoteroTimeout,
+	type ZoteroAccount,
 	ZoteroError,
 	type ZoteroConnection,
 	type ZoteroLibrary,
@@ -61,7 +62,7 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = fet
 	 * Zotero API key is issued to an account, and `/keys/current` is where the account comes back.
 	 * Cached as the promise rather than the value, so twenty parallel calls make one request.
 	 */
-	let userId: Promise<number | null> | null = null;
+	let account: Promise<ZoteroAccount | null> | null = null;
 
 	/** When zotero.org last asked us to slow down. A `Backoff` applies to the *next* request, not this one. */
 	let quietUntil = 0;
@@ -107,23 +108,26 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = fet
 		...(write ? { "Content-Type": "application/json" } : {}),
 	});
 
-	const loadUserId = async (): Promise<number | null> => {
+	const loadAccount = async (): Promise<ZoteroAccount | null> => {
 		const response = await request(`${ZOTERO_API}/keys/current`, { headers: headers(false) }, ZOTERO_WEB_TIMEOUT_MS);
 		if (response.status === 401 || response.status === 403) throw new ZoteroError("unauthorized", "Zotero rejected the API key.");
 		if (!response.ok) throw new ZoteroError("server", `zotero.org answered ${response.status} when asked whose key this is.`);
-		const body = (await response.json()) as { userID?: unknown };
-		return typeof body.userID === "number" ? body.userID : null;
+		const body = (await response.json()) as { userID?: unknown; username?: unknown };
+		if (typeof body.userID !== "number") return null;
+		return { id: body.userID, username: typeof body.username === "string" ? body.username : null };
 	};
 
-	const libraryId = async (): Promise<number | null> => {
+	const whose = async (): Promise<ZoteroAccount | null> => {
 		// Re-asked after a failure rather than caching the rejection: a user who pastes a working key
 		// into the settings must not have to restart Obsidian for it to be tried.
-		userId ??= loadUserId().catch((error: unknown) => {
-			userId = null;
+		account ??= loadAccount().catch((error: unknown) => {
+			account = null;
 			throw error;
 		});
-		return await userId;
+		return await account;
 	};
+
+	const libraryId = async (): Promise<number | null> => (await whose())?.id ?? null;
 
 	/** `/users/<id>` for the personal library -- the key's own account -- or `/groups/<id>`, which needs no account at all. */
 	const prefix = async (library: ZoteroLibrary): Promise<string> => {
@@ -154,5 +158,5 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = fet
 			if (!response.ok) throw new ZoteroError("server", `zotero.org answered ${response.status} for that PDF.`);
 			return new Uint8Array(await response.arrayBuffer());
 		},
-	}, libraryId);
+	}, whose);
 }

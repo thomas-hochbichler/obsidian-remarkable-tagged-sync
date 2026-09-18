@@ -27,6 +27,7 @@ import {
 	createZoteroConnection,
 	libraryPath,
 	withZoteroTimeout,
+	type ZoteroAccount,
 	ZoteroError,
 	type ZoteroConnection,
 	type ZoteroRequest,
@@ -183,12 +184,13 @@ export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fet
 	 * is -- but every item it returns carries the real numeric id, which is what the note's web link
 	 * needs. An empty library answers nothing, and then the note simply has no web link (spec §4).
 	 */
-	const libraryId = async (): Promise<number | null> => {
+	const account = async (): Promise<ZoteroAccount | null> => {
 		const response = await requester({ library: "user", path: "/items/top?limit=1" });
 		if (!response.ok) return null;
 		const rows = (await response.json()) as { library?: { id?: unknown } }[];
 		const id = Array.isArray(rows) ? rows[0]?.library?.id : undefined;
-		return typeof id === "number" ? id : null;
+		// The username is zotero.org's; the desktop app never says it, and nothing here needs it.
+		return typeof id === "number" ? { id, username: null } : null;
 	};
 
 	return createZoteroConnection("local", "your Zotero desktop app", requester, {
@@ -209,5 +211,5 @@ export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fet
 		// The desktop hands out a path; reading it is the caller's, which keeps every filesystem call
 		// in one place instead of two (spec §2.4).
 		bytes: async () => null,
-	}, libraryId);
+	}, account);
 }

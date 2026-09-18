@@ -207,6 +207,12 @@ export class ZoteroError extends Error {
 	}
 }
 
+/** Whose library a connection opens: the id every web-library URL needs, the username only zotero.org has. */
+export interface ZoteroAccount {
+	readonly id: number;
+	readonly username: string | null;
+}
+
 /** One way into the library. Both connections implement it; {@link createZoteroClient} picks between them. */
 export interface ZoteroConnection {
 	readonly id: "local" | "web";
@@ -216,6 +222,8 @@ export interface ZoteroConnection {
 	probe(): Promise<boolean>;
 	/** The numeric user id, for the web-library URL (spec §4). `null` when this connection cannot say. */
 	libraryId(): Promise<number | null>;
+	/** The account's zotero.org username, which its web reader URLs hang under. Only zotero.org knows it. */
+	username(): Promise<string | null>;
 	/** The group libraries this connection can see (ticket 26). Membership only: whether it may *write* into one is answered by the write. */
 	groups(): Promise<ZoteroGroup[]>;
 	/** Every PDF attachment in one library. The matcher's whole input (§2.3), library by library. */
@@ -546,7 +554,7 @@ export function createZoteroConnection(
 	label: string,
 	request: ZoteroRequester,
 	files: ZoteroFiles,
-	libraryIdOf: () => Promise<number | null>,
+	accountOf: () => Promise<ZoteroAccount | null>,
 ): ZoteroConnection {
 	const itemData = async (key: string, library: ZoteroLibrary): Promise<Json | null> => {
 		try {
@@ -571,7 +579,8 @@ export function createZoteroConnection(
 				return false;
 			}
 		},
-		libraryId: libraryIdOf,
+		libraryId: async () => (await accountOf())?.id ?? null,
+		username: async () => (await accountOf())?.username ?? null,
 		async groups() {
 			// Hangs under the *user* prefix on both APIs -- `/users/0/groups` locally, `/users/<id>/groups`
 			// on the web -- and lists membership, not write access: the desktop app answers every group
@@ -739,6 +748,8 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 			return { local: localUp, web: webUp, summary: statusSummary(localUp, webUp) };
 		},
 		libraryId: () => call((connection) => connection.libraryId()),
+		// Not a `call`: the desktop app answers `null` rather than failing, and there is no falling through a `null`.
+		username: async () => (await web?.username()) ?? null,
 		groups: () => call((connection) => connection.groups()),
 		attachments: () => listEach((connection, library) => connection.attachments(library)),
 		attachment: (key, library) => call((connection) => connection.attachment(key, library)),

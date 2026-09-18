@@ -12,6 +12,15 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Zotero.** A vault that talks to zotero.org only (no desktop connection) now gets an *in
+  Zotero* link per quote that opens in the browser, in zotero.org's own reader — a `zotero://`
+  link on such a machine opened nothing but Windows' "Get an app to open this 'zotero' link"
+  dialog. The web reader opens on the first page with the annotations in its sidebar; it cannot be
+  sent to a page or an annotation. With the desktop connection on, the link still opens the
+  annotation itself in the Zotero app.
+
 ### Added
 
 - **Zotero.** Send a PDF from your Zotero library to the tablet (untagged — you give it your sync

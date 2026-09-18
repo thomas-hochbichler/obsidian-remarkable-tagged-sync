@@ -4,7 +4,7 @@ import { applyFrontmatter } from "./frontmatter";
 import { buildNoteContent, type NoteFields } from "./note-builder";
 import type { ZoteroItem } from "./zotero-client";
 import type { ZoteroLink } from "./zotero-links";
-import { findLiteratureNote, formatLocalDate, itemLabel, openPdfUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo } from "./zotero-note";
+import { findLiteratureNote, formatLocalDate, itemLabel, openPdfUrl, webReaderUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo } from "./zotero-note";
 
 const ITEM: ZoteroItem = { key: "KX7Q2R4M", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
 
@@ -158,6 +158,20 @@ describe("the link a quote carries once it is in Zotero", () => {
 		});
 	});
 
+	// A vault whose one reader is zotero.org's: on Windows a `zotero://` link is a dialog offering the
+	// Microsoft Store. The web reader's URL takes no page and no annotation (tried 2026-09-18), and
+	// the personal library hangs under the username -- `/users/<id>/…/reader` is a 404.
+	it("opens zotero.org's reader instead where the vault has no desktop app", () => {
+		const web = { username: "someone", itemKey: "KX7Q2R4M" };
+		expect(zoteroDigestLinks(link(), [page({ highlights: [highlight("hl-9f21c4")] })], web)).toEqual({
+			"hl-9f21c4": "https://www.zotero.org/someone/items/KX7Q2R4M/attachment/A9B3C1DE/reader",
+		});
+	});
+
+	it("opens a standalone PDF as its own item in the web reader", () => {
+		expect(webReaderUrl({ username: "someone", itemKey: "A9B3C1DE" }, "A9B3C1DE", "user")).toBe("https://www.zotero.org/someone/items/A9B3C1DE/reader");
+	});
+
 	it("is not offered for a highlight that has not been written back", () => {
 		expect(zoteroDigestLinks(link({ annotations: {} }), [page({ highlights: [highlight("hl-9f21c4")] })])).toEqual({});
 	});
@@ -295,5 +309,11 @@ describe("an item in a group library (ticket 26)", () => {
 
 	it("opens the reader on the group's copy of the PDF", () => {
 		expect(openPdfUrl("A9B3C1DE", 1, "Q1H4T7K2", { group: 4711 })).toBe("zotero://open-pdf/groups/4711/items/A9B3C1DE?page=2&annotation=Q1H4T7K2");
+	});
+
+	it("opens the web reader on the group's copy of the PDF", () => {
+		expect(webReaderUrl({ username: "someone", itemKey: "KX7Q2R4M" }, "A9B3C1DE", { group: 4711 })).toBe(
+			"https://www.zotero.org/groups/4711/items/KX7Q2R4M/attachment/A9B3C1DE/reader",
+		);
 	});
 });

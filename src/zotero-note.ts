@@ -175,6 +175,29 @@ export function openPdfUrl(attachmentKey: string, pageIndex: number, annotationK
 	return `zotero://open-pdf/${librarySegment(library)}/items/${attachmentKey}?page=${pageIndex + 1}&annotation=${annotationKey}`;
 }
 
+/** The web reader a vault without the desktop app opens its quotes in: whose library, and which item the PDF hangs under. */
+export interface WebReader {
+	readonly username: string;
+	/** The parent item's key; a standalone PDF is its own item, and then this is the attachment key. */
+	readonly itemKey: string;
+}
+
+/**
+ * Where zotero.org's reader opens the attachment. For a vault that has no desktop app: a
+ * `zotero://` link there is "Get an app to open this 'zotero' link" on Windows and nothing on
+ * the web, and this is the one reader such a user has.
+ *
+ * No page and no annotation: the web reader's URL takes neither (`?page=` is silently dropped,
+ * tried 2026-09-18), so it opens on the first sheet with every annotation in its sidebar. The
+ * personal library hangs under the username -- `/users/<id>/…/reader` is a 404, unlike the item
+ * page -- so this link needs a name the callout's web link does not.
+ */
+export function webReaderUrl(web: WebReader, attachmentKey: string, library: ZoteroLibrary): string {
+	const owner = library === "user" ? web.username : `groups/${library.group}`;
+	const item = web.itemKey === attachmentKey ? `items/${attachmentKey}` : `items/${web.itemKey}/attachment/${attachmentKey}`;
+	return `https://www.zotero.org/${owner}/${item}/reader`;
+}
+
 /**
  * The `in Zotero` link of every digest entry that has one, for {@link renderDigest}.
  *
@@ -186,7 +209,7 @@ export function openPdfUrl(attachmentKey: string, pageIndex: number, annotationK
  * An annotation the user deleted in Zotero is left out: we remember it as deleted and never create
  * it again (§3.3), so the link would open a reader on nothing.
  */
-export function zoteroDigestLinks(link: ZoteroLink, pages: readonly DigestPage[]): ZoteroDigestLinks {
+export function zoteroDigestLinks(link: ZoteroLink, pages: readonly DigestPage[], web: WebReader | null = null): ZoteroDigestLinks {
 	const links: Record<string, string> = {};
 	for (const page of pages) {
 		const source = page.source;
@@ -194,7 +217,7 @@ export function zoteroDigestLinks(link: ZoteroLink, pages: readonly DigestPage[]
 		for (const highlight of page.highlights) {
 			const annotation = link.annotations[highlight.id];
 			if (annotation === undefined || annotation.deleted === true) continue;
-			links[highlight.id] = openPdfUrl(link.attachmentKey, source.index, annotation.key, link.library);
+			links[highlight.id] = web === null ? openPdfUrl(link.attachmentKey, source.index, annotation.key, link.library) : webReaderUrl(web, link.attachmentKey, link.library);
 		}
 	}
 	return links;

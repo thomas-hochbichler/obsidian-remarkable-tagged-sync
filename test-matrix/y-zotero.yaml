@@ -241,6 +241,13 @@
       file: src/zotero-client.test.ts
       test: "two connections, one client > sends a trash to the connection whose version it is holding, and nowhere else"
 
+    - id: Y4.10
+      scenario: A connection whose account cannot be told (an empty desktop library, a key zotero.org would not name)
+      expect: '`null` for both the id and the username. The note then has no web link and the quotes keep `zotero://`; nothing is guessed'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > has neither id nor username where the account is unknown"
+
     - id: Y4.7
       scenario: The settings status line
       expect: Connected via desktop / via web / via desktop and web / not connected, in the spec's own words (§2.1); with both up the line adds that the desktop app is asked first and zotero.org answers when it is closed
@@ -383,6 +390,27 @@
       layer: unit
       file: src/zotero-web.test.ts
       test: "the PDF itself > knows no path on disk, which is what the desktop connection is for"
+
+    - id: Y6.13
+      scenario: Asked whose name the key carries
+      expect: The `username` of `/keys/current`, from the same one request as the id. The web reader hangs the personal library under it, and no other connection knows it
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > knows the account's username, which zotero.org's reader URLs hang under"
+
+    - id: Y6.14
+      scenario: A key whose `/keys/current` answer carries no username
+      expect: '`null`, and the quotes keep their `zotero://` link rather than a URL with nothing where the name goes'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > has no username for a key whose account does not say one"
+
+    - id: Y6.15
+      scenario: A `/keys/current` answer with no `userID` at all
+      expect: '`null` -- no account, no id, and the personal library cannot be addressed. Nothing is guessed from the key'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > names no library for a key whose account has no id"
 
 - feature: Y7
   name: The Zotero desktop app
@@ -1784,6 +1812,20 @@
       file: src/digest-builder.test.ts
       test: "renderDigest — the link into Zotero > leaves every entry as it was for a sync with nothing written back"
 
+    - id: Y17.11
+      scenario: The same highlight, in a vault whose one reader is zotero.org's (no desktop app; e-2-e 2026-09-18, Windows)
+      expect: '`https://www.zotero.org/<username>/items/<itemKey>/attachment/<attKey>/reader`. A `zotero://` link there is a dialog offering the Microsoft Store. No page, no annotation: the web reader''s URL takes neither, and `/users/<id>/…/reader` is a 404 where the item page is not'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > opens zotero.org's reader instead where the vault has no desktop app"
+
+    - id: Y17.12
+      scenario: A standalone PDF, in the web reader
+      expect: '`items/<attKey>/reader` -- the PDF is its own item, and there is no parent to hang it under'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the link a quote carries once it is in Zotero > opens a standalone PDF as its own item in the web reader"
+
 - feature: Y18
   name: The one hash Zotero speaks
   code: src/file-md5.ts
@@ -2583,6 +2625,13 @@
       file: src/zotero-sync.test.ts
       test: "in a vault that has the free half > names the paper, writes nothing, and says where the highlights are"
 
+    - id: Y25.25
+      scenario: The written document's quotes, in a vault whose one reader is zotero.org's
+      expect: One web-reader link per written highlight, on the parent item and the attachment, in place of `zotero://open-pdf`
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > sends the quotes to zotero.org's reader where no desktop app is there to open them"
+
     - id: Y25.18
       scenario: Zotero refuses some of a batch
       expect: '"N of M highlights written, retry on next sync" in both the note and the run. Add-and-refresh means nothing needs rolling back'
@@ -3111,6 +3160,13 @@
       file: src/zotero-plugin.test.ts
       test: "a paper that is already on the tablet (§2.5) > asks as well when the tablet's folder holds the name and this vault has no link to it"
 
+    - id: Y29.40
+      scenario: Which reader the quotes link into, by this vault's connections (2026-09-18)
+      expect: 'zotero.org''s reader with the web connection alone; `zotero://open-pdf` once the desktop connection is on. The gate is the connection as `createZoteroClientFor` builds it -- switch and licence together'
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "the run's Zotero half > sends the quotes to zotero.org's reader only where no desktop app is connected"
+
     - id: Y29.34
       scenario: A web connection that cannot name the library
       expect: No web link, rather than a URL with a hole in it
@@ -3623,6 +3679,13 @@
       layer: unit
       file: src/zotero-sync.test.ts
       test: "group libraries (ticket 26) > names the API key when zotero.org refused the write"
+
+    - id: Y33.53
+      scenario: The per-quote link for a group's PDF, in a vault with only the web reader
+      expect: '`https://www.zotero.org/groups/<id>/items/<itemKey>/attachment/<attKey>/reader` -- the group id where the personal library has the username. Unverified against zotero.org (2026-09-18); the personal form is'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "an item in a group library (ticket 26) > opens the web reader on the group's copy of the PDF"
 
     - id: Y33.26
       scenario: "A link into a group the vault has since switched off"

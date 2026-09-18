@@ -56,6 +56,21 @@ describe("talking to zotero.org", () => {
 		expect(calls.filter((call) => call.url.endsWith("/keys/current"))).toHaveLength(1);
 	});
 
+	it("knows the account's username, which zotero.org's reader URLs hang under", async () => {
+		const { impl } = stubFetch(whoami());
+		expect(await createZoteroWebConnection(KEY, impl, sleep).username()).toBe("someone");
+	});
+
+	it("has no username for a key whose account does not say one", async () => {
+		const { impl } = stubFetch(json({ userID: 1597773 }));
+		expect(await createZoteroWebConnection(KEY, impl, sleep).username()).toBeNull();
+	});
+
+	it("names no library for a key whose account has no id", async () => {
+		const { impl } = stubFetch(json({}));
+		expect(await createZoteroWebConnection(KEY, impl, sleep).libraryId()).toBeNull();
+	});
+
 	it("sends the key and pins the API version on every request", async () => {
 		const { impl, calls } = stubFetch(whoami(), attachments());
 		await createZoteroWebConnection(KEY, impl, sleep).attachments("user");

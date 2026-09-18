@@ -97,6 +97,13 @@ export function zoteroPassFor(host: ZoteroHost, interactive: boolean): ZoteroPas
 			const id = await client.libraryId();
 			return id === null ? null : String(id);
 		},
+		// The quotes link into zotero.org's reader only where that is the one reader this vault has:
+		// with the desktop connection on (and licensed, which is what makes it a connection at all --
+		// the same gate as `createZoteroClientFor`), a `zotero://` link opens the annotation itself.
+		webReaderUser: async () => {
+			if (host.data.zotero.useLocal && zoteroProAllowed(host.entitlement())) return null;
+			return await client.username();
+		},
 		// ⚠️ Not in a background run. A picker nobody is there to answer would either hang the sync or
 		// have to be answered for them, and "ask once" (§2.3) means the one asking is spent for good.
 		ask: interactive ? (question) => askWhichAttachment(host.app, question) : undefined,

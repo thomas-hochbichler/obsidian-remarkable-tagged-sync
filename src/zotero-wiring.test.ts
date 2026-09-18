@@ -30,6 +30,7 @@ function fakeClient(): ZoteroClient {
 		libraryName: () => "your library",
 		groups: async () => [],
 		libraryId: async () => null,
+		username: async () => null,
 		attachments: async () => [ATTACHMENT],
 		attachment: async () => ATTACHMENT,
 		parentItem: async () => ITEM,

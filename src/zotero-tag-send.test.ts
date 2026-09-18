@@ -27,6 +27,7 @@ function fakeClient(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 		libraryName: () => "your library",
 		groups: async () => [],
 		libraryId: async () => 1234567,
+		username: async () => null,
 		attachments: async () => [attachment()],
 		attachment: async () => attachment(),
 		parentItem: async () => PAPER,
