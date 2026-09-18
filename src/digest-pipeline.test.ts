@@ -237,9 +237,8 @@ describe("buildDigest with the fixture page's text layer", () => {
 			'on <mark class="tagged-sync-hl-magenta">a shelf of rock that the sea had spent a long time deciding not to take.</mark>',
 		);
 		expect(result.markdown).toContain('somewhere where the <mark class="tagged-sync-hl-yellow">readings matter more than the reader.</mark>');
-		// A run that covers its whole sentence marks nothing: the quote IS the run.
-		expect(result.markdown).toContain("He missed eleven readings in nineteen years.");
-		expect(result.markdown).not.toContain(">He missed");
+		// A run that covers its whole sentence is marked like any other (since 2026-09-18).
+		expect(result.markdown).toContain(">He missed eleven readings in nineteen years.</mark>");
 		expect(result.warnings).toEqual([]);
 	});
 
@@ -457,7 +456,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### Zweiter Abschnitt\n\nEin Satz auf dieser Seite. · [[attachments/doc.pdf#page=2|p. 2]]");
+		expect(result.markdown).toContain("### Zweiter Abschnitt\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	it("orders a heading without a y at the top of its page", async () => {
@@ -471,7 +470,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### Ganze Seite\n\nEin Satz auf dieser Seite. · [[attachments/doc.pdf#page=2|p. 2]]");
+		expect(result.markdown).toContain("### Ganze Seite\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	/**

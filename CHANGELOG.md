@@ -51,6 +51,9 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A highlight that started at a paragraph's first word printed without its colour.** A quote
+  three-quarters marked was printed plain, for contrast. With coloured marks that dropped the one
+  thing the colour said, so the rule is gone: what you marked is marked, whole quote or not.
 - **Two-column papers: the abstract's highlight printed after the introduction's.** Digest entries
   were ordered by height on the page, and on a two-column page the right column's first lines sit
   higher than the left column's last. Entries now follow the page's reading order, the same order

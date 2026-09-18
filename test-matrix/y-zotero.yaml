@@ -3410,11 +3410,25 @@
       test: "renderDigest — highlight quotes > escapes the text inside a coloured mark and leaves the mark itself alone"
 
     - id: Y32.4
-      scenario: The runs cover the whole quote (the 75 % rule)
-      expect: 'No mark and so no colour: the rule is about the marks, and a quote that is all mark is the highlight. Colour would need a mark to sit on, and a striped slab in green is still a striped slab'
+      scenario: The runs cover the whole quote
+      expect: 'The whole quote in the coloured mark. Until 2026-09-18 a quote three-quarters marked was printed plain, for contrast -- and a highlight that started at a paragraph''s first word lost its colour with the marks, which the live test on the ACON paper showed as an orange highlight printed black'
       layer: unit
       file: src/digest-builder.test.ts
-      test: "renderDigest — highlight quotes > drops the colour with the marks when the runs cover the whole quote"
+      test: "renderDigest — highlight quotes > keeps the colour on a quote the runs cover whole"
+
+    - id: Y32.5
+      scenario: A colourless quote almost entirely marked (21 of 26 characters)
+      expect: 'Marked like any other: the same rule, dropped for `==` as for the coloured mark'
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — highlight quotes > keeps the marks on a quote that is almost entirely marked"
+
+    - id: Y32.6
+      scenario: The same run recorded three times over, overlapping, as the device does for an adjusted selection
+      expect: 'One `==...==` range: nested or crossing markers are not Markdown'
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest — highlight quotes > resolves overlapping and repeated runs to one range"
 
 - feature: Y33
   name: Group libraries

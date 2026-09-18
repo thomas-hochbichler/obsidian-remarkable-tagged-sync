@@ -416,10 +416,11 @@ describe("renderDigest — highlight quotes", () => {
 	 * striped slab -- which is what opened this map. The threshold also removes every fragmented mark
 	 * the fixture has, since each of those sits at 98 % or above.
 	 */
-	it("drops the marks from a quote that is almost entirely marked", () => {
-		// 21 of 26 characters, i.e. 81 %: what is left unmarked is a lead-in, not a distinction.
+	// Until 2026-09-18 a quote three-quarters marked was printed plain, for contrast. A highlight
+	// starting at a paragraph's first word then lost its marks -- and with them its colour.
+	it("keeps the marks on a quote that is almost entirely marked", () => {
 		expect(quoteBody({ sentence: "Also ist das hier wichtig.", marked: ["ist das hier wichtig."] })).toBe(
-			"Also ist das hier wichtig.",
+			"Also ==ist das hier wichtig.==",
 		);
 	});
 
@@ -429,10 +430,9 @@ describe("renderDigest — highlight quotes", () => {
 		);
 	});
 
-	it("counts the coverage over the resolved ranges, so an adjusted selection cannot over-count", () => {
-		// The device records every version of a selection, so the same run arrives repeatedly. Summed
-		// raw these three cover the sentence more than once and the mark would be dropped; resolved
-		// they cover 13 of 23 characters.
+	it("resolves overlapping and repeated runs to one range", () => {
+		// The device records every version of a selection, so the same run arrives repeatedly; nested
+		// or crossing `==` markers are not valid Markdown.
 		expect(quoteBody({ sentence: "Ein Wort und noch mehr.", marked: ["Wort und", "Wort und", "und noch"] })).toBe(
 			"Ein ==Wort und noch== mehr.",
 		);
@@ -557,8 +557,10 @@ describe("renderDigest — highlight quotes", () => {
 
 	// The coverage rule is about the marks, not the colour: a quote that is all mark carries none,
 	// and so no colour either -- the sentence is the highlight.
-	it("drops the colour with the marks when the runs cover the whole quote", () => {
-		expect(quoteBody({ sentence: "Alles markiert hier.", marked: ["Alles markiert hier."], color: { r: 172, g: 255, b: 133 } })).toBe("Alles markiert hier.");
+	it("keeps the colour on a quote the runs cover whole", () => {
+		expect(quoteBody({ sentence: "Alles markiert hier.", marked: ["Alles markiert hier."], color: { r: 172, g: 255, b: 133 } })).toBe(
+			'<mark class="tagged-sync-hl-green">Alles markiert hier.</mark>',
+		);
 	});
 });
 

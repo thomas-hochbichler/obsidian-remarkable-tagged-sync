@@ -227,18 +227,6 @@ function anchorTitle(anchor: DigestAnchor): string {
 }
 
 /**
- * The share of a quote that may be marked before the marks are dropped altogether.
- *
- * A mark only says something by contrast: where it covers the whole entry there is nothing left for
- * it to single out, and Obsidian paints one mark per wrapped line, so a long one reads as a striped
- * slab rather than a highlight. Measured over the fixture's 77 marked lines, 31 sit at 75 % or above
- * -- and every one of the 3 fragmented lines sits at 98 % or above, so the threshold removes the
- * fragments with them. Below it the mark is the only carrier of which words the reader actually drew
- * over, since the sentence around them is context the digest adds on purpose (F3).
- */
-const FULLY_MARKED_COVERAGE = 0.75;
-
-/**
  * The class a coloured mark carries: the Zotero colour's name, painted by the plugin's own
  * `styles.css`, so the reader needs no snippet and a theme can still override it.
  */
@@ -246,8 +234,10 @@ const MARK_CLASS_PREFIX = "tagged-sync-hl-";
 
 /**
  * Wraps every run at its first occurrence -- in `==...==`, or in a `<mark>` named for its colour when
- * the marker had one -- or leaves the sentence plain when the runs cover {@link FULLY_MARKED_COVERAGE}
- * of it. Escapes the text on the way out, run by run: the runs are matched against the raw sentence,
+ * the marker had one. A run covering the whole quote is marked like any other (decided 2026-09-18:
+ * until then a quote three-quarters marked was printed plain, for contrast, and a highlight that
+ * started at a paragraph's first word lost its colour with the marks). Escapes the text on the way
+ * out, run by run: the runs are matched against the raw sentence,
  * and the markup is the digest's own rather than the document's, so `escapeText` cannot run over the
  * whole result -- it would turn the `<mark>` into text.
  *
@@ -275,11 +265,6 @@ function markSentence(sentence: string, marked: string[], color: DigestHighlight
 		if (last && sentence.slice(last.end, start).trim() === "") last.end = Math.max(last.end, start + length);
 		else ranges.push({ start, end: start + length });
 	}
-
-	// Over the resolved ranges, not over `marked`, whose runs overlap and repeat -- counting those
-	// would put the coverage of an adjusted selection over 100 %.
-	const covered = ranges.reduce((sum, range) => sum + (range.end - range.start), 0);
-	if (covered >= FULLY_MARKED_COVERAGE * sentence.length) return escapeText(sentence);
 
 	// Markdown's own mark where the colour is not known; HTML only where there is a colour to name,
 	// so a pen mark and an older device read exactly as before.
