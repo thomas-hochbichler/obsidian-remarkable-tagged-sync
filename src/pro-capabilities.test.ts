@@ -148,7 +148,7 @@ describe("with a licence that is working", () => {
 // state that is genuinely due a re-check, so the dead call actually happens.
 describe("when the licence server cannot be reached", () => {
 	const DUE_A_RECHECK: LicenceState = { ...BOUGHT, validatedAt: daysBefore(CHECK_INTERVAL_DAYS + 1) };
-	const CONTEXT = { label: "My Vault", now: NOW, fallbackBackend: "vision", transcriptionGated: true };
+	const CONTEXT = { label: "My Vault", now: NOW, fallbackBackend: "vision" };
 
 	const deadApi = (fail: () => never): LicenceApi => ({
 		activate: async () => fail(),

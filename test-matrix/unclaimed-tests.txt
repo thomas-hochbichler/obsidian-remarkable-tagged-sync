@@ -211,6 +211,7 @@ src/licence-check.test.ts :: activateKey > never loses a key pasted with no conn
 src/licence-check.test.ts :: activateKey > reports a full licence as full
 src/licence-check.test.ts :: activateKey > reports an unknown key without recording a revocation
 src/licence-check.test.ts :: checkLicence > activates a key that was saved while offline
+src/licence-check.test.ts :: checkLicence > announces an ended trial once, without any call at all
 src/licence-check.test.ts :: checkLicence > arms the notice again for a licence that comes back
 src/licence-check.test.ts :: checkLicence > asks nothing of someone who never bought
 src/licence-check.test.ts :: checkLicence > asks nothing while the last verdict is still fresh
@@ -244,6 +245,7 @@ src/licence-messages.test.ts :: licenceStatusText > says which of the two is unl
 src/licence-messages.test.ts :: licenceStatusText > tells a refunded user what still works, in the same breath
 src/licence-messages.test.ts :: licenceStatusText > tells an ended trial that nothing was touched
 src/licence-messages.test.ts :: the messages that appear once > is honest when there is nothing to fall back to
+src/licence-messages.test.ts :: the messages that appear once > names the backend transcription fell back to
 src/licence-messages.test.ts :: the shipped text this edits > keeps the tag cap's promise that an existing mapping stays
 src/licence-messages.test.ts :: the shipped text this edits > states the money-back promise and the device count together
 src/licence-state.test.ts :: applyOutcome > changes nothing at all when there was no answer

@@ -99,19 +99,12 @@ export function licenceStatusText(entitlement: Entitlement, state: LicenceState)
  * plugin" failure. A reminder on every sync was rejected — it punishes someone who got their money
  * back, on every single run.
  */
-export function licenceEndedNotice(reason: "revoked" | "trial-ended", fallbackBackend: string | null): string {
+export function licenceEndedNotice(reason: "revoked" | "trial-ended", fallbackBackend: string): string {
 	const lead =
 		reason === "revoked"
 			? "Your Tagged Sync Pro licence was withdrawn after the refund."
 			: "Your Tagged Sync Pro trial has ended.";
-	// `null` is a backend the licence never gated: transcription is as it was, and what the ending
-	// took is the rest of Pro -- which the user only finds out here, or by a highlight that never
-	// reaches Zotero.
-	const tail =
-		fallbackBackend === null
-			? "Highlights stay in the vault and the desktop app is off until you buy a key — Settings → Tagged Sync Pro."
-			: `Transcription has fallen back to ${fallbackBackend}.`;
-	return `${lead} ${tail}`;
+	return `${lead} Transcription has fallen back to ${fallbackBackend}.`;
 }
 
 /** A key that Polar does not know, reported at the moment it is pasted rather than stored. */

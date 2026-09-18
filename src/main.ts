@@ -15,7 +15,7 @@ import { confirmDialog } from "./confirm-modal";
 import { isIntervalSyncDue } from "./auto-sync";
 import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-check";
 import { createPolarLicenceApi } from "./licence-client";
-import { type Entitlement, entitlementOf, nextLicenceCall } from "./licence-state";
+import { type Entitlement, entitlementOf } from "./licence-state";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import { remapRows, rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
@@ -218,12 +218,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * A user on Apple Vision or a local server causes no call, whatever they own.
 	 */
 	private async refreshLicenceIfGated(silent: boolean): Promise<void> {
-		if (this.backendRequiresLicence() || this.licenceCheckIsLocal()) await this.refreshLicence(silent);
-	}
-
-	/** See `RunConditions.licenceCheckIsLocal`: the check makes no call, so it is free to ask. */
-	private licenceCheckIsLocal(): boolean {
-		return nextLicenceCall(this.data.licence, new Date()) === "none";
+		if (this.backendRequiresLicence()) await this.refreshLicence(silent);
 	}
 
 	private backendRequiresLicence(): boolean {
@@ -309,7 +304,6 @@ export default class TaggedSyncPlugin extends Plugin {
 			connectNotice: status.connectNotice,
 			running: this.syncing,
 			backendRequiresLicence: this.backendRequiresLicence(),
-			licenceCheckIsLocal: this.licenceCheckIsLocal(),
 		};
 	}
 
@@ -322,7 +316,6 @@ export default class TaggedSyncPlugin extends Plugin {
 			label: this.app.vault.getName(),
 			now: new Date(),
 			fallbackBackend: fallback === "off" ? null : (ocrBackendEntry(fallback)?.label ?? null),
-			transcriptionGated: this.backendRequiresLicence(),
 		};
 	}
 

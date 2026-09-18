@@ -182,13 +182,6 @@
       file: src/sync-preflight.test.ts
       test: "what has to be true before a sync starts > causes no licence call at all on a backend that needs none"
 
-    - id: I7.8
-      scenario: The trial ran out, and the vault transcribes with a backend that never needed the licence
-      expect: "The first sync after the end says so, in words about what the ending took -- highlights stay in the vault, desktop app off -- and the second sync says nothing; Polar is never called for it (e2e 2026-09-18)"
-      layer: vault
-      file: src/sync-preflight.test.ts
-      test: "what has to be true before a sync starts > announces an ended trial on the first sync after it, once, on a backend that needed no licence"
-
     - id: I7.3
       scenario: A re-transcribe is started on a gated backend
       expect: The same re-read. Re-transcribe spends more than a sync does, so it cannot be the cheaper path to a gated backend
@@ -216,13 +209,6 @@
       layer: unit
       file: src/sync-guards.test.ts
       test: "preflightRun > asks for a licence re-read on a backend that needs one"
-
-    - id: I7.7
-      scenario: The pre-flight is asked while the licence check would make no call -- no key, a withdrawn one, or nothing due
-      expect: It asks for the re-read. Free of network, it costs the free user nothing and is the one place an ended trial is announced; a vault on an ungated backend heard nothing before (e2e 2026-09-18)
-      layer: unit
-      file: src/sync-guards.test.ts
-      test: "preflightRun > asks for the re-read whenever it would make no call"
 
 - feature: C24
   name: A refusal names the source the vault actually syncs from
