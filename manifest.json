@@ -3,7 +3,7 @@
 	"name": "Tagged Sync for reMarkable",
 	"version": "1.7.0",
 	"minAppVersion": "1.5.7",
-	"description": "Sync tagged reMarkable notebooks, PDFs and EPUBs as searchable Markdown, routed by tag. Send Zotero papers to the tablet; highlights come back as Zotero annotations. Handwriting transcribed locally, no subscription. Unofficial; not affiliated with reMarkable AS.",
+	"description": "Sync reMarkable notebooks, PDFs and EPUBs as searchable Markdown, routed by tag. Send Zotero papers to the tablet, get the highlights back into Zotero. Handwriting transcribed locally, no subscription. Unofficial; not affiliated with reMarkable AS.",
 	"author": "Thomas Hochbichler",
 	"authorUrl": "https://taggedsync.com",
 	"isDesktopOnly": true
