@@ -10,6 +10,8 @@ time. At release time that heading is renamed to `## [<version>] - <date>`, and 
 workflow publishes the section as the GitHub release body. See
 [docs/RELEASING.md](docs/RELEASING.md).
 
+## [Unreleased]
+
 ## [1.8.0] - 2026-09-18
 
 ### Added
