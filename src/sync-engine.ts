@@ -1178,6 +1178,10 @@ async function writeUnit(
 	const empty = await emptyBlockReport(deps.noteStore, params, fields, ocr.status, ocr.pages === null && ocr.text === "");
 	if (empty?.refuse === true) return { written: null, emptyBlock: empty.line };
 
+	// Asked before the write puts the note back: a row whose note is not on disk is one the user
+	// deleted by hand (the self-heal is what brought the document here), and write-back reads that
+	// as "start over" for what they deleted in Zotero too -- see `WriteBackInput.noteWasDeleted`.
+	const noteWasDeleted = params.previous !== undefined && (await deps.noteStore.read(params.previous.notePath)) === null;
 	const notePath = await write(fields);
 
 	// ⚠️ Everything Zotero happens **after** that line and nowhere else (spec §3.4.1). The note above
@@ -1188,7 +1192,7 @@ async function writeUnit(
 	let withZotero = fields;
 	if (params.zotero !== undefined && deps.zotero !== undefined) {
 		const unit = params.zotero;
-		zotero = await deps.zotero.run({ docId: params.docId, visibleName: params.source, notePath, pages: unit.pages, covered: unit.covered, md5: () => unit.md5() });
+		zotero = await deps.zotero.run({ docId: params.docId, visibleName: params.source, notePath, pages: unit.pages, covered: unit.covered, noteWasDeleted, md5: () => unit.md5() });
 		// Rewritten only where there is something to add. A vault with no Zotero, a document that is
 		// not linked and a licence that lapsed all arrive here with nothing, and the note keeps the
 		// one write it already had.

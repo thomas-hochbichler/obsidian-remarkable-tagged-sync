@@ -93,6 +93,15 @@ export interface WriteBackInput {
 	readonly link: ZoteroLink;
 	/** Our own annotations as they stand in Zotero now, read by the ownership tag. */
 	readonly existing: ZoteroAnnotation[];
+	/**
+	 * The vault note was deleted by hand since the last sync, and this write recreates it.
+	 *
+	 * Deleting the note is the user's "start over", and it is the one gesture that also un-remembers
+	 * a deletion in Zotero: an annotation of ours that is not in Zotero any more is created again
+	 * rather than stored as deleted (§3.3). Everything still in Zotero keeps its record, and with it
+	 * every field the user took over -- so a note deleted to regenerate it overwrites nothing there.
+	 */
+	readonly noteWasDeleted?: boolean;
 }
 
 /** One digest entry, reduced to what write-back cares about. */
@@ -194,7 +203,7 @@ function writtenPageIndex(stored: LinkedAnnotation): number | null {
 	}
 }
 
-export function planWriteBack({ pages, covered, attachmentKey, link, existing }: WriteBackInput): WriteBackPlan {
+export function planWriteBack({ pages, covered, attachmentKey, link, existing, noteWasDeleted = false }: WriteBackInput): WriteBackPlan {
 	const { entries, present, skipped } = entriesOf(pages, attachmentKey);
 	const byKey = new Map(existing.map((annotation) => [annotation.key, annotation]));
 	// Two entries must never adopt the same annotation: the second would patch what the first just
@@ -242,14 +251,15 @@ export function planWriteBack({ pages, covered, attachmentKey, link, existing }:
 	for (const entry of entries) {
 		const stored = link.annotations[entry.blockId];
 		// The user deleted it in Zotero. It is never recreated, and the key is kept so that a later
-		// sync can tell this from "never written" -- which is the whole difference (§3.3).
-		if (stored?.deleted) {
+		// sync can tell this from "never written" -- which is the whole difference (§3.3). Unless they
+		// deleted the note as well: then it is written like a highlight Zotero has never seen.
+		if (stored?.deleted && !noteWasDeleted) {
 			vanished.push({ blockId: entry.blockId, annotation: stored });
 			continue;
 		}
 
-		const known = stored === undefined ? adopt(entry, existing, taken) : (byKey.get(stored.key) ?? null);
-		if (stored !== undefined && known === null) {
+		const known = stored === undefined || stored.deleted ? adopt(entry, existing, taken) : (byKey.get(stored.key) ?? null);
+		if (stored !== undefined && known === null && !noteWasDeleted) {
 			// We wrote it, it is not there any more, and only the user can have removed it.
 			vanished.push({ blockId: entry.blockId, annotation: { key: stored.key, written: stored.written, deleted: true } });
 			continue;

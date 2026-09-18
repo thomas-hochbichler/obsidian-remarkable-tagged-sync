@@ -74,13 +74,14 @@ const WRITTEN = {
 	position: '{"pageIndex":1,"rects":[[72,700,300,712]]}',
 };
 
-const plan = (overrides: { pages?: DigestPage[]; covered?: number[]; link?: ZoteroLink; existing?: ZoteroAnnotation[] } = {}): WriteBackPlan =>
+const plan = (overrides: { pages?: DigestPage[]; covered?: number[]; link?: ZoteroLink; existing?: ZoteroAnnotation[]; noteWasDeleted?: boolean } = {}): WriteBackPlan =>
 	planWriteBack({
 		pages: overrides.pages ?? [page()],
 		covered: overrides.covered ?? [SOURCE.index],
 		attachmentKey: ATTACHMENT,
 		link: overrides.link ?? link(),
 		existing: overrides.existing ?? [],
+		noteWasDeleted: overrides.noteWasDeleted,
 	});
 
 describe("a highlight Zotero has never seen", () => {
@@ -163,6 +164,33 @@ describe("a highlight that is already in Zotero", () => {
 
 		expect(planned.creates).toEqual([]);
 		expect(planned.patches).toEqual([]);
+	});
+
+	// The one gesture that un-remembers a deletion: deleting the vault note as well. That is "start
+	// over", and the highlight is written like one Zotero has never seen (2026-09-18).
+	it("is created again once the user has deleted the vault note as well", () => {
+		const remembered = link({ annotations: { "hl-9f21c4": { key: "TNZQQNN3", written: WRITTEN, deleted: true } } });
+		const planned = plan({ link: remembered, existing: [], noteWasDeleted: true });
+
+		expect(planned.vanished).toEqual([]);
+		expect(planned.creates.map((create) => create.blockId)).toEqual(["hl-9f21c4"]);
+	});
+
+	it("is created again on the very sync that finds both the note and the annotation gone", () => {
+		const planned = plan({ link: stored, existing: [], noteWasDeleted: true });
+
+		expect(planned.vanished).toEqual([]);
+		expect(planned.creates.map((create) => create.blockId)).toEqual(["hl-9f21c4"]);
+	});
+
+	// Only what is gone starts over. An annotation still in Zotero keeps its record, and with it the
+	// fields the user took over -- a note deleted to regenerate it must not overwrite a comment.
+	it("keeps what the user edited in Zotero even though they deleted the note", () => {
+		const planned = plan({ link: stored, existing: [inZotero({ comment: "theirs" })], noteWasDeleted: true });
+
+		expect(planned.creates).toEqual([]);
+		expect(planned.patches).toEqual([]);
+		expect(planned.unchanged[0].annotation.userEdited).toEqual(["comment"]);
 	});
 });
 

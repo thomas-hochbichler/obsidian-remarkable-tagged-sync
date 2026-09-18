@@ -31,7 +31,8 @@ workflow publishes the section as the GitHub release body. See
   thing to look at. With Tagged Sync Pro, what you
   marked on the tablet is also written into Zotero as native highlights, underlines and comments
   (your edits in Zotero win; a highlight you erase on the tablet goes to Zotero's trash, unless
-  you edited it there), and the plugin can talk to the Zotero 10 desktop app as
+  you edited it there; an annotation you delete in Zotero stays deleted — unless you also delete
+  the note in the vault, which starts that paper over), and the plugin can talk to the Zotero 10 desktop app as
   well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
   Highlight colours arrive as the colour you chose, in Zotero's eight — matched by hue, so the
   Paper Pro's pastel highlighters keep their names and the reMarkable 2's three arrive as three.

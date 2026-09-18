@@ -1432,6 +1432,27 @@
       file: src/zotero-writeback.test.ts
       test: "a highlight the reader erased on the tablet > is decided on a page the digest was given even when that page has nothing left on it"
 
+    - id: Y14.35
+      scenario: An annotation remembered as deleted in Zotero, on a sync that recreates a vault note the user deleted by hand (2026-09-18)
+      expect: Created again, like a highlight Zotero has never seen. Deleting the note is the user's "start over", and the one gesture that un-remembers a deletion in Zotero
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > is created again once the user has deleted the vault note as well"
+
+    - id: Y14.36
+      scenario: The same sync finds the annotation gone from Zotero for the first time
+      expect: Created, not stored as deleted -- the note deletion decides on the same sync, not one later
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > is created again on the very sync that finds both the note and the annotation gone"
+
+    - id: Y14.37
+      scenario: An annotation still in Zotero with a comment the user edited, on that same sync
+      expect: Left alone, and the comment stays theirs. Only what is gone starts over; a note deleted to regenerate it overwrites nothing in Zotero
+      layer: unit
+      file: src/zotero-writeback.test.ts
+      test: "a highlight that is already in Zotero > keeps what the user edited in Zotero even though they deleted the note"
+
     - id: Y14.32
       scenario: Carrying out a trash
       expect: The client is asked with the annotation's own version and source; the record is stored as deleted and counted as written
@@ -2632,6 +2653,13 @@
       file: src/zotero-sync.test.ts
       test: "what the pass does for one written note > sends the quotes to zotero.org's reader where no desktop app is there to open them"
 
+    - id: Y25.26
+      scenario: A unit that recreates a hand-deleted note, over a link that remembers a deletion in Zotero
+      expect: The highlight is written again and its quote gets a fresh `in Zotero` link; the same unit without the flag writes nothing
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > writes a highlight the user deleted in Zotero again when they deleted the note as well"
+
     - id: Y25.18
       scenario: Zotero refuses some of a batch
       expect: '"N of M highlights written, retry on next sync" in both the note and the run. Add-and-refresh means nothing needs rolling back'
@@ -2877,6 +2905,13 @@
       layer: unit
       file: src/sync-engine.test.ts
       test: 'the Zotero half of a sync (spec §3.4) > gives a page-tag note its Zotero part too: a paper read a page at a time is still that paper'
+
+    - id: Y28.11
+      scenario: The self-heal of a note the user deleted by hand (root hash unchanged), for a document with a Zotero half
+      expect: The pass is told `noteWasDeleted`, decided before the write puts the note back; a first sync says `false`
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > tells the pass when this write recreates a note the user deleted by hand"
 
     - id: Y28.7
       scenario: A document with no Zotero part to add

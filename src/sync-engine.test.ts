@@ -5023,6 +5023,22 @@ describe("the Zotero half of a sync (spec §3.4)", () => {
 		expect(blockHashOf(extractManagedBlock(note)!)).toBe(result.index.rows[notebookSyncKey("doc-1", "sync")].blockHash);
 	});
 
+	it("tells the pass when this write recreates a note the user deleted by hand", async () => {
+		const api = await zoteroDocument("root-1");
+		const row = notebookSyncKey("doc-1", "sync");
+		const previousIndex: SyncIndex = {
+			rootHash: "root-1", // unchanged -- only the missing note reopens the document
+			mappings: mappingFingerprint({ sync: "Target" }),
+			rows: { [row]: { syncKey: row, docId: "doc-1", pageId: null, tag: "sync", entryHash: "hash-1", pageHash: null, notePath: "Target/Prompting.md", status: "active", syncedAt: "2025-12-01T00:00:00.000Z", renderVersion: RENDER_VERSION } },
+		};
+		const seen: ZoteroUnit[] = [];
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), ...fakePass({}, seen) }, EMPTY_SYNC_INDEX);
+		await runSync({ ...baseDeps(api, { sync: "Target" }), ...fakePass({}, seen) }, previousIndex); // note deliberately not seeded
+
+		expect(seen.map((unit) => unit.noteWasDeleted)).toEqual([false, true]);
+	});
+
 	it("writes the two Zotero keys into the frontmatter the Pro toggle already owns", async () => {
 		const api = await zoteroDocument("root-zotero-keys");
 		const deps = { ...baseDeps(api, { sync: "Target" }), frontmatter: true, ...fakePass() };

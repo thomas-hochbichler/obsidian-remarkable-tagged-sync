@@ -41,6 +41,8 @@ export interface ZoteroUnit {
 	readonly pages: readonly DigestPage[];
 	/** The source page indexes the digest was given -- see `WriteBackInput.covered`. */
 	readonly covered: readonly number[];
+	/** This write recreates a note the user deleted by hand -- see `WriteBackInput.noteWasDeleted`. */
+	readonly noteWasDeleted?: boolean;
 	/**
 	 * MD5 of the source PDF the tablet holds, or `null` where there is none.
 	 *
@@ -306,7 +308,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			writeBack = { kind: "free" };
 		} else try {
 			const existing = await deps.client.ownAnnotations(attachment.key, attachment.library);
-			const plan = planWriteBack({ pages: [...unit.pages], covered: unit.covered, attachmentKey: attachment.key, link, existing });
+			const plan = planWriteBack({ pages: [...unit.pages], covered: unit.covered, attachmentKey: attachment.key, link, existing, noteWasDeleted: unit.noteWasDeleted });
 			const result = await executeWriteBack(deps.client, link, plan);
 			link = { ...link, annotations: result.annotations };
 			await deps.saveLinks(withLink(deps.links(), unit.docId, link));

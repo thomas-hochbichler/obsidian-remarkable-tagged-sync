@@ -114,6 +114,17 @@ describe("what the pass does for one written note", () => {
 		expect(parts.links).toEqual({ "hl-9f21c4": "zotero://open-pdf/library/items/ATT1?page=2&annotation=KEY0" });
 	});
 
+	it("writes a highlight the user deleted in Zotero again when they deleted the note as well", async () => {
+		const forgotten = linked({ annotations: { "hl-9f21c4": { key: "GONE1", written: {}, deleted: true } } });
+		const { deps } = harness({ links: forgotten });
+
+		const kept = await createZoteroPass(deps).run(unit());
+		const restarted = await createZoteroPass(deps).run(unit({ noteWasDeleted: true }));
+
+		expect(kept.links).toEqual({});
+		expect(restarted.links).toEqual({ "hl-9f21c4": "zotero://open-pdf/library/items/ATT1?page=2&annotation=KEY0" });
+	});
+
 	it("sends the quotes to zotero.org's reader where no desktop app is there to open them", async () => {
 		const { deps } = harness({ links: linked(), webReaderUser: async () => "someone" });
 
