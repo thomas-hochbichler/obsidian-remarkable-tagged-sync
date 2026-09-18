@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-18
+
 ### Added
 
 - **Zotero.** Send a PDF from your Zotero library to the tablet (untagged — you give it your sync
