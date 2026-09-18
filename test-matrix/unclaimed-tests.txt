@@ -266,7 +266,6 @@ src/licence-state.test.ts :: nextLicenceCall > remembers a fresh verdict instead
 src/licence-state.test.ts :: the stored fields > does not hand back the trial when a licence is removed
 src/licence-state.test.ts :: the stored fields > keeps a pasted key even before it can be activated
 src/licence-state.test.ts :: the stored fields > records an activation as a confirmation too
-src/licence-state.test.ts :: the stored fields > starts the trial once and never again
 src/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > addresses a single page image
 src/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > is one string, not a template
 src/llm-transcript.test.ts :: TRANSCRIPTION_PROMPT > keeps the clauses the measurement showed were doing the work

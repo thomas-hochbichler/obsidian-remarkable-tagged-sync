@@ -71,7 +71,7 @@ export const LICENCE_TIMEOUT_MS = 10_000;
  * ignored. What matters is that the *caller* stops waiting -- an abandoned socket costs nothing next
  * to a sync that never ends.
  */
-async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 	let timer: number | undefined;
 	try {
 		return await Promise.race([

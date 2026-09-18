@@ -57,8 +57,16 @@ export interface LicenceState {
 	validatedAt: string | null;
 	/** ISO timestamp when the licence was found revoked, so the settings tab can name the day. */
 	revokedAt: string | null;
-	/** ISO timestamp the trial began. Never reset by the plugin — there is no restart button. */
+	/**
+	 * ISO timestamp the trial began, as taggedsync.com issued it. Never reset by the plugin — there is
+	 * no restart button — and, since 1.8, not trusted on its own: `trialSignature` has to prove it,
+	 * or `attestTrial` in `trial-ticket.ts` drops both on load.
+	 */
 	trialStartedAt: string | null;
+	/** The server's signature over this vault's hash and `trialStartedAt`. Null before 1.8, and then the trial does not count. */
+	trialSignature: string | null;
+	/** The hash that was sent for it — what the server knows this vault as, kept so a user can quote it (PRIVACY.md). */
+	trialVault: string | null;
 	/**
 	 * Set once the "your licence ended" notice has been shown, so it never nags again. Same shape as
 	 * `ocrUnavailableNoticeShown`. A reminder on every sync was rejected: it would punish someone who
@@ -73,6 +81,8 @@ export const NO_LICENCE: LicenceState = {
 	validatedAt: null,
 	revokedAt: null,
 	trialStartedAt: null,
+	trialSignature: null,
+	trialVault: null,
 	endedNoticeShown: false,
 };
 
@@ -192,16 +202,6 @@ export function withKey(state: LicenceState, key: string): LicenceState {
 /** Forgets the licence on this vault, freeing its slot at Polar. The trial is not restored. */
 export function withoutLicence(state: LicenceState): LicenceState {
 	return { ...state, key: null, activationId: null, validatedAt: null, revokedAt: null };
-}
-
-/**
- * Starts the trial, once. A second call is ignored: deleting the field by hand restarts it, which is
- * accepted (a tester pays their own API bill, so the trial costs nothing to give) — but the plugin
- * must not offer a restart button, or the purchase becomes a donation.
- */
-export function startTrial(state: LicenceState, now: Date): LicenceState {
-	if (state.trialStartedAt !== null) return state;
-	return { ...state, trialStartedAt: now.toISOString() };
 }
 
 function msOf(iso: string | null): number | null {

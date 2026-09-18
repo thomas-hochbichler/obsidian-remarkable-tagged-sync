@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { activateKey, checkLicence, deactivateHere, type LicenceApi, type LicenceContext } from "./licence-check";
-import { CHECK_INTERVAL_DAYS, NO_LICENCE, startTrial, type LicenceState } from "./licence-state";
+import { CHECK_INTERVAL_DAYS, NO_LICENCE, type LicenceState } from "./licence-state";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date("2026-08-14T10:00:00.000Z");
@@ -98,7 +98,7 @@ describe("checkLicence", () => {
 
 	it("announces an ended trial once, without any call at all", async () => {
 		const polar = api();
-		const ended = startTrial(NO_LICENCE, new Date("2026-07-01T00:00:00.000Z"));
+		const ended = { ...NO_LICENCE, trialStartedAt: new Date("2026-07-01T00:00:00.000Z").toISOString() };
 		const result = await checkLicence(ended, polar, ctx);
 		expect(polar.validate).not.toHaveBeenCalled();
 		expect(result.notice).toContain("trial has ended");

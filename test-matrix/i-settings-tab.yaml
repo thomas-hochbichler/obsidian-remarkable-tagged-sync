@@ -309,10 +309,38 @@
 
     - id: I2.4
       scenario: Start free trial is pressed
-      expect: Started, saved and re-drawn without the button -- one click, no key, no email
+      expect: The vault's hash goes to taggedsync.com, the signed ticket comes back, saved and re-drawn without the button -- one click, no key, no email
       layer: vault
       file: src/settings-tab.test.ts
       test: "the Tagged Sync Pro section > starts the trial on the spot, saves it, and re-draws without the button"
+
+    - id: I2.11
+      scenario: Start free trial is pressed with no connection
+      expect: Nothing started, nothing saved, one sentence that names taggedsync.com, and the button is still there
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > starts nothing when taggedsync.com cannot be reached, and says so once, in place"
+
+    - id: I2.12
+      scenario: The old restart trick -- data.json emptied, or the plugin reinstalled, and the button pressed again
+      expect: The server knows the vault and answers with the original date, so the days left are what they were
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > gets the same trial back for a vault the server already knows, however the file was edited"
+
+    - id: I2.13
+      scenario: A data.json with a trial nobody signed -- written before 1.8, or by hand
+      expect: Dropped on load and written back without it; the trial is offered as if never started
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > does not honour a trial in data.json that taggedsync.com never signed"
+
+    - id: I2.14
+      scenario: A signed trial whose start date was moved by hand
+      expect: The signature no longer matches, so it is dropped on load like an unsigned one
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > does not honour a signed trial whose date was moved by hand"
 
     - id: I2.5
       scenario: A Pro licence is active, or was refunded, in a vault where no trial was ever started

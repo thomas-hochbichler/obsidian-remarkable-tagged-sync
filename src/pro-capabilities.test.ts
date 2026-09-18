@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { checkLicence, type LicenceApi } from "./licence-check";
-import { CARRY_DAYS, CHECK_INTERVAL_DAYS, entitlementOf, type Entitlement, type LicenceState, NO_LICENCE, startTrial, TRIAL_DAYS } from "./licence-state";
+import { CARRY_DAYS, CHECK_INTERVAL_DAYS, entitlementOf, type Entitlement, type LicenceState, NO_LICENCE, TRIAL_DAYS } from "./licence-state";
 import { ocrBackendEntries } from "./ocr-registry";
 import { BACKEND_TIER, proCapabilities, TIER_READERS, undeclaredBackends } from "./pro-capabilities";
 import { FREE_TAG_LIMIT } from "./tag-routing-view";
@@ -113,7 +113,7 @@ describe("with no licence", () => {
 describe("with a licence that is working", () => {
 	const PAID_STATES: Record<string, LicenceState> = {
 		"bought and validated": BOUGHT,
-		"trial running": startTrial(NO_LICENCE, new Date(NOW.getTime() - 2 * DAY_MS)),
+		"trial running": { ...NO_LICENCE, trialStartedAt: new Date(NOW.getTime() - 2 * DAY_MS).toISOString() },
 		"validated a month ago, not since": { ...BOUGHT, validatedAt: daysBefore(CARRY_DAYS + 10) },
 	};
 
@@ -194,7 +194,7 @@ describe("when the licence server cannot be reached", () => {
 	});
 
 	it("does not end a running trial either", async () => {
-		const trialing = startTrial(NO_LICENCE, new Date(NOW.getTime() - 2 * DAY_MS));
+		const trialing = { ...NO_LICENCE, trialStartedAt: new Date(NOW.getTime() - 2 * DAY_MS).toISOString() };
 
 		const result = await checkLicence(
 			trialing,

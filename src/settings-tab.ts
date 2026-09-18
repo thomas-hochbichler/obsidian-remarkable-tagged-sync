@@ -15,9 +15,10 @@ import { confirmDialog } from "./confirm-modal";
 import { explainError } from "./explain-error";
 import { frontmatterAllowed } from "./frontmatter";
 import { activateKey, deactivateHere } from "./licence-check";
-import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft } from "./licence-messages";
-import { startTrial, withoutLicence } from "./licence-state";
+import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft, trialStartFailed } from "./licence-messages";
+import { withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
+import { startTrial, TrialStartError } from "./trial-ticket";
 import { backendPromise, defaultOcrBackend, hasAlternativeBackends } from "./ocr-resolution";
 import { BACKGROUND_CONSENT_NAME, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
@@ -394,16 +395,28 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		}
 
 		// One click, no key, no email. The trial is the only way a Windows or Linux user can judge
-		// cloud transcription before paying, and it costs nothing to give: the tester pays their own
-		// API bill. There is deliberately no restart button -- one would turn the purchase into a
-		// donation.
+		// cloud transcription before paying. There is deliberately no restart button -- one would turn
+		// the purchase into a donation -- and since 1.8 the start date comes signed from taggedsync.com,
+		// so deleting it by hand is not a restart either (`trial-ticket.ts`).
 		if (this.plugin.data.licence.trialStartedAt === null) {
 			statusRow.addButton((button) =>
 				button
 					.setButtonText("Start free trial")
 					.setCta()
 					.onClick(async () => {
-						this.plugin.data.licence = startTrial(this.plugin.data.licence, new Date());
+						const vault = await this.plugin.vaultHash();
+						try {
+							this.plugin.data.licence = await startTrial(
+								this.plugin.data.licence,
+								vault,
+								this.plugin.trialIssuer,
+								this.plugin.trialPublicKey,
+							);
+						} catch (error) {
+							// `startTrial` throws nothing else: every failure inside it is caught and named.
+							new Notice(trialStartFailed((error as TrialStartError).reason), 15_000);
+							return;
+						}
 						await this.plugin.saveData(this.plugin.data);
 						this.display();
 					}),

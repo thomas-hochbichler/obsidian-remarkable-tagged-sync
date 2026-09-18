@@ -7,7 +7,6 @@ import {
 	entitlementOf,
 	nextLicenceCall,
 	NO_LICENCE,
-	startTrial,
 	TRIAL_DAYS,
 	trialEndsAt,
 	withActivation,
@@ -27,6 +26,8 @@ const active: LicenceState = {
 	validatedAt: daysBefore(1),
 	revokedAt: null,
 	trialStartedAt: null,
+	trialSignature: null,
+	trialVault: null,
 	endedNoticeShown: false,
 };
 
@@ -55,7 +56,7 @@ describe("entitlementOf", () => {
 	});
 
 	it("runs the trial for its days and then ends it", () => {
-		const trialing = startTrial(NO_LICENCE, NOW);
+		const trialing = { ...NO_LICENCE, trialStartedAt: NOW.toISOString() };
 		expect(entitlementOf(trialing, NOW).tier).toBe("trial");
 		expect(entitlementOf(trialing, daysAfter(TRIAL_DAYS - 0.5)).tier).toBe("trial");
 		expect(entitlementOf(trialing, daysAfter(TRIAL_DAYS))).toEqual({ tier: "free", reason: "trial-ended" });
@@ -78,7 +79,7 @@ describe("entitlementOf", () => {
 
 describe("endedUnannounced", () => {
 	it("is owed once the trial has run out, and only then", () => {
-		const trial = startTrial(NO_LICENCE, NOW);
+		const trial = { ...NO_LICENCE, trialStartedAt: NOW.toISOString() };
 		expect(endedUnannounced(trial, daysAfter(TRIAL_DAYS - 1))).toBe(false);
 		expect(endedUnannounced(trial, daysAfter(TRIAL_DAYS))).toBe(true);
 	});
@@ -88,7 +89,7 @@ describe("endedUnannounced", () => {
 	});
 
 	it("is settled once the sentence has been said", () => {
-		const trial = startTrial(NO_LICENCE, NOW);
+		const trial = { ...NO_LICENCE, trialStartedAt: NOW.toISOString() };
 		expect(endedUnannounced({ ...trial, endedNoticeShown: true }, daysAfter(TRIAL_DAYS))).toBe(false);
 	});
 
@@ -172,12 +173,6 @@ describe("the stored fields", () => {
 		const done = withActivation(withKey(NO_LICENCE, "TSP-9999"), "act_7", NOW);
 		expect(done.activationId).toBe("act_7");
 		expect(entitlementOf(done, NOW).tier).toBe("pro");
-	});
-
-	// There is no restart button by decision: one would turn the purchase into a donation.
-	it("starts the trial once and never again", () => {
-		const first = startTrial(NO_LICENCE, NOW);
-		expect(startTrial(first, daysAfter(30))).toBe(first);
 	});
 
 	it("does not hand back the trial when a licence is removed", () => {

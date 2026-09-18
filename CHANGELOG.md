@@ -12,6 +12,23 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **The trial's start date now comes from `taggedsync.com`, signed.** "Start free trial" is still
+  one click, no key, no email — but the click now sends a 12-character hash of this vault's
+  Obsidian id to `taggedsync.com/trial`, and what comes back is the start date with a signature
+  the plugin checks, on receipt and on every load. Until now the date was a line in `data.json`,
+  and deleting that line — or reinstalling the plugin — started the trial again; Pro's Zotero
+  write-back and frontmatter cost nothing to run, so that was a free Pro for anyone who read the
+  file. The server remembers the vault: a deleted or edited date only gets the original one back.
+  What is sent is the hash and nothing else — no vault name, no path, no note, no email; what the
+  server keeps is the hash, the date it first saw it and how often it was asked. Starting the
+  trial now needs a connection, once; with none, nothing starts and the plugin says so. **A trial
+  started before this version is not carried over:** its date was never signed, so the button
+  comes back and the next click issues a fresh 14 days. This is the one call the plugin makes for
+  somebody who has not bought, and it is only ever made by that click — never on load, never on
+  sync. README and PRIVACY.md say the same in full.
+
 ## [1.8.0] - 2026-09-18
 
 ### Added
