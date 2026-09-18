@@ -602,7 +602,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const keyRow = new Setting(containerEl)
 			.setName("Zotero API key")
-			.setDesc("From zotero.org → Settings → Feeds/API. Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
+			.setDesc("From zotero.org → Settings → Security → New Key (Applications). Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
 			.addText((text) => {
 				text.inputEl.type = "password";
 				// Debounced like the attachments folder: the in-memory value is current immediately, and
