@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { obsidianFetch } from "./obsidian-fetch";
+import { MAX_REQUESTS_IN_FLIGHT, obsidianFetch } from "./obsidian-fetch";
 
 // Gap G30. This is the single point every cloud request in the plugin passes through -- reMarkable,
 // Polar, and every LLM provider -- and it had no test file and 0 % coverage.
@@ -16,6 +16,10 @@ const requested = vi.hoisted(() => ({
 		headers: {} as Record<string, string>,
 		arrayBuffer: new TextEncoder().encode("hello").buffer as ArrayBuffer,
 	},
+	/** When set, every request is rejected with it instead of answered. */
+	failWith: null as Error | null,
+	/** When set, every request waits here until the test lets it go -- for the in-flight tests. */
+	held: null as (() => void)[] | null,
 }));
 
 vi.mock("obsidian", async (importOriginal) => {
@@ -26,6 +30,8 @@ vi.mock("obsidian", async (importOriginal) => {
 		// Replaced here because this file is *about* the call, and every answer is scripted.
 		requestUrl: (options: { url: string; method: string; headers: Record<string, string>; body: unknown; throw: boolean }) => {
 			requested.calls.push(options);
+			if (requested.failWith) return Promise.reject(requested.failWith);
+			if (requested.held) return new Promise((resolve) => requested.held?.push(() => resolve(requested.answer)));
 			return Promise.resolve(requested.answer);
 		},
 	};
@@ -33,6 +39,8 @@ vi.mock("obsidian", async (importOriginal) => {
 
 beforeEach(() => {
 	requested.calls.length = 0;
+	requested.failWith = null;
+	requested.held = null;
 	requested.answer = { status: 200, headers: {}, arrayBuffer: new TextEncoder().encode("hello").buffer as ArrayBuffer };
 });
 
@@ -179,5 +187,39 @@ describe("the Response it hands back", () => {
 		requested.answer = { status: 200, headers: {}, arrayBuffer: new ArrayBuffer(0) };
 
 		expect(await (await obsidianFetch("https://example.test/")).text()).toBe("");
+	});
+});
+
+// Issue #160. Why the bound is here and why it is eight: see `MAX_REQUESTS_IN_FLIGHT`. These two
+// tests are what keep it there.
+describe("how many it lets out at once", () => {
+	/** Lets every queued promise callback run. */
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+	it("holds the request past the limit back until one of the others has answered", async () => {
+		requested.held = [];
+		const responses = Array.from({ length: MAX_REQUESTS_IN_FLIGHT + 2 }, (_, i) => obsidianFetch(`https://example.test/${i}`));
+		await settle();
+		expect(requested.calls).toHaveLength(MAX_REQUESTS_IN_FLIGHT);
+
+		requested.held.shift()?.();
+		await settle();
+		expect(requested.calls).toHaveLength(MAX_REQUESTS_IN_FLIGHT + 1);
+
+		while (requested.held.length > 0) {
+			requested.held.shift()?.();
+			await settle();
+		}
+		expect(await Promise.all(responses)).toHaveLength(MAX_REQUESTS_IN_FLIGHT + 2);
+	});
+
+	it("gives a slot back when the request fails, rather than leaking it", async () => {
+		// A leaked slot per failure would stall the plugin for good after a handful of dropped
+		// connections -- every later request waiting on a slot that nobody will give back.
+		requested.failWith = new Error("net::ERR_CONNECTION_RESET");
+		await Promise.allSettled(Array.from({ length: MAX_REQUESTS_IN_FLIGHT }, (_, i) => obsidianFetch(`https://example.test/${i}`)));
+		requested.failWith = null;
+
+		expect((await obsidianFetch("https://example.test/after")).status).toBe(200);
 	});
 });

@@ -110,6 +110,19 @@ export function entitlementOf(state: LicenceState, now: Date): Entitlement {
 	return { tier: "free", reason: "never-bought" };
 }
 
+/**
+ * An ended licence whose one sentence has not been said yet.
+ *
+ * Asked by the pre-flight so the sentence reaches a user on Apple Vision too. Before this, the
+ * re-check that carries it ran only for a cloud backend, and a trial that lapsed on a Mac ended in
+ * silence: the second tag mapping simply stopped being offered, and nothing said why.
+ */
+export function endedUnannounced(state: LicenceState, now: Date): boolean {
+	if (state.endedNoticeShown) return false;
+	const entitlement = entitlementOf(state, now);
+	return entitlement.tier === "free" && (entitlement.reason === "trial-ended" || entitlement.reason === "revoked");
+}
+
 /** The end of the trial, or null if none was ever started. */
 export function trialEndsAt(state: LicenceState): Date | null {
 	const started = msOf(state.trialStartedAt);

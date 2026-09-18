@@ -12,15 +12,6 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
-### Fixed
-
-- **Zotero.** A vault that talks to zotero.org only (no desktop connection) now gets an *in
-  Zotero* link per quote that opens in the browser, in zotero.org's own reader — a `zotero://`
-  link on such a machine opened nothing but Windows' "Get an app to open this 'zotero' link"
-  dialog. The web reader opens on the first page with the annotations in its sidebar; it cannot be
-  sent to a page or an annotation. With the desktop connection on, the link still opens the
-  annotation itself in the Zotero app.
-
 ### Added
 
 - **Zotero.** Send a PDF from your Zotero library to the tablet (untagged — you give it your sync
@@ -70,8 +61,28 @@ workflow publishes the section as the GitHub release body. See
   page the section starts on, like the `### Page 1` heading a section-less entry gets; each entry
   keeps its own page link, since a section runs across pages.
 
+- **The accuracy figure the settings card quotes for each downloadable model is now a committed
+  measurement, checked on every build.** `docs/ocr-local/` holds one file per model generation --
+  error rate per reference page, peak memory, and the prompt, raster, runtime and model-file pins it
+  was measured with -- and a test refuses a build whose pins have moved past it. The figures
+  themselves are unchanged (Qwen3-VL-8B 1.79 %, Qwen3-VL-2B 6.55 %, Qwen2.5-VL-7B 4.32 %); the card's
+  "measured on" date moves to 16 September 2026 for the two re-measured through the new tool,
+  `npm run measure:local`. The published series (`docs/ocr-series.csv`) carries these rows too, under
+  `local/<generation>`.
+
 ### Fixed
 
+- **Zotero.** A vault that talks to zotero.org only (no desktop connection) now gets an *in
+  Zotero* link per quote that opens in the browser, in zotero.org's own reader — a `zotero://`
+  link on such a machine opened nothing but Windows' "Get an app to open this 'zotero' link"
+  dialog. The web reader opens on the first page with the annotations in its sidebar; it cannot be
+  sent to a page or an annotation. With the desktop connection on, the link still opens the
+  annotation itself in the Zotero app.
+- **A trial that ends on a backend the licence never gated is now announced.** The one-time
+  "trial has ended" sentence rode on the licence re-check, which ran only for a cloud backend, so
+  a vault transcribing on Apple Vision or locally lost the second tag mapping and Zotero write-back in
+  silence. The sentence is now said on the first sync after the end, whatever the backend, and
+  names the price and the way to the Buy button. No call is made for it.
 - **A highlight that started at a paragraph's first word printed without its colour.** A quote
   three-quarters marked was printed plain, for contrast. With coloured marks that dropped the one
   thing the colour said, so the rule is gone: what you marked is marked, whole quote or not.
@@ -95,6 +106,37 @@ workflow publishes the section as the GitHub release body. See
   with hundreds of empty ```` ```text ```` blocks before the word, which reached the note's callout
   and, with Zotero write-back, the annotation's comment. Empty blocks are dropped; a block with
   content is left alone.
+## [1.7.2] - 2026-09-13
+
+### Fixed
+
+- **A large reMarkable account no longer fails its first sync with "This plugin did not expect the
+  answer it got from reMarkable's cloud".** Listing the account asked for every document's files at
+  the same moment, and past a few hundred documents Electron refused to open one more connection
+  (`net::ERR_INSUFFICIENT_RESOURCES`). The plugin now keeps at most eight requests open at once, which
+  also covers rendering a notebook with hundreds of pages and *Discover tags* in the settings. (#160)
+
+## [1.7.1] - 2026-09-13
+
+### Changed
+
+- **A Windows PC with an Intel or AMD processor is now told what does work.** The Backend list
+  answered *needs Apple Silicon or Windows on ARM*, which reads as "buy another machine" — and it is
+  not true of those PCs. They run the model perfectly well; what the plugin cannot do there is install
+  the engine without a virus scanner quarantining it. The same models are reachable through a server
+  you run yourself, which this plugin already supports, so the entry now reads *not yet on Windows
+  x64; use a localhost backend (Ollama, LM Studio)*. An Intel Mac keeps the old sentence, because
+  there it really is the machine.
+
+### Fixed
+
+- **A document with a slim `.content` file no longer stops the whole cloud sync.** The reMarkable
+  cloud can hold a document whose `.content` carries only six fields -- `coverPageNumber`,
+  `cPages`, `fileType`, `formatVersion`, `orientation`, `pageCount` -- and rmapi-js rejects it for
+  lacking six more it never reads. Because the whole library is listed in one go, that single
+  document surfaced as *"This plugin did not expect the answer it got from the reMarkable cloud"*
+  and took tag discovery and sync down for the entire account. Such a document is now read for
+  the fields this plugin actually uses. (#156)
 
 ## [1.7.0] - 2026-09-11
 

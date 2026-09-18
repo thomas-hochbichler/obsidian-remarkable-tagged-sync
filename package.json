@@ -1,6 +1,6 @@
 {
   "name": "remarkable-tagged-sync",
-  "version": "1.7.0",
+  "version": "1.7.2",
   "description": "Sync tagged reMarkable notebooks into Obsidian as searchable Markdown notes, routed to folders by tag.",
   "main": "main.js",
   "private": true,
@@ -17,6 +17,7 @@
     "matrix": "node scripts/matrix-link.mjs",
     "nightly:ocr": "esbuild test-support/nightly/ocr-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-ocr.cjs && node /tmp/tagged-sync-nightly-ocr.cjs",
     "nightly:vision": "esbuild test-support/nightly/vision-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-vision.cjs && node /tmp/tagged-sync-nightly-vision.cjs",
+    "measure:local": "esbuild test-support/local-ocr/measure-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-measure-local.cjs && node /tmp/tagged-sync-measure-local.cjs",
     "nightly:perf": "esbuild test-support/nightly/perf-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-nightly-perf.cjs && node /tmp/tagged-sync-nightly-perf.cjs",
     "ocr:curve": "node scripts/ocr-curve.mjs",
     "images:update": "esbuild test-support/reference-images/update-main.ts --bundle --platform=node --alias:obsidian=./test-stubs/obsidian.ts --external:iconv-lite --format=cjs --outfile=/tmp/tagged-sync-images-update.cjs && node /tmp/tagged-sync-images-update.cjs",

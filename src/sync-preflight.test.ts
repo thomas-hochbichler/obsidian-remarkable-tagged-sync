@@ -70,7 +70,9 @@ function activeRow(notePath: string) {
 	return { docId: "doc-1", unitId: "unit-1", notePath, status: "active" };
 }
 
-async function pluginWith(setup: { connected?: boolean; backend?: string; rows?: number } = {}): Promise<Plugin> {
+async function pluginWith(
+	setup: { connected?: boolean; backend?: string; rows?: number; licence?: Record<string, unknown> } = {},
+): Promise<Plugin> {
 	const { default: TaggedSyncPlugin } = await import("./entry");
 	const plugin = new (TaggedSyncPlugin as unknown as new (a: unknown, m: unknown) => Plugin & { saved: unknown })(
 		new FakeApp(),
@@ -82,6 +84,7 @@ async function pluginWith(setup: { connected?: boolean; backend?: string; rows?:
 		deviceToken: setup.connected === false ? null : "device-token",
 		ocrBackend: setup.backend ?? "off",
 		syncIndex: { ...EMPTY_SYNC_INDEX, rows },
+		...(setup.licence ? { licence: setup.licence } : {}),
 	};
 	// A clock nobody moves: the interval backstop arms and never fires.
 	(plugin as unknown as { scheduler: FakeClock }).scheduler = new FakeClock();
@@ -207,6 +210,17 @@ describe("what has to be true before a sync starts", () => {
 		await plugin.syncNow();
 
 		expect(licenceChecks).toEqual([]);
+	});
+
+	it("re-reads once for a trial that ended unannounced, even on a backend that needs none", async () => {
+		// The one sentence about the ended trial rides on the re-read. On Apple Vision or `off` that
+		// re-read never ran, so a lapsed trial on a Mac was never announced. The re-read makes no
+		// call here -- there is no key -- so the free user's promise still holds.
+		const plugin = await pluginWith({ backend: "off", licence: { trialStartedAt: "2026-01-01T00:00:00.000Z" } });
+
+		await plugin.syncNow();
+
+		expect(licenceChecks).toEqual([false]);
 	});
 
 	it("re-reads the licence before a re-transcribe too", async () => {

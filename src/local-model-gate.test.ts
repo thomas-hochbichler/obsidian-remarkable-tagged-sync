@@ -71,11 +71,19 @@ describe("the registration predicate (§4.1)", () => {
 	});
 });
 
-describe("the three strings (§4.3, §6.2)", () => {
-	/** One string covers both excluded architectures, so the backend keeps to three strings in total. */
-	it("uses one architecture line for Intel Macs and Windows x64 alike", () => {
+describe("the strings a machine without the offer sees (§4.3, §6.2)", () => {
+	/** An Intel Mac has no way to the model at all, so it gets the plain hardware line. */
+	it("tells an Intel Mac it needs other hardware", () => {
 		expect(localModelUnavailableLabel({ kind: "architecture" }, "darwin")).toBe("Local model — needs Apple Silicon or Windows on ARM");
-		expect(localModelUnavailableLabel({ kind: "architecture" }, "win32")).toBe("Local model — needs Apple Silicon or Windows on ARM");
+	});
+
+	// Windows x64 runs the model fine; only the engine download is blocked (§4.2, amended 2026-09-11),
+	// and the localhost backend reaches the same models through a host the user installs. "Buy another
+	// machine" would be the wrong sentence. Nothing promises the managed route -- it may still fail.
+	it("sends a Windows x64 user to the localhost backend rather than to other hardware", () => {
+		expect(localModelUnavailableLabel({ kind: "architecture" }, "win32")).toBe(
+			"Local model — not yet on Windows x64; use a localhost backend (Ollama, LM Studio)",
+		);
 	});
 
 	// A bare requirement only sends the user looking for what they have.
@@ -88,16 +96,17 @@ describe("the three strings (§4.3, §6.2)", () => {
 		);
 	});
 
-	it("is three strings and no more", () => {
+	it("is four strings and no more", () => {
 		const strings = new Set([
 			localModelUnavailableLabel({ kind: "architecture" }, "darwin"),
 			localModelUnavailableLabel({ kind: "architecture" }, "win32"),
 			localModelUnavailableLabel({ kind: "memory", floorGb: 18, actualGb: 16 }, "darwin"),
 			localModelUnavailableLabel({ kind: "memory", floorGb: 24, actualGb: 8 }, "win32"),
 		]);
-		// Two hardware shapes; the memory ones differ only by their numbers. A model that is merely not
-		// downloaded gets no string at all -- it is listed, and its card says what to do.
-		expect(strings.size).toBe(3);
+		// Three hardware shapes since the two excluded architectures parted ways; the memory ones differ
+		// only by their numbers. A model that is merely not downloaded gets no string at all -- it is
+		// listed, and its card says what to do.
+		expect(strings.size).toBe(4);
 		for (const value of strings) expect(value.startsWith("Local model — ")).toBe(true);
 	});
 });

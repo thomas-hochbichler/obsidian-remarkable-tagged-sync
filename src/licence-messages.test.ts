@@ -9,6 +9,7 @@ import {
 	MONEY_BACK_MESSAGE,
 	OFFLINE_ACTIVATION_MESSAGE,
 	onDay,
+	PRO_PRICE,
 	TAG_CAP_MESSAGE,
 	trialDaysLeft,
 	WITHDRAWN_KEY_MESSAGE,
@@ -89,6 +90,16 @@ describe("the messages that appear once", () => {
 	it("names the backend transcription fell back to", () => {
 		expect(licenceEndedNotice("revoked", "Apple Vision")).toContain("Apple Vision");
 		expect(licenceEndedNotice("trial-ended", "Apple Vision")).toContain("trial has ended");
+	});
+
+	it("names the price and the way to it when a trial ends, and not after a refund", () => {
+		// The trial's end is the one moment the user has just had all of Pro and is losing it. A
+		// refund is the opposite moment, and selling into it would be exactly the wrong sentence.
+		const trial = licenceEndedNotice("trial-ended", "Apple Vision");
+		expect(trial).toContain(PRO_PRICE);
+		expect(trial).toContain("Buy");
+		expect(trial).toContain("capped at one");
+		expect(licenceEndedNotice("revoked", "Apple Vision")).not.toContain(PRO_PRICE);
 	});
 
 	it("is honest when there is nothing to fall back to", () => {

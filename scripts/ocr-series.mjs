@@ -15,7 +15,7 @@
 // Usage: node scripts/ocr-series.mjs > ocr-series.csv
 
 import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 export const COLUMNS = [
 	"measured_at",
@@ -113,13 +113,53 @@ export function toRows(verdicts, traits) {
 			}
 		}
 	}
-	rows.sort(
-		(a, b) =>
-			a.measured_at.localeCompare(b.measured_at) ||
-			a.backend.localeCompare(b.backend) ||
-			a.page.localeCompare(b.page),
-	);
-	return rows;
+	return rows.sort(byMeasurement);
+}
+
+const byMeasurement = (a, b) =>
+	a.measured_at.localeCompare(b.measured_at) || a.backend.localeCompare(b.backend) || a.page.localeCompare(b.page);
+
+/**
+ * The local figures (`docs/ocr-local/*.json`, one per model generation the plugin can fetch) as
+ * rows of the same series, under `local/<generation>`. Nobody hosts the models a laptop can run, so
+ * these were measured on a Mac through the shipped runtime rather than by the nightly; what licenses
+ * them to sit in the same file is that they were scored by the same code on the same PNGs, and that
+ * `test-support/local-ocr/local-figures.test.ts` refuses a build whose pins have moved past them.
+ *
+ * The envelope columns are the nightly's and stay empty: nothing was routed, served or billed. The
+ * runtime release goes where the endpoint would, and the machine where the provider would, because
+ * those are the two things that stand in for them -- a different llama.cpp build or a different
+ * chip is a different measurement the same way a different provider is.
+ */
+export function localRows(figures, traits) {
+	const rows = [];
+	for (const figure of figures) {
+		for (const [page, measurement] of Object.entries(figure.pages ?? {})) {
+			rows.push({
+				measured_at: figure.measuredAt,
+				run_id: "",
+				backend: `local/${figure.generation}`,
+				page,
+				trait: traits[page] ?? "",
+				cer: typeof measurement.cer === "number" ? measurement.cer.toFixed(6) : "",
+				problem: measurement.problem ?? "",
+				structure: Object.entries(measurement.structure ?? {})
+					.map(([kind, state]) => `${kind}:${state}`)
+					.join(";"),
+				backend_status: figure.status ?? "",
+				prompt_sha: figure.promptSha ?? "",
+				render_version: figure.renderVersion ?? "",
+				endpoint: `llama.cpp ${figure.runtime}`,
+				// No commas: nothing in this file is quoted.
+				served_by: `${figure.machine.cpu} · ${figure.machine.memoryGb} GB · ${figure.machine.os}`,
+				prompt_tokens: "",
+				completion_tokens: "",
+				reasoning_tokens: "",
+				cost: "",
+			});
+		}
+	}
+	return rows.sort(byMeasurement);
 }
 
 export const toCsv = (rows) =>
@@ -138,5 +178,8 @@ if (invokedDirectly) {
 		}
 	}
 	const traits = traitsFromFilenames(readdirSync("test-fixtures/ocr-reference/pages"));
-	console.log(toCsv(toRows(verdicts, traits)));
+	const figures = readdirSync("docs/ocr-local")
+		.filter((name) => name.endsWith(".json"))
+		.map((name) => JSON.parse(readFileSync(`docs/ocr-local/${name}`, "utf8")));
+	console.log(toCsv([...toRows(verdicts, traits), ...localRows(figures, traits)].sort(byMeasurement)));
 }

@@ -247,6 +247,10 @@ export function proCapabilities(): ProCapability[] {
  */
 export const TIER_READERS: Record<string, { readonly reads: number; readonly why: string }> = {
 	"src/licence-check.ts": { reads: 1, why: "Decides whether the ended-licence notice fires. Not a gate." },
+	"src/licence-state.ts": {
+		reads: 1,
+		why: "`endedUnannounced`: whether that same notice is still owed, asked by the sync pre-flight. Not a gate.",
+	},
 	"src/licence-messages.ts": { reads: 1, why: "Renders the settings-tab status line. Not a gate." },
 	"src/main.ts": { reads: 1, why: "The backend gate, asked through `isGated`. A gate, and it is in the list." },
 	"src/tag-routing-view.ts": { reads: 1, why: "The tag cap's own limit function. A gate, and it is in the list." },

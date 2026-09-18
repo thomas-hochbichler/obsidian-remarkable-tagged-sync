@@ -79,18 +79,23 @@ export function localModelBlock(machine: MachineFacts, floors: MemoryFloors = DE
 }
 
 /**
- * The dropdown's replacement text for a machine that can never run the model (§4.3).
+ * The dropdown's replacement text for a machine the model is not offered on (§4.3).
  *
  * Each is rendered as the *entire* option text of a disabled dropdown entry, so each is the whole
- * explanation and neither has a card beneath it -- §4.1 attaches no card where the model cannot run.
+ * explanation and none has a card beneath it -- §4.1 attaches no card where the model cannot run.
  *
  * The memory string names the machine's own figure, because a bare requirement only sends the user
  * looking for what they have.
  */
 export function localModelUnavailableLabel(block: LocalModelBlock, platform: string): string {
 	if (block.kind === "architecture") {
-		// One string for both excluded architectures -- Intel Macs and Windows x64 -- which keeps the
-		// backend at one lifecycle string plus two hardware strings.
+		// Windows x64 is the one excluded architecture that *can* run the model -- what it cannot do is
+		// get the engine past Defender (§4.2), and the free build's localhost backend reaches the same
+		// models through a host the user installs themselves. Sending that user to "needs Apple Silicon
+		// or Windows on ARM" would read as "buy another machine" when the way through is a setting away.
+		// Nothing here says "coming": the measurement that would open the managed route can still say no.
+		if (platform === "win32") return "Local model — not yet on Windows x64; use a localhost backend (Ollama, LM Studio)";
+		// An Intel Mac has no such way through, so it keeps the plain hardware line.
 		return "Local model — needs Apple Silicon or Windows on ARM";
 	}
 	const machine = platform === "darwin" ? "Mac" : "PC";

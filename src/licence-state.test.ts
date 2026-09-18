@@ -3,6 +3,7 @@ import {
 	applyOutcome,
 	CARRY_DAYS,
 	CHECK_INTERVAL_DAYS,
+	endedUnannounced,
 	entitlementOf,
 	nextLicenceCall,
 	NO_LICENCE,
@@ -72,6 +73,28 @@ describe("entitlementOf", () => {
 			reason: "not-activated",
 		});
 		expect(trialEndsAt({ ...NO_LICENCE, trialStartedAt: "" })).toBeNull();
+	});
+});
+
+describe("endedUnannounced", () => {
+	it("is owed once the trial has run out, and only then", () => {
+		const trial = startTrial(NO_LICENCE, NOW);
+		expect(endedUnannounced(trial, daysAfter(TRIAL_DAYS - 1))).toBe(false);
+		expect(endedUnannounced(trial, daysAfter(TRIAL_DAYS))).toBe(true);
+	});
+
+	it("is owed after a revocation too", () => {
+		expect(endedUnannounced({ ...active, revokedAt: daysBefore(1) }, NOW)).toBe(true);
+	});
+
+	it("is settled once the sentence has been said", () => {
+		const trial = startTrial(NO_LICENCE, NOW);
+		expect(endedUnannounced({ ...trial, endedNoticeShown: true }, daysAfter(TRIAL_DAYS))).toBe(false);
+	});
+
+	it("owes nothing to someone who never had Pro, or still has it", () => {
+		expect(endedUnannounced(NO_LICENCE, NOW)).toBe(false);
+		expect(endedUnannounced(active, NOW)).toBe(false);
 	});
 });
 

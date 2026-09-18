@@ -100,11 +100,15 @@ export function licenceStatusText(entitlement: Entitlement, state: LicenceState)
  * back, on every single run.
  */
 export function licenceEndedNotice(reason: "revoked" | "trial-ended", fallbackBackend: string): string {
-	const lead =
-		reason === "revoked"
-			? "Your Tagged Sync Pro licence was withdrawn after the refund."
-			: "Your Tagged Sync Pro trial has ended.";
-	return `${lead} Transcription has fallen back to ${fallbackBackend}.`;
+	// A refund is not a moment to sell. The trial's end is: it is the one time the user has just
+	// had everything Pro does and is about to lose it, so the price and the way to it are said here.
+	if (reason === "revoked") {
+		return `Your Tagged Sync Pro licence was withdrawn after the refund. Transcription has fallen back to ${fallbackBackend}.`;
+	}
+	return (
+		"Your Tagged Sync Pro trial has ended. Tag mappings are capped at one again and cloud transcription " +
+		`falls back to ${fallbackBackend}. Keep it all for ${PRO_PRICE}, once: Settings → Tagged Sync → Buy.`
+	);
 }
 
 /** A key that Polar does not know, reported at the moment it is pasted rather than stored. */

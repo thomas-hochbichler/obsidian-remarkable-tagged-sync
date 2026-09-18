@@ -651,3 +651,36 @@
       file: src/local-register.test.ts
       test: "a model an earlier release left behind > removes an unfinishable partial without asking"
 
+
+- feature: E41
+  name: What the dropdown says on a machine the model is not offered on
+  code: src/local-model-gate.ts
+  tier: free
+  scenarios:
+    - id: E41.1
+      scenario: An Intel Mac, which no amount of RAM will qualify
+      expect: The plain hardware line. There is no route to the managed model on that machine and none is implied
+      layer: unit
+      file: src/local-model-gate.test.ts
+      test: "the strings a machine without the offer sees (§4.3, §6.2) > tells an Intel Mac it needs other hardware"
+
+    - id: E41.2
+      scenario: Windows x64 -- the one excluded architecture that can actually run the model
+      expect: It is sent to the free localhost backend (Ollama, LM Studio) instead, not told to buy other hardware. What x64 lacks is an engine download Defender leaves alone (§4.2, amended 2026-09-11), not the hardware; and nothing in the string promises the managed route, because the measurement that would open it can still say no
+      layer: unit
+      file: src/local-model-gate.test.ts
+      test: "the strings a machine without the offer sees (§4.3, §6.2) > sends a Windows x64 user to the localhost backend rather than to other hardware"
+
+    - id: E41.3
+      scenario: A machine of the right shape but under the floor
+      expect: The requirement *and* the machine's own figure. A bare requirement only sends the user looking for what they have
+      layer: unit
+      file: src/local-model-gate.test.ts
+      test: "the strings a machine without the offer sees (§4.3, §6.2) > names the machine's own figure beside the requirement"
+
+    - id: E41.4
+      scenario: Every reason the dropdown can give, counted
+      expect: Four and no more, each starting `Local model — `. Three hardware shapes since the two excluded architectures parted ways, plus one memory line whose wording differs only by its numbers. A fifth string would mean a case was added without deciding what it says
+      layer: unit
+      file: src/local-model-gate.test.ts
+      test: "the strings a machine without the offer sees (§4.3, §6.2) > is four strings and no more"
