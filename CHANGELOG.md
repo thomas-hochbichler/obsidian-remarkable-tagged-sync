@@ -60,7 +60,6 @@ workflow publishes the section as the GitHub release body. See
 - **Section headings in the digest link to their page.** `### 2. Related Works` now links to the
   page the section starts on, like the `### Page 1` heading a section-less entry gets; each entry
   keeps its own page link, since a section runs across pages.
-
 - **The accuracy figure the settings card quotes for each downloadable model is now a committed
   measurement, checked on every build.** `docs/ocr-local/` holds one file per model generation --
   error rate per reference page, peak memory, and the prompt, raster, runtime and model-file pins it
