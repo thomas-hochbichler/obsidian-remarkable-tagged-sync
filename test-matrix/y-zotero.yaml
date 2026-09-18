@@ -3598,10 +3598,10 @@
 
     - id: Y33.35
       scenario: "The settings tab of a Pro vault whose connection names a group"
-      expect: '*Zotero libraries*: *Your library* fixed on, the visibility sentence, then one switch per group Zotero names; switching one on stores `{ id, name }`'
+      expect: '*Zotero libraries*: the visibility sentence, then one switch per group Zotero names; no row for the personal library, which is always read; switching one on stores `{ id, name }`'
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > lists the groups Zotero names as switches, the personal library fixed on above them"
+      test: "the Zotero section > lists the groups Zotero names as switches"
 
     - id: Y33.36
       scenario: "A group switched on earlier that Zotero does not list right now"

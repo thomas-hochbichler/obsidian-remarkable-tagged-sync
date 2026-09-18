@@ -984,15 +984,14 @@ describe("the Zotero section", () => {
 		return new Response("[]", { status: 200 });
 	};
 
-	it("lists the groups Zotero names as switches, the personal library fixed on above them", async () => {
+	it("lists the groups Zotero names as switches", async () => {
 		vi.stubGlobal("fetch", zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
 		const { plugin, tab } = await tabWith({ ...PRO, zotero: WEB });
 		draw(tab);
 		await settle();
 
 		const libraries = section(draw(tab), "Zotero libraries");
-		expect(rowNames(libraries)).toEqual(["Your library", "Group libraries", "Lab reading group"]);
-		expect(toggle(libraries, "Your library").disabled).toBe(true);
+		expect(rowNames(libraries)).toEqual(["Group libraries", "Lab reading group"]);
 		expect(row(libraries, "Group libraries").desc).toContain("visible to everyone in that group");
 		toggle(libraries, "Lab reading group").toggle(true);
 		await settle();
@@ -1018,7 +1017,8 @@ describe("the Zotero section", () => {
 		const drawn = draw((await tabWith({ zotero: WEB })).tab);
 		await settle();
 
-		expect(rowNames(section(drawn, "Zotero libraries"))).toEqual(["Your library", "Group libraries (Pro)"]);
+		expect(rowNames(section(drawn, "Zotero libraries"))).toEqual(["Group libraries (Pro)"]);
+		expect(toggle(section(drawn, "Zotero libraries"), "Group libraries (Pro)").disabled).toBe(true);
 		expect(fetched.mock.calls.map((call) => String(call[0]))).not.toContainEqual(expect.stringContaining("/groups"));
 	});
 
@@ -1207,7 +1207,7 @@ describe("the Zotero section", () => {
 		vi.stubGlobal("fetch", zoteroAnswering([]));
 		const { tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
 
-		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Your library", "Group libraries", "Lab reading group"]);
+		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Group libraries", "Lab reading group"]);
 	});
 });
 

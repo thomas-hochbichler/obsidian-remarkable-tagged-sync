@@ -706,8 +706,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private zoteroGroups: ZoteroGroup[] | null = null;
 
 	/**
-	 * The libraries (ticket 26): the personal one fixed on, then one switch per group library, all
-	 * off until switched on by name -- a group is other people's work, and what write-back puts
+	 * The libraries (ticket 26): one switch per group library, all off until switched on by name
+	 * (the personal library is always read and needs no row) -- a group is other people's work, and what write-back puts
 	 * there is visible to everyone in it, which the row says.
 	 *
 	 * The groups are Zotero's to name, so they are asked for when the tab is drawn and the tab is
@@ -719,11 +719,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private renderZoteroLibraries(containerEl: HTMLElement, pro: boolean): void {
 		new Setting(containerEl).setName("Zotero libraries").setHeading();
 
-		new Setting(containerEl)
-			.setName("Your library")
-			.setDesc("Always on.")
-			.addToggle((toggle) => toggle.setValue(true).setDisabled(true));
-
 		const groupsRow = new Setting(containerEl)
 			.setName(pro ? "Group libraries" : "Group libraries (Pro)")
 			.setDesc(
@@ -731,7 +726,11 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					"Highlights written into a group library are visible to everyone in that group.",
 			);
 		const status = groupsRow.descEl.createDiv({ cls: "tagged-sync-verdict" });
-		if (!pro) return;
+		if (!pro) {
+			// Shut like the desktop-app switch: a free vault sees the row as a Pro row, not as a bare paragraph.
+			groupsRow.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
+			return;
+		}
 
 		const enabled = this.plugin.data.zotero.groups;
 		const client = this.plugin.zoteroClient();
