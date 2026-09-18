@@ -71,7 +71,9 @@ describe("what the cloud's Zotero folder holds", () => {
 		({ id: `d-${visibleName}`, hash: "h", visibleName, lastModified: "0", pinned: false, parent, type: "DocumentType", tags: [] }) as unknown as Entry;
 
 	it("names the documents in it and nothing outside it", async () => {
-		const items = [folder(), doc("Prompting", "f-1"), doc("Elsewhere", ""), doc("Nested", "other")];
+		const atRoot = { ...doc("Elsewhere", "") } as { parent?: string };
+		delete atRoot.parent; // rmapi-js: "" or omitted for the root
+		const items = [folder(), doc("Prompting", "f-1"), atRoot as Entry, doc("Nested", "other")];
 		expect(await namesInCloudFolder(api({ listItems: async () => items }), "Zotero")).toEqual(["Prompting"]);
 	});
 

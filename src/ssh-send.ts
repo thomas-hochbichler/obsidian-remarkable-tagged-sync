@@ -109,7 +109,8 @@ export async function namesInDeviceFolder(device: DeviceSendTarget, name: string
 	const folders = new Set(folderIds(metadata, name));
 	return [...metadata.values()]
 		.filter((m) => m.type === "DocumentType" && folders.has(m.parent ?? "") && m.deleted !== true)
-		.map((m) => m.visibleName ?? "");
+		.map((m) => m.visibleName)
+		.filter((name): name is string => typeof name === "string");
 }
 
 /**

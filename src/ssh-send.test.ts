@@ -101,7 +101,8 @@ describe("what the tablet's Zotero folder holds", () => {
 		const tablet = device({
 			...zotero,
 			[`${DOC_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Prompting", parent: FOLDER_ID }),
-			[`${DOC2_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Elsewhere", parent: "" }),
+			// No `parent` at all, which is how xochitl writes a document at the root.
+			[`${DOC2_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Elsewhere" }),
 			[`${OTHER_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Deleted", parent: FOLDER_ID, deleted: true }),
 		});
 		expect(await namesInDeviceFolder(tablet.target, "Zotero")).toEqual(["Prompting"]);
