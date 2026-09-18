@@ -49,6 +49,12 @@ workflow publishes the section as the GitHub release body. See
   a theme can restyle them. A pen mark stays Obsidian's ordinary highlight. An existing digest
   picks the colours up the next time its document changes.
 
+### Changed
+
+- **Section headings in the digest link to their page.** `### 2. Related Works` now links to the
+  page the section starts on, like the `### Page 1` heading a section-less entry gets; each entry
+  keeps its own page link, since a section runs across pages.
+
 ### Fixed
 
 - **A highlight that started at a paragraph's first word printed without its colour.** A quote

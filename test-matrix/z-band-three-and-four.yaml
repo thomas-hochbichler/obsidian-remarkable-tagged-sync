@@ -315,6 +315,13 @@
       file: src/digest-builder.test.ts
       test: "renderDigest > orders sections and their entries by reading order where the page has one, not by height on the page"
 
+    - id: F4.10
+      scenario: "Two entries of one section on two pages, the section starting on the first of them"
+      expect: "The `###` line links to the page the section starts on (the heading''s own, from the outline), once; each entry still ends with its own page link. Decided 2026-09-18: the page heading was a link and the section heading was not, and the two should read alike"
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest > links a section heading to the page its section starts on, not to the entry's"
+
 - feature: F22
   name: A text layer whose font speaks in glyph ids
   code: src/pdf-text.ts

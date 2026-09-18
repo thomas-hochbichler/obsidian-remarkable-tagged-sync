@@ -291,6 +291,23 @@ describe("renderDigest", () => {
 > A margin note. ^nt-1`);
 	});
 
+	// Decided 2026-09-18: the page heading was a link and the section heading was not. The section
+	// links to the page it starts on, which the pipeline read off the outline; the entry keeps its own.
+	it("links a section heading to the page its section starts on, not to the entry's", () => {
+		const rendered = renderDigest(EMBED, [
+			page({ pageLabel: "3", embedPage: 3, highlights: [highlight({ id: "hl-1", sentence: "Two.", section: "2. Related Works", sectionPage: 3 })] }),
+			page({ pageLabel: "4", embedPage: 4, highlights: [highlight({ id: "hl-2", sentence: "Three.", section: "2. Related Works", sectionPage: 3 })] }),
+		]);
+		expect(rendered).toBe(`
+### [[${EMBED}#page=3|2. Related Works]]
+
+Two. · [[${EMBED}#page=3|p. 3]]
+^hl-1
+
+Three. · [[${EMBED}#page=4|p. 4]]
+^hl-2`);
+	});
+
 	it("emits a section heading once, where the section changes", () => {
 		const rendered = renderDigest(EMBED, [
 			page({

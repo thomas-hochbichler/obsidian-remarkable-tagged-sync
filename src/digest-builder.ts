@@ -109,6 +109,8 @@ export interface DigestHighlight {
 	notes: DigestNote[];
 	/** Nearest section heading. */
 	section: string | null;
+	/** The `embedPage` the section starts on -- its heading's own page -- which the `###` line links to. Absent where nothing knows it. */
+	sectionPage?: number;
 	top: number;
 	/** Where the highlight sits in the page's reading order, where the page has one; `top` otherwise. See `pageEntries`. */
 	order?: number;
@@ -144,8 +146,8 @@ export interface DigestPage {
 	/** Which page of the source document this is, or `null` when it is not a page of it. */
 	source: DigestPageSource | null;
 	highlights: DigestHighlight[];
-	/** Notes not nested under a highlight, each with its own `section` and, where the page has a text layer, its reading `order`. */
-	notes: (DigestNote & { section: string | null; order?: number })[];
+	/** Notes not nested under a highlight, each with its own `section` (and its page) and, where the page has a text layer, its reading `order`. */
+	notes: (DigestNote & { section: string | null; sectionPage?: number; order?: number })[];
 }
 
 /**
@@ -355,6 +357,7 @@ function renderHighlight(highlight: DigestHighlight, locator: string, zoteroUrl:
 
 interface DigestEntry {
 	section: string | null;
+	sectionPage?: number;
 	top: number;
 	order?: number;
 	/** `locator` is the entry's trailing page link, "" where the page is the heading and carries it. */
@@ -380,12 +383,14 @@ function pageEntries(page: DigestPage, zotero: ZoteroDigestLinks): DigestEntry[]
 	const entries: DigestEntry[] = [
 		...page.highlights.map((highlight) => ({
 			section: highlight.section,
+			sectionPage: highlight.sectionPage,
 			top: highlight.top,
 			order: highlight.order,
 			render: (locator: string) => renderHighlight(highlight, locator, zotero[highlight.id]),
 		})),
 		...page.notes.map((note) => ({
 			section: note.section,
+			sectionPage: note.sectionPage,
 			top: note.top,
 			order: note.order,
 			render: (locator: string) => renderNote(note, "> ", locator),
@@ -425,7 +430,16 @@ export function renderDigest(embedPath: string, pages: DigestPage[], zotero: Zot
 			// Compared as the rendered line, which is what settles both cases at once: the same section
 			// twice running is one heading, while two pages without a section are two -- their headings
 			// differ, because each names its own page.
-			const line = entry.section === null ? `### ${pageLink(page.pageLabel === null ? "Added page" : `Page ${page.pageLabel}`)}` : `### ${escapeText(entry.section)}`;
+			//
+			// A section heading links to the page the section *starts* on (its heading's, from the
+			// outline) rather than to the entry's, which the entry carries itself: a section runs across
+			// pages, and the page of its first annotation would change with the annotations. Decided
+			// 2026-09-18, so that the page heading and the section heading read alike.
+			const title = entry.section === null ? null : escapeText(entry.section);
+			const line =
+				title === null
+					? `### ${pageLink(page.pageLabel === null ? "Added page" : `Page ${page.pageLabel}`)}`
+					: `### ${entry.sectionPage === undefined ? title : `[[${embedPath}#page=${entry.sectionPage}|${title}]]`}`;
 			if (line !== heading) {
 				heading = line;
 				blocks.push(line);

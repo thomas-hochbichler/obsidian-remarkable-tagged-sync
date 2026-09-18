@@ -292,8 +292,8 @@ describe("buildDigest with the fixture page's text layer", () => {
 			const chapters = ["Chapter One — The station, 1962 to 1981"];
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ ...BOOK, chapters }));
 
-			expect(result.markdown).toContain("### Chapter One — The station, 1962 to 1981");
-			expect(result.markdown).not.toContain("### One — The station\n");
+			expect(result.markdown).toContain("### [[attachments/doc.pdf#page=2|Chapter One — The station, 1962 to 1981]]");
+			expect(result.markdown).not.toContain("|One — The station]]");
 		});
 
 		it("reads the book once, for the headings and the quotes together", async () => {
@@ -330,7 +330,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 
 		// Every entry on this page sits below the page's second heading, so one section carries all
 		// of it; the multi-section ordering is pinned by the synthetic suites below.
-		expect(sections).toEqual(["### One — The station"]);
+		expect(sections).toEqual(["### [[attachments/doc.pdf#page=2|One — The station]]"]);
 		// Reading order runs down the page: `top` is a scene coordinate, which grows downwards.
 		const first = result.markdown.indexOf("a shelf of rock");
 		const last = result.markdown.indexOf("the roof came");
@@ -440,7 +440,9 @@ describe("buildDigest sections across pages", () => {
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
 		// One heading for the section, and the page each entry sits on in the entry's own link.
-		expect(result.markdown.match(/^### .+$/gm)).toEqual(["### Erster Abschnitt"]);
+		// The heading links to the page the section starts on -- page 1 -- not to the entry's page 2,
+		// which the entry names itself.
+		expect(result.markdown.match(/^### .+$/gm)).toEqual(["### [[attachments/doc.pdf#page=1|Erster Abschnitt]]"]);
 		expect(result.markdown).toContain("#page=1|p. 1]]");
 		expect(result.markdown).toContain("#page=2|p. 2]]");
 		expect(result.markdown).not.toContain("Zweiter Abschnitt");
@@ -456,7 +458,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### Zweiter Abschnitt\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=2|Zweiter Abschnitt]]\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	it("orders a heading without a y at the top of its page", async () => {
@@ -470,7 +472,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### Ganze Seite\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=2|Ganze Seite]]\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	/**
@@ -514,7 +516,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### 1 Einleitung");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=1|1 Einleitung]]");
 		expect(result.markdown).not.toContain("2 Methode");
 	});
 
@@ -553,7 +555,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([page], { loadText: async () => document });
 
-		expect(result.markdown.indexOf(abstract)).toBeLessThan(result.markdown.indexOf("### 1 Einleitung"));
+		expect(result.markdown.indexOf(abstract)).toBeLessThan(result.markdown.indexOf("|1 Einleitung]]"));
 	});
 
 	it("renders no section at all for a document without headings", async () => {
@@ -1263,7 +1265,7 @@ describe("typed text as the document", () => {
 
 		const result = await buildTyped([typedPage(scene)], { ocrBackend: fakeOcr("a note in the margin") });
 
-		expect(result.markdown).toContain(`### ${heading.text}`);
+		expect(result.markdown).toContain(`### [[attachments/doc.pdf#page=1|${heading.text}`);
 		expect(result.markdown).toContain("a note in the margin");
 	});
 

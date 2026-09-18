@@ -172,6 +172,8 @@ interface PageGeometry {
 	headings: { title: string; y: number }[];
 	/** Every heading in the document, in document order, for the section lookup. */
 	documentHeadings: OrderedHeading[];
+	/** The `embedPage` of every source page index, so a section heading can link to the page its section starts on. */
+	embedPageOfSource: ReadonlyMap<number, number>;
 	lineHeightPt: number;
 }
 
@@ -618,17 +620,17 @@ function readingOrder(pageText: PdfPageText | null, x: number, y: number): numbe
  * heading-anchored note does not come through here at all -- it takes the heading the cascade gave
  * it, for the same reason.
  */
-function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings: OrderedHeading[], pageText: PdfPageText | null): string | null {
+function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings: OrderedHeading[], pageText: PdfPageText | null): SectionHeading | null {
 	const rank = pageRank(pageText, pdfLeft, pdfTop);
-	let carried: string | null = null;
-	let best: string | null = null;
+	let carried: SectionHeading | null = null;
+	let best: SectionHeading | null = null;
 	let bestRank = Number.NEGATIVE_INFINITY;
 
 	for (const heading of headings) {
 		// Sorted by page, so the first heading on a later page ends the search.
 		if (heading.pageIndex > pageIndex) break;
 		if (heading.pageIndex < pageIndex) {
-			carried = heading.title;
+			carried = heading;
 			continue;
 		}
 		// Not sorted by reading order, so every heading on this page is weighed rather than the first
@@ -636,12 +638,21 @@ function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings:
 		const at = pageRank(pageText, heading.x, heading.y);
 		if (at > rank || (at === rank && heading.y < pdfTop)) continue;
 		if (at >= bestRank) {
-			best = heading.title;
+			best = heading;
 			bestRank = at;
 		}
 	}
 
 	return best ?? carried;
+}
+
+/** What `sectionAt` answers with: the heading's title and the source page it stands on. */
+type SectionHeading = Pick<OrderedHeading, "title" | "pageIndex">;
+
+/** The entry's `section` and `sectionPage` for a heading, or no section at all. */
+function sectionFields(heading: SectionHeading | null, geometry: PageGeometry): { section: string | null; sectionPage?: number } {
+	if (heading === null) return { section: null };
+	return { section: heading.title, sectionPage: geometry.embedPageOfSource.get(heading.pageIndex) };
 }
 
 /**
@@ -751,8 +762,9 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		const host = hostId === undefined ? undefined : highlights.find((item) => item.highlight.id === hostId);
 		if (host) host.highlight.notes.push({ ...note, anchor: { kind: "highlight", highlightId: host.highlight.id } });
 		else {
-			const section = anchor.kind === "heading" ? anchor.heading : sectionAt(page.sourceIndex, pdfLeft, pdfTop, geometry.documentHeadings, geometry.pageText);
-			standalone.push({ ...note, section, order: readingOrder(geometry.pageText, pdfLeft, pdfTop) });
+			// A heading-anchored note sits level with its heading, so the section starts on its own page.
+			const heading = anchor.kind === "heading" ? { title: anchor.heading, pageIndex: page.sourceIndex } : sectionAt(page.sourceIndex, pdfLeft, pdfTop, geometry.documentHeadings, geometry.pageText);
+			standalone.push({ ...note, ...sectionFields(heading, geometry), order: readingOrder(geometry.pageText, pdfLeft, pdfTop) });
 		}
 	}
 
@@ -761,7 +773,7 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		// for it, and it keeps the entry in the digest instead of dropping it.
 		const top = pdfRect ? pdfRect.y + pdfRect.height : geometry.frame.heightPt;
 		const left = pdfRect ? pdfRect.x : 0;
-		highlight.section = sectionAt(page.sourceIndex, left, top, geometry.documentHeadings, geometry.pageText);
+		Object.assign(highlight, sectionFields(sectionAt(page.sourceIndex, left, top, geometry.documentHeadings, geometry.pageText), geometry));
 		highlight.order = readingOrder(geometry.pageText, left, top);
 	}
 
@@ -929,6 +941,7 @@ export async function buildDigest(
 	const chapters = book && text.headings.length > 0 ? ((await book())?.chapters ?? null) : null;
 	const headings = chapters?.length ? text.headings.map((heading) => ({ ...heading, title: chapterName(heading.title, chapters) ?? heading.title })) : text.headings;
 	const ordered = orderHeadings(headings);
+	const embedPageOfSource = new Map(pages.map((page) => [page.sourceIndex, page.embedPage]));
 
 	const digestPages: DigestPage[] = [];
 	for (const page of pages) {
@@ -942,6 +955,7 @@ export async function buildDigest(
 				.filter((heading): heading is PdfHeading & { y: number } => heading.pageIndex === page.sourceIndex && heading.y !== null)
 				.map((heading) => ({ title: heading.title, y: heading.y })),
 			documentHeadings: ordered,
+			embedPageOfSource,
 			// Not the mode and not the median: on a page of short paragraphs the commonest gap is a
 			// paragraph break, which would report roughly twice the real line height and double every
 			// tolerance downstream. `bodyLineSpacing` takes the lower quartile instead, the smallest gap
