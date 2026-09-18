@@ -234,12 +234,11 @@ describe("buildDigest with the fixture page's text layer", () => {
 
 		// The wrapped runs merge into one marked range spanning the printed line break.
 		expect(result.markdown).toContain(
-			"on ==a shelf of rock that the sea had spent a long time deciding not to take.==",
+			'on <mark class="tagged-sync-hl-magenta">a shelf of rock that the sea had spent a long time deciding not to take.</mark>',
 		);
-		expect(result.markdown).toContain("somewhere where the ==readings matter more than the reader.==");
-		// A run that covers its whole sentence marks nothing: the quote IS the run.
-		expect(result.markdown).toContain("He missed eleven readings in nineteen years.");
-		expect(result.markdown).not.toContain("==He missed");
+		expect(result.markdown).toContain('somewhere where the <mark class="tagged-sync-hl-yellow">readings matter more than the reader.</mark>');
+		// A run that covers its whole sentence is marked like any other (since 2026-09-18).
+		expect(result.markdown).toContain(">He missed eleven readings in nineteen years.</mark>");
 		expect(result.warnings).toEqual([]);
 	});
 
@@ -267,7 +266,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 		it("re-spells a damaged quote in the book's own words, and keeps the run marked", async () => {
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => BOOK);
 
-			expect(result.markdown).toContain("in February of nineteen seventy-four, when ==the roof came== off.");
+			expect(result.markdown).toContain('in February of nineteen seventy-four, when <mark class="tagged-sync-hl-blue">the roof came</mark> off.');
 			expect(result.markdown).not.toContain("Febrnary");
 		});
 
@@ -293,8 +292,8 @@ describe("buildDigest with the fixture page's text layer", () => {
 			const chapters = ["Chapter One — The station, 1962 to 1981"];
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ ...BOOK, chapters }));
 
-			expect(result.markdown).toContain("### Chapter One — The station, 1962 to 1981");
-			expect(result.markdown).not.toContain("### One — The station\n");
+			expect(result.markdown).toContain("### [[attachments/doc.pdf#page=2|Chapter One — The station, 1962 to 1981]]");
+			expect(result.markdown).not.toContain("|One — The station]]");
 		});
 
 		it("reads the book once, for the headings and the quotes together", async () => {
@@ -331,7 +330,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 
 		// Every entry on this page sits below the page's second heading, so one section carries all
 		// of it; the multi-section ordering is pinned by the synthetic suites below.
-		expect(sections).toEqual(["### One — The station"]);
+		expect(sections).toEqual(["### [[attachments/doc.pdf#page=2|One — The station]]"]);
 		// Reading order runs down the page: `top` is a scene coordinate, which grows downwards.
 		const first = result.markdown.indexOf("a shelf of rock");
 		const last = result.markdown.indexOf("the roof came");
@@ -441,7 +440,9 @@ describe("buildDigest sections across pages", () => {
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
 		// One heading for the section, and the page each entry sits on in the entry's own link.
-		expect(result.markdown.match(/^### .+$/gm)).toEqual(["### Erster Abschnitt"]);
+		// The heading links to the page the section starts on -- page 1 -- not to the entry's page 2,
+		// which the entry names itself.
+		expect(result.markdown.match(/^### .+$/gm)).toEqual(["### [[attachments/doc.pdf#page=1|Erster Abschnitt]]"]);
 		expect(result.markdown).toContain("#page=1|p. 1]]");
 		expect(result.markdown).toContain("#page=2|p. 2]]");
 		expect(result.markdown).not.toContain("Zweiter Abschnitt");
@@ -457,7 +458,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### Zweiter Abschnitt\n\nEin Satz auf dieser Seite. · [[attachments/doc.pdf#page=2|p. 2]]");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=2|Zweiter Abschnitt]]\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	it("orders a heading without a y at the top of its page", async () => {
@@ -471,7 +472,7 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([first.page, second.page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### Ganze Seite\n\nEin Satz auf dieser Seite. · [[attachments/doc.pdf#page=2|p. 2]]");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=2|Ganze Seite]]\n\n==Ein Satz auf dieser Seite.== · [[attachments/doc.pdf#page=2|p. 2]]");
 	});
 
 	/**
@@ -515,8 +516,46 @@ describe("buildDigest sections across pages", () => {
 
 		const result = await build([page], { loadText: async () => document });
 
-		expect(result.markdown).toContain("### 1 Einleitung");
+		expect(result.markdown).toContain("### [[attachments/doc.pdf#page=1|1 Einleitung]]");
 		expect(result.markdown).not.toContain("2 Methode");
+	});
+
+	// Live, 2026-09-18: a highlight in the abstract (left column, low on the page) printed after the
+	// introduction's highlights (right column, high on the page).
+	it("prints the left column's lower highlight before the right column's higher one", async () => {
+		const column = (text: string, x: number, y: number, height: number): PdfTextLine => ({ text, x, y, width: 200, height });
+		const abstract = "Ein Satz im Abstract.";
+		const intro = "Ein Satz in der Einleitung.";
+		const text: PdfPageText = {
+			label: "1",
+			width: PAGE_WIDTH_PT,
+			height: PAGE_HEIGHT_PT,
+			lines: [column(abstract, 80, 400, 10), column("1 Einleitung", 330, 700, 12), column(intro, 330, 680, 10)],
+		};
+		const rect = (x: number, y: number) => ({
+			x: (x - PAGE_WIDTH_PT / 2) / PX_TO_PT,
+			y: (PAGE_HEIGHT_PT - y - 10) / PX_TO_PT,
+			width: 200 / PX_TO_PT,
+			height: 10 / PX_TO_PT,
+		});
+		const page: DigestPageInput = {
+			pageId: "p0",
+			sourceIndex: 0,
+			embedPage: 1,
+			scene: {
+				formatVersion: 2,
+				layers: [],
+				highlights: [
+					{ id: "h0", color: 0, text: intro, rects: [rect(330, 680)] },
+					{ id: "h1", color: 0, text: abstract, rects: [rect(80, 400)] },
+				],
+			},
+		};
+		const document = fakeTextDocument({ 0: text }, [{ pageIndex: 0, x: 330, y: 700, title: "1 Einleitung" }]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.markdown.indexOf(abstract)).toBeLessThan(result.markdown.indexOf("|1 Einleitung]]"));
 	});
 
 	it("renders no section at all for a document without headings", async () => {
@@ -529,6 +568,35 @@ describe("buildDigest sections across pages", () => {
 		expect(result.markdown.match(/^### /gm)).toHaveLength(2);
 		expect(result.markdown).not.toContain("]] · ");
 		expect(result.markdown.match(/^\*\*(.+)\*\*$/gm)).toBeNull();
+	});
+});
+
+describe("buildDigest marker colour", () => {
+	/** One page, one highlight over its one line of text, recorded with the given colour fields. */
+	function pageWith(sourceIndex: number, colour: Pick<RmHighlight, "color" | "colorRgba">) {
+		const text: PdfPageText = { label: String(sourceIndex + 1), width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: [textLine("Ein Satz auf dieser Seite.", 600, 10)] };
+		const rect = { x: (80 - PAGE_WIDTH_PT / 2) / PX_TO_PT, y: (PAGE_HEIGHT_PT - 600 - 10) / PX_TO_PT, width: 450 / PX_TO_PT, height: 10 / PX_TO_PT };
+		const scene: RmPage = { formatVersion: 2, layers: [], highlights: [{ id: `h${sourceIndex}`, text: "Ein Satz auf dieser Seite.", rects: [rect], ...colour }] };
+		const page: DigestPageInput = { pageId: `p${sourceIndex}`, sourceIndex, embedPage: sourceIndex + 1, scene };
+		return { page, text };
+	}
+
+	// Both conventions the devices use, read out of real files: the reMarkable 2 and the Paper Pro's
+	// selection gesture name a palette id (with no `color_rgba`, or an opaque-black one); the Paper
+	// Pro's highlighter names the HIGHLIGHT placeholder and the true colour.
+	it("takes the palette id the device named, and color_rgba only for the HIGHLIGHT placeholder", async () => {
+		const gesture = pageWith(0, { color: 3, colorRgba: { r: 0, g: 0, b: 0 } });
+		const rm2 = pageWith(1, { color: 4 });
+		const highlighter = pageWith(2, { color: 9, colorRgba: { r: 190, g: 234, b: 254 } });
+		const document = fakeTextDocument({ 0: gesture.text, 1: rm2.text, 2: highlighter.text });
+
+		const result = await build([gesture.page, rm2.page, highlighter.page], { loadText: async () => document });
+
+		expect(result.pages.map((page) => page.highlights[0].color)).toEqual([
+			{ r: 251, g: 247, b: 25 },
+			{ r: 0, g: 255, b: 0 },
+			{ r: 190, g: 234, b: 254 },
+		]);
 	});
 });
 
@@ -574,6 +642,31 @@ describe("buildDigest merges highlights that share a sentence", () => {
 
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(1);
 		expect(result.markdown.match(/==/g)).toHaveLength(4);
+	});
+
+	it("keeps every run of a highlight, not only the box around them", async () => {
+		// A gesture over wrapped lines is one box per line; their union is the whole block including the
+		// unmarked ends of the first and last line, which is not what the reader marked (Zotero spec §3.1).
+		const { page, document } = sharedSentencePage([SENTENCE], [{ sentence: 0, from: 0, to: 20 }]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.pages[0].highlights[0].rects).toHaveLength(1);
+		expect(result.pages[0].highlights[0].rects[0].width).toBeGreaterThan(0);
+	});
+
+	it("gives the merged entry every member's runs", async () => {
+		// One selection the reader adjusted arrives as several runs. The entry is one annotation, and
+		// all of it is what they marked -- the survivor's own box is only where the entry *sits*.
+		const { page, document } = sharedSentencePage([SENTENCE], [
+			{ sentence: 0, from: 0, to: 20 },
+			{ sentence: 0, from: 40, to: 62 },
+		]);
+
+		const result = await build([page], { loadText: async () => document });
+
+		expect(result.pages[0].highlights).toHaveLength(1);
+		expect(result.pages[0].highlights[0].rects).toHaveLength(2);
 	});
 
 	it("keeps the id of the topmost contributing highlight and its position", async () => {
@@ -894,7 +987,7 @@ describe("buildDigest resilience", () => {
 		expect(result.markdown.match(/Handwriting that could not be transcribed\./g)).toHaveLength(6);
 		expect(result.markdown.match(/^> ```remarkable-note$/gm)).toHaveLength(6);
 		expect(result.markdown.match(/\^hl-/g)).toHaveLength(4);
-		expect(result.markdown).toContain("somewhere where the ==readings matter more than the reader.==");
+		expect(result.markdown).toContain('somewhere where the <mark class="tagged-sync-hl-yellow">readings matter more than the reader.</mark>');
 	});
 
 	it("turns a throwing OCR backend into warnings and entries rather than an exception", async () => {
@@ -1154,13 +1247,13 @@ describe("typed text as the document", () => {
 		// The whole sentence, with the covered run marked inside it -- and the sentence runs across the
 		// line the highlight sits on, so it was read out of the page's own typed text rather than out of
 		// anything the device recorded with the highlight (which is nothing: its `text` is empty).
-		const marked = /==([^=]+)==/.exec(result.markdown)?.[1] ?? "";
+		const marked = /(?:==|<mark[^>]*>)([^=<]+)(?:==|<\/mark>)/.exec(result.markdown)?.[1] ?? "";
 		// What was marked came off the line the rectangle covers, rounded back to whole words...
 		expect(marked).not.toBe("");
 		expect(layoutText(scene.text!).lines[2].text.startsWith(marked)).toBe(true);
 		// ...and the quote around it is the whole sentence, which runs past that line in both
 		// directions -- so it was read from the page's typed text, not from the one line.
-		expect(result.markdown.replace(/==/g, "")).toContain(SENTENCE.trim());
+		expect(result.markdown.replace(/==|<\/?mark[^>]*>/g, "")).toContain(SENTENCE.trim());
 		expect(result.warnings).toEqual([]);
 	});
 
@@ -1172,7 +1265,7 @@ describe("typed text as the document", () => {
 
 		const result = await buildTyped([typedPage(scene)], { ocrBackend: fakeOcr("a note in the margin") });
 
-		expect(result.markdown).toContain(`### ${heading.text}`);
+		expect(result.markdown).toContain(`### [[attachments/doc.pdf#page=1|${heading.text}`);
 		expect(result.markdown).toContain("a note in the margin");
 	});
 
@@ -1198,5 +1291,65 @@ describe("typed text as the document", () => {
 		const result = await buildTyped([typedPage(typedScene())]);
 
 		expect(result.warnings).toEqual([]);
+	});
+});
+
+// Everything below is about the digest as a *model* rather than as markdown: the places on the source
+// page that the rendered note cannot carry and write-back needs (Zotero spec §8). Nothing here changes
+// what is written into the vault -- the golden digests above are the proof of that.
+describe("where the digest's entries sit on the source page", () => {
+	it("hands back the entries the markdown was rendered from", async () => {
+		// Re-deriving them would mean parsing our own output, which is the one input that is guaranteed
+		// to be a rendering rather than a record.
+		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		expect(result.pages).toHaveLength(1);
+		expect(result.pages[0].highlights.length).toBeGreaterThan(0);
+		expect(result.pages[0].embedPage).toBe(2);
+	});
+
+	it("says which page of the source document it is, and how tall that page is", async () => {
+		// The height is the axis every rectangle here is measured against, and the one thing a caller
+		// cannot recover from the rectangles themselves.
+		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		expect(result.pages[0].source).toEqual({ index: 1, widthPt: PAGE_WIDTH_PT, heightPt: PAGE_HEIGHT_PT });
+	});
+
+	// ⚠️ Without a text layer the frame is the *device screen*, so a rectangle measured on it names a
+	// place on the tablet rather than in the PDF. Saying so once here is what keeps write-back from
+	// drawing a highlight onto the wrong part of somebody's paper.
+	it("says a page whose text could not be read is not a place in the document", async () => {
+		const result = await build([fixturePage()], { loadText: async () => null, ocrBackend: fakeOcr(...VISION_OUTPUT) });
+
+		expect(result.pages[0].source).toBeNull();
+		expect(result.pages[0].highlights.every((highlight) => highlight.rects.length === 0)).toBe(true);
+	});
+
+	it("gives a margin note a box on the page it was written on", async () => {
+		const result = await build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+		const notes = result.pages.flatMap((page) => [...page.notes, ...page.highlights.flatMap((highlight) => highlight.notes)]);
+
+		expect(notes.length).toBeGreaterThan(0);
+		for (const note of notes) {
+			expect(note.rect).not.toBeNull();
+			// Two things a caller must expect, both real in this fixture rather than hypothetical:
+			// a box can be **flat** (a single horizontal stroke is a note of height 0), and it can sit
+			// **past the page edge** horizontally (x ≈ 743 pt on a 612 pt page) -- the device's canvas is
+			// wider than the paper it shows, so the margin really is off the page.
+			expect(note.rect!.width).toBeGreaterThanOrEqual(0);
+			expect(note.rect!.height).toBeGreaterThanOrEqual(0);
+			// Vertically it is on the paper, which is the axis the page height fixes.
+			expect(note.rect!.y).toBeGreaterThanOrEqual(0);
+			expect(note.rect!.y + note.rect!.height).toBeLessThanOrEqual(PAGE_HEIGHT_PT);
+		}
+	});
+
+	it("leaves a margin note without a box where the page is not a place in the document", async () => {
+		const result = await build([fixturePage()], { loadText: async () => null, ocrBackend: fakeOcr(...VISION_OUTPUT) });
+		const notes = result.pages.flatMap((page) => page.notes);
+
+		expect(notes.length).toBeGreaterThan(0);
+		expect(notes.every((note) => note.rect === null)).toBe(true);
 	});
 });

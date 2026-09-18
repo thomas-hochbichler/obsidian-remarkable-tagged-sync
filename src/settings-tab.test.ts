@@ -83,7 +83,15 @@ vi.mock("./vision-ocr-runtime", async (importOriginal) => {
 // `window.open` is the platform's and there is nothing to model.
 vi.stubGlobal("createFragment", createFragment);
 const opened: string[] = [];
-vi.stubGlobal("window", { open: (url: string) => opened.push(url) });
+// `setTimeout`/`clearTimeout` are here for the Zotero probe: `withZoteroTimeout` uses the window's
+// timers (Obsidian's popout rule), and without them the race between the request and its timeout is
+// decided by microtask order rather than by the request. Delegated per call, so a test that installs
+// fake timers still sees them.
+vi.stubGlobal("window", {
+	open: (url: string) => opened.push(url),
+	setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+	clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+});
 const copied: string[] = [];
 vi.stubGlobal("navigator", { clipboard: { writeText: async (text: string) => void copied.push(text) } });
 
@@ -204,6 +212,13 @@ function row(drawn: Drawn[], name: string): Extract<Drawn, { kind: "row" }> {
 	return found;
 }
 
+/** The live line inside a row's description -- the connection verdict under Zotero. */
+function verdict(found: Extract<Drawn, { kind: "row" }>): FakeEl {
+	const line = found.setting.descEl.children.find((child) => child.classes.has("tagged-sync-verdict"));
+	if (!line) throw new Error(`no verdict line under "${found.name}"`);
+	return line;
+}
+
 function rowNames(drawn: Drawn[]): string[] {
 	return drawn.filter((item) => item.kind === "row").map((item) => item.name);
 }
@@ -253,6 +268,15 @@ describe("the shape of the settings screen", () => {
 			"Vault output",
 			"Transcription",
 			"Automatic sync",
+			// Between automatic sync and the Pro section: it is a Pro feature, set up once, and it reads
+			// as what it is where it sits next to the thing that unlocks it.
+			"Zotero",
+			// One heading per connection, so a switch says whether anything goes over the internet, and
+			// one for the tablet rows that follow.
+			"Zotero cloud",
+			"Zotero local",
+			"Zotero libraries",
+			"Zotero on the tablet",
 			"Tagged Sync Pro",
 			"Actions",
 		]);
@@ -830,6 +854,360 @@ describe("automatic sync", () => {
 		paid.setting.toggles[0].toggle(true);
 		await settle();
 		expect((metered.plugin.data.autoSync as { autoTranscribeMetered: boolean }).autoTranscribeMetered).toBe(true);
+	});
+});
+
+describe("the Zotero section", () => {
+	// Zotero is split (spec §5): zotero.org, Send and the note's Zotero line are free; the desktop
+	// app and Send over SSH are Pro, and those two rows are *shown* disabled with "(Pro)" rather than
+	// hidden -- the same rule as the transport dropdown and the frontmatter toggle. What a free user
+	// cannot see is not something they can decide to buy.
+	const PRO = {
+		licence: {
+			...NO_LICENCE,
+			key: "TS-XXXX-1234",
+			activationId: "act-1",
+			validatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+		},
+	};
+
+	it("opens zotero.org to a free user, shows the desktop app shut, and says which half is Pro", async () => {
+		const { tab } = await tabWith();
+		const drawn = draw(tab);
+
+		const headings = drawn.filter((item) => item.kind === "heading").map((item) => item.name);
+		expect(headings).toContain("Zotero");
+		expect(headings.indexOf("Zotero cloud")).toBeGreaterThan(headings.indexOf("Zotero"));
+		expect(headings.indexOf("Zotero local")).toBeGreaterThan(headings.indexOf("Zotero cloud"));
+		expect(toggle(section(drawn, "Zotero cloud"), "Use zotero.org").disabled).toBe(false);
+		expect(toggle(section(drawn, "Zotero local"), "Use the Zotero desktop app (Pro)").disabled).toBe(true);
+		expect(row(drawn, "Connection").desc).toContain("part of Tagged Sync Pro");
+	});
+
+	it("drops the (Pro) and opens both connections for a buyer", async () => {
+		const { tab } = await tabWith(PRO);
+		const drawn = draw(tab);
+
+		expect(rowNames(drawn)).not.toContain("Use the Zotero desktop app (Pro)");
+		expect(toggle(drawn, "Use zotero.org").disabled).toBe(false);
+		expect(toggle(drawn, "Use the Zotero desktop app").disabled).toBe(false);
+	});
+
+	// One switch per connection (desk test 2026-09-13): whether anything goes over the internet is
+	// then one visible thing, not "is the key field empty". The key row belongs to the switch.
+	it("shows the key row only while zotero.org is switched on, under its own heading", async () => {
+		const off = draw((await tabWith(PRO)).tab);
+		expect(row(off, "Zotero API key").setting.settingEl.visible).toBe(false);
+
+		const on = draw((await tabWith({ ...PRO, zotero: { useWeb: true } })).tab);
+		expect(row(on, "Zotero API key").setting.settingEl.visible).toBe(true);
+		expect(rowNames(section(on, "Zotero cloud"))).toEqual(["Use zotero.org", "Zotero API key"]);
+		expect(rowNames(section(on, "Zotero local"))).toEqual(["Use the Zotero desktop app"]);
+		expect(rowNames(section(on, "Zotero on the tablet"))).toContain("Tablet folder for sent PDFs");
+	});
+
+	it("saves the cloud switch, shows the key row and asks the status line again", async () => {
+		const { plugin, tab } = await tabWith(PRO);
+		const drawn = draw(tab);
+		toggle(drawn, "Use zotero.org").toggle(true);
+		await settle();
+
+		expect((plugin.data.zotero as { useWeb: boolean }).useWeb).toBe(true);
+		expect(plugin.saves).toHaveLength(1);
+		expect(row(drawn, "Zotero API key").setting.settingEl.visible).toBe(true);
+		// On with no key yet is still nothing: the line was asked again and says so.
+		expect(verdict(row(drawn, "Connection")).text).toBe("Not connected.");
+	});
+
+	// A key left in place with the switch off is kept, and reaches nothing: the line says so without
+	// a single request going out.
+	it("reads a key with zotero.org switched off as not connected, without asking zotero.org", async () => {
+		const fetched = vi.fn(async () => new Response("[]", { status: 200 }));
+		vi.stubGlobal("fetch", fetched);
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: false, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		await settle();
+
+		expect(verdict(row(drawn, "Connection")).text).toBe("Not connected.");
+		expect(fetched).not.toHaveBeenCalled();
+	});
+
+	// The privacy sentence sits beside the switch it is about, not only in the README (spec §1.2):
+	// write-back is the one thing in this plugin that sends transcribed text anywhere.
+	it("says what leaves the machine, where the switch is", async () => {
+		const free = draw((await tabWith()).tab);
+		const bought = draw((await tabWith(PRO)).tab);
+
+		expect(rowNames(section(bought, "Zotero on the tablet"))).toContain("What leaves your machine");
+		expect(row(bought, "What leaves your machine").desc).toContain("handwriting never does");
+		// A free vault's Zotero is running too, and the sentence names the half that sends text as
+		// Pro -- so it reads as true there as well, not as a feature that is not there.
+		expect(row(free, "What leaves your machine").desc).toContain("Tagged Sync Pro");
+	});
+
+	it("says nothing is connected until one of the two is set up", async () => {
+		const { tab } = await tabWith(PRO);
+
+		// The line is drawn inside the row's own description, not as a sibling below it: Obsidian 1.13
+		// draws each setting as a card, and a loose note lands in the gap between two of them.
+		const line = verdict(row(draw(tab), "Connection"));
+		expect(line.text).toBe("Not connected.");
+		expect(line.style["color"]).toBe("var(--text-error)");
+	});
+
+	// The four states of §2.1 come from the client, because what *answered* is not the same question
+	// as what is configured -- a key that is set up and rejected reads as "not connected", which is the
+	// state the user has to see to go and fix it.
+	it("replaces the line with what actually answered", async () => {
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
+			String(input).endsWith("/keys/current")
+				? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 })
+				: new Response("[]", { status: 200 }),
+		);
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		expect(verdict(row(drawn, "Connection")).style["color"]).toBe("");
+		await settle();
+
+		const line = verdict(row(drawn, "Connection"));
+		expect(line.text).toBe("Connected via web.");
+		expect(line.style["color"]).toBe("var(--text-success)");
+	});
+
+	// Ticket 26: the personal library is fixed on; each group the connection can see is a switch of
+	// its own, off until named -- what write-back puts into a group is visible to everyone in it.
+	const WEB = { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} };
+	const zoteroAnswering = (groups: unknown[]) => async (input: RequestInfo | URL) => {
+		const url = String(input);
+		if (url.endsWith("/keys/current")) return new Response(JSON.stringify({ userID: 1597773 }), { status: 200 });
+		if (url.includes("/groups?")) return new Response(JSON.stringify(groups), { status: 200 });
+		return new Response("[]", { status: 200 });
+	};
+
+	it("lists the groups Zotero names as switches", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: WEB });
+		draw(tab);
+		await settle();
+
+		const libraries = section(draw(tab), "Zotero libraries");
+		expect(rowNames(libraries)).toEqual(["Group libraries", "Lab reading group"]);
+		expect(row(libraries, "Group libraries").desc).toContain("visible to everyone in that group");
+		toggle(libraries, "Lab reading group").toggle(true);
+		await settle();
+		expect((plugin.data.zotero as { groups: unknown }).groups).toEqual([{ id: 4711, name: "Lab reading group" }]);
+	});
+
+	it("keeps a switched-on group on the screen while Zotero does not list it, so it can be switched off", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([]));
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
+		draw(tab);
+		await settle();
+
+		const libraries = section(draw(tab), "Zotero libraries");
+		expect(row(libraries, "Lab reading group").desc).toContain("Not listed by Zotero right now");
+		toggle(libraries, "Lab reading group").toggle(false);
+		await settle();
+		expect((plugin.data.zotero as { groups: unknown }).groups).toEqual([]);
+	});
+
+	it("shows the group switches shut to a free vault, without asking Zotero for its groups", async () => {
+		const fetched = vi.fn(zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		vi.stubGlobal("fetch", fetched);
+		const drawn = draw((await tabWith({ zotero: WEB })).tab);
+		await settle();
+
+		expect(rowNames(section(drawn, "Zotero libraries"))).toEqual(["Group libraries (Pro)"]);
+		expect(toggle(section(drawn, "Zotero libraries"), "Group libraries (Pro)").disabled).toBe(true);
+		expect(fetched.mock.calls.map((call) => String(call[0]))).not.toContainEqual(expect.stringContaining("/groups"));
+	});
+
+	it("says not connected when the connection that is set up does not answer", async () => {
+		vi.stubGlobal("fetch", async () => {
+			throw new TypeError("fetch failed");
+		});
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		await settle();
+
+		const line = verdict(row(drawn, "Connection"));
+		expect(line.text).toBe("Not connected.");
+		expect(line.style["color"]).toBe("var(--text-error)");
+	});
+
+	it("saves the desktop switch and redraws, because the status line is now about something else", async () => {
+		const { plugin, tab } = await tabWith(PRO);
+		toggle(draw(tab), "Use the Zotero desktop app").toggle(true);
+		await settle();
+
+		expect((plugin.data.zotero as { useLocal: boolean }).useLocal).toBe(true);
+		expect(plugin.saves).toHaveLength(1);
+	});
+
+	// §2.4's own sentence, in advance rather than in a notice afterwards: this is the one thing the
+	// plugin does that interrupts the person holding the tablet.
+	it("names the restart before the SSH send switch is touched", async () => {
+		const drawn = draw((await tabWith(PRO)).tab);
+		const restart = row(drawn, "Send over SSH when the cloud is not connected");
+
+		expect(restart.desc).toContain("restarts the tablet's reading app");
+		expect(restart.desc).toContain("the document you have open is closed first");
+	});
+
+	it("saves the SSH send switch", async () => {
+		const { plugin, tab } = await tabWith(PRO);
+		toggle(draw(tab), "Send over SSH when the cloud is not connected").toggle(true);
+		await settle();
+
+		expect((plugin.data.zotero as { sendOverSsh: boolean }).sendOverSsh).toBe(true);
+	});
+
+	// Send over the cloud is free (§5); the SSH route is the Pro transport, and its row says so.
+	it("opens the folder row to a free vault and keeps SSH send shut", async () => {
+		const drawn = draw((await tabWith()).tab);
+
+		expect(field(drawn, "Tablet folder for sent PDFs").disabled).toBe(false);
+		expect(toggle(drawn, "Send over SSH when the cloud is not connected (Pro)").disabled).toBe(true);
+	});
+
+	// A folder with no name would put every sent paper at the root of the tablet, where the user has
+	// to go looking for it.
+	it("takes an emptied folder name as the default rather than as no folder", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		field(draw(tab), "Tablet folder for sent PDFs").type("  ");
+
+		expect((plugin.data.zotero as { folder: string }).folder).toBe("Zotero");
+		vi.useRealTimers();
+	});
+
+	it("takes a folder name the user typed", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		field(draw(tab), "Tablet folder for sent PDFs").type(" Papers ");
+
+		expect((plugin.data.zotero as { folder: string }).folder).toBe("Papers");
+		await vi.advanceTimersByTimeAsync(600);
+		expect(plugin.saves.length).toBeGreaterThan(0);
+		vi.useRealTimers();
+	});
+
+	// The same debounce the attachments folder uses, and for the same reason: a 24-character key is 24
+	// writes to `data.json` otherwise.
+	it("takes a typed key immediately and reaches data.json when the typing stops", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		const text = field(draw(tab), "Zotero API key");
+
+		text.type("P9c46b0lkV2XzAoUTqPmPuGZ");
+		expect((plugin.data.zotero as { apiKey: string | null }).apiKey).toBe("P9c46b0lkV2XzAoUTqPmPuGZ");
+		expect(plugin.saves).toEqual([]);
+
+		vi.advanceTimersByTime(500);
+		expect(plugin.saves).toHaveLength(1);
+	});
+
+	// Prefilled: nothing happens until the command is run, so the tag is a name, not a switch -- and the
+	// sentence names the command and says that no sync sends (decided 2026-09-18).
+	it("starts the send tag at to-remarkable and names the command that uses it", async () => {
+		const sendTag = row(draw((await tabWith()).tab), "Send tag in Zotero");
+
+		expect(sendTag.setting.texts[0].getValue()).toBe("to-remarkable");
+		expect(sendTag.desc).toContain("Send tagged Zotero papers to reMarkable");
+		expect(sendTag.desc).toContain("No sync sends");
+		expect(sendTag.desc).not.toContain("automatic");
+	});
+
+	it("takes the send tag the user typed, trimmed, and keeps an emptied one empty", async () => {
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith(PRO);
+		field(draw(tab), "Send tag in Zotero").type(" lesen ");
+		expect((plugin.data.zotero as { sendTag: string }).sendTag).toBe("lesen");
+
+		field(draw(tab), "Send tag in Zotero").type("");
+		expect((plugin.data.zotero as { sendTag: string }).sendTag).toBe("");
+		vi.useRealTimers();
+	});
+
+	// Found in the desk test of 2026-09-13: the line was computed once at draw, so a key changed to a
+	// wrong one kept reading "Connected via web." until the tab was reopened.
+	it("asks again when the key changes, so a wrong key reads as not connected at once", async () => {
+		vi.useFakeTimers();
+		let accepted = true;
+		// A good answer is held back while `held` is set, so a slow probe can be overtaken by a later one.
+		const held: (() => void)[] = [];
+		let holding = false;
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (!accepted) return new Response("Forbidden", { status: 403 });
+			if (holding && String(input).includes("/items/top")) await new Promise<void>((resolve) => held.push(resolve));
+			return String(input).endsWith("/keys/current") ? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 }) : new Response("[]", { status: 200 });
+		});
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		const drawn = draw(tab);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Connected via web.");
+
+		// A second good key whose probe is slow, then a wrong key whose probe answers first.
+		holding = true;
+		field(drawn, "Zotero API key").type("ANOTHERGOODKEYANOTHERGOO");
+		await vi.advanceTimersByTimeAsync(700);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Checking…");
+
+		accepted = false;
+		field(drawn, "Zotero API key").type("WRONGKEYWRONGKEYWRONGKEY");
+		await vi.advanceTimersByTimeAsync(700);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Not connected.");
+
+		// The slow answer arrives last and lands nowhere: the line belongs to the newest probe.
+		for (const release of held.splice(0)) release();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(row(drawn, "Connection").setting.descEl.allText()).toContain("Not connected.");
+	});
+
+	it("reads a cleared field as no key at all, rather than as an empty one", async () => {
+		// `""` would be a configured connection that answers 401 on every call -- and the status line
+		// would say "not connected" for a vault that is, as far as the settings go, set up.
+		vi.useFakeTimers();
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
+		field(draw(tab), "Zotero API key").type("");
+		vi.advanceTimersByTime(500);
+
+		expect((plugin.data.zotero as { apiKey: string | null }).apiKey).toBeNull();
+	});
+
+	// The listing runs once per draw and answers late; two draws in flight would otherwise redraw
+	// twice for one list. Only an answer that adds a row is a reason to redraw.
+	it("redraws once for the answer that adds groups, and not again for the same list", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		const { tab } = await tabWith({ ...PRO, zotero: WEB });
+		draw(tab);
+		draw(tab);
+		const redraws = vi.spyOn(tab, "display");
+		await settle();
+		await settle();
+
+		expect(redraws).toHaveBeenCalledTimes(1);
+	});
+
+	it("says why when the groups cannot be listed", async () => {
+		const answering = zoteroAnswering([]);
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			if (String(input).includes("/groups?")) throw new TypeError("fetch failed");
+			return answering(input);
+		});
+		const { tab } = await tabWith({ ...PRO, zotero: WEB });
+		const drawn = draw(tab);
+		await settle();
+
+		expect(verdict(row(section(drawn, "Zotero libraries"), "Group libraries")).text).toContain("Could not list your groups:");
+	});
+
+	// A group the user switched on is theirs to see and to switch off before Zotero has said a word.
+	it("shows a switched-on group before Zotero has answered", async () => {
+		vi.stubGlobal("fetch", zoteroAnswering([]));
+		const { tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
+
+		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Group libraries", "Lab reading group"]);
 	});
 });
 

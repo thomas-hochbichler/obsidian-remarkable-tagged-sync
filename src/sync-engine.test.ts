@@ -11,6 +11,9 @@ import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmLayer, RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
+import { Platform } from "obsidian";
+import { md5Hex } from "./file-md5";
+import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
@@ -47,6 +50,8 @@ vi.mock("./scene-text", async (importOriginal) => {
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
 const PAGE_BYTES = new Uint8Array(readFileSync(FIXTURE_PATH));
+/** A v6 page file with nothing after its header: what a page whose layers were all deleted parses to -- no strokes, no highlights, no text. */
+const BLANK_PAGE_BYTES = new TextEncoder().encode("reMarkable .lines file, version=6          ");
 // A page whose nodes carry no anchor, so nothing about it is placed -- unlike FIXTURE_PATH, whose two
 // group nodes are anchored to its typed text.
 const UNANCHORED_PAGE_BYTES = new Uint8Array(readFileSync("./test-fixtures/rmv6/color-and-tool-v3.14.4.rm"));
@@ -616,6 +621,8 @@ describe("runSync", () => {
 
 		expect(result.notesWritten).toBe(0);
 		expect(result.index).toBe(previousIndex);
+		// No listing, so nothing to say about what is on the tablet: the Zotero links keep what they know.
+		expect(result.documentIds).toBeNull();
 		expect(api.raw.getRootHash).toHaveBeenCalledTimes(1);
 		expect(api.listItems).not.toHaveBeenCalled();
 		expect(api.getContent).not.toHaveBeenCalled();
@@ -670,6 +677,8 @@ describe("runSync", () => {
 
 		expect(result.notesWritten).toBe(1);
 		expect(result.index.mappings).toBe(mappingFingerprint({ sync: "Target" }));
+		// The run listed, and says so: every document the listing found, for the Zotero links to judge by.
+		expect(result.documentIds).toEqual(["doc-1"]);
 	});
 
 	it("self-heals: recreates a note the user deleted by hand, even though the root hash is unchanged", async () => {
@@ -2515,7 +2524,7 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 
 	/** What `buildDigest` came back with, in the shape the engine reads. */
 	function digestBuild(markdown: string, covered: number[], ocr: OcrStatus = "skipped") {
-		return { markdown, warnings: [], ocr, covered };
+		return { markdown, warnings: [], ocr, covered, pages: [] };
 	}
 
 	const lastWrite = (deps: { noteStore: { write: ReturnType<typeof vi.fn> } }) => deps.noteStore.write.mock.calls.at(-1)![1] as string;
@@ -2710,6 +2719,29 @@ describe("a unit that would be written with neither section", () => {
 		expect(await first.noteStore.read(path)).toContain("real text");
 		expect(result.documentsSkipped).toBe(1);
 		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
+	});
+
+	// Desk test 2026-09-13: the reader deleted a page's whole annotation layer; the render came back
+	// blank and the note kept quoting the old marks, because the net took the empty block for a loss.
+	// A unit that is blank on the tablet is the explanation it lacked: there is nothing left that
+	// the render, drawn from the same scene, does not also lack -- so the note follows the tablet.
+	it("rewrites the note when the pages themselves are empty now, and says why the sections went", async () => {
+		const first = { ...baseDeps(onePageNotebook("root-04-g", "hash-1"), { sync: "Target" }), ocrBackend: perPageOcrBackend("real text") };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const path = synced.index.rows[KEY].notePath;
+		expect(await first.noteStore.read(path)).toContain("real text");
+
+		// The page is still there but carries nothing any more -- what a deleted layer leaves behind.
+		const erased = onePageNotebook("root-04-g2", "hash-2");
+		erased.raw.getHash.mockResolvedValue(BLANK_PAGE_BYTES);
+		const second = { ...baseDeps(erased, { sync: "Target" }), noteStore: first.noteStore, ocrBackend: emptyPerPageOcrBackend() };
+		const result = await runSync(second, synced.index);
+
+		expect(await first.noteStore.read(path)).not.toContain("real text");
+		expect(result.notesWritten).toBe(1);
+		expect(result.documentsSkipped).toBe(0);
+		expect(result.skipErrors).toContainEqual(expect.stringContaining("its pages are empty on the tablet now"));
+		expect(result.index.rows[KEY].entryHash).toBe("hash-2");
 	});
 
 	// "Never replace content with nothing", not "never write nothing". Refusing here would leave a
@@ -2918,7 +2950,7 @@ describe("reTranscribeAll", () => {
 		/** A mixed notebook, synced: page 1 typed and in the digest, page 2 handwritten and transcribed. */
 		async function syncedMixedNotebook(rootHash: string, pageBBytes = PAGE_BYTES) {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [] });
 			const api = twoPageNotebook(rootHash);
 			api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-b") ? pageBBytes : PAGE_BYTES));
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
@@ -2973,7 +3005,7 @@ describe("reTranscribeAll", () => {
 		// Nothing else in the note accounts for that page, and the naming line is the whole point.
 		it("names a typed page when the note has no digest to carry it", async () => {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [], pages: [] });
 			const api = twoPageNotebook("root-06-nodigest");
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
 			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -2992,7 +3024,7 @@ describe("reTranscribeAll", () => {
 		// dropped it instead, and the two paths then disagreed about the same notebook (ticket 06).
 		it("names a typed page the note's digest saw and found nothing on", async () => {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [] });
 			const api = twoPageNotebook("root-06-uncovered");
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
 			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -4693,7 +4725,7 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		// Page 1 reads as a document, so the unit gets a digest -- which is what makes page 3's quotes
 		// fold into the transcript instead of standing in their own `## Highlights` section.
 		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
-		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1] });
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [] });
 
 		const backend = countingOcrBackend();
 		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: backend };
@@ -4708,7 +4740,7 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		const secondApi = notebook("root-117-m2", "hash-2", { ...THREE, "page-b": "h-b-edited" });
 		secondApi.raw.getHash.mockImplementation(async (path: string) => (path.includes("page-c") ? HIGHLIGHTED_PAGE_BYTES : PAGE_BYTES));
 		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
-		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1] });
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [] });
 		await runSync({ ...baseDeps(secondApi, { sync: "Target" }), noteStore: deps.noteStore, ocrBackend: countingOcrBackend("test-backend", "fresh") }, synced.index);
 
 		const after = (await deps.noteStore.read(NOTE))!;
@@ -4926,5 +4958,221 @@ describe("remarkable-uuid and remarkable-note-id are a contract (Pro, #109)", ()
 		expect(one.noteId).not.toBe(other.noteId);
 		expect(notes[0]).toContain(`remarkable-note-id: ${one.noteId}\n`);
 		expect(notes[1]).toContain(`remarkable-note-id: ${other.noteId}\n`);
+	});
+});
+
+describe("the Zotero half of a sync (spec §3.4)", () => {
+	/** A PDF-backed doc whose single page carries the handwriting fixture, so the unit gets a digest. */
+	async function zoteroDocument(rootHash: string, hash = "hash-1") {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, fileType: "pdf", visibleName: "Prompting", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p0: "anno-hash" } },
+		});
+	}
+
+	const LINE = "Zotero: [Smith 2024 · Prompting](zotero://select/library/items/ITEM1) · highlights written back 2026-09-11";
+
+	/** A pass that answers `parts`, and records every unit it was asked about. */
+	function fakePass(parts: Partial<ZoteroNoteParts> = {}, seen: ZoteroUnit[] = []): { zotero: ZoteroPass; seen: ZoteroUnit[] } {
+		return {
+			seen,
+			zotero: {
+				run: async (unit) => {
+					seen.push(unit);
+					return { line: LINE, links: {}, keys: { zoteroKey: "ITEM1", citekey: "smith2024prompting" }, notices: [], ...parts };
+				},
+			},
+		};
+	}
+
+	// §3.4.1, and the whole reason the Zotero part is a second write: by the time anything talks to
+	// Zotero, the note is on disk with every highlight the tablet had.
+	it("asks Zotero only after the note is written, and about the note that is already there", async () => {
+		const api = await zoteroDocument("root-zotero-order");
+		const deps = baseDeps(api, { sync: "Target" });
+		const seen: ZoteroUnit[] = [];
+		const onDisk: (string | null)[] = [];
+		const zotero: ZoteroPass = {
+			run: async (unit) => {
+				seen.push(unit);
+				onDisk.push(await deps.noteStore.read(unit.notePath));
+				return { line: null, links: {}, keys: {}, notices: [] };
+			},
+		};
+
+		await runSync({ ...deps, zotero }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map((unit) => unit.docId)).toEqual(["doc-1"]);
+		expect(seen[0].notePath).toBe("Target/Prompting.md");
+		expect(onDisk[0]).toContain("Generated by Tagged Sync");
+	});
+
+	it("writes the line into the ownership callout, and the row's hash agrees with what is on disk", async () => {
+		const api = await zoteroDocument("root-zotero-line");
+		const deps = { ...baseDeps(api, { sync: "Target" }), ...fakePass() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const note = (await deps.noteStore.read("Target/Prompting.md"))!;
+		expect(note).toContain(`> ${LINE}`);
+		// Without this the next sync reads its own second write as a hand edit and refuses to touch the
+		// note ever again.
+		expect(blockHashOf(extractManagedBlock(note)!)).toBe(result.index.rows[notebookSyncKey("doc-1", "sync")].blockHash);
+	});
+
+	it("tells the pass when this write recreates a note the user deleted by hand", async () => {
+		const api = await zoteroDocument("root-1");
+		const row = notebookSyncKey("doc-1", "sync");
+		const previousIndex: SyncIndex = {
+			rootHash: "root-1", // unchanged -- only the missing note reopens the document
+			mappings: mappingFingerprint({ sync: "Target" }),
+			rows: { [row]: { syncKey: row, docId: "doc-1", pageId: null, tag: "sync", entryHash: "hash-1", pageHash: null, notePath: "Target/Prompting.md", status: "active", syncedAt: "2025-12-01T00:00:00.000Z", renderVersion: RENDER_VERSION } },
+		};
+		const seen: ZoteroUnit[] = [];
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), ...fakePass({}, seen) }, EMPTY_SYNC_INDEX);
+		await runSync({ ...baseDeps(api, { sync: "Target" }), ...fakePass({}, seen) }, previousIndex); // note deliberately not seeded
+
+		expect(seen.map((unit) => unit.noteWasDeleted)).toEqual([false, true]);
+	});
+
+	it("writes the two Zotero keys into the frontmatter the Pro toggle already owns", async () => {
+		const api = await zoteroDocument("root-zotero-keys");
+		const deps = { ...baseDeps(api, { sync: "Target" }), frontmatter: true, ...fakePass() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const note = (await deps.noteStore.read("Target/Prompting.md"))!;
+		expect(note).toContain("zotero-key: ITEM1\n");
+		expect(note).toContain("citekey: smith2024prompting\n");
+	});
+
+	it("offers a notebook to nothing: there is no source file for Zotero to hold", async () => {
+		const api = fakeApi({
+			rootHash: "root-zotero-notebook",
+			entries: [documentEntry({ tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = { ...baseDeps(api, { sync: "Target" }), ...fakePass() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(deps.seen).toEqual([]);
+	});
+
+	it("hands over the hash of the file the tablet holds, not of the render in the vault", async () => {
+		Platform.isDesktop = true;
+		const source = await makeSourcePdf([[100, 100]]);
+		const api = fakeApi({
+			rootHash: "root-zotero-md5",
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Prompting", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }) },
+			sourcePdfByDoc: { "doc-1": source },
+			pageHashesByDoc: { "doc-1": { p0: "anno-hash" } },
+		});
+		const hashes: (string | null)[] = [];
+		const zotero: ZoteroPass = {
+			run: async (unit) => {
+				hashes.push(await unit.md5());
+				return { line: null, links: {}, keys: {}, notices: [] };
+			},
+		};
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), zotero }, EMPTY_SYNC_INDEX);
+
+		expect(hashes).toEqual([md5Hex(source)]);
+	});
+
+	// A document synced under a notebook tag *and* a page tag is two notes of one paper, so the same
+	// sentence arrives twice. The report says it once; diagnostics keeps both, because they are two
+	// notes that did not get their highlights.
+	it("says a repeated sentence once in the report, and once per note in diagnostics", async () => {
+		const api = fakeApi({
+			rootHash: "root-zotero-twice",
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Prompting", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: {
+				"doc-1": documentContent({
+					fileType: "pdf",
+					pageCount: 2,
+					cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]),
+					pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }],
+				}),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p0: "anno-hash", p1: "anno-hash-2" } },
+		});
+		const notice = 'Zotero: "Prompting" was not written back — Zotero could not be reached. The next sync tries again.';
+		const deps = { ...baseDeps(api, { sync: "Target", todo: "Todo" }), ...fakePass({ line: null, notices: [notice] }) };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(deps.seen).toHaveLength(2);
+		expect(result.zoteroNotices).toEqual([notice]);
+		expect(result.skipErrors.filter((line) => line === notice)).toHaveLength(2);
+	});
+
+	it("gives a page-tag note its Zotero part too: a paper read a page at a time is still that paper", async () => {
+		const api = fakeApi({
+			rootHash: "root-zotero-page",
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Prompting", tags: [] })],
+			contentById: {
+				"doc-1": documentContent({
+					fileType: "pdf",
+					pageCount: 2,
+					cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]),
+					pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }],
+				}),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+		});
+		const deps = { ...baseDeps(api, { todo: "Todo" }), ...fakePass() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(deps.seen.map((unit) => unit.notePath)).toEqual(["Todo/Prompting — Page 2.md"]);
+		expect(await deps.noteStore.read("Todo/Prompting — Page 2.md")).toContain(`> ${LINE}`);
+	});
+
+	it("says what the Zotero half could not do, in the run's report and in diagnostics", async () => {
+		const api = await zoteroDocument("root-zotero-notice");
+		const notice = 'Zotero: "Prompting" was not written back — Zotero could not be reached. The next sync tries again.';
+		const deps = { ...baseDeps(api, { sync: "Target" }), ...fakePass({ line: null, notices: [notice] }) };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.zoteroNotices).toEqual([notice]);
+		expect(result.skipErrors).toContain(notice);
+	});
+
+	it("writes the note once where there is no Zotero part to add", async () => {
+		const api = await zoteroDocument("root-zotero-quiet");
+		const deps = { ...baseDeps(api, { sync: "Target" }), ...fakePass({ line: null, keys: { zoteroKey: null, citekey: null } }) };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(deps.noteStore.write.mock.calls.filter((call) => call[0] === "Target/Prompting.md")).toHaveLength(1);
+	});
+
+	// §5: the sync goes on as the free one, `data.json` is untouched, and the note loses the one line
+	// that was Pro. The keys stay, because a pass that did not run knows nothing about this document.
+	it("drops the callout line and keeps the frontmatter keys when the licence has lapsed", async () => {
+		const first = { ...baseDeps(await zoteroDocument("root-lapse-1"), { sync: "Target" }), frontmatter: true, ...fakePass() };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		expect(await first.noteStore.read("Target/Prompting.md")).toContain("zotero://select");
+
+		// The same document, annotated again, and no Zotero half at all this time -- which is what a
+		// lapsed licence, an unconfigured vault and a free one all look like from in here.
+		const lapsed = { ...baseDeps(await zoteroDocument("root-lapse-2", "hash-2"), { sync: "Target" }), frontmatter: true, noteStore: first.noteStore };
+		const result = await runSync(lapsed, synced.index);
+
+		const note = (await first.noteStore.read("Target/Prompting.md"))!;
+		expect(note).not.toContain("zotero://select");
+		expect(note).toContain("zotero-key: ITEM1");
+		expect(blockHashOf(extractManagedBlock(note)!)).toBe(result.index.rows[notebookSyncKey("doc-1", "sync")].blockHash);
 	});
 });

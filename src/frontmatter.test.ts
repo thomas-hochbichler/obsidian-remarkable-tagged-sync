@@ -162,6 +162,74 @@ describe("removeFrontmatter (the toggle-off cleanup)", () => {
 	});
 });
 
+describe("the two Zotero keys", () => {
+	it("writes both, in the order of the §4 sample", () => {
+		const { content } = applyFrontmatter(BODY, fields({ zoteroKey: "KX7Q2R4M", citekey: "smith2024prompting" }), []);
+		expect(content).toContain("remarkable-note-id: n0000001\nzotero-key: KX7Q2R4M\ncitekey: smith2024prompting\n---\n");
+	});
+
+	// "Only when Zotero has one, never invented" (§4). A library without Better BibTeX has no citekeys
+	// at all, and a made-up one would be indistinguishable from a real one to every query in the vault.
+	it("invents no citekey where Zotero has none", () => {
+		const { content } = applyFrontmatter(BODY, fields({ zoteroKey: "KX7Q2R4M", citekey: null }), []);
+		expect(content).toContain("zotero-key: KX7Q2R4M\n");
+		expect(content).not.toContain("citekey");
+	});
+
+	// Ticket 26: the group's id beside the key, only for a group -- a query on `zotero-key` alone
+	// keeps working, and the line is absent exactly where it would say nothing.
+	it("names the group library only where the item is in one, and takes the line out with the key", () => {
+		const grouped = applyFrontmatter(BODY, fields({ zoteroKey: "KX7Q2R4M", zoteroLibrary: "4711" }), []);
+		expect(grouped.content).toContain("zotero-key: KX7Q2R4M\nzotero-library: 4711\n");
+		const personal = applyFrontmatter(grouped.content, fields({ zoteroKey: "KX7Q2R4M", zoteroLibrary: null }), []);
+		expect(personal.content).not.toContain("zotero-library");
+		expect(removeFrontmatter(grouped.content, grouped.ownTags)).not.toContain("zotero-library");
+	});
+
+	// ⚠️ The value may be ZotLit's or the user's own -- the key is shared vocabulary, not ours. Taking
+	// it away because *this* document stopped being linked deletes another plugin's line.
+	it("never takes a citekey out of a note", () => {
+		const existing = "---\ncitekey: smith2024prompting\n---\n" + BODY;
+		const { content } = applyFrontmatter(existing, fields({ zoteroKey: "KX7Q2R4M", citekey: null }), []);
+		expect(content).toContain("citekey: smith2024prompting\n");
+	});
+
+	it("writes over a citekey Zotero now spells differently", () => {
+		const existing = "---\ncitekey: old2020key\n---\n" + BODY;
+		const { content } = applyFrontmatter(existing, fields({ citekey: "smith2024prompting" }), []);
+		expect(content).toContain("citekey: smith2024prompting\n");
+		expect(content).not.toContain("old2020key");
+	});
+
+	it("removes the item key from a note whose document is no longer linked", () => {
+		const linked = applyFrontmatter(BODY, fields({ zoteroKey: "KX7Q2R4M" }), []);
+		const { content } = applyFrontmatter(linked.content, fields({ zoteroKey: null }), []);
+		expect(content).not.toContain("zotero-key");
+	});
+
+	// The ordinary case for every vault that does not use Zotero: nothing to write, and nothing to
+	// take out either.
+	it("writes nothing at all for a document that was never linked", () => {
+		const { content } = applyFrontmatter(BODY, fields({ zoteroKey: null, citekey: null }), []);
+		expect(content).not.toContain("zotero-key");
+		expect(content).not.toContain("citekey");
+	});
+
+	// ⚠️ The frontmatter backfill pass never asks Zotero, so it cannot answer this question. Absent has
+	// to mean "leave the line alone": read as "no link", it would strip the key off every linked note
+	// in the vault until each document's next real sync put it back.
+	it("leaves both alone for a caller that does not know", () => {
+		const linked = applyFrontmatter(BODY, fields({ zoteroKey: "KX7Q2R4M", citekey: "smith2024prompting" }), []);
+		const { content } = applyFrontmatter(linked.content, fields(), []);
+		expect(content).toContain("zotero-key: KX7Q2R4M\ncitekey: smith2024prompting\n");
+	});
+
+	it("takes its own key back on the toggle-off cleanup, and leaves the citekey standing", () => {
+		const once = applyFrontmatter(BODY, fields({ zoteroKey: "KX7Q2R4M", citekey: "smith2024prompting" }), []);
+		expect(removeFrontmatter(once.content, once.ownTags)).toBe("---\ncitekey: smith2024prompting\n---\n" + BODY);
+	});
+});
+
 describe("value formatting", () => {
 	it("formats a local minute, zero-padded", () => {
 		expect(formatLocalMinute(new Date(2026, 7, 5, 9, 3))).toBe("2026-08-05T09:03");

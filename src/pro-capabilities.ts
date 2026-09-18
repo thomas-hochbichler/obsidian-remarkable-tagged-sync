@@ -4,6 +4,7 @@ import { isGated } from "./ocr-resolution";
 import { ocrBackendEntries } from "./ocr-registry";
 import { allowedTransports } from "./ssh-transport";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
+import { createZoteroClientFor, DEFAULT_ZOTERO_SETTINGS, zoteroProAllowed } from "./zotero-settings";
 
 /**
  * Everything Tagged Sync Pro sells, in one list a test can walk.
@@ -184,6 +185,37 @@ const FRONTMATTER_CAPABILITY: ProCapability = {
 };
 
 /**
+ * Zotero's Pro half (spec §5): the desktop-app connection and write-back. One capability for both,
+ * because they are one purchase and one gate function. Send over the cloud, matching and the note's
+ * Zotero line are free and are not in this list.
+ *
+ * `locked` asks the production gate, and `run` drives the production *factory* for the half of it
+ * a unit test can reach: a vault with nothing but the desktop app switched on either gets a client
+ * or gets `null`. Phrased against `zoteroProAllowed` alone this would still pass if the factory
+ * forgot to ask it, which is the mistake that gives the feature away. The write-back half is the
+ * same predicate, read into `ZoteroPassDeps.mayWriteBack` by `zotero-plugin.ts zoteroPassFor` and
+ * pinned by `zotero-plugin.test.ts`.
+ */
+const ZOTERO_CAPABILITY: ProCapability = {
+	id: "zotero-integration",
+	label: "Connect to the Zotero desktop app, and write your tablet highlights into Zotero as native annotations",
+	locked: (entitlement) => !zoteroProAllowed(entitlement),
+	// The desktop-app toggle is shown, disabled, with "(Pro)" -- the same rule as the transport dropdown
+	// and the frontmatter toggle: a feature a free user cannot see is one they cannot decide to buy.
+	whenLocked: "refused-in-place",
+	enforcedAt: {
+		site: "src/zotero-settings.ts createZoteroClientFor (local connection) and src/zotero-plugin.ts zoteroPassFor (mayWriteBack)",
+		run: (entitlement) => {
+			const client = createZoteroClientFor(
+				{ settings: () => ({ ...DEFAULT_ZOTERO_SETTINGS, useLocal: true }), saveLocalKey: async () => {} },
+				entitlement,
+			);
+			return client === null ? "refused-in-place" : "allowed";
+		},
+	},
+};
+
+/**
  * Every gated capability this build ships.
  *
  * The `filter` is the single most important line here. The obvious form --
@@ -194,7 +226,7 @@ export function proCapabilities(): ProCapability[] {
 	const backends = ocrBackendEntries()
 		.filter((entry) => BACKEND_TIER[entry.id]?.paid)
 		.map(backendCapability);
-	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY];
+	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY, ZOTERO_CAPABILITY];
 }
 
 /**
@@ -229,6 +261,10 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	"src/frontmatter.ts": {
 		reads: 1,
 		why: "`frontmatterAllowed`, the frontmatter-properties gate. A gate, and it is in the list -- `main.ts` and the settings tab ask it rather than reading the tier themselves.",
+	},
+	"src/zotero-settings.ts": {
+		reads: 1,
+		why: "`zoteroProAllowed`, the gate of Zotero's Pro half. A gate, and it is in the list -- `createZoteroClientFor` in the same file asks it for the desktop connection, `zoteroPassFor` for write-back.",
 	},
 	"src/settings-tab.ts": {
 		reads: 4,

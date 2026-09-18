@@ -417,6 +417,13 @@
       file: src/status-and-notices.test.ts
       test: "what a sync records for the diagnostics block > clears a stale error after a clean run, so diagnostics describes the latest sync"
 
+    - id: H7.25
+      scenario: The Zotero half of a run could not write something back
+      expect: Its sentence goes up as the pass wrote it, beside the backend's warnings and for the same reason -- the sync succeeded, and this half is invisible from anywhere else (spec §3.4.2)
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > raises what the Zotero half could not do, as the pass worded it"
+
 - feature: E15
   name: One-time platform-gap notice
   code: src/sync-notices.ts

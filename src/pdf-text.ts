@@ -942,6 +942,30 @@ async function readTextContent(page: PdfJsPage): Promise<PdfJsTextContent | null
 	}
 }
 
+/**
+ * The offset between a glyph id and the character it draws in the TrueType fonts whose text pdf.js
+ * hands over as glyph ids: glyph 3 is the space, so the id is the character code less 29.
+ */
+const GLYPH_ID_OFFSET = 29;
+
+/**
+ * Text that arrived as glyph ids, read back as characters.
+ *
+ * A symbolic TrueType font with no usable ToUnicode map makes pdf.js return the glyph ids as if they
+ * were characters, and one family of such fonts numbers its glyphs in ASCII order from the space at 3
+ * -- so "Introduction " comes out as ",QWURGXFWLRQ\u0003", every character 29 too low. Seen live in
+ * a 2008 Springer paper whose bold heading font was of that family while the body font was fine: the
+ * quotes were right, the section headings were noise. The tell is the `\u0003`, a control character
+ * no real text carries, standing where the spaces are; with it present and every code inside the
+ * shifted range, adding the offset back is the text. Anything else is left exactly as pdf.js gave it.
+ */
+export function repairGlyphIdText(text: string): string {
+	if (!text.includes("\u0003")) return text;
+	const codes = Array.from(text, (char) => char.charCodeAt(0));
+	if (!codes.every((code) => code >= 3 && code <= 0x7e - GLYPH_ID_OFFSET)) return text;
+	return String.fromCharCode(...codes.map((code) => code + GLYPH_ID_OFFSET));
+}
+
 async function readTextItems(page: PdfJsPage): Promise<RawTextItem[]> {
 	const content = await readTextContent(page);
 	const items: RawTextItem[] = [];
@@ -950,13 +974,17 @@ async function readTextItems(page: PdfJsPage): Promise<RawTextItem[]> {
 		const item = entry as { str?: unknown; transform?: unknown; width?: unknown; height?: unknown };
 		if (typeof item.str !== "string" || item.str.length === 0) continue;
 		if (!Array.isArray(item.transform) || item.transform.length < 6) continue;
-		const [x, y] = [item.transform[4], item.transform[5]] as unknown[];
+		const [a, b, , , x, y] = item.transform as unknown[];
 		if (typeof x !== "number" || typeof y !== "number") continue;
+		// Text running up or down the page -- arXiv's stamp in the left margin, a rotated figure label --
+		// is not prose, and its box read as horizontal lands it in the middle of the line whose
+		// baseline it happens to start at (live, 2026-09-18: "No- … arXiv:2510.00615v3 … 2026tably").
+		if (typeof a === "number" && typeof b === "number" && Math.abs(b) > Math.abs(a)) continue;
 		// `transform[3]` is the vertical font scale, i.e. the font size -- the fallback for the builds
 		// that leave `height` at 0.
 		const scale = typeof item.transform[3] === "number" ? Math.abs(item.transform[3]) : 0;
 		items.push({
-			text: item.str,
+			text: repairGlyphIdText(item.str),
 			x,
 			y,
 			width: typeof item.width === "number" ? item.width : 0,

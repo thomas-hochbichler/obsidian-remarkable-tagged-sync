@@ -3,6 +3,7 @@ import {
 	buildNoteContent,
 	deriveBaseName,
 	isEmptyManagedBlock,
+	managedBlockHash,
 	moveNote,
 	renderTranscript,
 	sanitizeFilenamePart,
@@ -47,6 +48,7 @@ function baseFields(overrides: Partial<NoteFields> = {}): NoteFields {
 		highlights: [],
 		transcript: "Some OCR text",
 		digest: "",
+		zoteroLine: null,
 		...overrides,
 	};
 }
@@ -167,6 +169,26 @@ describe("buildNoteContent", () => {
 				"> Every sync rewrites this note. Keep your own thoughts in a separate note and link back to this one.\n" +
 				"\n![[tagged-sync/attachments/doc-1.pdf]]",
 		);
+	});
+
+	it("carries the Zotero line as the callout's last line", () => {
+		const content = buildNoteContent(baseFields({ zoteroLine: "Zotero: [Smith 2024](zotero://select/library/items/KX7Q2R4M)" }), null);
+
+		expect(content).toContain(
+			"> Every sync rewrites this note. Keep your own thoughts in a separate note and link back to this one.\n" +
+				"> Zotero: [Smith 2024](zotero://select/library/items/KX7Q2R4M)\n" +
+				"\n![[tagged-sync/attachments/doc-1.pdf]]",
+		);
+	});
+
+	it("writes no Zotero line at all for a document that is not linked to one", () => {
+		expect(buildNoteContent(baseFields(), null)).not.toContain("Zotero");
+	});
+
+	// The line is part of the managed block, so a document that gains its link -- or loses it -- reads
+	// as a changed note rather than as one already up to date, and the next sync rewrites it.
+	it("changes the block hash when the Zotero line does", () => {
+		expect(managedBlockHash(baseFields({ zoteroLine: "Zotero: x" }))).not.toBe(managedBlockHash(baseFields()));
 	});
 
 	it("puts the same callout on a digest note", () => {

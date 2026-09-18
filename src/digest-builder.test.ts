@@ -12,15 +12,15 @@ function top(pdfY: number): number {
 }
 
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
-	return { id: "hl-000000", sentence: "", marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
+	return { id: "hl-000000", sentence: "", rects: [], tool: "marker", marked: [], color: null, notes: [], section: null, top: 0, ...overrides };
 }
 
 function note(overrides: Partial<DigestNote> = {}): DigestNote {
-	return { id: "nt-000000", anchor: { kind: "page" }, text: "", region: null, top: 0, ...overrides };
+	return { id: "nt-000000", anchor: { kind: "page" }, text: "", region: null, rect: null, top: 0, ...overrides };
 }
 
 function page(overrides: Partial<DigestPage> = {}): DigestPage {
-	return { pageLabel: "1", embedPage: 1, highlights: [], notes: [], ...overrides };
+	return { pageLabel: "1", embedPage: 1, source: null, highlights: [], notes: [], ...overrides };
 }
 
 /** The fixture page's right margin, where every one of its notes was written. */
@@ -52,6 +52,7 @@ const NOTE_NEXT_TO_HIGHLIGHT = note({
 const FIXTURE_PAGE: DigestPage = {
 	pageLabel: "2",
 	embedPage: 2,
+	source: { index: 1, widthPt: 612, heightPt: PAGE_HEIGHT },
 	highlights: [
 		highlight({
 			id: "hl-9f21c4",
@@ -180,7 +181,7 @@ const NOTE_P2 = P2.replace(" · ", " ");
 const FIXTURE_MARKDOWN = `
 ### Allgemeine Prinzipien
 
-Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten ==für alle aktuellen Claude-Modelle,== einschließlich Claude Fable 5 und Claude Mythos 5.${P2}
+Die Techniken in diesem Abschnitt und den folgenden Abschnitten gelten <mark class="tagged-sync-hl-yellow">für alle aktuellen Claude-Modelle,</mark> einschließlich Claude Fable 5 und Claude Mythos 5.${P2}
 ^hl-9f21c4
 
 ### Sei klar und direkt
@@ -290,6 +291,23 @@ describe("renderDigest", () => {
 > A margin note. ^nt-1`);
 	});
 
+	// Decided 2026-09-18: the page heading was a link and the section heading was not. The section
+	// links to the page it starts on, which the pipeline read off the outline; the entry keeps its own.
+	it("links a section heading to the page its section starts on, not to the entry's", () => {
+		const rendered = renderDigest(EMBED, [
+			page({ pageLabel: "3", embedPage: 3, highlights: [highlight({ id: "hl-1", sentence: "Two.", section: "2. Related Works", sectionPage: 3 })] }),
+			page({ pageLabel: "4", embedPage: 4, highlights: [highlight({ id: "hl-2", sentence: "Three.", section: "2. Related Works", sectionPage: 3 })] }),
+		]);
+		expect(rendered).toBe(`
+### [[${EMBED}#page=3|2. Related Works]]
+
+Two. · [[${EMBED}#page=3|p. 3]]
+^hl-1
+
+Three. · [[${EMBED}#page=4|p. 4]]
+^hl-2`);
+	});
+
 	it("emits a section heading once, where the section changes", () => {
 		const rendered = renderDigest(EMBED, [
 			page({
@@ -334,6 +352,20 @@ Three. · [[${EMBED}#page=3|p. 3]]
 			page({ pageLabel: "7", embedPage: 7, highlights: [highlight({ id: "hl-2", sentence: "Two." })] }),
 		]);
 		expect(rendered.match(/^### .*$/gm)).toEqual([`### [[${EMBED}#page=4|Page iv]]`, `### [[${EMBED}#page=7|Page 7]]`]);
+	});
+
+	// A two-column page: the abstract's highlight sits lower on the page than the introduction's and
+	// comes before it. The pipeline measured that as `order`; `top` alone printed it second.
+	it("orders sections and their entries by reading order where the page has one, not by height on the page", () => {
+		const rendered = renderDigest(EMBED, [
+			page({
+				highlights: [
+					highlight({ id: "hl-1", sentence: "Intro.", section: "1 Introduction", top: 10, order: 30 }),
+					highlight({ id: "hl-2", sentence: "Abstract.", section: null, top: 40, order: 12 }),
+				],
+			}),
+		]);
+		expect(rendered.indexOf("Abstract.")).toBeLessThan(rendered.indexOf("### 1 Introduction"));
 	});
 
 	it("groups entries by section rather than by position, so a heading-anchored note lands under its section heading", () => {
@@ -401,10 +433,11 @@ describe("renderDigest — highlight quotes", () => {
 	 * striped slab -- which is what opened this map. The threshold also removes every fragmented mark
 	 * the fixture has, since each of those sits at 98 % or above.
 	 */
-	it("drops the marks from a quote that is almost entirely marked", () => {
-		// 21 of 26 characters, i.e. 81 %: what is left unmarked is a lead-in, not a distinction.
+	// Until 2026-09-18 a quote three-quarters marked was printed plain, for contrast. A highlight
+	// starting at a paragraph's first word then lost its marks -- and with them its colour.
+	it("keeps the marks on a quote that is almost entirely marked", () => {
 		expect(quoteBody({ sentence: "Also ist das hier wichtig.", marked: ["ist das hier wichtig."] })).toBe(
-			"Also ist das hier wichtig.",
+			"Also ==ist das hier wichtig.==",
 		);
 	});
 
@@ -414,10 +447,9 @@ describe("renderDigest — highlight quotes", () => {
 		);
 	});
 
-	it("counts the coverage over the resolved ranges, so an adjusted selection cannot over-count", () => {
-		// The device records every version of a selection, so the same run arrives repeatedly. Summed
-		// raw these three cover the sentence more than once and the mark would be dropped; resolved
-		// they cover 13 of 23 characters.
+	it("resolves overlapping and repeated runs to one range", () => {
+		// The device records every version of a selection, so the same run arrives repeatedly; nested
+		// or crossing `==` markers are not valid Markdown.
 		expect(quoteBody({ sentence: "Ein Wort und noch mehr.", marked: ["Wort und", "Wort und", "und noch"] })).toBe(
 			"Ein ==Wort und noch== mehr.",
 		);
@@ -511,9 +543,40 @@ describe("renderDigest — highlight quotes", () => {
 		);
 	});
 
-	it("does not render the marker color (F9)", () => {
-		expect(quoteBody({ sentence: "Gelb ist die Farbe hier.", marked: ["Gelb"], color: { r: 255, g: 207, b: 0 } })).toBe(
-			"==Gelb== ist die Farbe hier.",
+	// F9 revised 2026-09-13 (desk test: Zotero showed the colours, the note showed all yellow): a
+	// coloured mark is a `<mark>` named for the Zotero colour of the same hue, painted by the
+	// plugin's own stylesheet, so the note and the library show the same green. The name is the
+	// one table `zotero-annotations.ts` uses -- the Paper Pro's pastel green is green here too.
+	it("paints a coloured mark with the name of the Zotero colour it becomes", () => {
+		expect(quoteBody({ sentence: "Grün ist die Farbe hier.", marked: ["Grün"], color: { r: 172, g: 255, b: 133 } })).toBe(
+			'<mark class="tagged-sync-hl-green">Grün</mark> ist die Farbe hier.',
+		);
+		expect(quoteBody({ sentence: "Pink ist die Farbe hier.", marked: ["Pink"], color: { r: 255, g: 192, b: 203 } })).toBe(
+			'<mark class="tagged-sync-hl-magenta">Pink</mark> ist die Farbe hier.',
+		);
+		expect(quoteBody({ sentence: "Grau ist die Farbe hier.", marked: ["Grau"], color: { r: 200, g: 200, b: 201 } })).toBe(
+			'<mark class="tagged-sync-hl-gray">Grau</mark> ist die Farbe hier.',
+		);
+	});
+
+	// A pen mark, and a marker an older device recorded without a colour, read exactly as before.
+	it("keeps Markdown's own mark for a highlight with no recorded colour", () => {
+		expect(quoteBody({ sentence: "Gelb ist die Farbe hier.", marked: ["Gelb"], color: null })).toBe("==Gelb== ist die Farbe hier.");
+	});
+
+	// The text is escaped run by run: escaping the finished line would turn the `<mark>` itself into
+	// text, and not escaping the marked run would let a tag in the document open raw HTML.
+	it("escapes the text inside a coloured mark and leaves the mark itself alone", () => {
+		expect(quoteBody({ sentence: "Nutze <tag> & mehr.", marked: ["<tag>"], color: { r: 255, g: 207, b: 0 } })).toBe(
+			'Nutze <mark class="tagged-sync-hl-yellow">\\<tag></mark> \\& mehr.',
+		);
+	});
+
+	// The coverage rule is about the marks, not the colour: a quote that is all mark carries none,
+	// and so no colour either -- the sentence is the highlight.
+	it("keeps the colour on a quote the runs cover whole", () => {
+		expect(quoteBody({ sentence: "Alles markiert hier.", marked: ["Alles markiert hier."], color: { r: 172, g: 255, b: 133 } })).toBe(
+			'<mark class="tagged-sync-hl-green">Alles markiert hier.</mark>',
 		);
 	});
 });
@@ -594,6 +657,46 @@ describe("renderDigest — note anchors and regions", () => {
 			`Ein ==Satz== mit Inhalt. · [[${EMBED}#page=1|p. 1]]
 ^hl-1\n\n> [!handwritten] [[${EMBED}#page=1|p. 1]]\n> Dazu. ^nt-1`,
 		);
+	});
+});
+
+describe("renderDigest — the link into Zotero", () => {
+	// The vault's own page link first, then Zotero's. Two numbers on one line -- `p. 1` is the
+	// document's printed label, `page=2` is the sheet Zotero's reader turns to -- and that is right.
+	it("follows the vault's page link with the annotation's own", () => {
+		const rendered = renderDigest(
+			EMBED,
+			[page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz.", section: "First" })] })],
+			{ "hl-1": "zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1" },
+		);
+
+		expect(rendered.split("\n").slice(-2)).toEqual([
+			`Ein Satz. · [[${EMBED}#page=1|p. 1]] · [in Zotero](zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1)`,
+			"^hl-1",
+		]);
+	});
+
+	// The heading carries the page there, and a heading cannot carry a link to one mark: the entry has
+	// no locator of its own and still has an annotation to point at.
+	it("is there on a page that is its own heading, where the entry carries no other link", () => {
+		const rendered = renderDigest(EMBED, [page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz." })] })], {
+			"hl-1": "zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1",
+		});
+
+		expect(rendered).toContain("Ein Satz. · [in Zotero](zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1)\n^hl-1");
+	});
+
+	it("is absent from every entry that has no annotation of its own", () => {
+		const rendered = renderDigest(EMBED, [page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz." }), highlight({ id: "hl-2", sentence: "Noch einer." })] })], {
+			"hl-1": "zotero://open-pdf/library/items/ATT1?page=2&annotation=ANN1",
+		});
+
+		expect(rendered).toContain("Noch einer.\n^hl-2");
+	});
+
+	it("leaves every entry as it was for a sync with nothing written back", () => {
+		const pages = [page({ highlights: [highlight({ id: "hl-1", sentence: "Ein Satz." })] })];
+		expect(renderDigest(EMBED, pages, {})).toBe(renderDigest(EMBED, pages));
 	});
 });
 

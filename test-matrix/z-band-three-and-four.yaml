@@ -200,6 +200,13 @@
       file: src/pdf-text.test.ts
       test: "paragraphBounds > returns null for a span that touches no line"
 
+    - id: F3.7
+      scenario: "A text item running up the page -- arXivs stamp in the left margin, whose transform is a 90° rotation"
+      expect: "Left out of the text layer. Read as a horizontal box it starts at the baseline of whichever body line it meets and sorts in by x, and the live digest of 2026-09-18 quoted `No- … arXiv:2510.00615v3 [cs.AI] 1 Jun 2026tably` mid-sentence"
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "loadPdfText > leaves out text that runs up or down the page"
+
 - feature: A5
   name: Old documents don't break the account -- the assumption the patch rests on
   code: src/remarkable-metadata.ts
@@ -293,3 +300,43 @@
       layer: unit
       file: src/digest-pipeline.test.ts
       test: "buildDigest merges highlights that share a sentence > merges runs that already carry several rectangles by their outermost lines"
+
+    - id: F4.8
+      scenario: "A two-column page: a highlight in the abstract (left column, low on the page) and one in the introduction (right column, high on the page)"
+      expect: "The abstracts entry first, under its page heading, then `### 1 Einleitung`. Sorted by `top` the introduction printed first (live, 2026-09-18); the pipeline hands the builder the reading index it already measures for the section lookup"
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest sections across pages > prints the left column's lower highlight before the right column's higher one"
+
+    - id: F4.9
+      scenario: "Entries carrying a reading `order` that disagrees with their `top`"
+      expect: "Sections and the entries within them follow `order`; `top` only stands in where there is none and breaks a tie on one line"
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest > orders sections and their entries by reading order where the page has one, not by height on the page"
+
+    - id: F4.10
+      scenario: "Two entries of one section on two pages, the section starting on the first of them"
+      expect: "The `###` line links to the page the section starts on (the heading''s own, from the outline), once; each entry still ends with its own page link. Decided 2026-09-18: the page heading was a link and the section heading was not, and the two should read alike"
+      layer: unit
+      file: src/digest-builder.test.ts
+      test: "renderDigest > links a section heading to the page its section starts on, not to the entry's"
+
+- feature: F22
+  name: A text layer whose font speaks in glyph ids
+  code: src/pdf-text.ts
+  tier: free
+  scenarios:
+    - id: F22.1
+      scenario: "A heading font pdf.js returns as glyph ids -- \",QWURGXFWLRQ\\u0003\" for \"Introduction \", every character 29 too low, \\u0003 for the space (a 2008 Springer paper, live 2026-09-12)"
+      expect: "Read back as the characters: the section heading is \"Introduction\", not noise, and a quote in that font would be too"
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "repairGlyphIdText > reads a heading font's glyph ids back as the characters they draw"
+
+    - id: F22.2
+      scenario: "Ordinary text; text that merely looks shifted but carries no \\u0003; text with the control character but a code outside the shifted range"
+      expect: "Left exactly as pdf.js gave it. The control character where the spaces are is the tell, and a wrong repair is worse than none"
+      layer: unit
+      file: src/pdf-text.test.ts
+      test: "repairGlyphIdText > leaves ordinary text alone, and anything that only looks shifted"

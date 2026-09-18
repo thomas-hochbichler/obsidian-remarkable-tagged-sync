@@ -11,6 +11,7 @@ import {
 	type PdfTextLine,
 	type RawTextItem,
 	sentenceAround,
+	repairGlyphIdText,
 } from "./pdf-text";
 
 function item(text: string, x: number, y: number, size: number, width = text.length * size * 0.5): RawTextItem {
@@ -617,6 +618,18 @@ function singlePageDoc(page: FakePage, extras: Partial<FakeDocument> = {}): Fake
 const BYTES = new Uint8Array([1, 2, 3]);
 
 describe("loadPdfText", () => {
+	// arXiv's stamp runs up the left margin. Read as a horizontal box it starts at the baseline of
+	// whichever body line it happens to meet, and sorted in by x it printed in the middle of that
+	// line's text (live, 2026-09-18).
+	it("leaves out text that runs up or down the page", async () => {
+		const stamp = { str: "arXiv:2510.00615v3 [cs.AI] 1 Jun 2026", width: 180, height: 10, transform: [0, 10, -10, 0, 40, 400] };
+		const page = fakePage([textItem("Notably, it enables", 100, 400, 10), stamp, textItem("smaller LMs", 100, 388, 10)]);
+
+		const text = await (await loadPdfText(BYTES, fakeLoader(singlePageDoc(page))))?.page(0);
+
+		expect(text?.lines.map((line) => line.text)).toEqual(["Notably, it enables", "smaller LMs"]);
+	});
+
 	it("returns null when Obsidian does not expose pdf.js", async () => {
 		expect(await loadPdfText(BYTES)).toBeNull();
 	});
@@ -910,5 +923,22 @@ describe("cleanHeadingTitle", () => {
 	it("returns nothing for a title that holds nothing but junk", () => {
 		expect(cleanHeadingTitle("■")).toBe("");
 		expect(cleanHeadingTitle("   ")).toBe("");
+	});
+});
+
+describe("repairGlyphIdText", () => {
+	// The strings are what pdf.js returned for the heading font of a 2008 Springer paper, live on
+	// 2026-09-12: the bold font speaks in glyph ids, 29 below the character, with \u0003 for a space.
+	it("reads a heading font's glyph ids back as the characters they draw", () => {
+		expect(repairGlyphIdText(",QWURGXFWLRQ\u0003")).toBe("Introduction ");
+		expect(repairGlyphIdText("$\u0003%XVLQHVV\u00033URFHVV\u0010%DVHG")).toBe("A Business Process-Based");
+	});
+
+	// The tell is the control character where the spaces are; without it, or with any code outside
+	// the shifted range, the text is left exactly as pdf.js gave it -- a wrong repair is worse than none.
+	it("leaves ordinary text alone, and anything that only looks shifted", () => {
+		expect(repairGlyphIdText("Introduction")).toBe("Introduction");
+		expect(repairGlyphIdText("QWURGXFWLRQ")).toBe("QWURGXFWLRQ");
+		expect(repairGlyphIdText("a\u0003b~")).toBe("a\u0003b~");
 	});
 });

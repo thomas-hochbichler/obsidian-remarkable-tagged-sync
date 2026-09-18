@@ -319,6 +319,7 @@ describe("choosing a path for a new note, against a vault that folds case", () =
 			highlights: [],
 			transcript: "",
 			digest: "",
+			zoteroLine: null,
 			...overrides,
 		};
 	}

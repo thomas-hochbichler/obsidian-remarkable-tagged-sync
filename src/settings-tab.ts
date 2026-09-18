@@ -22,12 +22,18 @@ import { backendPromise, defaultOcrBackend, hasAlternativeBackends } from "./ocr
 import { BACKGROUND_CONSENT_NAME, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { DeviceUnreachableError, USB_HOST } from "./ssh-connection";
 import { pairDevice, PairingRefusedError, pairingGuidance } from "./ssh-pairing";
+import { SSH_SEND_RESTART_NOTE } from "./ssh-send";
+import { DEFAULT_SEND_TAG } from "./zotero-send";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
+import { DEFAULT_SEND_FOLDER } from "./zotero-send";
+import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
+import { zoteroProAllowed } from "./zotero-settings";
+import type { ZoteroGroup } from "./zotero-client";
 import { visionRunStats } from "./vision-ocr-backend";
 
 /**
@@ -104,6 +110,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		this.renderVaultOutput(containerEl);
 		this.renderOcrSettings(containerEl);
 		this.renderAutoSyncSettings(containerEl);
+		this.renderZotero(containerEl);
 		this.renderPro(containerEl);
 		this.renderActions(containerEl, connected);
 		// After the content is back, so there is something to scroll through. A page that got shorter
@@ -519,6 +526,248 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					toggle.setValue(this.plugin.data.frontmatter);
 				});
 			});
+	}
+
+	/**
+	 * Zotero: the two connections, and what is connected right now (spec §2.1).
+	 *
+	 * Four headings: *Zotero* with the connection line, then one heading per connection -- *Zotero
+	 * cloud* with its switch and key, *Zotero local* with its switch -- then *Zotero on the tablet* for
+	 * the sending rows. Each connection has a switch (asked for in the desk test of 2026-09-13): whether
+	 * anything goes over the internet is then one visible thing, not "is the key field empty". The key
+	 * row is shown only while the cloud switch is on.
+	 *
+	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (spec §5). The two Pro
+	 * rows -- the desktop app and Send over SSH -- are shown disabled with "(Pro)", the same rule as
+	 * the transport dropdown and the frontmatter toggle above: a feature a free user cannot see is one
+	 * they cannot decide to buy. Write-back has no switch; the connection sentence says whose it is.
+	 *
+	 * The privacy sentence sits here rather than in the README alone, beside the setting it is about
+	 * (spec §1.2): ink never leaves the machine, and with write-back on, the *transcribed text* of a
+	 * margin note reaches the user's own Zotero library. That is a change to what leaves the machine,
+	 * so it is said where the switch is.
+	 */
+	private renderZotero(containerEl: HTMLElement): void {
+		const pro = zoteroProAllowed(this.plugin.entitlement());
+		const settings = this.plugin.data.zotero;
+
+		new Setting(containerEl).setName("Zotero").setHeading();
+
+		const status = new Setting(containerEl)
+			.setName("Connection")
+			.setDesc(
+				pro
+					? "Either connection is enough on its own. The desktop app works offline and knows where your PDFs are; zotero.org works with Zotero closed."
+					: "zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro -- see below.",
+			);
+		// The four states of §2.1, and the client is what says which one it is -- it knows what answered,
+		// which is not the same question as what is configured. Asked at draw and again after the key
+		// changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading
+		// "Connected via web." until the tab was reopened). Each probe is numbered, so a slow answer
+		// never lands on top of a newer one; a render that has been superseded drops its own answer on
+		// the floor (`display()` empties the container and draws a new one).
+		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
+		// Coloured like the vision verdict under Model (asked for in the desk test of 2026-09-13): the
+		// theme's own success and error tones, through a variable, so the answer reads at a glance.
+		const paint = (text: string, color: string) => {
+			line.setText(text);
+			line.style.color = color;
+		};
+		let probe = 0;
+		const refreshStatus = () => {
+			const client = this.plugin.zoteroClient();
+			const mine = ++probe;
+			if (client === null) {
+				paint("Not connected.", "var(--text-error)");
+				return;
+			}
+			paint("Checking…", "");
+			// No rejection arm: `status()` is the one call on the client that answers instead of
+			// throwing -- a probe is a question, and "nothing answered" is one of its answers.
+			void client.status().then((reached) => {
+				if (mine === probe) paint(reached.summary, reached.web || reached.local ? "var(--text-success)" : "var(--text-error)");
+			});
+		};
+		refreshStatus();
+		const recheck = debounce(refreshStatus, 600, true);
+
+		new Setting(containerEl).setName("Zotero cloud").setHeading();
+
+		const cloud = new Setting(containerEl)
+			.setName("Use zotero.org")
+			.setDesc(
+				"Your library is read over the internet, at zotero.org, and with write-back your highlights are written there. " +
+					"Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.",
+			);
+
+		const keyRow = new Setting(containerEl)
+			.setName("Zotero API key")
+			.setDesc("From zotero.org → Settings → Security → New Key (Applications). Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
+			.addText((text) => {
+				text.inputEl.type = "password";
+				// Debounced like the attachments folder: the in-memory value is current immediately, and
+				// `data.json` is not written on every keystroke of a 24-character key.
+				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+				text.setValue(settings.apiKey ?? "").onChange((value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, apiKey: value === "" ? null : value };
+					persist();
+					recheck();
+				});
+			});
+		// The key row belongs to the switch: shown while it is on, hidden -- not removed -- while it is
+		// off, so a pasted key stays where it was for the day the switch is turned back on.
+		keyRow.settingEl.toggle(settings.useWeb);
+
+		cloud.addToggle((toggle) => {
+			toggle.setValue(settings.useWeb);
+			toggle.onChange(async (value) => {
+				this.plugin.data.zotero = { ...this.plugin.data.zotero, useWeb: value };
+				await this.plugin.saveData(this.plugin.data);
+				keyRow.settingEl.toggle(value);
+				// The status line is now about a different set of connections.
+				refreshStatus();
+			});
+		});
+
+		new Setting(containerEl).setName("Zotero local").setHeading();
+
+		new Setting(containerEl)
+			.setName(pro ? "Use the Zotero desktop app" : "Use the Zotero desktop app (Pro)")
+			.setDesc(
+				'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). ' +
+					"Zotero asks your permission the first time this plugin writes something; choose Always Allow.",
+			)
+			.addToggle((toggle) => {
+				toggle.setValue(settings.useLocal).setDisabled(!pro);
+				toggle.onChange(async (value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
+					await this.plugin.saveData(this.plugin.data);
+					// Redrawn, because the status line above is now about a different set of connections.
+					this.display();
+				});
+			});
+
+		this.renderZoteroLibraries(containerEl, pro);
+
+		new Setting(containerEl).setName("Zotero on the tablet").setHeading();
+
+		new Setting(containerEl)
+			.setName("Tablet folder for sent PDFs")
+			.setDesc("Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.")
+			.addText((text) => {
+				text.setPlaceholder(DEFAULT_SEND_FOLDER);
+				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+				text.setValue(settings.folder).onChange((value) => {
+					// Blank is the default rather than a folder with no name: a document put at the root of
+					// the tablet is one the user has to go looking for.
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, folder: value.trim() === "" ? DEFAULT_SEND_FOLDER : value.trim() };
+					persist();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Send tag in Zotero")
+			.setDesc(
+				"Tag a paper with it in Zotero, then run Send tagged Zotero papers to reMarkable: every paper carrying the tag goes to your tablet, " +
+					"in the folder above, without a sync tag -- tag it on the tablet when you want it back. Tag the paper, not the PDF. No sync sends; only that command does.",
+			)
+			.addText((text) => {
+				text.setPlaceholder(DEFAULT_SEND_TAG);
+				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+				text.setValue(settings.sendTag).onChange((value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendTag: value.trim() };
+					persist();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)")
+			// The spec's own wording, and it is here rather than in a notice afterwards because it is the
+			// one thing about this plugin that interrupts the person holding the tablet. They agree to it
+			// once, in advance, rather than finding out when their page closes.
+			.setDesc(`${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`)
+			.addToggle((toggle) => {
+				toggle.setValue(settings.sendOverSsh).setDisabled(!pro);
+				toggle.onChange(async (value) => {
+					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendOverSsh: value };
+					await this.plugin.saveData(this.plugin.data);
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("What leaves your machine")
+			.setDesc(
+				"Your handwriting never does. With write-back (Tagged Sync Pro), the transcribed text of your margin notes is written into " +
+					"your own Zotero library -- and to zotero.org, if that is the connection carrying it.",
+			);
+	}
+
+	/** What `client.groups()` last answered while this tab was open, or `null` before it has. See {@link renderZoteroLibraries}. */
+	private zoteroGroups: ZoteroGroup[] | null = null;
+
+	/**
+	 * The libraries (ticket 26): one switch per group library, all off until switched on by name
+	 * (the personal library is always read and needs no row) -- a group is other people's work, and what write-back puts
+	 * there is visible to everyone in it, which the row says.
+	 *
+	 * The groups are Zotero's to name, so they are asked for when the tab is drawn and the tab is
+	 * drawn again once the answer changes what it would show. Rows are drawn from what is *stored*
+	 * as well as from what was found: a group switched on stays a row while Zotero is closed, so it
+	 * can be switched off again, and the name stored beside its id is what the row and the note
+	 * call it meanwhile. Pro (§5), and shown shut to a free vault like the desktop-app switch.
+	 */
+	private renderZoteroLibraries(containerEl: HTMLElement, pro: boolean): void {
+		new Setting(containerEl).setName("Zotero libraries").setHeading();
+
+		const groupsRow = new Setting(containerEl)
+			.setName(pro ? "Group libraries" : "Group libraries (Pro)")
+			.setDesc(
+				"A group you switch on is searched, sent from and, with write-back, written into like your own library. " +
+					"Highlights written into a group library are visible to everyone in that group.",
+			);
+		const status = groupsRow.descEl.createDiv({ cls: "tagged-sync-verdict" });
+		if (!pro) {
+			// Shut like the desktop-app switch: a free vault sees the row as a Pro row, not as a bare paragraph.
+			groupsRow.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
+			return;
+		}
+
+		const enabled = this.plugin.data.zotero.groups;
+		const client = this.plugin.zoteroClient();
+		if (client === null) {
+			status.setText("Set up a connection above to see your groups.");
+		} else if (this.zoteroGroups === null) {
+			status.setText("Looking up your groups…");
+			client.groups().then(
+				(found) => {
+					const known = this.zoteroGroups;
+					this.zoteroGroups = found;
+					// Drawn again only when the answer adds a row: the same list twice is not a reason to
+					// pull the screen out from under a person reading it.
+					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.display();
+				},
+				(error: unknown) => status.setText(`Could not list your groups: ${describeZoteroError(error)}`),
+			);
+		} else if (this.zoteroGroups.length === 0 && enabled.length === 0) {
+			status.setText("You are in no group.");
+		}
+
+		// Switched-on groups first, in the order they were switched on, then the rest as Zotero lists them.
+		const rows = [...enabled, ...(this.zoteroGroups ?? []).filter((group) => !enabled.some((on) => on.id === group.id))];
+		for (const group of rows) {
+			const on = enabled.some((candidate) => candidate.id === group.id);
+			new Setting(containerEl)
+				.setName(group.name)
+				.setDesc(this.zoteroGroups !== null && !this.zoteroGroups.some((found) => found.id === group.id) ? "Not listed by Zotero right now; switched on earlier." : "")
+				.addToggle((toggle) => {
+					toggle.setValue(on);
+					toggle.onChange(async (value) => {
+						const others = this.plugin.data.zotero.groups.filter((candidate) => candidate.id !== group.id);
+						this.plugin.data.zotero = { ...this.plugin.data.zotero, groups: value ? [...others, group] : others };
+						await this.plugin.saveData(this.plugin.data);
+					});
+				});
+		}
 	}
 
 	/**

@@ -242,3 +242,29 @@
 .tagged-sync-pairing-help p {
 	margin: var(--size-4-2) 0 0;
 }
+
+/*
+ * A highlight in the digest, in the colour the marker had -- named for the Zotero colour of the
+ * same hue (`highlight-color.ts`), so a green mark is the same green in the note and in the
+ * library. Zotero's own eight, at the translucency Obsidian gives its default mark
+ * (`--text-highlight-bg` is rgba(255, 208, 0, 0.4)); a touch fainter in the dark theme, where a
+ * pastel on black glares. A mark with no recorded colour is Obsidian's `==...==` and gets none of
+ * this. A theme or snippet may override any of them.
+ */
+mark.tagged-sync-hl-yellow { background-color: rgba(255, 212, 0, 0.4); }
+mark.tagged-sync-hl-red { background-color: rgba(255, 102, 102, 0.4); }
+mark.tagged-sync-hl-green { background-color: rgba(95, 178, 54, 0.4); }
+mark.tagged-sync-hl-blue { background-color: rgba(46, 168, 229, 0.4); }
+mark.tagged-sync-hl-purple { background-color: rgba(162, 138, 229, 0.4); }
+mark.tagged-sync-hl-magenta { background-color: rgba(229, 110, 238, 0.4); }
+mark.tagged-sync-hl-orange { background-color: rgba(241, 152, 55, 0.4); }
+mark.tagged-sync-hl-gray { background-color: rgba(170, 170, 170, 0.4); }
+
+.theme-dark mark.tagged-sync-hl-yellow { background-color: rgba(255, 212, 0, 0.3); }
+.theme-dark mark.tagged-sync-hl-red { background-color: rgba(255, 102, 102, 0.3); }
+.theme-dark mark.tagged-sync-hl-green { background-color: rgba(95, 178, 54, 0.3); }
+.theme-dark mark.tagged-sync-hl-blue { background-color: rgba(46, 168, 229, 0.3); }
+.theme-dark mark.tagged-sync-hl-purple { background-color: rgba(162, 138, 229, 0.3); }
+.theme-dark mark.tagged-sync-hl-magenta { background-color: rgba(229, 110, 238, 0.3); }
+.theme-dark mark.tagged-sync-hl-orange { background-color: rgba(241, 152, 55, 0.3); }
+.theme-dark mark.tagged-sync-hl-gray { background-color: rgba(170, 170, 170, 0.3); }

@@ -12,8 +12,54 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Zotero.** Send a PDF from your Zotero library to the tablet (untagged — you give it your sync
+  tag on the tablet, the plugin never tags a document for you); after the sync the note knows
+  which paper it is and links back to the item in Zotero and in your
+  web library. Both work with zotero.org switched on under Settings → Zotero, an API key, and no
+  licence; each connection has its own switch, so whether anything goes over the internet is one
+  thing to look at. With Tagged Sync Pro, what you
+  marked on the tablet is also written into Zotero as native highlights, underlines and comments
+  (your edits in Zotero win; a highlight you erase on the tablet goes to Zotero's trash, unless
+  you edited it there; an annotation you delete in Zotero stays deleted — unless you also delete
+  the note in the vault, which starts that paper over), and the plugin can talk to the Zotero 10 desktop app as
+  well as to zotero.org. Nothing on the tablet is ever changed or removed by this — Send only adds.
+  Highlight colours arrive as the colour you chose, in Zotero's eight — matched by hue, so the
+  Paper Pro's pastel highlighters keep their names and the reMarkable 2's three arrive as three.
+- **A tag in Zotero sends the paper.** Tag a paper `to-remarkable` in Zotero (the tag is a setting
+  under Settings → Zotero) and run *Send tagged Zotero papers to reMarkable*: every paper carrying
+  the tag goes to your tablet, in the same folder as *Send* but without a sync tag — you tag it on
+  the tablet when you want it back. Nothing is written into Zotero and the tag there stays; a paper
+  already on the tablet is skipped — judged by this vault's own record *and* by name in the tablet's
+  folder, so a paper sent from another vault is not sent twice — and one with two PDFs is named and
+  left for *Send*. It is a command
+  on purpose, not part of the sync: **Sync never writes to your tablet**, and the scheduler never
+  sends — only you do, by running it.
+
+- **Group libraries** (Tagged Sync Pro). Under Settings → Zotero → *Zotero libraries*, switch on
+  any group your Zotero account is in, by name. A group switched on is searched by *Send*, sent
+  from by the tag command, matched against at sync time and -- with write-back -- written into like
+  your own library; a note whose paper is in a group links into the group, and its frontmatter
+  carries `zotero-library` beside `zotero-key`. Highlights written into a group library are
+  visible to everyone in that group, which the setting says. A group you may only read is named
+  in the note (*no write access to …*) rather than retried into your own library. Works over both
+  connections.
+- **Marker colours in the digest.** A highlight you made in green is green in the note — the
+  same eight colours Zotero uses, painted by the plugin's own stylesheet, so nothing to install and
+  a theme can restyle them. A pen mark stays Obsidian's ordinary highlight. An existing digest
+  picks the colours up the next time its document changes.
+
 ### Changed
 
+- **A refused write over zotero.org names the key.** An API key made without *Allow write access*
+  reads the library fine and is refused on the first write. The note and the run now say `the API
+  key has no write access to your library (allow it under zotero.org → Settings → Security)`
+  instead of `no write access to your library`, which pointed at a membership you do not lack. The
+  desktop app's answer for a group you may only read is unchanged.
+- **Section headings in the digest link to their page.** `### 2. Related Works` now links to the
+  page the section starts on, like the `### Page 1` heading a section-less entry gets; each entry
+  keeps its own page link, since a section runs across pages.
 - **The accuracy figure the settings card quotes for each downloadable model is now a committed
   measurement, checked on every build.** `docs/ocr-local/` holds one file per model generation --
   error rate per reference page, peak memory, and the prompt, raster, runtime and model-file pins it
@@ -23,6 +69,42 @@ workflow publishes the section as the GitHub release body. See
   `npm run measure:local`. The published series (`docs/ocr-series.csv`) carries these rows too, under
   `local/<generation>`.
 
+### Fixed
+
+- **Zotero.** A vault that talks to zotero.org only (no desktop connection) now gets an *in
+  Zotero* link per quote that opens in the browser, in zotero.org's own reader — a `zotero://`
+  link on such a machine opened nothing but Windows' "Get an app to open this 'zotero' link"
+  dialog. The web reader opens on the first page with the annotations in its sidebar; it cannot be
+  sent to a page or an annotation. With the desktop connection on, the link still opens the
+  annotation itself in the Zotero app.
+- **A trial that ends on a backend the licence never gated is now announced.** The one-time
+  "trial has ended" sentence rode on the licence re-check, which ran only for a cloud backend, so
+  a vault transcribing on Apple Vision or locally lost the second tag mapping and Zotero write-back in
+  silence. The sentence is now said on the first sync after the end, whatever the backend, and
+  names the price and the way to the Buy button. No call is made for it.
+- **A highlight that started at a paragraph's first word printed without its colour.** A quote
+  three-quarters marked was printed plain, for contrast. With coloured marks that dropped the one
+  thing the colour said, so the rule is gone: what you marked is marked, whole quote or not.
+- **Two-column papers: the abstract's highlight printed after the introduction's.** Digest entries
+  were ordered by height on the page, and on a two-column page the right column's first lines sit
+  higher than the left column's last. Entries now follow the page's reading order, the same order
+  the section lookup already used.
+- **A rotated margin stamp landed mid-sentence in a quote.** Text running up the page — arXiv's
+  `arXiv:2510.00615v3 [cs.AI]` in the left margin — was read as a horizontal line and sorted into
+  the body text at whatever baseline it started. Rotated text is left out of the text layer.
+- **A page you cleared on the tablet cleared its note too.** Deleting every mark on a page (the
+  whole layer, say) left the render blank but the note still quoting the old highlights, because
+  the plugin refuses to replace a note's content with nothing -- a guard against losing marks to a
+  parse error. A page that is empty on the tablet now writes an empty note; the guard still holds
+  where the page plainly carries ink.
+- **Section headings from a font that speaks in glyph ids.** Some PDFs embed a heading font that
+  pdf.js can only read as glyph numbers, so the digest filed quotes under `,QWURGXFWLRQ` instead
+  of `Introduction`. Such text is now read back as the characters it draws; quotes set in such a
+  font gain the same.
+- **Empty code blocks in a transcript.** A local model was seen answering a one-word margin note
+  with hundreds of empty ```` ```text ```` blocks before the word, which reached the note's callout
+  and, with Zotero write-back, the annotation's comment. Empty blocks are dropped; a block with
+  content is left alone.
 ## [1.7.2] - 2026-09-13
 
 ### Fixed

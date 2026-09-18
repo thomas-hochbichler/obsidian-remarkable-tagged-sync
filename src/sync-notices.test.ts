@@ -100,6 +100,16 @@ describe("partialOutcomeNotices", () => {
 		expect(notices.every((notice) => notice.timeout === LONG_NOTICE_MS)).toBe(true);
 	});
 
+	// A sync whose notes all landed and whose highlights silently stopped reaching Zotero the day a
+	// key expired is exactly what §3.4 is written against. Diagnostics nobody opens is not enough.
+	it("raises what the Zotero half could not do, as the pass worded it", () => {
+		const zoteroNotices = ['Zotero: "Prompting" was not written back — Zotero rejected the API key. The next sync tries again.'];
+		const notices = partialOutcomeNotices({ ...NOTHING_SKIPPED, zoteroNotices });
+
+		expect(notices.map((notice) => notice.message)).toEqual(zoteroNotices);
+		expect(notices[0].timeout).toBe(LONG_NOTICE_MS);
+	});
+
 	it("leaves out the ones that did not happen", () => {
 		expect(partialOutcomeNotices({ ...NOTHING_SKIPPED, shrunkNotes: 2 })).toHaveLength(1);
 	});

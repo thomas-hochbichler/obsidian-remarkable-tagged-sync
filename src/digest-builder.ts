@@ -10,6 +10,8 @@
 
 import type { DigestAnchor } from "./digest-anchoring";
 import { hashString } from "./note-builder";
+import { highlightColorName } from "./highlight-color";
+import type { PdfRect } from "./pdf-text";
 
 /**
  * Where a note's ink sits in the embedded PDF: its page, and the ink's bounding box in PDF points
@@ -35,6 +37,19 @@ export interface DigestNote {
 	text: string;
 	/** Where to draw the handwriting from, or null where there is nothing to draw it out of. */
 	region: NoteRegion | null;
+	/**
+	 * The ink's own box on the **source** page, in PDF points with the PDF's bottom-left origin --
+	 * what a second reader of this document, one that never saw our render, would need to point at
+	 * the same handwriting.
+	 *
+	 * Not the same thing as {@link DigestNote.region}, which is measured in the vault attachment we
+	 * wrote out: that one is placed by the renderer's own transform (a page whose ink runs off the
+	 * paper is drawn shrunk), and it is y-from-top because a pdf.js viewport is. The two agree for
+	 * most pages and must not be confused on the ones they do not.
+	 *
+	 * Null on a page whose frame is a guess -- see {@link DigestPage.source}.
+	 */
+	rect: PdfRect | null;
 	/** Scene y, for reading order. */
 	top: number;
 	/**
@@ -52,6 +67,18 @@ export interface DigestHighlight {
 	/** The full surrounding sentence, or the `.rm` highlight text alone (F4 soft fail). */
 	sentence: string;
 	/**
+	 * The marked text's boxes on the **source** page, one per run the reader's gesture covered, in
+	 * PDF points with the PDF's bottom-left origin.
+	 *
+	 * Kept per run rather than as the union the anchor cascade uses: a highlight over three wrapped
+	 * lines is three boxes, and its union is the whole block of text including the unmarked ends of
+	 * the first and last line. Anything drawing the marks back onto the page needs the runs.
+	 *
+	 * Empty where the page has no text layer at all. See {@link DigestPage.source} for the frame they
+	 * are measured in.
+	 */
+	rects: PdfRect[];
+	/**
 	 * The highlighted runs inside `sentence`; empty when none is known (F4 soft fail).
 	 *
 	 * A list, not a single run: the device keeps every version of a selection the user adjusted, so
@@ -60,17 +87,52 @@ export interface DigestHighlight {
 	 */
 	marked: string[];
 	/**
-	 * The marker's color. Carried through the model but deliberately never rendered: F9 keeps every
-	 * highlight a uniform `==...==`, because color semantics ("yellow = important") is the user's
-	 * private convention and guessing at it would put meaning in the note that nobody stated. Do not
-	 * "fix" this by rendering it -- changing it needs a spec decision, not a patch.
+	 * Which tool the reader marked this passage with.
+	 *
+	 * The digest renders both identically -- F9, and the reader wants the passage rather than the tool
+	 * -- but they are not the same act, and something writing them into another reader's document has
+	 * to say which: a swipe of the marker is a highlight, a line drawn under the words is an underline.
+	 * Kept here rather than derived from `color`, which is null for a marker the device recorded
+	 * without one as well as for every pen.
+	 */
+	tool: "marker" | "pen";
+	/**
+	 * The marker's color, or `null` for a pen mark and for a marker the device recorded without one.
+	 *
+	 * Rendered since F9 was revised (2026-09-13): a coloured mark is a `<mark>` carrying the name of the
+	 * Zotero colour it becomes in the library, so the note and Zotero show the same green. F9 had
+	 * kept every highlight a uniform `==...==` because colour *semantics* is the reader's private
+	 * convention -- that still holds: the note shows the colour and says nothing about what it means.
 	 */
 	color: { r: number; g: number; b: number } | null;
 	/** Notes anchored to this highlight, nested inside its callout (F5). */
 	notes: DigestNote[];
 	/** Nearest section heading. */
 	section: string | null;
+	/** The `embedPage` the section starts on -- its heading's own page -- which the `###` line links to. Absent where nothing knows it. */
+	sectionPage?: number;
 	top: number;
+	/** Where the highlight sits in the page's reading order, where the page has one; `top` otherwise. See `pageEntries`. */
+	order?: number;
+}
+
+/**
+ * The page of the source document a digest page was measured against.
+ *
+ * `null` says the entries on this page **cannot be placed on the source document**, and it covers
+ * the two cases that look different and are not: a page the reader added on the device, which has no
+ * source page at all, and a page whose text layer could not be read, where the coordinate frame falls
+ * back to the device screen and every rectangle on it names a place on the tablet rather than in the
+ * PDF. Either way the rectangles below describe something other than the source page, so anything
+ * writing them back into that document has one field to check instead of two conditions to re-derive.
+ */
+export interface DigestPageSource {
+	/** 0-based index of the page in the source PDF. */
+	index: number;
+	/** The source page's width in PDF points. */
+	widthPt: number;
+	/** The source page's height in PDF points -- the axis every rectangle here is measured against. */
+	heightPt: number;
 }
 
 export interface DigestPage {
@@ -81,10 +143,22 @@ export interface DigestPage {
 	 */
 	pageLabel: string | null;
 	embedPage: number;
+	/** Which page of the source document this is, or `null` when it is not a page of it. */
+	source: DigestPageSource | null;
 	highlights: DigestHighlight[];
-	/** Notes not nested under a highlight, each with its own `section`. */
-	notes: (DigestNote & { section: string | null })[];
+	/** Notes not nested under a highlight, each with its own `section` (and its page) and, where the page has a text layer, its reading `order`. */
+	notes: (DigestNote & { section: string | null; sectionPage?: number; order?: number })[];
 }
+
+/**
+ * Block id -> the `zotero://open-pdf/…` URL of the annotation that entry became, for the ` · [in
+ * Zotero]` link a quote carries once it has been written back (spec §4).
+ *
+ * A plain record of strings rather than the link itself, so the one module that knows how a Zotero
+ * URL is spelled (`zotero-note.ts`) stays the only one: here it is a string to print. Empty for
+ * every sync that has nothing written back, which is most of them.
+ */
+export type ZoteroDigestLinks = Readonly<Record<string, string>>;
 
 /** How many words of the nearest line the `line` anchor quotes before trailing off. */
 const ANCHOR_LINE_WORDS = 4;
@@ -155,20 +229,19 @@ function anchorTitle(anchor: DigestAnchor): string {
 }
 
 /**
- * The share of a quote that may be marked before the marks are dropped altogether.
- *
- * A mark only says something by contrast: where it covers the whole entry there is nothing left for
- * it to single out, and Obsidian paints one mark per wrapped line, so a long one reads as a striped
- * slab rather than a highlight. Measured over the fixture's 77 marked lines, 31 sit at 75 % or above
- * -- and every one of the 3 fragmented lines sits at 98 % or above, so the threshold removes the
- * fragments with them. Below it the mark is the only carrier of which words the reader actually drew
- * over, since the sentence around them is context the digest adds on purpose (F3).
+ * The class a coloured mark carries: the Zotero colour's name, painted by the plugin's own
+ * `styles.css`, so the reader needs no snippet and a theme can still override it.
  */
-const FULLY_MARKED_COVERAGE = 0.75;
+const MARK_CLASS_PREFIX = "tagged-sync-hl-";
 
 /**
- * Wraps every run in `==...==` at its first occurrence, or leaves the sentence plain when the runs
- * cover {@link FULLY_MARKED_COVERAGE} of it.
+ * Wraps every run at its first occurrence -- in `==...==`, or in a `<mark>` named for its colour when
+ * the marker had one. A run covering the whole quote is marked like any other (decided 2026-09-18:
+ * until then a quote three-quarters marked was printed plain, for contrast, and a highlight that
+ * started at a paragraph's first word lost its colour with the marks). Escapes the text on the way
+ * out, run by run: the runs are matched against the raw sentence,
+ * and the markup is the digest's own rather than the document's, so `escapeText` cannot run over the
+ * whole result -- it would turn the `<mark>` into text.
  *
  * The runs are separate selections over one passage, so they overlap, repeat and touch each other.
  * They are resolved to non-overlapping character ranges first: nested or crossing `==` markers are
@@ -179,7 +252,7 @@ const FULLY_MARKED_COVERAGE = 0.75;
  * plain sentence still says what the highlight was about, while throwing would drop the annotation
  * entirely.
  */
-function markSentence(sentence: string, marked: string[]): string {
+function markSentence(sentence: string, marked: string[], color: DigestHighlight["color"]): string {
 	const found = marked
 		.map((run) => ({ start: run === "" ? -1 : sentence.indexOf(run), length: run.length }))
 		.filter((range) => range.start >= 0)
@@ -195,18 +268,16 @@ function markSentence(sentence: string, marked: string[]): string {
 		else ranges.push({ start, end: start + length });
 	}
 
-	// Over the resolved ranges, not over `marked`, whose runs overlap and repeat -- counting those
-	// would put the coverage of an adjusted selection over 100 %.
-	const covered = ranges.reduce((sum, range) => sum + (range.end - range.start), 0);
-	if (covered >= FULLY_MARKED_COVERAGE * sentence.length) return sentence;
-
+	// Markdown's own mark where the colour is not known; HTML only where there is a colour to name,
+	// so a pen mark and an older device read exactly as before.
+	const [open, close] = color === null ? ["==", "=="] : [`<mark class="${MARK_CLASS_PREFIX}${highlightColorName(color)}">`, "</mark>"];
 	let quoted = "";
 	let cut = 0;
 	for (const { start, end } of ranges) {
-		quoted += `${sentence.slice(cut, start)}==${sentence.slice(start, end)}==`;
+		quoted += `${escapeText(sentence.slice(cut, start))}${open}${escapeText(sentence.slice(start, end))}${close}`;
 		cut = end;
 	}
-	return quoted + sentence.slice(cut);
+	return quoted + escapeText(sentence.slice(cut));
 }
 
 /** The block id (F7) terminates the entry's last text line -- it has to sit on content, not on a callout's title line and not on a code fence. */
@@ -263,17 +334,19 @@ function renderNote(note: DigestNote, prefix: string, locator: string): string {
  * page alternate grey and blue for its whole length. With the box gone the fold it existed to keep
  * short goes too -- a long quote is now simply a long paragraph.
  */
-function renderHighlight(highlight: DigestHighlight, locator: string): string {
-	// Escaped after marking, not before: the runs are matched against the raw sentence, and `==` is
-	// the digest's own markup rather than the document's, so it must survive untouched.
-	//
+function renderHighlight(highlight: DigestHighlight, locator: string, zoteroUrl: string | undefined): string {
 	// The block id goes on a line of its own, which is what keeps F7's "invisible in reading view"
 	// true. Measured in a real Reading View: Obsidian hides a trailing `^id` inside a callout but
 	// prints it as grey text at the end of a paragraph -- so moving the quote out of its callout made
 	// every id visible. On its own line (no blank line, so it stays part of the entry) it is hidden
 	// again and still resolves as a link target. A note keeps its id on the last body line: inside
 	// the callout it was never visible.
-	const quote = `${escapeText(markSentence(highlight.sentence, highlight.marked))}${locator}\n^${highlight.id}`;
+	//
+	// The Zotero link follows the vault's own, and it is per entry rather than per page because it
+	// points at one annotation. So it is there even where the page heading carries the locator and
+	// the entry itself has none -- a heading cannot hold a link to a single mark.
+	const inZotero = zoteroUrl === undefined ? "" : ` · [in Zotero](${zoteroUrl})`;
+	const quote = `${markSentence(highlight.sentence, highlight.marked, highlight.color)}${locator}${inZotero}\n^${highlight.id}`;
 	// A note anchored to this highlight follows it as a block of its own -- there is no callout left
 	// to nest inside. It repeats the locator rather than leaning on the quote above it: as a separate
 	// box it reads as an entry, and an entry whose title lacks the link every other one has reads as
@@ -284,42 +357,53 @@ function renderHighlight(highlight: DigestHighlight, locator: string): string {
 
 interface DigestEntry {
 	section: string | null;
+	sectionPage?: number;
 	top: number;
+	order?: number;
 	/** `locator` is the entry's trailing page link, "" where the page is the heading and carries it. */
 	render(locator: string): string;
 }
 
 /**
- * Reading order: section first, then top-down within the section.
+ * Reading order: section first, then along the page's reading order within the section.
  *
  * Sorting by `top` alone does not reproduce the sample. A note written *at* a heading sits slightly
  * above that heading's baseline, so by position it still belongs to the section above it and would be
  * printed before the section heading it introduces. Grouping by section fixes that, and it also settles the
  * exact `top` tie a heading produces between the last entry of one section and the first of the next.
  *
- * Sections themselves run in the order their first entry appears top-down, which is the order of
- * their headings on the page -- the page carries no heading positions of its own.
+ * Sections themselves run in the order their first entry appears in the reading order -- the page
+ * carries no heading positions of its own. Reading order and not `top`: on a two-column page the
+ * abstract sits *below* the introduction's first lines and comes before them, and by `top` the
+ * abstract's highlight printed after the introduction's (live, 2026-09-18). `order` is the reading
+ * index the pipeline measured against the text layer; `top` stands in where there is none, and
+ * breaks the tie of two entries on one line.
  */
-function pageEntries(page: DigestPage): DigestEntry[] {
+function pageEntries(page: DigestPage, zotero: ZoteroDigestLinks): DigestEntry[] {
 	const entries: DigestEntry[] = [
 		...page.highlights.map((highlight) => ({
 			section: highlight.section,
+			sectionPage: highlight.sectionPage,
 			top: highlight.top,
-			render: (locator: string) => renderHighlight(highlight, locator),
+			order: highlight.order,
+			render: (locator: string) => renderHighlight(highlight, locator, zotero[highlight.id]),
 		})),
 		...page.notes.map((note) => ({
 			section: note.section,
+			sectionPage: note.sectionPage,
 			top: note.top,
+			order: note.order,
 			render: (locator: string) => renderNote(note, "> ", locator),
 		})),
 	];
 
+	const rank = (entry: DigestEntry) => entry.order ?? entry.top;
 	const sectionOrder = new Map<string | null, number>();
-	for (const entry of [...entries].sort((a, b) => a.top - b.top)) {
+	for (const entry of [...entries].sort((a, b) => rank(a) - rank(b) || a.top - b.top)) {
 		if (!sectionOrder.has(entry.section)) sectionOrder.set(entry.section, sectionOrder.size);
 	}
 	return entries.sort(
-		(a, b) => (sectionOrder.get(a.section) ?? 0) - (sectionOrder.get(b.section) ?? 0) || a.top - b.top,
+		(a, b) => (sectionOrder.get(a.section) ?? 0) - (sectionOrder.get(b.section) ?? 0) || rank(a) - rank(b) || a.top - b.top,
 	);
 }
 
@@ -336,17 +420,26 @@ function pageEntries(page: DigestPage): DigestEntry[] {
  * A page without a single entry contributes nothing, so it never appears as a bare heading: a page
  * with no annotation is not part of the digest.
  */
-export function renderDigest(embedPath: string, pages: DigestPage[]): string {
+export function renderDigest(embedPath: string, pages: DigestPage[], zotero: ZoteroDigestLinks = {}): string {
 	const blocks: string[] = [];
 	let heading: string | null = null;
 
 	for (const page of pages) {
 		const pageLink = (label: string) => `[[${embedPath}#page=${page.embedPage}|${label}]]`;
-		for (const entry of pageEntries(page)) {
+		for (const entry of pageEntries(page, zotero)) {
 			// Compared as the rendered line, which is what settles both cases at once: the same section
 			// twice running is one heading, while two pages without a section are two -- their headings
 			// differ, because each names its own page.
-			const line = entry.section === null ? `### ${pageLink(page.pageLabel === null ? "Added page" : `Page ${page.pageLabel}`)}` : `### ${escapeText(entry.section)}`;
+			//
+			// A section heading links to the page the section *starts* on (its heading's, from the
+			// outline) rather than to the entry's, which the entry carries itself: a section runs across
+			// pages, and the page of its first annotation would change with the annotations. Decided
+			// 2026-09-18, so that the page heading and the section heading read alike.
+			const title = entry.section === null ? null : escapeText(entry.section);
+			const line =
+				title === null
+					? `### ${pageLink(page.pageLabel === null ? "Added page" : `Page ${page.pageLabel}`)}`
+					: `### ${entry.sectionPage === undefined ? title : `[[${embedPath}#page=${entry.sectionPage}|${title}]]`}`;
 			if (line !== heading) {
 				heading = line;
 				blocks.push(line);

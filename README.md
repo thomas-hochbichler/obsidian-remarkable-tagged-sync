@@ -35,7 +35,9 @@ it does on a Mac.
 <sub>PDF shown: Kang et al., <a href="https://arxiv.org/abs/2510.00615">ACON: Optimizing Context
 Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
-**Desktop only** · **one-way** (reMarkable → Obsidian) · never writes back to your tablet.
+**Desktop only** · **one-way** (reMarkable → Obsidian, and → Zotero) · **Sync never writes to
+your tablet.** Send puts a PDF on it only when you run it — and only adds, never changes, deletes
+or moves anything.
 
 ## What makes it different
 
@@ -45,7 +47,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 |---|:---:|:---:|
 | **Direction & safety** | | |
 | [reMarkable → Obsidian sync](#how-it-works) | ✓ | ✓ |
-| [One-way by design — never writes to your tablet](#what-gets-synced) | ✓ | ✓ |
+| [One-way by design — Sync never writes to your tablet; Send only adds, and only when you run it](#what-gets-synced) | ✓ | ✓ |
 | [No reMarkable Connect subscription needed](#install-and-set-up) | ✓ | ✓ |
 | [Sync straight from the tablet, without the reMarkable cloud](#syncing-without-the-cloud) | — | ✓ |
 | [Your edits are never silently overwritten](#writing-your-own-notes) | ✓ | ✓ |
@@ -68,6 +70,12 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Cloud transcription with your own API key](#tagged-sync-pro) | — | ✓ |
 | [Re-transcribe notes you already synced](#re-transcribing) | ✓ | ✓ |
 | [Repair one note without re-running the whole vault](#re-transcribing) | ✓ | ✓ |
+| **Zotero** | | |
+| [Zotero connection](#connecting) | zotero.org | zotero.org + desktop app |
+| [Send a Zotero PDF to your tablet](#zotero) | ✓ | ✓ |
+| [Notes know their Zotero item — link, web library](#zotero) | ✓ | ✓ |
+| [Your tablet highlights as native Zotero annotations, with a jump into Zotero from every quote](#zotero) | — | ✓ |
+| [Group libraries — search, send from and write into a group you switch on](#zotero) | — | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
@@ -103,6 +111,7 @@ Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 - [Handwriting transcription](#handwriting-transcription)
 - [Typed text and the Type Folio](#typed-text-and-the-type-folio)
 - [Tagged Sync Pro](#tagged-sync-pro)
+- [Zotero](#zotero)
 - [Syncing without the cloud](#syncing-without-the-cloud)
 - [Annotated PDFs](#annotated-pdfs)
 - [What gets synced](#what-gets-synced)
@@ -340,6 +349,9 @@ Everything described above is free and stays free. Two things are paid:
   tablet directly over USB or Wi-Fi.
 - **[Frontmatter properties](#frontmatter-properties-pro)** — each synced note carries its
   reMarkable tags and metadata as Obsidian properties, for Dataview and Bases queries.
+- **[Zotero write-back and the desktop app](#zotero)** — what you marked on the tablet lands in
+  Zotero as native annotations, and the plugin can talk to the Zotero desktop app instead of only
+  to zotero.org. Sending a paper to the tablet and the note's link to its Zotero item are free.
 
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
@@ -380,6 +392,135 @@ Updates come through the Obsidian plugin store, to everyone, for as long as the 
 I promise is effort, not dates.
 
 None of this changes your rights as a consumer under EU law.
+
+## Zotero
+
+Your reMarkable highlights land in Zotero as native annotations. No script, no Python, no Zotero
+plugin, no closed Zotero.
+
+What goes into your vault is free; what is written into Zotero is
+[Tagged Sync Pro](#tagged-sync-pro). In other words: sending a paper to the tablet and the note
+knowing which paper it is work with a zotero.org API key and no licence. Writing your highlights
+into Zotero, and talking to the Zotero desktop app, are the Pro half — covered by the 14-day trial
+like everything else.
+
+The loop is three steps:
+
+1. In Obsidian, run **Send Zotero PDF to reMarkable…** and search your library the way you
+   remember the paper — half a title, an author, a year. The PDF lands on your tablet in a
+   `Zotero` folder, untagged: the plugin never puts a tag on a document for you.
+2. On the tablet, give it your sync tag, then read it and mark it up: highlighter, pen underlines,
+   notes in the margin.
+3. Sync. The [digest](#annotated-pdfs) arrives in your vault knowing which paper it is, and — with
+   Pro — what you marked appears in Zotero as real highlights and underlines you can click, colour,
+   search and cite. A margin note anchored to a passage becomes that annotation's comment. Without
+   Pro the note says so in its top line: *highlights stay in the vault*.
+
+**Or start in Zotero.** Tag the paper `to-remarkable` (the tag under Settings → Zotero, change it if
+you like), then run **Send tagged Zotero papers to reMarkable**. Every paper carrying the tag lands
+on your tablet, in the same `Zotero` folder as *Send* and without a sync tag — you tag it on the
+tablet when you want it back. Tag the paper in Zotero, not the PDF. Nothing is ever taken off the
+tablet, and the Zotero tag is left where you put it; a paper that is already there is simply
+skipped, and the notice says so. A paper with two PDFs, or one Zotero has no copy of, is named in
+the notice and waits for **Send Zotero PDF to reMarkable…**, which is where questions get asked.
+No sync sends: only that command does, so the scheduler never puts anything on your tablet.
+
+Each half stands on its own. A PDF that reached the tablet some other way is recognised at sync
+time — by the file's own hash, or by asking you once — and a note gets its Zotero link whether or
+not you ever use write-back. A note that is already in your vault can be pointed at an item by hand
+with **Link to Zotero item…**.
+
+**What the note gets.** One line in the block at the top, naming the paper and linking to it in
+Zotero, to your web library, and to your own literature note if you keep one. Once written back, every quote gets an
+`in Zotero` link that opens the reader at that annotation on that page. With [frontmatter
+properties](#frontmatter-properties-pro) on, the note also carries `zotero-key` and — if the item
+has one — `citekey`, which is the same vocabulary other Zotero tools in Obsidian use; a paper in a
+group library adds `zotero-library` with the group's id.
+
+### Connecting
+
+Either connection is enough on its own, and you can have both:
+
+| | **zotero.org** | **The Zotero desktop app** ([Pro](#tagged-sync-pro)) |
+|---|---|---|
+| What you need | *Use zotero.org* switched on, and an API key from zotero.org with read and write access to your personal library | *Use the Zotero desktop app* switched on, Zotero 10 running, with *Allow other applications on this computer to communicate with Zotero* on |
+| Works with Zotero closed | ✓ | — |
+| Finds your PDFs | the copies synced to zotero.org | any file on your disk |
+
+Each connection has its own switch under Settings → Zotero, so whether anything goes over the
+internet is one thing to look at: with *Use zotero.org* off, nothing Zotero-related leaves your
+machine, whatever key is stored. With both set up the desktop app is asked first and zotero.org is
+the fallback, so a paper Zotero never uploaded still gets sent. If neither is set up, nothing
+Zotero-related runs and your sync is exactly what it was.
+
+**Group libraries** ([Pro](#tagged-sync-pro)). Your own library is always on. Under Settings →
+Zotero → *Zotero libraries*, every group your account is in is a switch of its own, off until you
+name it — a group is other people's work, and **highlights written into a group library are
+visible to everyone in that group.** A group you switch on is searched by *Send*, sent from by the
+tag command, matched against at sync time and, with write-back, written into like your own library;
+the note then links into the group. Where the same PDF is in your library and in a group, you are
+asked which, once, with the library named. A group you may only read is named in the note — *no
+write access to …* — and nothing is written into your own library instead. Both connections
+handle groups; the desktop app knows the groups it syncs, zotero.org the ones your key can read.
+
+Sending needs a way onto the tablet: the reMarkable cloud, or [a paired
+tablet](#syncing-without-the-cloud) with **Send over SSH** switched on. Sending over SSH restarts
+the tablet's reading app, which closes whatever you have open — that is the only way it notices a
+new file. The home screen is back in about six seconds.
+
+**What leaves your machine.** Your handwriting never does — the ink itself is never uploaded
+anywhere, by any part of this plugin. What write-back sends is the *transcribed text* of your
+margin notes, into your own Zotero library, and to zotero.org if that is the connection carrying
+it. Setting up a connection above is what switches this on; there is no separate step, and with no
+connection nothing is sent at all.
+
+### Colours
+
+Your highlights arrive in Zotero in the colour you chose, in Zotero's own eight. A tablet colour
+goes to the Zotero colour of the same *hue*, not to the nearest by number — so the Paper Pro's
+pastel green stays green instead of turning grey. What a device can record differs:
+
+| Device | Records | Arrives in Zotero as |
+|---|---|---|
+| reMarkable 2 (firmware 3.1 sample) | yellow, green, pink — the device shows them as three greys, the desktop app in colour | yellow, green, magenta |
+| Paper Pro highlighter (firmware 3.14–3.15 samples, and the maintainer's own pages of September 2026) | yellow, green, pink, blue, orange, grey | yellow, green, magenta, blue, orange, gray |
+| Paper Pro shader | the pen palette | the Zotero colour of the same hue; black becomes gray |
+| Paper Pro, text selected by hand | yellow, green, pink, like the reMarkable 2 | yellow, green, magenta |
+| Paper Pure | not measured yet — a page from one is welcome | |
+
+A colour code planned on the laptop therefore has three colours on a reMarkable 2 and six on a
+Paper Pro. The digest in your vault uses the same names, so a mark is the same green in the note
+and in Zotero. Recolouring in Zotero afterwards is safe: your edit of a colour wins from then on.
+
+### When something does not reach Zotero
+
+Your notes are never held up by Zotero: the vault half of a sync always finishes first, and
+whatever happens afterwards costs you the Zotero half of one note and nothing else. When that
+happens the note says so in its own top line, in place of the write-back date:
+
+- *Zotero could not be reached* — no connection answered.
+- *the Zotero desktop app is not letting other applications talk to it* — the setting in Zotero's
+  *Advanced* pane is off.
+- *Zotero refused this plugin permission* — the desktop app asks the first time; choose
+  **Always Allow**.
+- *Zotero rejected the API key* — the key is wrong, or has no write access.
+- *Zotero asked for a pause* — its rate limit; nothing is wrong.
+- *the Zotero item was no longer found* — the attachment was deleted or moved to the trash. Here
+  the line reads *Zotero: item no longer found* instead: the note keeps every quote it has and
+  simply stops claiming a paper it can no longer point at.
+- *Zotero answered with an error* — its end, not yours.
+
+Every one of these is retried by the next sync, and there is nothing to clean up first: write-back
+adds, refreshes and trashes, and each of those is safe to repeat. If half the highlights of a
+document made it, the rest are written next time; the ones already there are not written twice.
+
+**Zotero is never the truth for your note.** The annotations this plugin creates are a copy, marked
+with a `tagged-sync` tag. Edit one in Zotero and your version wins from then on — that field is
+never overwritten again. Delete one and it stays deleted. Your own highlights, made in Zotero, are
+never read and never touched. Erase a highlight on the tablet and its annotation goes to Zotero's
+trash on the next sync — unless you have edited it in Zotero, in which case it stays: what you built
+on there is yours. Nothing is ever erased for good; the trash keeps it. On the tablet side nothing is
+ever removed.
 
 ## Syncing without the cloud
 
@@ -446,6 +587,10 @@ Paper Pro's shader — and one you underlined or circled with the pen arrive the
 with its surrounding sentence, the section it sits under, and a link to the page. Marking with the
 pen used to reach your vault as nothing at all.
 
+**Your colours come with it.** A mark you made in green is green in the note, in the same eight
+colours Zotero uses (the [table below](#colours)) — no snippet to install; a theme can restyle them.
+A pen mark, which has no colour, is Obsidian's ordinary highlight.
+
 **None of this goes through transcription.** The words come from the PDF's own text, not from a
 picture of it, so the digest works the same on Windows and Linux as it does on a Mac — and no marked
 word can come out misspelled.
@@ -503,8 +648,6 @@ Three things worth knowing before you rely on it:
   and a PDF you only wrote on syncs with the render and no text at all.
 - **It reads the PDF's own text layer.** A scanned page without one gives less: highlights arrive as
   the words your tablet recorded, and pen marks are not recognised as marks at all.
-- **Marker colour is not carried over.** Every mark reads the same in the note; the colours stay in
-  the embedded render.
 
 Section headings come from the PDF's own outline where it has one, and from a font-size guess where
 it does not — so a document without bookmarks can file a quote under the wrong heading.
@@ -643,7 +786,10 @@ stays where it is and is still preserved on every sync — new notes just no lon
 ## Limitations
 
 - Desktop only. Obsidian on mobile is unsupported.
-- One-way sync: reMarkable → Obsidian only. Nothing is ever written back to your tablet.
+- One-way sync: reMarkable → Obsidian, and → Zotero. Nothing on your tablet is ever changed,
+  deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
+- [Zotero](#zotero) works with **PDF attachments only** — an EPUB in your library cannot be sent,
+  and a book you read on the tablet is not matched to one.
 - One tag → folder mapping.
 - Transcription with Apple Vision requires **macOS 13 or later**, and its transcripts are flat
   text — no headings, lists, task lists, or tables.
@@ -685,8 +831,9 @@ This plugin makes network requests to exactly one place by default:
 
 - **reMarkable cloud** (required) — the plugin authenticates to `my.remarkable.com` via a
   one-time device code, then reads your notebook/page list, tags, and content over the
-  reMarkable cloud API to sync it into your vault. This is read-only; nothing is written back to
-  your reMarkable account.
+  reMarkable cloud API to sync it into your vault. It reads only; the one thing it ever writes is
+  a PDF you sent yourself with [Send a Zotero PDF](#zotero). Nothing already in your reMarkable
+  account is changed, deleted, moved, renamed or re-tagged.
 
 **Your tablet, over your own network — only if you set it up**
 ([Syncing without the cloud](#syncing-without-the-cloud), [Tagged Sync Pro](#tagged-sync-pro)):
@@ -694,14 +841,28 @@ This plugin makes network requests to exactly one place by default:
 - **An SSH connection to your reMarkable**, at the address you pair with — the USB address
   (`10.11.99.1`) or the tablet's address on your Wi-Fi. The plugin reads the notes directory over
   SFTP and runs two commands on the device: one to list the files with their sizes and times, and
-  `sha256sum` to hash them so it can tell what changed. It is read-only apart from pairing, which
-  appends one public key to `/home/root/.ssh/authorized_keys`, and — only if you agree when asked —
-  runs `rm-ssh-over-wlan on` so the tablet keeps accepting connections over Wi-Fi.
+  `sha256sum` to hash them so it can tell what changed. It reads only, with three exceptions, each
+  of which you ask for: pairing appends one public key to `/home/root/.ssh/authorized_keys`; if you
+  agree when asked, `rm-ssh-over-wlan on` keeps the tablet accepting connections over Wi-Fi; and
+  [Send a Zotero PDF](#zotero) over SSH writes the new document's three files and restarts the
+  tablet's reading app so it notices them. Nothing already on the tablet is touched.
 
   **This connection stays on your network.** It goes to your tablet and nowhere else; no server of
   mine and none of reMarkable's is involved, and with it configured a sync needs no internet
   connection at all. The root password you type while pairing is used for that one connection and
   is never stored.
+
+**Your Zotero library — only if you set it up** ([Zotero](#zotero)):
+
+- **`api.zotero.org`** — with your own API key, and only for your personal library. The plugin
+  searches it, reads your PDF attachments, and — with [Tagged Sync Pro](#tagged-sync-pro) — writes
+  the annotations it made from your tablet marks. Nothing you did not mark on the tablet is sent,
+  and no annotation of yours is read. Without Pro the plugin only reads.
+- **The Zotero desktop app on `127.0.0.1:23119`** ([Pro](#tagged-sync-pro)) — the same thing over
+  your own machine's loopback interface. This leaves nothing on your machine at all.
+
+  Both are off unless you configure them; a vault with no Zotero API key and no desktop app
+  switched on never causes either call.
 
 **A transcription backend you choose yourself.** Which of these is contacted, if any, depends
 entirely on the backend selected in settings:

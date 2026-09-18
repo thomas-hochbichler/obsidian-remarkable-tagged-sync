@@ -455,8 +455,10 @@ export function checkPath(path: string, platform: VaultPlatform): void {
 // --- the Vault -----------------------------------------------------------------------------------
 
 export type VaultEvent = "rename" | "create" | "modify" | "delete";
+/** The workspace's events, which is one: the file explorer's context menu. */
+export type WorkspaceEvent = "file-menu";
 export interface EventRef {
-	event: VaultEvent;
+	event: VaultEvent | WorkspaceEvent;
 	handler: (...args: never[]) => void;
 }
 
@@ -526,6 +528,11 @@ export class FakeVault {
 		const found = this.fileMap.get(path);
 		return found instanceof TFolder ? found : null;
 	}
+	/** Every Markdown file in the vault, which is how the plugin sweeps for frontmatter keys. */
+	getMarkdownFiles(): TFile[] {
+		return this.getAllLoadedFiles().filter((file): file is TFile => file instanceof TFile && file.extension === "md");
+	}
+
 	getAllLoadedFiles(): TAbstractFile[] {
 		return [...this.fileMap.values()];
 	}
@@ -721,16 +728,43 @@ export class FakeApp {
 			this.workspace.layoutReady = true;
 			for (const cb of this.workspace.pending.splice(0, this.workspace.pending.length)) cb();
 		},
+		on: (event: WorkspaceEvent, handler: (...args: never[]) => void): EventRef => {
+			const ref = { event, handler };
+			this.workspaceRefs.push(ref);
+			return ref;
+		},
+		/** Not an Obsidian member. How a test says "the user right-clicked this file". */
+		trigger: (event: WorkspaceEvent, ...args: unknown[]): void => {
+			for (const ref of this.workspaceRefs) {
+				if (ref.event === event) (ref.handler as (...a: unknown[]) => void)(...args);
+			}
+		},
 	};
+	/** The workspace's own events. Same shape as the vault's, for the same reason: one `trigger`. */
+	private readonly workspaceRefs: EventRef[] = [];
 	readonly fileManager = {
 		renameFile: async (file: TAbstractFile, newPath: string): Promise<void> => {
 			this.vault.rename(file, newPath);
 		},
 	};
 	readonly metadataCache = {
+		/**
+		 * What Obsidian parsed out of each note's `---` block, by path.
+		 *
+		 * Not an Obsidian member: there, the cache fills itself from the files. Here a test writes the
+		 * frontmatter it wants the plugin to see, because parsing YAML in a stub would be modelling
+		 * `js-yaml` rather than Obsidian.
+		 */
+		frontmatter: new Map<string, Record<string, unknown>>(),
 		/** The plugin resolves an embed to a file. Exact path first, then the vault's own lookup. */
 		getFirstLinkpathDest: (linkpath: string, _sourcePath: string): TFile | null =>
 			this.vault.getFileByPath(linkpath) ?? this.vault.getFileByPath(normalizePath(linkpath)),
+		getFileCache: (file: TFile): { frontmatter?: Record<string, unknown> } | null => {
+			const frontmatter = this.metadataCache.frontmatter.get(file.path);
+			return frontmatter === undefined ? null : { frontmatter };
+		},
+		/** Obsidian answers the shortest unambiguous form; the basename is that wherever it is unique. */
+		fileToLinktext: (file: TFile, _sourcePath: string): string => file.basename,
 	};
 
 	constructor(vault: FakeVault = new FakeVault()) {

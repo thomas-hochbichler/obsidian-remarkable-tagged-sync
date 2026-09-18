@@ -41,7 +41,7 @@ and no account.
 
 Your licence key, the activation id, the date of the last successful check and the trial start date
 are stored in the plugin's `data.json`, inside your vault, next to the reMarkable device token that
-is already there. That file is yours. If your vault is synced, the file travels with it — which is
+is already there — as is your Zotero API key, if you set one up. That file is yours. If your vault is synced, the file travels with it — which is
 intended, because one vault is one activation.
 
 ## 3. What I store when you buy

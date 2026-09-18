@@ -49,7 +49,8 @@ describe("the list the walk walks", () => {
 		expect(ids).toContain("ocr-backend:gemini");
 		expect(ids).toContain("ocr-backend:openrouter");
 		expect(ids).toContain("tag-mappings-beyond-the-first");
-		expect(ids.length).toBeGreaterThanOrEqual(5);
+		expect(ids).toContain("zotero-integration");
+		expect(ids.length).toBeGreaterThanOrEqual(6);
 	});
 
 	it("takes its membership from the declaration, never from the flag under test", () => {

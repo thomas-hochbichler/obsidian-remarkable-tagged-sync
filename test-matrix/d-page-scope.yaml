@@ -180,6 +180,13 @@
       file: src/sync-engine.test.ts
       test: "a unit that would be written with neither section > writes and reports a unit over a page that was never drawn on"
 
+    - id: D19.8
+      scenario: The reader erased everything on the unit's pages (deleted the annotation layer), over a note that has a digest or transcript (desk test 2026-09-13)
+      expect: 'Written, not refused: the note follows the tablet, and the line says the pages are empty now so the old sections went with them. Judged on the scene the device sent -- no stroke, highlight, text or picture on any page -- not on what the digest or backend made of it, so a parse that drops ink still trips the net. Before this the render was blank while the note kept quoting marks that were gone'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > rewrites the note when the pages themselves are empty now, and says why the sections went"
+
     - id: D19.5
       scenario: Transcription is off
       expect: Silent. `OffOcrBackend` reports nothing per page and no text, which is "I never looked" -- an embed-only note is what the user asked for

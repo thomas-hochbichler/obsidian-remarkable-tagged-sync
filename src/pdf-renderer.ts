@@ -123,6 +123,13 @@ function paletteColor(r: number, g: number, b: number): Color {
 	return rgb(r / 255, g / 255, b / 255);
 }
 
+/** A 0-255 RGB triple, the form `rmscene`/`rmc` give the palette in and the form the digest carries a colour in. */
+export interface Rgb {
+	r: number;
+	g: number;
+	b: number;
+}
+
 /**
  * Every colorId `rmscene` defines except `HIGHLIGHT` (9), a shared placeholder for
  * highlighter/shader strokes whose real color instead lives in the per-stroke `color_rgba`
@@ -130,21 +137,44 @@ function paletteColor(r: number, g: number, b: number): Color {
  * (src/rmc/exporters/writing_tools.py, MIT, Rick Lupton) -- same author/lineage as `rmscene`.
  * Anything still unmapped falls back to black, per the pdf-color-rendering map's fallback policy.
  */
-const STROKE_COLORS: Record<number, Color> = {
-	0: paletteColor(0, 0, 0), // BLACK
-	1: paletteColor(144, 144, 144), // GRAY
-	2: paletteColor(255, 255, 255), // WHITE
-	3: paletteColor(251, 247, 25), // YELLOW
-	4: paletteColor(0, 255, 0), // GREEN
-	5: paletteColor(255, 192, 203), // PINK
-	6: paletteColor(78, 105, 201), // BLUE
-	7: paletteColor(179, 62, 57), // RED
-	8: paletteColor(125, 125, 125), // GRAY_OVERLAP
-	10: paletteColor(161, 216, 125), // GREEN_2
-	11: paletteColor(139, 208, 229), // CYAN
-	12: paletteColor(183, 130, 205), // MAGENTA
-	13: paletteColor(247, 232, 81), // YELLOW_2
+export const RM_PALETTE: Record<number, Rgb> = {
+	0: { r: 0, g: 0, b: 0 }, // BLACK
+	1: { r: 144, g: 144, b: 144 }, // GRAY
+	2: { r: 255, g: 255, b: 255 }, // WHITE
+	3: { r: 251, g: 247, b: 25 }, // YELLOW
+	4: { r: 0, g: 255, b: 0 }, // GREEN
+	5: { r: 255, g: 192, b: 203 }, // PINK
+	6: { r: 78, g: 105, b: 201 }, // BLUE
+	7: { r: 179, g: 62, b: 57 }, // RED
+	8: { r: 125, g: 125, b: 125 }, // GRAY_OVERLAP
+	10: { r: 161, g: 216, b: 125 }, // GREEN_2
+	11: { r: 139, g: 208, b: 229 }, // CYAN
+	12: { r: 183, g: 130, b: 205 }, // MAGENTA
+	13: { r: 247, g: 232, b: 81 }, // YELLOW_2
 };
+
+const STROKE_COLORS: Record<number, Color> = Object.fromEntries(
+	Object.entries(RM_PALETTE).map(([id, { r, g, b }]) => [id, paletteColor(r, g, b)]),
+);
+
+/** Palette ids no highlighter offers: a mark recorded with one has no marker colour, rather than a black one. */
+const ACHROMATIC_PALETTE_IDS = new Set([0, 1, 2, 8]);
+
+/**
+ * The colour a marker swipe or text highlight was recorded with, on the terms `strokeColor` renders
+ * by: a named palette id is authoritative, `colorRgba` resolves only the `HIGHLIGHT` placeholder.
+ *
+ * Both conventions are real. The reMarkable 2 and the Paper Pro's selection gesture write a palette
+ * id (3 yellow, 4 green, 5 pink) and either no `color_rgba` or an opaque-black one; the Paper Pro's
+ * highlighter and shader write id 9 and the true colour. Reading `colorRgba` first turned the first
+ * kind black -- which write-back then snapped to green -- and its absence turned the reMarkable 2's
+ * green and pink into "no colour". Null is what a pen mark and an unnamed id come out as.
+ */
+export function recordedColor(item: { color: number; colorRgba?: Rgb }): Rgb | null {
+	const palette = RM_PALETTE[item.color];
+	if (palette && !ACHROMATIC_PALETTE_IDS.has(item.color)) return palette;
+	return item.colorRgba ?? null;
+}
 
 /**
  * A known palette id is authoritative; `colorRgba` only resolves ids the palette doesn't name

@@ -105,9 +105,6 @@ src/digest-builder.test.ts :: renderDigest > is a pure function of its input —
 src/digest-builder.test.ts :: renderDigest > renders the fixture page exactly as the signed-off format prescribes
 src/digest-builder.test.ts :: renderDigest > returns nothing when there is nothing to show
 src/digest-builder.test.ts :: renderDigest — highlight quotes > bridges two runs parted by nothing but whitespace
-src/digest-builder.test.ts :: renderDigest — highlight quotes > counts the coverage over the resolved ranges, so an adjusted selection cannot over-count
-src/digest-builder.test.ts :: renderDigest — highlight quotes > does not render the marker color (F9)
-src/digest-builder.test.ts :: renderDigest — highlight quotes > drops the marks from a quote that is almost entirely marked
 src/digest-builder.test.ts :: renderDigest — highlight quotes > escapes a leading `>`, which would open a blockquote instead of printing the character
 src/digest-builder.test.ts :: renderDigest — highlight quotes > escapes an ampersand, which would otherwise reach the reader as a decoded entity
 src/digest-builder.test.ts :: renderDigest — highlight quotes > escapes the angle brackets a quoted passage carries, so an XML tag cannot open raw HTML

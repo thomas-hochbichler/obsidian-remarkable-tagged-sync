@@ -21,6 +21,7 @@ import {
 	annotatedPageFit,
 	isHighlighterOrShader,
 	notebookPageFrame,
+	recordedColor,
 	pageFrame,
 	resolveDeviceCanvas,
 	sceneRectToPdf,
@@ -81,6 +82,14 @@ export interface DigestBuild {
 	 * that Vision could not run.
 	 */
 	ocr: OcrStatus;
+	/**
+	 * The same entries the markdown was rendered from, with their places on the source document.
+	 *
+	 * Handed out because the markdown is a rendering and cannot be read back: write-back needs the
+	 * rectangles, the page and the block ids, and re-deriving them from the note would mean parsing
+	 * our own output. Nothing here is written to the vault.
+	 */
+	pages: DigestPage[];
 	/**
 	 * The `embedPage` of every page that produced an entry -- what the digest actually carries.
 	 *
@@ -163,6 +172,8 @@ interface PageGeometry {
 	headings: { title: string; y: number }[];
 	/** Every heading in the document, in document order, for the section lookup. */
 	documentHeadings: OrderedHeading[];
+	/** The `embedPage` of every source page index, so a section heading can link to the page its section starts on. */
+	embedPageOfSource: ReadonlyMap<number, number>;
 	lineHeightPt: number;
 }
 
@@ -305,11 +316,16 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
 			pdfRect: unionRect(rects),
 			highlight: {
 				id: digestId("hl", page.pageId, source.id),
+				// Only where they name a place on the source page. Without a text layer the frame is the
+				// device screen (see `buildDigest`), and the same numbers would put the mark somewhere on
+				// the tablet -- the condition `DigestPage.source` is derived from.
+				rects: pageText === null ? [] : rects,
+				tool: "marker",
 				// F4's soft fail: without a text layer -- or when the rectangles hit no line -- the
 				// device's own recorded text is still the truth about what was highlighted.
 				sentence: found?.sentence ?? oneLine(source.text),
 				marked: found?.marked ?? [],
-				color: source.colorRgba ?? null,
+				color: recordedColor(source),
 				notes: [],
 				section: null,
 				top: source.rects.length === 0 ? 0 : Math.min(...source.rects.map((rect) => rect.y)),
@@ -329,12 +345,16 @@ function buildHighlights(page: DigestPageInput, geometry: PageGeometry): PlacedH
  * that: the text of a mark entry comes out of the PDF, exactly as a marker highlight's does. It also
  * makes underlines work where no OCR backend exists at all.
  */
-function placeMark(page: DigestPageInput, mark: InkMark): PlacedHighlight {
+function placeMark(page: DigestPageInput, mark: InkMark, tool: "marker" | "pen"): PlacedHighlight {
 	return {
 		pdfRect: mark.pdfRect,
 		fromInk: true,
 		highlight: {
+			tool,
 			id: digestId("hl", page.pageId, mark.strokeId),
+			// One box, and it is the marked *text's* rather than the ink's -- see `InkMark.pdfRect`. An
+			// underline's own box sits in the whitespace below the words, which is not what was marked.
+			rects: [mark.pdfRect],
 			sentence: mark.sentence,
 			marked: mark.marked,
 			// A pen has no marker colour, and F9 would not render one anyway; a marker swipe has its own.
@@ -349,7 +369,9 @@ function placeMark(page: DigestPageInput, mark: InkMark): PlacedHighlight {
 function buildInkMarks(page: DigestPageInput, geometry: PageGeometry, ink: RmStroke[]): { marks: PlacedHighlight[]; strokes: RmStroke[] } {
 	if (geometry.pageText === null) return { marks: [], strokes: ink };
 	const found = findInkMarks(ink, geometry.pageText, geometry.frame, geometry.lineHeightPt);
-	return { strokes: found.strokes, marks: found.marks.map((mark) => placeMark(page, mark)) };
+	// A pen, whatever shape it drew: a line under the words, a ring around them. `fromInk` above says
+	// "found among the strokes", which a marker swipe is too -- this says which hand made it.
+	return { strokes: found.strokes, marks: found.marks.map((mark) => placeMark(page, mark, "pen")) };
 }
 
 /**
@@ -361,7 +383,7 @@ function buildInkMarks(page: DigestPageInput, geometry: PageGeometry, ink: RmStr
 function buildMarkerMarks(page: DigestPageInput, geometry: PageGeometry): PlacedHighlight[] {
 	if (geometry.pageText === null) return [];
 	const marker = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => isHighlighterOrShader(stroke.penType));
-	return findMarkerMarks(marker, geometry.pageText, geometry.frame, geometry.lineHeightPt).map((mark) => placeMark(page, mark));
+	return findMarkerMarks(marker, geometry.pageText, geometry.frame, geometry.lineHeightPt).map((mark) => placeMark(page, mark, "marker"));
 }
 
 /**
@@ -423,6 +445,13 @@ function mergeBySentence(placed: PlacedHighlight[]): { highlights: PlacedHighlig
 				...survivor.highlight,
 				sentence: longest.highlight.sentence,
 				marked: members.flatMap((member) => member.highlight.marked),
+				// Every member's boxes, not the survivor's alone: the reader drew one selection and
+				// adjusted it, and all of it is what they marked. `pdfRect` stays the survivor's -- it is
+				// the anchor cascade's input, and that is about where the entry *sits*.
+				rects: members.flatMap((member) => member.highlight.rects),
+				// A passage that was swiped *and* underlined is a highlight: the marker is the stronger
+				// claim, and the survivor may be the pen only because it sits a fraction higher.
+				tool: members.some((member) => member.highlight.tool === "marker") ? ("marker" as const) : ("pen" as const),
 			},
 		};
 	});
@@ -473,6 +502,18 @@ function noteRegion(rect: PdfRect, { page, geometry }: PageContext): NoteRegion 
 	};
 }
 
+/**
+ * The same rectangle, but only where it names a place on the *source* page.
+ *
+ * Without a text layer the frame is the device screen (see `buildDigest`), so the numbers describe a
+ * spot on the tablet rather than in the PDF -- and something drawing them back onto the document
+ * would put the mark anywhere. The one condition is `DigestPage.source`, which is derived from the
+ * same fact.
+ */
+function sourceRect(rect: PdfRect, { geometry }: PageContext): PdfRect | null {
+	return geometry.pageText === null ? null : rect;
+}
+
 /** Transcribes one cluster and turns it into a note. Called strictly one cluster at a time -- see `buildNotes`. */
 async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<PlacedNote> {
 	const { deps, page, geometry, warnings } = context;
@@ -499,7 +540,10 @@ async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<
 	const paragraph = geometry.pageText ? paragraphBounds(geometry.pageText, rect.y + rect.height, rect.y) : null;
 	const regionRect = paragraph ? (unionRect([rect, paragraph]) ?? rect) : rect;
 	return {
-		note: { id, anchor, text, region: noteRegion(regionRect, context), top: cluster.rowTop },
+		// `rect` is the ink itself; `region` is the wider clip that includes the paragraph beside it,
+		// placed in the render. A sticky note in another reader belongs on the handwriting, not on the
+		// paragraph it comments on.
+		note: { id, anchor, text, region: noteRegion(regionRect, context), rect: sourceRect(rect, context), top: cluster.rowTop },
 		anchor,
 		pdfLeft: rect.x,
 		pdfTop: rect.y + rect.height,
@@ -552,6 +596,14 @@ function pageRank(pageText: PdfPageText | null, x: number | null, y: number): nu
 }
 
 /**
+ * The entry's place in the page's reading order, for `pageEntries` in digest-builder.ts to sort by;
+ * undefined without a text layer, where `top` is all there is. The same rank `sectionAt` weighs.
+ */
+function readingOrder(pageText: PdfPageText | null, x: number, y: number): number | undefined {
+	return pageText && pageText.lines.length > 0 ? pageRank(pageText, x, y) : undefined;
+}
+
+/**
  * The section an entry belongs to: the last heading that comes at or before it *in the document*,
  * not on its page. A page's first annotation usually sits above that page's first heading, and the
  * section it belongs to is then the one still open from an earlier page.
@@ -568,17 +620,17 @@ function pageRank(pageText: PdfPageText | null, x: number | null, y: number): nu
  * heading-anchored note does not come through here at all -- it takes the heading the cascade gave
  * it, for the same reason.
  */
-function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings: OrderedHeading[], pageText: PdfPageText | null): string | null {
+function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings: OrderedHeading[], pageText: PdfPageText | null): SectionHeading | null {
 	const rank = pageRank(pageText, pdfLeft, pdfTop);
-	let carried: string | null = null;
-	let best: string | null = null;
+	let carried: SectionHeading | null = null;
+	let best: SectionHeading | null = null;
 	let bestRank = Number.NEGATIVE_INFINITY;
 
 	for (const heading of headings) {
 		// Sorted by page, so the first heading on a later page ends the search.
 		if (heading.pageIndex > pageIndex) break;
 		if (heading.pageIndex < pageIndex) {
-			carried = heading.title;
+			carried = heading;
 			continue;
 		}
 		// Not sorted by reading order, so every heading on this page is weighed rather than the first
@@ -586,12 +638,21 @@ function sectionAt(pageIndex: number, pdfLeft: number, pdfTop: number, headings:
 		const at = pageRank(pageText, heading.x, heading.y);
 		if (at > rank || (at === rank && heading.y < pdfTop)) continue;
 		if (at >= bestRank) {
-			best = heading.title;
+			best = heading;
 			bestRank = at;
 		}
 	}
 
 	return best ?? carried;
+}
+
+/** What `sectionAt` answers with: the heading's title and the source page it stands on. */
+type SectionHeading = Pick<OrderedHeading, "title" | "pageIndex">;
+
+/** The entry's `section` and `sectionPage` for a heading, or no section at all. */
+function sectionFields(heading: SectionHeading | null, geometry: PageGeometry): { section: string | null; sectionPage?: number } {
+	if (heading === null) return { section: null };
+	return { section: heading.title, sectionPage: geometry.embedPageOfSource.get(heading.pageIndex) };
 }
 
 /**
@@ -626,6 +687,7 @@ async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink
 		anchor: { kind: "page" },
 		text,
 		region: null,
+		rect: null,
 		top: 0,
 		wholePage: true,
 		section: null,
@@ -657,7 +719,9 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	if (page.appended) {
 		if (!state.deps.marginNotes || ink.length === 0) return null;
 		const transcript = await buildPageTranscript(state, page, ink);
-		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, highlights: [], notes: [transcript] };
+		// A page added on the device is not a page of the source document, so nothing on it can be
+		// placed there -- which is also why write-back skips it (Zotero spec §3.1).
+		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, source: null, highlights: [], notes: [transcript] };
 	}
 
 	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
@@ -692,14 +756,15 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// page next to which the note was written.
 	const notes = await buildNotes({ ...state, page, geometry, highlights: placed }, clusters);
 	const { highlights, survivorOf } = mergeBySentence(placed);
-	const standalone: (DigestNote & { section: string | null })[] = [];
+	const standalone: (DigestNote & { section: string | null; order?: number })[] = [];
 	for (const { note, anchor, pdfLeft, pdfTop } of notes) {
 		const hostId = anchor.kind === "highlight" ? survivorOf.get(anchor.highlightId) : undefined;
 		const host = hostId === undefined ? undefined : highlights.find((item) => item.highlight.id === hostId);
 		if (host) host.highlight.notes.push({ ...note, anchor: { kind: "highlight", highlightId: host.highlight.id } });
 		else {
-			const section = anchor.kind === "heading" ? anchor.heading : sectionAt(page.sourceIndex, pdfLeft, pdfTop, geometry.documentHeadings, geometry.pageText);
-			standalone.push({ ...note, section });
+			// A heading-anchored note sits level with its heading, so the section starts on its own page.
+			const heading = anchor.kind === "heading" ? { title: anchor.heading, pageIndex: page.sourceIndex } : sectionAt(page.sourceIndex, pdfLeft, pdfTop, geometry.documentHeadings, geometry.pageText);
+			standalone.push({ ...note, ...sectionFields(heading, geometry), order: readingOrder(geometry.pageText, pdfLeft, pdfTop) });
 		}
 	}
 
@@ -708,12 +773,16 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 		// for it, and it keeps the entry in the digest instead of dropping it.
 		const top = pdfRect ? pdfRect.y + pdfRect.height : geometry.frame.heightPt;
 		const left = pdfRect ? pdfRect.x : 0;
-		highlight.section = sectionAt(page.sourceIndex, left, top, geometry.documentHeadings, geometry.pageText);
+		Object.assign(highlight, sectionFields(sectionAt(page.sourceIndex, left, top, geometry.documentHeadings, geometry.pageText), geometry));
+		highlight.order = readingOrder(geometry.pageText, left, top);
 	}
 
 	return {
 		pageLabel: pageLabelOf(page, geometry),
 		embedPage: page.embedPage,
+		// The frame is the source page's own only when its text layer could be read; otherwise it is
+		// the device screen and nothing measured here belongs to the document.
+		source: geometry.pageText === null ? null : { index: page.sourceIndex, widthPt: geometry.frame.widthPt, heightPt: geometry.frame.heightPt },
 		highlights: highlights.map((item) => item.highlight),
 		notes: standalone,
 	};
@@ -872,6 +941,7 @@ export async function buildDigest(
 	const chapters = book && text.headings.length > 0 ? ((await book())?.chapters ?? null) : null;
 	const headings = chapters?.length ? text.headings.map((heading) => ({ ...heading, title: chapterName(heading.title, chapters) ?? heading.title })) : text.headings;
 	const ordered = orderHeadings(headings);
+	const embedPageOfSource = new Map(pages.map((page) => [page.sourceIndex, page.embedPage]));
 
 	const digestPages: DigestPage[] = [];
 	for (const page of pages) {
@@ -885,6 +955,7 @@ export async function buildDigest(
 				.filter((heading): heading is PdfHeading & { y: number } => heading.pageIndex === page.sourceIndex && heading.y !== null)
 				.map((heading) => ({ title: heading.title, y: heading.y })),
 			documentHeadings: ordered,
+			embedPageOfSource,
 			// Not the mode and not the median: on a page of short paragraphs the commonest gap is a
 			// paragraph break, which would report roughly twice the real line height and double every
 			// tolerance downstream. `bodyLineSpacing` takes the lower quartile instead, the smallest gap
@@ -901,6 +972,7 @@ export async function buildDigest(
 
 	return {
 		markdown: renderDigest(embedPath, digestPages),
+		pages: digestPages,
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
 		covered: digestPages.map((page) => page.embedPage),

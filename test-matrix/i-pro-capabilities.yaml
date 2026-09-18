@@ -20,7 +20,7 @@
   scenarios:
     - id: I13.1
       scenario: The capability list is built
-      expect: It is not empty, and holds the four cloud providers and the tag cap by id. This assertion comes first because every other one has the shape "nothing is open" -- which an empty list satisfies perfectly
+      expect: It is not empty, and holds the four cloud providers, the tag cap and the Zotero integration by id. This assertion comes first because every other one has the shape "nothing is open" -- which an empty list satisfies perfectly
       layer: unit
       file: src/pro-capabilities.test.ts
       test: "the list the walk walks > is not empty, and holds the capabilities this build actually sells"

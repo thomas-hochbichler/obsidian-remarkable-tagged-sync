@@ -43,6 +43,11 @@ import { failoverNotice, openTransportChain, type OpenedTransport, type Transpor
 import { allowedTransports, SSH_TRANSPORT_LABEL, SshTransport } from "./ssh-transport";
 import { reachableHost } from "./ssh-pairing";
 import { frontmatterAllowed } from "./frontmatter";
+import type { ZoteroClient } from "./zotero-client";
+import { createZoteroClientFor, zoteroSettingsStore } from "./zotero-settings";
+import type { SendRoutes } from "./zotero-send";
+import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
+import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
@@ -78,8 +83,11 @@ const AUTO_SYNC_LAUNCH_DELAY_MS = 4_000;
 export default class TaggedSyncPlugin extends Plugin {
 	data: TaggedSyncData = DEFAULT_DATA;
 	auth!: RemarkableAuth;
-	private cloudTransport!: Transport;
-	private sshTransport!: Transport;
+	// The concrete classes rather than `Transport`: both are also a `SendTransport`, and that is the
+	// only thing in the plugin allowed to put a file on the tablet. Widening them to the interface
+	// here would mean casting it back at the one call site that is allowed to use it.
+	private cloudTransport!: CloudTransport;
+	private sshTransport!: SshTransport;
 	readonly licenceApi: LicenceApi = createPolarLicenceApi();
 	/** What the launch delay and the interval backstop run on. Replaced in tests; see `./scheduler`. */
 	scheduler: Scheduler = windowScheduler;
@@ -135,6 +143,52 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	entitlement(): Entitlement {
 		return entitlementOf(this.data.licence, new Date());
+	}
+
+	/**
+	 * This vault's Zotero client, or `null` when there is none to have.
+	 *
+	 * Asked fresh each time rather than built once at load: both of the things it depends on -- the
+	 * settings and the entitlement -- change while Obsidian is running, and a client cached across a
+	 * pasted API key or a lapsed licence would be the wrong one in both directions. It builds nothing
+	 * but two small objects; the connections open no socket until somebody asks them something.
+	 */
+	zoteroClient(): ZoteroClient | null {
+		return createZoteroClientFor(zoteroSettingsStore(this.data, () => this.saveData(this.data)), this.entitlement());
+	}
+
+	/**
+	 * What `zotero-plugin.ts` reaches for. Wiring only: every decision it makes is over there, where a
+	 * test can drive it without a Plugin.
+	 */
+	private zoteroHost(): ZoteroHost {
+		return {
+			app: this.app,
+			data: this.data,
+			entitlement: () => this.entitlement(),
+			zoteroClient: () => this.zoteroClient(),
+			save: () => this.saveData(this.data),
+			now: () => new Date(this.scheduler.now()),
+			sendRoutes: () => this.sendRoutes(),
+			report: (state, message) => this.setStatus(state, message),
+			addCommand: (command) => this.addCommand(command),
+			registerEvent: (ref) => this.registerEvent(ref),
+		};
+	}
+
+	/**
+	 * Which routes a send may take right now (§2.4).
+	 *
+	 * The cloud is never gated and the tablet is Pro, asked through `allowedTransports` rather than
+	 * through a second copy of that rule. SSH is also off unless the user switched it on, because that
+	 * route restarts the tablet's reading app -- see `ZoteroSettings.sendOverSsh`.
+	 */
+	private sendRoutes(): SendRoutes {
+		const sshAllowed = this.data.zotero.sendOverSsh && allowedTransports(this.entitlement()).includes("ssh") && this.sshTransport.status().connected;
+		return {
+			cloud: this.cloudTransport.status().connected ? this.cloudTransport : null,
+			ssh: sshAllowed ? this.sshTransport : null,
+		};
 	}
 
 	/**
@@ -365,6 +419,11 @@ export default class TaggedSyncPlugin extends Plugin {
 			},
 		});
 
+		// Send and *Link to Zotero item…* are the free half of Zotero (spec §5), so every vault gets them.
+		// The Pro half -- the desktop-app connection and write-back -- is refused in place where it
+		// runs, not here.
+		registerZoteroCommands(this.zoteroHost());
+
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
 
@@ -588,6 +647,11 @@ export default class TaggedSyncPlugin extends Plugin {
 					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
 					// touching what is already in the vault -- a sync that keeps working, minus the Pro part.
 					frontmatter: frontmatterOn,
+					// Absent for a vault with no Zotero connection it may use, and that absence means the
+					// sync runs exactly as it did before this feature existed. Present for a free vault with
+					// a zotero.org key: it links and names the paper, and the pass itself skips the write
+					// step (§5). A note rewritten without it loses its Zotero callout line and keeps its keys.
+					zotero: zoteroPassFor(this.zoteroHost(), !auto),
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -606,6 +670,10 @@ export default class TaggedSyncPlugin extends Plugin {
 			const speak = !auto || result.stopped;
 
 			this.data.syncIndex = result.index;
+			// What the listing found is what the Zotero links judge presence by (spec §2.5): a sent
+			// document is on the tablet while listings keep finding it, tagged or not. `null` means the
+			// run never listed -- the root hash was unchanged, so nothing on the tablet moved.
+			if (result.documentIds !== null) this.data.zoteroLinks = markListed(this.data.zoteroLinks, result.documentIds, this.nowIso());
 
 			// The one-time pass that brings already-written notes up to the current managed key set
 			// (#107, #109). Without it a vault that has settled would never receive a new key at all:

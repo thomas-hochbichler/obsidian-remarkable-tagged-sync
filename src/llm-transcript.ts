@@ -244,7 +244,27 @@ export function sanitizeTranscript(text: string): string {
 		}
 	}
 
-	return lines.join("\n").trim();
+	// 3. Fence debris, anywhere. A local model was seen answering a one-word margin note with two
+	//    hundred "```text" / "```" pairs before the word, and a stroke with no words in it with a lone
+	//    "```text" over a broken "``". An empty block, an opener no closer ever follows, and a line of
+	//    nothing but backticks carry nothing of the user's, so dropping them cannot corrupt a note. A
+	//    block with anything inside it is kept whole, whatever its info string.
+	const kept: string[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i].trim();
+		if (/^```\w*$/.test(line)) {
+			const closer = lines.findIndex((candidate, index) => index > i && candidate.trim() === "```");
+			if (closer === -1) continue;
+			const inside = lines.slice(i + 1, closer);
+			if (inside.some((candidate) => candidate.trim() !== "")) kept.push(...lines.slice(i, closer + 1));
+			i = closer;
+			continue;
+		}
+		if (/^`{1,3}$/.test(line)) continue;
+		kept.push(lines[i]);
+	}
+
+	return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // --- the OpenAI-compatible call machinery ----------------------------------------------------
