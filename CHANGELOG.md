@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-09-18
+
 ### Changed
 
 - **The trial's start date now comes from `taggedsync.com`, signed.** "Start free trial" is still
