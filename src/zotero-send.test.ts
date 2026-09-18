@@ -81,7 +81,7 @@ describe("which PDF of an item is meant", () => {
 });
 
 describe("which route the send takes", () => {
-	const route = (label: string): SendTransport => ({ label, putPdf: async () => ({ docId: "doc" }) });
+	const route = (label: string): SendTransport => ({ label, namesIn: async () => [], putPdf: async () => ({ docId: "doc" }) });
 
 	// Not about speed: the SSH route restarts the tablet's reading app, which closes whatever the
 	// reader has open. The cloud costs them nothing.
@@ -131,7 +131,7 @@ describe("where the PDF's bytes come from", () => {
 	function deps(overrides: Partial<SendDeps> = {}): SendDeps {
 		return {
 			client: client(),
-			transport: { label: "cloud", putPdf: async () => ({ docId: "doc-1" }) },
+			transport: { label: "cloud", namesIn: async () => [], putPdf: async () => ({ docId: "doc-1" }) },
 			readFile: async () => null,
 			pickFile: async () => null,
 			now: () => new Date("2026-09-11T10:00:00.000Z"),
@@ -195,6 +195,7 @@ describe("sending", () => {
 		const sent: SendDocument[] = [];
 		const transport: SendTransport = {
 			label: "cloud",
+			namesIn: async () => [],
 			putPdf: async (document) => {
 				sent.push(document);
 				return { docId: "doc-1" };
@@ -210,7 +211,7 @@ describe("sending", () => {
 	// hash of the bytes that actually went up -- Zotero's own `md5` is null for a linked file and
 	// describes its copy rather than the tablet's.
 	it("writes the link only after the upload, with what was sent and when", async () => {
-		const result = await sendToTablet(deps({ label: "cloud", putPdf: async () => ({ docId: "doc-1" }) }), {
+		const result = await sendToTablet(deps({ label: "cloud", namesIn: async () => [], putPdf: async () => ({ docId: "doc-1" }) }), {
 			attachment: attachment(),
 			item: ITEM,
 			folder: "Zotero",
@@ -229,6 +230,7 @@ describe("sending", () => {
 	it("writes no link at all when the upload throws", async () => {
 		const transport: SendTransport = {
 			label: "cloud",
+			namesIn: async () => [],
 			putPdf: async () => {
 				throw new Error("the cloud said no");
 			},
@@ -240,7 +242,7 @@ describe("sending", () => {
 
 	it("does nothing at all when the user closes the file dialog", async () => {
 		const putPdf = vi.fn();
-		const never = deps({ label: "cloud", putPdf }, { client: { filePath: async () => null, fileBytes: async () => null } as unknown as ZoteroClient });
+		const never = deps({ label: "cloud", namesIn: async () => [], putPdf }, { client: { filePath: async () => null, fileBytes: async () => null } as unknown as ZoteroClient });
 		expect(await sendToTablet(never, { attachment: attachment(), item: ITEM, folder: "Zotero", links: {} })).toBeNull();
 		expect(putPdf).not.toHaveBeenCalled();
 	});
@@ -254,7 +256,7 @@ describe("sending", () => {
 			keep: { attachmentKey: "ATT9", library: "user", annotations: {} },
 		};
 
-		const result = await sendToTablet(deps({ label: "cloud", putPdf: async () => ({ docId: "doc-1" }) }), {
+		const result = await sendToTablet(deps({ label: "cloud", namesIn: async () => [], putPdf: async () => ({ docId: "doc-1" }) }), {
 			attachment: attachment(),
 			item: ITEM,
 			folder: "Zotero",
@@ -270,7 +272,7 @@ describe("sending", () => {
 	it("leaves the first copy's mapping alone when a second is sent", async () => {
 		const links: StoredZoteroLinks = { "doc-1": { attachmentKey: "ATT1", library: "user", annotations: { "hl-1": { key: "ANN1", written: {} } } } };
 
-		const result = await sendToTablet(deps({ label: "cloud", putPdf: async () => ({ docId: "doc-2" }) }), {
+		const result = await sendToTablet(deps({ label: "cloud", namesIn: async () => [], putPdf: async () => ({ docId: "doc-2" }) }), {
 			attachment: attachment(),
 			item: ITEM,
 			folder: "Zotero",
@@ -364,7 +366,7 @@ describe("group libraries (ticket 26)", () => {
 		const fileBytes = vi.fn(async () => new Uint8Array([1, 2, 3]));
 		const client = { filePath: async () => null, fileBytes } as unknown as ZoteroClient;
 		const result = await sendToTablet(
-			{ client, transport: { label: "cloud", putPdf: async () => ({ docId: "doc-1" }) }, readFile: async () => null, pickFile: async () => null, now: () => new Date("2026-09-14T10:00:00.000Z") },
+			{ client, transport: { label: "cloud", namesIn: async () => [], putPdf: async () => ({ docId: "doc-1" }) }, readFile: async () => null, pickFile: async () => null, now: () => new Date("2026-09-14T10:00:00.000Z") },
 			{ attachment: attachment({ library: GROUP }), item: { ...ITEM, library: GROUP }, folder: "Zotero", links: {} },
 		);
 		expect(fileBytes).toHaveBeenCalledWith("ATT1", GROUP);

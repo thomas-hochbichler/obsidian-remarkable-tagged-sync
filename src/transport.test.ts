@@ -7,7 +7,10 @@ import { explainTransportError, type Transport } from "./transport";
 vi.mock("rmapi-js", () => ({
 	session: vi.fn(() => ({
 		raw: {},
-		listItems: async () => [],
+		listItems: async () => [
+			{ id: "folder-1", visibleName: "Zotero", parent: "", type: "CollectionType" },
+			{ id: "doc-1", visibleName: "Prompting", parent: "folder-1", type: "DocumentType" },
+		],
 		putFolder: async () => ({ id: "folder-1" }),
 		putPdf: async () => ({ id: "doc-1" }),
 	})),
@@ -82,6 +85,14 @@ describe("sending a PDF through the cloud", () => {
 		const cloud = cloudWith({ isConnected: () => true, session });
 
 		expect(await cloud.putPdf({ visibleName: "Prompting", bytes: new Uint8Array([37]), folder: "Zotero" })).toEqual({ docId: "doc-1" });
+		expect(session).toHaveBeenCalled();
+	});
+
+	it("names what the folder holds through a session of its own, too", async () => {
+		const session = vi.fn(async () => "token");
+		const cloud = cloudWith({ isConnected: () => true, session });
+
+		expect(await cloud.namesIn("Zotero")).toEqual(["Prompting"]);
 		expect(session).toHaveBeenCalled();
 	});
 });

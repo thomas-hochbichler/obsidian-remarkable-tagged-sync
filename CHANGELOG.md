@@ -30,7 +30,9 @@ workflow publishes the section as the GitHub release body. See
   under Settings → Zotero) and run *Send tagged Zotero papers to reMarkable*: every paper carrying
   the tag goes to your tablet, in the same folder as *Send* but without a sync tag — you tag it on
   the tablet when you want it back. Nothing is written into Zotero and the tag there stays; a paper
-  already on the tablet is skipped, one with two PDFs is named and left for *Send*. It is a command
+  already on the tablet is skipped — judged by this vault's own record *and* by name in the tablet's
+  folder, so a paper sent from another vault is not sent twice — and one with two PDFs is named and
+  left for *Send*. It is a command
   on purpose, not part of the sync: **Sync never writes to your tablet**, and the scheduler never
   sends — only you do, by running it.
 

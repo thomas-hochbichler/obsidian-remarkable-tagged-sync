@@ -126,6 +126,7 @@ describe("the Zotero commands as the plugin registers them", () => {
 		(plugin as unknown as { sshTransport: unknown }).sshTransport = {
 			label: "your reMarkable",
 			status: () => ({ connected: true, summary: "Paired", connectNotice: "" }),
+			namesIn: async () => [],
 			putPdf: async (document: SendDocument) => {
 				sent.push(document);
 				return { docId: "doc-2" };
@@ -147,6 +148,7 @@ describe("the Zotero commands as the plugin registers them", () => {
 		(plugin as unknown as { cloudTransport: unknown }).cloudTransport = {
 			label: "reMarkable's cloud",
 			status: () => ({ connected: true, summary: "Connected.", connectNotice: "" }),
+			namesIn: async () => [],
 			putPdf: async (document: SendDocument) => {
 				sent.push(document);
 				return { docId: "doc-1" };
@@ -170,6 +172,7 @@ describe("the Zotero commands as the plugin registers them", () => {
 		(plugin as unknown as { cloudTransport: unknown }).cloudTransport = {
 			label: "reMarkable's cloud",
 			status: () => ({ connected: true, summary: "Connected.", connectNotice: "" }),
+			namesIn: async () => [],
 			putPdf: async (document: SendDocument) => {
 				sent.push(document);
 				return { docId: "doc-7" };

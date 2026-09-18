@@ -88,7 +88,9 @@ function stepSkipped(count: number, sendTag: string, reason: string): string {
  *
  * Items already on the tablet are skipped in silence, and counted: idempotence comes from the link
  * store (§2.5), not from Zotero, and the tag staying on a paper that was sent last week is the
- * normal state, not a complaint.
+ * normal state, not a complaint. The tablet's folder is asked as well, by name, once per run: the
+ * link store is this vault's, and a paper sent from another vault is on the tablet all the same
+ * (found live 2026-09-18, one paper twice).
  */
 export async function sendTaggedPapers(host: ZoteroHost, client: ZoteroClient): Promise<string[]> {
 	const sendTag = host.data.zotero.sendTag.trim();
@@ -112,6 +114,7 @@ export async function sendTaggedPapers(host: ZoteroHost, client: ZoteroClient): 
 		const attachments = await client.attachments();
 		const onTablet = documentsOnTablet(host.data.zoteroLinks, host.now());
 		const folder = host.data.zotero.folder.trim() === "" ? DEFAULT_SEND_FOLDER : host.data.zotero.folder;
+		const namesOnTablet = new Set(await transport.namesIn(folder));
 
 		for (const item of items) {
 			const title = item.title.trim() === "" ? item.key : item.title;
@@ -127,12 +130,12 @@ export async function sendTaggedPapers(host: ZoteroHost, client: ZoteroClient): 
 			// Re-read per item: every successful send below writes it.
 			const links = host.data.zoteroLinks;
 			const state = sendState(links, pdf.attachment, onTablet);
-			if (state.present.length > 0) {
+			const name = tabletName(item, pdf.attachment);
+			if (state.present.length > 0 || namesOnTablet.has(name)) {
 				present += 1;
 				continue;
 			}
 
-			const name = tabletName(item, pdf.attachment);
 			host.report("busy", `Tagged Sync: sending "${name}" to ${transport.label}…`);
 			try {
 				const result = await sendToTablet(

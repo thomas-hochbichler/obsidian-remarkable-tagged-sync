@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeviceFileStat } from "./device-api";
-import { findOrCreateFolder, RESTART_COMMAND, sendOverSsh, type DeviceSendTarget } from "./ssh-send";
+import { findOrCreateFolder, namesInDeviceFolder, RESTART_COMMAND, sendOverSsh, type DeviceSendTarget } from "./ssh-send";
 import type { SendDocument } from "./zotero-send";
 
 const FOLDER_ID = "11111111-1111-4111-8111-111111111111";
@@ -89,6 +89,28 @@ describe("the tablet's Zotero folder", () => {
 		const read = vi.spyOn(tablet.target, "read");
 		await findOrCreateFolder(tablet.target, "Zotero", tablet.newId);
 		expect(read).not.toHaveBeenCalled();
+	});
+});
+
+describe("what the tablet's Zotero folder holds", () => {
+	const DOC_ID = "33333333-3333-4333-8333-333333333333";
+	const DOC2_ID = "44444444-4444-4444-8444-444444444444";
+	const zotero = { [`${FOLDER_ID}.metadata`]: json({ type: "CollectionType", visibleName: "Zotero", parent: "" }) };
+
+	it("names the live documents in it and nothing outside it", async () => {
+		const tablet = device({
+			...zotero,
+			[`${DOC_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Prompting", parent: FOLDER_ID }),
+			[`${DOC2_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Elsewhere", parent: "" }),
+			[`${OTHER_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Deleted", parent: FOLDER_ID, deleted: true }),
+		});
+		expect(await namesInDeviceFolder(tablet.target, "Zotero")).toEqual(["Prompting"]);
+	});
+
+	it("names nothing where there is no such folder, and writes nothing", async () => {
+		const tablet = device({ [`${DOC_ID}.metadata`]: json({ type: "DocumentType", visibleName: "Prompting", parent: "" }) });
+		expect(await namesInDeviceFolder(tablet.target, "Zotero")).toEqual([]);
+		expect(tablet.written.size).toBe(0);
 	});
 });
 

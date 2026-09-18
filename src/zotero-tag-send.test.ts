@@ -50,9 +50,10 @@ interface Harness {
 	saves: number;
 }
 
-function route(label: string, sent: SendDocument[]): SendTransport {
+function route(label: string, sent: SendDocument[], onTablet: string[] = []): SendTransport {
 	return {
 		label,
+		namesIn: async () => onTablet,
 		putPdf: async (document) => {
 			sent.push(document);
 			return { docId: `doc-${sent.length}` };
@@ -66,6 +67,8 @@ function harness(
 		tags?: Record<string, string>;
 		cloud?: boolean;
 		ssh?: boolean;
+		/** What the tablet's folder is already called, by name, whichever vault put it there. */
+		onTablet?: string[];
 		data?: Partial<TaggedSyncData>;
 		zotero?: Partial<TaggedSyncData["zotero"]>;
 	} = {},
@@ -90,8 +93,8 @@ function harness(
 		},
 		now: () => new Date(NOW),
 		sendRoutes: () => ({
-			cloud: options.cloud === false ? null : route("reMarkable's cloud", sent),
-			ssh: options.ssh === true ? route("your reMarkable", sent) : null,
+			cloud: options.cloud === false ? null : route("reMarkable's cloud", sent, options.onTablet),
+			ssh: options.ssh === true ? route("your reMarkable", sent, options.onTablet) : null,
 		}),
 		report: (_state, message) => reports.push(message),
 		addCommand: () => undefined,
@@ -217,6 +220,17 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 		expect(h.data.zoteroLinks).toEqual(linked("doc-9"));
 	});
 
+	// Found live 2026-09-18: sent from one vault, sent again from a second, because the link store
+	// that answers "already there" is the vault's own. The tablet's folder is asked by name as well.
+	it("does not send a paper whose name the tablet's folder already holds, whichever vault put it there", async () => {
+		const h = harness({ onTablet: ["Prompting"] });
+		const notices = await sendTaggedPapers(h.host, h.client);
+
+		expect(h.sent).toEqual([]);
+		expect(notices).toEqual([nothingToSend(1, "to-remarkable")]);
+		expect(h.data.zoteroLinks).toEqual({});
+	});
+
 	// Deleted on the tablet before any listing caught it: after a day the link is let go, and the
 	// paper comes back. Without this it would stay "present" for good.
 	it("sends a paper again whose document no listing has found in a day", async () => {
@@ -295,6 +309,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 			sendRoutes: () => ({
 				cloud: {
 					label: "reMarkable's cloud",
+					namesIn: async () => [],
 					putPdf: async () => {
 						throw "the socket closed";
 					},
@@ -325,6 +340,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 		const sent: SendDocument[] = [];
 		const failing: SendTransport = {
 			label: "reMarkable's cloud",
+			namesIn: async () => [],
 			putPdf: async (document) => {
 				if (document.visibleName === "Prompting") throw new Error("generation mismatch");
 				sent.push(document);

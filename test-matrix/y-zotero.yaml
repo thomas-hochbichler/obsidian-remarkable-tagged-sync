@@ -2175,6 +2175,27 @@
       file: src/ssh-transport.test.ts
       test: 'sending a PDF over SSH > closes the connection even when the send fails'
 
+    - id: Y21.19
+      scenario: "The names in the tablets Zotero folder, asked over SSH"
+      expect: "Every live document whose parent is that folder, by visibleName; a document at the top level, in another folder or with a tombstone is not one of them. The second vault''s question (2026-09-18): the link store is the vault''s, the tablet is shared"
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: "what the tablet's Zotero folder holds > names the live documents in it and nothing outside it"
+
+    - id: Y21.20
+      scenario: "The names, where the tablet has no such folder"
+      expect: "An empty list, and nothing written: this is a read, and a folder is created by a send and by nothing else"
+      layer: unit
+      file: src/ssh-send.test.ts
+      test: "what the tablet's Zotero folder holds > names nothing where there is no such folder, and writes nothing"
+
+    - id: Y21.21
+      scenario: "The names asked through the SSH transport"
+      expect: "Answered off the metadata pass the send itself makes, and the connection closed after, like a send"
+      layer: unit
+      file: src/ssh-transport.test.ts
+      test: "sending a PDF over SSH > names what the folder holds, and closes the connection after"
+
 - feature: Y22
   name: Send through the reMarkable cloud
   code: src/cloud-send.ts
@@ -2242,6 +2263,34 @@
       layer: unit
       file: src/transport.test.ts
       test: 'sending a PDF through the cloud > opens its own session and hands back the id the cloud gave'
+
+    - id: Y22.10
+      scenario: "The names in the clouds Zotero folder"
+      expect: "Every document whose parent is that folder, by visibleName; a document at the root or in another folder is not one of them"
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what the cloud's Zotero folder holds > names the documents in it and nothing outside it"
+
+    - id: Y22.11
+      scenario: "The names, where the account has no such folder"
+      expect: "An empty list. A read never creates the folder"
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what the cloud's Zotero folder holds > names nothing where there is no such folder"
+
+    - id: Y22.12
+      scenario: "Two top-level folders of that name"
+      expect: "Both are looked into. A second folder is the users arrangement, and a paper filed there is on the tablet all the same; a send uses only the lowest id, but presence is not a choice between them"
+      layer: unit
+      file: src/cloud-send.test.ts
+      test: "what the cloud's Zotero folder holds > looks into every folder of that name, not only the one a send would use"
+
+    - id: Y22.13
+      scenario: "The names asked through the cloud transport"
+      expect: "A session of its own, like `putPdf`: the engines six read methods stay six"
+      layer: unit
+      file: src/transport.test.ts
+      test: "sending a PDF through the cloud > names what the folder holds through a session of its own, too"
 
 - feature: Y23
   name: The Send dialog
@@ -3055,6 +3104,13 @@
       file: src/zotero-plugin.test.ts
       test: 'what a vault gets registered > tells a vault with no connection what to set up when the tag command runs'
 
+    - id: Y29.39
+      scenario: "Send, for a paper this vault never sent but the tablets folder already holds by that name (sent from another vault, 2026-09-18)"
+      expect: "The same *Already on your tablet* question as for a linked document. The link store is this vaults and answers only for it; the folder listing answers for every vault, by name"
+      layer: unit
+      file: src/zotero-plugin.test.ts
+      test: "a paper that is already on the tablet (§2.5) > asks as well when the tablet's folder holds the name and this vault has no link to it"
+
     - id: Y29.34
       scenario: A web connection that cannot name the library
       expect: No web link, rather than a URL with a hole in it
@@ -3183,6 +3239,13 @@
       layer: unit
       file: src/zotero-tag-send.test.ts
       test: "a paper tagged in Zotero, when the command runs > counts the papers that are on the tablet already, in one sentence"
+
+    - id: Y31.36
+      scenario: "The command, for a paper with no link here whose name the tablets folder already holds (the live test of 2026-09-18: one paper, two vaults, two copies)"
+      expect: "Skipped and counted as on the tablet already, no link written. The folder is asked once per run, by name, beside the link store"
+      layer: unit
+      file: src/zotero-tag-send.test.ts
+      test: "a paper tagged in Zotero, when the command runs > does not send a paper whose name the tablet's folder already holds, whichever vault put it there"
 
     - id: Y31.12
       scenario: "A tagged paper whose document has vanished from the tablet"

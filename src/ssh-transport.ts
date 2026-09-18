@@ -21,7 +21,7 @@ import {
 	USB_HOST,
 } from "./ssh-connection";
 import type { Entitlement } from "./licence-state";
-import { sendOverSsh } from "./ssh-send";
+import { namesInDeviceFolder, sendOverSsh } from "./ssh-send";
 import type { Transport, TransportId, TransportSession, TransportStatus } from "./transport";
 import type { SendDocument, SendTransport } from "./zotero-send";
 
@@ -123,6 +123,15 @@ export class SshTransport implements Transport, SendTransport {
 		const connection = await this.connect(this.store.settings());
 		try {
 			return await sendOverSsh(connection, document);
+		} finally {
+			await connection.close();
+		}
+	}
+
+	async namesIn(folder: string): Promise<string[]> {
+		const connection = await this.connect(this.store.settings());
+		try {
+			return await namesInDeviceFolder(connection, folder);
 		} finally {
 			await connection.close();
 		}

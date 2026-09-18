@@ -278,7 +278,8 @@ async function putOnTablet(host: ZoteroHost, client: ZoteroClient, transport: Se
 	const links: StoredZoteroLinks = host.data.zoteroLinks;
 	const state = sendState(links, choice.attachment, documentsOnTablet(links, host.now()));
 	const name = tabletName(choice.item, choice.attachment);
-	if (state.present.length > 0) {
+	// The folder by name as well as the links by key: the links are this vault's, the tablet is shared.
+	if (state.present.length > 0 || (await transport.namesIn(folder)).includes(name)) {
 		const again = await confirmDialog(
 			host.app,
 			"Already on your tablet",

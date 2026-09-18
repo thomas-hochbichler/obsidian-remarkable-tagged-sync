@@ -12,7 +12,7 @@
  * the user pressed should fail in seconds rather than loop.
  */
 
-import { GenerationError, type RemarkableApi } from "rmapi-js";
+import { GenerationError, type Entry, type RemarkableApi } from "rmapi-js";
 import type { SendDocument } from "./zotero-send";
 
 /** What a send needs of the cloud: two writes and the listing that finds the folder. */
@@ -49,13 +49,29 @@ async function withGenerationRetries<T>(attempt: (refresh: boolean) => Promise<T
  * row agree about which one they mean.
  */
 async function folderId(api: CloudSendApi, name: string): Promise<string> {
-	const items = await api.listItems();
-	const existing = items
+	const existing = existingFolderIds(await api.listItems(), name);
+	if (existing.length > 0) return existing[0];
+	return (await withGenerationRetries((refresh) => api.putFolder(name, {}, refresh))).id;
+}
+
+/** Every top-level folder of that name, lowest id first. */
+function existingFolderIds(items: readonly Entry[], name: string): string[] {
+	return items
 		.filter((item) => item.type === "CollectionType" && item.visibleName === name && item.parent === "")
 		.map((item) => item.id)
 		.sort();
-	if (existing.length > 0) return existing[0];
-	return (await withGenerationRetries((refresh) => api.putFolder(name, {}, refresh))).id;
+}
+
+/**
+ * The names of the documents in the cloud's `Zotero` folder -- {@link SendTransport.namesIn}.
+ *
+ * In *every* folder of that name, not only the one a send would use: a second one is the user's
+ * arrangement, and a paper they filed there is on the tablet all the same.
+ */
+export async function namesInCloudFolder(api: CloudSendApi, name: string): Promise<string[]> {
+	const items = await api.listItems();
+	const folders = new Set(existingFolderIds(items, name));
+	return items.filter((item) => item.type === "DocumentType" && folders.has(item.parent ?? "")).map((item) => item.visibleName);
 }
 
 /** Adds one PDF and answers the id the cloud gave it. */

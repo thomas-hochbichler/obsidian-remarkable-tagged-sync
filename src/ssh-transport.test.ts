@@ -355,6 +355,26 @@ describe("sending a PDF over SSH", () => {
 		expect(close).toHaveBeenCalled();
 	});
 
+	it("names what the folder holds, and closes the connection after", async () => {
+		const close = vi.fn(async () => {});
+		const folderId = "11111111-1111-4111-8111-111111111111";
+		const docId = "22222222-2222-4222-8222-222222222222";
+		const files: Record<string, unknown> = {
+			[`${folderId}.metadata`]: { type: "CollectionType", visibleName: "Zotero", parent: "" },
+			[`${docId}.metadata`]: { type: "DocumentType", visibleName: "Prompting", parent: folderId },
+		};
+		vi.mocked(connectToDevice).mockResolvedValue(
+			connection({
+				list: async () => Object.keys(files).map((path) => ({ path, size: 1, mtimeMs: 0 })),
+				read: async (path) => new TextEncoder().encode(JSON.stringify(files[path])),
+				close,
+			}),
+		);
+
+		expect(await transport().namesIn("Zotero")).toEqual(["Prompting"]);
+		expect(close).toHaveBeenCalled();
+	});
+
 	// The connection is a socket to a tablet: left open by a send that threw, it stays open until the
 	// process ends, and the next send opens a second one beside it.
 	it("closes the connection even when the send fails", async () => {

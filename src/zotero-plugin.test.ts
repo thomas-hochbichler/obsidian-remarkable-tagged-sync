@@ -71,6 +71,7 @@ function harness(
 	const harnessed = { commands, events, sent, reports, saves: 0, app, data } as Harness;
 	const cloud: SendTransport = options.transport ?? {
 		label: "reMarkable's cloud",
+		namesIn: async () => [],
 		putPdf: async (document) => {
 			sent.push(document);
 			return { docId: `doc-${sent.length}` };
@@ -274,6 +275,7 @@ describe("sending a paper", () => {
 		const harnessed = harness({
 			transport: {
 				label: "reMarkable's cloud",
+				namesIn: async () => [],
 				putPdf: async () => {
 					throw new Error("the tablet refused it");
 				},
@@ -305,6 +307,7 @@ describe("sending a paper", () => {
 			transport: {
 				label: "reMarkable's cloud",
 				// eslint-disable-next-line @typescript-eslint/only-throw-error -- Deliberate: a rejected promise carrying a string is what a reverse-engineered API produces.
+				namesIn: async () => [],
 				putPdf: async () => Promise.reject("upload rejected"),
 			},
 		});
@@ -352,6 +355,26 @@ describe("a paper that is already on the tablet (§2.5)", () => {
 		await done;
 
 		expect(harnessed.sent).toEqual([]);
+	});
+
+	// Sent from another vault (found live 2026-09-18): no link here, but the tablet's folder holds the
+	// name, and that is the same question.
+	it("asks as well when the tablet's folder holds the name and this vault has no link to it", async () => {
+		const harnessed = harness({
+			transport: { label: "reMarkable's cloud", namesIn: async () => ["Prompting"], putPdf: async () => ({ docId: "doc-1" }) },
+		});
+
+		const done = sendZoteroPdf(harnessed.host);
+		await vi.advanceTimersByTimeAsync(1);
+		await search("smith");
+		press("Smith 2024 · Prompting");
+		await vi.advanceTimersByTimeAsync(1);
+		const rows = takeSettings();
+		expect(rows.some((row) => row.buttons.some((button) => button.text === "Send another copy"))).toBe(true);
+		press("Cancel", rows);
+		await done;
+
+		expect(harnessed.data.zoteroLinks).toEqual({});
 	});
 
 	// A second document with its own mapping. Nothing already on the tablet is touched -- that is the

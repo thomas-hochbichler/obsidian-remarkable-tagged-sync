@@ -1,11 +1,11 @@
 /**
  * Putting a Zotero PDF on the tablet: spec §2.4 and §2.5.
  *
- * The whole of what this may do is {@link SendTransport}, and it has **one method**. That is the
- * promise of §1.2 written as a type rather than as a comment: there is no update here, no delete, no
- * move and no rename, so no version of this code can take something off the user's tablet or change
- * a document that is already on it. A transport that grows a second method is a change somebody has
- * to make on purpose.
+ * The whole of what this may do is {@link SendTransport}, and it has **one method that writes**
+ * (the other one reads names). That is the promise of §1.2 written as a type rather than as a
+ * comment: there is no update here, no delete, no move and no rename, so no version of this code
+ * can take something off the user's tablet or change a document that is already on it. A transport
+ * that grows a second writing method is a change somebody has to make on purpose.
  *
  * Everything else in this file is arithmetic over what is already known -- what to call the document,
  * which tag it gets, whether it is there already -- so the policy of §2.4 is testable without a
@@ -31,8 +31,16 @@ export interface SendDocument {
 export interface SendTransport {
 	/** Names this route in the send dialog and in a failure: "reMarkable's cloud" / "your reMarkable". */
 	readonly label: string;
-	/** Adds one PDF and answers with the id the tablet gave it. The only method, on purpose. */
+	/** Adds one PDF and answers with the id the tablet gave it. The one method that writes, on purpose. */
 	putPdf(document: SendDocument): Promise<{ docId: string }>;
+	/**
+	 * What the tablet calls the documents in that top-level folder right now; `[]` where there is no
+	 * such folder. Read, never written: the second vault's question (2026-09-18, found in the live
+	 * test -- a paper sent from one vault was sent again from another, because the link store that
+	 * answers "already there" is the vault's own). The listing every send makes to find the folder,
+	 * asked once more and answered by name.
+	 */
+	namesIn(folder: string): Promise<string[]>;
 }
 
 /** Said when the vault has no route to a tablet at all (§2.4, last line). */

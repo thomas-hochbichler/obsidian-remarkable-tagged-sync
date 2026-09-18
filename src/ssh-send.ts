@@ -59,22 +59,7 @@ const encode = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.str
  * -- and the lowest id wins so that two sends in a row agree.
  */
 export async function findOrCreateFolder(device: DeviceSendTarget, name: string, newId: () => string): Promise<string> {
-	const files = await device.list();
-	const candidates = files.map((file) => file.path).filter((path) => TOP_LEVEL_METADATA.test(path));
-	const found = await mapWithConcurrency(candidates, METADATA_READ_PARALLELISM, async (path) => {
-		let metadata: DeviceMetadata;
-		try {
-			metadata = JSON.parse(new TextDecoder().decode(await device.read(path))) as DeviceMetadata;
-		} catch {
-			// A `.metadata` that cannot be read is not a folder we may use, and it is not this command's
-			// business to repair: the device is live and a half-written file is an ordinary sight.
-			return null;
-		}
-		const matches = metadata.type === "CollectionType" && metadata.visibleName === name && (metadata.parent ?? "") === "" && metadata.deleted !== true;
-		return matches ? path.replace(/\.metadata$/, "") : null;
-	});
-
-	const existing = found.filter((id): id is string => id !== null).sort();
+	const existing = folderIds(await topLevelMetadata(device), name);
 	if (existing.length > 0) return existing[0];
 
 	const id = newId();
@@ -85,6 +70,46 @@ export async function findOrCreateFolder(device: DeviceSendTarget, name: string,
 		encode({ lastModified: String(now), createdTime: String(now), parent: "", pinned: false, type: "CollectionType", visibleName: name }),
 	);
 	return id;
+}
+
+/**
+ * Every readable top-level `.metadata` file, by document id.
+ *
+ * A `.metadata` that cannot be read is left out: it is not a folder we may use nor a document we
+ * can name, and it is not this command's business to repair -- the device is live and a
+ * half-written file is an ordinary sight.
+ */
+async function topLevelMetadata(device: DeviceSendTarget): Promise<Map<string, DeviceMetadata>> {
+	const files = await device.list();
+	const candidates = files.map((file) => file.path).filter((path) => TOP_LEVEL_METADATA.test(path));
+	const read = await mapWithConcurrency(candidates, METADATA_READ_PARALLELISM, async (path): Promise<[string, DeviceMetadata] | null> => {
+		try {
+			return [path.replace(/\.metadata$/, ""), JSON.parse(new TextDecoder().decode(await device.read(path))) as DeviceMetadata];
+		} catch {
+			return null;
+		}
+	});
+	return new Map(read.filter((entry): entry is [string, DeviceMetadata] => entry !== null));
+}
+
+/** Every live top-level folder of that name, lowest id first. */
+function folderIds(metadata: ReadonlyMap<string, DeviceMetadata>, name: string): string[] {
+	return [...metadata]
+		.filter(([, m]) => m.type === "CollectionType" && m.visibleName === name && (m.parent ?? "") === "" && m.deleted !== true)
+		.map(([id]) => id)
+		.sort();
+}
+
+/**
+ * The names of the live documents in the tablet's `Zotero` folder -- {@link SendTransport.namesIn}.
+ * In every folder of that name, as on the cloud side: a second one is the user's arrangement.
+ */
+export async function namesInDeviceFolder(device: DeviceSendTarget, name: string): Promise<string[]> {
+	const metadata = await topLevelMetadata(device);
+	const folders = new Set(folderIds(metadata, name));
+	return [...metadata.values()]
+		.filter((m) => m.type === "DocumentType" && folders.has(m.parent ?? "") && m.deleted !== true)
+		.map((m) => m.visibleName ?? "");
 }
 
 /**

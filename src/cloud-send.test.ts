@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Entry, SimpleEntry } from "rmapi-js";
-import { GENERATION_ATTEMPTS, sendToCloud, type CloudSendApi } from "./cloud-send";
+import { GENERATION_ATTEMPTS, namesInCloudFolder, sendToCloud, type CloudSendApi } from "./cloud-send";
 import type { SendDocument } from "./zotero-send";
 
 // rmapi-js cannot be loaded here -- its own package resolves `crc-32/crc32c` in a way node refuses --
@@ -63,6 +63,27 @@ describe("the cloud's Zotero folder", () => {
 		const two = [{ ...folder(), id: "f-9" } as Entry, { ...folder(), id: "f-2" } as Entry];
 		await sendToCloud(api({ listItems: async () => two, putPdf }), document);
 		expect(parents).toEqual(["f-2"]);
+	});
+});
+
+describe("what the cloud's Zotero folder holds", () => {
+	const doc = (visibleName: string, parent: string): Entry =>
+		({ id: `d-${visibleName}`, hash: "h", visibleName, lastModified: "0", pinned: false, parent, type: "DocumentType", tags: [] }) as unknown as Entry;
+
+	it("names the documents in it and nothing outside it", async () => {
+		const items = [folder(), doc("Prompting", "f-1"), doc("Elsewhere", ""), doc("Nested", "other")];
+		expect(await namesInCloudFolder(api({ listItems: async () => items }), "Zotero")).toEqual(["Prompting"]);
+	});
+
+	it("names nothing where there is no such folder", async () => {
+		expect(await namesInCloudFolder(api({ listItems: async () => [doc("Prompting", "")] }), "Zotero")).toEqual([]);
+	});
+
+	// A second folder of that name is the user's arrangement, and a paper filed there is on the
+	// tablet all the same.
+	it("looks into every folder of that name, not only the one a send would use", async () => {
+		const items = [folder(), { ...folder(), id: "f-2" } as Entry, doc("Prompting", "f-2")];
+		expect(await namesInCloudFolder(api({ listItems: async () => items }), "Zotero")).toEqual(["Prompting"]);
 	});
 });
 

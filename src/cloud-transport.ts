@@ -10,7 +10,7 @@
  * here as well would be two copies of one paragraph.
  */
 
-import { sendToCloud } from "./cloud-send";
+import { namesInCloudFolder, sendToCloud } from "./cloud-send";
 import { isOfflineError } from "./explain-error";
 import type { RemarkableAuth } from "./remarkable-auth";
 import { openSession } from "./remarkable-session";
@@ -48,6 +48,10 @@ export class CloudTransport implements Transport, SendTransport {
 	 */
 	async putPdf(document: SendDocument): Promise<{ docId: string }> {
 		return await sendToCloud(openSession(await this.auth.session()), document);
+	}
+
+	async namesIn(folder: string): Promise<string[]> {
+		return await namesInCloudFolder(openSession(await this.auth.session()), folder);
 	}
 
 	explainError(): string | null {
