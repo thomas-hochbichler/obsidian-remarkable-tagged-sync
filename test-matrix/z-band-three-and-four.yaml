@@ -126,6 +126,180 @@
       file: src/licence-messages.test.ts
       test: "dates and counting > rounds a part-day up, because part of a day left is a day the trial still works"
 
+    - id: I2.7
+      scenario: The trial ran out since the last check
+      expect: One sentence, once, and no call to Polar for it -- a trial has no key to validate
+      layer: unit
+      file: src/licence-check.test.ts
+      test: "checkLicence > announces an ended trial once, without any call at all"
+
+    - id: I2.9
+      scenario: The ended-licence sentence on a gated backend
+      expect: It names the backend transcription fell back to
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "the messages that appear once > names the backend transcription fell back to"
+
+    - id: I2.15
+      scenario: Start free trial pressed with no connection
+      expect: The sentence names taggedsync.com and says to try again when online; nothing else is offered because nothing else helps
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "why Start free trial did nothing > names taggedsync.com and the moment to try again when there is no connection"
+
+    - id: I2.16
+      scenario: Obsidian gave this vault no id
+      expect: Sent to support -- there is no user action that produces an id
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "why Start free trial did nothing > sends a vault Obsidian gave no id to support, since nothing the user does fixes that"
+
+    - id: I2.17
+      scenario: taggedsync.com answered with something the plugin cannot verify
+      expect: Says so, and offers a retry and support -- a transient bad answer and a real key mismatch look the same from here
+      layer: unit
+      file: src/licence-messages.test.ts
+      test: "why Start free trial did nothing > says the answer could not be verified, and offers both a retry and support"
+
+
+- feature: I16
+  name: The trial ticket -- the start date is signed by taggedsync.com
+  code: src/trial-ticket.ts
+  tier: Pro trial
+  scenarios:
+    - id: I16.1
+      scenario: Obsidian's per-vault id is hashed for the server
+      expect: Twelve hex characters of its SHA-256; nothing of the id itself is in the string
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "vaultHashOf > is twelve hex characters of the id's SHA-256, and nothing of the id itself"
+
+    - id: I16.2
+      scenario: The server's signature over this vault and this date
+      expect: Accepted
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "verifyTicket > accepts the server's signature over this vault and this date"
+
+    - id: I16.3
+      scenario: The start date in a signed ticket is moved by hand
+      expect: Refused -- the one field a restart needs is the one field the signature covers
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "verifyTicket > refuses a ticket whose date was moved by hand"
+
+    - id: I16.4
+      scenario: Another vault's ticket, copied in
+      expect: Refused -- the hash is inside the signed bytes
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "verifyTicket > refuses another vault's ticket"
+
+    - id: I16.5
+      scenario: A ticket signed with a key that is not taggedsync.com's
+      expect: Refused
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "verifyTicket > refuses a ticket signed by anyone but taggedsync.com"
+
+    - id: I16.6
+      scenario: A signature that is not even base64
+      expect: Answers no rather than throwing inside a load
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "verifyTicket > answers no, not an error, to a signature that is not even base64"
+
+    - id: I16.7
+      scenario: The click, with the server answering
+      expect: The ticket is recorded and attests; nothing else in the licence state changes
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "startTrial > records the ticket the server issued, and nothing else changes"
+
+    - id: I16.8
+      scenario: The click, with no connection
+      expect: Nothing started; the error names `unreachable` so the tab can say what to do
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "startTrial > starts nothing when taggedsync.com cannot be reached, and says so"
+
+    - id: I16.9
+      scenario: The click, with an answer the plugin cannot verify
+      expect: Nothing started; the error names `bad-ticket`
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "startTrial > starts nothing on a ticket it cannot verify"
+
+    - id: I16.10
+      scenario: The click on a vault Obsidian gave no id
+      expect: The server is not asked at all
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "startTrial > asks nothing of the server for a vault with no id"
+
+    - id: I16.11
+      scenario: On load, a trial with no signature -- a pre-1.8 file
+      expect: Dropped -- the trial is not honoured and the button comes back
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "attestTrial > drops a trial that carries no signature"
+
+    - id: I16.12
+      scenario: On load, a signed trial whose date no longer matches
+      expect: Dropped
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "attestTrial > drops a trial whose date no longer matches its signature"
+
+    - id: I16.13
+      scenario: On load, a proven trial
+      expect: Kept, as the same object, so nothing is written
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "attestTrial > keeps a proven trial, as the same object"
+
+    - id: I16.14
+      scenario: On load, with no vault id to check against
+      expect: Left as found -- the plugin can neither prove nor obtain a ticket here
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "attestTrial > leaves a vault with no id as it found it"
+
+    - id: I16.15
+      scenario: On load, no trial ever started
+      expect: Untouched
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "attestTrial > touches nothing where no trial was ever started"
+
+    - id: I16.16
+      scenario: The request itself
+      expect: One POST to taggedsync.com/trial with the hash and nothing else in the body
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "createTrialIssuer > posts the hash, and only the hash, to taggedsync.com"
+
+    - id: I16.17
+      scenario: The server's answer
+      expect: Handed back as written
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "createTrialIssuer > hands back the ticket as the server wrote it"
+
+    - id: I16.18
+      scenario: The server refuses
+      expect: Rejected, so the click reports no connection rather than storing an error page as a ticket
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "createTrialIssuer > rejects a refusal, so the click reports no connection rather than storing a 400 page"
+
+    - id: I16.19
+      scenario: An answer with no ticket in it
+      expect: Rejected
+      layer: unit
+      file: src/trial-ticket.test.ts
+      test: "createTrialIssuer > rejects an answer with no ticket in it"
+
 
 - feature: B8
   name: Folder tags are inherited -- where the chain stops

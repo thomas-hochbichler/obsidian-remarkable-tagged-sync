@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { entitlementOf, type Entitlement, NO_LICENCE, startTrial } from "./licence-state";
+import { entitlementOf, type Entitlement, NO_LICENCE } from "./licence-state";
 import {
 	zoteroUnavailable,
 	createZoteroClientFor,
@@ -22,7 +22,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const FREE = entitlementOf(NO_LICENCE, NOW);
 const BOUGHT = entitlementOf({ ...NO_LICENCE, key: "TS-1", activationId: "act-1", validatedAt: new Date(NOW.getTime() - DAY_MS).toISOString() }, NOW);
-const TRIAL = entitlementOf(startTrial(NO_LICENCE, new Date(NOW.getTime() - 2 * DAY_MS)), NOW);
+const TRIAL = entitlementOf({ ...NO_LICENCE, trialStartedAt: new Date(NOW.getTime() - 2 * DAY_MS).toISOString() }, NOW);
 
 const clientFor = (settings: ZoteroSettings, entitlement: Entitlement) =>
 	createZoteroClientFor({ settings: () => settings, saveLocalKey: async () => {} }, entitlement);

@@ -32,15 +32,27 @@ licence key is valid.
 If `polar.sh` cannot be reached, nothing happens: the last valid answer carries for 30 days, and
 after that the settings tab says so and Pro keeps working. Silence never locks the plugin.
 
-### The trial
+### The trial — one call to `taggedsync.com`, on the click
 
-The 14-day trial is entirely local. Starting it sends nothing to anyone. There is no key, no email
-and no account.
+There is no key, no email and no account. Pressing **Start free trial** contacts **`taggedsync.com`**
+once, which issues the trial: it answers with the start date, signed, and the plugin checks that
+signature on every load. Without a connection nothing starts, and the plugin says so.
+
+| | |
+|---|---|
+| **When** | only when you press *Start free trial*. Never on load, never on sync, never unless you press it |
+| **What is sent** | a 12-character hash (SHA-256) of the id Obsidian gave this vault. **No vault name, no path, no note content, no email address, no licence key.** The id itself never leaves your machine, and the hash cannot be turned back into it |
+| **What the server keeps** | per hash: the date the trial was first issued, the date it was last asked for, and how many times. Nothing else — no IP address is stored beyond Cloudflare's ordinary request logs, which are Cloudflare's, as with any web request |
+| **Why** | so the trial is 14 days per vault whatever happens to `data.json`: a deleted or edited start date, or a reinstalled plugin, gets the original date back rather than a new trial. That is the whole purpose; the counter is what makes it possible, not a separate measurement |
+| **Legal basis** | my legitimate interest in a trial that ends, Art. 6(1)(f) GDPR. The hash is not linked to a person by anything on the server; a vault id is a random string Obsidian makes up |
+| **How long** | indefinitely, because the trial is per vault and there is no later date at which "this vault already had its trial" stops being true. If you write to me with your vault's hash — the plugin keeps it in `data.json` as `trialVault`, beside the date — I delete the row |
+
+The plugin contains no other call to a server of mine.
 
 ## 2. What is stored on your own machine
 
-Your licence key, the activation id, the date of the last successful check and the trial start date
-are stored in the plugin's `data.json`, inside your vault, next to the reMarkable device token that
+Your licence key, the activation id, the date of the last successful check, the trial start date
+and its signature are stored in the plugin's `data.json`, inside your vault, next to the reMarkable device token that
 is already there — as is your Zotero API key, if you set one up. That file is yours. If your vault is synced, the file travels with it — which is
 intended, because one vault is one activation.
 
@@ -92,8 +104,10 @@ system.
 
 ## 6. What is not here, on purpose
 
-- **No analytics, no telemetry, no crash reporting, no usage counters.** This is a store rule and a
-  promise, and the plugin contains no such code.
+- **No analytics, no telemetry, no crash reporting, no usage counters** in the plugin. This is a
+  store rule and a promise, and the plugin contains no such code. The one request to a server of
+  mine is the trial ticket above, and it is the request that issues the trial — the server counting
+  how often a vault asked is a side of that, disclosed above, not a separate measurement.
 - **No account.** There is nothing to sign up for and nothing to log into.
 - **No page image and no transcript ever leaves your device** except to a transcription backend
   *you* configured with *your* own key. See the README.

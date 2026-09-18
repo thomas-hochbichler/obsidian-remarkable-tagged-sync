@@ -358,8 +358,9 @@ devices, at home and at work.
 
 **Every future Tagged Sync Pro feature is included** — no upgrade fee, ever.
 
-**Try it for 14 days** — one click in the plugin settings, no key and no email needed. Nothing is
-sent anywhere to start a trial.
+**Try it for 14 days** — one click in the plugin settings, no key and no email needed. The click
+asks `taggedsync.com` for this vault's signed start date, once (see
+[Privacy and permissions](#privacy-and-permissions)); a connection is needed for that one moment.
 
 **[Buy a licence](https://buy.polar.sh/polar_cl_ri72ZVng24KrtsNUNu8poN2J0rsvTSbkWwoZp2ZIQbP)** — you get your key on the page straight after paying, and
 by email as a backup. Paste it into the plugin settings.
@@ -891,7 +892,16 @@ most once every 7 days**; a valid answer is remembered in between. It carries yo
 activation id of this vault and the plugin's public organization id — no email address, no vault
 name, no note content. **A free user never causes this call.** Details in [PRIVACY.md](./PRIVACY.md).
 
-No telemetry or analytics of any kind are collected or sent by this plugin.
+**The trial ticket** — `taggedsync.com`, once, when you press *Start free trial*. It sends a
+12-character hash of this vault's Obsidian id and nothing else, and answers with the trial's start
+date, signed; the plugin keeps the signed date and checks it on every load. The server keeps the
+hash, the date it first saw it and how often it was asked — that is how a deleted `data.json` or a
+reinstalled plugin gets the same trial back rather than a new one. **Never on load, never on sync,
+never for somebody who does not press the button.** Details in [PRIVACY.md](./PRIVACY.md).
+
+No telemetry or analytics of any kind are collected or sent by this plugin. The trial ticket
+above is the one request it makes to a server of mine, and it is the request that issues the trial
+— there is no separate counting.
 
 ### Accessing files outside of Obsidian vaults
 

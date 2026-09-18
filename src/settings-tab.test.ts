@@ -22,6 +22,7 @@ import {
 	WRONG_KEY_MESSAGE,
 } from "./licence-messages";
 import { NO_LICENCE } from "./licence-state";
+import { ticketMessage, type TrialIssuer, type TrialTicket, vaultHashOf } from "./trial-ticket";
 import { DeviceUnreachableError } from "./ssh-connection";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import { PairingRefusedError } from "./ssh-pairing";
@@ -147,6 +148,21 @@ registerOcrBackend(
 /** Declares the need and forgets the accessors -- the half-declared pair, from the tab's side. */
 registerOcrBackend(testBackend("test-half-consent", { needsBackgroundConsent: true }));
 
+/**
+ * A key pair for the trial ticket (`trial-ticket.ts`). The plugin gets its public half; "signed by
+ * taggedsync.com" is then a fact the test controls rather than a secret it would have to carry.
+ */
+const TICKET_PAIR = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+const TICKET_PUBLIC = await crypto.subtle.exportKey("jwk", TICKET_PAIR.publicKey);
+async function ticketFor(vault: string, startedAt: string): Promise<TrialTicket> {
+	const raw = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, TICKET_PAIR.privateKey, ticketMessage(vault, startedAt));
+	const signature = btoa(String.fromCharCode(...new Uint8Array(raw)))
+		.replace(/\+/g, "-")
+		.replace(/\//g, "_")
+		.replace(/=+$/, "");
+	return { startedAt, signature };
+}
+
 // --- harness ------------------------------------------------------------------------------------
 
 interface Tab {
@@ -159,16 +175,24 @@ interface Plugin {
 	saves: unknown[];
 	saved: unknown;
 	settingTabs: Tab[];
+	trialIssuer: TrialIssuer;
+	trialPublicKey: JsonWebKey;
 	rearmAutoSyncInterval(): void;
 }
 
-async function tabWith(saved: Record<string, unknown> = {}): Promise<{ plugin: Plugin; tab: Tab }> {
+async function tabWith(
+	saved: Record<string, unknown> = {},
+	app: FakeApp = new FakeApp(),
+	trialPublicKey: JsonWebKey = TICKET_PUBLIC,
+): Promise<{ plugin: Plugin; tab: Tab }> {
 	const { default: TaggedSyncPlugin } = await import("./entry");
-	const plugin = new (TaggedSyncPlugin as unknown as new (a: unknown, m: unknown) => Plugin)(new FakeApp(), {
+	const plugin = new (TaggedSyncPlugin as unknown as new (a: unknown, m: unknown) => Plugin)(app, {
 		id: "tagged-sync",
 		name: "Tagged Sync",
 		version: "9.9.9",
 	});
+	// Before `onload`, which is where a stored trial is checked against it.
+	plugin.trialPublicKey = trialPublicKey;
 	plugin.saved = { ocrBackend: "off", licence: { ...NO_LICENCE }, ...saved };
 	// A clock nobody moves: the launch sync never comes due, so nothing runs behind these assertions.
 	(plugin as unknown as { scheduler: FakeClock }).scheduler = new FakeClock();
@@ -1251,14 +1275,82 @@ describe("the Tagged Sync Pro section", () => {
 		expect(row.desc).toContain("12 day(s) left.");
 	});
 
+	// --- the ticket ------------------------------------------------------------------------------
+	//
+	// Since 1.8 the start date comes signed from taggedsync.com (`trial-ticket.ts`); the key pair
+	// is at the top of the file.
+	/** An Obsidian that gave this vault an id, as every real one does. The fake's default has none. */
+	function appWithId(): FakeApp {
+		return Object.assign(new FakeApp(), { appId: "3f8a1c9e2b7d4e60" });
+	}
+	/** Records what was asked, answers from the server's point of view. */
+	function issuer(answer: (vault: string) => Promise<TrialTicket>): TrialIssuer & { asked: string[] } {
+		const asked: string[] = [];
+		return {
+			asked,
+			issue: (vault) => {
+				asked.push(vault);
+				return answer(vault);
+			},
+		};
+	}
+
 	it("starts the trial on the spot, saves it, and re-draws without the button", async () => {
-		const { plugin, tab } = await tabWith();
+		const { plugin, tab } = await tabWith({}, appWithId());
+		const server = issuer((vault) => ticketFor(vault, iso(0)));
+		plugin.trialIssuer = server;
+
 		await buttons(draw(tab), "Not active")[0].click();
 		await settle();
 
+		expect(server.asked).toEqual([expect.stringMatching(/^[0-9a-f]{12}$/)]);
 		expect((plugin.data.licence as { trialStartedAt: string | null }).trialStartedAt).not.toBeNull();
 		expect(plugin.saves).toHaveLength(1);
 		expect(pro(draw(tab))).toMatchObject({ heading: "Trial", buttons: ["Buy"] });
+	});
+
+	it("starts nothing when taggedsync.com cannot be reached, and says so once, in place", async () => {
+		const { plugin, tab } = await tabWith({}, appWithId());
+		plugin.trialIssuer = issuer(() => Promise.reject(new Error("ENOTFOUND")));
+
+		await buttons(draw(tab), "Not active")[0].click();
+		await settle();
+
+		expect(takeNotices()).toEqual([expect.stringContaining("needs a connection to taggedsync.com")]);
+		expect((plugin.data.licence as { trialStartedAt: string | null }).trialStartedAt).toBeNull();
+		expect(plugin.saves).toHaveLength(0);
+		expect(pro(draw(tab)).buttons).toEqual(["Start free trial", "Buy"]);
+	});
+
+	// The restart trick this replaces: delete `trialStartedAt`, click again. The server remembers.
+	it("gets the same trial back for a vault the server already knows, however the file was edited", async () => {
+		const { plugin, tab } = await tabWith({}, appWithId());
+		plugin.trialIssuer = issuer((vault) => ticketFor(vault, iso(10 * DAY_MS)));
+
+		await buttons(draw(tab), "Not active")[0].click();
+		await settle();
+
+		expect(pro(draw(tab)).desc).toContain("4 day(s) left.");
+	});
+
+	it("does not honour a trial in data.json that taggedsync.com never signed", async () => {
+		// A pre-1.8 file, or a hand-written one: same thing to the plugin.
+		const { plugin, tab } = await tabWith({ licence: { ...NO_LICENCE, trialStartedAt: iso(2 * DAY_MS) } }, appWithId());
+
+		expect((plugin.data.licence as { trialStartedAt: string | null }).trialStartedAt).toBeNull();
+		expect(plugin.saves).toHaveLength(1);
+		expect(pro(draw(tab)).buttons).toEqual(["Start free trial", "Buy"]);
+	});
+
+	it("does not honour a signed trial whose date was moved by hand", async () => {
+		const honest = await ticketFor(await vaultHashOf("3f8a1c9e2b7d4e60"), iso(2 * DAY_MS));
+		const { plugin, tab } = await tabWith(
+			{ licence: { ...NO_LICENCE, trialStartedAt: iso(0), trialSignature: honest.signature } },
+			appWithId(),
+		);
+
+		expect((plugin.data.licence as { trialStartedAt: string | null }).trialStartedAt).toBeNull();
+		expect(pro(draw(tab)).buttons).toEqual(["Start free trial", "Buy"]);
 	});
 
 	it("swaps Buy for the two account buttons once the licence is active", async () => {

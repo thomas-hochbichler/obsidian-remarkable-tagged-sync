@@ -3,6 +3,7 @@ import {
 	ACTIVATED_MESSAGE,
 	ACTIVATION_LIMIT_MESSAGE,
 	activationMessage,
+	TAG_CAP_MESSAGE,
 	gatedBackendMessage,
 	licenceEndedNotice,
 	licenceStatusText,
@@ -10,12 +11,12 @@ import {
 	OFFLINE_ACTIVATION_MESSAGE,
 	onDay,
 	PRO_PRICE,
-	TAG_CAP_MESSAGE,
 	trialDaysLeft,
+	trialStartFailed,
 	WITHDRAWN_KEY_MESSAGE,
 	WRONG_KEY_MESSAGE,
 } from "./licence-messages";
-import { entitlementOf, startTrial, NO_LICENCE, type LicenceOutcome, type LicenceState } from "./licence-state";
+import { entitlementOf, NO_LICENCE, type LicenceOutcome, type LicenceState } from "./licence-state";
 
 const NOW = new Date("2026-08-14T10:00:00.000Z");
 const active: LicenceState = {
@@ -24,6 +25,8 @@ const active: LicenceState = {
 	validatedAt: "2026-08-13T09:00:00.000Z",
 	revokedAt: null,
 	trialStartedAt: null,
+	trialSignature: null,
+	trialVault: null,
 	endedNoticeShown: false,
 };
 
@@ -60,13 +63,13 @@ describe("licenceStatusText", () => {
 	});
 
 	it("tells an ended trial that nothing was touched", () => {
-		const ended = startTrial(NO_LICENCE, new Date("2026-07-01T00:00:00.000Z"));
+		const ended = { ...NO_LICENCE, trialStartedAt: new Date("2026-07-01T00:00:00.000Z").toISOString() };
 		expect(textOf(ended).body).toContain("untouched");
 	});
 
 	// The one state where Pro works and the licence does not. Silence here reads as "the key took".
 	it("says which of the two is unlocking Pro when both are present", () => {
-		const trialing = startTrial(NO_LICENCE, NOW);
+		const trialing = { ...NO_LICENCE, trialStartedAt: NOW.toISOString() };
 		expect(textOf(trialing).body).not.toContain("licence key");
 
 		const withKey = { ...trialing, key: "TSP-9999" };
@@ -132,7 +135,7 @@ describe("dates and counting", () => {
 	});
 
 	it("counts trial days down to zero and no further", () => {
-		const trialing = startTrial(NO_LICENCE, NOW);
+		const trialing = { ...NO_LICENCE, trialStartedAt: NOW.toISOString() };
 		expect(trialDaysLeft(trialing, NOW)).toBe(14);
 		expect(trialDaysLeft(trialing, new Date("2026-08-27T10:00:00.000Z"))).toBe(1);
 		expect(trialDaysLeft(trialing, new Date("2026-09-30T10:00:00.000Z"))).toBe(0);
@@ -144,7 +147,7 @@ describe("dates and counting", () => {
 	// with `floor`, somebody with eighteen hours of trial remaining is told "0 day(s) left" while Pro
 	// is still working, which reads as a plugin that has lost track of its own state.
 	it("rounds a part-day up, because part of a day left is a day the trial still works", () => {
-		const trialing = startTrial(NO_LICENCE, NOW);
+		const trialing = { ...NO_LICENCE, trialStartedAt: NOW.toISOString() };
 		const endsAt = new Date(NOW.getTime() + 14 * 24 * 60 * 60 * 1000);
 
 		// Eighteen hours to go.
@@ -185,5 +188,24 @@ describe("activationMessage", () => {
 		// Nothing was ever active on a key being pasted for the first time, so there is nothing to
 		// withdraw. The default has to be the harmless reading of the two.
 		expect(activationMessage("something-polar-added-later" as LicenceOutcome)).toBe(WRONG_KEY_MESSAGE);
+	});
+});
+
+describe("why Start free trial did nothing", () => {
+	// The button is still on screen after each of these, so every sentence says what to do next.
+	it("names taggedsync.com and the moment to try again when there is no connection", () => {
+		expect(trialStartFailed("unreachable")).toContain("connection to taggedsync.com");
+		expect(trialStartFailed("unreachable")).toContain("try again");
+	});
+
+	it("sends a vault Obsidian gave no id to support, since nothing the user does fixes that", () => {
+		expect(trialStartFailed("no-vault-id")).toContain("support@hochbichler.com");
+	});
+
+	it("says the answer could not be verified, and offers both a retry and support", () => {
+		const text = trialStartFailed("bad-ticket");
+		expect(text).toContain("could not verify");
+		expect(text).toContain("try again");
+		expect(text).toContain("support@hochbichler.com");
 	});
 });

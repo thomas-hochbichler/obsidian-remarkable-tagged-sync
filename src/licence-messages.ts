@@ -11,6 +11,7 @@
 
 import type { Entitlement, LicenceOutcome, LicenceState } from "./licence-state";
 import { trialEndsAt } from "./licence-state";
+import type { TrialStartFailure } from "./trial-ticket";
 
 /** What a licence costs, said in one place so the settings tab and the README cannot drift apart. */
 export const PRO_PRICE = "€24";
@@ -109,6 +110,21 @@ export function licenceEndedNotice(reason: "revoked" | "trial-ended", fallbackBa
 		"Your Tagged Sync Pro trial has ended. Tag mappings are capped at one again and cloud transcription " +
 		`falls back to ${fallbackBackend}. Keep it all for ${PRO_PRICE}, once: Settings → Tagged Sync → Buy.`
 	);
+}
+
+/**
+ * Why "Start free trial" did nothing. Each names what to do next, because the button is still there
+ * and a second press with no change of circumstances would only repeat the sentence.
+ */
+export function trialStartFailed(reason: TrialStartFailure): string {
+	switch (reason) {
+		case "unreachable":
+			return "Starting the trial needs a connection to taggedsync.com, once. Nothing was started — try again when you are online.";
+		case "no-vault-id":
+			return "Obsidian gave this vault no id, so a trial cannot be issued for it. Write to support@hochbichler.com.";
+		case "bad-ticket":
+			return "taggedsync.com answered with a ticket this plugin could not verify. Nothing was started — try again, or write to support@hochbichler.com.";
+	}
 }
 
 /** A key that Polar does not know, reported at the moment it is pasted rather than stored. */

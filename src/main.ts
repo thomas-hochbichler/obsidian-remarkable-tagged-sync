@@ -16,6 +16,7 @@ import { isIntervalSyncDue } from "./auto-sync";
 import { checkLicence, type LicenceApi, type LicenceContext } from "./licence-check";
 import { createPolarLicenceApi } from "./licence-client";
 import { endedUnannounced, type Entitlement, entitlementOf } from "./licence-state";
+import { attestTrial, createTrialIssuer, TRIAL_PUBLIC_KEY, type TrialIssuer, vaultHashOf } from "./trial-ticket";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import { remapRows, rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
@@ -89,6 +90,9 @@ export default class TaggedSyncPlugin extends Plugin {
 	private cloudTransport!: CloudTransport;
 	private sshTransport!: SshTransport;
 	readonly licenceApi: LicenceApi = createPolarLicenceApi();
+	/** Where "Start free trial" gets its signed start date. Replaced in tests, with the key below. */
+	readonly trialIssuer: TrialIssuer = createTrialIssuer();
+	readonly trialPublicKey: JsonWebKey = TRIAL_PUBLIC_KEY;
 	/** What the launch delay and the interval backstop run on. Replaced in tests; see `./scheduler`. */
 	scheduler: Scheduler = windowScheduler;
 
@@ -143,6 +147,16 @@ export default class TaggedSyncPlugin extends Plugin {
 	 */
 	entitlement(): Entitlement {
 		return entitlementOf(this.data.licence, new Date());
+	}
+
+	/**
+	 * This vault as taggedsync.com knows it: a 12-hex hash of Obsidian's per-vault id, or null where
+	 * there is none. `appId` is not in the typings; it is the key of the vault's entry in Obsidian's
+	 * own vault list, which is why it changes when a vault is removed and added back.
+	 */
+	async vaultHash(): Promise<string | null> {
+		const appId = (this.app as unknown as { appId?: unknown }).appId;
+		return typeof appId === "string" && appId !== "" ? vaultHashOf(appId) : null;
 	}
 
 	/**
@@ -339,6 +353,13 @@ export default class TaggedSyncPlugin extends Plugin {
 			isKnownBackend: isRegisteredOcrBackend,
 			defaultBackend: defaultOcrBackend(visionPlatformSupported()),
 		});
+		// A trial `data.json` claims but taggedsync.com never signed for this vault is no trial. Once,
+		// here: the gates read memory, and memory is what a hand-edited file cannot reach.
+		const attested = await attestTrial(this.data.licence, await this.vaultHash(), this.trialPublicKey);
+		if (attested !== this.data.licence) {
+			this.data.licence = attested;
+			await this.saveData(this.data);
+		}
 
 		const store: AuthStore = {
 			getDeviceToken: () => this.data.deviceToken,

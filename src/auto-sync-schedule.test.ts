@@ -115,6 +115,8 @@ const ACTIVE_LICENCE = {
 	validatedAt: "2026-08-01T00:00:00.000Z",
 	revokedAt: null,
 	trialStartedAt: null,
+	trialSignature: null,
+	trialVault: null,
 	endedNoticeShown: false,
 };
 

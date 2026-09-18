@@ -8,7 +8,7 @@ import {
 	removeFrontmatter,
 	type NoteFrontmatter,
 } from "./frontmatter";
-import { entitlementOf, NO_LICENCE, startTrial } from "./licence-state";
+import { entitlementOf, NO_LICENCE } from "./licence-state";
 
 const NOW = new Date("2026-08-26T12:00:00.000Z");
 
@@ -253,7 +253,7 @@ describe("value formatting", () => {
 describe("the gate", () => {
 	it("locks free and opens for a trial or a licence", () => {
 		expect(frontmatterAllowed(entitlementOf(NO_LICENCE, NOW))).toBe(false);
-		expect(frontmatterAllowed(entitlementOf(startTrial(NO_LICENCE, NOW), NOW))).toBe(true);
+		expect(frontmatterAllowed(entitlementOf({ ...NO_LICENCE, trialStartedAt: NOW.toISOString() }, NOW))).toBe(true);
 		expect(frontmatterAllowed({ tier: "pro", since: "2026-01-01", stale: false })).toBe(true);
 	});
 });
