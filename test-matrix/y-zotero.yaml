@@ -2860,7 +2860,7 @@
 
     - id: Y29.9
       scenario: A paper chosen in the dialog
-      expect: Uploaded into the tablet folder without a sync tag, the link written, and one sentence saying what to do next -- tag it there, annotate it, then sync. Untagged since 2026-09-13, when the live test turned up a tag the user never chose on the tablet
+      expect: Uploaded into the tablet folder without a sync tag, the link written, and one sentence saying what to do next -- it has no sync tag yet; add one on the tablet, annotate, then sync. Untagged since 2026-09-13, when the live test turned up a tag the user never chose on the tablet
       layer: unit
       file: src/zotero-plugin.test.ts
       test: 'sending a paper > puts it in the tablet folder, untagged, and records the link'

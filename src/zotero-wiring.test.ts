@@ -182,6 +182,6 @@ describe("the Zotero commands as the plugin registers them", () => {
 		expect(itemsWithTag).toHaveBeenCalledWith("to-remarkable");
 		expect(sent.map((document) => document.visibleName)).toEqual(["Prompting"]);
 		expect(linkFor(plugin.saved.zoteroLinks ?? {}, "doc-7")?.attachmentKey).toBe("ATT1");
-		expect(notices()).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
+		expect(notices()).toEqual(['Sent 1 Zotero paper to your reMarkable: "Prompting". It has no sync tag yet — add one on the tablet when you want it back.']);
 	});
 });

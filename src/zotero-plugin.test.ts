@@ -204,8 +204,8 @@ describe("what a vault gets registered", () => {
 
 		expect(harnessed.sent.map((document) => document.visibleName)).toEqual(["Prompting"]);
 		expect(harnessed.saves).toBe(1);
-		expect(notices()).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
-		expect(harnessed.reports.at(-1)).toBe('Tagged Sync: 1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.');
+		expect(notices()).toEqual(['Sent 1 Zotero paper to your reMarkable: "Prompting". It has no sync tag yet — add one on the tablet when you want it back.']);
+		expect(harnessed.reports.at(-1)).toBe('Tagged Sync: Sent 1 Zotero paper to your reMarkable: "Prompting". It has no sync tag yet — add one on the tablet when you want it back.');
 	});
 
 	// Same door as Send: a vault with no connection is told what to set up, and nothing is asked of Zotero.
@@ -259,7 +259,7 @@ describe("sending a paper", () => {
 		expect(harnessed.sent).toEqual([{ visibleName: "Prompting", bytes: new Uint8Array([1, 2, 3]), folder: "Zotero" }]);
 		expect(linkFor(harnessed.data.zoteroLinks, "doc-1")?.attachmentKey).toBe("ATT1");
 		expect(harnessed.saves).toBe(1);
-		expect(notices()[0]).toContain("is on your reMarkable. Tag it there, annotate it, then sync.");
+		expect(notices()[0]).toContain("to your reMarkable. It has no sync tag yet — add one on the tablet, annotate, then sync.");
 	});
 
 	it("falls back to the default folder when the setting was emptied", async () => {

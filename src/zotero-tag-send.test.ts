@@ -146,7 +146,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 		expect(link.sentMd5).toMatch(/^[0-9a-f]{32}$/);
 		expect(h.saves).toBe(1);
 		expect(h.reports).toEqual(['Tagged Sync: sending "Prompting" to reMarkable\'s cloud…']);
-		expect(notices).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
+		expect(notices).toEqual(['Sent 1 Zotero paper to your reMarkable: "Prompting". It has no sync tag yet — add one on the tablet when you want it back.']);
 	});
 
 	// Ticket 26: a paper tagged in a group is fetched from the group and linked into it.
@@ -171,7 +171,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(h.sent.map((document) => document.visibleName)).toEqual(["Prompting", "Retrieval"]);
-		expect(notices).toEqual(['2 Zotero papers are on your reMarkable: "Prompting", "Retrieval". Tag them there to sync them back.']);
+		expect(notices).toEqual(['Sent 2 Zotero papers to your reMarkable: "Prompting", "Retrieval". They have no sync tag yet — add one on the tablet when you want them back.']);
 	});
 
 	// Nothing is written to Zotero by this step: the tag is the user's, and removing it would be the
@@ -341,7 +341,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 		const notices = await sendTaggedPapers(h.host, h.client);
 
 		expect(sent.map((document) => document.visibleName)).toEqual(["Retrieval"]);
-		expect(notices).toEqual(['1 Zotero paper is on your reMarkable: "Retrieval". Tag it there to sync it back.', tagSendSkipNotice("Prompting", "generation mismatch")]);
+		expect(notices).toEqual(['Sent 1 Zotero paper to your reMarkable: "Retrieval". It has no sync tag yet — add one on the tablet when you want it back.', tagSendSkipNotice("Prompting", "generation mismatch")]);
 	});
 });
 
@@ -394,7 +394,7 @@ describe("when the whole command stands down", () => {
 	it("sends over SSH when the cloud is not connected, in the same press", async () => {
 		const h = harness({ cloud: false, ssh: true });
 
-		expect(await sendTaggedPapers(h.host, h.client)).toEqual(['1 Zotero paper is on your reMarkable: "Prompting". Tag it there to sync it back.']);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual(['Sent 1 Zotero paper to your reMarkable: "Prompting". It has no sync tag yet — add one on the tablet when you want it back.']);
 		expect(h.reports.at(-1)).toBe('Tagged Sync: sending "Prompting" to your reMarkable…');
 	});
 

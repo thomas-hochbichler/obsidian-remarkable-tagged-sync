@@ -51,13 +51,13 @@ export function tagSendRoute(routes: SendRoutes): SendTransport | null {
 	return routes.cloud ?? routes.ssh;
 }
 
-/** The one sentence for what went up, or `null` when nothing did. It ends with the one thing left to do, because nothing tagged the document. */
+/** The one sentence for what went up, or `null` when nothing did. It says that the document is untagged and where the tag goes -- "there" alone would read as Zotero after a command about Zotero tags. */
 export function tagSendNotice(names: readonly string[]): string | null {
 	if (names.length === 0) return null;
 	const quoted = names.map((name) => `"${name}"`).join(", ");
 	return names.length === 1
-		? `1 Zotero paper is on your reMarkable: ${quoted}. Tag it there to sync it back.`
-		: `${names.length} Zotero papers are on your reMarkable: ${quoted}. Tag them there to sync them back.`;
+		? `Sent 1 Zotero paper to your reMarkable: ${quoted}. It has no sync tag yet — add one on the tablet when you want it back.`
+		: `Sent ${names.length} Zotero papers to your reMarkable: ${quoted}. They have no sync tag yet — add one on the tablet when you want them back.`;
 }
 
 /** One sentence per paper that stayed behind, in the shape of §3.4.2's skip notice. */

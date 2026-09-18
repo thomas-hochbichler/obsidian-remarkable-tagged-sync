@@ -310,7 +310,7 @@ async function putOnTablet(host: ZoteroHost, client: ZoteroClient, transport: Se
 	host.data.zoteroLinks = result.links;
 	await host.save();
 	host.report("ok", `Tagged Sync: sent "${result.visibleName}"`);
-	new Notice(`"${result.visibleName}" is on your reMarkable. Tag it there, annotate it, then sync.`, LONG_NOTICE_MS);
+	new Notice(`Sent "${result.visibleName}" to your reMarkable. It has no sync tag yet — add one on the tablet, annotate, then sync.`, LONG_NOTICE_MS);
 }
 
 /**
