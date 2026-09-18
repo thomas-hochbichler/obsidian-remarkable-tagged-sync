@@ -55,11 +55,19 @@ export interface TrialIssuer {
 	issue(vault: string): Promise<TrialTicket>;
 }
 
-export type TrialStartFailure = "no-vault-id" | "unreachable" | "bad-ticket";
+export type TrialStartFailure = "no-vault-id" | "unreachable" | "server-error" | "bad-ticket";
 
 export class TrialStartError extends Error {
-	constructor(readonly reason: TrialStartFailure) {
-		super(`trial not started: ${reason}`);
+	/**
+	 * `message` carries what the server actually said, where there is something to say -- it reaches
+	 * nobody but a diagnostics copy. The sentence the user reads comes from `reason` alone
+	 * (`licence-messages.ts`), because a status code helps no one who is trying to start a trial.
+	 */
+	constructor(
+		readonly reason: TrialStartFailure,
+		message = `trial not started: ${reason}`,
+	) {
+		super(message);
 	}
 }
 
@@ -105,8 +113,11 @@ export async function startTrial(
 	let ticket: TrialTicket;
 	try {
 		ticket = await issuer.issue(vault);
-	} catch {
-		throw new TrialStartError("unreachable");
+	} catch (error) {
+		// An issuer that already knows why keeps its reason: the real one separates a server that
+		// answered something other than a ticket from a server that answered nothing. Anything else
+		// -- a test double, a thrown string -- is a call that did not arrive.
+		throw error instanceof TrialStartError ? error : new TrialStartError("unreachable");
 	}
 	if (!(await verifyTicket(vault, ticket, publicKey))) throw new TrialStartError("bad-ticket");
 	return { ...state, trialStartedAt: ticket.startedAt, trialSignature: ticket.signature, trialVault: vault };
@@ -148,10 +159,13 @@ export function createTrialIssuer(fetchFn: typeof fetch = fetch): TrialIssuer {
 				}),
 				TRIAL_ISSUE_TIMEOUT_MS,
 			);
-			if (!response.ok) throw new Error(`taggedsync.com answered ${response.status}`);
+			// `server-error`, not `unreachable`: the request arrived and was answered. Reporting this as
+			// "you are offline" sent the one person who hit it looking at their own network, while
+			// `/trial` sat there answering 500 (2026-09-18).
+			if (!response.ok) throw new TrialStartError("server-error", `taggedsync.com answered ${response.status}`);
 			const body = (await response.json()) as Partial<TrialTicket>;
 			if (typeof body.startedAt !== "string" || typeof body.signature !== "string") {
-				throw new Error("taggedsync.com answered without a ticket");
+				throw new TrialStartError("server-error", "taggedsync.com answered without a ticket");
 			}
 			return { startedAt: body.startedAt, signature: body.signature };
 		},
