@@ -392,6 +392,18 @@ describe("group libraries (ticket 26)", () => {
 		expect(parts.notices).toEqual([zoteroSkipNotice("Best Practices für Prompting", "no write access to Lab reading group")]);
 	});
 
+	// Over zotero.org the thing without write access is the key, and the fix is on the key's page.
+	it("names the API key when zotero.org refused the write", async () => {
+		const createAnnotations = vi.fn(async (): Promise<AnnotationsCreated> => {
+			throw new ZoteroError("read-only", "Zotero refused to write into that library.", "web");
+		});
+		const { deps } = harness({ links: linked(), client: client({ createAnnotations }) });
+		const parts = await createZoteroPass(deps).run(unit());
+		const reason = "the API key has no write access to your library (allow it under zotero.org → Settings → Security)";
+		expect(parts.line).toContain(`not written back: ${reason}`);
+		expect(parts.notices).toEqual([zoteroSkipNotice("Best Practices für Prompting", reason)]);
+	});
+
 	// Unticked in the settings: the link stays for the day it is ticked again, and meanwhile nothing
 	// is read for it -- "gone" would be the wrong word for a library that is merely off.
 	it("leaves a link into a group that was switched off alone, and says so", async () => {

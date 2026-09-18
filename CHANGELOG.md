@@ -51,6 +51,11 @@ workflow publishes the section as the GitHub release body. See
 
 ### Changed
 
+- **A refused write over zotero.org names the key.** An API key made without *Allow write access*
+  reads the library fine and is refused on the first write. The note and the run now say `the API
+  key has no write access to your library (allow it under zotero.org → Settings → Security)`
+  instead of `no write access to your library`, which pointed at a membership you do not lack. The
+  desktop app's answer for a group you may only read is unchanged.
 - **Section headings in the digest link to their page.** `### 2. Related Works` now links to the
   page the section starts on, like the `### Page 1` heading a section-less entry gets; each entry
   keeps its own page link, since a section runs across pages.

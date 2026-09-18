@@ -199,6 +199,8 @@ export class ZoteroError extends Error {
 	constructor(
 		readonly reason: ZoteroFailure,
 		message: string,
+		/** Which connection said no. Set for `read-only`, where the fix differs: a key on zotero.org, a membership in the desktop app. */
+		readonly connection?: "local" | "web",
 	) {
 		super(message);
 		this.name = "ZoteroError";
@@ -352,13 +354,13 @@ function asString(value: unknown): string | null {
  * key that reads it -- and the other connection would say the same, so it is `read-only`, which
  * the client never falls back on (ticket 26).
  */
-async function failureFor(response: Response, write: boolean): Promise<ZoteroError> {
+async function failureFor(response: Response, write: boolean, connection?: "local" | "web"): Promise<ZoteroError> {
 	const body = await response.text().catch(() => "");
 	if (response.status === 401) return new ZoteroError("unauthorized", "Zotero rejected the API key.");
 	if (response.status === 403) {
 		if (body.includes("Local API is not enabled")) return new ZoteroError("not-enabled", 'Zotero is running with "Allow other applications" switched off.');
 		return write
-			? new ZoteroError("read-only", "Zotero refused to write into that library.")
+			? new ZoteroError("read-only", "Zotero refused to write into that library.", connection)
 			: new ZoteroError("unauthorized", "This Zotero API key may not read the library.");
 	}
 	if (response.status === 404) return new ZoteroError("not-found", "Zotero does not have that item any more.");
@@ -368,8 +370,8 @@ async function failureFor(response: Response, write: boolean): Promise<ZoteroErr
 	return new ZoteroError("server", `Zotero answered ${response.status}${body === "" ? "" : `: ${body.slice(0, 200)}`}`);
 }
 
-async function readJson(response: Response, write = false): Promise<unknown> {
-	if (!response.ok) throw await failureFor(response, write);
+async function readJson(response: Response, write = false, connection?: "local" | "web"): Promise<unknown> {
+	if (!response.ok) throw await failureFor(response, write, connection);
 	try {
 		return await response.json();
 	} catch {
@@ -632,6 +634,7 @@ export function createZoteroConnection(
 						headers: { "Zotero-Write-Token": writeToken() },
 					}),
 					true,
+					id,
 				);
 				const success = asRecord(asRecord(body).success);
 				const failed = asRecord(asRecord(body).failed);
@@ -664,7 +667,7 @@ export function createZoteroConnection(
 			headers: { "If-Unmodified-Since-Version": String(version) },
 		});
 		if (response.status === 412) return "conflict";
-		if (!response.ok) throw await failureFor(response, true);
+		if (!response.ok) throw await failureFor(response, true, id);
 		return "written";
 	}
 }

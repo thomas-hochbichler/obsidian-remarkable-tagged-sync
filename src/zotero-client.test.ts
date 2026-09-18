@@ -455,9 +455,19 @@ describe("group libraries (ticket 26)", () => {
 		const local = connection(() => new Response("Write access denied", { status: 403 }), "local");
 		const web = connection(() => json({ success: { "0": "NEW" } }), "web");
 		const client = createZoteroClient({ local: local.api, web: web.api });
-		await expect(client?.createAnnotations([{ type: "note", parentKey: "ATT1" }], GROUP)).rejects.toMatchObject({ reason: "read-only" });
+		await expect(client?.createAnnotations([{ type: "note", parentKey: "ATT1" }], GROUP)).rejects.toMatchObject({ reason: "read-only", connection: "local" });
 		expect(web.calls).toHaveLength(0);
 		await expect(local.api.attachments("user")).rejects.toMatchObject({ reason: "unauthorized" });
+	});
+
+	// zotero.org refuses a write with the same 403 when the key was made without "Allow write
+	// access" (e2e 2026-09-18). The error says which connection refused, so the pass can point at
+	// the key rather than at a library membership.
+	it("says that a refused write came from zotero.org", async () => {
+		const web = connection(() => new Response("Forbidden", { status: 403 }), "web");
+		const client = createZoteroClient({ web: web.api });
+		await expect(client?.createAnnotations([{ type: "note", parentKey: "ATT1" }], "user")).rejects.toMatchObject({ reason: "read-only", connection: "web" });
+		await expect(client?.patchAnnotation({ key: "ANN1", version: 3, library: "user", source: "web" }, { comment: "x" })).rejects.toMatchObject({ reason: "read-only", connection: "web" });
 	});
 
 	it("routes a patch by the annotation's library as well as by its source", async () => {

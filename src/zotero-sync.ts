@@ -148,8 +148,16 @@ const REASONS: Record<ZoteroFailure, string> = {
 	server: "Zotero answered with an error",
 };
 
-/** The `read-only` clause with the library named (ticket 26): "no write access to Lab reading group". */
-export function noWriteAccess(libraryName: string): string {
+/**
+ * The `read-only` clause with the library named (ticket 26): "no write access to Lab reading group".
+ *
+ * Over zotero.org the thing refused is the *key*, and the fix is a checkbox on the key's own page
+ * (e2e 2026-09-18: a key made without "Allow write access" read the library fine and was refused
+ * on the first write). Naming the library alone would send the user to look at a membership they
+ * do not lack.
+ */
+export function noWriteAccess(libraryName: string, connection?: "local" | "web"): string {
+	if (connection === "web") return `the API key has no write access to ${libraryName} (allow it under zotero.org → Settings → Security)`;
 	return `no write access to ${libraryName}`;
 }
 
@@ -299,7 +307,8 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		} catch (error) {
 			// A refused write names the library it was refused by (ticket 26): "no write access to
 			// Lab reading group" is something to act on, "to the library" is not.
-			const reason = error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(attachment.library)) : zoteroSkipReason(error);
+			const reason =
+				error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(attachment.library), error.connection) : zoteroSkipReason(error);
 			writeBack = { kind: "not-written", reason };
 			notices.push(zoteroSkipNotice(unit.visibleName, reason));
 		}

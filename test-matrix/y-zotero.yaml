@@ -3505,6 +3505,13 @@
       file: src/zotero-client.test.ts
       test: "group libraries (ticket 26) > reads a refused write as read-only and never tries the other connection with it"
 
+    - id: Y33.51
+      scenario: "zotero.org refuses a write with 403 (a key made without \"Allow write access\", e2e 2026-09-18)"
+      expect: '`read-only` with `connection: "web"` on both the create and the patch, so the pass can point at the key rather than at a membership'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "group libraries (ticket 26) > says that a refused write came from zotero.org"
+
     - id: Y33.11
       scenario: "A patch on an annotation read from a group"
       expect: 'Routed by the annotation''s library as well as by its source: the same key in the personal library is another annotation'
@@ -3609,6 +3616,13 @@
       layer: unit
       file: src/zotero-sync.test.ts
       test: "group libraries (ticket 26) > writes into the group and nowhere else, and names the group it may only read"
+
+    - id: Y33.52
+      scenario: "Write-back refused by zotero.org"
+      expect: 'The note says `not written back: the API key has no write access to your library (allow it under zotero.org → Settings → Security)` and the run says the same -- the key is what lacks access, and its page is where the fix is'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "group libraries (ticket 26) > names the API key when zotero.org refused the write"
 
     - id: Y33.26
       scenario: "A link into a group the vault has since switched off"
