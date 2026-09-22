@@ -42,29 +42,38 @@ jobs:
         run: sw_vers
       # Temporary, and out with the `push` trigger: the nightly harness classifies a failed backend
       # the way it classifies a cloud one, so the first macOS 27 run reported "network error" for a
-      # machine that never touched the network. This reproduces `probe()` by hand -- same driver,
-      # same 1x1 PNG -- and prints what the harness swallows.
-      - name: Probe Vision directly and show the raw error
+      # machine that never touched the network. This asks Vision itself what went wrong.
+      #
+      # The control image is a 320x240 blank. On macOS 26.5.2 the shipped driver answers
+      # `{lines: [], boxes: [], revision: "3"}` for it -- Vision working and finding nothing -- and
+      # `performRequestsError` returns true with `defaultRevision` 3.
+      - name: Ask Vision what it objects to
         continue-on-error: true
         run: |
           printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAWk1v8QAAAABJRU5ErkJggg==' | base64 -d > /tmp/probe.png
-          ls -l /tmp/probe.png
-          echo '--- ObjC.import(Vision) alone ---'
-          osascript -l JavaScript -e 'ObjC.import("Vision"); "import ok"' || echo "import FAILED rc=$?"
           sips -z 240 320 /tmp/probe.png --out /tmp/probe_big.png >/dev/null
-          echo '--- the shipped driver against the probe image (1x1, fails on macOS 26 too) ---'
-          node -e '
-            const { execFileSync } = require("node:child_process");
-            const src = require("node:fs").readFileSync("src/vision-ocr-runtime.ts", "utf8");
-            const jxa = src.split("const VISION_OCR_JXA = `")[1].split("`;")[0];
-            try {
-              const out = execFileSync("/usr/bin/osascript", ["-l", "JavaScript", "-", "/tmp/probe.png", "/tmp/probe_big.png"], { input: jxa, encoding: "utf8" });
-              console.log("stdout:", out);
-            } catch (e) {
-              console.log("rc:", e.status, "\nstdout:", e.stdout, "\nstderr:", e.stderr);
-            }
-          '
-          echo '--- 320x240 blank is the one that matters: on macOS 26 it returns lines:[] and revision 3 ---'
+          cat > /tmp/err-probe.js <<'JXA'
+          ObjC.import('Foundation');
+          ObjC.import('Vision');
+          function run(argv) {
+            var out = {};
+            var url = $.NSURL.fileURLWithPath($(argv[0]));
+            var req = $.VNRecognizeTextRequest.alloc.init;
+            req.recognitionLevel = 0;
+            req.usesLanguageCorrection = true;
+            try { out.defaultRevision = $.VNRecognizeTextRequest.defaultRevision.toString(); } catch (e) { out.defaultRevision = 'threw: ' + e; }
+            try { out.reqRevision = req.revision.toString(); } catch (e) { out.reqRevision = 'threw: ' + e; }
+            var handler = $.VNImageRequestHandler.alloc.initWithURLOptions(url, $({}));
+            var err = $();
+            out.ok = handler.performRequestsError($.NSArray.arrayWithObject(req), err);
+            try { out.error = ObjC.unwrap(err.localizedDescription); } catch (e) { out.error = 'no description: ' + e; }
+            try { out.errorCode = err.code; out.errorDomain = ObjC.unwrap(err.domain); } catch (e) {}
+            try { out.results = req.results.isNil() ? 'nil' : req.results.count; } catch (e) { out.results = 'threw: ' + e; }
+            return JSON.stringify(out);
+          }
+          JXA
+          echo '--- 320x240 blank, the image macOS 26 accepts ---'
+          osascript -l JavaScript /tmp/err-probe.js /tmp/probe_big.png || echo "osascript rc=$?"
 
       - name: Read the reference pages with Apple Vision
         run: npm run nightly:vision
