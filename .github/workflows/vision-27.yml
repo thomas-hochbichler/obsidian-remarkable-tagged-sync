@@ -1,0 +1,49 @@
+# The one-off macOS 27 comparison run, for the article that asks whether Apple's Vision framework
+# reads handwriting better than it did on macOS 26.
+#
+# Deliberately not a job in `nightly.yml`. The `xcode-27` image is in public preview -- GitHub says
+# its software "can be unstable" and warns about queueing -- and the nightly is a measurement that
+# has to stay trustworthy every morning. A flaky runner belongs nowhere near it. This file also
+# commits nothing and writes no verdict: it reads the same fifteen pages and hands back the part.
+#
+# `xcode-27`, not `macos-27`: since 2026-07-16 GitHub names macOS images after the major Xcode
+# version rather than the OS, and the image is arm64-only.
+#
+# Before publishing any number this produces, read `macosBuild` in the part. `26A428` is the
+# shipped macOS 27 and may be written about; `26A5406e` is Golden Gate beta 5 and may not, because
+# Apple's developer agreement holds pre-release builds confidential until commercial release.
+# The Darwin version cannot tell the two apart.
+#
+# Actions are pinned by commit SHA, same as `nightly.yml`. The trailing comment is the tag.
+
+name: Vision on macOS 27
+
+on:
+  workflow_dispatch:
+
+jobs:
+  vision-27:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Say which machine this is before anything measures on it
+        run: sw_vers
+      - name: Read the reference pages with Apple Vision
+        run: npm run nightly:vision
+      - name: Write the run summary
+        if: always()
+        run: |
+          if [ -f nightly-parts/vision.json ]; then
+            node scripts/nightly-summary.mjs nightly-parts/vision.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep the part to compare against the macOS 26 measurement
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vision-27-part
+          path: nightly-parts/vision.json
