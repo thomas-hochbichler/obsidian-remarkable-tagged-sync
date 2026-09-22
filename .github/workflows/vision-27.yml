@@ -40,40 +40,20 @@ jobs:
       - run: npm ci
       - name: Say which machine this is before anything measures on it
         run: sw_vers
-      # Temporary, and out with the `push` trigger: the nightly harness classifies a failed backend
-      # the way it classifies a cloud one, so the first macOS 27 run reported "network error" for a
-      # machine that never touched the network. This asks Vision itself what went wrong.
+      # Temporary, and out with the `push` trigger. The shipped driver reports `unreadable_image`
+      # for every image on this runner, including a 320x240 blank that macOS 26.5.2 accepts, and the
+      # NSError out-param stays empty under JXA. So instead of asking why, this tries ten ways into
+      # the same framework and prints which of them work.
       #
-      # The control image is a 320x240 blank. On macOS 26.5.2 the shipped driver answers
-      # `{lines: [], boxes: [], revision: "3"}` for it -- Vision working and finding nothing -- and
-      # `performRequestsError` returns true with `defaultRevision` 3.
-      - name: Ask Vision what it objects to
+      # On macOS 26.5.2 all ten answer `ok: true`. Any that also answers `ok: true` here is both the
+      # explanation and the fix; none doing so is the strong reading that macOS 27 refuses this
+      # route outright.
+      - name: Try every way into Vision and see which one works
         continue-on-error: true
         run: |
           printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAWk1v8QAAAABJRU5ErkJggg==' | base64 -d > /tmp/probe.png
           sips -z 240 320 /tmp/probe.png --out /tmp/probe_big.png >/dev/null
-          cat > /tmp/err-probe.js <<'JXA'
-          ObjC.import('Foundation');
-          ObjC.import('Vision');
-          function run(argv) {
-            var out = {};
-            var url = $.NSURL.fileURLWithPath($(argv[0]));
-            var req = $.VNRecognizeTextRequest.alloc.init;
-            req.recognitionLevel = 0;
-            req.usesLanguageCorrection = true;
-            try { out.defaultRevision = $.VNRecognizeTextRequest.defaultRevision.toString(); } catch (e) { out.defaultRevision = 'threw: ' + e; }
-            try { out.reqRevision = req.revision.toString(); } catch (e) { out.reqRevision = 'threw: ' + e; }
-            var handler = $.VNImageRequestHandler.alloc.initWithURLOptions(url, $({}));
-            var err = $();
-            out.ok = handler.performRequestsError($.NSArray.arrayWithObject(req), err);
-            try { out.error = ObjC.unwrap(err.localizedDescription); } catch (e) { out.error = 'no description: ' + e; }
-            try { out.errorCode = err.code; out.errorDomain = ObjC.unwrap(err.domain); } catch (e) {}
-            try { out.results = req.results.isNil() ? 'nil' : req.results.count; } catch (e) { out.results = 'threw: ' + e; }
-            return JSON.stringify(out);
-          }
-          JXA
-          echo '--- 320x240 blank, the image macOS 26 accepts ---'
-          osascript -l JavaScript /tmp/err-probe.js /tmp/probe_big.png || echo "osascript rc=$?"
+          osascript -l JavaScript .github/workflows/vision-27-probe.js /tmp/probe_big.png || echo "osascript rc=$?"
 
       - name: Read the reference pages with Apple Vision
         run: npm run nightly:vision
