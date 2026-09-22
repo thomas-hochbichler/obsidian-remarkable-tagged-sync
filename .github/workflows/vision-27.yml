@@ -51,18 +51,20 @@ jobs:
           ls -l /tmp/probe.png
           echo '--- ObjC.import(Vision) alone ---'
           osascript -l JavaScript -e 'ObjC.import("Vision"); "import ok"' || echo "import FAILED rc=$?"
-          echo '--- the shipped driver against the probe image ---'
+          sips -z 240 320 /tmp/probe.png --out /tmp/probe_big.png >/dev/null
+          echo '--- the shipped driver against the probe image (1x1, fails on macOS 26 too) ---'
           node -e '
             const { execFileSync } = require("node:child_process");
             const src = require("node:fs").readFileSync("src/vision-ocr-runtime.ts", "utf8");
             const jxa = src.split("const VISION_OCR_JXA = `")[1].split("`;")[0];
             try {
-              const out = execFileSync("/usr/bin/osascript", ["-l", "JavaScript", "-", "/tmp/probe.png"], { input: jxa, encoding: "utf8" });
+              const out = execFileSync("/usr/bin/osascript", ["-l", "JavaScript", "-", "/tmp/probe.png", "/tmp/probe_big.png"], { input: jxa, encoding: "utf8" });
               console.log("stdout:", out);
             } catch (e) {
               console.log("rc:", e.status, "\nstdout:", e.stdout, "\nstderr:", e.stderr);
             }
           '
+          echo '--- 320x240 blank is the one that matters: on macOS 26 it returns lines:[] and revision 3 ---'
 
       - name: Read the reference pages with Apple Vision
         run: npm run nightly:vision
