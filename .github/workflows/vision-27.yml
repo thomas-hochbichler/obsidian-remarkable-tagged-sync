@@ -1,6 +1,16 @@
 # The one-off macOS 27 comparison run, for the article that asks whether Apple's Vision framework
 # reads handwriting better than it did on macOS 26.
 #
+# ⚠️ It cannot answer that question on a GitHub runner, and this is what it took to find out:
+# `.accurate` recognition fails on `xcode-27` for every image, through every handler and every
+# request option, while `.fast` and a non-text request both succeed and the accurate language list
+# comes back complete. The runner logs `IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver`
+# -- it is paravirtualised, with no real GPU or Neural Engine. macOS 26 still ran the accurate path
+# there; macOS 27 does not. The number has to come from real hardware.
+#
+# The file stays because it is one button and it still measures whatever runner it is pointed at,
+# which is the cheap way to re-check a future image.
+#
 # Deliberately not a job in `nightly.yml`. The `xcode-27` image is in public preview -- GitHub says
 # its software "can be unstable" and warns about queueing -- and the nightly is a measurement that
 # has to stay trustworthy every morning. A flaky runner belongs nowhere near it. This file also
@@ -18,14 +28,10 @@
 
 name: Vision on macOS 27
 
-# The `push` trigger is temporary scaffolding and comes out before this branch merges. GitHub only
-# offers the manual button for workflows that already exist on the default branch, so a file that
-# has never been on `main` cannot be dispatched at all -- pushing the branch is the only way to
-# make this run before it is merged.
+# Note that the manual button only appears once this file is on the default branch; GitHub answers
+# a dispatch for anything else with "not found on the default branch".
 on:
   workflow_dispatch:
-  push:
-    branches: [macos-27-vision]
 
 jobs:
   vision-27:
@@ -40,27 +46,6 @@ jobs:
       - run: npm ci
       - name: Say which machine this is before anything measures on it
         run: sw_vers
-      # Temporary, and out with the `push` trigger. The shipped driver reports `unreadable_image`
-      # for every image on this runner, including a 320x240 blank that macOS 26.5.2 accepts, and the
-      # NSError out-param stays empty under JXA. So instead of asking why, this tries ten ways into
-      # the same framework and prints which of them work.
-      #
-      # On macOS 26.5.2 all ten answer `ok: true`. Any that also answers `ok: true` here is both the
-      # explanation and the fix; none doing so is the strong reading that macOS 27 refuses this
-      # route outright.
-      - name: Try every way into Vision and see which one works
-        continue-on-error: true
-        run: |
-          printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAWk1v8QAAAABJRU5ErkJggg==' | base64 -d > /tmp/probe.png
-          sips -z 240 320 /tmp/probe.png --out /tmp/probe_big.png >/dev/null
-          osascript -l JavaScript .github/workflows/vision-27-probe.js /tmp/probe_big.png || echo "osascript rc=$?"
-          echo '--- which languages each level admits to supporting ---'
-          osascript -l JavaScript .github/workflows/vision-27-langs.js || echo "osascript rc=$?"
-          echo '--- accurate again after 120s, in case an asset is still downloading ---'
-          sleep 120
-          osascript -l JavaScript .github/workflows/vision-27-langs.js || echo "osascript rc=$?"
-          osascript -l JavaScript .github/workflows/vision-27-probe.js /tmp/probe_big.png 2>&1 | head -6 || true
-
       - name: Read the reference pages with Apple Vision
         run: npm run nightly:vision
       - name: Write the run summary
