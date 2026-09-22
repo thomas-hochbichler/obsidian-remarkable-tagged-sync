@@ -26,8 +26,11 @@ export interface LocalFigure {
 	mmprojSha256: string;
 	/** llama.cpp release tag, `RUNTIME_RELEASE`. */
 	runtime: string;
-	/** No hostname: the CPU, the memory and the OS are what move a number; a name moves nothing. */
-	machine: { cpu: string; memoryGb: number; os: string };
+	/**
+	 * No hostname: the CPU, the memory and the OS are what move a number; a name moves nothing.
+	 * `osBuild` is optional because the measurements taken before it existed do not carry it.
+	 */
+	machine: { cpu: string; memoryGb: number; os: string; osBuild?: string };
 	promptSha: string;
 	renderVersion: number;
 	contextTokens: number | null;

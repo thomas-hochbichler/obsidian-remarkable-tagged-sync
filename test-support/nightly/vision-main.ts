@@ -10,6 +10,7 @@
 // `.ocr-baseline.json` discipline. What differs is the provenance -- there is no model id, no prompt
 // and no price, and instead the `VNRecognizeTextRequest` revision and the OS that chose it.
 
+import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { release } from "node:os";
 import { join } from "node:path";
@@ -85,6 +86,14 @@ async function main() {
 					visionRevision: visionRunStats.revision,
 					unreadableInkRegions: visionRunStats.unreadableInkRegions,
 					macos: `darwin ${release()}`,
+					// The build, because the Darwin version cannot tell a seed from a shipped OS: macOS 27
+					// reports `darwin 27.0.0` whether it is Golden Gate beta 5 (`26A5406e`) or the release
+					// (`26A428`), and Apple's developer agreement binds pre-release builds to confidentiality
+					// while the shipped one is free to write about. A number whose build is unknown cannot be
+					// published. `ImageOS`/`ImageVersion` are set by GitHub and absent locally, where the
+					// field drops out of the JSON.
+					macosBuild: execFileSync("sw_vers", ["-buildVersion"], { encoding: "utf8" }).trim(),
+					runnerImage: process.env.ImageVersion && `${process.env.ImageOS} ${process.env.ImageVersion}`,
 					totalMs: ms,
 				},
 			},

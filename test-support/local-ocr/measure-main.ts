@@ -125,6 +125,11 @@ async function main() {
 			cpu: cpus()[0]?.model ?? "unknown",
 			memoryGb: Math.round(totalmem() / 1024 ** 3),
 			os: `macOS ${execFileSync("sw_vers", ["-productVersion"], { encoding: "utf8" }).trim()}`,
+			// Beside the version, never inside it: `os` is rendered verbatim into the published
+			// `served_by` line by `scripts/ocr-series.mjs`. The build is what separates a seed from a
+			// shipped OS -- both report the same product version -- and that is what decides whether a
+			// measurement may be published at all.
+			osBuild: execFileSync("sw_vers", ["-buildVersion"], { encoding: "utf8" }).trim(),
 		},
 		promptSha: promptSha(),
 		renderVersion: RENDER_VERSION,
