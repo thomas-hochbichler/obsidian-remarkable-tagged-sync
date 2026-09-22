@@ -40,6 +40,30 @@ jobs:
       - run: npm ci
       - name: Say which machine this is before anything measures on it
         run: sw_vers
+      # Temporary, and out with the `push` trigger: the nightly harness classifies a failed backend
+      # the way it classifies a cloud one, so the first macOS 27 run reported "network error" for a
+      # machine that never touched the network. This reproduces `probe()` by hand -- same driver,
+      # same 1x1 PNG -- and prints what the harness swallows.
+      - name: Probe Vision directly and show the raw error
+        continue-on-error: true
+        run: |
+          printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAWk1v8QAAAABJRU5ErkJggg==' | base64 -d > /tmp/probe.png
+          ls -l /tmp/probe.png
+          echo '--- ObjC.import(Vision) alone ---'
+          osascript -l JavaScript -e 'ObjC.import("Vision"); "import ok"' || echo "import FAILED rc=$?"
+          echo '--- the shipped driver against the probe image ---'
+          node -e '
+            const { execFileSync } = require("node:child_process");
+            const src = require("node:fs").readFileSync("src/vision-ocr-runtime.ts", "utf8");
+            const jxa = src.split("const VISION_OCR_JXA = `")[1].split("`;")[0];
+            try {
+              const out = execFileSync("/usr/bin/osascript", ["-l", "JavaScript", "-", "/tmp/probe.png"], { input: jxa, encoding: "utf8" });
+              console.log("stdout:", out);
+            } catch (e) {
+              console.log("rc:", e.status, "\nstdout:", e.stdout, "\nstderr:", e.stderr);
+            }
+          '
+
       - name: Read the reference pages with Apple Vision
         run: npm run nightly:vision
       - name: Write the run summary
