@@ -54,6 +54,12 @@ jobs:
           printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAWk1v8QAAAABJRU5ErkJggg==' | base64 -d > /tmp/probe.png
           sips -z 240 320 /tmp/probe.png --out /tmp/probe_big.png >/dev/null
           osascript -l JavaScript .github/workflows/vision-27-probe.js /tmp/probe_big.png || echo "osascript rc=$?"
+          echo '--- which languages each level admits to supporting ---'
+          osascript -l JavaScript .github/workflows/vision-27-langs.js || echo "osascript rc=$?"
+          echo '--- accurate again after 120s, in case an asset is still downloading ---'
+          sleep 120
+          osascript -l JavaScript .github/workflows/vision-27-langs.js || echo "osascript rc=$?"
+          osascript -l JavaScript .github/workflows/vision-27-probe.js /tmp/probe_big.png 2>&1 | head -6 || true
 
       - name: Read the reference pages with Apple Vision
         run: npm run nightly:vision
