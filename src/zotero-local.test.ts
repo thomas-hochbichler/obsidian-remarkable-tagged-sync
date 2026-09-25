@@ -146,6 +146,13 @@ describe("the file on disk", () => {
 		expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ATT1", "user")).toBe("/Users/me/Zotero/storage/ATT1/Maß und Zahl.pdf");
 	});
 
+	// Zotero uses the same URL on Windows, where simply stripping `file://` leaves an unusable `/C:/...` path.
+	it("converts a Windows drive file URL to a native path", async () => {
+		const { impl } = stubZotero(() => new Response("file:///C:/Users/me/Zotero%20Library/ATT1/paper.pdf"));
+		const expected = process.platform === "win32" ? "C:\\Users\\me\\Zotero Library\\ATT1\\paper.pdf" : "/C:/Users/me/Zotero Library/ATT1/paper.pdf";
+		expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ATT1", "user")).toBe(expected);
+	});
+
 	it("answers nothing for an item that has no file, rather than failing the send", async () => {
 		const { impl } = stubZotero(() => new Response("Not a file attachment", { status: 400 }));
 		expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ITEM1", "user")).toBeNull();

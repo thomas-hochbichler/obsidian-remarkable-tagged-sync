@@ -23,6 +23,7 @@
  *    write.
  */
 
+import { fileURLToPath } from "url";
 import {
 	createZoteroConnection,
 	libraryPath,
@@ -199,14 +200,15 @@ export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fet
 		 * works for a linked file that was never in Zotero's storage at all.
 		 *
 		 * `/file/view/url` answers a percent-encoded `file://` URL as plain text; 400 is Zotero's answer
-		 * for an item that is not a file attachment, and `null` lets the caller fall through.
+		 * for an item that is not a file attachment. Convert with Node's URL helper so drive-letter and
+		 * UNC paths become native paths on Windows too.
 		 */
 		async path(key, library) {
 			const response = await requester({ library, path: `/items/${key}/file/view/url` });
 			if (!response.ok) return null;
 			const url = (await response.text()).trim();
 			if (!url.startsWith("file://")) return null;
-			return decodeURIComponent(url.slice("file://".length));
+			return fileURLToPath(url);
 		},
 		// The desktop hands out a path; reading it is the caller's, which keeps every filesystem call
 		// in one place instead of two (spec §2.4).
