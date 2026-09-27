@@ -21,6 +21,12 @@ workflow publishes the section as the GitHub release body. See
   wrong now says so, and points at a retry in a few minutes or at support. Nothing is stored either
   way, and a real lack of connection still reads as before.
 
+- **Send finds the Zotero PDF on Windows again.** With the Zotero desktop app connected, Obsidian
+  on Windows could never open the file Zotero named, so Send asked you to pick the PDF by hand
+  every time, and sending by tag skipped every paper with *"Zotero has no copy of the PDF"*. The
+  path now reads as a proper Windows path, and a PDF on a network share works too. Thanks to
+  @id-b3 for the report and the fix (#179).
+
 ## [1.8.1] - 2026-09-18
 
 ### Changed
