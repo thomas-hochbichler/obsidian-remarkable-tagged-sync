@@ -37,6 +37,13 @@
       file: src/zotero-client.test.ts
       test: "reading the library > names a linked file by the last segment of its path"
 
+    - id: Y1.3a
+      scenario: A linked file on Windows, whose absolute path Zotero keeps with backslashes
+      expect: The last segment all the same, not the whole `C:\...` path -- that one never matched a tablet document name
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > names a linked file on Windows by the last segment of its path"
+
     - id: Y1.4
       scenario: The stored link points at an attachment that is no longer there
       expect: '`null`, not a throw: §2.3 keeps the note and drops the Zotero part. Every other failure stays a throw, because it is repairable and the user has to be told which one it was'

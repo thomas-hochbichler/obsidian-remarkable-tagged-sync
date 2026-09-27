@@ -27,6 +27,11 @@ workflow publishes the section as the GitHub release body. See
   path now reads as a proper Windows path, and a PDF on a network share works too. Thanks to
   @id-b3 for the report and the fix (#179).
 
+- **A linked Zotero PDF on Windows is recognised by its filename again.** Zotero keeps the path of a
+  linked file with backslashes on Windows, and the plugin read the whole path as the filename. A
+  document that reached the tablet another way was then never offered as a match for that PDF, and
+  the link dialog showed the full path. Only the filename counts now.
+
 ## [1.8.1] - 2026-09-18
 
 ### Changed
