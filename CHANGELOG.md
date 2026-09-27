@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-09-27
+
 ### Fixed
 
 - **"Start free trial" no longer blames your network for a fault at `taggedsync.com`.** Every
