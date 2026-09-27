@@ -262,6 +262,20 @@
       file: src/zotero-client.test.ts
       test: "two connections, one client > hands every call through to the connection that answers it"
 
+    - id: Y4.11
+      scenario: The desktop app is connected, and the PDF is on zotero.org but cannot be read from disk
+      expect: The download from zotero.org. The desktop app never has bytes, so its `null` is not "no copy online" -- ending there sent the user to the file dialog without zotero.org being asked
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > downloads from zotero.org when the desktop app has no bytes to give"
+
+    - id: Y4.12
+      scenario: The download needs zotero.org, and zotero.org cannot be reached
+      expect: '`null`, so send goes on to the file dialog. Not an error: the next step is the dialog either way'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > goes on to the file dialog, not an error, when zotero.org cannot be reached for the download"
+
 - feature: Y5
   name: What a failure is called
   code: src/zotero-client.ts

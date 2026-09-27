@@ -21,6 +21,12 @@ workflow publishes the section as the GitHub release body. See
   wrong now says so, and points at a retry in a few minutes or at support. Nothing is stored either
   way, and a real lack of connection still reads as before.
 
+- **Send downloads the PDF from zotero.org when the desktop app cannot hand it over.** With the
+  Zotero desktop app connected, Send never asked zotero.org for the PDF. If the file was not on this
+  computer — for example with Zotero set to download files only when needed — Send opened the file
+  dialog and said *"Zotero has no copy of this PDF online"*, even when zotero.org had it. Sending by
+  tag skipped those papers. Send now tries zotero.org before it asks you.
+
 ## [1.8.1] - 2026-09-18
 
 ### Changed
