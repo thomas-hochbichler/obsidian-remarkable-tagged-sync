@@ -146,6 +146,14 @@ describe("the file on disk", () => {
 		expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ATT1", "user")).toBe("/Users/me/Zotero/storage/ATT1/Maß und Zahl.pdf");
 	});
 
+	// Issue #179. Zotero on Windows answers `file:///C:/...`; cutting off `file://` leaves `/C:/...`,
+	// which no Windows call can open, so every send fell to the dialog. A drive letter only ever comes
+	// from Windows, so the answer does not depend on the machine the test runs on.
+	it("hands back a Windows drive path, not /C:/", async () => {
+		const { impl } = stubZotero(() => new Response("file:///C:/Users/me/Zotero%20Library/ATT1/paper.pdf"));
+		expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ATT1", "user")).toBe("C:\\Users\\me\\Zotero Library\\ATT1\\paper.pdf");
+	});
+
 	it("answers nothing for an item that has no file, rather than failing the send", async () => {
 		const { impl } = stubZotero(() => new Response("Not a file attachment", { status: 400 }));
 		expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ITEM1", "user")).toBeNull();

@@ -494,6 +494,13 @@
       file: src/zotero-local.test.ts
       test: "the file on disk > hands back the real path, decoded"
 
+    - id: Y7.11a
+      scenario: Send asks the desktop where the PDF is, and the desktop runs on Windows (issue #179)
+      expect: A native drive path `C:\...`, not `/C:/...` -- that one no Windows call can open, and send fell to the dialog
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the file on disk > hands back a Windows drive path, not /C:/"
+
     - id: Y7.12
       scenario: The key is not a file attachment
       expect: '`null`, so send falls through to the web download and then to the file dialog (§2.4)'
