@@ -276,6 +276,13 @@
       file: src/zotero-client.test.ts
       test: "two connections, one client > goes on to the file dialog, not an error, when zotero.org cannot be reached for the download"
 
+    - id: Y4.13
+      scenario: The download needs zotero.org, and zotero.org fails it (a 500)
+      expect: The error. The dialog would say "no copy online" when the copy is there and the server is what failed
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > reports zotero.org failing the download rather than hiding it behind the file dialog"
+
 - feature: Y5
   name: What a failure is called
   code: src/zotero-client.ts

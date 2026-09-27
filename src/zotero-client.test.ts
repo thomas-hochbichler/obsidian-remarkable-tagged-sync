@@ -404,6 +404,16 @@ describe("two connections, one client", () => {
 		const client = createZoteroClient({ local: withBytes("local", async () => null), web: withBytes("web", unreachable) });
 		expect(await client?.fileBytes("ATT1", "user")).toBeNull();
 	});
+
+	// A 500 is zotero.org's answer, not a connection that could not be asked: the dialog would hide it
+	// behind "no copy online" when the copy is there and the server is what failed.
+	it("reports zotero.org failing the download rather than hiding it behind the file dialog", async () => {
+		const failing = async (): Promise<never> => {
+			throw new ZoteroError("server", "zotero.org answered 500 for that PDF.");
+		};
+		const client = createZoteroClient({ local: withBytes("local", async () => null), web: withBytes("web", failing) });
+		await expect(client?.fileBytes("ATT1", "user")).rejects.toMatchObject({ reason: "server" });
+	});
 });
 
 describe("what comes back from Zotero", () => {
