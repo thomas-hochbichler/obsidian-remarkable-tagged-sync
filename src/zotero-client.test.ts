@@ -391,6 +391,36 @@ describe("two connections, one client", () => {
 		expect((await client?.createAnnotations([{ type: "note", parentKey: "ATT1" }], "user"))?.keys).toEqual([null]);
 		expect(asked).toHaveLength(6);
 	});
+
+	// The desktop app never hands over bytes, only a path (§2.4). Its `null` says nothing about
+	// zotero.org, which may well have the file: Zotero's "download files as needed", or a path the
+	// desktop named that could not be read. Ending there sent the user to the file dialog under
+	// "Zotero has no copy of this PDF online" without zotero.org ever being asked.
+	const withBytes = (id: "local" | "web", bytes: () => Promise<Uint8Array | null>) =>
+		createZoteroConnection(id, id, stub(() => json([])).requester, { path: async () => null, bytes }, async () => null);
+
+	it("downloads from zotero.org when the desktop app has no bytes to give", async () => {
+		const client = createZoteroClient({ local: withBytes("local", async () => null), web: withBytes("web", async () => new Uint8Array([7])) });
+		expect(await client?.fileBytes("ATT1", "user")).toEqual(new Uint8Array([7]));
+	});
+
+	it("goes on to the file dialog, not an error, when zotero.org cannot be reached for the download", async () => {
+		const unreachable = async (): Promise<never> => {
+			throw new ZoteroError("unreachable", "offline");
+		};
+		const client = createZoteroClient({ local: withBytes("local", async () => null), web: withBytes("web", unreachable) });
+		expect(await client?.fileBytes("ATT1", "user")).toBeNull();
+	});
+
+	// A 500 is zotero.org's answer, not a connection that could not be asked: the dialog would hide it
+	// behind "no copy online" when the copy is there and the server is what failed.
+	it("reports zotero.org failing the download rather than hiding it behind the file dialog", async () => {
+		const failing = async (): Promise<never> => {
+			throw new ZoteroError("server", "zotero.org answered 500 for that PDF.");
+		};
+		const client = createZoteroClient({ local: withBytes("local", async () => null), web: withBytes("web", failing) });
+		await expect(client?.fileBytes("ATT1", "user")).rejects.toMatchObject({ reason: "server" });
+	});
 });
 
 describe("what comes back from Zotero", () => {

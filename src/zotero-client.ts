@@ -758,7 +758,23 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 		search: (query) => listEach((connection, library) => connection.search(query, library)),
 		itemsWithTag: (tag) => listEach((connection, library) => connection.itemsWithTag(tag, library)),
 		filePath: (key, library) => call((connection) => connection.filePath(key, library)),
-		fileBytes: (key, library) => call((connection) => connection.fileBytes(key, library)),
+		/**
+		 * Not a `call`: a `null` here asks the next connection instead of ending the search. The desktop
+		 * app never has bytes -- it hands out a path (§2.4) -- so its `null` is not "Zotero has no copy
+		 * online"; only zotero.org can say that. One that cannot be reached is the same as one without
+		 * the file, because the next step is the file dialog either way.
+		 */
+		async fileBytes(key, library) {
+			for (const connection of order) {
+				try {
+					const bytes = await connection.fileBytes(key, library);
+					if (bytes !== null) return bytes;
+				} catch (error) {
+					if (!(error instanceof ZoteroError) || !canFallBack(error)) throw error;
+				}
+			}
+			return null;
+		},
 		ownAnnotations: (parentKey, library) => call((connection) => connection.ownAnnotations(parentKey, library)),
 		// ⚠️ Not falling back mid-batch: if the desktop accepted twelve of fifty and then went away, the
 		// web must not be handed the same fifty. `call` re-runs the *whole* work function, so a create
