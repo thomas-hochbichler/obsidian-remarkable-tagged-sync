@@ -66,6 +66,13 @@ describe("reading the library", () => {
 		expect((await api.attachments("user"))[0].filename).toBe("linked copy.pdf");
 	});
 
+	// Zotero keeps an absolute linked path in the platform's own form, so on Windows it has no `/` at
+	// all, and the whole path became the name the matcher compares.
+	it("names a linked file on Windows by the last segment of its path", async () => {
+		const { api } = connection(() => json([attachmentRow({ filename: undefined, path: "C:\\Users\\me\\Papers\\linked copy.pdf" })]));
+		expect((await api.attachments("user"))[0].filename).toBe("linked copy.pdf");
+	});
+
 	it("answers nothing for an attachment Zotero no longer has", async () => {
 		const { api } = connection(() => json({ error: "Not found" }, 404));
 		expect(await api.attachment("GONE", "user")).toBeNull();

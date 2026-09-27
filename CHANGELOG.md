@@ -27,6 +27,17 @@ workflow publishes the section as the GitHub release body. See
   dialog and said *"Zotero has no copy of this PDF online"*, even when zotero.org had it. Sending by
   tag skipped those papers. Send now tries zotero.org before it asks you.
 
+- **Send finds the Zotero PDF on Windows again.** With the Zotero desktop app connected, Obsidian
+  on Windows could never open the file Zotero named, so Send asked you to pick the PDF by hand
+  every time, and sending by tag skipped every paper with *"Zotero has no copy of the PDF"*. The
+  path now reads as a proper Windows path, and a PDF on a network share works too. Thanks to
+  @id-b3 for the report and the fix (#179).
+
+- **A linked Zotero PDF on Windows is recognised by its filename again.** Zotero keeps the path of a
+  linked file with backslashes on Windows, and the plugin read the whole path as the filename. A
+  document that reached the tablet another way was then never offered as a match for that PDF, and
+  the link dialog showed the full path. Only the filename counts now.
+
 ## [1.8.1] - 2026-09-18
 
 ### Changed
