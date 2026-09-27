@@ -415,12 +415,13 @@ function isUsablePdf(data: Json): boolean {
 function toAttachment(data: Json, library: ZoteroLibrary): ZoteroAttachment {
 	// A linked file has `path` instead of `filename`, and the path may carry a `attachments:` prefix
 	// or be absolute. Only the last segment is ever compared against a tablet document name (§2.3).
+	// Both separators: Zotero keeps an absolute path in the platform's own form, `\` on Windows.
 	const path = asString(data.path);
 	return {
 		key: asString(data.key) ?? "",
 		library,
 		parentKey: asString(data.parentItem),
-		filename: asString(data.filename) ?? (path === null ? null : (path.split("/").pop() ?? null)),
+		filename: asString(data.filename) ?? (path === null ? null : (path.split(/[/\\]/).pop() ?? null)),
 		md5: asString(data.md5),
 		title: typeof data.title === "string" ? data.title : "",
 	};

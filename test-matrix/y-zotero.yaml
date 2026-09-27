@@ -37,6 +37,13 @@
       file: src/zotero-client.test.ts
       test: "reading the library > names a linked file by the last segment of its path"
 
+    - id: Y1.3a
+      scenario: A linked file on Windows, whose absolute path Zotero keeps with backslashes
+      expect: The last segment all the same, not the whole `C:\...` path -- that one never matched a tablet document name
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > names a linked file on Windows by the last segment of its path"
+
     - id: Y1.4
       scenario: The stored link points at an attachment that is no longer there
       expect: '`null`, not a throw: §2.3 keeps the note and drops the Zotero part. Every other failure stays a throw, because it is repairable and the user has to be told which one it was'
@@ -493,6 +500,20 @@
       layer: unit
       file: src/zotero-local.test.ts
       test: "the file on disk > hands back the real path, decoded"
+
+    - id: Y7.11a
+      scenario: Send asks the desktop where the PDF is, and the desktop runs on Windows (issue #179)
+      expect: A native drive path `C:\...`, not `/C:/...` -- that one no Windows call can open, and send fell to the dialog
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the file on disk > on Windows > hands back a drive path, not /C:/"
+
+    - id: Y7.11b
+      scenario: The PDF on Windows lies on a network share (issue #179)
+      expect: A UNC path `\\server\share\...`, not the relative `server/share/...` that could never be read
+      layer: unit
+      file: src/zotero-local.test.ts
+      test: "the file on disk > on Windows > hands back a network share as a UNC path"
 
     - id: Y7.12
       scenario: The key is not a file attachment

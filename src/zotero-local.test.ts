@@ -1,5 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createZoteroLocalConnection, memoryKeyStore } from "./zotero-local";
+
+// `fileURLToPath` converts the way the machine running it does. CI is Linux, so the Windows tests
+// below switch this on to get Node's Windows conversion instead.
+const host = vi.hoisted(() => ({ windows: false }));
+vi.mock("url", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("url")>();
+	return { ...actual, fileURLToPath: (url: string) => actual.fileURLToPath(url, { windows: host.windows }) };
+});
 
 // `zotero-local.ts` reaches for `window.setTimeout`, which is Obsidian's rule for popout-window
 // compatibility and does not exist under vitest.
@@ -144,6 +152,27 @@ describe("the file on disk", () => {
 	it("hands back the real path, decoded", async () => {
 		const { impl } = stubZotero(() => new Response("file:///Users/me/Zotero/storage/ATT1/Ma%C3%9F%20und%20Zahl.pdf"));
 		expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ATT1", "user")).toBe("/Users/me/Zotero/storage/ATT1/Maß und Zahl.pdf");
+	});
+
+	// Issue #179. Zotero on Windows answers `file:///C:/...`; cutting off `file://` left `/C:/...`,
+	// which no Windows call can open, so every send fell to the dialog.
+	describe("on Windows", () => {
+		beforeEach(() => {
+			host.windows = true;
+		});
+		afterEach(() => {
+			host.windows = false;
+		});
+
+		it("hands back a drive path, not /C:/", async () => {
+			const { impl } = stubZotero(() => new Response("file:///C:/Users/me/Zotero%20Library/ATT1/paper.pdf"));
+			expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ATT1", "user")).toBe("C:\\Users\\me\\Zotero Library\\ATT1\\paper.pdf");
+		});
+
+		it("hands back a network share as a UNC path", async () => {
+			const { impl } = stubZotero(() => new Response("file://server/share/ATT1/paper.pdf"));
+			expect(await createZoteroLocalConnection(memoryKeyStore(), impl).filePath("ATT1", "user")).toBe("\\\\server\\share\\ATT1\\paper.pdf");
+		});
 	});
 
 	it("answers nothing for an item that has no file, rather than failing the send", async () => {
