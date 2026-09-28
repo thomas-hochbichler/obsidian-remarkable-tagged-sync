@@ -313,6 +313,63 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(h.completed).not.toHaveBeenCalled();
 	});
 
+	it("reopens a document with owed page-note work on an unchanged tablet, and keeps it owed while a page fails", async () => {
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } }, "root-1");
+		const store = noteStore();
+		store.files["Work/Work log.md"] = "note";
+		const rows = { "doc-1:work": { syncKey: "doc-1:work", docId: "doc-1", pageId: null, tag: "work", entryHash: "hash-1", pageHash: null, notePath: "Work/Work log.md", folder: "Work", status: "active" as const, syncedAt: NOW, renderVersion: 9999 } };
+		const h = hook();
+		const failing = await runSync({ ...deps(a), noteStore: store, intelligence: h.value }, { ...settled(rows), intelligencePending: ["doc-1"] });
+		expect(h.docs).toHaveLength(1);
+		expect(failing.index.intelligencePending).toEqual(["doc-1"]);
+		h.value.process = async () => emptyReport();
+		const done = await runSync({ ...deps(a), noteStore: store, intelligence: h.value }, { ...settled(rows), intelligencePending: ["doc-1"] });
+		expect(done.index.intelligencePending).toEqual([]);
+		const quiet = await runSync({ ...deps(a), noteStore: store, intelligence: h.value }, done.index);
+		expect(quiet.documentIds).toBeNull();
+	});
+
+	it("owes an extracting notebook to the next run the engine can do, and drops a document gone from the tablet", async () => {
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
+		const router = new TagRouter({ work: "Work" }, () => ({ transcript: true, intelligence: true }));
+		const owed = await runSync({ ...deps(a), tagRouter: router }, EMPTY_SYNC_INDEX);
+		expect(owed.index.intelligencePending).toEqual(["doc-1"]);
+		const plain = await runSync(deps(a), EMPTY_SYNC_INDEX);
+		expect(plain.index.intelligencePending).toEqual([]);
+		const gone = await runSync(deps(api([], {}, {}, "root-3")), { ...EMPTY_SYNC_INDEX, intelligencePending: ["doc-1"] });
+		expect(gone.index.intelligencePending).toEqual([]);
+	});
+
+	it("hands the engine a notebook whose last Intelligence tag left, so its page notes are orphaned", async () => {
+		const a = api([entry({ tags: [] })], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
+		const h = hook();
+		const row = { syncKey: "doc-1:p1:work", unitKey: "doc-1:p1:work", docId: "doc-1", pageId: "p1", tag: "work", scope: "notebook" as const, notePath: "Work/p1.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic" };
+		await runSync({ ...deps(a), intelligence: h.value }, { ...EMPTY_SYNC_INDEX, intelligenceRows: { [row.syncKey]: row } as SyncIndex["intelligenceRows"] });
+		expect(h.docs).toHaveLength(1);
+		expect(h.docs[0].units).toEqual([]);
+	});
+
+	it("leaves a switch-on scan unfinished when a document could not be read", async () => {
+		const a = api([entry(), entry({ id: "doc-2", hash: "hash-2", visibleName: "Broken" })], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
+		a.getContent.mockImplementation(async (id: string) => {
+			if (id === "doc-2") throw new Error("gone");
+			return content([{ id: "p1" }]);
+		});
+		const h = hook({ due: ["work"] });
+		const result = await runSync({ ...deps(a), intelligence: h.value }, EMPTY_SYNC_INDEX);
+		expect(h.completed).not.toHaveBeenCalled();
+		expect(result.index.intelligenceScans).toEqual({});
+	});
+
+	it("leaves a switch-on scan unfinished when a document read in the scan fails when the run reads it again", async () => {
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
+		a.getContent.mockResolvedValueOnce(content([{ id: "p1" }])).mockRejectedValueOnce(new Error("gone"));
+		const h = hook({ due: ["work"] });
+		const result = await runSync({ ...deps(a), intelligence: h.value }, EMPTY_SYNC_INDEX);
+		expect(result.skipErrors).toEqual(['failed to read "Work log" during sync: Error: gone']);
+		expect(h.completed).not.toHaveBeenCalled();
+	});
+
 	it("sweeps the engine's rows and seen entries of a document gone from the tablet", async () => {
 		const a = api([], {}, {}, "root-2");
 		const previous: SyncIndex = {

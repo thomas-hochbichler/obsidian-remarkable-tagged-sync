@@ -114,11 +114,13 @@ describe("rerunExtraction", () => {
 });
 
 describe("markForRereading and isPageNote", () => {
-	it("clears the seen hash of a page note, keeping its id; says so for any other note", async () => {
+	it("clears the seen hash of a page note, keeping its id, and owes its notebook to the next sync; says so for any other note", async () => {
 		const e = env();
 		const { index, path } = await synced(e);
 		expect([isPageNote(index, path), isPageNote(index, "Other.md"), isPageNote({ rootHash: null, rows: {} }, path)]).toEqual([true, false, false]);
 		expect(markForRereading(index, path).index!.seenPages!["d:p1:work"].pageHash).toBeNull();
+		expect(markForRereading({ ...index, intelligencePending: ["d", "e"] }, path).index!.intelligencePending).toEqual(["d", "e"]);
+		expect(markForRereading(index, path).index!.intelligencePending).toEqual(["d"]);
 		const bare = { ...index, seenPages: undefined };
 		expect(markForRereading(bare, path).index!.seenPages!["d:p1:work"]).toMatchObject({ pageHash: null, firstSeen: null });
 		expect(markForRereading(index, "Other.md")).toEqual({ message: "This note is not a page note from the Intelligence Engine." });
