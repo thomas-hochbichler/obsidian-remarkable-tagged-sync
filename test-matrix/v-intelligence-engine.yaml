@@ -884,10 +884,10 @@
 
     - id: V8.6
       scenario: "A Slot heading was deleted"
-      expect: "That Slot is left out of the rebuilt base"
+      expect: "That Slot is settled: left out of the rebuilt base and never re-added"
       layer: unit
       file: src/intelligence/base-store.test.ts
-      test: "rebuildBase > leaves out a region whose heading is gone, and Value Slots, which live in frontmatter"
+      test: "rebuildBase > settles a region whose heading is gone so it is never re-added, and skips Value Slots, which live in frontmatter"
 
 - feature: V9
   name: Any Markdown note can be a template

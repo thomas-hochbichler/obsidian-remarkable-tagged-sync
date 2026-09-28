@@ -49,6 +49,11 @@ export interface PageBase {
 	/** The page transcript. Its one home: never read back from the note. Null after a rebuild. */
 	transcript: string | null;
 	slots: Record<string, SlotBase>;
+	/**
+	 * Slots this note ever had that are not merged regions: filled once at creation, or a region the
+	 * user deleted. Either way the engine never adds them again.
+	 */
+	settled: string[];
 	extraction: ExtractionState;
 }
 
@@ -74,7 +79,7 @@ export function basePath(dir: string, noteId: string): string {
 function isPageBase(value: unknown): value is PageBase {
 	if (typeof value !== "object" || value === null) return false;
 	const v = value as Partial<PageBase>;
-	return v.version === BASE_VERSION && typeof v.noteId === "string" && typeof v.syncKey === "string" && typeof v.slots === "object" && v.slots !== null && typeof v.extraction === "object";
+	return v.version === BASE_VERSION && typeof v.noteId === "string" && typeof v.syncKey === "string" && typeof v.slots === "object" && v.slots !== null && Array.isArray(v.settled) && typeof v.extraction === "object";
 }
 
 export function createBaseStore(files: BaseFiles, dir: string): BaseStore {
@@ -111,9 +116,14 @@ export interface RebuildSlot {
  */
 export function rebuildBase(input: { lines: readonly string[]; slots: readonly RebuildSlot[]; noteId: string; syncKey: string; newId: () => string }): PageBase {
 	const slots: Record<string, SlotBase> = {};
+	const settled: string[] = [];
 	for (const slot of input.slots) {
 		const region = findRegion(input.lines, slot.heading, slot.format);
-		if (region === null || slot.shape === "value") continue;
+		if (slot.shape === "value") continue;
+		if (region === null) {
+			settled.push(slot.id);
+			continue;
+		}
 		if (slot.shape === "text") {
 			slots[slot.id] = { shape: "text", heading: slot.heading, text: readTextRegion(input.lines, region), proposals: [] };
 			continue;
@@ -128,5 +138,5 @@ export function rebuildBase(input: { lines: readonly string[]; slots: readonly R
 		}));
 		slots[slot.id] = { shape: slot.shape, heading: slot.heading, itemFormat: slot.itemFormat, list: { items, tombstones: [], proposals: [] } };
 	}
-	return { version: BASE_VERSION, noteId: input.noteId, syncKey: input.syncKey, unitKey: input.syncKey, transcript: null, slots, extraction: { ...NO_FAILURES } };
+	return { version: BASE_VERSION, noteId: input.noteId, syncKey: input.syncKey, unitKey: input.syncKey, transcript: null, slots, settled, extraction: { ...NO_FAILURES } };
 }

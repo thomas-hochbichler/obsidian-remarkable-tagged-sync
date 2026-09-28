@@ -13,7 +13,7 @@ function memoryFiles(): BaseFiles & { files: Map<string, string> } {
 }
 
 const DIR = ".obsidian/plugins/remarkable-tagged-sync";
-const base = (noteId = "n1"): PageBase => ({ version: BASE_VERSION, noteId, syncKey: "doc:page:work", unitKey: "doc:page:work", transcript: "Call Bob", slots: {}, extraction: { ...NO_FAILURES } });
+const base = (noteId = "n1"): PageBase => ({ version: BASE_VERSION, noteId, syncKey: "doc:page:work", unitKey: "doc:page:work", transcript: "Call Bob", slots: {}, settled: [], extraction: { ...NO_FAILURES } });
 
 describe("createBaseStore", () => {
 	it("keys the file by noteId, never by syncKey, whose colons Windows rejects", () => {
@@ -79,8 +79,9 @@ describe("rebuildBase", () => {
 		expect(rebuilt.slots.summary).toEqual({ shape: "text", heading: { level: 2, text: "Summary" }, text: "Met Bob.", proposals: [] });
 	});
 
-	it("leaves out a region whose heading is gone, and Value Slots, which live in frontmatter", () => {
+	it("settles a region whose heading is gone so it is never re-added, and skips Value Slots, which live in frontmatter", () => {
 		const rebuilt = rebuildBase({ lines: note, slots, noteId: "n1", syncKey: "k", newId: () => "r" });
 		expect(Object.keys(rebuilt.slots)).toEqual(["tasks", "summary"]);
+		expect(rebuilt.settled).toEqual(["gone"]);
 	});
 });
