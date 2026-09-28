@@ -518,3 +518,141 @@
       layer: unit
       file: src/intelligence/merge.test.ts
       test: "mergeText > proposes nothing when the model says what the base already said"
+
+- feature: V5
+  name: Regions under template headings are written line by line
+  code: src/intelligence/regions.ts
+  tier: free
+  scenarios:
+    - id: V5.1
+      scenario: "A code block in the note contains a `##` line"
+      expect: "Not a heading, so no region ends there"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "headings > ignores a heading inside fenced code"
+
+    - id: V5.2
+      scenario: "A Slot heading has a sub-heading below it"
+      expect: "The sub-heading is inside the region"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > runs from the heading to the next heading of the same or a higher level"
+
+    - id: V5.3
+      scenario: "The user renamed the Tasks heading"
+      expect: "The region is found by its items"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > finds a renamed heading again through the items it holds"
+
+    - id: V5.4
+      scenario: "Several headings hold some of the items"
+      expect: "The one with most matches wins"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > takes the renamed heading that holds the most of the base's items"
+
+    - id: V5.5
+      scenario: "No heading matches"
+      expect: "Null -- nothing is written, a notice is shown"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > gives up rather than guess when no heading holds the base's items"
+
+    - id: V5.6
+      scenario: "A region mixes prose, items and a plain `- ` line"
+      expect: "Items are read; the plain list line is a user item"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "parseRegion > reads item lines, skips prose and sub-headings, and keeps a list line the format cannot read"
+
+    - id: V5.7
+      scenario: "A ticked line with a done date is updated"
+      expect: "Tick and done date survive"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > updates a line in place, keeping its tick and the Tasks fields after it"
+
+    - id: V5.8
+      scenario: "An accepted change hits a plain list line"
+      expect: "It is rewritten in the Slot's format"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > rewrites a loose list line through the format when it is updated"
+
+    - id: V5.9
+      scenario: "The line is indented"
+      expect: "Indentation kept"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > keeps the indentation of an updated line"
+
+    - id: V5.10
+      scenario: "The page ticks an item"
+      expect: "Only `[ ]` becomes `[x]`"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > ticks a line without touching the rest of it"
+
+    - id: V5.11
+      scenario: "Removes and inserts in one sync"
+      expect: "Every line the engine does not own is unchanged"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > removes lines and inserts new ones after the last item, leaving every other line alone"
+
+    - id: V5.12
+      scenario: "The region is empty but has a callout"
+      expect: "New items go under the callout"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > inserts into an empty region under the heading and its callout, before the blank line"
+
+    - id: V5.13
+      scenario: "The region ends the note"
+      expect: "Appended at the end"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > appends at the end of the note when the region is the last one"
+
+    - id: V5.14
+      scenario: "A summary region carries a callout"
+      expect: "The callout is not part of the text"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "Text regions > reads the body without the proposal callout"
+
+    - id: V5.15
+      scenario: "The summary is replaced"
+      expect: "Callout and spacing kept"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "Text regions > replaces the body, keeping the callout and the blank line before the next heading"
+
+    - id: V5.16
+      scenario: "The summary is the last region"
+      expect: "Written at the end"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "Text regions > writes into the last region of the note"
+
+    - id: V5.17
+      scenario: "A region gets its first proposal"
+      expect: "The callout appears under the heading"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "setProposalCallout > adds the callout right under the heading"
+
+    - id: V5.18
+      scenario: "More proposals arrive"
+      expect: "The count changes in place"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "setProposalCallout > updates the count of an existing callout"
+
+    - id: V5.19
+      scenario: "All proposals are decided"
+      expect: "The callout goes; nothing else changes"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "setProposalCallout > removes the callout once everything is decided, and leaves a region without one alone"
