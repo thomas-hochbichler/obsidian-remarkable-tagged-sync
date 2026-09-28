@@ -4,7 +4,7 @@ import { createBaseStore, type BaseFiles } from "./base-store";
 import type { ExtractionBackend } from "./extraction-backend";
 import { parseExtraction } from "./extraction";
 import { defaultSlots, emptyIntelligence, setIntelligenceMode, type IntelligenceSettings } from "./settings";
-import { completeScans, type DocPage, type IntelligenceDocument, type IntelligencePassDeps, type IntelligenceState, processDocument, sweepDeletedDocuments } from "./sync-pass";
+import { completeScans, type DocPage, followRetargets, type IntelligenceDocument, type IntelligencePassDeps, type IntelligenceState, processDocument, sweepDeletedDocuments } from "./sync-pass";
 
 const ENABLED = new Date("2026-09-28T08:00:00.000Z");
 const BEFORE = ENABLED.getTime() - 86_400_000;
@@ -256,6 +256,80 @@ describe("processDocument > rows", () => {
 		mem.notes.set(path, mem.notes.get(path)!.replace(/## Summary\n/, ""));
 		const report = await processDocument(d, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Call" }), state);
 		expect(report.notices).toEqual([`"${path}": the heading for summary is gone, so it was not updated.`]);
+	});
+});
+
+describe("processDocument > a mapped tag renamed on the tablet", () => {
+	it("moves the row and seen entry to the new tag, keeps the note and its id, and takes the new mapping's folder", async () => {
+		const mem = memory();
+		const state = fresh();
+		const map = { work: "Work", job: "Job" };
+		const s = setIntelligenceMode(settings(), "job", true, ENABLED);
+		const d = deps(mem, { tagFolderMap: map, settings: s });
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		completeScans(s, map, ["work", "job"], state);
+		const path = state.rows["d1:p3:work"].notePath;
+		const renamed = doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Call todo Pay" }, { units: [{ tag: "job", scope: "notebook", pageIds: ["p3"] }] });
+		await processDocument(d, renamed, state);
+		expect(Object.keys(state.rows)).toEqual(["d1:p3:job"]);
+		expect(state.rows["d1:p3:job"]).toMatchObject({ tag: "job", folder: "Job", notePath: path, noteId: "note1", status: "active" });
+		expect(Object.keys(state.seenPages)).toEqual(["d1:p3:job"]);
+		expect(mem.notes.get(path)).toContain("- [ ] Pay");
+	});
+
+	it("moves a row that lost its seen entry too", async () => {
+		const mem = memory();
+		const state = fresh();
+		const s = setIntelligenceMode(settings(), "job", true, ENABLED);
+		const map = { work: "Work", job: "Job" };
+		const d = deps(mem, { tagFolderMap: map, settings: s });
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		delete state.seenPages["d1:p3:work"];
+		completeScans(s, map, ["work", "job"], state);
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], {}, { units: [{ tag: "job", scope: "notebook", pageIds: ["p3"] }] }), state);
+		expect(state.rows["d1:p3:job"]).toMatchObject({ tag: "job", noteId: "note1" });
+	});
+
+	it("does not read two new tags as a rename, and moves a seen-only page too", async () => {
+		const state: IntelligenceState = { seenPages: { "d1:p1:work": { scope: "notebook", pageHash: "h1", firstSeen: BEFORE } }, rows: {}, scans: { work: ENABLED.toISOString(), job: ENABLED.toISOString() } };
+		const s = setIntelligenceMode(settings(), "job", true, ENABLED);
+		const d = deps(memory(), { tagFolderMap: { work: "Work", job: "Job", home: "Home" }, settings: s });
+		await processDocument(d, doc([page("p1", 1, "h1", BEFORE)], {}, { units: [{ tag: "job", scope: "notebook", pageIds: ["p1"] }] }), state);
+		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:job"]);
+		const two = doc([page("p1", 1, "h1", BEFORE)], {}, { units: [{ tag: "work", scope: "notebook", pageIds: ["p1"] }, { tag: "home", scope: "notebook", pageIds: ["p1"] }] });
+		await processDocument(d, two, state);
+		// Not a rename: "job" keeps its entry, "work" is recorded afresh, "home" has page notes off.
+		expect(Object.keys(state.seenPages).sort()).toEqual(["d1:p1:job", "d1:p1:work"]);
+	});
+});
+
+describe("followRetargets", () => {
+	const row = (notePath: string, folder: string, status: "active" | "orphaned" = "active") => ({ syncKey: notePath, unitKey: notePath, docId: "d1", pageId: "p", tag: "work", scope: "notebook" as const, notePath, folder, status, noteId: "n", profileId: "generic", baseHash: "", syncedAt: "" });
+
+	it("moves a page note still inside the old folder into the new one, keeping its notebook subfolder, and leaves a sorted-away note", async () => {
+		const mem = memory();
+		mem.notes.set("Work/Log/p1.md", "x");
+		mem.notes.set("Job/Log/p1.md", "someone else's");
+		const moves: string[] = [];
+		const store = { ...mem.noteStore, move: async (from: string, to: string) => void moves.push(`${from} -> ${to}`) };
+		const state: IntelligenceState = {
+			seenPages: {},
+			scans: {},
+			rows: { a: row("Work/Log/p1.md", "Work"), b: row("Elsewhere/p2.md", "Work"), c: row("Work/p3.md", "Work/"), d: row("Work/Log/p4.md", "Work", "orphaned"), e: row("Job/Log/p5.md", "Job") },
+		};
+		expect(await followRetargets(state, { work: "Job/" }, store)).toBe(2);
+		expect(moves).toEqual(["Work/Log/p1.md -> Job/Log/p1 (work).md", "Work/p3.md -> Job/p3.md"]);
+		expect(state.rows.a).toMatchObject({ notePath: "Job/Log/p1 (work).md", folder: "Job" });
+		expect(state.rows.b.notePath).toBe("Elsewhere/p2.md");
+		expect(state.rows.d.notePath).toBe("Work/Log/p4.md");
+	});
+
+	it("moves a note to the vault root when the mapping points there, and skips a tag that is no longer mapped", async () => {
+		const mem = memory();
+		const state: IntelligenceState = { seenPages: {}, scans: {}, rows: { a: row("Work/p1.md", "Work"), b: { ...row("Work/p2.md", "Work"), tag: "gone" } } };
+		expect(await followRetargets(state, { work: "" }, mem.noteStore)).toBe(1);
+		expect(state.rows.a.notePath).toBe("p1.md");
+		expect(state.rows.b.notePath).toBe("Work/p2.md");
 	});
 });
 

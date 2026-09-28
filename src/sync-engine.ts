@@ -365,6 +365,8 @@ export interface IntelligenceHook {
 	process: (doc: IntelligenceDocument, state: IntelligenceState) => Promise<PassReport>;
 	/** Marks every due scan done; called only after a run that opened every document. */
 	completeScans: (state: IntelligenceState) => void;
+	/** Local work before any document is opened: page notes follow a re-targeted mapping. */
+	beforeRun: (state: IntelligenceState) => Promise<void>;
 }
 
 export interface SyncResult {
@@ -1959,6 +1961,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		scans: { ...previousIndex.intelligenceScans },
 	};
 	const intelligenceReport = emptyReport();
+	if (intelligence !== undefined) await intelligence.beforeRun(intelligenceState);
 	/** The engine's maps as they stand, beside `rows`; the modes print and scans are the caller's to choose. */
 	const indexWith = (rootHash: string | null, mappings: string | undefined, intelligenceMappings: string | undefined, scans: Record<string, string> | undefined): SyncIndex => ({
 		rootHash,

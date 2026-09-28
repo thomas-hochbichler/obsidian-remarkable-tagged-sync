@@ -158,6 +158,11 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	const report = emptyReport();
 	const pageById = new Map(doc.pages.map((page) => [page.id, page]));
 
+	// A mapped tag renamed on the tablet: one tag gone and one new at the same page and scope is the same
+	// unit under a new name. Its rows and seen entries move to the new key, its note stays where it is,
+	// and `folder` becomes the new mapping's so the re-target check stays quiet (spec §4.1).
+	if (!options.partial) followTagRenames(deps, doc, state);
+
 	// Tag gone from the notebook or page on the tablet: the row is orphaned and its note stays. A tag
 	// whose Intelligence Mode is merely off is still here, and its rows stay active and untouched.
 	const present = new Set(doc.units.flatMap((unit) => unit.pageIds.map((pageId) => intelligenceSyncKey(doc.docId, pageId, unit.tag))));
@@ -300,6 +305,65 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 		};
 	}
 	return report;
+}
+
+const keyParts = (key: string) => {
+	const [docId, pageId, ...tag] = key.split(":");
+	return { docId, pageId, tag: tag.join(":") };
+};
+
+function followTagRenames(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState): void {
+	for (const page of doc.pages) {
+		for (const scope of ["notebook", "page"] as const) {
+			const current = doc.units.filter((unit) => unit.scope === scope && unit.pageIds.includes(page.id)).map((unit) => unit.tag);
+			const previous = new Set<string>();
+			for (const row of Object.values(state.rows)) if (row.status === "active" && row.docId === doc.docId && row.pageId === page.id && row.scope === scope) previous.add(row.tag);
+			for (const [key, seen] of Object.entries(state.seenPages)) {
+				const parts = keyParts(key);
+				if (parts.docId === doc.docId && parts.pageId === page.id && seen.scope === scope) previous.add(parts.tag);
+			}
+			const removed = [...previous].filter((tag) => !current.includes(tag));
+			const added = current.filter((tag) => !previous.has(tag));
+			if (removed.length !== 1 || added.length !== 1) continue;
+			const from = intelligenceSyncKey(doc.docId, page.id, removed[0]);
+			const to = intelligenceSyncKey(doc.docId, page.id, added[0]);
+			if (state.seenPages[from] !== undefined) {
+				state.seenPages[to] = state.seenPages[from];
+				delete state.seenPages[from];
+			}
+			const row = state.rows[from];
+			if (row !== undefined) {
+				// The new tag is on a unit, so it is mapped: its folder is always there.
+				state.rows[to] = { ...row, syncKey: to, unitKey: to, tag: added[0], folder: deps.tagFolderMap[added[0]] };
+				delete state.rows[from];
+			}
+		}
+	}
+}
+
+/**
+ * A mapping re-targeted to another folder in settings: page notes move with it, row by row, into
+ * `<new folder>/<the rest of their path>` -- but only a note still inside the old folder. One the user
+ * sorted elsewhere is never dragged back (#101), and a whole subfolder is never moved: two tags may
+ * share it, and the user's own files may sit in it (spec §4.1). Local only; runs before each sync.
+ */
+export async function followRetargets(state: IntelligenceState, tagFolderMap: Record<string, string>, noteStore: NoteStore): Promise<number> {
+	let moved = 0;
+	for (const [key, row] of Object.entries(state.rows)) {
+		const target = tagFolderMap[row.tag]?.replace(/\/+$/, "");
+		const written = row.folder.replace(/\/+$/, "");
+		if (row.status !== "active" || target === undefined || target === written || !row.notePath.startsWith(`${written}/`)) continue;
+		const rest = row.notePath.slice(written.length + 1);
+		const cut = rest.lastIndexOf("/");
+		const folder = [target, ...(cut === -1 ? [] : [rest.slice(0, cut)])].filter((part) => part !== "").join("/");
+		const name = rest.slice(cut + 1).replace(/\.md$/, "");
+		const notePath = await resolveFreePath(noteStore, folder, name, row.tag, row.docId);
+		if (folder !== "") await noteStore.ensureFolder(folder);
+		await noteStore.move(row.notePath, notePath);
+		state.rows[key] = { ...row, notePath, folder: target };
+		moved++;
+	}
+	return moved;
 }
 
 /**

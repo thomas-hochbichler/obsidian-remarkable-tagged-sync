@@ -12,7 +12,7 @@ import { type BaseFiles, type BaseStore, createBaseStore } from "./base-store";
 import { extractionBackendEntry } from "./extraction-registry";
 import { backgroundExtractionAllowed, chooseExtractionBackend, effectiveModes, effectiveSlotsFor, isEngineDevice, scansDue } from "./plugin-rules";
 import { intelligenceFingerprint, type IntelligenceSettings } from "./settings";
-import { completeScans, type IntelligencePassDeps, type IntelligenceRow, type PassReport, processDocument } from "./sync-pass";
+import { completeScans, followRetargets, type IntelligencePassDeps, type IntelligenceRow, type PassReport, processDocument } from "./sync-pass";
 
 /** A plain file API over the plugin folder: `vault.adapter` in the app. */
 export interface PluginFiles {
@@ -142,6 +142,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		scansDue: (scanned) => scansDue(input.settings, input.tagFolderMap, input.pro, scanned),
 		process: (doc, state) => processDocument(deps, doc, state),
 		completeScans: (state) => completeScans(input.settings, input.tagFolderMap, Object.keys(input.tagFolderMap).filter((tag) => modes(tag).intelligence), state),
+		beforeRun: async (state) => void (await followRetargets(state, input.tagFolderMap, env.noteStore)),
 	};
 	return { modes, fingerprint, hook, paused: null, deps };
 }
