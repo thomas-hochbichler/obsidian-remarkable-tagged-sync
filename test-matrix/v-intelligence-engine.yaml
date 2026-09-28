@@ -935,3 +935,64 @@
       layer: unit
       file: src/intelligence/template.test.ts
       test: "starterTemplate > gives every Slot its own heading, so every Slot is a region"
+
+- feature: V10
+  name: "Field types are one table: schema and resolution"
+  code: src/intelligence/field-types.ts
+  tier: free
+  scenarios:
+    - id: V10.1
+      scenario: "An amount is written as 12,90 € or 1.234,50"
+      expect: "A plain decimal"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "parseNumber > reads German and English decimals, thousands separators and currency noise"
+
+    - id: V10.2
+      scenario: "The amount is a word or two numbers"
+      expect: "No value rather than a wrong one"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "parseNumber > gives null for words or a malformed number"
+
+    - id: V10.3
+      scenario: "The strict schema is built"
+      expect: "Every Field may be null; a Choice only offers its options"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > makes every field nullable in the schema, a choice closed to its options"
+
+    - id: V10.4
+      scenario: "A Date field comes back as words and class"
+      expect: "Code resolves the date"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > resolves a date from the copied words, falling back to the class"
+
+    - id: V10.5
+      scenario: "A Text field is blank"
+      expect: "Null"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > resolves text trimmed and empty text as null"
+
+    - id: V10.6
+      scenario: "A Number field comes back as text or number"
+      expect: "A plain decimal either way"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > resolves a number copied as text or given as a number"
+
+    - id: V10.7
+      scenario: "The model answers outside the list"
+      expect: "Null -- never an invented option"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > keeps a choice only when it is one of the options"
+
+    - id: V10.8
+      scenario: "A Link comes back bare or bracketed"
+      expect: "Always one pair of brackets"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > wraps a link in brackets whether or not the model already did"
