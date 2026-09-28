@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	defaultSlots,
+	markSlotsUsed,
+	slotIdFor,
 	EMPTY_INTELLIGENCE_FINGERPRINT,
 	emptyIntelligence,
 	genericProfile,
@@ -95,5 +97,24 @@ describe("genericProfile", () => {
 	it("runs Tasks and Summary, plus Tags with Pro", () => {
 		expect(genericProfile(false).slots).toEqual(["tasks", "summary"]);
 		expect(genericProfile(true).slots).toEqual(["tasks", "summary", "tags"]);
+	});
+});
+
+describe("markSlotsUsed", () => {
+	it("marks the Slots a sync wrote, and hands back the same settings when nothing changes", () => {
+		const settings = emptyIntelligence();
+		const marked = markSlotsUsed(settings, ["tasks"]);
+		expect(marked.slots.find((slot) => slot.id === "tasks")!.used).toBe(true);
+		expect(marked.slots.find((slot) => slot.id === "summary")!.used).toBeUndefined();
+		expect(markSlotsUsed(marked, ["tasks"])).toBe(marked);
+		expect(markSlotsUsed(settings, [])).toBe(settings);
+	});
+});
+
+describe("slotIdFor", () => {
+	it("makes a readable id from the name, unique among the Slots", () => {
+		expect(slotIdFor("Ausgaben & Kosten", [])).toBe("ausgaben-kosten");
+		expect(slotIdFor("Tasks", ["tasks", "tasks-2"])).toBe("tasks-3");
+		expect(slotIdFor("!!!", [])).toBe("slot");
 	});
 });

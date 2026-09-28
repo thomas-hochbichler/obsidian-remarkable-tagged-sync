@@ -38,6 +38,8 @@ export interface SlotDef {
 	review: boolean;
 	/** Value only: a frontmatter property instead of the note body. */
 	property?: string;
+	/** Written into a page note at least once: its Shape is fixed from then on (spec §5.3). */
+	used?: boolean;
 }
 
 export interface ProfileDef {
@@ -189,3 +191,17 @@ export function intelligenceFingerprint(mappings: Record<string, MappingModes>):
 
 /** What an index written before this block existed is taken to hold: the empty block's print, so an upgrade costs no scan. */
 export const EMPTY_INTELLIGENCE_FINGERPRINT = intelligenceFingerprint({});
+
+/** Marks Slots as used in notes, which locks their Shape. Unchanged settings come back as they were. */
+export function markSlotsUsed(settings: IntelligenceSettings, ids: readonly string[]): IntelligenceSettings {
+	if (!settings.slots.some((slot) => ids.includes(slot.id) && slot.used !== true)) return settings;
+	return { ...settings, slots: settings.slots.map((slot) => (ids.includes(slot.id) ? { ...slot, used: true } : slot)) };
+}
+
+/** A new Slot's id from its name: lowercase words joined, made unique against the Slots there are. */
+export function slotIdFor(name: string, taken: readonly string[]): string {
+	const stem = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "slot";
+	let id = stem;
+	for (let n = 2; taken.includes(id); n++) id = `${stem}-${n}`;
+	return id;
+}

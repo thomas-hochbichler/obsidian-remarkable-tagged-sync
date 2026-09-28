@@ -78,6 +78,7 @@ import { type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscri
 import { rerunExtraction } from "./intelligence/rerun";
 import { followVaultRename } from "./intelligence/vault-follow";
 import { intelligenceProAllowed } from "./intelligence/plugin-rules";
+import { markSlotsUsed } from "./intelligence/settings";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
@@ -736,6 +737,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			const speak = !auto || result.stopped;
 
 			this.data.syncIndex = result.index;
+			// A Slot written into a note keeps its Shape from now on (Intelligence Engine §5.3).
+			this.data.intelligence = markSlotsUsed(this.data.intelligence, result.intelligence.usedSlots);
 			// What the listing found is what the Zotero links judge presence by (spec §2.5): a sent
 			// document is on the tablet while listings keep finding it, tagged or not. `null` means the
 			// run never listed -- the root hash was unchanged, so nothing on the tablet moved.

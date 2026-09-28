@@ -7,7 +7,7 @@
 import { Setting } from "obsidian";
 import { extractionBackendEntries } from "./extraction-registry";
 import { freeTag, isEngineDevice } from "./plugin-rules";
-import { genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, setIntelligenceMode, type SlotDef, TASKS_FORMAT } from "./settings";
+import { type FieldDef, type FieldType, genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, setIntelligenceMode, type Shape, type SlotDef, slotIdFor, TASKS_FORMAT } from "./settings";
 import { starterTemplate } from "./template";
 
 export interface IntelligenceSettingsHost {
@@ -205,8 +205,35 @@ function renderProfile(containerEl: HTMLElement, host: IntelligenceSettingsHost,
 	}
 }
 
+const SHAPES: Record<Shape, string> = { text: "Text", value: "Value", list: "List", checklist: "Checklist" };
+const FIELD_TYPES: Record<FieldType, string> = { text: "Text", date: "Date", number: "Number", choice: "Choice", link: "Link" };
+const MAX_FIELDS = 5;
+
+function newSlot(name: string, shape: Shape, taken: readonly string[]): SlotDef {
+	const list = shape === "list" || shape === "checklist";
+	return { id: slotIdFor(name, taken), name, shape, instruction: "", examples: [], fields: [], itemFormat: shape === "checklist" ? "- [ ] {{text}}" : list ? "- {{text}}" : "", review: list };
+}
+
 function renderSlots(containerEl: HTMLElement, host: IntelligenceSettingsHost): void {
 	new Setting(containerEl).setName("Slots").setHeading();
+	let draft: { name: string; shape: Shape } = { name: "", shape: "list" };
+	new Setting(containerEl)
+		.setName(host.pro ? "Add a slot" : `Add a slot${PRO}`)
+		.setDesc("A slot is one thing to take out of a page. Profiles share slots: an edit reaches every profile that uses it.")
+		.addText((text) => text.setPlaceholder("Name").setDisabled(!host.pro).onChange((name) => void (draft = { ...draft, name })))
+		.addDropdown((dropdown) => {
+			for (const [shape, label] of Object.entries(SHAPES)) dropdown.addOption(shape, label);
+			dropdown.setValue(draft.shape).setDisabled(!host.pro).onChange((shape) => void (draft = { ...draft, shape: shape as Shape }));
+		})
+		.addButton((button) =>
+			button
+				.setButtonText("Add")
+				.setDisabled(!host.pro)
+				.onClick(async () => {
+					if (draft.name.trim() === "") return;
+					await withSettings(host, (s) => ({ ...s, slots: [...s.slots, newSlot(draft.name.trim(), draft.shape, s.slots.map((slot) => slot.id))] }));
+				}),
+		);
 	for (const slot of host.settings().slots) renderSlot(containerEl, host, slot);
 }
 
@@ -218,7 +245,45 @@ function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, sl
 	new Setting(containerEl)
 		.setName(`${slot.name}${proSlot ? PRO : ""}`)
 		.setDesc(usedBy.length > 1 ? `Used by ${usedBy.join(", ")}: an edit here changes all of them.` : "What to extract, in your words.")
-		.addTextArea((text) => text.setValue(slot.instruction).setDisabled(proSlot).onChange(async (instruction) => typed(host, edit({ instruction }))));
+		.addTextArea((text) => text.setValue(slot.instruction).setDisabled(proSlot).onChange(async (instruction) => typed(host, edit({ instruction }))))
+		.addButton((button) =>
+			button
+				.setButtonText("Duplicate")
+				.setDisabled(!host.pro)
+				.onClick(async () =>
+					withSettings(host, (s) => {
+						const copy = { ...slot, id: slotIdFor(`${slot.name} copy`, s.slots.map((c) => c.id)), name: `${slot.name} copy`, used: false };
+						return { ...s, slots: [...s.slots, copy] };
+					}),
+				),
+		)
+		.addButton((button) =>
+			button
+				.setButtonText("Delete")
+				.setDisabled(!host.pro)
+				.onClick(async () =>
+					// Notes keep the regions it filled; they are no longer updated (spec §5.3).
+					withSettings(host, (s) => ({ ...s, slots: s.slots.filter((c) => c.id !== slot.id), profiles: s.profiles.map((p) => ({ ...p, slots: p.slots.filter((id) => id !== slot.id) })) })),
+				),
+		);
+	// The Shape is what code branches on; once a note holds this slot's region, it is fixed.
+	new Setting(containerEl)
+		.setName(`Shape${slot.used === true ? " (fixed: duplicate to change it)" : ""}`)
+		.addDropdown((dropdown) => {
+			for (const [shape, label] of Object.entries(SHAPES)) dropdown.addOption(shape, label);
+			dropdown
+				.setValue(slot.shape)
+				.setDisabled(!host.pro || slot.used === true)
+				.onChange(async (shape) => withSettings(host, replace({ ...newSlot(slot.name, shape as Shape, []), id: slot.id, instruction: slot.instruction, examples: slot.examples })));
+		});
+	renderExamples(containerEl, host, slot, edit);
+	if (slot.shape === "value") {
+		new Setting(containerEl)
+			.setName(`Frontmatter property${host.pro ? "" : PRO}`)
+			.setDesc("Empty: under its heading in the note. Otherwise the frontmatter property of that name.")
+			.addText((text) => text.setValue(slot.property ?? "").setDisabled(!host.pro).onChange(async (property) => typed(host, edit({ property: property.trim() === "" ? undefined : property.trim() }))));
+	}
+	if (slot.shape !== "text") renderFields(containerEl, host, slot, edit);
 	if (slot.shape !== "list" && slot.shape !== "checklist") return;
 	// Free locks Tasks' review on and its format to the Tasks plugin's (spec §11).
 	const freeLocked = !host.pro;
@@ -245,4 +310,58 @@ function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, sl
 					if (itemFormat.includes("{{text}}")) await typed(host, edit({ itemFormat }));
 				}),
 		);
+}
+
+type SlotEdit = (patch: Partial<SlotDef>) => (s: IntelligenceSettings) => IntelligenceSettings;
+
+/** Examples: a line from a page and what the slot takes from it -- or, as a counter-example, nothing. */
+function renderExamples(containerEl: HTMLElement, host: IntelligenceSettingsHost, slot: SlotDef, edit: SlotEdit): void {
+	const current = () => host.settings().slots.find((c) => c.id === slot.id)!.examples;
+	slot.examples.forEach((example, index) => {
+		const patch = (next: Partial<typeof example>) => edit({ examples: current().map((e, i) => (i === index ? { ...e, ...next } : e)) });
+		new Setting(containerEl)
+			.setName(example.positive ? "Example" : "Counter-example")
+			.addText((text) => text.setValue(example.input).setPlaceholder("From the page").onChange(async (input) => typed(host, patch({ input }))))
+			.addText((text) => text.setValue(example.output).setPlaceholder("Taken out").setDisabled(!example.positive).onChange(async (output) => typed(host, patch({ output }))))
+			.addButton((button) => button.setButtonText("Remove").onClick(async () => withSettings(host, edit({ examples: current().filter((_, i) => i !== index) }))));
+	});
+	new Setting(containerEl)
+		.setName("Add an example")
+		.addButton((button) => button.setButtonText("Example").onClick(async () => withSettings(host, edit({ examples: [...current(), { input: "", output: "", positive: true }] }))))
+		.addButton((button) => button.setButtonText("Counter-example").onClick(async () => withSettings(host, edit({ examples: [...current(), { input: "", output: "", positive: false }] }))));
+}
+
+/** Up to five typed fields per item (Pro): what each item carries besides its text. */
+function renderFields(containerEl: HTMLElement, host: IntelligenceSettingsHost, slot: SlotDef, edit: SlotEdit): void {
+	const current = () => host.settings().slots.find((c) => c.id === slot.id)!.fields;
+	slot.fields.forEach((field, index) => {
+		const patch = (next: Partial<FieldDef>) => edit({ fields: current().map((f, i) => (i === index ? { ...f, ...next } : f)) });
+		const row = new Setting(containerEl)
+			.setName(`Field ${field.name}${host.pro ? "" : PRO}`)
+			.addText((text) => text.setValue(field.name).setDisabled(!host.pro).onChange(async (name) => typed(host, patch({ name: name.trim() }))))
+			.addDropdown((dropdown) => {
+				for (const [type, label] of Object.entries(FIELD_TYPES)) dropdown.addOption(type, label);
+				dropdown
+					.setValue(field.type)
+					.setDisabled(!host.pro)
+					.onChange(async (type) => withSettings(host, patch({ type: type as FieldType })));
+			});
+		if (field.type === "choice") {
+			row.addText((text) =>
+				text
+					.setValue((field.options ?? []).join(", "))
+					.setPlaceholder("Options, comma-separated")
+					.setDisabled(!host.pro)
+					.onChange(async (options) => typed(host, patch({ options: options.split(",").map((o) => o.trim()).filter((o) => o !== "") }))),
+			);
+		}
+		row.addButton((button) => button.setButtonText("Remove").setDisabled(!host.pro).onClick(async () => withSettings(host, edit({ fields: current().filter((_, i) => i !== index) }))));
+	});
+	if (slot.fields.length >= MAX_FIELDS) return;
+	new Setting(containerEl).setName(`Add a field${host.pro ? "" : PRO}`).addButton((button) =>
+		button
+			.setButtonText("Add")
+			.setDisabled(!host.pro)
+			.onClick(async () => withSettings(host, edit({ fields: [...current(), { name: `field${current().length + 1}`, type: "text" }] }))),
+	);
 }

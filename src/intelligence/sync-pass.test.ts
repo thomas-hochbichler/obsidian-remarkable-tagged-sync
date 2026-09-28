@@ -98,6 +98,7 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		expect(state.rows["d1:p3:work"]).toMatchObject({ notePath: path, folder: "Work", status: "active", noteId: "note1", profileId: "generic", scope: "notebook" });
 		expect(state.seenPages["d1:p3:work"]).toEqual({ scope: "notebook", pageHash: "h3", firstSeen: AFTER, noteId: "note1" });
 		expect(mem.bases.has("plugin/base/note1.json")).toBe(true);
+		expect(report.usedSlots).toEqual(["tasks", "summary"]);
 	});
 
 	it("says which page it is on before each extraction", async () => {
