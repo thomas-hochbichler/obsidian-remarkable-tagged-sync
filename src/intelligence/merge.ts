@@ -9,6 +9,7 @@
  * transcript.
  */
 
+import type { PropertyValue } from "./frontmatter-values";
 import { matchItems, normaliseText } from "./matcher";
 
 export type Fields = Record<string, string | null>;
@@ -36,7 +37,7 @@ export type Proposal =
 	| { kind: "add"; id: string; text: string; fields: Fields; source: string | null; done: boolean }
 	| { kind: "remove"; id: string; itemId: string }
 	| { kind: "change"; id: string; itemId: string; text: string; fields: Fields; source: string }
-	| { kind: "replace"; id: string; text: string };
+	| { kind: "replace"; id: string; text: string; value?: PropertyValue | null };
 
 export type ListProposal = Exclude<Proposal, { kind: "replace" }>;
 
