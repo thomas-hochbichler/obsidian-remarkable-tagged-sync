@@ -752,3 +752,92 @@
       layer: unit
       file: src/intelligence/dates.test.ts
       test: "resolveWrittenDate > reads nothing relative or missing"
+
+- feature: V7
+  name: The intelligence settings block reads totally and never costs a scan by itself
+  code: src/intelligence/settings.ts
+  tier: free
+  scenarios:
+    - id: V7.1
+      scenario: "The block is absent or junk"
+      expect: "A complete block with Tasks, Decisions, Summary, Tags"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > gives a complete block with the default Slots for anything that is not a stored block"
+
+    - id: V7.2
+      scenario: "A migrated block is read again later"
+      expect: "It reads to itself -- no re-stamp"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > is idempotent"
+
+    - id: V7.3
+      scenario: "The user deleted every Slot"
+      expect: "They stay deleted"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > does not bring back a default Slot the user deleted"
+
+    - id: V7.4
+      scenario: "A mapping is partial or junk"
+      expect: "Each field gets its default; junk Profile ids are dropped"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > fills each mapping field on its own and drops junk inside it"
+
+    - id: V7.5
+      scenario: "Intelligence Mode is on with no stamp"
+      expect: "Stamped with the load time in memory; onload writes nothing"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > stamps a mapping that is on but was never stamped with the load time, in memory"
+
+    - id: V7.6
+      scenario: "A newer install wrote fields this one does not know"
+      expect: "They are carried, not dropped for every device"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > carries Profiles and Slots whole, unknown fields included, and reads the backend"
+
+    - id: V7.7
+      scenario: "A mapped tag has no intelligence entry"
+      expect: "Transcript on, Intelligence off"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "modesFor > gives a mapped tag its modes and an unmentioned one the defaults"
+
+    - id: V7.8
+      scenario: "The folder mapping was removed but the entry remains"
+      expect: "The entry is ignored"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "modesFor > ignores the modes of a tag whose mapping was removed"
+
+    - id: V7.9
+      scenario: "Intelligence Mode is switched on, off, on"
+      expect: "enabledAt moves each time; firstEnabledAt keeps the first"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "setIntelligenceMode > stamps enabledAt on every switch-on and firstEnabledAt only once"
+
+    - id: V7.10
+      scenario: "The block is reordered or gains a default entry"
+      expect: "Same print as before"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "intelligenceFingerprint > ignores key order and entries equal to the defaults, so an upgrade and a no-op write cost no scan"
+
+    - id: V7.11
+      scenario: "A mode, stamp or Profile list changes"
+      expect: "A new print -- the gate opens"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "intelligenceFingerprint > changes on a toggle, a re-stamp or a Profile list change"
+
+    - id: V7.12
+      scenario: "A mapping has Intelligence Mode on and no Profile"
+      expect: "Tasks + Summary; Tags only with Pro"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "genericProfile > runs Tasks and Summary, plus Tags with Pro"

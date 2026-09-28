@@ -28,6 +28,7 @@ import { DEFAULT_ZOTERO_SETTINGS, type ZoteroSettings } from "./zotero-settings"
 import { EMPTY_SYNC_INDEX, type SyncIndex, type SyncIndexRow } from "./sync-engine";
 import type { TransportId } from "./transport";
 import { mappingFingerprint, type TagFolderMap } from "./tag-router";
+import { emptyIntelligence, type IntelligenceSettings, readIntelligence } from "./intelligence/settings";
 
 /** Opt-in background sync (auto-sync spec §"Settings & data model"). */
 export interface AutoSyncSettings {
@@ -108,6 +109,11 @@ export interface TaggedSyncData {
 	 * one vault is one activation, wherever it is opened.
 	 */
 	licence: LicenceState;
+	/**
+	 * The Intelligence Engine: per-mapping modes, Profiles, Slots, extraction backend (1.9.0). A block
+	 * of its own so `tagFolderMap` keeps the shape an older install sharing this file can read.
+	 */
+	intelligence: IntelligenceSettings;
 }
 
 /** Read field by field, never handed out whole -- see the `syncIndex` note in `migrateSettings`. */
@@ -132,6 +138,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	marginNotes: false,
 	frontmatter: false,
 	licence: NO_LICENCE,
+	intelligence: emptyIntelligence(),
 };
 
 /**
@@ -149,6 +156,8 @@ export interface SettingsEnv {
 	isKnownBackend: (id: unknown) => boolean;
 	/** What an unknown or absent backend becomes -- platform-derived (multi-provider spec §7). */
 	defaultBackend: OcrBackendId;
+	/** The load time, stamped in memory on a mapping switched on without a stamp. Defaults to now. */
+	now?: Date;
 }
 
 function isTransportId(value: unknown): value is TransportId {
@@ -245,5 +254,6 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// Spread over the default so a `data.json` written by an older version, or one a user has
 		// edited by hand, is missing fields rather than being rejected.
 		licence: { ...NO_LICENCE, ...stored?.licence },
+		intelligence: readIntelligence(stored?.intelligence, env.now ?? new Date()),
 	};
 }
