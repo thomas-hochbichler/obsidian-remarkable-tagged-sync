@@ -53,7 +53,8 @@ describe("the list the walk walks", () => {
 		expect(ids).toContain("intelligence-beyond-the-first-tag");
 		expect(ids).toContain("intelligence-own-slots");
 		expect(ids).toContain("intelligence-cloud-extraction");
-		expect(ids.length).toBeGreaterThanOrEqual(9);
+		expect(ids).toContain("intelligence-change-profile");
+		expect(ids.length).toBeGreaterThanOrEqual(10);
 	});
 
 	it("takes its membership from the declaration, never from the flag under test", () => {

@@ -79,6 +79,37 @@ export interface IntelligenceCommandsHost {
 	setIndex(index: SyncIndex): Promise<void>;
 	/** "Re-run extraction" on one page note, with this run's backend and settings. */
 	rerun(notePath: string): Promise<RerunOutcome>;
+	/** "Change Profile for this page" (Pro). */
+	changeProfile(notePath: string, profileId: string): Promise<RerunOutcome>;
+	profiles(): readonly { id: string; name: string }[];
+	pro(): boolean;
+}
+
+export const CHANGE_PROFILE_PRO = "Changing the profile of one page is part of Tagged Sync Pro.";
+
+/** One button per Profile; choosing closes the Modal and hands the id on. */
+export class ProfileChoiceModal extends Modal {
+	constructor(
+		app: App,
+		private readonly profiles: readonly { id: string; name: string }[],
+		private readonly choose: (id: string) => void,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.titleEl.setText("Change profile for this page");
+		if (this.profiles.length === 0) {
+			this.contentEl.createEl("p", { text: "There is no profile yet. Add one in the plugin settings." });
+			return;
+		}
+		for (const profile of this.profiles) {
+			this.contentEl.createEl("button", { text: profile.name }).addEventListener("click", () => {
+				this.close();
+				this.choose(profile.id);
+			});
+		}
+	}
 }
 
 async function say(host: IntelligenceCommandsHost, outcome: RerunOutcome): Promise<void> {
@@ -107,6 +138,18 @@ export async function openReview(host: IntelligenceCommandsHost): Promise<Review
 
 export function registerIntelligenceCommands(host: IntelligenceCommandsHost): void {
 	host.addCommand({ id: "review-proposals", name: "Review proposals", callback: () => void openReview(host) });
+	host.addCommand({
+		id: "change-profile",
+		name: "Change profile for this page note",
+		checkCallback: (checking) => {
+			const file = host.app.workspace.getActiveFile();
+			if (file === null || file.extension !== "md") return false;
+			if (checking) return true;
+			if (!host.pro()) new Notice(CHANGE_PROFILE_PRO);
+			else new ProfileChoiceModal(host.app, host.profiles(), (id) => void host.changeProfile(file.path, id).then((outcome) => say(host, outcome))).open();
+			return true;
+		},
+	});
 	host.addCommand({
 		id: "rerun-extraction",
 		name: "Re-run extraction for this page note",

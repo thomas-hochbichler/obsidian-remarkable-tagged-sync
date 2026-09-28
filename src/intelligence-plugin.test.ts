@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { FakeApp, FakeEl, takeModals, takeNotices, TFile } from "../test-stubs/fake-obsidian";
 import { FakeClock } from "../test-stubs/fake-clock";
-import { ReviewModal } from "./intelligence/commands";
+import { ProfileChoiceModal, ReviewModal } from "./intelligence/commands";
+import { NO_LICENCE } from "./licence-state";
 
 // The plugin-level seam of the review: the command and the callout's link are registered at load
 // and reach the vault's own index. What the review does is pinned in intelligence/*.test.ts.
@@ -77,5 +78,24 @@ describe("the review in the running plugin", () => {
 		await settle();
 		await settle();
 		expect(takeNotices()).toEqual(["This note is not a page note from the Intelligence Engine."]);
+	});
+
+	it("offers Change profile with Pro and says it is Pro without", async () => {
+		const trial = { ...NO_LICENCE, trialStartedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() };
+		const pro = await load({ ...withPageNote, licence: trial, intelligence: { profiles: [{ id: "a", name: "A", description: "", template: null, slots: [] }] } });
+		pro.app.workspace.activeFile = file("Work/p.md");
+		takeModals();
+		takeNotices();
+		pro.commands.find((command) => command.id === "change-profile")!.checkCallback!(false);
+		const [chooser] = takeModals().filter((modal) => modal instanceof ProfileChoiceModal);
+		(chooser.contentEl as unknown as FakeEl).children[0].dispatch("click");
+		await settle();
+		await settle();
+		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Intelligence in the settings."]);
+
+		const free = await load(withPageNote);
+		free.app.workspace.activeFile = file("Work/p.md");
+		free.commands.find((command) => command.id === "change-profile")!.checkCallback!(false);
+		expect(takeNotices()).toEqual(["Changing the profile of one page is part of Tagged Sync Pro."]);
 	});
 });
