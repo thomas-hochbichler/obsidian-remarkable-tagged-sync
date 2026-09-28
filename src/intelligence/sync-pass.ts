@@ -82,6 +82,8 @@ export interface IntelligenceDocument {
 	onProgress?: (done: number, total: number) => void;
 	/** "Stop sync" was pressed: no further page starts. Pages already done are kept; the rest wait. */
 	shouldStop?: () => boolean;
+	/** Saves the index; called after each page, so a note made is never made twice after a crash. */
+	checkpoint?: () => Promise<void>;
 	/**
 	 * The plugin's frontmatter keys for a page note (Pro), exactly as a page-tag note gets them -- or
 	 * null with the feature off. Page notes are synced notes: `FROM #remarkable` finds them (spec §7.4).
@@ -238,120 +240,145 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	if (legacyRecorded) report.notices.push(`"${doc.name}" was written before the tablet stamped page dates, so none of its pages counts as new. Write on a page to bring it in.`);
 	if (work.length === 0) return report;
 
-	const texts = await doc.transcribe([...new Set(work.map((item) => item.page.id))]);
+	let texts: Map<string, string>;
+	try {
+		texts = await doc.transcribe([...new Set(work.map((item) => item.page.id))]);
+	} catch (error) {
+		// Every page then fails as unread and retries; the sync itself goes on.
+		console.warn("Tagged Sync: the Intelligence Engine could not read its pages", error);
+		texts = new Map();
+	}
 
-	for (const [index, { unit, page, key, seen }] of work.entries()) {
+	for (const [index, item] of work.entries()) {
 		if (doc.shouldStop?.() === true) break;
 		doc.onProgress?.(index + 1, work.length);
-		const row = state.rows[key];
-		const noteText = row ? await deps.noteStore.read(row.notePath) : null;
-		// One revive rule (§4.1): a row whose note is gone starts over with a fresh id and no base --
-		// merging against the dead note's base would tombstone everything.
-		const alive = row !== undefined && noteText !== null;
-		const noteId = alive ? row.noteId : row !== undefined ? deps.newNoteId() : (seen?.noteId ?? deps.newNoteId());
-		if (row !== undefined && !alive) await deps.baseStore.discard(row.noteId);
-		state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId };
-
-		const transcript = texts.get(page.id);
-		if (transcript === undefined) {
-			report.failures.push(`page ${page.ordinal} of "${doc.name}": the page could not be read`);
-			continue;
+		// One page's failure -- a render that times out, a note that cannot be written -- is that page's,
+		// never the sync's: the notes already made stay, and the index is saved after each one.
+		try {
+			await processItem(deps, doc, state, report, item, texts);
+		} catch (error) {
+			report.failures.push(`page ${item.page.ordinal} of "${doc.name}": ${error instanceof Error ? error.message : String(error)}`);
 		}
-		const profile = await profileFor(deps, unit.tag, alive ? row.profileId : undefined, transcript, report);
-		const slots = slotsOf(deps, profile);
-		const template = await templateFor(deps, profile, slots);
-		let base = await deps.baseStore.load(noteId);
-		if (base === null && alive) {
-			const placements = analyseTemplate(template, slots.map((slot) => slot.id));
-			base = rebuildBase({
-				lines: noteText.split("\n"),
-				slots: slots.map((slot) => {
-					const placement = placements[slot.id];
-					const itemFormat = slot.shape === "list" || slot.shape === "checklist" ? slot.itemFormat : "- {{text}}";
-					return { id: slot.id, shape: slot.shape, heading: placement.kind === "region" ? placement.heading : { level: 2, text: slot.name }, format: compileItemFormat(itemFormat), itemFormat: slot.itemFormat, property: slot.property };
-				}),
-				noteId,
-				syncKey: key,
-				newId: deps.newId,
-			});
-		}
-
-		const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(doc.name)}`;
-		const renderPath = await doc.writeRender(page.id);
-		const outcome = await processPage({
-			unit: { key, pageHash: page.hash, transcript, firstSeen: seen?.firstSeen ?? page.modified },
-			noteId,
-			base,
-			note: alive ? noteText : null,
-			profile,
-			slots,
-			template,
-			backend: deps.backend,
-			syncedAt: deps.now(),
-			title: (pageDate) => `${isoDay(pageDate)} ${doc.name} p${page.ordinal}`,
-			pageLink: `[[${renderPath}|Page ${page.ordinal}]]`,
-			pageEmbed: `![[${renderPath}]]`,
-			reviewLink: deps.reviewLink,
-			formatDate: deps.formatDate,
-			formatTime: deps.formatTime,
-			newId: deps.newId,
-		});
-
-		if (outcome.kind === "failed") {
-			await deps.baseStore.save(outcome.base);
-			report.failures.push(`page ${page.ordinal} of "${doc.name}": ${outcome.reason}`);
-			if (outcome.base.extraction.attempts === RETRY_NOTICE_AFTER) report.notices.push(`Page ${page.ordinal} of "${doc.name}" could not be extracted ${RETRY_NOTICE_AFTER} times: ${outcome.reason}`);
-			continue;
-		}
-
-		// The plugin's keys ride along on every write; an unchanged note is not written for them alone.
-		const keys = outcome.content === null ? null : (doc.frontmatter?.(unit.tag, page.id) ?? null);
-		let ownTags = alive ? row.frontmatterTags : undefined;
-		let content = outcome.content;
-		if (keys !== null && content !== null) {
-			const applied = applyFrontmatter(content, { ...keys.fields, synced: formatLocalMinute(deps.now()), noteId }, ownTags ?? []);
-			content = applied.content;
-			ownTags = applied.ownTags;
-		}
-
-		let notePath = alive ? row.notePath : "";
-		if (outcome.created) {
-			const name = sanitizeFilenamePart(`${isoDay(outcome.pageDate)} ${doc.name} p${page.ordinal}`);
-			await deps.noteStore.ensureFolder(folder);
-			notePath = await resolveFreePath(deps.noteStore, folder, name, unit.tag, doc.docId);
-			await deps.createNote(notePath, content!);
-			report.notesWritten++;
-		} else if (content !== null) {
-			await deps.noteStore.write(notePath, content);
-			report.notesUpdated++;
-		}
-		for (const id of outcome.missingRegions) report.notices.push(`"${notePath}": the heading for ${id} is gone, so it was not updated.`);
-		report.proposals += outcome.proposals;
-		if (outcome.proposals > 0) report.proposalNotes++;
-
-		for (const id of Object.keys(outcome.base.slots)) if (!report.usedSlots.includes(id)) report.usedSlots.push(id);
-		await deps.baseStore.save(outcome.base);
-		// The page's hash enters the seen-set only now, after success: a failed page retries next sync.
-		state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified, noteId };
-		state.rows[key] = {
-			...(alive ? row : {}),
-			syncKey: key,
-			unitKey: key,
-			docId: doc.docId,
-			pageId: page.id,
-			tag: unit.tag,
-			scope: unit.scope,
-			notePath,
-			folder: alive ? row.folder : deps.tagFolderMap[unit.tag],
-			status: "active",
-			noteId,
-			profileId: profile.id,
-			baseHash: baseHash(outcome.base),
-			syncedAt: deps.now().toISOString(),
-			...(keys === null ? {} : { frontmatterTags: ownTags, frontmatterVersion: keys.version }),
-		};
+		await doc.checkpoint?.();
 	}
 	return report;
+}
+
+async function processItem(
+	deps: IntelligencePassDeps,
+	doc: IntelligenceDocument,
+	state: IntelligenceState,
+	report: PassReport,
+	{ unit, page, key, seen }: { unit: DocUnit; page: DocPage; key: string; seen: SeenEntry | undefined },
+	texts: Map<string, string>,
+): Promise<void> {
+	const row = state.rows[key];
+	const noteText = row ? await deps.noteStore.read(row.notePath) : null;
+	// One revive rule (§4.1): a row whose note is gone starts over with a fresh id and no base --
+	// merging against the dead note's base would tombstone everything.
+	const alive = row !== undefined && noteText !== null;
+	const noteId = alive ? row.noteId : row !== undefined ? deps.newNoteId() : (seen?.noteId ?? deps.newNoteId());
+	if (row !== undefined && !alive) await deps.baseStore.discard(row.noteId);
+	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId };
+
+	const transcript = texts.get(page.id);
+	if (transcript === undefined) {
+		report.failures.push(`page ${page.ordinal} of "${doc.name}": the page could not be read`);
+		return;
+	}
+	const profile = await profileFor(deps, unit.tag, alive ? row.profileId : undefined, transcript, report);
+	const slots = slotsOf(deps, profile);
+	const template = await templateFor(deps, profile, slots);
+	let base = await deps.baseStore.load(noteId);
+	if (base === null && alive) {
+		const placements = analyseTemplate(template, slots.map((slot) => slot.id));
+		base = rebuildBase({
+			lines: noteText.split("\n"),
+			slots: slots.map((slot) => {
+				const placement = placements[slot.id];
+				const itemFormat = slot.shape === "list" || slot.shape === "checklist" ? slot.itemFormat : "- {{text}}";
+				return { id: slot.id, shape: slot.shape, heading: placement.kind === "region" ? placement.heading : { level: 2, text: slot.name }, format: compileItemFormat(itemFormat), itemFormat: slot.itemFormat, property: slot.property };
+			}),
+			noteId,
+			syncKey: key,
+			newId: deps.newId,
+		});
+	}
+
+	const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(doc.name)}`;
+	const renderPath = await doc.writeRender(page.id);
+	const outcome = await processPage({
+		unit: { key, pageHash: page.hash, transcript, firstSeen: seen?.firstSeen ?? page.modified },
+		noteId,
+		base,
+		note: alive ? noteText : null,
+		profile,
+		slots,
+		template,
+		backend: deps.backend,
+		syncedAt: deps.now(),
+		title: (pageDate) => `${isoDay(pageDate)} ${doc.name} p${page.ordinal}`,
+		pageLink: `[[${renderPath}|Page ${page.ordinal}]]`,
+		pageEmbed: `![[${renderPath}]]`,
+		reviewLink: deps.reviewLink,
+		formatDate: deps.formatDate,
+		formatTime: deps.formatTime,
+		newId: deps.newId,
+	});
+
+	if (outcome.kind === "failed") {
+		await deps.baseStore.save(outcome.base);
+		report.failures.push(`page ${page.ordinal} of "${doc.name}": ${outcome.reason}`);
+		if (outcome.base.extraction.attempts === RETRY_NOTICE_AFTER) report.notices.push(`Page ${page.ordinal} of "${doc.name}" could not be extracted ${RETRY_NOTICE_AFTER} times: ${outcome.reason}`);
+		return;
+	}
+
+	// The plugin's keys ride along on every write; an unchanged note is not written for them alone.
+	const keys = outcome.content === null ? null : (doc.frontmatter?.(unit.tag, page.id) ?? null);
+	let ownTags = alive ? row.frontmatterTags : undefined;
+	let content = outcome.content;
+	if (keys !== null && content !== null) {
+		const applied = applyFrontmatter(content, { ...keys.fields, synced: formatLocalMinute(deps.now()), noteId }, ownTags ?? []);
+		content = applied.content;
+		ownTags = applied.ownTags;
+	}
+
+	let notePath = alive ? row.notePath : "";
+	if (outcome.created) {
+		const name = sanitizeFilenamePart(`${isoDay(outcome.pageDate)} ${doc.name} p${page.ordinal}`);
+		await deps.noteStore.ensureFolder(folder);
+		notePath = await resolveFreePath(deps.noteStore, folder, name, unit.tag, doc.docId);
+		await deps.createNote(notePath, content!);
+		report.notesWritten++;
+	} else if (content !== null) {
+		await deps.noteStore.write(notePath, content);
+		report.notesUpdated++;
+	}
+	for (const id of outcome.missingRegions) report.notices.push(`"${notePath}": the heading for ${id} is gone, so it was not updated.`);
+	report.proposals += outcome.proposals;
+	if (outcome.proposals > 0) report.proposalNotes++;
+
+	for (const id of Object.keys(outcome.base.slots)) if (!report.usedSlots.includes(id)) report.usedSlots.push(id);
+	await deps.baseStore.save(outcome.base);
+	// The page's hash enters the seen-set only now, after success: a failed page retries next sync.
+	state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified, noteId };
+	state.rows[key] = {
+		...(alive ? row : {}),
+		syncKey: key,
+		unitKey: key,
+		docId: doc.docId,
+		pageId: page.id,
+		tag: unit.tag,
+		scope: unit.scope,
+		notePath,
+		folder: alive ? row.folder : deps.tagFolderMap[unit.tag],
+		status: "active",
+		noteId,
+		profileId: profile.id,
+		baseHash: baseHash(outcome.base),
+		syncedAt: deps.now().toISOString(),
+		...(keys === null ? {} : { frontmatterTags: ownTags, frontmatterVersion: keys.version }),
+	};
 }
 
 const keyParts = (key: string) => {
@@ -362,7 +389,8 @@ const keyParts = (key: string) => {
 function followTagRenames(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState): void {
 	for (const page of doc.pages) {
 		for (const scope of ["notebook", "page"] as const) {
-			const current = doc.units.filter((unit) => unit.scope === scope && unit.pageIds.includes(page.id)).map((unit) => unit.tag);
+			// Only tags that make page notes can be the new name: a transcript-only tag was never this unit's.
+			const current = doc.units.filter((unit) => unit.scope === scope && unit.pageIds.includes(page.id) && modesFor(deps.settings, deps.tagFolderMap, unit.tag).intelligence).map((unit) => unit.tag);
 			const previous = new Set<string>();
 			for (const row of Object.values(state.rows)) if (row.status === "active" && row.docId === doc.docId && row.pageId === page.id && row.scope === scope) previous.add(row.tag);
 			for (const [key, seen] of Object.entries(state.seenPages)) {

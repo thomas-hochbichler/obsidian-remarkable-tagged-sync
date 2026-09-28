@@ -113,6 +113,17 @@ describe("prepareRun", () => {
 		expect(allowed.hook).toBeDefined();
 	});
 
+	it("runs only the free tag's pages without Pro, though the others stay switched on in the settings", async () => {
+		const e = env({ "plugin/device-id": "device-a" });
+		const both = setIntelligenceMode(onDevice({ ...ON, backend: "hostfake" }), "home", true, new Date("2026-09-05T00:00:00.000Z"));
+		const run = await prepareRun(e, { settings: both, tagFolderMap: { work: "Work", home: "Home" }, pro: false, transcriptionBackend: "vision", providerSettings: {}, background: false });
+		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: "2026-09-01T00:00:00.000Z", home: "2026-09-05T00:00:00.000Z" } };
+		const page = { id: "p1", ordinal: 1, hash: "h", modified: Date.parse("2026-09-10T00:00:00.000Z") };
+		await run.hook!.process({ docId: "d", name: "N", legacy: false, pages: [page], units: [{ tag: "work", scope: "notebook", pageIds: ["p1"] }, { tag: "home", scope: "notebook", pageIds: ["p1"] }], transcribe: async () => new Map([["p1", "call Bob"]]), writeRender: async () => "a.pdf" }, state);
+		expect(Object.keys(state.rows)).toEqual(["d:p1:work"]);
+		expect(both.mappings.home.intelligence).toBe(true);
+	});
+
 	it("builds the engine hook on the engine device with a working backend", async () => {
 		const e = env({ "plugin/device-id": "device-a" });
 		const run = await prepareRun(e, { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: { hostcloud: { apiKey: "k" } }, background: false });

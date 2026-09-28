@@ -2212,7 +2212,7 @@
       test: "processDocument > a mapped tag renamed on the tablet > moves a row that lost its seen entry too"
 
     - id: V33.3
-      scenario: "A page seen but never noted is renamed; later two tags replace one"
+      scenario: "A page seen but never noted is renamed; later two page-note tags replace one"
       expect: "The seen entry moves; two new tags are no rename"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
@@ -2762,3 +2762,29 @@
       layer: unit
       file: src/pro-capabilities.test.ts
       test: "nothing gated escapes the list > declares every extraction backend too, and keeps its flag saying the same as the declaration"
+
+- feature: V45
+  name: "Review fixes: the engine never takes the sync down, and holds its gates"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V45.1
+      scenario: "A page's render or write throws; the transcription throws"
+      expect: "That page fails and retries; the others are written; the index is saved after each page"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > failures > keeps going when one page throws, saving after each page, and survives a transcription that throws"
+
+    - id: V45.2
+      scenario: "A page-note tag is removed while a transcript-only tag stays on the notebook"
+      expect: "The page note's row is orphaned, not renamed to the transcript-only tag"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > orphans a removed page-note tag instead of renaming it to a transcript-only tag on the notebook"
+
+    - id: V45.3
+      scenario: "Pro lapsed with page notes on two tags"
+      expect: "Only the free tag's pages are processed; the settings keep the other switched on"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > runs only the free tag's pages without Pro, though the others stay switched on in the settings"
