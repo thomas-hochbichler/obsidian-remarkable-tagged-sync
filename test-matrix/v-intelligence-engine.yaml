@@ -1318,6 +1318,13 @@
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > after the scan > brings an old page in once the user writes on it"
 
+    - id: V14.18
+      scenario: "Review is on and a changed page brings new tasks"
+      expect: "The report counts the proposals and the notes that hold them"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > counts the notes that hold proposals"
+
     - id: V14.6
       scenario: "A notebook tagged after the toggle"
       expect: "Its old pages are seen, not extracted"
@@ -1718,3 +1725,50 @@
       layer: unit
       file: src/intelligence/host.test.ts
       test: "prepareRun > builds the engine hook on the engine device with a working backend"
+
+- feature: V21
+  name: "The engine reaches Obsidian through a thin, tested seam"
+  code: src/intelligence/host.ts
+  tier: free
+  scenarios:
+    - id: V21.1
+      scenario: "The plugin folder is read and written"
+      expect: "Absent reads as null; remove and mkdir only when needed"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > reads an absent file as null, and removes or makes a folder only when that changes something"
+
+    - id: V21.2
+      scenario: "Templater is installed, half-installed, or absent"
+      expect: "Its API only when the create call exists"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > finds Templater only when its API is there"
+
+    - id: V21.3
+      scenario: "A page note is created"
+      expect: "Through Templater with folder and name; plain create when it throws or is absent"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > creates a note through Templater with folder and name, falls back when it throws, and uses create without it"
+
+    - id: V21.4
+      scenario: "core Templates has date/time formats, blanks, or a broken file"
+      expect: "The formats, else none"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > reads core Templates' date and time formats, ignoring blanks and a broken file"
+
+    - id: V21.5
+      scenario: "A run ends"
+      expect: "A pause, failures and 'N proposals in M notes' with where to review"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "intelligenceNotices > says a pause, the engine's own notices, and the pending proposals with where to review them"
+
+    - id: V21.6
+      scenario: "The plugin builds the engine's environment"
+      expect: "Plugin folder, template reads, note creation, moment formats, ids and clock"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "hostEnvironmentFor > reaches the app through the vault: plugin folder, templates, note creation and the clock"

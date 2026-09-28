@@ -5,6 +5,8 @@ import { ocrBackendEntries } from "./ocr-registry";
 import { allowedTransports } from "./ssh-transport";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
 import { createZoteroClientFor, DEFAULT_ZOTERO_SETTINGS, zoteroProAllowed } from "./zotero-settings";
+import { chooseExtractionBackend, effectiveModes, effectiveSlotsFor, intelligenceProAllowed } from "./intelligence/plugin-rules";
+import { defaultSlots, emptyIntelligence, genericProfile, setIntelligenceMode } from "./intelligence/settings";
 
 /**
  * Everything Tagged Sync Pro sells, in one list a test can walk.
@@ -216,6 +218,65 @@ const ZOTERO_CAPABILITY: ProCapability = {
 };
 
 /**
+ * Intelligence Mode on more than one tag. Without Pro the engine keeps the tag switched on first; the
+ * others keep their configuration, show "(Pro)" and their page notes are no longer updated (spec §11).
+ */
+const INTELLIGENCE_TAGS_CAPABILITY: ProCapability = {
+	id: "intelligence-beyond-the-first-tag",
+	label: "Page notes from the Intelligence Engine on more than one tag",
+	locked: (entitlement) => !intelligenceProAllowed(entitlement),
+	whenLocked: "falls-back-to-free",
+	enforcedAt: {
+		site: "src/intelligence/plugin-rules.ts effectiveModes, called from src/intelligence/host.ts prepareRun",
+		run: (entitlement) => {
+			const at = new Date("2026-09-01T00:00:00.000Z");
+			const settings = setIntelligenceMode(setIntelligenceMode(emptyIntelligence(), "#first", true, at), "#second", true, new Date(at.getTime() + 1));
+			return effectiveModes(settings, { "#first": "A", "#second": "B" }, intelligenceProAllowed(entitlement))("#second").intelligence ? "allowed" : "falls-back-to-free";
+		},
+	},
+};
+
+/**
+ * Own Slots, Decisions and Tags, Fields, Item formats and per-Slot review. Without Pro a Profile runs
+ * Tasks and Summary; regions of Pro Slots stay in the notes and are no longer updated -- which is
+ * `falls-back-to-free`, not a third outcome (spec §11).
+ */
+const INTELLIGENCE_SLOTS_CAPABILITY: ProCapability = {
+	id: "intelligence-own-slots",
+	label: "Own Slots, Decisions and Tags, Item formats and per-Slot review in page notes",
+	locked: (entitlement) => !intelligenceProAllowed(entitlement),
+	whenLocked: "falls-back-to-free",
+	enforcedAt: {
+		site: "src/intelligence/plugin-rules.ts effectiveSlotsFor, called from src/intelligence/host.ts prepareRun",
+		run: (entitlement) => {
+			const slots = effectiveSlotsFor(intelligenceProAllowed(entitlement))(genericProfile(true), defaultSlots());
+			return slots.some((slot) => slot.id === "decisions") ? "allowed" : "falls-back-to-free";
+		},
+	},
+};
+
+/** Extraction on a cloud model. Without Pro it falls back to the local model, else the engine pauses (spec §11). */
+const CLOUD_EXTRACTION_CAPABILITY: ProCapability = {
+	id: "intelligence-cloud-extraction",
+	label: "Extracting tasks and summaries with a cloud model",
+	locked: (entitlement) => !intelligenceProAllowed(entitlement),
+	whenLocked: "falls-back-to-free",
+	enforcedAt: {
+		site: "src/intelligence/plugin-rules.ts chooseExtractionBackend, called from src/intelligence/host.ts prepareRun",
+		run: (entitlement) => {
+			const entry = (id: string, paid: boolean) => ({ id, label: id, metered: paid, requiresLicence: paid, measured: false, create: () => null });
+			const choice = chooseExtractionBackend({
+				settings: { ...emptyIntelligence(), backend: "cloud" },
+				transcriptionBackend: "vision",
+				pro: intelligenceProAllowed(entitlement),
+				lookup: (id) => entry(id, id === "cloud"),
+			});
+			return choice.kind === "ready" && choice.entry.id === "cloud" ? "allowed" : "falls-back-to-free";
+		},
+	},
+};
+
+/**
  * Every gated capability this build ships.
  *
  * The `filter` is the single most important line here. The obvious form --
@@ -226,7 +287,16 @@ export function proCapabilities(): ProCapability[] {
 	const backends = ocrBackendEntries()
 		.filter((entry) => BACKEND_TIER[entry.id]?.paid)
 		.map(backendCapability);
-	return [...backends, TAG_MAPPING_CAPABILITY, SSH_TRANSPORT_CAPABILITY, FRONTMATTER_CAPABILITY, ZOTERO_CAPABILITY];
+	return [
+		...backends,
+		TAG_MAPPING_CAPABILITY,
+		SSH_TRANSPORT_CAPABILITY,
+		FRONTMATTER_CAPABILITY,
+		ZOTERO_CAPABILITY,
+		INTELLIGENCE_TAGS_CAPABILITY,
+		INTELLIGENCE_SLOTS_CAPABILITY,
+		CLOUD_EXTRACTION_CAPABILITY,
+	];
 }
 
 /**
@@ -265,6 +335,10 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	"src/zotero-settings.ts": {
 		reads: 1,
 		why: "`zoteroProAllowed`, the gate of Zotero's Pro half. A gate, and it is in the list -- `createZoteroClientFor` in the same file asks it for the desktop connection, `zoteroPassFor` for write-back.",
+	},
+	"src/intelligence/plugin-rules.ts": {
+		reads: 1,
+		why: "`intelligenceProAllowed`, the Intelligence Engine's gate. A gate, and it is in the list three times -- extra tags, own Slots, cloud extraction -- and `main.ts` asks it rather than reading the tier itself.",
 	},
 	"src/settings-tab.ts": {
 		reads: 4,

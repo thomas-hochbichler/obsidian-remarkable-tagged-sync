@@ -1,4 +1,5 @@
 import {
+	moment,
 	normalizePath,
 	Notice,
 	Plugin,
@@ -72,6 +73,8 @@ import {
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
+import { hostEnvironmentFor, intelligenceNotices, prepareRun } from "./intelligence/host";
+import { intelligenceProAllowed } from "./intelligence/plugin-rules";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
@@ -651,12 +654,24 @@ export default class TaggedSyncPlugin extends Plugin {
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;
+			// Both configured folder sets resolve to the vault's real casing here, before any path is
+			// derived from them -- see resolveFolderCasing for why (issue #73).
+			const tagFolderMap = await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap);
+			// The per-tag modes and their print go to every device; the engine itself only to the one
+			// that runs it, and only with a backend that can (Intelligence Engine §9).
+			const intelligence = await prepareRun(hostEnvironmentFor(this.app, this.manifest, createNoteStore(this.app), moment), {
+				settings: this.data.intelligence,
+				tagFolderMap,
+				pro: intelligenceProAllowed(this.entitlement()),
+				transcriptionBackend: backend.id,
+				providerSettings: this.data.llmProviders,
+			});
 			const result = await runSync(
 				{
 					api: session.api,
-					// Both configured folder sets resolve to the vault's real casing here, before any
-					// path is derived from them -- see resolveFolderCasing for why (issue #73).
-					tagRouter: new TagRouter(await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap)),
+					tagRouter: new TagRouter(tagFolderMap, intelligence.modes),
+					intelligence: intelligence.hook,
+					modesFingerprint: intelligence.fingerprint,
 					noteStore: createNoteStore(this.app),
 					attachmentStore: createAttachmentStore(this.app.vault),
 					attachmentsFolder: await resolveFolderCasing(
@@ -745,6 +760,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Both of these used to be console-only while the notice still reported plain success. A
 			// stopped run's skips and failures are just as real as a completed one's.
 			if (speak) this.reportPartialOutcomes(result);
+			// What the engine has to say -- a pause, a page that keeps failing, pending proposals -- is
+			// said in a background run too: nobody else will ever tell the user.
+			for (const line of intelligenceNotices(intelligence.paused, result.intelligence)) new Notice(line);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");

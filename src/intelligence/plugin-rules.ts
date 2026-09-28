@@ -4,9 +4,18 @@
  * the engine, and which extraction backend it runs on (spec §9, §11).
  */
 
+import type { Entitlement } from "../licence-state";
 import type { TagModes } from "../tag-router";
 import type { ExtractionBackendEntry } from "./extraction-registry";
 import { type IntelligenceSettings, modesFor, type ProfileDef, type SlotDef, TASKS_FORMAT } from "./settings";
+
+/**
+ * The Intelligence Engine's Pro gate. Every Pro part of the engine -- tags beyond the free one, own and
+ * extra Slots, cloud extraction -- asks this and nothing else; each is a line in `proCapabilities()`.
+ */
+export function intelligenceProAllowed(entitlement: Entitlement): boolean {
+	return entitlement.tier !== "free";
+}
 
 /**
  * The one tag Intelligence Mode stays on for without Pro: the mapping switched on first, by

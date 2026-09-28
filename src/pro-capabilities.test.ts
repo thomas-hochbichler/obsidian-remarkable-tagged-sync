@@ -50,7 +50,10 @@ describe("the list the walk walks", () => {
 		expect(ids).toContain("ocr-backend:openrouter");
 		expect(ids).toContain("tag-mappings-beyond-the-first");
 		expect(ids).toContain("zotero-integration");
-		expect(ids.length).toBeGreaterThanOrEqual(6);
+		expect(ids).toContain("intelligence-beyond-the-first-tag");
+		expect(ids).toContain("intelligence-own-slots");
+		expect(ids).toContain("intelligence-cloud-extraction");
+		expect(ids.length).toBeGreaterThanOrEqual(9);
 	});
 
 	it("takes its membership from the declaration, never from the flag under test", () => {
