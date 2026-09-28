@@ -1401,3 +1401,132 @@
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "completeScans and sweepDeletedDocuments > marks scans done only for tags that are on, and orphans rows and prunes seen entries of deleted documents"
+
+- feature: V15
+  name: "TagRouter carries each mapped tag's modes"
+  code: src/tag-router.ts
+  tier: free
+  scenarios:
+    - id: V15.1
+      scenario: "A caller gives no modes"
+      expect: "Every mapped tag writes its transcript note, none extracts"
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "TagRouter > transcribes and does not extract a mapped tag when no modes are given, as before the Intelligence Engine"
+
+    - id: V15.2
+      scenario: "Modes are given; a tag is unmapped"
+      expect: "Modes apply to mapped tags only"
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "TagRouter > follows the modes it is given, but only for a tag that is mapped"
+
+- feature: V16
+  name: "The sync engine hands handwritten pages to the Intelligence Engine"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V16.1
+      scenario: "A tagged notebook is opened on the engine device"
+      expect: "Pages with ordinal, hash and modified stamp; one unit per tag (a page tag duplicating the notebook tag is not a second unit); the engine's failures reach diagnostics"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > hands a handwritten notebook's pages, stamps and units to the engine, and reports what it did"
+
+    - id: V16.2
+      scenario: "Transcript note on or off"
+      expect: "A page is transcribed once per sync; the engine reads only what no note read"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > gives the engine the page text the transcript note already read, and reads only what is missing"
+
+    - id: V16.3
+      scenario: "A Type Folio page"
+      expect: "Its typed text, no OCR call"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > reads a typed page from its text layer, never through OCR"
+
+    - id: V16.4
+      scenario: "One page comes back empty, one failed"
+      expect: "The empty text is kept; the failed page is left out and retries"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > keeps an empty page's empty text but leaves out a page the backend failed on"
+
+    - id: V16.5
+      scenario: "The backend throws"
+      expect: "No texts; the engine counts failed attempts"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > leaves a page the backend could not read out of the engine's texts"
+
+    - id: V16.6
+      scenario: "Only a page tag; a blank page; a legacy pages[] notebook"
+      expect: "Page-scope unit; null hash; legacy flag"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > hands over a page-tag-only notebook, a page with no ink file, and a legacy notebook without page stamps"
+
+    - id: V16.7
+      scenario: "Two documents give the same notice"
+      expect: "Said once"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > says a notice the engine gave for two documents once"
+
+    - id: V16.8
+      scenario: "Stop pressed after the transcript note"
+      expect: "The engine does not start; the run is stopped"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > stops between a notebook's transcript note and its page notes, leaving the pages for the next run"
+
+    - id: V16.9
+      scenario: "An EPUB is tagged"
+      expect: "Its digest note as always; no page notes"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > does not give annotated PDFs or EPUBs to the engine"
+
+    - id: V16.10
+      scenario: "A scan is due and nothing changed on the tablet"
+      expect: "Every document is opened; the scan is marked done at the end"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > opens every document while a switch-on scan is due, and marks the scan done only after the whole run"
+
+    - id: V16.11
+      scenario: "A run is stopped mid-way"
+      expect: "The modes print and scans stay old so the scan re-runs; seen entries are kept"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > keeps the previous modes print and scans when a run is stopped, but keeps what the engine recorded"
+
+    - id: V16.12
+      scenario: "A document is deleted"
+      expect: "Its page-note rows orphaned, seen entries pruned"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > sweeps the engine's rows and seen entries of a document gone from the tablet"
+
+    - id: V16.13
+      scenario: "Transcript off for a tag; the notebook changed"
+      expect: "No note written; row active; entry hash kept for a full round later"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > transcript notes switched off > writes no transcript note, orphans nothing, and keeps the row's entry hash so switching back on re-reads the notebook"
+
+    - id: V16.14
+      scenario: "The switched-off note was deleted"
+      expect: "The level-1 gate stays shut"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > transcript notes switched off > does not open anything for a switched-off note the user deleted"
+
+    - id: V16.15
+      scenario: "Only the per-tag modes changed"
+      expect: "A full scan; the new modes print is stored"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > transcript notes switched off > opens the level-1 gate when only the modes changed"
