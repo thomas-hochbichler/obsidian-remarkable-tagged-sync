@@ -2257,3 +2257,29 @@
       layer: engine
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > Intelligence Engine seam > gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off"
+
+- feature: V35
+  name: "The status bar says when the engine extracts"
+  code: src/status-model.ts
+  tier: free
+  scenarios:
+    - id: V35.1
+      scenario: "The engine is on page 2 of 3 of a notebook"
+      expect: "'Tagged Sync: extracting 2/3', the notebook in the detail, no transcription bar"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus while the Intelligence Engine extracts > counts the notebook's pages on its own, without the transcription bar"
+
+    - id: V35.2
+      scenario: "A notebook has two pages to extract"
+      expect: "1/2, then 2/2, before each extraction"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > says which page it is on before each extraction"
+
+    - id: V35.3
+      scenario: "The sync hands the engine a notebook"
+      expect: "Its progress is reported as the extracting phase, with the notebook's name"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > reports the engine's progress as its own phase, with the notebook's name"

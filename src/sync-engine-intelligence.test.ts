@@ -160,6 +160,15 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(result.index).toMatchObject({ intelligenceMappings: "modes-1", seenPages: { "doc-1:x:work": { pageHash: "h" } }, intelligenceRows: {} });
 	});
 
+	it("reports the engine's progress as its own phase, with the notebook's name", async () => {
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
+		const h = hook();
+		const progress: unknown[] = [];
+		await runSync({ ...deps(a), intelligence: h.value, onProgress: (p) => void progress.push(p) }, EMPTY_SYNC_INDEX);
+		h.docs[0].onProgress!(1, 2);
+		expect(progress.at(-1)).toEqual({ phase: "extracting", done: 1, total: 2, document: "Work log" });
+	});
+
 	it("gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }, { id: "p2" }]) }, { "doc-1": { p1: "h1", p2: "h2" } });
 		const on = hook();
