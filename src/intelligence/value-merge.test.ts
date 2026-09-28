@@ -22,6 +22,13 @@ describe("mergeValue", () => {
 		expect(mergeValue({ base: undefined, note: null, model: null, proposals: [], proposeFirst: true, newId: ids() })).toEqual({ base: null, write: undefined, proposals: [] });
 	});
 
+	it("keeps a first pick under review on the next run, follows the page's new pick, and drops it when the page has none", () => {
+		const pending: Proposal = { kind: "replace", id: "v1", text: "Alpha", value: "Alpha" };
+		expect(mergeValue({ base: null, note: null, model: "Alpha", proposals: [pending], proposeFirst: false, newId: ids() })).toEqual({ base: null, write: undefined, proposals: [pending] });
+		expect(mergeValue({ base: null, note: null, model: "Beta", proposals: [pending], proposeFirst: false, newId: ids() })).toEqual({ base: null, write: undefined, proposals: [{ kind: "replace", id: "v1", text: "Beta", value: "Beta" }] });
+		expect(mergeValue({ base: null, note: null, model: null, proposals: [pending], proposeFirst: false, newId: ids() })).toEqual({ base: null, write: undefined, proposals: [] });
+	});
+
 	it("follows the page while the user has not touched the value, and clears a stale proposal", () => {
 		const stale: Proposal = { kind: "replace", id: "p", text: "x" };
 		expect(mergeValue({ base: "gut", note: "gut", model: "ok", proposals: [stale], proposeFirst: false, newId: ids() })).toEqual({ base: "ok", write: "ok", proposals: [] });

@@ -33,6 +33,12 @@ export function mergeValue(input: { base: PropertyValue | null | undefined; note
 		if (input.proposeFirst && model !== null) return { base: null, write: undefined, proposals: replace() };
 		return { base: model, write: same(note, model) ? undefined : model, proposals: [] };
 	}
+	// A first pick still waiting for review: the page's value stays a proposal until the user decides,
+	// however often the page is read again (spec §7.4, research 15).
+	if (base === null && note === null && proposals.some((p) => p.kind === "replace")) {
+		if (model === null) return { base: null, write: undefined, proposals: proposals.filter((p) => p.kind !== "replace") };
+		return { base: null, write: undefined, proposals: replace() };
+	}
 	if (same(note, base)) return { base: model, write: same(note, model) ? undefined : model, proposals: proposals.filter((p) => p.kind !== "replace") };
 	if (same(model, base)) return { base, write: undefined, proposals: [...proposals] };
 	return { base, write: undefined, proposals: replace() };
