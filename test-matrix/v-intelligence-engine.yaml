@@ -179,3 +179,85 @@
       layer: unit
       file: src/intelligence/item-format.test.ts
       test: "compileItemFormat > rejects > a format without {{text}}"
+
+- feature: V3
+  name: Note lines are matched to base items without visible ids
+  code: src/intelligence/matcher.ts
+  tier: free
+  scenarios:
+    - id: V3.1
+      scenario: "A line differs from its item only in case, punctuation or spacing"
+      expect: "Same normalised text"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "normaliseText > ignores case, punctuation and spacing"
+
+    - id: V3.2
+      scenario: "A German line has umlauts"
+      expect: "They are letters, not punctuation"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "normaliseText > keeps letters with accents and umlauts"
+
+    - id: V3.3
+      scenario: "Two texts share all or none of their words"
+      expect: "1 or 0"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "similarity > is 1 for the same words in another order and 0 for no shared word"
+
+    - id: V3.4
+      scenario: "Both texts are empty"
+      expect: "0 -- NaN would slip past every threshold comparison"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "similarity > is 0 for two empty texts rather than NaN"
+
+    - id: V3.5
+      scenario: "Lines were reordered, a dot added"
+      expect: "Each finds its item by exact normalised text"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > matches lines whose text is unchanged up to case and punctuation"
+
+    - id: V3.6
+      scenario: "The user added two words to a task"
+      expect: "Still the same item (similarity >= 0.6)"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > matches a lightly edited line to its item"
+
+    - id: V3.7
+      scenario: "The user rewrote a task entirely"
+      expect: "A user line plus a tombstone -- nothing lost, nothing duplicated"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > reads a heavy rewrite as a user-added line and a deleted item"
+
+    - id: V3.8
+      scenario: "The user duplicated a line"
+      expect: "Only one line is the item; the copy is user-added"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > matches one to one, so two lines never claim the same item"
+
+    - id: V3.9
+      scenario: "Two lines resemble one item"
+      expect: "The closer line wins"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > gives an item to the most similar line first"
+
+    - id: V3.10
+      scenario: "Two lines match two items equally"
+      expect: "Position decides"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > breaks a tie by position"
+
+    - id: V3.11
+      scenario: "An exact match sits further away than a fuzzy one"
+      expect: "Exact wins"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > prefers an exact match over a closer position"
