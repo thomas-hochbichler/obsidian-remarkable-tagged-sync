@@ -56,6 +56,8 @@ export const FIELD_TYPES: Record<FieldType, FieldTypeRow> = {
 		resolve: (raw, _def, ctx) => {
 			if (typeof raw !== "object" || raw === null) return null;
 			const { words, rel } = raw as { words?: unknown; rel?: unknown };
+			// A local model's format pass writes the notes' "NONE" into the words (research 22): no date.
+			if (typeof words === "string" && /^none$/i.test(words.trim())) return null;
 			return resolveDue(typeof words === "string" ? words : null, DATE_RELS.includes(rel as DateRel) ? (rel as DateRel) : null, ctx.pageDate);
 		},
 	},

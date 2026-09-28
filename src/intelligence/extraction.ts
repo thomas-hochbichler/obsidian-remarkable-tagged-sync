@@ -60,9 +60,9 @@ export function buildSchema(slots: readonly SlotDef[]): Record<string, unknown> 
 	return { type: "object", properties, required: Object.keys(properties), additionalProperties: false };
 }
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function describeSlot(slot: SlotDef, known: readonly KnownItem[]): string {
+export function describeSlot(slot: SlotDef, known: readonly KnownItem[]): string {
 	const lines = [`### ${slot.id} (${slot.name}) — ${slot.shape}`, slot.instruction];
 	for (const field of slot.fields) lines.push(`- field \`${field.name}\`: ${field.type}${field.options?.length ? ` (one of: ${field.options.join(", ")})` : ""}`);
 	for (const example of slot.examples) lines.push(`${example.positive ? "Example" : "Not this"}: "${example.input}" → ${example.positive ? example.output : "nothing"}`);

@@ -75,21 +75,40 @@ describe("twoCallBackend", () => {
 		return { complete, requests };
 	}
 
-	it("writes free-text notes first, then formats them under the schema with the page beside them", async () => {
-		const { complete, requests } = scripted({ kind: "ok", text: "# tasks\n- Call Bob | SOURCE: call Bob | DUE: none | REASON: mine\n# summary\nA call." }, { kind: "ok", text: ANSWER });
+	it("writes free-text notes first, line by line, then formats them under the schema with the page beside them", async () => {
+		const { complete, requests } = scripted({ kind: "ok", text: "call Bob => TASK\n\n## tasks\n- Call Bob | SOURCE: call Bob | due: NONE\n## summary\nA call." }, { kind: "ok", text: ANSWER });
 		const outcome = await twoCallBackend("local", false, complete).extract(INPUT);
 		expect(outcome).toMatchObject({ kind: "ok", result: { slots: { tasks: { items: [{ text: "Call Bob" }] } } } });
 		expect(requests.map((r) => [r.schema === null, r.maxTokens])).toEqual([
-			[true, 2000],
+			[true, 3000],
 			[false, 4000],
 		]);
-		expect(requests[0].user).toContain("SOURCE: <words copied from the page>");
-		expect(requests[1].user).toContain("## Notes\n# tasks\n- Call Bob");
-		expect(requests[1].user.endsWith("call Bob")).toBe(true);
+		// Research 22's pass 1: the line pass, started for the model, then one heading per Slot.
+		expect(requests[0].prefill).toBe("LINES:\n");
+		expect(requests[0].system).toContain("Profile: Generic: Any handwritten page.");
+		expect(requests[0].system).toContain("Page date: Monday, 2026-09-28.");
+		expect(requests[0].system).toContain('Step 1. Write "LINES:"');
+		expect(requests[0].system).toContain('Under "## tasks" write one line per line you marked TASK: "- <text> | SOURCE: <the transcript line, copied exactly> | due: <date words as written, or NONE>".');
+		expect(requests[0].system).toContain('Under "## summary" write one or two sentences.');
+		expect(requests[0].user).toBe("Transcript:\n<<<\ncall Bob\n>>>");
+		// Pass 2 sees the notes from the first heading on, not the line verdicts.
+		expect(requests[1].user).toBe("Notes:\n## tasks\n- Call Bob | SOURCE: call Bob | due: NONE\n## summary\nA call.\n\nOriginal transcript (for verbatim source spans):\n<<<\ncall Bob\n>>>");
+		expect(requests[1].system).toContain("Slot definitions:\n### tasks (Tasks)");
+	});
+
+	it("asks for no line pass without a tasks Slot, and lists items and values per Slot", async () => {
+		const [, DECISIONS, , TAGS] = defaultSlots();
+		const { complete, requests } = scripted({ kind: "ok", text: "## decisions\nNONE\n## tags\nNONE" });
+		const owned = { ...DECISIONS, fields: [{ name: "owner", type: "text" as const }] };
+		await twoCallBackend("local", false, complete).extract({ ...INPUT, slots: [owned, { ...TAGS, property: undefined }] });
+		expect(requests[0].prefill).toBeUndefined();
+		expect(requests[0].system).not.toContain("LINES");
+		expect(requests[0].system).toContain('Under "## decisions" write one line per item: "- <text> | SOURCE: <the transcript line, copied exactly> | owner: <value, or NONE>".');
+		expect(requests[0].system).toContain('Under "## tags" write the value.');
 	});
 
 	it("skips the format pass when the notes found nothing, so a small model cannot invent items there", async () => {
-		const { complete, requests } = scripted({ kind: "ok", text: "tasks:\nNONE\n\n## summary\n- none" });
+		const { complete, requests } = scripted({ kind: "ok", text: "call Bob => NO\n## tasks\nNONE\n\n## summary\n- none" });
 		expect(await twoCallBackend("local", false, complete).extract(INPUT)).toMatchObject({ kind: "ok", result: { slots: { tasks: { items: [] }, summary: { text: "" } } } });
 		expect(requests).toHaveLength(1);
 	});
@@ -132,11 +151,13 @@ describe("openAiCompatComplete", () => {
 		});
 	});
 
-	it("sends temperature 0 and no auth or schema to the user's own server when asked for free text", async () => {
+	it("sends temperature 0 and no auth or schema to the user's own server when asked for free text, and a prefill as the assistant's turn", async () => {
 		const { fn, calls } = fakeFetch(() => chat("free text"));
 		await openAiCompatComplete({ baseURL: "http://localhost:8080/v1", model: "m", deterministic: true, fetchFn: fn })({ ...request, schema: null });
 		expect(calls[0].body).toEqual({ model: "m", messages: expect.any(Array), max_tokens: 4000, temperature: 0 });
 		expect(calls[0].init.headers).toEqual({ "content-type": "application/json" });
+		await openAiCompatComplete({ baseURL: "http://localhost:8080/v1", model: "m", fetchFn: fn })({ ...request, prefill: "LINES:\n" });
+		expect((calls[1].body as { messages: unknown[] }).messages.at(-1)).toEqual({ role: "assistant", content: "LINES:\n" });
 	});
 
 	it("goes through Obsidian's requestUrl wrapper when no fetch is injected, never the global fetch", async () => {
