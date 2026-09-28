@@ -1563,3 +1563,29 @@
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
       test: "notesAreEmpty > treats a one-word item as a find, not as a heading"
+
+- feature: V18
+  name: "Extraction backends are registered per provider"
+  code: src/intelligence/extraction-registry.ts
+  tier: free
+  scenarios:
+    - id: V18.1
+      scenario: "A cloud provider is registered"
+      expect: "Metered, Pro, one call; nothing without a key; the Profile's model overrides the provider's"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "compatExtractionEntry > makes a cloud provider a metered, Pro, one-call backend that needs a key"
+
+    - id: V18.2
+      scenario: "The user's own server is registered"
+      expect: "Free, marked unmeasured, two calls; nothing without a URL"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "compatExtractionEntry > makes the user's own server a free, unmeasured two-call backend, and needs a URL"
+
+    - id: V18.3
+      scenario: "Backends are registered"
+      expect: "Found by id"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "the registry > keeps entries by id, in registration order"

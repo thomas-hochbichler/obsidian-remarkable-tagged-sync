@@ -10,6 +10,7 @@ import { visionOnly } from "../src/localhost-vision-detect";
 // In `src/` since the free build gained the localhost providers (free-localhost-ocr spec §2). Same
 // class, same requests; only `metered` changed where it is derived from.
 import { OpenAiCompatOcrBackend } from "../src/openai-compat-ocr-backend";
+import { compatExtractionEntry, registerExtractionBackend } from "../src/intelligence/extraction-registry";
 
 /**
  * Selects the adapter for one run (multi-provider spec §6). The asymmetry is deliberate: a missing
@@ -225,6 +226,11 @@ function renderProviderSettings(meta: ProviderMeta, containerEl: HTMLElement, ct
 
 // Registered in the dropdown order fixed by PROVIDERS (spec §2 / §5), after the free backends.
 for (const meta of Object.values(PROVIDERS)) {
+	// Cloud extraction (Intelligence Engine §6, §11). The user's own servers register in src/, and the
+	// native Anthropic adapter has no extraction backend: only the OpenRouter path is measured.
+	if (meta.kind === "cloud" && meta.adapter === "openai-compat") {
+		registerExtractionBackend(compatExtractionEntry({ ...meta, resolve: (settings) => resolveProviderEndpoint(meta, settings) }));
+	}
 	registerOcrBackend({
 		id: meta.id,
 		label: meta.label,
