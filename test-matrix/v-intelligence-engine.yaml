@@ -2337,3 +2337,64 @@
       layer: unit
       file: src/intelligence/frontmatter-values.test.ts
       test: "writeProperty > removes a key with null, and gives a note without a block one only when there is something to write"
+
+- feature: V37
+  name: "Value Slots and tags merge without overwriting the user"
+  code: src/intelligence/value-merge.ts
+  tier: pro
+  scenarios:
+    - id: V37.1
+      scenario: "First value of a Slot"
+      expect: "Written directly"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > writes the first value directly, and nothing when the note already says it"
+
+    - id: V37.2
+      scenario: "A local model picks a topical Choice first"
+      expect: "A proposal, not a write (position bias)"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > proposes a first topical pick of a local model instead of writing it, and writes nothing for no pick"
+
+    - id: V37.3
+      scenario: "The value is untouched since the base"
+      expect: "It follows the page, also to empty"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > follows the page while the user has not touched the value, and clears a stale proposal"
+
+    - id: V37.4
+      scenario: "The user edited the value"
+      expect: "Kept; one Replace proposal"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > keeps a value the user edited and proposes a new one once; proposes nothing when the page says what it said"
+
+    - id: V37.5
+      scenario: "The page brings tags"
+      expect: "Added beside the user's and the plugin's; tracked as the engine's"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > adds the page's tags beside the user's and remembers which are the engine's"
+
+    - id: V37.6
+      scenario: "The page drops a tag"
+      expect: "Only the engine's own tag leaves"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > removes only its own tags when the page drops them, never the user's or the plugin's"
+
+    - id: V37.7
+      scenario: "The user removed an engine tag"
+      expect: "Never added again"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > buries a tag of its own the user removed and never adds it again"
+
+    - id: V37.8
+      scenario: "Same tags again"
+      expect: "No write"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > changes nothing when the page says what it said"
