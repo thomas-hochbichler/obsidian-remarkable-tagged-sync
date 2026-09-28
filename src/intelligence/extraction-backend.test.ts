@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { OcrTimeoutError } from "../llm-transcript";
 import { calendarDay } from "./dates";
-import { type Complete, oneCallBackend, openAiCompatComplete } from "./extraction-backend";
+import { type Complete, type CompletionRequest, type CompletionOutcome, notesAreEmpty, oneCallBackend, openAiCompatComplete, twoCallBackend } from "./extraction-backend";
 import { defaultSlots, genericProfile } from "./settings";
 
 const viaObsidian = vi.hoisted(() => vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), { status: 200 })));
@@ -39,6 +39,52 @@ describe("oneCallBackend", () => {
 		expect(await oneCallBackend("x", true, async () => ({ kind: "truncated" })).extract(INPUT)).toEqual({ kind: "failed", reason: "The answer was cut off at the token limit." });
 		expect(await oneCallBackend("x", true, async () => ({ kind: "failed", reason: "no" })).extract(INPUT)).toEqual({ kind: "failed", reason: "no" });
 		expect(await oneCallBackend("x", true, async () => ({ kind: "ok", text: "Sure! Here are the tasks" })).extract(INPUT)).toMatchObject({ kind: "failed" });
+	});
+});
+
+describe("twoCallBackend", () => {
+	function scripted(...answers: CompletionOutcome[]) {
+		const requests: CompletionRequest[] = [];
+		const complete: Complete = async (request) => {
+			requests.push(request);
+			return answers.shift()!;
+		};
+		return { complete, requests };
+	}
+
+	it("writes free-text notes first, then formats them under the schema with the page beside them", async () => {
+		const { complete, requests } = scripted({ kind: "ok", text: "# tasks\n- Call Bob | SOURCE: call Bob | DUE: none | REASON: mine\n# summary\nA call." }, { kind: "ok", text: ANSWER });
+		const outcome = await twoCallBackend("local", false, complete).extract(INPUT);
+		expect(outcome).toMatchObject({ kind: "ok", result: { slots: { tasks: { items: [{ text: "Call Bob" }] } } } });
+		expect(requests.map((r) => [r.schema === null, r.maxTokens])).toEqual([
+			[true, 2000],
+			[false, 4000],
+		]);
+		expect(requests[0].user).toContain("SOURCE: <words copied from the page>");
+		expect(requests[1].user).toContain("## Notes\n# tasks\n- Call Bob");
+		expect(requests[1].user.endsWith("call Bob")).toBe(true);
+	});
+
+	it("skips the format pass when the notes found nothing, so a small model cannot invent items there", async () => {
+		const { complete, requests } = scripted({ kind: "ok", text: "tasks:\nNONE\n\n## summary\n- none" });
+		expect(await twoCallBackend("local", false, complete).extract(INPUT)).toMatchObject({ kind: "ok", result: { slots: { tasks: { items: [] }, summary: { text: "" } } } });
+		expect(requests).toHaveLength(1);
+	});
+
+	it("fails on a cut-off or failed pass and on an answer that is not JSON", async () => {
+		const notes: CompletionOutcome = { kind: "ok", text: "- Call Bob | SOURCE: call Bob" };
+		expect(await twoCallBackend("l", false, scripted({ kind: "truncated" }).complete).extract(INPUT)).toEqual({ kind: "failed", reason: "The notes pass was cut off at the token limit." });
+		expect(await twoCallBackend("l", false, scripted({ kind: "failed", reason: "down" }).complete).extract(INPUT)).toEqual({ kind: "failed", reason: "down" });
+		expect(await twoCallBackend("l", false, scripted(notes, { kind: "truncated" }).complete).extract(INPUT)).toEqual({ kind: "failed", reason: "The answer was cut off at the token limit." });
+		expect(await twoCallBackend("l", false, scripted(notes, { kind: "failed", reason: "oom" }).complete).extract(INPUT)).toEqual({ kind: "failed", reason: "oom" });
+		expect(await twoCallBackend("l", false, scripted(notes, { kind: "ok", text: "tasks: Call Bob" }).complete).extract(INPUT)).toMatchObject({ kind: "failed" });
+	});
+});
+
+describe("notesAreEmpty", () => {
+	it("treats a one-word item as a find, not as a heading", () => {
+		expect(notesAreEmpty("- Milk", ["tasks"])).toBe(false);
+		expect(notesAreEmpty("Tasks:\n- NONE.", ["tasks"])).toBe(true);
 	});
 });
 
