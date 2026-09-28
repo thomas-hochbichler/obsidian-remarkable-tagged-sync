@@ -36,8 +36,8 @@ describe("renderTemplate", () => {
 		);
 	});
 
-	it("leaves an unknown placeholder as written so a typo shows, and fills an empty Slot with nothing", () => {
-		expect(renderTemplate("{{ts.taks}}|{{ts.summary}}|{{other}}", values)).toBe("{{ts.taks}}||{{other}}");
+	it("fills a Slot the Profile does not run, or one with nothing extracted, with nothing, and leaves other braces alone", () => {
+		expect(renderTemplate("{{ts.decisions}}|{{ts.summary}}|{{other}}", values)).toBe("||{{other}}");
 	});
 });
 

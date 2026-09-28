@@ -923,11 +923,11 @@
       test: "renderTemplate > fills ts variables and the core title, date and time, with formats"
 
     - id: V9.5
-      scenario: "A misspelt ts placeholder and an empty Slot"
-      expect: "The typo stays visible; the empty Slot fills with nothing"
+      scenario: "The template places a Slot this Profile does not run, and one with nothing extracted"
+      expect: "Both fill with nothing, leaving an empty region the Slot can adopt later; other braces stay"
       layer: unit
       file: src/intelligence/template.test.ts
-      test: "renderTemplate > leaves an unknown placeholder as written so a typo shows, and fills an empty Slot with nothing"
+      test: "renderTemplate > fills a Slot the Profile does not run, or one with nothing extracted, with nothing, and leaves other braces alone"
 
     - id: V9.6
       scenario: "Create template writes a starter"
@@ -1146,3 +1146,134 @@
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
       test: "openAiCompatComplete > goes through Obsidian's requestUrl wrapper when no fetch is injected, never the global fetch"
+
+- feature: V13
+  name: "One page through the engine: create from the template, or merge into the user's note"
+  code: src/intelligence/page-engine.ts
+  tier: free
+  scenarios:
+    - id: V13.1
+      scenario: "A page gets its first note"
+      expect: "The template filled with Slots, dates and page link; regions recorded"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > renders the template with every Slot, the page's dates and link, and records the regions in the base"
+
+    - id: V13.2
+      scenario: "The template lacks one Slot and places another inline"
+      expect: "Missing Slot gets a heading at the end; the inline one is settled"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > gives a Slot the template does not place its own heading at the end, and settles one filled inline"
+
+    - id: V13.3
+      scenario: "No written date, no first-seen stamp"
+      expect: "The sync day names the note; date variables stay empty"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > names the note after the sync day when the page has neither a written date nor a first-seen stamp"
+
+    - id: V13.4
+      scenario: "A task is ticked on the page at the first extraction"
+      expect: "Written as [x]"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > writes a task already ticked on the page as ticked"
+
+    - id: V13.5
+      scenario: "The Profile holds a Value Slot"
+      expect: "Not sent to the model in phase 1"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > skips Value Slots, which are frontmatter and come in phase 2"
+
+    - id: V13.6
+      scenario: "Extraction fails repeatedly, then the page changes"
+      expect: "Transcript kept; attempts count up, reset on a new hash; no note"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a failed extraction > keeps the transcript in the base and counts attempts per page hash"
+
+    - id: V13.7
+      scenario: "The same answer again"
+      expect: "No write at all"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > changes nothing when the page says what it said"
+
+    - id: V13.8
+      scenario: "A new task appears, review on; the user added a line"
+      expect: "A proposal and a callout; the user's line stays"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > proposes a new task under review and puts the callout under the heading, leaving the user's lines alone"
+
+    - id: V13.9
+      scenario: "Review off; summary never edited"
+      expect: "Task inserted; summary replaced"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > applies a new task directly with review off and replaces an untouched summary"
+
+    - id: V13.10
+      scenario: "The user renamed the Tasks heading"
+      expect: "Found again by its items; the new name is remembered"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > follows a renamed heading and keeps its new name in the base"
+
+    - id: V13.11
+      scenario: "The user deleted a Slot's heading and body"
+      expect: "Nothing written there; reported for a notice; base kept"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > writes nothing into a region it cannot find, and reports it"
+
+    - id: V13.12
+      scenario: "A Slot is added to the Profile"
+      expect: "Its region goes right after the preceding Slot's; deleted again, it stays deleted"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adds a Slot new to the Profile right after the region before it, once"
+
+    - id: V13.13
+      scenario: "A new Slot comes first in the Profile, another is inline in the template"
+      expect: "Appended at the end; the inline one settled without a write"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > appends a new Slot at the end when no earlier Slot has a region, and settles one the template places inline"
+
+    - id: V13.14
+      scenario: "A new Summary with nothing to say"
+      expect: "A bare heading"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adds a new Summary Slot the template does not place as a bare heading when there is nothing to say"
+
+    - id: V13.15
+      scenario: "The note already has the new Slot's empty template heading"
+      expect: "That heading is used; no second one"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adopts the empty template heading a newly added Slot already has in the note"
+
+    - id: V13.16
+      scenario: "The user wrote under that heading"
+      expect: "Their lines and text stay; the model's output becomes proposals"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > never overwrites what the user wrote under a heading a newly added Slot adopts"
+
+    - id: V13.17
+      scenario: "The adopted task heading is empty"
+      expect: "Written directly like a first extraction"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adopts an empty task heading by writing the page's tasks directly"
+
+    - id: V13.18
+      scenario: "A page is re-extracted"
+      expect: "The model sees each known item with its id"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > passes the base's items with their ids to the model"
