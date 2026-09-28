@@ -2191,3 +2191,43 @@
       layer: vault
       file: src/intelligence-plugin.test.ts
       test: "the review in the running plugin > runs Re-run extraction on the note on screen, and says why when this device does not extract"
+
+- feature: V33
+  name: "Page notes follow a renamed tag and a re-targeted mapping"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V33.1
+      scenario: "A mapped tag is renamed on the tablet"
+      expect: "Row and seen entry move to the new key; the note stays, keeps its id, and is updated from then on"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > moves the row and seen entry to the new tag, keeps the note and its id, and takes the new mapping's folder"
+
+    - id: V33.2
+      scenario: "The row has no seen entry"
+      expect: "It still moves"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > moves a row that lost its seen entry too"
+
+    - id: V33.3
+      scenario: "A page seen but never noted is renamed; later two tags replace one"
+      expect: "The seen entry moves; two new tags are no rename"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > does not read two new tags as a rename, and moves a seen-only page too"
+
+    - id: V33.4
+      scenario: "A mapping is re-targeted in settings"
+      expect: "Notes inside the old folder move with their notebook subfolder (suffix on collision); a note the user sorted away stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "followRetargets > moves a page note still inside the old folder into the new one, keeping its notebook subfolder, and leaves a sorted-away note"
+
+    - id: V33.5
+      scenario: "The mapping points at the vault root, or is gone"
+      expect: "Moved to the root; an unmapped tag's note stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "followRetargets > moves a note to the vault root when the mapping points there, and skips a tag that is no longer mapped"

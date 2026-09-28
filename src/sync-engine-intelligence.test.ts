@@ -98,6 +98,7 @@ function hook(options: { due?: string[]; read?: boolean } = {}) {
 	const texts: Map<string, string>[] = [];
 	const renders: string[] = [];
 	const completed = vi.fn((state: IntelligenceState) => void (state.scans.work = "enabled-1"));
+	const before = vi.fn(async () => {});
 	const value: IntelligenceHook = {
 		fingerprint: "modes-1",
 		scansDue: () => options.due ?? [],
@@ -111,8 +112,9 @@ function hook(options: { due?: string[]; read?: boolean } = {}) {
 			return { ...emptyReport(), notesWritten: 1, failures: ["page 1: slow"] };
 		},
 		completeScans: completed,
+		beforeRun: before,
 	};
-	return { value, docs, texts, renders, completed };
+	return { value, docs, texts, renders, completed, before };
 }
 
 function deps(a: SyncApi, overrides: Record<string, unknown> = {}) {
@@ -138,6 +140,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		const result = await runSync({ ...deps(a), tagRouter: router, intelligence: h.value, modesFingerprint: "modes-1" }, EMPTY_SYNC_INDEX);
 
 		expect(h.docs).toHaveLength(1);
+		expect(h.before).toHaveBeenCalledTimes(1);
 		expect(h.docs[0]).toMatchObject({
 			docId: "doc-1",
 			name: "Work log",

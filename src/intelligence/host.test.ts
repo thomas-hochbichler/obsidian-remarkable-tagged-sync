@@ -121,6 +121,7 @@ describe("prepareRun", () => {
 		expect(hook.fingerprint).toBe(run.fingerprint);
 		expect(hook.scansDue({})).toEqual(["work"]);
 		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: {} };
+		await hook.beforeRun(state);
 		hook.completeScans(state);
 		expect(state.scans).toEqual({ work: "2026-09-01T00:00:00.000Z" });
 		// A document with nothing new costs no call and writes no base.
