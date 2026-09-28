@@ -1946,3 +1946,36 @@
       layer: unit
       file: src/intelligence/host.test.ts
       test: "reviewStoresFor > reads bases from the plugin folder and notes through the vault, with short item ids"
+
+- feature: V26
+  name: "A rename in the vault is followed for page notes and templates"
+  code: src/intelligence/vault-follow.ts
+  tier: free
+  scenarios:
+    - id: V26.1
+      scenario: "The user moves a page note"
+      expect: "Its row follows; nothing else changes"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > follows a moved page note and leaves the rest as it was"
+
+    - id: V26.2
+      scenario: "The user renames the mapped folder"
+      expect: "Transcript and page-note rows follow together"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > follows a renamed folder for transcript notes and page notes at once"
+
+    - id: V26.3
+      scenario: "The user renames a Profile's template"
+      expect: "The Profile follows; an older index is untouched"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > follows a renamed template, and keeps an index written before page notes existed as it was"
+
+    - id: V26.4
+      scenario: "An unrelated file is renamed"
+      expect: "Nothing is saved"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > is null when the rename touched nothing the plugin keeps"
