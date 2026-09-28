@@ -34,7 +34,12 @@ export function markForRereading(index: SyncIndex, notePath: string): RerunOutco
 	const seen = index.seenPages?.[row.syncKey];
 	return {
 		message: "The page is read again on the next sync, and its note updated from it.",
-		index: { ...index, seenPages: { ...index.seenPages, [row.syncKey]: { scope: row.scope, firstSeen: seen?.firstSeen ?? null, noteId: row.noteId, pageHash: null } } },
+		index: {
+			...index,
+			seenPages: { ...index.seenPages, [row.syncKey]: { scope: row.scope, firstSeen: seen?.firstSeen ?? null, noteId: row.noteId, pageHash: null } },
+			// Nothing changes on the tablet, so the document has to be named for the next sync to open it.
+			intelligencePending: [...new Set([...(index.intelligencePending ?? []), row.docId])],
+		},
 	};
 }
 

@@ -224,6 +224,12 @@ export interface SyncIndex {
 	intelligenceMappings?: string;
 	/** Per tag, the `enabledAt` whose switch-on scan a completed run finished. */
 	intelligenceScans?: Record<string, string>;
+	/**
+	 * Documents with page-note work still owed: the engine did not run on them (another device, no
+	 * consent in a background sync), a page failed, or a page note was marked to be read again. Nothing
+	 * on the tablet changes for any of these, so without this list no sync would ever open them again.
+	 */
+	intelligencePending?: string[];
 }
 
 export const EMPTY_SYNC_INDEX: SyncIndex = { rootHash: null, rows: {} };
@@ -1575,12 +1581,12 @@ async function needsDocumentOpen(
 	tagRouter: TagRouter,
 	entry: Entry,
 	entryAndInheritedTags: string[],
-	scanDue = false,
+	forceOpen = false,
 ): Promise<boolean> {
 	// A due switch-on scan opens every document: page tags sit inside the unread `.content`, so which
 	// documents carry an Intelligence-mapped tag is not knowable here. One `getContent` and one file
 	// listing per document, no render and no OCR (spec §3.1).
-	if (scanDue) return true;
+	if (forceOpen) return true;
 	if (findEntryHash(rows, entry.id) !== entry.hash) return true;
 	return (
 		hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) ||
@@ -1820,7 +1826,7 @@ async function scanWorkload(
 	entriesById: ReadonlyMap<string, Entry>,
 	report: (progress: SyncProgress) => void,
 	shouldStop: () => boolean,
-	scanDue: boolean,
+	forceOpen: (docId: string) => boolean,
 ): Promise<Workload> {
 	const { api, tagRouter } = deps;
 	const unreadable = new Map<string, string>();
@@ -1831,7 +1837,7 @@ async function scanWorkload(
 	for (const entry of documents) {
 		if (shouldStop()) return { total: 0, unreadable, stopped: true };
 		const tags = entryAndInheritedTagNames(entry, entriesById);
-		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags, scanDue)) candidates.push({ entry, tags });
+		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags, forceOpen(entry.id))) candidates.push({ entry, tags });
 	}
 
 	let checked = 0;
@@ -1946,6 +1952,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const scansDue = intelligence?.scansDue(previousIndex.intelligenceScans ?? {}) ?? [];
 	// Only a scan that opens every document may be marked done: a page not opened was not stamped.
 	const scanDue = scansDue.length > 0;
+	const pending = new Set(previousIndex.intelligencePending ?? []);
+	/** A due scan opens every document; owed page-note work opens its own, once the engine can run. */
+	const forceOpen = (docId: string) => scanDue || (intelligence !== undefined && pending.has(docId));
+	// A document the run could not read leaves the scan unfinished: its pages were never stamped.
+	let everyDocumentRead = true;
 	// The stale-render check has to happen here too, not just per doc: nothing on the device changes
 	// when the renderer does, so an unchanged root hash would otherwise return before any doc is
 	// even looked at, and notes rendered by an older version would never be corrected. The mappings
@@ -1957,6 +1968,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		mappings === previousIndex.mappings &&
 		modesFingerprint === (previousIndex.intelligenceMappings ?? EMPTY_INTELLIGENCE_FINGERPRINT) &&
 		!scanDue &&
+		!(intelligence !== undefined && pending.size > 0) &&
 		!staleRenders &&
 		!(await hasMissingActiveNote(deps.noteStore, tagRouter, previousIndex.rows))
 	) {
@@ -1980,6 +1992,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		intelligenceRows: { ...intelligenceState.rows },
 		intelligenceMappings,
 		intelligenceScans: scans === undefined ? undefined : { ...scans },
+		intelligencePending: [...pending],
 	});
 	let notesWritten = 0;
 	let unavailableOcrUnits = 0;
@@ -2062,7 +2075,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const documents = entries.filter((entry) => entry.type === "DocumentType" && !isInTrash(entry, entriesById));
 	documentIds = documents.map((entry) => entry.id);
 
-	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop, scanDue);
+	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop, forceOpen);
+	if (workload.unreadable.size > 0) everyDocumentRead = false;
 	// Nothing has been written yet, so there is nothing to checkpoint -- but the caller still has to
 	// hear that this run was stopped rather than finished.
 	if (workload.stopped) return stopHere();
@@ -2081,7 +2095,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// The scan already failed to read this one, and said so. Trying again would report it twice.
 		if (workload.unreadable.has(entry.id)) continue;
-		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags, scanDue))) continue; // level 2
+		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags, forceOpen(entry.id)))) continue; // level 2
 
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
@@ -2089,6 +2103,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		} catch (error) {
 			console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during sync, skipping`, error);
 			skipErrors.push(`failed to read "${entry.visibleName}" during sync: ${errorText(error)}`);
+			everyDocumentRead = false;
 			skippedDocIds.add(entry.id);
 			continue;
 		}
@@ -2097,7 +2112,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// Nothing mapped now, and nothing previously active to potentially orphan -- truly nothing to do.
 		const hasPreviouslyActiveRow = hasRowWithStatus(rows, entry.id, "active");
-		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow) continue;
+		// Page notes whose tag just left the notebook are the engine's to orphan.
+		const hasPageNotes = Object.values(intelligenceState.rows).some((row) => row.docId === entry.id && row.status === "active");
+		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow && !hasPageNotes) continue;
 
 		// A PDF-backed doc's pages are a source PDF with handwritten annotations layered on top. The
 		// render composites the two: each page shows the source page with its `.rm` annotation scene
@@ -2480,7 +2497,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		for (const row of Object.values(rows)) if (row.docId === entry.id && isTranscriptOff(tagRouter, row.tag)) untouchedKeys.add(row.syncKey);
 
 		// The Intelligence Engine: handwritten notebooks only; annotated PDFs and EPUBs (both `pdfBacked`) keep the digest.
-		if (intelligence !== undefined && !pdfBacked && (mapped.notebook.length > 0 || mapped.page.length > 0)) {
+		// A handwritten notebook with a page-note tag, or with page notes whose tag just left it (so they
+		// are orphaned). Owed when the engine cannot run here: another device, or no background consent.
+		const engineTags = [...mapped.notebook, ...mapped.page.map((pageTag) => pageTag.name)];
+		if (intelligence === undefined && !pdfBacked && (engineTags.some((tag) => tagRouter.extracts(tag)) || hasPageNotes)) pending.add(entry.id);
+		// The hook decides per unit which tags extract; it only needs every mapped notebook.
+		if (intelligence !== undefined && !pdfBacked && (engineTags.length > 0 || hasPageNotes)) {
 			if (shouldStop()) return stopHere();
 			const cPages = new Map((content.cPages?.pages ?? []).map((page) => [page.id, page]));
 			const notebookUnits = mapped.notebook.map((tag) => ({ tag, scope: "notebook" as const, pageIds: pageOrder }));
@@ -2510,6 +2532,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				intelligenceState,
 			);
 			mergeReport(intelligenceReport, pass);
+			// A page that failed retries on the next sync, not when the notebook next changes (spec §9).
+			if (pass.failures.some((line) => line.startsWith("page "))) pending.add(entry.id);
+			else pending.delete(entry.id);
 		}
 
 		// Bump entryHash on any of this doc's rows we didn't touch this round (e.g. a page-tag row
@@ -2544,7 +2569,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 	sweepDeletedDocuments(intelligenceState, liveDocIds);
-	if (scanDue) intelligence!.completeScans(intelligenceState);
+	if (scanDue && everyDocumentRead) intelligence!.completeScans(intelligenceState);
+	for (const docId of pending) if (!liveDocIds.has(docId)) pending.delete(docId);
 
 	return {
 		index: indexWith(rootHash, mappings, modesFingerprint, intelligenceState.scans),

@@ -2157,7 +2157,7 @@
       expect: "Its seen hash is cleared, the note id kept"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "markForRereading and isPageNote > clears the seen hash of a page note, keeping its id; says so for any other note"
+      test: "markForRereading and isPageNote > clears the seen hash of a page note, keeping its id, and owes its notebook to the next sync; says so for any other note"
 
 - feature: V32
   name: "The page-note commands in the palette"
@@ -2788,3 +2788,48 @@
       layer: unit
       file: src/intelligence/host.test.ts
       test: "prepareRun > runs only the free tag's pages without Pro, though the others stay switched on in the settings"
+
+- feature: V46
+  name: "Owed page-note work reopens its notebook"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V46.1
+      scenario: "A page failed last run; nothing changed on the tablet"
+      expect: "The notebook is opened again; it stays owed while a page fails and leaves the list once all pages pass"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > reopens a document with owed page-note work on an unchanged tablet, and keeps it owed while a page fails"
+
+    - id: V46.2
+      scenario: "The engine cannot run here (another device, no consent)"
+      expect: "An extracting notebook is owed to a later run; a transcript-only one is not; a deleted document leaves the list"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > owes an extracting notebook to the next run the engine can do, and drops a document gone from the tablet"
+
+    - id: V46.3
+      scenario: "The last Intelligence tag is removed from a notebook with page notes"
+      expect: "The engine still gets the notebook, with no units, so it can orphan the page notes"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > hands the engine a notebook whose last Intelligence tag left, so its page notes are orphaned"
+
+    - id: V46.4
+      scenario: "A switch-on scan runs and one document cannot be read"
+      expect: "The scan is not marked done, so the next sync scans again"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > leaves a switch-on scan unfinished when a document could not be read"
+
+- feature: V47
+  name: "A second read failing leaves the switch-on scan open"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V47.1
+      scenario: "A document reads in the scan but fails when the run opens it"
+      expect: "The failure is reported and the scan is not marked done"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > leaves a switch-on scan unfinished when a document read in the scan fails when the run reads it again"
