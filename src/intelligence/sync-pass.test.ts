@@ -380,6 +380,61 @@ describe("processDocument > frontmatter (Pro)", () => {
 	});
 });
 
+describe("processDocument > choosing among a tag's Profiles", () => {
+	const two = (): IntelligenceSettings => {
+		const s = settings();
+		return {
+			...s,
+			mappings: { work: { ...s.mappings.work, profiles: ["meeting", "journal"] } },
+			profiles: [
+				{ id: "meeting", name: "Meeting", description: "Meeting notes", template: null, slots: ["tasks"] },
+				{ id: "journal", name: "Journal", description: "Personal journal", template: null, slots: ["summary"] },
+			],
+		};
+	};
+	const classifying = (pick: "journal" | "fail"): ExtractionBackend => ({
+		...reader(),
+		classify: async () => (pick === "fail" ? { kind: "failed", reason: "down" } : { kind: "ok", id: pick }),
+	});
+
+	it("lets the classifier pick the Profile of a new page, and freezes it for the page", async () => {
+		const state = fresh();
+		const d = deps(memory(), { settings: two(), pro: true, backend: classifying("journal") });
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		expect(state.rows["d1:p3:work"].profileId).toBe("journal");
+		completeScans(d.settings, MAP, ["work"], state);
+		await processDocument({ ...d, backend: classifying("fail") }, doc([page("p3", 3, "h3b", AFTER + 1)], { p3: "todo Call" }), state);
+		expect(state.rows["d1:p3:work"].profileId).toBe("journal");
+	});
+
+	it("skips a listed Profile that was deleted, and asks nobody when one is left", async () => {
+		const s = two();
+		const state = fresh();
+		await processDocument(deps(memory(), { settings: { ...s, mappings: { work: { ...s.mappings.work, profiles: ["gone", "journal"] } } }, pro: true, backend: classifying("fail") }), doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		expect(state.rows["d1:p3:work"].profileId).toBe("journal");
+	});
+
+	it("takes the first Profile when the pick fails, and says so", async () => {
+		const state = fresh();
+		const report = await processDocument(deps(memory(), { settings: two(), pro: true, backend: classifying("fail") }), doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		expect(state.rows["d1:p3:work"].profileId).toBe("meeting");
+		expect(report.failures).toEqual(['choosing a profile under "work": down; used "Meeting"']);
+	});
+
+	it("takes the first Profile on a local backend, saying so once ever, and without Pro asks nobody", async () => {
+		const state = fresh();
+		const d = deps(memory(), { settings: two(), pro: true });
+		const first = await processDocument(d, doc([page("p1", 1, "h1", AFTER), page("p2", 2, "h2", AFTER)], { p1: "todo A", p2: "todo B" }), state);
+		expect(state.rows["d1:p1:work"].profileId).toBe("meeting");
+		expect(first.notices).toEqual(['A local model does not choose between profiles, so pages under "work" use "Meeting", the first one listed. A cloud backend picks per page.']);
+		expect(first.saidOnce).toEqual(["local-classifier"]);
+		const said = await processDocument({ ...d, settings: { ...two(), saidOnce: ["local-classifier"] } }, doc([page("p4", 4, "h4", AFTER)], { p4: "todo C" }), state);
+		expect(said.notices).toEqual([]);
+		const free = await processDocument(deps(memory(), { settings: two(), pro: false, backend: classifying("journal") }), doc([page("p5", 5, "h5", AFTER)], { p5: "todo D" }), fresh());
+		expect(free.failures).toEqual([]);
+	});
+});
+
 describe("processDocument > Profiles and templates", () => {
 	it("uses the mapping's Profile and its template, and falls back to the starter when the template is gone", async () => {
 		const mem = memory();

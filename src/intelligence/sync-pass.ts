@@ -122,23 +122,45 @@ export interface PassReport {
 	notices: string[];
 	/** Slots written into a page note this run: their Shape is locked from now on. */
 	usedSlots: string[];
+	/** Keys of the notices above that are said once ever; the caller records them. */
+	saidOnce: string[];
 }
 
 export const RETRY_NOTICE_AFTER = 3;
 
 export function emptyReport(): PassReport {
-	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [] };
+	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [], saidOnce: [] };
 }
 
 export function intelligenceSyncKey(docId: string, pageId: string, tag: string): string {
 	return `${docId}:${pageId}:${tag}`;
 }
 
-function profileFor(deps: IntelligencePassDeps, tag: string, frozen: string | undefined): ProfileDef {
+export const LOCAL_CLASSIFIER_NOTICE = "local-classifier";
+
+/**
+ * The page's Profile (spec §5.1): the one frozen on its row; else the only one the tag allows; else,
+ * with several, the classifier's pick among them -- cloud only, so a local backend takes the first and
+ * says so once. No Profile at all is the Generic one.
+ */
+async function profileFor(deps: IntelligencePassDeps, tag: string, frozen: string | undefined, transcript: string, report: PassReport): Promise<ProfileDef> {
 	const byId = (id: string | undefined) => deps.settings.profiles.find((profile) => profile.id === id);
-	const allowed = modesFor(deps.settings, deps.tagFolderMap, tag).profiles;
-	// Phase 1: one Profile per tag, so the first allowed one. Several + classifier is phase 3.
-	return byId(frozen) ?? byId(allowed[0]) ?? genericProfile(deps.pro);
+	const pinned = byId(frozen);
+	if (pinned !== undefined) return pinned;
+	const allowed = modesFor(deps.settings, deps.tagFolderMap, tag).profiles.flatMap((id) => byId(id) ?? []);
+	if (allowed.length === 0) return genericProfile(deps.pro);
+	if (allowed.length === 1 || !deps.pro) return allowed[0];
+	if (deps.backend.classify === undefined) {
+		if (!deps.settings.saidOnce.includes(LOCAL_CLASSIFIER_NOTICE) && !report.saidOnce.includes(LOCAL_CLASSIFIER_NOTICE)) {
+			report.notices.push(`A local model does not choose between profiles, so pages under "${tag}" use "${allowed[0].name}", the first one listed. A cloud backend picks per page.`);
+			report.saidOnce.push(LOCAL_CLASSIFIER_NOTICE);
+		}
+		return allowed[0];
+	}
+	const picked = await deps.backend.classify({ transcript, profiles: allowed.map((profile) => ({ id: profile.id, description: profile.description })) });
+	if (picked.kind === "ok") return byId(picked.id)!;
+	report.failures.push(`choosing a profile under "${tag}": ${picked.reason}; used "${allowed[0].name}"`);
+	return allowed[0];
 }
 
 function slotsOf(deps: IntelligencePassDeps, profile: ProfileDef): SlotDef[] {
@@ -231,7 +253,11 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 		state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId };
 
 		const transcript = texts.get(page.id);
-		const profile = profileFor(deps, unit.tag, alive ? row.profileId : undefined);
+		if (transcript === undefined) {
+			report.failures.push(`page ${page.ordinal} of "${doc.name}": the page could not be read`);
+			continue;
+		}
+		const profile = await profileFor(deps, unit.tag, alive ? row.profileId : undefined, transcript, report);
 		const slots = slotsOf(deps, profile);
 		const template = await templateFor(deps, profile, slots);
 		let base = await deps.baseStore.load(noteId);
@@ -248,11 +274,6 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 				syncKey: key,
 				newId: deps.newId,
 			});
-		}
-
-		if (transcript === undefined) {
-			report.failures.push(`page ${page.ordinal} of "${doc.name}": the page could not be read`);
-			continue;
 		}
 
 		const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(doc.name)}`;

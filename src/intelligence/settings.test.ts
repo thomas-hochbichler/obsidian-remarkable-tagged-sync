@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	defaultSlots,
+	markSaid,
 	markSlotsUsed,
 	slotIdFor,
 	EMPTY_INTELLIGENCE_FINGERPRINT,
@@ -116,5 +117,13 @@ describe("slotIdFor", () => {
 		expect(slotIdFor("Ausgaben & Kosten", [])).toBe("ausgaben-kosten");
 		expect(slotIdFor("Tasks", ["tasks", "tasks-2"])).toBe("tasks-3");
 		expect(slotIdFor("!!!", [])).toBe("slot");
+	});
+});
+
+describe("markSaid", () => {
+	it("records a notice as said once, and hands back the same settings when it already was", () => {
+		const said = markSaid(emptyIntelligence(), ["local-classifier", "local-classifier"]);
+		expect(said.saidOnce).toEqual(["local-classifier"]);
+		expect(markSaid(said, ["local-classifier"])).toBe(said);
 	});
 });

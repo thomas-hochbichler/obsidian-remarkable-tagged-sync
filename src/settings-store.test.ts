@@ -133,6 +133,7 @@ describe("migrateSettings", () => {
 				engineDeviceId: "device-1",
 				autoExtractMetered: true,
 				autoExtractLocal: false,
+				saidOnce: ["local-classifier"],
 			},
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);

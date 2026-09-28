@@ -42,6 +42,29 @@ describe("oneCallBackend", () => {
 	});
 });
 
+describe("classify", () => {
+	const profiles = [
+		{ id: "meeting", description: "Meeting notes" },
+		{ id: "journal", description: "Personal journal" },
+	];
+	it("asks one question under a schema whose only answers are the Profile ids, and reads the pick", async () => {
+		let seen: Parameters<Complete>[0] | null = null;
+		const backend = oneCallBackend("x", true, async (request) => ((seen = request), { kind: "ok", text: '{"profile":"journal"}' }));
+		expect(await backend.classify!({ transcript: "Dear diary", profiles })).toEqual({ kind: "ok", id: "journal" });
+		expect(seen!.schema).toEqual({ type: "object", properties: { profile: { type: "string", enum: ["meeting", "journal"] } }, required: ["profile"], additionalProperties: false });
+		expect(seen!.user).toContain("- journal: Personal journal");
+	});
+
+	it("fails on an unknown pick, a cut-off or failed call, and prose", async () => {
+		const answer = (outcome: Awaited<ReturnType<Complete>>) => oneCallBackend("x", true, async () => outcome).classify!({ transcript: "", profiles });
+		expect(await answer({ kind: "ok", text: '{"profile":"other"}' })).toEqual({ kind: "failed", reason: "The answer named no known profile." });
+		expect(await answer({ kind: "ok", text: "journal" })).toMatchObject({ kind: "failed" });
+		expect(await answer({ kind: "truncated" })).toEqual({ kind: "failed", reason: "The answer was cut off." });
+		expect(await answer({ kind: "failed", reason: "down" })).toEqual({ kind: "failed", reason: "down" });
+		expect(twoCallBackend("l", false, async () => ({ kind: "failed", reason: "" })).classify).toBeUndefined();
+	});
+});
+
 describe("twoCallBackend", () => {
 	function scripted(...answers: CompletionOutcome[]) {
 		const requests: CompletionRequest[] = [];

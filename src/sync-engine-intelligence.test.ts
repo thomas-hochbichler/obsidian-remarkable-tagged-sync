@@ -254,10 +254,11 @@ describe("runSync > Intelligence Engine seam", () => {
 	it("says a notice the engine gave for two documents once, and names each used Slot once", async () => {
 		const a = api([entry(), entry({ id: "doc-2", hash: "hash-2" })], { "doc-1": content([{ id: "p1" }]), "doc-2": content([{ id: "q1" }]) }, { "doc-1": { p1: "h1" }, "doc-2": { q1: "h2" } });
 		const h = hook();
-		h.value.process = async () => ({ ...emptyReport(), notices: ["The engine is paused."], usedSlots: ["tasks"] });
+		h.value.process = async () => ({ ...emptyReport(), notices: ["The engine is paused."], usedSlots: ["tasks"], saidOnce: ["local-classifier"] });
 		const result = await runSync({ ...deps(a), intelligence: h.value }, EMPTY_SYNC_INDEX);
 		expect(result.intelligence.notices).toEqual(["The engine is paused."]);
 		expect(result.intelligence.usedSlots).toEqual(["tasks"]);
+		expect(result.intelligence.saidOnce).toEqual(["local-classifier"]);
 	});
 
 	it("stops between a notebook's transcript note and its page notes, leaving the pages for the next run", async () => {

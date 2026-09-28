@@ -2011,7 +2011,7 @@
       expect: "Saved; the row explains transcript off"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderTagModes > switches the transcript note, picks a Profile, and says what transcript off means"
+      test: "renderTagModes > switches the transcript note, picks a Profile without Pro, and says what transcript off means"
 
     - id: V27.5
       scenario: "The engine runs elsewhere, or nowhere"
@@ -2539,3 +2539,64 @@
       layer: unit
       file: src/intelligence/settings-section.test.ts
       test: "renderIntelligenceSection > what a Profile's Slots will do > warns about many Slots on a local model, and not on a cloud one"
+
+- feature: V41
+  name: "Several Profiles per tag, sorted by a classifier (Pro)"
+  code: src/intelligence/sync-pass.ts
+  tier: pro
+  scenarios:
+    - id: V41.1
+      scenario: "A cloud backend sorts a page among a tag's Profiles"
+      expect: "One call under a schema of Profile ids; the pick read back"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "classify > asks one question under a schema whose only answers are the Profile ids, and reads the pick"
+
+    - id: V41.2
+      scenario: "The classifier answers wrongly, is cut off, fails; a local backend"
+      expect: "A failure outcome; a local backend has no classifier"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "classify > fails on an unknown pick, a cut-off or failed call, and prose"
+
+    - id: V41.3
+      scenario: "A new page under a tag with two Profiles, then a change to it"
+      expect: "The classifier picks; the pick is frozen on the page"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > lets the classifier pick the Profile of a new page, and freezes it for the page"
+
+    - id: V41.4
+      scenario: "The classifier fails"
+      expect: "The first Profile, and a failure line"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > takes the first Profile when the pick fails, and says so"
+
+    - id: V41.5
+      scenario: "Several Profiles on a local backend, and without Pro"
+      expect: "The first Profile; a local backend says so once ever; without Pro nobody is asked"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > takes the first Profile on a local backend, saying so once ever, and without Pro asks nobody"
+
+    - id: V41.6
+      scenario: "A once-only notice is said"
+      expect: "Recorded once; not again"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "markSaid > records a notice as said once, and hands back the same settings when it already was"
+
+    - id: V41.7
+      scenario: "A Pro user offers several Profiles on a tag"
+      expect: "Added from a list, removed one by one; a vanished Profile still shows by id"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > offers several Profiles per tag with Pro: added from a list, removed one by one"
+
+    - id: V41.8
+      scenario: "A tag lists a Profile that was deleted, beside one that exists"
+      expect: "The deleted one is skipped; with one left nobody is asked"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > skips a listed Profile that was deleted, and asks nobody when one is left"

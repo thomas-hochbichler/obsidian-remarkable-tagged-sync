@@ -43,7 +43,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 				shrunkNotes: 0,
 				relaidDocuments: 0,
 				skipErrors: [],
-				intelligence: { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [] },
+				intelligence: { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [], saidOnce: [] },
 			};
 		},
 	};
