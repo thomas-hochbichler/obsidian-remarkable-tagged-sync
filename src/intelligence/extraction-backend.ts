@@ -9,6 +9,7 @@
  */
 
 import { fetchWithRetry, isUnreachable, OcrTimeoutError, refusalDetail, type Sleep } from "../llm-transcript";
+import { obsidianFetch } from "../obsidian-fetch";
 import { buildPrompt, buildSchema, type ExtractionResult, type KnownItem, parseExtraction } from "./extraction";
 import type { ProfileDef, SlotDef } from "./settings";
 
@@ -108,7 +109,7 @@ export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
 			...(options.deterministic ? { temperature: 0 } : {}),
 		};
 		try {
-			const response = await fetchWithRetry(options.fetchFn ?? fetch, url, { method: "POST", headers, body: JSON.stringify(body) }, options.sleepFn);
+			const response = await fetchWithRetry(options.fetchFn ?? obsidianFetch, url, { method: "POST", headers, body: JSON.stringify(body) }, options.sleepFn);
 			if (!response.ok) return { kind: "failed", reason: `The server at ${options.baseURL} answered ${response.status}${await refusalDetail(response)}.` };
 			const json = (await response.json()) as ChatResponse;
 			const choice = json.choices?.[0];
