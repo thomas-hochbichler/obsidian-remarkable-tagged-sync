@@ -239,3 +239,117 @@ describe("renderIntelligenceSection", () => {
 		expect(pro.settings().slots[0].itemFormat).toBe("- {{text}} #todo");
 	});
 });
+
+describe("renderIntelligenceSection > own Slots (Pro)", () => {
+	it("adds a Slot with a name and a Shape, and not without a name or without Pro", async () => {
+		const h = host(emptyIntelligence(), true);
+		let settings = section(h);
+		const add = named(settings, "Add a slot");
+		add.buttons[0].click();
+		await flush();
+		expect(h.settings().slots).toHaveLength(4);
+		add.texts[0].type("Ausgaben");
+		add.dropdowns[0].pick("value");
+		add.buttons[0].click();
+		await flush();
+		expect(h.settings().slots.at(-1)).toMatchObject({ id: "ausgaben", name: "Ausgaben", shape: "value", itemFormat: "", review: false });
+		settings = section(h);
+		const add2 = named(settings, "Add a slot");
+		add2.texts[0].type("Offene Fragen");
+		add2.dropdowns[0].pick("checklist");
+		add2.buttons[0].click();
+		await flush();
+		expect(h.settings().slots.at(-1)).toMatchObject({ id: "offene-fragen", shape: "checklist", itemFormat: "- [ ] {{text}}", review: true });
+		const add3 = named(section(h), "Add a slot");
+		add3.texts[0].type("Ideen");
+		add3.buttons[0].click();
+		await flush();
+		expect(h.settings().slots.at(-1)).toMatchObject({ id: "ideen", shape: "list", itemFormat: "- {{text}}", review: true });
+		expect(named(section(host(emptyIntelligence(), false)), "Add a slot (Pro)").buttons[0].disabled).toBe(true);
+	});
+
+	it("duplicates and deletes a Slot, taking a deleted one out of every Profile", async () => {
+		const h = host({ ...emptyIntelligence(), profiles: [{ id: "p", name: "P", description: "", template: null, slots: ["tasks", "summary"] }] }, true);
+		const tasks = () => section(h).find((s) => s.name === "Tasks" && s.buttons.length === 2)!;
+		tasks().buttons[0].click();
+		await flush();
+		expect(h.settings().slots.at(-1)).toMatchObject({ id: "tasks-copy", name: "Tasks copy", used: false, shape: "checklist" });
+		tasks().buttons[1].click();
+		await flush();
+		expect(h.settings().slots.map((s) => s.id)).not.toContain("tasks");
+		expect(h.settings().profiles[0].slots).toEqual(["summary"]);
+	});
+
+	it("changes a Shape until the Slot is used in a note, then keeps it fixed", async () => {
+		const h = host(emptyIntelligence(), true);
+		const shapeOf = (index: number) => section(h).filter((s) => s.name.startsWith("Shape"))[index];
+		shapeOf(1).dropdowns[0].pick("checklist");
+		await flush();
+		expect(h.settings().slots[1]).toMatchObject({ id: "decisions", shape: "checklist", instruction: "Decisions that were made, as written." });
+		h.update({ ...h.settings(), slots: h.settings().slots.map((s) => (s.id === "tasks" ? { ...s, used: true } : s)) });
+		const fixed = shapeOf(0);
+		expect(fixed.name).toBe("Shape (fixed: duplicate to change it)");
+		expect(fixed.dropdowns[0].disabled).toBe(true);
+	});
+
+	it("edits examples and counter-examples", async () => {
+		const h = host(emptyIntelligence(), true);
+		named(section(h), "Add an example").buttons[0].click();
+		named(section(h), "Add an example").buttons[1].click();
+		await flush();
+		let settings = section(h);
+		const example = named(settings, "Example");
+		example.texts[0].type("call Bob");
+		example.texts[1].type("Call Bob");
+		named(settings, "Counter-example").texts[0].type("Bob will call");
+		await flush();
+		expect(h.settings().slots[0].examples).toEqual([
+			{ input: "call Bob", output: "Call Bob", positive: true },
+			{ input: "Bob will call", output: "", positive: false },
+		]);
+		expect(named(settings, "Counter-example").texts[1].disabled).toBe(true);
+		settings = section(h);
+		named(settings, "Example").buttons[0].click();
+		await flush();
+		expect(h.settings().slots[0].examples).toEqual([{ input: "Bob will call", output: "", positive: false }]);
+	});
+
+	it("points a Value at a frontmatter property, or back into the body", async () => {
+		const h = host(emptyIntelligence(), true);
+		const property = named(section(h), "Frontmatter property");
+		expect(property.texts[0].getValue()).toBe("tags");
+		property.texts[0].type(" ");
+		await flush();
+		expect(h.settings().slots[3].property).toBeUndefined();
+		property.texts[0].type(" project ");
+		await flush();
+		expect(h.settings().slots[3].property).toBe("project");
+		expect(named(section(host(emptyIntelligence(), false)), "Frontmatter property (Pro)").texts[0].disabled).toBe(true);
+	});
+
+	it("adds up to five fields, types them, gives a choice its options, and removes them", async () => {
+		const h = host({ ...emptyIntelligence(), slots: [{ id: "x", name: "X", shape: "list", instruction: "", examples: [], fields: [], itemFormat: "- {{text}}", review: false }] }, true);
+		for (let n = 0; n < 5; n++) {
+			named(section(h), "Add a field").buttons[0].click();
+			await flush();
+		}
+		expect(h.settings().slots[0].fields.map((f) => f.name)).toEqual(["field1", "field2", "field3", "field4", "field5"]);
+		let settings = section(h);
+		expect(settings.some((s) => s.name === "Add a field")).toBe(false);
+		const first = named(settings, "Field field1");
+		first.texts[0].type(" owner ");
+		first.dropdowns[0].pick("choice");
+		await flush();
+		settings = section(h);
+		named(settings, "Field owner").texts[1].type("Anna, Bob, ,Carl");
+		await flush();
+		expect(h.settings().slots[0].fields[0]).toEqual({ name: "owner", type: "choice", options: ["Anna", "Bob", "Carl"] });
+		named(section(h), "Field owner").buttons[0].click();
+		await flush();
+		expect(h.settings().slots[0].fields).toHaveLength(4);
+		const free = host({ ...emptyIntelligence(), slots: [{ ...h.settings().slots[0], fields: [{ name: "c", type: "choice" }] }] }, false);
+		const locked = section(free);
+		expect(named(locked, "Field c (Pro)").texts[1].getValue()).toBe("");
+		expect(named(locked, "Add a field (Pro)").buttons[0].disabled).toBe(true);
+	});
+});

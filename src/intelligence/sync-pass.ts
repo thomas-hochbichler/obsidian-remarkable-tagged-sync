@@ -120,12 +120,14 @@ export interface PassReport {
 	failures: string[];
 	/** Things said to the user: a page failing a third time, a legacy notebook, a lost region. */
 	notices: string[];
+	/** Slots written into a page note this run: their Shape is locked from now on. */
+	usedSlots: string[];
 }
 
 export const RETRY_NOTICE_AFTER = 3;
 
 export function emptyReport(): PassReport {
-	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [] };
+	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [] };
 }
 
 export function intelligenceSyncKey(docId: string, pageId: string, tag: string): string {
@@ -306,6 +308,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 		report.proposals += outcome.proposals;
 		if (outcome.proposals > 0) report.proposalNotes++;
 
+		for (const id of Object.keys(outcome.base.slots)) if (!report.usedSlots.includes(id)) report.usedSlots.push(id);
 		await deps.baseStore.save(outcome.base);
 		// The page's hash enters the seen-set only now, after success: a failed page retries next sync.
 		state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified, noteId };

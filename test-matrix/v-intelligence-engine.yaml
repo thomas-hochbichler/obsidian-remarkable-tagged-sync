@@ -1480,7 +1480,7 @@
       expect: "Said once"
       layer: engine
       file: src/sync-engine-intelligence.test.ts
-      test: "runSync > Intelligence Engine seam > says a notice the engine gave for two documents once"
+      test: "runSync > Intelligence Engine seam > says a notice the engine gave for two documents once, and names each used Slot once"
 
     - id: V16.8
       scenario: "Stop pressed after the transcript note"
@@ -2459,3 +2459,64 @@
       layer: unit
       file: src/intelligence/review.test.ts
       test: "decide > a Value > ✓ writes a Value under its heading, a list joined and nothing as nothing; ✗ keeps the user's"
+
+- feature: V39
+  name: "Own Slots in the settings (Pro)"
+  code: src/intelligence/settings-section.ts
+  tier: pro
+  scenarios:
+    - id: V39.1
+      scenario: "A Slot is added"
+      expect: "With a readable unique id and the Shape's defaults; nothing without a name; locked without Pro"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > adds a Slot with a name and a Shape, and not without a name or without Pro"
+
+    - id: V39.2
+      scenario: "A Slot is duplicated, then deleted"
+      expect: "The copy is unused and editable; a deleted Slot leaves every Profile"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > duplicates and deletes a Slot, taking a deleted one out of every Profile"
+
+    - id: V39.3
+      scenario: "The Shape is changed before and after use"
+      expect: "Free before; fixed once a note holds it"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > changes a Shape until the Slot is used in a note, then keeps it fixed"
+
+    - id: V39.4
+      scenario: "Examples are added, typed and removed"
+      expect: "Saved as typed; a counter-example has no output"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > edits examples and counter-examples"
+
+    - id: V39.5
+      scenario: "A Value's target is set or cleared"
+      expect: "A property, or the body"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > points a Value at a frontmatter property, or back into the body"
+
+    - id: V39.6
+      scenario: "Fields are edited"
+      expect: "At most five; typed; a Choice with its options; removable; locked without Pro"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > adds up to five fields, types them, gives a choice its options, and removes them"
+
+    - id: V39.7
+      scenario: "A sync writes Slots into page notes"
+      expect: "They are marked used, which fixes their Shape; unchanged settings stay the same object"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "markSlotsUsed > marks the Slots a sync wrote, and hands back the same settings when nothing changes"
+
+    - id: V39.8
+      scenario: "A Slot is named"
+      expect: "A readable id, unique among the Slots"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "slotIdFor > makes a readable id from the name, unique among the Slots"
