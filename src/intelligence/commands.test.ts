@@ -4,7 +4,7 @@ import { FakeEl, takeModals, takeNotices, TFile } from "../../test-stubs/fake-ob
 import type { SyncIndex } from "../sync-engine";
 import type { NoteStore } from "../note-builder";
 import { BASE_VERSION, createBaseStore, NO_FAILURES } from "./base-store";
-import { openReview, ProfileChoiceModal, registerIntelligenceCommands, reTranscribePageNote, ReviewModal, type IntelligenceCommandsHost } from "./commands";
+import { BUSY, openReview, ProfileChoiceModal, registerIntelligenceCommands, reTranscribePageNote, ReviewModal, type IntelligenceCommandsHost } from "./commands";
 import type { ApplyOutcome, ReviewItem } from "./review-session";
 
 const item = (notePath: string, label: string, source: string | null = "words"): ReviewItem => ({
@@ -19,7 +19,7 @@ const item = (notePath: string, label: string, source: string | null = "words"):
 const buttons = (el: FakeEl): FakeEl[] => [...(el.tag === "button" ? [el] : []), ...el.children.flatMap(buttons)];
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function modal(items: ReviewItem[], outcome: (item: ReviewItem, accept: boolean) => ApplyOutcome = () => "applied") {
+function modal(items: ReviewItem[], outcome: (item: ReviewItem, accept: boolean) => ApplyOutcome | typeof BUSY = () => "applied") {
 	const calls: [string, boolean][] = [];
 	const m = new ReviewModal(new App() as never, items, async (it, accept) => {
 		calls.push([it.label, accept]);
@@ -57,6 +57,23 @@ describe("ReviewModal", () => {
 		expect(content.allText()).toEqual(["Accept all", "A.md"]);
 	});
 
+	it("keeps a row to decide again when a sync was running", async () => {
+		let busy = true;
+		const { content, calls } = modal([item("A.md", "one")], () => (busy ? BUSY : "applied"));
+		const [, accept] = buttons(content);
+		accept.dispatch("click");
+		await flush();
+		expect(content.allText()).toEqual(["Accept all", "A.md", "one", "On the page: “words”", "✓", "✗"]);
+		busy = false;
+		accept.dispatch("click");
+		await flush();
+		expect(calls).toEqual([
+			["one", true],
+			["one", true],
+		]);
+		expect(content.allText()).toEqual(["Accept all", "A.md"]);
+	});
+
 	it("accepts everything left with Accept all, and says why a row could not be written", async () => {
 		const { content, calls } = modal([item("A.md", "one"), item("A.md", "two"), item("B.md", "three")], (it) => (it.label === "two" ? "no-region" : it.label === "three" ? "gone" : "stale"));
 		buttons(content)[0].dispatch("click");
@@ -89,6 +106,7 @@ describe("registerIntelligenceCommands", () => {
 			app: new App() as never,
 			index: () => ({ rootHash: null, rows: {} }),
 			setIndex: async () => {},
+			exclusive: (work) => work(),
 			rerun: async () => ({ message: "" }),
 			changeProfile: async () => ({ message: "" }),
 			profiles: () => [],
@@ -125,7 +143,7 @@ describe("registerIntelligenceCommands", () => {
 describe("the page-note commands", () => {
 	const row = { syncKey: "d:p:work", unitKey: "d:p:work", docId: "d", pageId: "p", tag: "work", scope: "notebook" as const, notePath: "Work/p.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "", syncedAt: "" };
 
-	function commandHost(active: TFile | null, pro = true) {
+	function commandHost(active: TFile | null, pro = true, syncing = false) {
 		let index: SyncIndex = { rootHash: null, rows: {}, intelligenceRows: { [row.syncKey]: row }, seenPages: { [row.syncKey]: { scope: "notebook", pageHash: "h", firstSeen: null, noteId: "n1" } } };
 		const commands: { id: string; checkCallback?: (checking: boolean) => boolean }[] = [];
 		const reran: string[] = [];
@@ -138,6 +156,7 @@ describe("the page-note commands", () => {
 			review: () => ({ rows: {}, baseStore: createBaseStore({ read: async () => null, write: async () => {}, remove: async () => {} }, "p"), noteStore: {} as NoteStore, newId: () => "x" }),
 			index: () => index,
 			setIndex: async (next) => void (index = next),
+			exclusive: async (work) => (syncing ? BUSY : work()),
 			rerun: async (path) => (reran.push(path), { message: "Extracted again; the note is updated.", index: { ...index, rootHash: "rerun" } }),
 			changeProfile: async (path, id) => (reran.push(`${path}->${id}`), { message: "The note is made again." }),
 			profiles: () => [{ id: "a", name: "A" }],
@@ -186,6 +205,18 @@ describe("the page-note commands", () => {
 		expect(takeNotices()).toEqual(["The note is made again."]);
 		commandHost(file("Work/p.md"), false).changeCommand.checkCallback!(false);
 		expect(takeNotices()).toEqual(["Changing the profile of one page is part of Tagged Sync Pro."]);
+	});
+
+	it("does nothing to the index or the note while a sync runs", async () => {
+		const { rerunCommand, changeCommand, reran, index, host } = commandHost(file("Work/p.md"), true, true);
+		const before = index();
+		rerunCommand.checkCallback!(false);
+		changeCommand.checkCallback!(false);
+		buttons(takeModals()[0].contentEl as unknown as FakeEl)[0].dispatch("click");
+		expect(await reTranscribePageNote(host, "Work/p.md")).toBe(true);
+		await flush();
+		expect(reran).toEqual([]);
+		expect(index()).toBe(before);
 	});
 
 	it("says there is no Profile yet when there is none to choose", () => {

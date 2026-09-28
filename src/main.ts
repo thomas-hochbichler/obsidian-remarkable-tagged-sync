@@ -74,7 +74,7 @@ import {
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
 import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, type IntelligenceRun, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
-import { type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscribePageNote } from "./intelligence/commands";
+import { BUSY, type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscribePageNote } from "./intelligence/commands";
 import { rerunExtraction } from "./intelligence/rerun";
 import { changeProfile } from "./intelligence/change-profile";
 import { followVaultRename } from "./intelligence/vault-follow";
@@ -658,10 +658,10 @@ export default class TaggedSyncPlugin extends Plugin {
 		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background };
 	}
 
-	/** The engine's commands reach the plugin through this; see `intelligence/commands.ts`. */
 	/** The engine's side of the sync in progress, so an unload mid-sync can stop the local model's server. */
 	private runningIntelligence: IntelligenceRun | null = null;
 
+	/** The engine's commands reach the plugin through this; see `intelligence/commands.ts`. */
 	private readonly intelligenceCommands: IntelligenceCommandsHost = {
 		app: this.app,
 		addCommand: (command) => this.addCommand(command),
@@ -671,6 +671,19 @@ export default class TaggedSyncPlugin extends Plugin {
 		setIndex: async (index) => {
 			this.data.syncIndex = index;
 			await this.saveData(this.data);
+		},
+		// The same one-writer rule as switching frontmatter off: the sync's own lock, held for the command.
+		exclusive: async (work) => {
+			if (this.syncing) {
+				new Notice("A sync is running. Try again when it has finished.");
+				return BUSY;
+			}
+			this.syncing = true;
+			try {
+				return await work();
+			} finally {
+				this.syncing = false;
+			}
 		},
 		rerun: async (notePath) => rerunExtraction(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, this.pageRenderPath(notePath)),
 		changeProfile: async (notePath, profileId) => changeProfile(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, profileId, this.pageRenderPath(notePath)),
