@@ -1861,3 +1861,88 @@
       layer: unit
       file: src/intelligence/review.test.ts
       test: "decide > nothing to decide > writes nothing when the note has lost the Slot's heading"
+
+- feature: V23
+  name: "Reviewing proposals in one Modal over all notes"
+  code: src/intelligence/review-session.ts
+  tier: free
+  scenarios:
+    - id: V23.1
+      scenario: "The review opens"
+      expect: "Every pending proposal of every active page note, with the page's words, never a model explanation"
+      layer: unit
+      file: src/intelligence/review-session.test.ts
+      test: "loadReview > lists every pending proposal of every active note with its words and the page's words behind it"
+
+    - id: V23.2
+      scenario: "A proposal is accepted"
+      expect: "Note and base written; the same proposal is stale afterwards"
+      layer: unit
+      file: src/intelligence/review-session.test.ts
+      test: "applyReview > writes the note and the base when the decision changes the note"
+
+    - id: V23.3
+      scenario: "A rejection changes no line, or the note/heading is gone"
+      expect: "Only the base saved; gone or no-region said"
+      layer: unit
+      file: src/intelligence/review-session.test.ts
+      test: "applyReview > saves only the base when the note does not change, and says when the note or base is gone or the heading lost"
+
+- feature: V24
+  name: "The review Modal and its entry points"
+  code: src/intelligence/commands.ts
+  tier: free
+  scenarios:
+    - id: V24.1
+      scenario: "No proposal is pending"
+      expect: "Says so"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > says there is nothing to review"
+
+    - id: V24.2
+      scenario: "Proposals in two notes"
+      expect: "Grouped by note, each with the page's words and ✓ ✗"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > groups proposals by note and shows each with the page's words"
+
+    - id: V24.3
+      scenario: "A row is clicked twice"
+      expect: "Decided once, then gone from the list"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > applies ✓ and ✗ per row and takes a decided row out of the list, once"
+
+    - id: V24.4
+      scenario: "Accept all over rows that fail differently"
+      expect: "Each accepted; a lost heading or note is said in its row"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > accepts everything left with Accept all, and says why a row could not be written"
+
+    - id: V24.5
+      scenario: "The plugin loads"
+      expect: "The command and the obsidian:// link both open the review"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "registerIntelligenceCommands > registers the command and the callout's link, both opening the review over every page note"
+
+- feature: V25
+  name: "The review reaches the running plugin"
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: V25.1
+      scenario: "The plugin loads on a fresh and on a synced vault"
+      expect: "The command and the callout's link both open the review; with no base on this device it says there is nothing to review"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > opens from the command palette and from the callout's link, on a vault that never synced and on one that did"
+
+    - id: V25.2
+      scenario: "The review opens"
+      expect: "Bases from the plugin folder, notes through the vault, short item ids"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "reviewStoresFor > reads bases from the plugin folder and notes through the vault, with short item ids"
