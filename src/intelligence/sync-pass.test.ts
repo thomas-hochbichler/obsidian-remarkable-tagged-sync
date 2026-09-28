@@ -333,6 +333,37 @@ describe("followRetargets", () => {
 	});
 });
 
+describe("processDocument > frontmatter (Pro)", () => {
+	const fields = { tags: ["remarkable/work"], modified: null, folder: null, type: "notebook" as const, pages: 1, page: 3, pinned: false, uuid: "d1" };
+
+	it("writes the plugin's keys into a new page note and into every later write, keeping the user's own tags", async () => {
+		const mem = memory();
+		const state = fresh();
+		const d = deps(mem);
+		const withKeys = (text: Record<string, string>, extra: Partial<IntelligenceDocument> = {}) => doc([page("p3", 3, extra.pages?.[0].hash ?? "h3", AFTER)], text, { frontmatter: () => ({ fields, version: 2 }), ...extra });
+		await processDocument(d, withKeys({ p3: "todo Call" }), state);
+		const path = state.rows["d1:p3:work"].notePath;
+		expect(mem.notes.get(path)).toMatch(/^---\n[\s\S]*\n---\n## Tasks/);
+		expect(mem.notes.get(path)).toContain("remarkable-note-id: note1");
+		expect(mem.notes.get(path)).toContain("remarkable-page: 3");
+		expect(state.rows["d1:p3:work"]).toMatchObject({ frontmatterTags: ["remarkable/work"], frontmatterVersion: 2 });
+
+		completeScans(d.settings, MAP, ["work"], state);
+		mem.notes.set(path, mem.notes.get(path)!.replace("tags:\n  - remarkable/work", "tags:\n  - remarkable/work\n  - mine"));
+		await processDocument(d, withKeys({ p3: "todo Call todo Pay" }, { pages: [page("p3", 3, "h3b", AFTER + 1)] }), state);
+		expect(mem.notes.get(path)).toContain("  - mine");
+		expect(mem.notes.get(path)).toContain("- [ ] Pay");
+	});
+
+	it("writes no keys with the feature off", async () => {
+		const mem = memory();
+		const state = fresh();
+		await processDocument(deps(mem), doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }, { frontmatter: () => null }), state);
+		expect([...mem.notes.values()][0].startsWith("## Tasks")).toBe(true);
+		expect(state.rows["d1:p3:work"].frontmatterTags).toBeUndefined();
+	});
+});
+
 describe("processDocument > Profiles and templates", () => {
 	it("uses the mapping's Profile and its template, and falls back to the starter when the template is gone", async () => {
 		const mem = memory();

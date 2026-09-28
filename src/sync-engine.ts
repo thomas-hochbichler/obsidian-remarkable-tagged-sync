@@ -2485,6 +2485,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pages: pageOrder.map((id, index) => ({ id, ordinal: index + 1, hash: pageHashes.get(id) ?? null, modified: pageModified(cPages.get(id)) })),
 					units: [...notebookUnits, ...pageUnits],
 					transcribe: (ids) => transcribeForEngine(api, ocrBackend, entry.id, ids, pageHashes, pageTexts),
+					frontmatter: (tag, pageId) => {
+						const fields = unitFrontmatter(tag, pageId);
+						return fields === null ? null : { fields, version: FRONTMATTER_KEYS_VERSION };
+					},
 					writeRender: async (pageId) => {
 						const scene = await renderPage(api, entry.id, pageId, pageHashes.get(pageId));
 						const bytes = await renderPagesToPdf([scene], await fetchPageImages(api, [scene], imageFiles));
