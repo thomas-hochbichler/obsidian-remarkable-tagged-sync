@@ -261,3 +261,260 @@
       layer: unit
       file: src/intelligence/matcher.test.ts
       test: "matchItems > prefers an exact match over a closer position"
+
+- feature: V4
+  name: Item-level three-way merge never overwrites what the user edited
+  code: src/intelligence/merge.ts
+  tier: free
+  scenarios:
+    - id: V4.1
+      scenario: "A stored source span is looked up in a re-read transcript"
+      expect: "Found despite spacing and case"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "inTranscript > finds a span despite OCR spacing and case drift"
+
+    - id: V4.2
+      scenario: "A span is missing or only punctuation"
+      expect: "Never counts as on the page"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "inTranscript > never finds an empty or missing span"
+
+    - id: V4.3
+      scenario: "A Slot is extracted for the first time"
+      expect: "Items are written directly; one with an invented or missing source is dropped"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > first extraction > writes every item directly and drops one whose source is not on the page"
+
+    - id: V4.4
+      scenario: "The model rewords an item and changes a field, same ink"
+      expect: "Nothing changes -- rewording is model noise"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the page did not change behind an item > ignores a reworded item and a changed field while the ink is the same"
+
+    - id: V4.5
+      scenario: "The model forgets an item whose words are still on the page"
+      expect: "The item stays"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the page did not change behind an item > ignores an item the model forgot while its ink is still on the page"
+
+    - id: V4.6
+      scenario: "The ink behind a task changed its due date, review on"
+      expect: "A change proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > proposes the new field with review on"
+
+    - id: V4.7
+      scenario: "Same, review off"
+      expect: "The line is updated"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > applies it with review off"
+
+    - id: V4.8
+      scenario: "Same, but the user edited that line"
+      expect: "A proposal, whatever the toggle"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > proposes it even with review off when the user edited that line"
+
+    - id: V4.9
+      scenario: "The ink moved but the answer is the same, with null Fields from the strict schema"
+      expect: "Only the stored span moves; no proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > only moves the source when the model's answer is otherwise the same, an empty field included"
+
+    - id: V4.10
+      scenario: "The page shows a task ticked"
+      expect: "The note line is ticked directly"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > ticks the note from the page directly, even with review on"
+
+    - id: V4.11
+      scenario: "The user unticked in Obsidian what the page ticked"
+      expect: "It stays unticked"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > does not tick again a line the user unticked after the page ticked it"
+
+    - id: V4.12
+      scenario: "Page and note are both ticked"
+      expect: "No write"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > records the tick without a write when the note is already ticked"
+
+    - id: V4.13
+      scenario: "The model ticks a known item but omits its source"
+      expect: "The tick applies; the stored span stays"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > takes a tick for a known item even when the model gave no source span"
+
+    - id: V4.14
+      scenario: "The page shows no tick, the note does"
+      expect: "The note stays ticked"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > never unticks from the page"
+
+    - id: V4.15
+      scenario: "A task's words are gone from the page, review on"
+      expect: "A remove proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > proposes the removal with review on"
+
+    - id: V4.16
+      scenario: "Same, review off"
+      expect: "The line is removed"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > removes the line with review off"
+
+    - id: V4.17
+      scenario: "The line is ticked"
+      expect: "Proposal, even with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > never removes a ticked line without review"
+
+    - id: V4.18
+      scenario: "The user edited the line"
+      expect: "Proposal, even with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > never removes a line the user edited without review"
+
+    - id: V4.19
+      scenario: "The user added a due date to the line"
+      expect: "Counts as an edit: proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > counts a field the user added as an edit"
+
+    - id: V4.20
+      scenario: "A line the user typed gained a source span, then its ink went"
+      expect: "Proposal, even with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > never removes a user-typed item without review once it gained a source"
+
+    - id: V4.21
+      scenario: "The user types a task in Obsidian"
+      expect: "It is kept across syncs and never removed"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > keeps a typed line as a user item that is never a drop candidate"
+
+    - id: V4.22
+      scenario: "The model finds a task the user already typed"
+      expect: "No proposal; the line gains the source"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > does not propose an item the user already typed"
+
+    - id: V4.23
+      scenario: "A pending add proposal is typed by the user"
+      expect: "The proposal disappears"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > drops a pending proposal the user has since typed themselves"
+
+    - id: V4.24
+      scenario: "The user deleted a line; the model keeps finding it"
+      expect: "Tombstone; it never comes back"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > turns a deleted line into a tombstone and never brings the item back"
+
+    - id: V4.25
+      scenario: "A tombstone without a source meets the same text"
+      expect: "Suppressed by text"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > does not bring back a deleted item the model returns under new words and no known source"
+
+    - id: V4.26
+      scenario: "The model finds a new task"
+      expect: "Proposal with review on, inserted with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > proposes a new item with review on and inserts it with review off"
+
+    - id: V4.27
+      scenario: "The same new task on two syncs"
+      expect: "One proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > keeps one pending proposal across syncs instead of piling up copies"
+
+    - id: V4.28
+      scenario: "The model loses a known item's id"
+      expect: "Folded onto the item, not proposed twice"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > folds an item the model calls new onto the live item it really is"
+
+    - id: V4.29
+      scenario: "A new item has no source"
+      expect: "Ignored"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > ignores a new item without a source span"
+
+    - id: V4.30
+      scenario: "The model returns a tombstoned id"
+      expect: "Ignored"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > ignores an id the user deleted"
+
+    - id: V4.31
+      scenario: "A pending change gets newer content"
+      expect: "One proposal, newest content, stable id"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeProposals > replaces the content of a pending proposal with the same key and keeps its id"
+
+    - id: V4.32
+      scenario: "First summary"
+      expect: "Written"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > writes the first summary"
+
+    - id: V4.33
+      scenario: "The user never edited the summary"
+      expect: "Replaced; stale proposal dropped"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > replaces an untouched summary and drops a stale replace proposal"
+
+    - id: V4.34
+      scenario: "The new summary reads the same"
+      expect: "No write"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > writes nothing when the untouched summary already reads the same"
+
+    - id: V4.35
+      scenario: "The user edited the summary"
+      expect: "Kept; one Replace proposal, updated not duplicated"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > keeps an edited summary and proposes the new one once"
+
+    - id: V4.36
+      scenario: "The model repeats the base"
+      expect: "No proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > proposes nothing when the model says what the base already said"
