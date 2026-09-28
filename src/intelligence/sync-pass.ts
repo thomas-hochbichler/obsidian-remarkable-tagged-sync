@@ -292,9 +292,12 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	return report;
 }
 
-/** Marks every tag's scan done at its current `enabledAt`. Called only when a run walked every document. */
-export function completeScans(settings: IntelligenceSettings, tagFolderMap: Record<string, string>, state: IntelligenceState): void {
-	for (const tag of Object.keys(tagFolderMap)) {
+/**
+ * Marks the scan of each of `tags` done at its current `enabledAt`. Called only when a run walked every
+ * document, and only for the tags that actually ran -- a tag held off without Pro was not scanned.
+ */
+export function completeScans(settings: IntelligenceSettings, tagFolderMap: Record<string, string>, tags: readonly string[], state: IntelligenceState): void {
+	for (const tag of tags) {
 		const modes = modesFor(settings, tagFolderMap, tag);
 		if (modes.intelligence && modes.enabledAt !== undefined) state.scans[tag] = modes.enabledAt;
 	}

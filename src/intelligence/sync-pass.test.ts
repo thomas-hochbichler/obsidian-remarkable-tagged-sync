@@ -114,7 +114,7 @@ describe("processDocument > after the scan", () => {
 		const calls: string[] = [];
 		const d = deps(mem, { backend: reader(calls) });
 		await processDocument(d, doc([page("p1", 1, "h1", BEFORE), page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
-		completeScans(d.settings, MAP, state);
+		completeScans(d.settings, MAP, ["work"], state);
 		return { mem, state, d, calls };
 	}
 
@@ -186,7 +186,7 @@ describe("processDocument > rows", () => {
 		const state = fresh();
 		const d = deps(mem);
 		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
-		completeScans(d.settings, MAP, state);
+		completeScans(d.settings, MAP, ["work"], state);
 		return { mem, state, d };
 	}
 
@@ -230,7 +230,7 @@ describe("processDocument > rows", () => {
 		const state = fresh();
 		const d = deps(mem, { loadTemplate: async () => "## Tasks\n{{ts.tasks}}\n", settings: { ...settings(), profiles: [{ id: "p", name: "P", description: "", template: "T.md", slots: ["tasks", "summary"] }], mappings: { work: { ...settings().mappings.work, profiles: ["p"] } } } });
 		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
-		completeScans(d.settings, MAP, state);
+		completeScans(d.settings, MAP, ["work"], state);
 		const path = state.rows["d1:p3:work"].notePath;
 		mem.notes.set(path, mem.notes.get(path)!.replace("## Summary\n", "## Summary\nMy words.\n"));
 		mem.bases.clear();
@@ -269,7 +269,7 @@ describe("processDocument > Profiles and templates", () => {
 });
 
 describe("completeScans and sweepDeletedDocuments", () => {
-	it("marks scans done only for tags that are on, and orphans rows and prunes seen entries of deleted documents", () => {
+	it("marks scans done only for the given tags that are on, and orphans rows and prunes seen entries of deleted documents", () => {
 		const state: IntelligenceState = {
 			seenPages: { "d1:p1:work": { scope: "notebook", pageHash: "h", firstSeen: null }, "d2:p1:work": { scope: "notebook", pageHash: "h", firstSeen: null } },
 			rows: {
@@ -278,8 +278,9 @@ describe("completeScans and sweepDeletedDocuments", () => {
 			},
 			scans: {},
 		};
-		completeScans(settings(), { work: "Work", home: "Home" }, state);
+		completeScans(settings(), { work: "Work", home: "Home" }, ["work", "home"], state);
 		expect(state.scans).toEqual({ work: ENABLED.toISOString() });
+		completeScans(settings(), { work: "Work" }, [], state);
 		sweepDeletedDocuments(state, new Set(["d1"]));
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work"]);
 		expect(state.rows["d2:p1:work"].status).toBe("orphaned");
