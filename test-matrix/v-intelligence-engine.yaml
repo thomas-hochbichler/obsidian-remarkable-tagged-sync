@@ -1589,3 +1589,85 @@
       layer: unit
       file: src/intelligence/extraction-registry.test.ts
       test: "the registry > keeps entries by id, in registration order"
+
+- feature: V19
+  name: "Free and Pro around the engine: free tag, Slots, engine device, backend"
+  code: src/intelligence/plugin-rules.ts
+  tier: pro
+  scenarios:
+    - id: V19.1
+      scenario: "Several tags have Intelligence Mode on"
+      expect: "The one switched on first is free; a tie goes by name"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeTag > is the mapping switched on first, ties broken by name, and none when nothing is on"
+
+    - id: V19.2
+      scenario: "The first tag was toggled off and on"
+      expect: "It stays the free tag"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeTag > keeps the first tag even after it was switched off and on again"
+
+    - id: V19.3
+      scenario: "The first tag is off now"
+      expect: "The next one is free"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeTag > skips a tag whose Intelligence Mode is off now"
+
+    - id: V19.4
+      scenario: "Pro is active"
+      expect: "Every tag keeps its modes"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "effectiveModes > keeps Intelligence Mode on every tag with Pro"
+
+    - id: V19.5
+      scenario: "Pro lapsed"
+      expect: "Only the free tag extracts; transcript switches are unchanged"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "effectiveModes > keeps it only on the free tag without Pro, transcript modes untouched"
+
+    - id: V19.6
+      scenario: "A Free vault runs a Profile"
+      expect: "Tasks + Summary; Tasks format and review locked; the instruction stays editable"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeSlots > runs Tasks and Summary only, Tasks in the Tasks format with review locked on"
+
+    - id: V19.7
+      scenario: "Several devices share the vault"
+      expect: "Only the named device extracts"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "isEngineDevice > is true only on the device the synced setting names"
+
+    - id: V19.8
+      scenario: "A tag was switched on or re-stamped"
+      expect: "Its scan is due until a full run marks it"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "scansDue > names the effective Intelligence tags whose current enabledAt has not been scanned"
+
+    - id: V19.9
+      scenario: "A backend is set, or none"
+      expect: "The set one; else the transcription backend if it can extract"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "chooseExtractionBackend > takes the configured backend, else the transcription backend when it can extract"
+
+    - id: V19.10
+      scenario: "A cloud backend without Pro"
+      expect: "The local model, else paused with a reason"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "chooseExtractionBackend > falls back from a Pro backend to the local model without Pro, and pauses when there is none"
+
+    - id: V19.11
+      scenario: "Vision transcription and no extraction backend"
+      expect: "Paused with a reason pointing to settings"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "chooseExtractionBackend > pauses when nothing is set and the transcription backend cannot extract"
