@@ -57,6 +57,7 @@ function base(noteId: string): PageBase {
 				},
 			},
 			summary: { shape: "text", heading: { level: 2, text: "Summary" }, text: "", proposals: [{ kind: "replace", id: "p5", text: "Met Bob." }] },
+			mood: { shape: "value", property: "mood", heading: null, value: null, proposals: [{ kind: "replace", id: "p6", text: "ok", value: "ok" }, { kind: "replace", id: "p7", text: "", value: null }] },
 		},
 	};
 }
@@ -73,6 +74,8 @@ describe("loadReview", () => {
 			["Work/one.md", "Remove: an item", null],
 			["Work/one.md", "Change: Call Bob", "call bob today"],
 			["Work/one.md", "Replace the summary with: Met Bob.", null],
+			["Work/one.md", "Set mood to: ok", null],
+			["Work/one.md", "Set mood to: nothing", null],
 		]);
 	});
 });

@@ -40,5 +40,6 @@ describe("writeProperty", () => {
 		expect(writeProperty("Body", "mood", "gut")).toBe("---\nmood: gut\n---\nBody");
 		expect(writeProperty("Body", "mood", null)).toBe("Body");
 		expect(writeProperty(NOTE, "none", null)).toBe(NOTE);
+		expect(writeProperty("---\nmood: gut\n---", "mood", null)).toBe("---\n---");
 	});
 });

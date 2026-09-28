@@ -137,3 +137,45 @@ describe("decide > nothing to decide", () => {
 		expect(run(page([ADD]), ["## Other", "- [ ] Something else"], "tasks", "p1", true)).toEqual({ kind: "no-region" });
 	});
 });
+
+describe("decide > a Value", () => {
+	function valued(property: string | null): PageBase {
+		const base = page([]);
+		return {
+			...base,
+			slots: {
+				...base.slots,
+				mood: { shape: "value", property, heading: property === null ? { level: 2, text: "Mood" } : null, value: "good", proposals: [{ kind: "replace", id: "v1", text: "ok", value: "ok" }] },
+			},
+		};
+	}
+
+	it("✓ writes a property into the frontmatter; ✗ keeps the note's and remembers the model's", () => {
+		const lines = ["---", "mood: great", "---", "## Tasks"];
+		const accepted = run(valued("mood"), lines, "mood", "v1", true);
+		if (accepted.kind !== "applied") throw new Error(accepted.kind);
+		expect(accepted.lines.slice(0, 3)).toEqual(["---", "mood: ok", "---"]);
+		const rejected = run(valued("mood"), lines, "mood", "v1", false);
+		if (rejected.kind !== "applied") throw new Error(rejected.kind);
+		expect(rejected.lines).toEqual(lines);
+		expect(rejected.base.slots.mood).toMatchObject({ value: "ok", proposals: [] });
+	});
+
+	it("✓ writes a Value under its heading, a list joined and nothing as nothing; ✗ keeps the user's", () => {
+		const lines = ["## Mood", "> [!todo] 1 proposal — [Review](obsidian://tagged-sync-review)", "great"];
+		const accepted = run(valued(null), lines, "mood", "v1", true);
+		if (accepted.kind !== "applied") throw new Error(accepted.kind);
+		expect(accepted.lines).toEqual(["## Mood", "ok"]);
+		const rejected = run(valued(null), lines, "mood", "v1", false);
+		if (rejected.kind !== "applied") throw new Error(rejected.kind);
+		expect(rejected.lines).toEqual(["## Mood", "great"]);
+		const list = valued(null);
+		(list.slots.mood as { proposals: Proposal[] }).proposals = [{ kind: "replace", id: "v1", text: "a, b", value: ["a", "b"] }];
+		expect((run(list, lines, "mood", "v1", true) as { lines: string[] }).lines).toEqual(["## Mood", "a, b"]);
+		(list.slots.mood as { proposals: Proposal[] }).proposals = [{ kind: "replace", id: "v1", text: "" }];
+		expect((run(list, lines, "mood", "v1", true) as { lines: string[] }).lines).toEqual(["## Mood", ""]);
+		const property = valued("mood");
+		(property.slots.mood as { proposals: Proposal[] }).proposals = [{ kind: "replace", id: "v1", text: "" }];
+		expect((run(property, ["---", "mood: x", "---"], "mood", "v1", true) as { lines: string[] }).lines).toEqual(["---", "---"]);
+	});
+});

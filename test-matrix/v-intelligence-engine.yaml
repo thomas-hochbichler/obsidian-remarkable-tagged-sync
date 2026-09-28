@@ -887,7 +887,7 @@
       expect: "That Slot is settled: left out of the rebuilt base and never re-added"
       layer: unit
       file: src/intelligence/base-store.test.ts
-      test: "rebuildBase > settles a region whose heading is gone so it is never re-added, and skips Value Slots, which live in frontmatter"
+      test: "rebuildBase > settles a region whose heading is gone so it is never re-added, and gives Values an empty base"
 
 - feature: V9
   name: Any Markdown note can be a template
@@ -1185,7 +1185,7 @@
       expect: "Not sent to the model in phase 1"
       layer: unit
       file: src/intelligence/page-engine.test.ts
-      test: "processPage > a new note > skips Value Slots, which are frontmatter and come in phase 2"
+      test: "processPage > a new note > sends every Slot to the model, Values included"
 
     - id: V13.6
       scenario: "Extraction fails repeatedly, then the page changes"
@@ -2398,3 +2398,64 @@
       layer: unit
       file: src/intelligence/value-merge.test.ts
       test: "mergeTagList > changes nothing when the page says what it said"
+
+- feature: V38
+  name: "Value Slots in page notes: under a heading, in frontmatter, and tags"
+  code: src/intelligence/page-engine.ts
+  tier: pro
+  scenarios:
+    - id: V38.1
+      scenario: "A Profile has a mood, a project property and Tags"
+      expect: "Mood under its heading, project in frontmatter, tags beside the user's"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > writes a Value under its heading, a property into the frontmatter, and tags beside the user's"
+
+    - id: V38.2
+      scenario: "A local model picks from a topical list and a mood"
+      expect: "The topical pick is proposed; the mood written; a choice without options written directly"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > proposes a local model's first topical pick instead of writing it, but writes a mood"
+
+    - id: V38.3
+      scenario: "Values change on the page, then the user edits them"
+      expect: "Untouched Values follow; edited ones stay, with a proposal"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > follows the page while the user has not touched a Value, and proposes once they have"
+
+    - id: V38.4
+      scenario: "tags written as a scalar; a mood gone from the page"
+      expect: "Read as a list; the mood cleared"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > reads a single tag written as a scalar, and clears a Value the page no longer holds"
+
+    - id: V38.5
+      scenario: "The user removed an engine tag"
+      expect: "It never comes back"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > never adds back a tag the user removed"
+
+    - id: V38.6
+      scenario: "A Value Slot is added to the Profile"
+      expect: "Its own heading, or the empty template heading adopted"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > adds a Value Slot new to the Profile under its own heading, and adopts an empty one"
+
+    - id: V38.7
+      scenario: "A Value proposal is decided, in frontmatter and under a heading"
+      expect: "✓ writes it; ✗ keeps the user's and remembers the model's"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a Value > ✓ writes a property into the frontmatter; ✗ keeps the note's and remembers the model's"
+
+    - id: V38.8
+      scenario: "A Value under a heading is decided, as a list, as nothing, or rejected"
+      expect: "Written joined or empty; ✗ keeps the user's text"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a Value > ✓ writes a Value under its heading, a list joined and nothing as nothing; ✗ keeps the user's"

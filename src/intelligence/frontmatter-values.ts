@@ -54,5 +54,7 @@ export function writeProperty(content: string, key: string, value: PropertyValue
 	const found = locate(lines, key);
 	if (found === null) lines.push(...rendered);
 	else lines.splice(found.at, found.span, ...rendered);
-	return `---\n${lines.join("\n")}\n---\n${content.slice(block[0].length)}`;
+	// The closing line keeps the ending it had, and an emptied block leaves no blank line behind.
+	const closing = /\r?\n$/.test(block[0]) ? "\n" : "";
+	return `---\n${lines.length === 0 ? "" : `${lines.join("\n")}\n`}---${closing}${content.slice(block[0].length)}`;
 }

@@ -9,6 +9,7 @@
  */
 
 import type { ItemFormat } from "./item-format";
+import type { PropertyValue } from "./frontmatter-values";
 import type { ListBase, Proposal } from "./merge";
 import { findRegion, parseRegion, type Heading } from "./regions";
 import type { Shape } from "./settings";
@@ -30,7 +31,19 @@ export interface ListSlotBase {
 	list: ListBase;
 }
 
-export type SlotBase = TextSlotBase | ListSlotBase;
+export interface ValueSlotBase {
+	shape: "value";
+	/** The frontmatter property it fills, or null for a value under its heading in the body. */
+	property: string | null;
+	heading: Heading | null;
+	value: PropertyValue | null;
+	/** A tag list only: the tags the engine added, and the ones of those the user removed. */
+	added?: string[];
+	buried?: string[];
+	proposals: Proposal[];
+}
+
+export type SlotBase = TextSlotBase | ListSlotBase | ValueSlotBase;
 
 export interface ExtractionState {
 	/** Failed attempts since the page's hash last changed. */
@@ -105,6 +118,8 @@ export interface RebuildSlot {
 	heading: Heading;
 	format: ItemFormat;
 	itemFormat: string;
+	/** A Value Slot's frontmatter property; absent for everything else. */
+	property?: string;
 }
 
 /**
@@ -118,10 +133,20 @@ export function rebuildBase(input: { lines: readonly string[]; slots: readonly R
 	const slots: Record<string, SlotBase> = {};
 	const settled: string[] = [];
 	for (const slot of input.slots) {
+		// A Value Slot comes back with an empty base, like a Text Slot below: whatever the note holds may
+		// be the user's own, and an untouched value is overwritten outright. Tags it added are forgotten,
+		// so one the user had removed may come back once -- documented with the rejected proposals.
+		if (slot.shape === "value" && slot.property !== undefined) {
+			slots[slot.id] = { shape: "value", property: slot.property, heading: null, value: null, ...(slot.property === "tags" ? { added: [], buried: [] } : {}), proposals: [] };
+			continue;
+		}
 		const region = findRegion(input.lines, slot.heading, slot.format);
-		if (slot.shape === "value") continue;
 		if (region === null) {
 			settled.push(slot.id);
+			continue;
+		}
+		if (slot.shape === "value") {
+			slots[slot.id] = { shape: "value", property: null, heading: slot.heading, value: null, proposals: [] };
 			continue;
 		}
 		if (slot.shape === "text") {
