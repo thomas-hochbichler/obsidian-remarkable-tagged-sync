@@ -106,6 +106,15 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		expect(seen).toEqual(["1/2", "2/2"]);
 	});
 
+	it("starts no further page once Stop sync is pressed, and keeps what it wrote", async () => {
+		const mem = memory();
+		const state = fresh();
+		let stop = false;
+		const report = await processDocument(deps(mem), doc([page("p1", 1, "h1", AFTER), page("p2", 2, "h2", AFTER)], { p1: "todo A", p2: "todo B" }, { onProgress: () => void (stop = true), shouldStop: () => stop }), state);
+		expect(report.notesWritten).toBe(1);
+		expect(state.seenPages["d1:p2:work"]).toBeUndefined();
+	});
+
 	it("skips a page never drawn on, so its first ink counts as new", async () => {
 		const state = fresh();
 		await processDocument(deps(memory()), doc([page("p1", 1, null, AFTER)], {}), state);

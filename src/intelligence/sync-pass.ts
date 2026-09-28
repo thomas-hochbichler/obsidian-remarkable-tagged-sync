@@ -80,6 +80,8 @@ export interface IntelligenceDocument {
 	writeRender: (pageId: string) => Promise<string>;
 	/** Before each page is extracted: which of this document's pages the engine is on. */
 	onProgress?: (done: number, total: number) => void;
+	/** "Stop sync" was pressed: no further page starts. Pages already done are kept; the rest wait. */
+	shouldStop?: () => boolean;
 	/**
 	 * The plugin's frontmatter keys for a page note (Pro), exactly as a page-tag note gets them -- or
 	 * null with the feature off. Page notes are synced notes: `FROM #remarkable` finds them (spec §7.4).
@@ -215,6 +217,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	const texts = await doc.transcribe([...new Set(work.map((item) => item.page.id))]);
 
 	for (const [index, { unit, page, key, seen }] of work.entries()) {
+		if (doc.shouldStop?.() === true) break;
 		doc.onProgress?.(index + 1, work.length);
 		const row = state.rows[key];
 		const noteText = row ? await deps.noteStore.read(row.notePath) : null;
