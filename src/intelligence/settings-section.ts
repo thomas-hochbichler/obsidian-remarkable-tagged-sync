@@ -8,7 +8,7 @@ import { Setting } from "obsidian";
 import { extractionBackendEntries } from "./extraction-registry";
 import { freeTag, isEngineDevice } from "./plugin-rules";
 import { type FieldDef, type FieldType, genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, setIntelligenceMode, type Shape, type SlotDef, slotIdFor, TASKS_FORMAT } from "./settings";
-import { starterTemplate } from "./template";
+import { analyseTemplate, starterTemplate } from "./template";
 
 export interface IntelligenceSettingsHost {
 	settings(): IntelligenceSettings;
@@ -26,6 +26,8 @@ export interface IntelligenceSettingsHost {
 	templateFolder(): Promise<string>;
 	/** Creates a vault note at the first free path from `path`, and returns where it went. */
 	createTemplate(path: string, content: string): Promise<string>;
+	/** A template note's text, or null when there is none at that path. */
+	readTemplate(path: string): Promise<string | null>;
 	now(): Date;
 	randomId(): string;
 }
@@ -98,7 +100,8 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 		.setName("Run page extraction on this device")
 		.setDesc("Sync and transcription run on every device; extraction runs on one, so two devices never write the same page note.")
 		.addToggle((toggle) => {
-			void host.deviceId(false).then((id) => toggle.setValue(isEngineDevice(host.settings(), id)));
+			// `void` inside: a component is a thenable (`BaseComponent.then`), see the placement hint below.
+			void host.deviceId(false).then((id) => void toggle.setValue(isEngineDevice(host.settings(), id)));
 			toggle.onChange(async (on) => {
 				const id = await host.deviceId(true);
 				const holder = host.settings().engineDeviceId;
@@ -194,15 +197,41 @@ function renderProfile(containerEl: HTMLElement, host: IntelligenceSettingsHost,
 				await withSettings(host, replace({ ...profile, template: path }));
 			}),
 		);
+	// A small model loses tasks when asked for many things at once (research 15): warned, never refused.
+	const backend = extractionBackendEntries().find((entry) => entry.id === host.settings().backend);
+	if (backend !== undefined && !backend.metered && profile.slots.length > LOCAL_SLOT_WARNING) {
+		containerEl.createDiv({ cls: "tagged-sync-note", text: `${profile.slots.length} slots on a local model: expect some items to be missed. ${LOCAL_SLOT_WARNING} or fewer read best.` });
+	}
 	for (const slot of host.settings().slots) {
 		const pro = !host.pro && !FREE_SLOTS.has(slot.id);
-		new Setting(containerEl).setName(`Fills ${slot.name}${pro ? PRO : ""}`).addToggle((toggle) =>
+		const row = new Setting(containerEl).setName(`Fills ${slot.name}${pro ? PRO : ""}`).addToggle((toggle) =>
 			toggle
 				.setValue(profile.slots.includes(slot.id))
 				.setDisabled(pro)
 				.onChange(async (on) => withSettings(host, replace({ ...profile, slots: on ? [...profile.slots, slot.id] : profile.slots.filter((id) => id !== slot.id) }))),
 		);
+		// Where the template puts it decides whether it is ever updated (spec §5.4), so the row says so.
+		// `void` on purpose: a `Setting` has a `then` of its own, so returning it from the callback would
+		// make the promise adopt it -- and `Setting.then` calls straight back, forever.
+		if (profile.slots.includes(slot.id)) void placementHint(host, profile, slot).then((hint) => void row.setDesc(hint));
 	}
+}
+
+const LOCAL_SLOT_WARNING = 7;
+
+async function placementHint(host: IntelligenceSettingsHost, profile: ProfileDef, slot: SlotDef): Promise<string> {
+	if (slot.shape === "value" && slot.property !== undefined) return `Frontmatter: ${slot.property}.`;
+	return hintFor(slot, profile.template === null ? null : await host.readTemplate(profile.template));
+}
+
+// Apart from the async half on purpose: V8 counts a branch right after an `await` wrongly (negative),
+// and a coverage ratchet then reports a tested line as untested.
+function hintFor(slot: SlotDef, template: string | null): string {
+	if (template === null) return "Its own heading in the built-in template.";
+	const placement = analyseTemplate(template, [slot.id])[slot.id];
+	if (placement.kind === "region") return `Under "${placement.heading.text}", kept up to date.`;
+	if (placement.kind === "once") return "Filled once when the note is made, never updated: give it a heading of its own to keep it current.";
+	return `Not in the template: it gets a "${slot.name}" heading at the end.`;
 }
 
 const SHAPES: Record<Shape, string> = { text: "Text", value: "Value", list: "List", checklist: "Checklist" };

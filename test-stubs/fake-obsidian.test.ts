@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	ButtonComponent,
 	checkPath,
 	createFragment,
 	debounce,
@@ -10,8 +11,10 @@ import {
 	normalizePath,
 	parseLinktext,
 	Plugin,
+	TextComponent,
 	TFile,
 	TFolder,
+	ToggleComponent,
 } from "./fake-obsidian";
 
 // `rmapi-js` cannot be resolved under vitest at all -- its `dist/raw.js` imports `crc-32/crc32c`,
@@ -349,6 +352,16 @@ describe("the plugin host", () => {
 		// Enabled by hand, long after startup: Obsidian runs it straight away.
 		app.workspace.onLayoutReady(() => ran.push("late"));
 		expect(ran).toEqual(["early", "late"]);
+	});
+});
+
+describe("components are thenables, as in Obsidian", () => {
+	it("calls back with the component and hands it back, so a promise returning one never settles", async () => {
+		const toggle = new ToggleComponent();
+		let seen: unknown = null;
+		expect(toggle.then((component) => void (seen = component))).toBe(toggle);
+		expect(seen).toBe(toggle);
+		for (const component of [new TextComponent(), new DropdownComponent(), new ButtonComponent()]) expect(component.then(() => undefined)).toBe(component);
 	});
 });
 

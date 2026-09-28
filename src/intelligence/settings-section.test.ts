@@ -11,7 +11,7 @@ registerExtractionBackend({ id: "sectionlocal", label: "Section local", metered:
 const MAP = { work: "Work", home: "Home" };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function host(initial: IntelligenceSettings, pro: boolean, options: { device?: string | null; confirm?: boolean } = {}) {
+function host(initial: IntelligenceSettings, pro: boolean, options: { device?: string | null; confirm?: boolean; templates?: Record<string, string> } = {}) {
 	let settings = initial;
 	let device = options.device ?? null;
 	const log: string[] = [];
@@ -30,6 +30,7 @@ function host(initial: IntelligenceSettings, pro: boolean, options: { device?: s
 		confirm: async () => options.confirm ?? false,
 		templateFolder: async () => "Templates",
 		createTemplate: async (path, content) => (log.push(`create ${path}:${content.split("\n")[0]}`), path),
+		readTemplate: async (path) => options.templates?.[path] ?? null,
 		now: () => new Date("2026-09-28T10:00:00.000Z"),
 		randomId: () => "0123456789abcdef",
 	};
@@ -351,5 +352,36 @@ describe("renderIntelligenceSection > own Slots (Pro)", () => {
 		const locked = section(free);
 		expect(named(locked, "Field c (Pro)").texts[1].getValue()).toBe("");
 		expect(named(locked, "Add a field (Pro)").buttons[0].disabled).toBe(true);
+	});
+});
+
+describe("renderIntelligenceSection > what a Profile's Slots will do", () => {
+	const profile = (template: string | null, slots: string[]) => ({ id: "p", name: "P", description: "", template, slots });
+
+	it("says per Slot where the template puts it, and whether it is kept up to date", async () => {
+		const TEMPLATE = "## To do\n{{ts.tasks}}\n\n## Notes\nToday: {{ts.summary}}\n";
+		const withProperty = { ...emptyIntelligence(), profiles: [profile("T.md", ["tasks", "summary", "decisions", "tags"])] };
+		const h = host(withProperty, true, { templates: { "T.md": TEMPLATE } });
+		const settings = section(h);
+		await flush();
+		expect(named(settings, "Fills Tasks").desc).toBe('Under "To do", kept up to date.');
+		expect(named(settings, "Fills Summary").desc).toContain("Filled once");
+		expect(named(settings, "Fills Decisions").desc).toBe('Not in the template: it gets a "Decisions" heading at the end.');
+		expect(named(settings, "Fills Tags").desc).toBe("Frontmatter: tags.");
+		const builtIn = section(host({ ...emptyIntelligence(), profiles: [profile(null, ["tasks"])] }, true));
+		await flush();
+		expect(named(builtIn, "Fills Tasks").desc).toBe("Its own heading in the built-in template.");
+	});
+
+	it("warns about many Slots on a local model, and not on a cloud one", () => {
+		const many = { ...emptyIntelligence(), profiles: [profile(null, ["a", "b", "c", "d", "e", "f", "g", "h"])] };
+		const notes = (settings: IntelligenceSettings) => {
+			const el = new FakeEl();
+			renderIntelligenceSection(el as unknown as HTMLElement, host(settings, true));
+			return el.allText().filter((text) => text.includes("slots on a local model"));
+		};
+		expect(notes({ ...many, backend: "sectionlocal" })).toEqual(["8 slots on a local model: expect some items to be missed. 7 or fewer read best."]);
+		expect(notes({ ...many, backend: "sectioncloud" })).toEqual([]);
+		expect(notes(many)).toEqual([]);
 	});
 });

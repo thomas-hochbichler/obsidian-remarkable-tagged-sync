@@ -885,6 +885,15 @@ export class MarkdownRenderChild {
 // Obsidian paints them.
 
 export class TextComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	value = "";
 	placeholder = "";
 	disabled = false;
@@ -917,6 +926,15 @@ export class TextComponent {
 }
 
 export class ToggleComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	value = false;
 	disabled = false;
 	private changed: ((value: boolean) => unknown) | null = null;
@@ -969,6 +987,15 @@ export class FakeSelectEl extends FakeEl {
 }
 
 export class DropdownComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	value = "";
 	disabled = false;
 	readonly selectEl = new FakeSelectEl();
@@ -1017,6 +1044,15 @@ export class DropdownComponent {
 }
 
 export class ButtonComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	text = "";
 	icon = "";
 	tooltip = "";
