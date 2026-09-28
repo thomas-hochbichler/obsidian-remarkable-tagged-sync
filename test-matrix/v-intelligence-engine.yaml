@@ -996,3 +996,85 @@
       layer: unit
       file: src/intelligence/field-types.test.ts
       test: "FIELD_TYPES > wraps a link in brackets whether or not the model already did"
+
+- feature: V11
+  name: "One schema per page, and a defensive reader for the answer"
+  code: src/intelligence/extraction.ts
+  tier: free
+  scenarios:
+    - id: V11.1
+      scenario: "A Profile's Slots become a schema"
+      expect: "Strict: all keys required, none extra, plus the hidden page date"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildSchema > asks for the page date and every Slot, all keys required, nothing extra"
+
+    - id: V11.2
+      scenario: "A List/Checklist item schema is built"
+      expect: "source first, then reason, then the value"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildSchema > orders item keys evidence, reason, id, text, fields, done"
+
+    - id: V11.3
+      scenario: "Value Slots with and without a choice list, and Tags"
+      expect: "Closed enums; Tags an array"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildSchema > closes a Value to its choice list, and makes the tags Value a list"
+
+    - id: V11.4
+      scenario: "The cloud prompt is assembled"
+      expect: "Description, weekday date, Slot instructions and examples, known ids, then the page"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildPrompt > carries the Profile description, the date with its weekday, each Slot, the known ids and the page"
+
+    - id: V11.5
+      scenario: "An answer with a known and a new item"
+      expect: "Typed items; 'new' becomes no id; an empty source becomes none"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > reads items with resolved fields, known ids, ticks and a missing source"
+
+    - id: V11.6
+      scenario: "The page carries its own date"
+      expect: "Due words resolve against it, not the sync time"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > resolves due dates against the date written on the page when there is one"
+
+    - id: V11.7
+      scenario: "NONE items, junk and a missing Slot"
+      expect: "Dropped; the missing Slot is empty"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > drops 'none' items and junk, and reads a missing Slot as empty"
+
+    - id: V11.8
+      scenario: "A summary, or None"
+      expect: "Trimmed text, or empty"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > reads a summary, and 'none' as an empty summary"
+
+    - id: V11.9
+      scenario: "Values outside the list, repeated tags"
+      expect: "Out-of-list becomes null; tags de-duplicated"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > keeps a Value only inside its choice list, and de-duplicates tags"
+
+    - id: V11.10
+      scenario: "A Choice with no options"
+      expect: "Schema offers nothing; any answer is null"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > reads nothing from a choice Value whose option list was never filled"
+
+    - id: V11.11
+      scenario: "The answer is not a JSON object"
+      expect: "A failure outcome, retried on the next sync"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > fails an answer that is not an object, so the page is retried"
