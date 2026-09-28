@@ -6,6 +6,7 @@ import { allowedTransports } from "./ssh-transport";
 import { planTagRouting, tagLimitFor } from "./tag-routing-view";
 import { createZoteroClientFor, DEFAULT_ZOTERO_SETTINGS, zoteroProAllowed } from "./zotero-settings";
 import { chooseExtractionBackend, effectiveModes, effectiveSlotsFor, intelligenceProAllowed } from "./intelligence/plugin-rules";
+import { extractionBackendEntries } from "./intelligence/extraction-registry";
 import { defaultSlots, emptyIntelligence, genericProfile, setIntelligenceMode } from "./intelligence/settings";
 
 /**
@@ -90,6 +91,16 @@ export const BACKEND_TIER: Record<string, { readonly paid: boolean; readonly bec
 	gemini: { paid: true, because: "Cloud LLM transcription is what Tagged Sync Pro sells." },
 	openrouter: { paid: true, because: "Cloud LLM transcription is what Tagged Sync Pro sells." },
 };
+
+/**
+ * Registered extraction backend ids with no line in {@link BACKEND_TIER} (Intelligence Engine §14):
+ * the same ids as transcription, so the same declaration covers both.
+ */
+export function undeclaredExtractionBackends(): string[] {
+	return extractionBackendEntries()
+		.map((entry) => entry.id)
+		.filter((id) => BACKEND_TIER[id] === undefined);
+}
 
 /** Registered backend ids with no line in {@link BACKEND_TIER}. An id nobody wrote down is an error. */
 export function undeclaredBackends(): string[] {

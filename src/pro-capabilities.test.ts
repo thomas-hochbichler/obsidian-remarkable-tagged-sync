@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { checkLicence, type LicenceApi } from "./licence-check";
 import { CARRY_DAYS, CHECK_INTERVAL_DAYS, entitlementOf, type Entitlement, type LicenceState, NO_LICENCE, TRIAL_DAYS } from "./licence-state";
 import { ocrBackendEntries } from "./ocr-registry";
-import { BACKEND_TIER, proCapabilities, TIER_READERS, undeclaredBackends } from "./pro-capabilities";
+import { BACKEND_TIER, proCapabilities, TIER_READERS, undeclaredBackends, undeclaredExtractionBackends } from "./pro-capabilities";
+import { extractionBackendEntries } from "./intelligence/extraction-registry";
 import { FREE_TAG_LIMIT } from "./tag-routing-view";
 
 // The Pro capability walk. It exists because of a measurement, not a worry: setting
@@ -221,6 +222,13 @@ describe("nothing gated escapes the list", () => {
 		// cloud provider registered with `requiresLicence` left at the `false` a developer writes to
 		// satisfy the interface fails **here**, by id, before any question of gating comes up.
 		expect(undeclaredBackends()).toEqual([]);
+	});
+
+	it("declares every extraction backend too, and keeps its flag saying the same as the declaration", () => {
+		expect(undeclaredExtractionBackends()).toEqual([]);
+		// "local" registers only where the managed model is offered, like its transcription entry.
+		expect(extractionBackendEntries().map((entry) => entry.id)).toEqual(expect.arrayContaining(["ollama", "openrouter"]));
+		for (const entry of extractionBackendEntries()) expect(entry.requiresLicence, entry.id).toBe(BACKEND_TIER[entry.id]?.paid ?? "undeclared");
 	});
 
 	it("keeps the entry flag and the declaration saying the same thing", () => {

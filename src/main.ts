@@ -73,7 +73,7 @@ import {
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
-import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
+import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, type IntelligenceRun, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
 import { type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscribePageNote } from "./intelligence/commands";
 import { rerunExtraction } from "./intelligence/rerun";
 import { changeProfile } from "./intelligence/change-profile";
@@ -688,6 +688,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// opening never got far enough to say which source it would have been.
 		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
+		let intelligence: IntelligenceRun | null = null;
 		// Asked once and reused below: the run and the key-set pass that follows it have to agree on
 		// whether the feature is on, and re-asking a licence gate mid-run could answer differently.
 		const frontmatterOn = this.data.frontmatter && frontmatterAllowed(this.entitlement());
@@ -700,7 +701,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			const tagFolderMap = await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap);
 			// The per-tag modes and their print go to every device; the engine itself only to the one
 			// that runs it, and only with a backend that can (Intelligence Engine §9).
-			const intelligence = await prepareRun(this.intelligenceEnv(), this.intelligenceInputs(tagFolderMap, backend.id, auto));
+			intelligence = await prepareRun(this.intelligenceEnv(), this.intelligenceInputs(tagFolderMap, backend.id, auto));
 			const result = await runSync(
 				{
 					api: session.api,
@@ -806,6 +807,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			if (!auto) new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
 			await session?.close();
+			intelligence?.dispose();
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.

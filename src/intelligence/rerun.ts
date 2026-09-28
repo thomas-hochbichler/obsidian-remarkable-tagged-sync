@@ -42,32 +42,37 @@ export async function rerunExtraction(env: HostEnvironment, run: RunInputs, inde
 	const row = pageRow(index, notePath);
 	if (row === undefined) return { message: NOT_A_PAGE_NOTE };
 	const prepared = await prepareRun(env, { ...run, background: false });
-	if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Intelligence in the settings." };
-	const base = await reviewStoresFor(env, {}).baseStore.load(row.noteId);
-	if (base?.transcript == null) return markForRereading(index, notePath);
+	try {
+		if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Intelligence in the settings." };
+		const base = await reviewStoresFor(env, {}).baseStore.load(row.noteId);
+		if (base?.transcript == null) return markForRereading(index, notePath);
 
-	const seen = index.seenPages?.[row.syncKey];
-	const state: IntelligenceState = { seenPages: { ...index.seenPages }, rows: { ...index.intelligenceRows }, scans: { ...index.intelligenceScans } };
-	const transcript = base.transcript;
-	const report = await processDocument(
-		prepared.deps,
-		{
-			docId: row.docId,
-			name: "",
-			legacy: false,
-			// The page as the seen-set knows it: forced, so the same hash still counts as a change.
-			pages: [{ id: row.pageId, ordinal: 0, hash: seen?.pageHash ?? "", modified: seen?.firstSeen ?? null }],
-			units: [{ tag: row.tag, scope: row.scope, pageIds: [row.pageId] }],
-			transcribe: async () => new Map([[row.pageId, transcript]]),
-			writeRender: async () => renderPath,
-		},
-		state,
-		{ force: new Set([row.syncKey]), partial: true },
-	);
-	// The pass words a failure for a sync over many pages ("page 3 of …: reason"); here there is one.
-	const said = [...report.failures.map((line) => `Extraction failed: ${line.slice(line.indexOf(": ") + 2)}`), ...intelligenceNotices(null, report)];
-	return {
-		message: said.length > 0 ? said.join(" ") : report.notesUpdated > 0 ? "Extracted again; the note is updated." : "Extracted again; nothing on the page changed what the note says.",
-		index: { ...index, seenPages: state.seenPages, intelligenceRows: state.rows },
-	};
+		const seen = index.seenPages?.[row.syncKey];
+		const state: IntelligenceState = { seenPages: { ...index.seenPages }, rows: { ...index.intelligenceRows }, scans: { ...index.intelligenceScans } };
+		const transcript = base.transcript;
+		const report = await processDocument(
+			prepared.deps,
+			{
+				docId: row.docId,
+				name: "",
+				legacy: false,
+				// The page as the seen-set knows it: forced, so the same hash still counts as a change.
+				pages: [{ id: row.pageId, ordinal: 0, hash: seen?.pageHash ?? "", modified: seen?.firstSeen ?? null }],
+				units: [{ tag: row.tag, scope: row.scope, pageIds: [row.pageId] }],
+				transcribe: async () => new Map([[row.pageId, transcript]]),
+				writeRender: async () => renderPath,
+			},
+			state,
+			{ force: new Set([row.syncKey]), partial: true },
+		);
+		// The pass words a failure for a sync over many pages ("page 3 of …: reason"); here there is one.
+		const said = [...report.failures.map((line) => `Extraction failed: ${line.slice(line.indexOf(": ") + 2)}`), ...intelligenceNotices(null, report)];
+		return {
+			message: said.length > 0 ? said.join(" ") : report.notesUpdated > 0 ? "Extracted again; the note is updated." : "Extracted again; nothing on the page changed what the note says.",
+			index: { ...index, seenPages: state.seenPages, intelligenceRows: state.rows },
+		};
+	} finally {
+		// A local model started for this command stops with it.
+		prepared.dispose();
+	}
 }
