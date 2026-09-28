@@ -1772,3 +1772,92 @@
       layer: unit
       file: src/intelligence/host.test.ts
       test: "hostEnvironmentFor > reaches the app through the vault: plugin folder, templates, note creation and the clock"
+
+- feature: V22
+  name: "Deciding a proposal changes the note and teaches the base"
+  code: src/intelligence/review.ts
+  tier: free
+  scenarios:
+    - id: V22.1
+      scenario: "The review lists a page's proposals"
+      expect: "Every pending one, with its Slot"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "pendingProposals > lists every pending proposal of a page with its Slot"
+
+    - id: V22.2
+      scenario: "A new task is accepted"
+      expect: "Inserted after the last item; the callout counts down"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a new item > ✓ inserts the line after the last item and updates the callout's count"
+
+    - id: V22.3
+      scenario: "A new task is rejected"
+      expect: "A tombstone; the callout goes with the last proposal"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a new item > ✗ writes a tombstone so the item stays out, and removes the callout with the last proposal"
+
+    - id: V22.4
+      scenario: "A removal is accepted"
+      expect: "The line goes; the item is tombstoned"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a dropped item > ✓ removes the line and tombstones the item"
+
+    - id: V22.5
+      scenario: "A removal is rejected"
+      expect: "The line stays; the engine no longer owns the item and never proposes it again"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a dropped item > ✗ keeps the line and takes the item out of the engine's hands for good"
+
+    - id: V22.6
+      scenario: "The line is already gone"
+      expect: "No line changes"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a dropped item > ✓ on an item whose line the user already deleted changes no line"
+
+    - id: V22.7
+      scenario: "A field change is accepted"
+      expect: "Line and item updated"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a changed field > ✓ rewrites the line and the item"
+
+    - id: V22.8
+      scenario: "A field change is rejected"
+      expect: "The line stays; the same ink is no longer a change"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a changed field > ✗ keeps the line and moves the item's source, so the same ink is not proposed again"
+
+    - id: V22.9
+      scenario: "The line was deleted"
+      expect: "Only the base changes"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a changed field > ✓ with the line gone only updates the base"
+
+    - id: V22.10
+      scenario: "A summary replacement is accepted or rejected"
+      expect: "Replaced, or kept with the model's text remembered"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a summary > ✓ replaces the text; ✗ keeps it and remembers the model's text so only a new one is proposed"
+
+    - id: V22.11
+      scenario: "The proposal, Slot or item is gone"
+      expect: "Stale, or applied without a line change"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > nothing to decide > is stale for a proposal or Slot that is gone, or an item that is gone"
+
+    - id: V22.12
+      scenario: "The heading is gone"
+      expect: "Nothing written"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > nothing to decide > writes nothing when the note has lost the Slot's heading"
