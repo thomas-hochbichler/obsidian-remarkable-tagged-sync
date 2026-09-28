@@ -1,0 +1,71 @@
+# The Intelligence Engine (1.9.0): one Obsidian note per handwritten page, built from the user's
+# template, with tasks and other Slots extracted by an LLM and merged item by item with what the
+# user edited in Obsidian.
+
+- feature: V1
+  name: Only new pages are processed
+  code: src/intelligence/seen-set.ts
+  tier: free
+  scenarios:
+    - id: V1.1
+      scenario: A page carries `modifed` as the device writes it, as a string
+      expect: It is read as epoch ms
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "pageModified > reads the epoch-ms string the device stamps on an edited page"
+
+    - id: V1.2
+      scenario: A page was never edited since the device started stamping
+      expect: No stamp, so null -- which the two questions read as old
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "pageModified > is null for a page never edited since the device started stamping it"
+
+    - id: V1.3
+      scenario: The stamp is garbled or empty
+      expect: Null, never NaN -- NaN compares false both ways and would decide new/old by accident
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "pageModified > is null for a value that is not a number, rather than NaN"
+
+    - id: V1.4
+      scenario: A page already in the seen-set is synced again
+      expect: Changed only when its `.rm` hash differs
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls a seen page changed only when its hash differs"
+
+    - id: V1.5
+      scenario: A page seen before it had any ink gets its first stroke
+      expect: A change -- the null hash differs from the first real one
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > counts the first ink on a page that had no .rm when seen as a change"
+
+    - id: V1.6
+      scenario: A page not in the seen-set carries a stamp
+      expect: New only when edited strictly after Intelligence Mode was switched on
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls an unseen page new only when it was edited after Intelligence Mode was switched on"
+
+    - id: V1.7
+      scenario: An old notebook without stamps is tagged today
+      expect: Its pages are old -- no extraction, no spend
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls an unseen page without a modified stamp old, so a notebook from 2025 tagged today costs nothing"
+
+    - id: V1.8
+      scenario: A legacy `pages[]` document is tagged
+      expect: Every page is old
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls every page of a legacy pages[] document old, whatever the clock says"
+
+    - id: V1.9
+      scenario: The switch-on scan meets a page written between the click and the sync
+      expect: It is not stamped as seen; the two questions process it in the same run
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "switchOnStamp > stamps pages written before the toggle or never stamped, and leaves a page written after it to the two questions"
