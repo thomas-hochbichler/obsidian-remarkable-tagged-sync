@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OcrTimeoutError } from "../llm-transcript";
 import { calendarDay } from "./dates";
 import { type Complete, oneCallBackend, openAiCompatComplete } from "./extraction-backend";
 import { defaultSlots, genericProfile } from "./settings";
+
+const viaObsidian = vi.hoisted(() => vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), { status: 200 })));
+vi.mock("../obsidian-fetch", () => ({ obsidianFetch: viaObsidian }));
 
 const [TASKS, , SUMMARY] = defaultSlots();
 const INPUT = { profile: genericProfile(false), slots: [TASKS, SUMMARY], transcript: "call Bob", referenceDate: calendarDay(2026, 8, 28), known: {} };
@@ -65,6 +68,11 @@ describe("openAiCompatComplete", () => {
 		await openAiCompatComplete({ baseURL: "http://localhost:8080/v1", model: "m", deterministic: true, fetchFn: fn })({ ...request, schema: null });
 		expect(calls[0].body).toEqual({ model: "m", messages: expect.any(Array), max_tokens: 4000, temperature: 0 });
 		expect(calls[0].init.headers).toEqual({ "content-type": "application/json" });
+	});
+
+	it("goes through Obsidian's requestUrl wrapper when no fetch is injected, never the global fetch", async () => {
+		expect(await openAiCompatComplete({ baseURL: "https://x", model: "m" })(request)).toEqual({ kind: "ok", text: "{}" });
+		expect(viaObsidian).toHaveBeenCalledWith("https://x/chat/completions", expect.objectContaining({ method: "POST" }));
 	});
 
 	it("names a missing model instead of sending a request", async () => {
