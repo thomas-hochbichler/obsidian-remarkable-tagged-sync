@@ -4,7 +4,7 @@ import { FakeEl, takeModals, takeNotices, TFile } from "../../test-stubs/fake-ob
 import type { SyncIndex } from "../sync-engine";
 import type { NoteStore } from "../note-builder";
 import { BASE_VERSION, createBaseStore, NO_FAILURES } from "./base-store";
-import { openReview, registerIntelligenceCommands, reTranscribePageNote, ReviewModal, type IntelligenceCommandsHost } from "./commands";
+import { openReview, ProfileChoiceModal, registerIntelligenceCommands, reTranscribePageNote, ReviewModal, type IntelligenceCommandsHost } from "./commands";
 import type { ApplyOutcome, ReviewItem } from "./review-session";
 
 const item = (notePath: string, label: string, source: string | null = "words"): ReviewItem => ({
@@ -90,6 +90,9 @@ describe("registerIntelligenceCommands", () => {
 			index: () => ({ rootHash: null, rows: {} }),
 			setIndex: async () => {},
 			rerun: async () => ({ message: "" }),
+			changeProfile: async () => ({ message: "" }),
+			profiles: () => [],
+			pro: () => true,
 			addCommand: (command) => commands.push(command as { id: string; callback?: () => unknown }),
 			registerObsidianProtocolHandler: (action, handler) => void (handlers[action] = handler),
 			review: () => ({
@@ -100,7 +103,7 @@ describe("registerIntelligenceCommands", () => {
 			}),
 		};
 		registerIntelligenceCommands(host);
-		expect(commands.map((c) => c.id)).toEqual(["review-proposals", "rerun-extraction"]);
+		expect(commands.map((c) => c.id)).toEqual(["review-proposals", "change-profile", "rerun-extraction"]);
 		expect(Object.keys(handlers)).toEqual(["tagged-sync-review"]);
 
 		const modalOpened = await openReview(host);
@@ -122,7 +125,7 @@ describe("registerIntelligenceCommands", () => {
 describe("the page-note commands", () => {
 	const row = { syncKey: "d:p:work", unitKey: "d:p:work", docId: "d", pageId: "p", tag: "work", scope: "notebook" as const, notePath: "Work/p.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "", syncedAt: "" };
 
-	function commandHost(active: TFile | null) {
+	function commandHost(active: TFile | null, pro = true) {
 		let index: SyncIndex = { rootHash: null, rows: {}, intelligenceRows: { [row.syncKey]: row }, seenPages: { [row.syncKey]: { scope: "notebook", pageHash: "h", firstSeen: null, noteId: "n1" } } };
 		const commands: { id: string; checkCallback?: (checking: boolean) => boolean }[] = [];
 		const reran: string[] = [];
@@ -136,9 +139,12 @@ describe("the page-note commands", () => {
 			index: () => index,
 			setIndex: async (next) => void (index = next),
 			rerun: async (path) => (reran.push(path), { message: "Extracted again; the note is updated.", index: { ...index, rootHash: "rerun" } }),
+			changeProfile: async (path, id) => (reran.push(`${path}->${id}`), { message: "The note is made again." }),
+			profiles: () => [{ id: "a", name: "A" }],
+			pro: () => pro,
 		};
 		registerIntelligenceCommands(host);
-		return { host, rerunCommand: commands.find((c) => c.id === "rerun-extraction")!, reran, index: () => index };
+		return { host, rerunCommand: commands.find((c) => c.id === "rerun-extraction")!, changeCommand: commands.find((c) => c.id === "change-profile")!, reran, index: () => index };
 	}
 	const file = (path: string, extension = "md") => Object.assign(Object.create(TFile.prototype) as TFile, { path, extension });
 
@@ -163,5 +169,28 @@ describe("the page-note commands", () => {
 		expect(await reTranscribePageNote(host, "Work/p.md")).toBe(true);
 		expect(index().seenPages!["d:p:work"].pageHash).toBeNull();
 		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
+	});
+
+	it("changes a page note's Profile through a choice of Profiles, and says it is Pro without it", async () => {
+		expect(commandHost(null).changeCommand.checkCallback!(true)).toBe(false);
+		const { changeCommand, reran } = commandHost(file("Work/p.md"));
+		expect(changeCommand.checkCallback!(true)).toBe(true);
+		takeModals();
+		takeNotices();
+		changeCommand.checkCallback!(false);
+		const [chooser] = takeModals();
+		expect((chooser.titleEl as unknown as FakeEl).text).toBe("Change profile for this page");
+		buttons(chooser.contentEl as unknown as FakeEl)[0].dispatch("click");
+		await flush();
+		expect(reran).toEqual(["Work/p.md->a"]);
+		expect(takeNotices()).toEqual(["The note is made again."]);
+		commandHost(file("Work/p.md"), false).changeCommand.checkCallback!(false);
+		expect(takeNotices()).toEqual(["Changing the profile of one page is part of Tagged Sync Pro."]);
+	});
+
+	it("says there is no Profile yet when there is none to choose", () => {
+		const modal = new ProfileChoiceModal(new App() as never, [], () => undefined);
+		modal.open();
+		expect((modal.contentEl as unknown as FakeEl).allText()).toEqual(["There is no profile yet. Add one in the plugin settings."]);
 	});
 });

@@ -2600,3 +2600,71 @@
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > choosing among a tag's Profiles > skips a listed Profile that was deleted, and asks nobody when one is left"
+
+- feature: V42
+  name: "Change the Profile of one page note (Pro)"
+  code: src/intelligence/change-profile.ts
+  tier: pro
+  scenarios:
+    - id: V42.1
+      scenario: "Is a page note as the engine wrote it, or touched by the user?"
+      expect: "Untouched only when every region reads exactly the base and no line was added; a lost heading counts as touched"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "uneditedSinceBase > is true for a note as the engine wrote it, and false for an added line, an edited summary, or a lost heading"
+
+    - id: V42.2
+      scenario: "The user changes the Profile of an untouched page note"
+      expect: "Made again where it is with the new Profile, its frontmatter kept, a fresh note id, the old base gone"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > makes an untouched note again with the new Profile, where it is, keeping its frontmatter"
+
+    - id: V42.3
+      scenario: "The user changes the Profile of an edited page note"
+      expect: "The edited note stays as it is; a new note is made beside it"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > leaves an edited note as it is and makes a new one beside it"
+
+    - id: V42.4
+      scenario: "The base holds no transcript"
+      expect: "The choice is frozen; the next sync that reads the page uses it"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > freezes the choice for the next sync when there is no transcript to extract from"
+
+    - id: V42.5
+      scenario: "Another note, another device, an unknown Profile, a failed extraction, no rows"
+      expect: "A sentence each, nothing written"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > refuses another note, another device, an unknown Profile, and says when extraction fails"
+
+    - id: V42.6
+      scenario: "The page's seen entry went missing"
+      expect: "It still works, recording a new entry"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > still works for a page whose seen entry went missing"
+
+    - id: V42.7
+      scenario: "The command is run with and without Pro"
+      expect: "A choice of Profiles with Pro; a sentence that it is Pro without"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > changes a page note's Profile through a choice of Profiles, and says it is Pro without it"
+
+    - id: V42.8
+      scenario: "There is no Profile to choose"
+      expect: "The chooser says where to add one"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > says there is no Profile yet when there is none to choose"
+
+    - id: V42.9
+      scenario: "The command in the running plugin, with a trial and without a licence"
+      expect: "The chooser, then a sentence which device extracts; or that it is Pro"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > offers Change profile with Pro and says it is Pro without"

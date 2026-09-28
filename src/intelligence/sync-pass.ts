@@ -163,17 +163,17 @@ async function profileFor(deps: IntelligencePassDeps, tag: string, frozen: strin
 	return allowed[0];
 }
 
-function slotsOf(deps: IntelligencePassDeps, profile: ProfileDef): SlotDef[] {
+export function slotsOf(deps: IntelligencePassDeps, profile: ProfileDef): SlotDef[] {
 	const all = profile.slots.flatMap((id) => deps.settings.slots.filter((slot) => slot.id === id));
 	return deps.effectiveSlots(profile, all);
 }
 
-async function templateFor(deps: IntelligencePassDeps, profile: ProfileDef, slots: SlotDef[]): Promise<string> {
+export async function templateFor(deps: IntelligencePassDeps, profile: ProfileDef, slots: SlotDef[]): Promise<string> {
 	const stored = profile.template === null ? null : await deps.loadTemplate(profile.template);
 	return stored ?? starterTemplate(slots);
 }
 
-function baseHash(base: PageBase): string {
+export function baseHash(base: PageBase): string {
 	return blockHashOf(JSON.stringify(base));
 }
 

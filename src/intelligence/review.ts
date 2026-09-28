@@ -11,10 +11,10 @@
 
 import type { PageBase, SlotBase } from "./base-store";
 import { compileItemFormat } from "./item-format";
-import { matchItems } from "./matcher";
+import { matchItems, normaliseText } from "./matcher";
 import type { Proposal } from "./merge";
 import { writeProperty } from "./frontmatter-values";
-import { applyListOps, findRegion, parseRegion, setProposalCallout, writeTextRegion } from "./regions";
+import { applyListOps, findRegion, parseRegion, readTextRegion, setProposalCallout, writeTextRegion } from "./regions";
 
 export interface PendingProposal {
 	slotId: string;
@@ -109,4 +109,28 @@ export function decide(input: { base: PageBase; lines: readonly string[]; slotId
 	const heading = { level: stored.heading!.level, text: lines[region.heading].replace(/^#+\s+/, "").trim() };
 	lines = setProposalCallout(lines, findRegion(lines, heading, format)!, pending(slot).length, input.reviewLink);
 	return { kind: "applied", base: { ...base, slots: { ...base.slots, [slotId]: slot } }, lines };
+}
+
+/**
+ * Whether the user has touched a page note since the engine last wrote it (spec §5.1, "Change Profile
+ * for this page"): every region parses to exactly the base's items, a Text or Value region reads what
+ * the base holds, and no line was added. Template prose and frontmatter outside the regions are not
+ * compared -- they are the template's, not the engine's. A region that is gone counts as touched.
+ */
+export function uneditedSinceBase(base: PageBase, lines: readonly string[]): boolean {
+	for (const slot of Object.values(base.slots)) {
+		if (slot.heading === null) continue;
+		const format = compileItemFormat("list" in slot ? slot.itemFormat : "- {{text}}");
+		const region = findRegion(lines, slot.heading, format);
+		if (region === null) return false;
+		if (!("list" in slot)) {
+			const expected = slot.shape === "text" ? slot.text : [slot.value].flat().join(", ");
+			if (readTextRegion(lines, region) !== expected.trim()) return false;
+			continue;
+		}
+		const items = parseRegion(lines, region, format);
+		if (items.length !== slot.list.items.length) return false;
+		if (items.some((item, index) => normaliseText(item.text) !== normaliseText(slot.list.items[index].text))) return false;
+	}
+	return true;
 }

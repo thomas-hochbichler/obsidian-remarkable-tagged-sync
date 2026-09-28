@@ -76,6 +76,7 @@ import { TagRouter } from "./tag-router";
 import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
 import { type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscribePageNote } from "./intelligence/commands";
 import { rerunExtraction } from "./intelligence/rerun";
+import { changeProfile } from "./intelligence/change-profile";
 import { followVaultRename } from "./intelligence/vault-follow";
 import { intelligenceProAllowed } from "./intelligence/plugin-rules";
 import { markSaid, markSlotsUsed } from "./intelligence/settings";
@@ -667,6 +668,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			await this.saveData(this.data);
 		},
 		rerun: async (notePath) => rerunExtraction(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, this.pageRenderPath(notePath)),
+		changeProfile: async (notePath, profileId) => changeProfile(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, profileId, this.pageRenderPath(notePath)),
+		profiles: () => this.data.intelligence.profiles,
+		pro: () => intelligenceProAllowed(this.entitlement()),
 	};
 
 	/** The render a page note's row points at, for a re-run: the same attachment the sync writes. */

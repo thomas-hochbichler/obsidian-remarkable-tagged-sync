@@ -276,6 +276,18 @@ const CLOUD_EXTRACTION_CAPABILITY: ProCapability = {
 	},
 };
 
+/** "Change profile for this page note" (spec §5.1): offered, and refused in place without Pro. */
+const CHANGE_PROFILE_CAPABILITY: ProCapability = {
+	id: "intelligence-change-profile",
+	label: "Changing the profile of one page note",
+	locked: (entitlement) => !intelligenceProAllowed(entitlement),
+	whenLocked: "refused-in-place",
+	enforcedAt: {
+		site: "src/intelligence/commands.ts change-profile, asking host.pro() -- intelligenceProAllowed in src/main.ts",
+		run: (entitlement) => (intelligenceProAllowed(entitlement) ? "allowed" : "refused-in-place"),
+	},
+};
+
 /**
  * Every gated capability this build ships.
  *
@@ -296,6 +308,7 @@ export function proCapabilities(): ProCapability[] {
 		INTELLIGENCE_TAGS_CAPABILITY,
 		INTELLIGENCE_SLOTS_CAPABILITY,
 		CLOUD_EXTRACTION_CAPABILITY,
+		CHANGE_PROFILE_CAPABILITY,
 	];
 }
 
@@ -338,7 +351,7 @@ export const TIER_READERS: Record<string, { readonly reads: number; readonly why
 	},
 	"src/intelligence/plugin-rules.ts": {
 		reads: 1,
-		why: "`intelligenceProAllowed`, the Intelligence Engine's gate. A gate, and it is in the list three times -- extra tags, own Slots, cloud extraction -- and `main.ts` asks it rather than reading the tier itself.",
+		why: "`intelligenceProAllowed`, the Intelligence Engine's gate. A gate, and it is in the list four times -- extra tags, own Slots, cloud extraction, changing a page's profile -- and `main.ts` asks it rather than reading the tier itself.",
 	},
 	"src/settings-tab.ts": {
 		reads: 4,
