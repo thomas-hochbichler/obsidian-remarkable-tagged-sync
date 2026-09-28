@@ -7,7 +7,9 @@
  */
 
 import { type BaseItem } from "./merge";
-import { NO_FAILURES, BASE_VERSION, type ListSlotBase, type PageBase, type SlotBase } from "./base-store";
+import { NO_FAILURES, BASE_VERSION, type ListSlotBase, type PageBase, type SlotBase, type ValueSlotBase } from "./base-store";
+import { type PropertyValue, readProperty, writeProperty } from "./frontmatter-values";
+import { mergeTagList, mergeValue } from "./value-merge";
 import { calendarDay, isoDay } from "./dates";
 import type { ExtractionBackend } from "./extraction-backend";
 import type { ExtractionResult, SlotResult } from "./extraction";
@@ -69,11 +71,24 @@ export type PageOutcome =
 const localDay = (date: Date) => calendarDay(date.getFullYear(), date.getMonth(), date.getDate());
 
 const isList = (slot: SlotDef) => slot.shape === "list" || slot.shape === "checklist";
+/** A Value Slot that fills a frontmatter property rather than a heading in the body. */
+const isProperty = (slot: SlotDef) => slot.shape === "value" && slot.property !== undefined;
 
 // `parseExtraction` builds each Slot's result from the Slot's own shape, so a Text Slot always holds
-// text and a List Slot items; these read that guarantee instead of re-checking it.
+// text, a List Slot items and a Value Slot a value; these read that guarantee instead of re-checking it.
 const textOf = (got: SlotResult) => (got as Extract<SlotResult, { kind: "text" }>).text;
 const itemsOf = (got: SlotResult) => (got as Extract<SlotResult, { kind: "items" }>).items;
+const valueOf = (got: SlotResult) => (got as Extract<SlotResult, { kind: "value" }>).value;
+
+/** A value as it reads in the body: a list joined, nothing as nothing (`join` writes null as ""). */
+const renderValue = (value: PropertyValue | null) => [value].flat().join(", ");
+
+/**
+ * A topical Choice (more than three options -- a project, a category) read by a local model: its
+ * first pick is proposed, not written, because a small model favours the options it saw first
+ * (research 15). A mood-style list of three was read right every time.
+ */
+const proposesFirst = (slot: SlotDef, backend: ExtractionBackend) => backend.local === true && slot.fields.some((field) => field.type === "choice" && (field.options?.length ?? 0) > 3);
 
 function freshBase(run: PageRun): PageBase {
 	return { version: BASE_VERSION, noteId: run.noteId, syncKey: run.unit.key, unitKey: run.unit.key, transcript: null, slots: {}, settled: [], extraction: { ...NO_FAILURES } };
@@ -81,7 +96,7 @@ function freshBase(run: PageRun): PageBase {
 
 function knownItems(base: PageBase | null): Record<string, { id: string; text: string }[]> {
 	const known: Record<string, { id: string; text: string }[]> = {};
-	for (const [id, slot] of Object.entries(base?.slots ?? {})) if (slot.shape !== "text") known[id] = slot.list.items.map((item) => ({ id: item.id, text: item.text }));
+	for (const [id, slot] of Object.entries(base?.slots ?? {})) if ("list" in slot) known[id] = slot.list.items.map((item) => ({ id: item.id, text: item.text }));
 	return known;
 }
 
@@ -89,9 +104,12 @@ function renderItems(format: ItemFormat, items: readonly BaseItem[]): string {
 	return items.map((item) => format.render({ text: item.text, fields: item.fields, checkbox: item.done ? "x" : " " })).join("\n");
 }
 
-function pendingCount(slot: SlotBase): number {
-	return slot.shape === "text" ? slot.proposals.length : slot.list.proposals.length;
+export function pendingCount(slot: SlotBase): number {
+	return "list" in slot ? slot.list.proposals.length : slot.proposals.length;
 }
+
+/** The heading a body Slot's region sits under; null for a frontmatter Value. */
+const headingOf = (slot: SlotBase): Heading | null => slot.heading;
 
 /** A new Slot's region, placed right after the region of the Slot before it in the Profile, else at the end. */
 function insertRegion(lines: string[], heading: Heading, body: string, after: Heading | null, format: ItemFormat): string[] {
@@ -102,10 +120,51 @@ function insertRegion(lines: string[], heading: Heading, body: string, after: He
 	return [...lines.slice(0, at), ...block, ...lines.slice(at)];
 }
 
+/** A body Slot's first base and the text it fills its region with. */
+function createSlotBase(slot: SlotDef, heading: Heading, got: SlotResult, transcript: string, run: PageRun): { base: SlotBase; body: string; proposals: number } {
+	if (slot.shape === "text") {
+		const merged = mergeText({ base: null, note: "", model: textOf(got), proposals: [], newId: run.newId });
+		return { base: { shape: "text", heading, text: merged.base, proposals: [] }, body: merged.base, proposals: 0 };
+	}
+	if (slot.shape === "value") {
+		const merged = mergeValue({ base: undefined, note: null, model: renderValue(valueOf(got)) || null, proposals: [], proposeFirst: proposesFirst(slot, run.backend), newId: run.newId });
+		return { base: { shape: "value", property: null, heading, value: merged.base, proposals: merged.proposals }, body: renderValue(merged.write ?? null), proposals: merged.proposals.length };
+	}
+	const merged = mergeList({ base: null, note: [], model: itemsOf(got), transcript, review: slot.review, newId: run.newId });
+	const base: ListSlotBase = { shape: slot.shape, heading, itemFormat: slot.itemFormat, list: merged.base };
+	return { base, body: renderItems(compileItemFormat(slot.itemFormat), merged.base.items), proposals: 0 };
+}
+
+/**
+ * The frontmatter Values, after the body: each reads its property from the note as it now stands and
+ * writes it back line by line. The `tags` list is shared with the plugin's own tags (spec §7.4).
+ */
+function mergeProperties(content: string, runSlots: readonly SlotDef[], results: Record<string, SlotResult>, slots: Record<string, SlotBase>, run: PageRun): string {
+	let out = content;
+	for (const slot of runSlots.filter(isProperty)) {
+		const property = slot.property!;
+		const stored = slots[slot.id] as ValueSlotBase | undefined;
+		const model = valueOf(results[slot.id]);
+		const current = readProperty(out, property);
+		if (property === "tags") {
+			const note = current === null ? [] : Array.isArray(current) ? current : [current];
+			// `parseExtraction` reads the tags Slot as a list, always.
+			const merged = mergeTagList({ added: stored?.added ?? [], buried: stored?.buried ?? [], note, model: model as string[] });
+			if (merged.write !== undefined) out = writeProperty(out, property, merged.write);
+			slots[slot.id] = { shape: "value", property, heading: null, value: merged.added, added: merged.added, buried: merged.buried, proposals: [] };
+			continue;
+		}
+		const merged = mergeValue({ base: stored === undefined ? undefined : stored.value, note: current, model, proposals: stored?.proposals ?? [], proposeFirst: stored === undefined && proposesFirst(slot, run.backend), newId: run.newId });
+		if (merged.write !== undefined) out = writeProperty(out, property, merged.write);
+		slots[slot.id] = { shape: "value", property, heading: null, value: merged.base, proposals: merged.proposals };
+	}
+	return out;
+}
+
 export async function processPage(run: PageRun): Promise<PageOutcome> {
 	const referenceDate = localDay(run.unit.firstSeen === null ? run.syncedAt : new Date(run.unit.firstSeen));
 	const previous = run.base ?? freshBase(run);
-	const runSlots = run.slots.filter((slot) => slot.shape !== "value");
+	const runSlots = run.slots;
 
 	const outcome = await run.backend.extract({ profile: run.profile, slots: runSlots, transcript: run.unit.transcript, referenceDate, known: knownItems(run.base) });
 	if (outcome.kind === "failed") {
@@ -123,9 +182,10 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 	const slots: Record<string, SlotBase> = { ...previous.slots };
 	const settled = [...previous.settled];
 	const missingRegions: string[] = [];
-	const placements = analyseTemplate(run.template, runSlots.map((slot) => slot.id));
+	const bodySlots = runSlots.filter((slot) => !isProperty(slot));
+	const placements = analyseTemplate(run.template, bodySlots.map((slot) => slot.id));
 
-	for (const [index, slot] of runSlots.entries()) {
+	for (const [index, slot] of bodySlots.entries()) {
 		const got = results[slot.id];
 		const stored = slots[slot.id];
 		if (stored === undefined) {
@@ -138,21 +198,26 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 			}
 			const heading = placement.kind === "region" ? placement.heading : { level: 2, text: slot.name };
 			const format = compileItemFormat(isList(slot) ? slot.itemFormat : "- {{text}}");
-			const fresh = createSlotBase(slot, heading, got, transcript, run.newId);
+			const fresh = createSlotBase(slot, heading, got, transcript, run);
 			const existing = placement.kind === "region" ? findRegion(lines, heading, format) : null;
 			if (existing === null) {
-				const before = runSlots.slice(0, index).reverse().find((other) => slots[other.id] !== undefined);
-				lines = insertRegion(lines, heading, fresh.body, before ? slots[before.id].heading : null, format);
+				const before = bodySlots
+					.slice(0, index)
+					.reverse()
+					.map((other) => slots[other.id])
+					.find((other) => other !== undefined);
+				lines = insertRegion(lines, heading, fresh.body, before === undefined ? null : headingOf(before), format);
 				slots[slot.id] = fresh.base;
 				continue;
 			}
 			// The template's heading is already in the note, left empty when the note was made: the Slot
 			// adopts it. Empty → written like a first extraction; the user wrote there → merged, never overwritten.
-			if (fresh.base.shape === "text") {
+			if (fresh.base.shape === "text" || fresh.base.shape === "value") {
 				const current = readTextRegion(lines, existing);
-				const merged = mergeText({ base: current === "" ? null : "", note: current, model: fresh.base.text, proposals: [], newId: run.newId });
+				const model = fresh.base.shape === "text" ? fresh.base.text : fresh.body;
+				const merged = mergeText({ base: current === "" ? null : "", note: current, model, proposals: [], newId: run.newId });
 				if (merged.write !== null) lines = writeTextRegion(lines, existing, merged.write);
-				slots[slot.id] = { shape: "text", heading, text: merged.base, proposals: merged.proposals };
+				slots[slot.id] = fresh.base.shape === "text" ? { ...fresh.base, text: merged.base, proposals: merged.proposals } : { ...fresh.base, value: merged.base || null, proposals: [...fresh.base.proposals, ...merged.proposals] };
 			} else {
 				const items = parseRegion(lines, existing, format);
 				const merged = mergeList({ base: items.length === 0 ? null : { items: [], tombstones: [], proposals: [] }, note: items, model: itemsOf(got), transcript, review: slot.review, newId: run.newId });
@@ -162,17 +227,22 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 			lines = setProposalCallout(lines, findRegion(lines, heading, format)!, pendingCount(slots[slot.id]), run.reviewLink);
 			continue;
 		}
-		const format = compileItemFormat(stored.shape === "text" ? "- {{text}}" : stored.itemFormat);
-		const region = findRegion(lines, stored.heading, format, stored.shape === "text" ? [] : stored.list.items.map((item) => item.text));
+		const storedHeading = headingOf(stored)!;
+		const format = compileItemFormat("list" in stored ? stored.itemFormat : "- {{text}}");
+		const region = findRegion(lines, storedHeading, format, "list" in stored ? stored.list.items.map((item) => item.text) : []);
 		if (region === null) {
 			missingRegions.push(slot.id);
 			continue;
 		}
-		const heading = { level: stored.heading.level, text: lines[region.heading].replace(/^#+\s+/, "").trim() };
+		const heading = { level: storedHeading.level, text: lines[region.heading].replace(/^#+\s+/, "").trim() };
 		if (stored.shape === "text") {
 			const merged = mergeText({ base: stored.text, note: readTextRegion(lines, region), model: textOf(got), proposals: stored.proposals, newId: run.newId });
 			if (merged.write !== null) lines = writeTextRegion(lines, region, merged.write);
 			slots[slot.id] = { shape: "text", heading, text: merged.base, proposals: merged.proposals };
+		} else if (stored.shape === "value") {
+			const merged = mergeValue({ base: renderValue(stored.value), note: readTextRegion(lines, region), model: renderValue(valueOf(got)), proposals: stored.proposals, proposeFirst: false, newId: run.newId });
+			if (merged.write !== undefined) lines = writeTextRegion(lines, region, renderValue(merged.write));
+			slots[slot.id] = { ...stored, heading, value: merged.base === "" ? null : merged.base, proposals: merged.proposals };
 		} else {
 			const items = parseRegion(lines, region, format);
 			const merged = mergeList({ base: stored.list, note: items, model: itemsOf(got), transcript, review: slot.review, newId: run.newId });
@@ -183,30 +253,21 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 		lines = setProposalCallout(lines, after, pendingCount(slots[slot.id]), run.reviewLink);
 	}
 
-	const content = lines.join("\n");
+	const content = mergeProperties(lines.join("\n"), runSlots, results, slots, run);
 	const base: PageBase = { ...previous, transcript, slots, settled, extraction: { ...NO_FAILURES } };
 	const proposals = Object.values(slots).reduce((sum, slot) => sum + pendingCount(slot), 0);
 	return { kind: "written", content: content === run.note ? null : content, created: false, base, proposals, pageDate: result.pageDate, missingRegions };
 }
 
-function createSlotBase(slot: SlotDef, heading: Heading, got: SlotResult, transcript: string, newId: () => string): { base: SlotBase; body: string } {
-	if (slot.shape === "text") {
-		const merged = mergeText({ base: null, note: "", model: textOf(got), proposals: [], newId });
-		return { base: { shape: "text", heading, text: merged.base, proposals: [] }, body: merged.base };
-	}
-	const merged = mergeList({ base: null, note: [], model: itemsOf(got), transcript, review: slot.review, newId });
-	const base: ListSlotBase = { shape: slot.shape as ListSlotBase["shape"], heading, itemFormat: slot.itemFormat, list: merged.base };
-	return { base, body: renderItems(compileItemFormat(slot.itemFormat), merged.base.items) };
-}
-
 function create(run: PageRun, runSlots: readonly SlotDef[], result: ExtractionResult, transcript: string): PageOutcome {
 	const { slots: results, pageDate } = result;
+	const bodySlots = runSlots.filter((slot) => !isProperty(slot));
 	// The Profile's Slot list decides what runs; the template only decides where. A Slot the template
 	// does not place gets its own heading at the end.
 	let template = run.template;
-	const absent = runSlots.filter((slot) => !template.includes(`{{ts.${slot.id}}}`));
+	const absent = bodySlots.filter((slot) => !template.includes(`{{ts.${slot.id}}}`));
 	if (absent.length > 0) template = `${template.replace(/\s*$/, "")}\n${absent.map((slot) => `\n## ${slot.name}\n{{ts.${slot.id}}}`).join("\n")}\n`;
-	const placements = analyseTemplate(template, runSlots.map((slot) => slot.id));
+	const placements = analyseTemplate(template, bodySlots.map((slot) => slot.id));
 
 	const ts: Record<string, string> = {
 		"page.link": run.pageLink,
@@ -217,15 +278,16 @@ function create(run: PageRun, runSlots: readonly SlotDef[], result: ExtractionRe
 	};
 	const slots: Record<string, SlotBase> = {};
 	const settled: string[] = [];
-	for (const slot of runSlots) {
+	for (const slot of bodySlots) {
 		const placement = placements[slot.id];
 		const heading = placement.kind === "region" ? placement.heading : { level: 2, text: slot.name };
-		const fresh = createSlotBase(slot, heading, results[slot.id], transcript, run.newId);
+		const fresh = createSlotBase(slot, heading, results[slot.id], transcript, run);
 		ts[slot.id] = fresh.body;
 		if (placement.kind === "region") slots[slot.id] = fresh.base;
 		else settled.push(slot.id);
 	}
-	const content = renderTemplate(template, { ts, title: run.title(pageDate), formatDate: run.formatDate, formatTime: run.formatTime });
+	const content = mergeProperties(renderTemplate(template, { ts, title: run.title(pageDate), formatDate: run.formatDate, formatTime: run.formatTime }), runSlots, results, slots, run);
 	const base: PageBase = { ...freshBase(run), transcript, slots, settled };
-	return { kind: "written", content, created: true, base, proposals: 0, pageDate, missingRegions: [] };
+	const proposals = Object.values(slots).reduce((sum, slot) => sum + pendingCount(slot), 0);
+	return { kind: "written", content, created: true, base, proposals, pageDate, missingRegions: [] };
 }

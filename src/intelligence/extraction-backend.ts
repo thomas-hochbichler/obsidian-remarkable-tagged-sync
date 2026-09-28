@@ -41,6 +41,8 @@ export interface ExtractionBackend {
 	readonly id: string;
 	/** Costs the user money per page: drives the auto-sync spend consent. */
 	readonly metered: boolean;
+	/** An 8B-class model on the user's machine or server: its first topical pick is proposed, not written (spec §7.4). */
+	readonly local?: boolean;
 	extract(input: ExtractionInput): Promise<ExtractionOutcome>;
 }
 
@@ -118,6 +120,7 @@ export function twoCallBackend(id: string, metered: boolean, complete: Complete)
 	return {
 		id,
 		metered,
+		local: true,
 		async extract(input) {
 			const read = localReadPrompt(input);
 			const notes = await complete({ ...read, schema: null, maxTokens: 2000 });

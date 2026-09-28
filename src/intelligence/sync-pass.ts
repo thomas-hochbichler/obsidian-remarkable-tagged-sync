@@ -240,7 +240,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 				slots: slots.map((slot) => {
 					const placement = placements[slot.id];
 					const itemFormat = slot.shape === "list" || slot.shape === "checklist" ? slot.itemFormat : "- {{text}}";
-					return { id: slot.id, shape: slot.shape, heading: placement.kind === "region" ? placement.heading : { level: 2, text: slot.name }, format: compileItemFormat(itemFormat), itemFormat: slot.itemFormat };
+					return { id: slot.id, shape: slot.shape, heading: placement.kind === "region" ? placement.heading : { level: 2, text: slot.name }, format: compileItemFormat(itemFormat), itemFormat: slot.itemFormat, property: slot.property };
 				}),
 				noteId,
 				syncKey: key,

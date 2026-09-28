@@ -29,7 +29,7 @@ const withFields = (text: string, fields: Fields) => (fieldText(fields) === "" ?
 
 function describe(base: PageBase, slotId: string, proposal: Proposal): { label: string; source: string | null } {
 	const slot = base.slots[slotId];
-	const items = slot.shape === "text" ? [] : slot.list.items;
+	const items = "list" in slot ? slot.list.items : [];
 	const item = (id: string) => items.find((candidate) => candidate.id === id);
 	switch (proposal.kind) {
 		case "add":
@@ -41,7 +41,7 @@ function describe(base: PageBase, slotId: string, proposal: Proposal): { label: 
 		case "change":
 			return { label: `Change: ${withFields(proposal.text, proposal.fields)}`, source: proposal.source };
 		case "replace":
-			return { label: `Replace the summary with: ${proposal.text}`, source: null };
+			return { label: slot.shape === "value" ? `Set ${slotId} to: ${proposal.text === "" ? "nothing" : proposal.text}` : `Replace the summary with: ${proposal.text}`, source: null };
 	}
 }
 

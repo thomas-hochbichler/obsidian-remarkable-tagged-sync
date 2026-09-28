@@ -13,6 +13,7 @@ import type { PageBase, SlotBase } from "./base-store";
 import { compileItemFormat } from "./item-format";
 import { matchItems } from "./matcher";
 import type { Proposal } from "./merge";
+import { writeProperty } from "./frontmatter-values";
 import { applyListOps, findRegion, parseRegion, setProposalCallout, writeTextRegion } from "./regions";
 
 export interface PendingProposal {
@@ -22,12 +23,12 @@ export interface PendingProposal {
 
 /** Every pending proposal of a page, in Slot order. */
 export function pendingProposals(base: PageBase): PendingProposal[] {
-	return Object.entries(base.slots).flatMap(([slotId, slot]) => (slot.shape === "text" ? slot.proposals : slot.list.proposals).map((proposal) => ({ slotId, proposal })));
+	return Object.entries(base.slots).flatMap(([slotId, slot]) => pending(slot).map((proposal) => ({ slotId, proposal })));
 }
 
 export type DecisionOutcome = { kind: "applied"; base: PageBase; lines: string[] } | { kind: "stale" } | { kind: "no-region" };
 
-const pending = (slot: SlotBase) => (slot.shape === "text" ? slot.proposals : slot.list.proposals);
+const pending = (slot: SlotBase): Proposal[] => ("list" in slot ? slot.list.proposals : slot.proposals);
 
 /**
  * Applies ✓ or ✗ to one proposal. `stale` when the proposal is gone (decided elsewhere, or a sync
@@ -38,13 +39,26 @@ export function decide(input: { base: PageBase; lines: readonly string[]; slotId
 	const stored = base.slots[slotId];
 	const proposal = stored === undefined ? undefined : pending(stored).find((p) => p.id === proposalId);
 	if (stored === undefined || proposal === undefined) return { kind: "stale" };
-	const format = compileItemFormat(stored.shape === "text" ? "- {{text}}" : stored.itemFormat);
-	const region = findRegion(input.lines, stored.heading, format, stored.shape === "text" ? [] : stored.list.items.map((item) => item.text));
+
+	// A frontmatter Value has no region and no callout: ✓ writes the property, ✗ keeps the note's.
+	if (stored.shape === "value" && stored.property !== null) {
+		const value = (proposal as Extract<Proposal, { kind: "replace" }>).value ?? null;
+		const lines = accept ? writeProperty(input.lines.join("\n"), stored.property, value).split("\n") : [...input.lines];
+		const slot: SlotBase = { ...stored, value, proposals: stored.proposals.filter((p) => p.id !== proposalId) };
+		return { kind: "applied", base: { ...base, slots: { ...base.slots, [slotId]: slot } }, lines };
+	}
+
+	const format = compileItemFormat("list" in stored ? stored.itemFormat : "- {{text}}");
+	const region = findRegion(input.lines, stored.heading!, format, "list" in stored ? stored.list.items.map((item) => item.text) : []);
 	if (region === null) return { kind: "no-region" };
 
 	let lines = [...input.lines];
 	let slot: SlotBase;
-	if (stored.shape === "text") {
+	if (stored.shape === "value") {
+		const value = (proposal as Extract<Proposal, { kind: "replace" }>).value ?? null;
+		if (accept) lines = writeTextRegion(lines, region, value === null ? "" : Array.isArray(value) ? value.join(", ") : value);
+		slot = { ...stored, value, proposals: stored.proposals.filter((p) => p.id !== proposalId) };
+	} else if (stored.shape === "text") {
 		// Only a replace lives on a Text Slot.
 		const text = (proposal as Extract<Proposal, { kind: "replace" }>).text;
 		if (accept) lines = writeTextRegion(lines, region, text);
@@ -92,7 +106,7 @@ export function decide(input: { base: PageBase; lines: readonly string[]; slotId
 	}
 	// Edits happen below the heading, so its line has not moved: the region is re-read from there,
 	// which also holds for a heading the user renamed.
-	const heading = { level: stored.heading.level, text: lines[region.heading].replace(/^#+\s+/, "").trim() };
+	const heading = { level: stored.heading!.level, text: lines[region.heading].replace(/^#+\s+/, "").trim() };
 	lines = setProposalCallout(lines, findRegion(lines, heading, format)!, pending(slot).length, input.reviewLink);
 	return { kind: "applied", base: { ...base, slots: { ...base.slots, [slotId]: slot } }, lines };
 }

@@ -81,10 +81,92 @@ describe("processPage > a new note", () => {
 		expect(out.content).toContain("## Tasks\n- [x] Buy milk\n");
 	});
 
-	it("skips Value Slots, which are frontmatter and come in phase 2", async () => {
+	it("sends every Slot to the model, Values included", async () => {
 		const seen: ExtractionInput[] = [];
 		await processPage(run({ slots: [TASKS, TAGS], backend: backend({ tasks: [] }, seen) }));
-		expect(seen[0].slots.map((s) => s.id)).toEqual(["tasks"]);
+		expect(seen[0].slots.map((s) => s.id)).toEqual(["tasks", "tags"]);
+	});
+});
+
+describe("processPage > Value Slots", () => {
+	const MOOD: SlotDef = { id: "mood", name: "Mood", shape: "value", instruction: "", examples: [], fields: [{ name: "mood", type: "choice", options: ["good", "ok", "bad"] }], itemFormat: "", review: false };
+	const PROJECT: SlotDef = { id: "project", name: "Project", shape: "value", instruction: "", examples: [], fields: [{ name: "project", type: "choice", options: ["A", "B", "C", "D"] }], itemFormat: "", review: false, property: "project" };
+	const TAGS_OPEN: SlotDef = { ...TAGS, fields: [{ name: "tags", type: "choice", options: ["budget", "hiring"] }] };
+	const local = (answer: Record<string, unknown>): ExtractionBackend => ({ ...backend(answer), local: true });
+	const TEMPLATE_V = "---\ntags:\n  - mine\n---\n## Mood\n{{ts.mood}}\n";
+
+	it("writes a Value under its heading, a property into the frontmatter, and tags beside the user's", async () => {
+		const out = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT, TAGS_OPEN], backend: backend({ mood: "good", project: "B", tags: ["budget"] }) }));
+		if (out.kind !== "written") throw new Error(out.kind);
+		expect(out.content).toBe("---\ntags:\n  - mine\n  - budget\nproject: B\n---\n## Mood\ngood\n");
+		expect(out.base.slots).toMatchObject({ mood: { shape: "value", value: "good", property: null }, project: { value: "B", property: "project" }, tags: { added: ["budget"], buried: [] } });
+	});
+
+	it("proposes a local model's first topical pick instead of writing it, but writes a mood", async () => {
+		const out = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT], backend: local({ mood: "ok", project: "C" }) }));
+		if (out.kind !== "written") throw new Error(out.kind);
+		expect(out.content).not.toContain("project:");
+		expect(out.content).toContain("## Mood\nok");
+		expect(out.proposals).toBe(1);
+		const withBodyPick = await processPage(run({ template: "## Project\n{{ts.project}}\n", slots: [{ ...PROJECT, property: undefined }], backend: local({ project: "C" }) }));
+		if (withBodyPick.kind !== "written") throw new Error(withBodyPick.kind);
+		expect(withBodyPick.content).toBe("## Project\n\n");
+		expect(withBodyPick.proposals).toBe(1);
+		// A choice whose options were never filled in is no topical list: written directly.
+		const bare = await processPage(run({ template: "## Mood\n{{ts.mood}}\n", slots: [{ ...MOOD, fields: [{ name: "mood", type: "choice" }] }], backend: local({ mood: null }) }));
+		expect(bare).toMatchObject({ kind: "written", proposals: 0 });
+	});
+
+	it("follows the page while the user has not touched a Value, and proposes once they have", async () => {
+		const first = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT], backend: backend({ mood: "good", project: "B" }) }));
+		if (first.kind !== "written") throw new Error(first.kind);
+		const again = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT], base: first.base, note: first.content, backend: backend({ mood: "bad", project: "A" }) }));
+		if (again.kind !== "written") throw new Error(again.kind);
+		expect(again.content).toContain("project: A");
+		expect(again.content).toContain("## Mood\nbad");
+		const edited = again.content!.replace("project: A", "project: D").replace("## Mood\nbad", "## Mood\nmeh");
+		const third = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT], base: again.base, note: edited, backend: backend({ mood: "good", project: "C" }) }));
+		if (third.kind !== "written") throw new Error(third.kind);
+		expect(third.content).toContain("project: D");
+		expect(third.content).toContain("## Mood\n> [!todo] 1 proposal — [Review](obsidian://review)\nmeh");
+		expect(third.proposals).toBe(2);
+	});
+
+	it("reads a single tag written as a scalar, and clears a Value the page no longer holds", async () => {
+		const out = await processPage(run({ template: "---\ntags: mine\n---\n## Mood\n{{ts.mood}}\n", slots: [MOOD, TAGS_OPEN], backend: backend({ mood: null, tags: ["budget"] }) }));
+		if (out.kind !== "written") throw new Error(out.kind);
+		expect(out.content).toBe("---\ntags:\n  - mine\n  - budget\n---\n## Mood\n\n");
+		expect(out.base.slots.mood).toMatchObject({ value: null });
+		const good = await processPage(run({ template: TEMPLATE_V, slots: [MOOD], backend: backend({ mood: "good" }) }));
+		if (good.kind !== "written") throw new Error(good.kind);
+		const gone = await processPage(run({ template: TEMPLATE_V, slots: [MOOD], base: good.base, note: good.content, backend: backend({ mood: null }) }));
+		if (gone.kind !== "written") throw new Error(gone.kind);
+		expect(gone.content).toContain("## Mood\n");
+		expect(gone.content).not.toContain("good");
+		expect(gone.base.slots.mood).toMatchObject({ value: null });
+	});
+
+	it("never adds back a tag the user removed", async () => {
+		const first = await processPage(run({ template: TEMPLATE_V, slots: [TAGS_OPEN], backend: backend({ tags: ["budget"] }) }));
+		if (first.kind !== "written") throw new Error(first.kind);
+		const removed = first.content!.replace("  - budget\n", "");
+		const again = await processPage(run({ template: TEMPLATE_V, slots: [TAGS_OPEN], base: first.base, note: removed, backend: backend({ tags: ["budget", "hiring"] }) }));
+		if (again.kind !== "written") throw new Error(again.kind);
+		expect(again.content).toContain("tags:\n  - mine\n  - hiring\n");
+		expect(again.base.slots.tags).toMatchObject({ added: ["hiring"], buried: ["budget"] });
+	});
+
+	it("adds a Value Slot new to the Profile under its own heading, and adopts an empty one", async () => {
+		const first = (await processPage(run({ slots: [TASKS] }))) as Extract<Awaited<ReturnType<typeof processPage>>, { kind: "written" }>;
+		const again = await processPage(run({ slots: [TASKS, MOOD], base: first.base, note: first.content, backend: backend({ tasks: [], mood: "ok" }) }));
+		if (again.kind !== "written") throw new Error(again.kind);
+		expect(again.content).toContain("\n## Mood\nok");
+		const adopt = await processPage(run({ template: "## Mood\n{{ts.mood}}\n", slots: [MOOD], base: { ...first.base, slots: {} }, note: "## Mood\n", backend: backend({ mood: "ok" }) }));
+		if (adopt.kind !== "written") throw new Error(adopt.kind);
+		expect(adopt.content).toBe("## Mood\nok");
+		const nothing = await processPage(run({ template: "## Mood\n{{ts.mood}}\n", slots: [MOOD], base: { ...first.base, slots: {} }, note: "## Mood\n", backend: backend({ mood: null }) }));
+		if (nothing.kind !== "written") throw new Error(nothing.kind);
+		expect(nothing.base.slots.mood).toMatchObject({ value: null });
 	});
 });
 

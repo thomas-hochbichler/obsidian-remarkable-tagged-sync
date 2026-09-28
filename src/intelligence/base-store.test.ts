@@ -80,9 +80,14 @@ describe("rebuildBase", () => {
 		expect(rebuilt.slots.summary).toEqual({ shape: "text", heading: { level: 2, text: "Summary" }, text: "", proposals: [] });
 	});
 
-	it("settles a region whose heading is gone so it is never re-added, and skips Value Slots, which live in frontmatter", () => {
-		const rebuilt = rebuildBase({ lines: note, slots, noteId: "n1", syncKey: "k", newId: () => "r" });
-		expect(Object.keys(rebuilt.slots)).toEqual(["tasks", "summary"]);
+	it("settles a region whose heading is gone so it is never re-added, and gives Values an empty base", () => {
+		const withProperty = [...slots.slice(0, 3), { ...slots[3], property: "tags" }, { id: "mood", shape: "value" as const, heading: { level: 2, text: "Tags" }, format: slots[3].format, itemFormat: "" }];
+		const rebuilt = rebuildBase({ lines: note, slots: withProperty, noteId: "n1", syncKey: "k", newId: () => "r" });
+		expect(Object.keys(rebuilt.slots)).toEqual(["tasks", "summary", "tags", "mood"]);
 		expect(rebuilt.settled).toEqual(["gone"]);
+		expect(rebuilt.slots.tags).toEqual({ shape: "value", property: "tags", heading: null, value: null, added: [], buried: [], proposals: [] });
+		expect(rebuilt.slots.mood).toEqual({ shape: "value", property: null, heading: { level: 2, text: "Tags" }, value: null, proposals: [] });
+		const plain = rebuildBase({ lines: note, slots: [{ ...slots[3], property: "mood" }], noteId: "n1", syncKey: "k", newId: () => "r" });
+		expect(plain.slots.tags).toEqual({ shape: "value", property: "mood", heading: null, value: null, proposals: [] });
 	});
 });
