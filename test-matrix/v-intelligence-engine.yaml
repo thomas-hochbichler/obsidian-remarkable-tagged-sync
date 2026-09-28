@@ -2416,7 +2416,7 @@
       expect: "The topical pick is proposed; the mood written; a choice without options written directly"
       layer: unit
       file: src/intelligence/page-engine.test.ts
-      test: "processPage > Value Slots > proposes a local model's first topical pick instead of writing it, but writes a mood"
+      test: "processPage > Value Slots > proposes a local model's first topical pick instead of writing it, also when read again before the review, but writes a mood"
 
     - id: V38.3
       scenario: "Values change on the page, then the user edits them"
@@ -2833,3 +2833,27 @@
       layer: unit
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > Intelligence Engine seam > leaves a switch-on scan unfinished when a document read in the scan fails when the run reads it again"
+
+- feature: V48
+  name: "Guards against Shape drift and an unreviewed first pick"
+  code: src/intelligence/page-engine.ts
+  tier: free
+  scenarios:
+    - id: V48.1
+      scenario: "A Slot's Shape in the settings differs from the Shape stored in the page's base"
+      expect: "The region and the base stay as they are; nothing crashes and no lines are lost"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > leaves a region alone whose Slot's Shape no longer matches the base, instead of merging across Shapes"
+
+- feature: V49
+  name: "A first pick stays a proposal until reviewed"
+  code: src/intelligence/value-merge.ts
+  tier: free
+  scenarios:
+    - id: V49.1
+      scenario: "A local model's first topical pick waits for review and the page is read again"
+      expect: "It stays a proposal, updated to the page's new pick, and is dropped when the page has none"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > keeps a first pick under review on the next run, follows the page's new pick, and drops it when the page has none"

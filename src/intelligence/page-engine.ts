@@ -227,6 +227,10 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 			lines = setProposalCallout(lines, findRegion(lines, heading, format)!, pendingCount(slots[slot.id]), run.reviewLink);
 			continue;
 		}
+		// The Shape is locked once used (spec §5), but settings from another device or edited by hand can
+		// still disagree with the base. Merging a list into a text base would lose the note's lines, so
+		// the Slot's region is left as it is until the Slot and the base agree again.
+		if ((isList(slot) ? "list" : slot.shape) !== ("list" in stored ? "list" : stored.shape)) continue;
 		const storedHeading = headingOf(stored)!;
 		const format = compileItemFormat("list" in stored ? stored.itemFormat : "- {{text}}");
 		const region = findRegion(lines, storedHeading, format, "list" in stored ? stored.list.items.map((item) => item.text) : []);
@@ -240,9 +244,10 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 			if (merged.write !== null) lines = writeTextRegion(lines, region, merged.write);
 			slots[slot.id] = { shape: "text", heading, text: merged.base, proposals: merged.proposals };
 		} else if (stored.shape === "value") {
-			const merged = mergeValue({ base: renderValue(stored.value), note: readTextRegion(lines, region), model: renderValue(valueOf(got)), proposals: stored.proposals, proposeFirst: false, newId: run.newId });
+			// An empty region and an empty base are "no value", so a first pick still under review stays one.
+			const merged = mergeValue({ base: stored.value === null ? null : renderValue(stored.value), note: readTextRegion(lines, region) || null, model: renderValue(valueOf(got)) || null, proposals: stored.proposals, proposeFirst: false, newId: run.newId });
 			if (merged.write !== undefined) lines = writeTextRegion(lines, region, renderValue(merged.write));
-			slots[slot.id] = { ...stored, heading, value: merged.base === "" ? null : merged.base, proposals: merged.proposals };
+			slots[slot.id] = { ...stored, heading, value: merged.base, proposals: merged.proposals };
 		} else {
 			const items = parseRegion(lines, region, format);
 			const merged = mergeList({ base: stored.list, note: items, model: itemsOf(got), transcript, review: slot.review, newId: run.newId });
@@ -286,7 +291,14 @@ function create(run: PageRun, runSlots: readonly SlotDef[], result: ExtractionRe
 		if (placement.kind === "region") slots[slot.id] = fresh.base;
 		else settled.push(slot.id);
 	}
-	const content = mergeProperties(renderTemplate(template, { ts, title: run.title(pageDate), formatDate: run.formatDate, formatTime: run.formatTime }), runSlots, results, slots, run);
+	let lines = renderTemplate(template, { ts, title: run.title(pageDate), formatDate: run.formatDate, formatTime: run.formatTime }).split("\n");
+	// Only a first pick held back for review is pending on a new note; its region says so from the start.
+	for (const slot of Object.values(slots)) {
+		if (pendingCount(slot) === 0) continue;
+		const heading = headingOf(slot)!;
+		lines = setProposalCallout(lines, findRegion(lines, heading, compileItemFormat("- {{text}}"))!, pendingCount(slot), run.reviewLink);
+	}
+	const content = mergeProperties(lines.join("\n"), runSlots, results, slots, run);
 	const base: PageBase = { ...freshBase(run), transcript, slots, settled };
 	const proposals = Object.values(slots).reduce((sum, slot) => sum + pendingCount(slot), 0);
 	return { kind: "written", content, created: true, base, proposals, pageDate, missingRegions: [] };

@@ -102,7 +102,7 @@ describe("processPage > Value Slots", () => {
 		expect(out.base.slots).toMatchObject({ mood: { shape: "value", value: "good", property: null }, project: { value: "B", property: "project" }, tags: { added: ["budget"], buried: [] } });
 	});
 
-	it("proposes a local model's first topical pick instead of writing it, but writes a mood", async () => {
+	it("proposes a local model's first topical pick instead of writing it, also when read again before the review, but writes a mood", async () => {
 		const out = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT], backend: local({ mood: "ok", project: "C" }) }));
 		if (out.kind !== "written") throw new Error(out.kind);
 		expect(out.content).not.toContain("project:");
@@ -110,8 +110,13 @@ describe("processPage > Value Slots", () => {
 		expect(out.proposals).toBe(1);
 		const withBodyPick = await processPage(run({ template: "## Project\n{{ts.project}}\n", slots: [{ ...PROJECT, property: undefined }], backend: local({ project: "C" }) }));
 		if (withBodyPick.kind !== "written") throw new Error(withBodyPick.kind);
-		expect(withBodyPick.content).toBe("## Project\n\n");
+		expect(withBodyPick.content).toBe("## Project\n> [!todo] 1 proposal — [Review](obsidian://review)\n\n");
 		expect(withBodyPick.proposals).toBe(1);
+		// Read again before the review: still a proposal, in the body and in the frontmatter.
+		const bodyAgain = await processPage(run({ template: "## Project\n{{ts.project}}\n", slots: [{ ...PROJECT, property: undefined }], backend: local({ project: "C" }), base: withBodyPick.base, note: withBodyPick.content }));
+		expect(bodyAgain).toMatchObject({ kind: "written", content: null, proposals: 1 });
+		const propertyAgain = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT], backend: local({ mood: "ok", project: "C" }), base: out.base, note: out.content }));
+		expect(propertyAgain).toMatchObject({ kind: "written", content: null, proposals: 1 });
 		// A choice whose options were never filled in is no topical list: written directly.
 		const bare = await processPage(run({ template: "## Mood\n{{ts.mood}}\n", slots: [{ ...MOOD, fields: [{ name: "mood", type: "choice" }] }], backend: local({ mood: null }) }));
 		expect(bare).toMatchObject({ kind: "written", proposals: 0 });
@@ -233,6 +238,15 @@ describe("processPage > an existing note", () => {
 		const again = await processPage(run({ base: first.base, note: gutted, backend: backend({ tasks: [task("Call Bob", "call Bob by Friday", { id: "id1" })], summary: "Other." }) }));
 		if (again.kind !== "written") throw new Error(again.kind);
 		expect(again.missingRegions).toEqual(["summary"]);
+		expect(again.base.slots.summary).toEqual(first.base.slots.summary);
+	});
+
+	it("leaves a region alone whose Slot's Shape no longer matches the base, instead of merging across Shapes", async () => {
+		const first = await created();
+		const summaryAsList: SlotDef = { ...SUMMARY, shape: "list", itemFormat: "- {{text}}" };
+		const again = await processPage(run({ slots: [TASKS, summaryAsList], base: first.base, note: first.content, backend: backend({ tasks: [task("Call Bob", "call Bob by Friday", { id: "id1", due: { words: "by Friday", rel: "none" } })], summary: [{ source: "Met Bob", reason: "", id: "new", text: "Met Bob" }] }) }));
+		if (again.kind !== "written") throw new Error(again.kind);
+		expect(again.content).toBeNull();
 		expect(again.base.slots.summary).toEqual(first.base.slots.summary);
 	});
 
