@@ -1139,3 +1139,10 @@
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
       test: "openAiCompatComplete > turns a timeout, an unreachable server and any other throw into a reason"
+
+    - id: V12.9
+      scenario: "No fetch is injected, as in the shipped plugin"
+      expect: "The call goes through the requestUrl wrapper, never the global fetch"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > goes through Obsidian's requestUrl wrapper when no fetch is injected, never the global fetch"
