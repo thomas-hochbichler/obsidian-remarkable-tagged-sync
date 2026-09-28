@@ -69,3 +69,113 @@
       layer: unit
       file: src/intelligence/seen-set.test.ts
       test: "switchOnStamp > stamps pages written before the toggle or never stamped, and leaves a page written after it to the two questions"
+
+- feature: V2
+  name: Item formats write and read one item per line
+  code: src/intelligence/item-format.ts
+  tier: free
+  scenarios:
+    - id: V2.1
+      scenario: "An item is written through a Tasks and a Dataview format"
+      expect: "The fields land where the format puts them"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > writes an item through the format"
+
+    - id: V2.2
+      scenario: "A field is empty"
+      expect: "Its label goes too -- a stray 📅 or `[due:: ]` would make a query read a date that is not there"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > drops a field together with the words that label it when the field is empty"
+
+    - id: V2.3
+      scenario: "A ticked line with a Tasks done date is rewritten"
+      expect: "The tick and `✅ date` survive"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > writes the checkbox state it is given and keeps the trailing fields of the line it replaces"
+
+    - id: V2.4
+      scenario: "A List format has no checkbox"
+      expect: "No `[x]` is invented"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > ignores a checkbox state for a format without a checkbox"
+
+    - id: V2.5
+      scenario: "Two placeholders share one word and only one has a value"
+      expect: "The other is written empty, not as `undefined`"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > leaves a second field in the same word empty when only the first has a value"
+
+    - id: V2.6
+      scenario: "A format ends in a literal like `#task`"
+      expect: "The literal is always written"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > keeps literal words after the last placeholder"
+
+    - id: V2.7
+      scenario: "A line the engine wrote is read back"
+      expect: "Same text and fields -- the merge compares against them"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > reads text and fields back from a line it wrote"
+
+    - id: V2.8
+      scenario: "The user deleted the due date"
+      expect: "The line still parses, with no field"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > reads a line whose optional field the user removed"
+
+    - id: V2.9
+      scenario: "A line carries `[x]` or a custom status like `[/]`"
+      expect: "It parses, and the character is kept"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > treats the checkbox character as a wildcard"
+
+    - id: V2.10
+      scenario: "Tasks appended priority, recurrence and a done date"
+      expect: "They are split off as a tail, never read as item text"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > tolerates the trailing fields the Tasks plugin appends"
+
+    - id: V2.11
+      scenario: "A line is indented or has doubled spaces"
+      expect: "It still parses"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > tolerates indentation and extra spaces"
+
+    - id: V2.12
+      scenario: "A region holds prose, a callout, a heading or an empty checkbox"
+      expect: "Not an item -- the parser skips it"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > returns null for a line that is not an item: prose, callouts, headings, blank lines"
+
+    - id: V2.13
+      scenario: "A format contains `$`, `(` or `)`"
+      expect: "They match literally"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > reads a line with a format's regex characters literally"
+
+    - id: V2.14
+      scenario: "The Profile editor asks which Fields a format places"
+      expect: "Only the fields, never `text`"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > names the fields a format places"
+
+    - id: V2.15
+      scenario: "A format lacks `{{text}}`"
+      expect: "Compiling it throws, naming the missing placeholder"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > rejects > a format without {{text}}"
