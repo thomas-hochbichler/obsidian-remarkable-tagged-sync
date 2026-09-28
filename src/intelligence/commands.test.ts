@@ -1,9 +1,10 @@
 import { App } from "obsidian";
 import { describe, expect, it } from "vitest";
-import { FakeEl, takeModals } from "../../test-stubs/fake-obsidian";
+import { FakeEl, takeModals, takeNotices, TFile } from "../../test-stubs/fake-obsidian";
+import type { SyncIndex } from "../sync-engine";
 import type { NoteStore } from "../note-builder";
 import { BASE_VERSION, createBaseStore, NO_FAILURES } from "./base-store";
-import { openReview, registerIntelligenceCommands, ReviewModal, type IntelligenceCommandsHost } from "./commands";
+import { openReview, registerIntelligenceCommands, reTranscribePageNote, ReviewModal, type IntelligenceCommandsHost } from "./commands";
 import type { ApplyOutcome, ReviewItem } from "./review-session";
 
 const item = (notePath: string, label: string, source: string | null = "words"): ReviewItem => ({
@@ -82,10 +83,13 @@ describe("registerIntelligenceCommands", () => {
 		});
 		const notes = new Map([["Work/n1.md", "## Summary\nMine."]]);
 		const noteStore: NoteStore = { read: async (p) => notes.get(p) ?? null, exists: async () => true, write: async (p, c) => void notes.set(p, c), ensureFolder: async () => {}, move: async () => {} };
-		const commands: { id: string; callback?: () => unknown }[] = [];
+		const commands: { id: string; callback?: () => unknown; checkCallback?: (checking: boolean) => boolean }[] = [];
 		const handlers: Record<string, () => void> = {};
 		const host: IntelligenceCommandsHost = {
 			app: new App() as never,
+			index: () => ({ rootHash: null, rows: {} }),
+			setIndex: async () => {},
+			rerun: async () => ({ message: "" }),
 			addCommand: (command) => commands.push(command as { id: string; callback?: () => unknown }),
 			registerObsidianProtocolHandler: (action, handler) => void (handlers[action] = handler),
 			review: () => ({
@@ -96,7 +100,7 @@ describe("registerIntelligenceCommands", () => {
 			}),
 		};
 		registerIntelligenceCommands(host);
-		expect(commands.map((c) => c.id)).toEqual(["review-proposals"]);
+		expect(commands.map((c) => c.id)).toEqual(["review-proposals", "rerun-extraction"]);
 		expect(Object.keys(handlers)).toEqual(["tagged-sync-review"]);
 
 		const modalOpened = await openReview(host);
@@ -112,5 +116,52 @@ describe("registerIntelligenceCommands", () => {
 		await flush();
 		await flush();
 		expect(takeModals().filter((m) => m instanceof ReviewModal)).toHaveLength(2);
+	});
+});
+
+describe("the page-note commands", () => {
+	const row = { syncKey: "d:p:work", unitKey: "d:p:work", docId: "d", pageId: "p", tag: "work", scope: "notebook" as const, notePath: "Work/p.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "", syncedAt: "" };
+
+	function commandHost(active: TFile | null) {
+		let index: SyncIndex = { rootHash: null, rows: {}, intelligenceRows: { [row.syncKey]: row }, seenPages: { [row.syncKey]: { scope: "notebook", pageHash: "h", firstSeen: null, noteId: "n1" } } };
+		const commands: { id: string; checkCallback?: (checking: boolean) => boolean }[] = [];
+		const reran: string[] = [];
+		const app = new App() as unknown as { workspace: { getActiveFile: () => TFile | null } };
+		app.workspace.getActiveFile = () => active;
+		const host: IntelligenceCommandsHost = {
+			app: app as never,
+			addCommand: (command) => commands.push(command as { id: string }),
+			registerObsidianProtocolHandler: () => {},
+			review: () => ({ rows: {}, baseStore: createBaseStore({ read: async () => null, write: async () => {}, remove: async () => {} }, "p"), noteStore: {} as NoteStore, newId: () => "x" }),
+			index: () => index,
+			setIndex: async (next) => void (index = next),
+			rerun: async (path) => (reran.push(path), { message: "Extracted again; the note is updated.", index: { ...index, rootHash: "rerun" } }),
+		};
+		registerIntelligenceCommands(host);
+		return { host, rerunCommand: commands.find((c) => c.id === "rerun-extraction")!, reran, index: () => index };
+	}
+	const file = (path: string, extension = "md") => Object.assign(Object.create(TFile.prototype) as TFile, { path, extension });
+
+	it("offers Re-run extraction on a Markdown note only, and runs it on the one on screen, saying what happened", async () => {
+		expect(commandHost(null).rerunCommand.checkCallback!(true)).toBe(false);
+		expect(commandHost(file("a.pdf", "pdf")).rerunCommand.checkCallback!(true)).toBe(false);
+		const { rerunCommand, reran, index } = commandHost(file("Work/p.md"));
+		takeNotices();
+		expect(rerunCommand.checkCallback!(true)).toBe(true);
+		expect(reran).toEqual([]);
+		rerunCommand.checkCallback!(false);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(reran).toEqual(["Work/p.md"]);
+		expect(index().rootHash).toBe("rerun");
+		expect(takeNotices()).toEqual(["Extracted again; the note is updated."]);
+	});
+
+	it("marks a page note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command", async () => {
+		const { host, index } = commandHost(null);
+		takeNotices();
+		expect(await reTranscribePageNote(host, "Other.md")).toBe(false);
+		expect(await reTranscribePageNote(host, "Work/p.md")).toBe(true);
+		expect(index().seenPages!["d:p:work"].pageHash).toBeNull();
+		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
 	});
 });

@@ -10,7 +10,7 @@ import {
 	TFile,
 	TFolder,
 } from "obsidian";
-import { normalizeAttachmentsFolder } from "./attachment-writer";
+import { attachmentPath, normalizeAttachmentsFolder } from "./attachment-writer";
 import { autoSpendBlocked, backgroundConsentGiven, backgroundRunBlocked } from "./auto-sync-gates";
 import { confirmDialog } from "./confirm-modal";
 import { isIntervalSyncDue } from "./auto-sync";
@@ -73,8 +73,9 @@ import {
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
-import { hostEnvironmentFor, intelligenceNotices, prepareRun, reviewStoresFor } from "./intelligence/host";
-import { registerIntelligenceCommands } from "./intelligence/commands";
+import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
+import { type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscribePageNote } from "./intelligence/commands";
+import { rerunExtraction } from "./intelligence/rerun";
 import { followVaultRename } from "./intelligence/vault-follow";
 import { intelligenceProAllowed } from "./intelligence/plugin-rules";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
@@ -449,12 +450,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// The Pro half -- the desktop-app connection and write-back -- is refused in place where it
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
-		registerIntelligenceCommands({
-			app: this.app,
-			addCommand: (command) => this.addCommand(command),
-			registerObsidianProtocolHandler: (action, handler) => this.registerObsidianProtocolHandler(action, handler),
-			review: () => reviewStoresFor(hostEnvironmentFor(this.app, this.manifest, createNoteStore(this.app), moment), this.data.syncIndex.intelligenceRows ?? {}),
-		});
+		registerIntelligenceCommands(this.intelligenceCommands);
 
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
@@ -648,6 +644,36 @@ export default class TaggedSyncPlugin extends Plugin {
 		return preflight;
 	}
 
+	/** The engine's environment in this app; nothing is read until something asks. */
+	private intelligenceEnv(): HostEnvironment {
+		return hostEnvironmentFor(this.app, this.manifest, createNoteStore(this.app), moment);
+	}
+
+	/** What the engine runs on, decided per run: the sync's and "Re-run extraction"'s alike. */
+	private intelligenceInputs(tagFolderMap: Record<string, string>, transcriptionBackend: string, background: boolean): RunInputs {
+		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background };
+	}
+
+	/** The engine's commands reach the plugin through this; see `intelligence/commands.ts`. */
+	private readonly intelligenceCommands: IntelligenceCommandsHost = {
+		app: this.app,
+		addCommand: (command) => this.addCommand(command),
+		registerObsidianProtocolHandler: (action, handler) => this.registerObsidianProtocolHandler(action, handler),
+		review: () => reviewStoresFor(this.intelligenceEnv(), this.data.syncIndex.intelligenceRows ?? {}),
+		index: () => this.data.syncIndex,
+		setIndex: async (index) => {
+			this.data.syncIndex = index;
+			await this.saveData(this.data);
+		},
+		rerun: async (notePath) => rerunExtraction(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, this.pageRenderPath(notePath)),
+	};
+
+	/** The render a page note's row points at, for a re-run: the same attachment the sync writes. */
+	private pageRenderPath(notePath: string): string {
+		const row = Object.values(this.data.syncIndex.intelligenceRows ?? {}).find((candidate) => candidate.notePath === notePath);
+		return row === undefined ? "" : attachmentPath(normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)), row.docId, row.pageId);
+	}
+
 	/** Runs a sync. The caller holds the run lock and releases it; see {@link claimRun}. */
 	private async runSyncNow(backend: OcrBackendAdapter, auto: boolean): Promise<void> {
 		this.stopRequested = false;
@@ -669,14 +695,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			const tagFolderMap = await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap);
 			// The per-tag modes and their print go to every device; the engine itself only to the one
 			// that runs it, and only with a backend that can (Intelligence Engine §9).
-			const intelligence = await prepareRun(hostEnvironmentFor(this.app, this.manifest, createNoteStore(this.app), moment), {
-				settings: this.data.intelligence,
-				tagFolderMap,
-				pro: intelligenceProAllowed(this.entitlement()),
-				transcriptionBackend: backend.id,
-				providerSettings: this.data.llmProviders,
-				background: auto,
-			});
+			const intelligence = await prepareRun(this.intelligenceEnv(), this.intelligenceInputs(tagFolderMap, backend.id, auto));
 			const result = await runSync(
 				{
 					api: session.api,
@@ -1004,6 +1023,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * dialog comes last, once the page count is known and can be quoted.
 	 */
 	async reTranscribeNote(file: TFile): Promise<void> {
+		// A page note is read again by the next sync, which is the only thing that can read a page.
+		if (await reTranscribePageNote(this.intelligenceCommands, file.path)) return;
 		// With its status, not filtered to `active`: filtering would make a notebook the user deleted
 		// from the device indistinguishable from a note that was never synced, and give it the wrong
 		// sentence (spec §3).

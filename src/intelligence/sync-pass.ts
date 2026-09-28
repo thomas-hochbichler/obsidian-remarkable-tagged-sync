@@ -147,14 +147,21 @@ function baseHash(base: PageBase): string {
  * Runs the switch-on scan where it is due, then every new or changed page of every Intelligence-mapped
  * unit of this document through the engine. Mutates `state`; the caller checkpoints it.
  */
-export async function processDocument(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState): Promise<PassReport> {
+export interface ProcessOptions {
+	/** Keys processed whatever the seen-set says: "Re-run extraction" on one page note (spec §9). */
+	force?: ReadonlySet<string>;
+	/** Only some of the document's units are given, so a missing one says nothing about its tag. */
+	partial?: boolean;
+}
+
+export async function processDocument(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState, options: ProcessOptions = {}): Promise<PassReport> {
 	const report = emptyReport();
 	const pageById = new Map(doc.pages.map((page) => [page.id, page]));
 
 	// Tag gone from the notebook or page on the tablet: the row is orphaned and its note stays. A tag
 	// whose Intelligence Mode is merely off is still here, and its rows stay active and untouched.
 	const present = new Set(doc.units.flatMap((unit) => unit.pageIds.map((pageId) => intelligenceSyncKey(doc.docId, pageId, unit.tag))));
-	for (const [key, row] of Object.entries(state.rows)) if (row.docId === doc.docId && row.status === "active" && !present.has(key)) state.rows[key] = { ...row, status: "orphaned" };
+	for (const [key, row] of Object.entries(state.rows)) if (!options.partial && row.docId === doc.docId && row.status === "active" && !present.has(key)) state.rows[key] = { ...row, status: "orphaned" };
 
 	const work: { unit: DocUnit; page: DocPage; key: string; seen: SeenEntry | undefined }[] = [];
 	let legacyRecorded = false;
@@ -174,13 +181,13 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 
 			// The scan re-stamps every page written up to the toggle, known or not, so pages written
 			// while the mode was off count as old. A page written after it is left to the two questions.
-			if (scanDue && switchOnStamp(page.modified, enabledAt)) {
+			if (scanDue && !options.force?.has(key) && switchOnStamp(page.modified, enabledAt)) {
 				seen = { ...seen, scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified };
 				state.seenPages[key] = seen;
 				continue;
 			}
 
-			const kind = classifyUnit({ seen, pageHash: page.hash, modified: page.modified, enabledAt, legacy: doc.legacy });
+			const kind = options.force?.has(key) ? "changed" : classifyUnit({ seen, pageHash: page.hash, modified: page.modified, enabledAt, legacy: doc.legacy });
 			if (kind === "old") {
 				if (doc.legacy && seen === undefined) legacyRecorded = true;
 				state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: page.modified };

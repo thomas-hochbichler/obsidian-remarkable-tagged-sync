@@ -12,7 +12,7 @@ import { type BaseFiles, type BaseStore, createBaseStore } from "./base-store";
 import { extractionBackendEntry } from "./extraction-registry";
 import { backgroundExtractionAllowed, chooseExtractionBackend, effectiveModes, effectiveSlotsFor, isEngineDevice, scansDue } from "./plugin-rules";
 import { intelligenceFingerprint, type IntelligenceSettings } from "./settings";
-import { completeScans, type IntelligenceRow, type PassReport, processDocument } from "./sync-pass";
+import { completeScans, type IntelligencePassDeps, type IntelligenceRow, type PassReport, processDocument } from "./sync-pass";
 
 /** A plain file API over the plugin folder: `vault.adapter` in the app. */
 export interface PluginFiles {
@@ -92,6 +92,8 @@ export interface IntelligenceRun {
 	hook: IntelligenceHook | undefined;
 	/** Why the engine will not run although a tag asks for it; said once per run. */
 	paused: string | null;
+	/** What the hook runs on; present exactly when `hook` is, for a run over a single note. */
+	deps?: IntelligencePassDeps;
 }
 
 /** What a review reads and writes, from the environment of the running app. */
@@ -118,7 +120,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 	}
 
 	const formats = await coreTemplateFormats(env.files, env.configDir);
-	const deps = {
+	const deps: IntelligencePassDeps = {
 		settings: input.settings,
 		tagFolderMap: input.tagFolderMap,
 		effectiveSlots: effectiveSlotsFor(input.pro),
@@ -141,7 +143,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		process: (doc, state) => processDocument(deps, doc, state),
 		completeScans: (state) => completeScans(input.settings, input.tagFolderMap, Object.keys(input.tagFolderMap).filter((tag) => modes(tag).intelligence), state),
 	};
-	return { modes, fingerprint, hook, paused: null };
+	return { modes, fingerprint, hook, paused: null, deps };
 }
 
 /** The slice of `vault.adapter` the host needs. */

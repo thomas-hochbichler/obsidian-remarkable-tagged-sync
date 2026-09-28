@@ -3,7 +3,9 @@
  * proposal callout in a note carries (spec §8). Both open one Modal over all page notes.
  */
 
-import { type App, type Command, Modal } from "obsidian";
+import { type App, type Command, Modal, Notice } from "obsidian";
+import type { SyncIndex } from "../sync-engine";
+import { isPageNote, markForRereading, type RerunOutcome } from "./rerun";
 import type { NoteStore } from "../note-builder";
 import type { BaseStore } from "./base-store";
 import { REVIEW_ACTION, REVIEW_LINK } from "./host";
@@ -72,6 +74,26 @@ export interface IntelligenceCommandsHost {
 	registerObsidianProtocolHandler(action: string, handler: () => void): void;
 	/** What a review reads and writes, as it stands when the review opens. */
 	review(): { rows: Record<string, IntelligenceRow>; baseStore: BaseStore; noteStore: NoteStore; newId: () => string };
+	index(): SyncIndex;
+	/** Persists a changed index. */
+	setIndex(index: SyncIndex): Promise<void>;
+	/** "Re-run extraction" on one page note, with this run's backend and settings. */
+	rerun(notePath: string): Promise<RerunOutcome>;
+}
+
+async function say(host: IntelligenceCommandsHost, outcome: RerunOutcome): Promise<void> {
+	if (outcome.index !== undefined) await host.setIndex(outcome.index);
+	new Notice(outcome.message);
+}
+
+/**
+ * "Re-transcribe" on a page note: the page is read again on the next sync (spec §9). False for any
+ * other note, which the transcript-note command then handles as it always has.
+ */
+export async function reTranscribePageNote(host: IntelligenceCommandsHost, notePath: string): Promise<boolean> {
+	if (!isPageNote(host.index(), notePath)) return false;
+	await say(host, markForRereading(host.index(), notePath));
+	return true;
 }
 
 /** Opens the review over every pending proposal. */
@@ -85,5 +107,17 @@ export async function openReview(host: IntelligenceCommandsHost): Promise<Review
 
 export function registerIntelligenceCommands(host: IntelligenceCommandsHost): void {
 	host.addCommand({ id: "review-proposals", name: "Review proposals", callback: () => void openReview(host) });
+	host.addCommand({
+		id: "rerun-extraction",
+		name: "Re-run extraction for this page note",
+		// Offered on every Markdown file, like "Re-transcribe this note": an index lookup per keystroke
+		// is what the palette must not do. A note that is not a page note earns a sentence at run time.
+		checkCallback: (checking) => {
+			const file = host.app.workspace.getActiveFile();
+			if (file === null || file.extension !== "md") return false;
+			if (!checking) void host.rerun(file.path).then((outcome) => say(host, outcome));
+			return true;
+		},
+	});
 	host.registerObsidianProtocolHandler(REVIEW_ACTION, () => void openReview(host));
 }
