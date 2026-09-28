@@ -1078,3 +1078,64 @@
       layer: unit
       file: src/intelligence/extraction.test.ts
       test: "parseExtraction > fails an answer that is not an object, so the page is retried"
+
+- feature: V12
+  name: "Extraction backends: one call on cloud, never a throw"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V12.1
+      scenario: "A cloud backend extracts a page"
+      expect: "One call with the Profile's schema and the 4 000-token cap; a fenced answer is read too"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "oneCallBackend > sends one call under the strict schema and reads the answer"
+
+    - id: V12.2
+      scenario: "The answer is cut off, refused or prose"
+      expect: "A failure outcome with a reason; the page is retried"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "oneCallBackend > fails a truncated, refused or unreadable answer, so the page is retried"
+
+    - id: V12.3
+      scenario: "A cloud call is made"
+      expect: "Strict json_schema, bearer key, max_tokens and require_parameters"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > posts system and user messages with the schema, the key, the cap and OpenRouter's routing guard"
+
+    - id: V12.4
+      scenario: "A local free-text pass"
+      expect: "temperature 0, no key, no schema"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > sends temperature 0 and no auth or schema to the user's own server when asked for free text"
+
+    - id: V12.5
+      scenario: "No model is configured"
+      expect: "No request; the reason says where to set one"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > names a missing model instead of sending a request"
+
+    - id: V12.6
+      scenario: "finish_reason length, or no content"
+      expect: "Truncated, or failed"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > reports a cut-off answer as truncated and an empty one as failed"
+
+    - id: V12.7
+      scenario: "The provider refuses with 402"
+      expect: "The reason quotes the provider's message"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > explains a refusal with the server's own message"
+
+    - id: V12.8
+      scenario: "Timeout, refused connection, other errors"
+      expect: "A readable reason each; nothing throws"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > turns a timeout, an unreachable server and any other throw into a reason"
