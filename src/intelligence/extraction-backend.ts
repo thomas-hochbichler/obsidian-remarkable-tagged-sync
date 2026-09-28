@@ -73,6 +73,69 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
 	};
 }
 
+/**
+ * The local pass-1 prompt: free text, one heading per Slot, one line per item with the words copied
+ * off the page. Free text first because an 8B model under a grammar from the first token loses items
+ * it would have written down in prose (research 10: 16 of 29 in one call, 25 of 29 in two).
+ */
+export function localReadPrompt(input: ExtractionInput): { system: string; user: string } {
+	const { system, user } = buildPrompt(input);
+	return {
+		system: `${system}\nAnswer in plain text, not JSON. Read the whole page before answering.`,
+		user: [
+			user,
+			"",
+			"## Answer format",
+			"For every Slot write its id as a heading. Under it, one line per item:",
+			"- <item> | SOURCE: <words copied from the page> | DUE: <due words or none> | REASON: <why>",
+			"For a Text Slot write the text under its heading. Write NONE under a Slot with nothing.",
+		].join("\n"),
+	};
+}
+
+/** Pass 2 formats pass 1's notes into the schema; it sees the page too, so `source` stays verbatim. */
+export function localFormatPrompt(input: ExtractionInput, notes: string): { system: string; user: string } {
+	return {
+		system: "You convert notes about a handwritten page into JSON that follows the schema exactly. Add nothing that is not in the notes.",
+		user: ["## Notes", notes, "", "## Page text", input.transcript].join("\n"),
+	};
+}
+
+/** Whether pass 1 found nothing at all: only headings (`#…` or a bare Slot id), blank lines and NONE. Any other line is a find. */
+export function notesAreEmpty(notes: string, slotIds: readonly string[]): boolean {
+	const ids = new Set(slotIds.map((id) => id.toLowerCase()));
+	return notes
+		.split("\n")
+		.map((line) => line.trim())
+		.every((line) => line === "" || line.startsWith("#") || ids.has(line.replace(/:$/, "").toLowerCase()) || /^(?:[-*]\s*)?none\.?$/i.test(line));
+}
+
+/**
+ * Two calls per page: the local path. Pass 2 is skipped when pass 1 found nothing anywhere -- a
+ * format pass over "NONE" is where a small model invents its junk items.
+ */
+export function twoCallBackend(id: string, metered: boolean, complete: Complete): ExtractionBackend {
+	return {
+		id,
+		metered,
+		async extract(input) {
+			const read = localReadPrompt(input);
+			const notes = await complete({ ...read, schema: null, maxTokens: 2000 });
+			if (notes.kind === "truncated") return { kind: "failed", reason: "The notes pass was cut off at the token limit." };
+			if (notes.kind === "failed") return notes;
+			if (notesAreEmpty(notes.text, input.slots.map((slot) => slot.id))) {
+				return { kind: "ok", result: parseExtraction({}, input.slots, input.referenceDate)! };
+			}
+			const format = localFormatPrompt(input, notes.text);
+			const formatted = await complete({ ...format, schema: buildSchema(input.slots), maxTokens: EXTRACTION_MAX_TOKENS });
+			if (formatted.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
+			if (formatted.kind === "failed") return formatted;
+			const result = parseExtraction(readJson(formatted.text), input.slots, input.referenceDate);
+			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
+		},
+	};
+}
+
 export interface OpenAiCompatOptions {
 	baseURL: string;
 	model: string;

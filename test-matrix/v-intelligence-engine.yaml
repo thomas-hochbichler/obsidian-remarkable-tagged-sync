@@ -1530,3 +1530,36 @@
       layer: engine
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > transcript notes switched off > opens the level-1 gate when only the modes changed"
+
+- feature: V17
+  name: "Local extraction takes two calls: notes, then format"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V17.1
+      scenario: "A local model extracts a page"
+      expect: "Pass 1 free text (2 000 tokens), pass 2 under the schema (4 000) with the page text"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > writes free-text notes first, then formats them under the schema with the page beside them"
+
+    - id: V17.2
+      scenario: "Pass 1 says NONE everywhere"
+      expect: "No second call; every Slot empty"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > skips the format pass when the notes found nothing, so a small model cannot invent items there"
+
+    - id: V17.3
+      scenario: "Either pass is cut off or fails, or pass 2 is prose"
+      expect: "A failure outcome; the page retries"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > fails on a cut-off or failed pass and on an answer that is not JSON"
+
+    - id: V17.4
+      scenario: "Pass 1 lists a one-word item"
+      expect: "It counts as found; a bare Slot id or NONE does not"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "notesAreEmpty > treats a one-word item as a find, not as a heading"
