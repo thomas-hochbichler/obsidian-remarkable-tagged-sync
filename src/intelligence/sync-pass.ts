@@ -103,7 +103,9 @@ export interface IntelligencePassDeps {
 export interface PassReport {
 	notesWritten: number;
 	notesUpdated: number;
+	/** Pending proposals over every page note this run touched, and how many notes hold them. */
 	proposals: number;
+	proposalNotes: number;
 	/** One line per page whose extraction failed this run, for diagnostics. */
 	failures: string[];
 	/** Things said to the user: a page failing a third time, a legacy notebook, a lost region. */
@@ -113,7 +115,7 @@ export interface PassReport {
 export const RETRY_NOTICE_AFTER = 3;
 
 export function emptyReport(): PassReport {
-	return { notesWritten: 0, notesUpdated: 0, proposals: 0, failures: [], notices: [] };
+	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [] };
 }
 
 export function intelligenceSyncKey(docId: string, pageId: string, tag: string): string {
@@ -268,6 +270,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 		}
 		for (const id of outcome.missingRegions) report.notices.push(`"${notePath}": the heading for ${id} is gone, so it was not updated.`);
 		report.proposals += outcome.proposals;
+		if (outcome.proposals > 0) report.proposalNotes++;
 
 		await deps.baseStore.save(outcome.base);
 		// The page's hash enters the seen-set only now, after success: a failed page retries next sync.

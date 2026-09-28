@@ -2000,6 +2000,7 @@ function mergeReport(into: PassReport, from: PassReport): void {
 	into.notesWritten += from.notesWritten;
 	into.notesUpdated += from.notesUpdated;
 	into.proposals += from.proposals;
+	into.proposalNotes += from.proposalNotes;
 	into.failures.push(...from.failures);
 	for (const notice of from.notices) if (!into.notices.includes(notice)) into.notices.push(notice);
 }

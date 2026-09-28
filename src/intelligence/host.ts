@@ -4,6 +4,7 @@
  * Obsidian-shaped arrives through {@link HostEnvironment}, so this is testable without the app.
  */
 
+import { normalizePath, TFile } from "obsidian";
 import type { NoteStore } from "../note-builder";
 import type { BackendSettings } from "../ocr-registry";
 import type { IntelligenceHook } from "../sync-engine";
@@ -11,7 +12,7 @@ import { createBaseStore, type BaseFiles } from "./base-store";
 import { extractionBackendEntry } from "./extraction-registry";
 import { chooseExtractionBackend, effectiveModes, effectiveSlotsFor, isEngineDevice, scansDue } from "./plugin-rules";
 import { intelligenceFingerprint, type IntelligenceSettings } from "./settings";
-import { completeScans, processDocument } from "./sync-pass";
+import { completeScans, type PassReport, processDocument } from "./sync-pass";
 
 /** A plain file API over the plugin folder: `vault.adapter` in the app. */
 export interface PluginFiles {
@@ -30,8 +31,10 @@ export interface HostEnvironment {
 	readVaultNote(path: string): Promise<string | null>;
 	/** Creates a note in one call -- through Templater when it is installed (spec §5.4). */
 	createNote(path: string, content: string): Promise<void>;
-	formatDate(format: string | null): string;
-	formatTime(format: string | null): string;
+	/** The vault's config folder, where core Templates keeps its date and time formats. */
+	configDir: string;
+	/** Now, in a moment.js format -- `moment().format` in the app. */
+	formatNow(format: string): string;
 	randomId(): string;
 	now(): Date;
 }
@@ -89,6 +92,9 @@ export interface IntelligenceRun {
 	paused: string | null;
 }
 
+/** The template's own `{{date:FORMAT}}`, else core Templates' setting, else Obsidian's default. */
+const firstFormat = (own: string | null, core: string | null, fallback: string) => own ?? core ?? fallback;
+
 /** Everything one sync needs from the engine side, decided once at its start. */
 export async function prepareRun(env: HostEnvironment, input: RunInputs): Promise<IntelligenceRun> {
 	const modes = effectiveModes(input.settings, input.tagFolderMap, input.pro);
@@ -103,6 +109,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		return { modes, fingerprint, hook: undefined, paused: reason };
 	}
 
+	const formats = await coreTemplateFormats(env.files, env.configDir);
 	const deps = {
 		settings: input.settings,
 		tagFolderMap: input.tagFolderMap,
@@ -116,8 +123,8 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		now: () => env.now(),
 		newId: () => env.randomId().slice(0, 8),
 		newNoteId: () => env.randomId(),
-		formatDate: (format: string | null) => env.formatDate(format),
-		formatTime: (format: string | null) => env.formatTime(format),
+		formatDate: (format: string | null) => env.formatNow(firstFormat(format, formats.date, "YYYY-MM-DD")),
+		formatTime: (format: string | null) => env.formatNow(firstFormat(format, formats.time, "HH:mm")),
 		reviewLink: REVIEW_LINK,
 	};
 	const hook: IntelligenceHook = {
@@ -127,4 +134,112 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		completeScans: (state) => completeScans(input.settings, input.tagFolderMap, Object.keys(input.tagFolderMap).filter((tag) => modes(tag).intelligence), state),
 	};
 	return { modes, fingerprint, hook, paused: null };
+}
+
+/** The slice of `vault.adapter` the host needs. */
+export interface AdapterLike {
+	exists(path: string): Promise<boolean>;
+	read(path: string): Promise<string>;
+	write(path: string, data: string): Promise<void>;
+	remove(path: string): Promise<void>;
+	mkdir(path: string): Promise<void>;
+}
+
+/** The plugin folder through `vault.adapter`: absent reads as null, removing or making twice is harmless. */
+export function adapterFiles(adapter: AdapterLike): PluginFiles {
+	return {
+		read: async (path) => ((await adapter.exists(path)) ? adapter.read(path) : null),
+		write: (path, content) => adapter.write(path, content),
+		remove: async (path) => {
+			if (await adapter.exists(path)) await adapter.remove(path);
+		},
+		mkdir: async (path) => {
+			if (!(await adapter.exists(path))) await adapter.mkdir(path);
+		},
+	};
+}
+
+/** The one Templater call the engine makes (spec §5.4). */
+export interface TemplaterApi {
+	create_new_note_from_template(template: string, folder: string, filename: string, openNewNote: boolean): Promise<unknown>;
+}
+
+/** Templater's API object when that plugin is installed and enabled; it is not in Obsidian's typings. */
+export function templaterOf(app: unknown): TemplaterApi | null {
+	const templater = (app as { plugins?: { plugins?: Record<string, { templater?: Partial<TemplaterApi> } | undefined> } }).plugins?.plugins?.["templater-obsidian"]?.templater;
+	return typeof templater?.create_new_note_from_template === "function" ? (templater as TemplaterApi) : null;
+}
+
+/**
+ * Creates a note in one call, never an empty file first: through Templater when it is there, so its
+ * own syntax in the user's template runs; else the vault's `create`. A Templater that throws falls
+ * back to `create` -- the page note matters more than the template's scripting.
+ */
+export function noteCreator(templater: TemplaterApi | null, create: (path: string, content: string) => Promise<unknown>): (path: string, content: string) => Promise<void> {
+	return async (path, content) => {
+		if (templater !== null) {
+			const cut = path.lastIndexOf("/");
+			try {
+				await templater.create_new_note_from_template(content, cut === -1 ? "" : path.slice(0, cut), path.slice(cut + 1).replace(/\.md$/, ""), false);
+				return;
+			} catch (error) {
+				console.warn("Tagged Sync: Templater could not create the page note, writing it plainly", error);
+			}
+		}
+		await create(path, content);
+	};
+}
+
+/** Core Templates' `dateFormat` / `timeFormat`, which `{{date}}` and `{{time}}` follow when set (spec §4). */
+export async function coreTemplateFormats(files: Pick<PluginFiles, "read">, configDir: string): Promise<{ date: string | null; time: string | null }> {
+	try {
+		const raw = JSON.parse((await files.read(`${configDir}/templates.json`)) ?? "{}") as { dateFormat?: unknown; timeFormat?: unknown };
+		return { date: typeof raw.dateFormat === "string" && raw.dateFormat !== "" ? raw.dateFormat : null, time: typeof raw.timeFormat === "string" && raw.timeFormat !== "" ? raw.timeFormat : null };
+	} catch {
+		return { date: null, time: null };
+	}
+}
+
+/** What the user hears from the engine after a run: a pause, what it could not do, and pending proposals (spec §8, §9). */
+export function intelligenceNotices(paused: string | null, report: PassReport): string[] {
+	const lines = [...(paused === null ? [] : [paused]), ...report.notices];
+	if (report.proposals > 0) {
+		const proposals = `${report.proposals} ${report.proposals === 1 ? "proposal" : "proposals"}`;
+		const notes = `${report.proposalNotes} ${report.proposalNotes === 1 ? "note" : "notes"}`;
+		lines.push(`${proposals} in ${notes} waiting for review — run "Review proposals" or click the callout in a note.`);
+	}
+	return lines;
+}
+
+/** The slice of Obsidian's `App` the engine reaches. */
+export interface AppLike {
+	vault: {
+		configDir: string;
+		adapter: AdapterLike;
+		getAbstractFileByPath(path: string): unknown;
+		read(file: TFile): Promise<string>;
+		create(path: string, content: string): Promise<unknown>;
+	};
+}
+
+/**
+ * The engine's environment in the running app. `clock` is Obsidian's `moment`, handed in rather than
+ * imported so this stays testable where there is no app.
+ */
+export function hostEnvironmentFor(app: AppLike, manifest: { dir?: string; id: string }, noteStore: NoteStore, clock: () => { format(format: string): string }): HostEnvironment {
+	const vault = app.vault;
+	return {
+		pluginDir: manifest.dir ?? `${vault.configDir}/plugins/${manifest.id}`,
+		files: adapterFiles(vault.adapter),
+		noteStore,
+		readVaultNote: async (path) => {
+			const file = vault.getAbstractFileByPath(normalizePath(path));
+			return file instanceof TFile ? vault.read(file) : null;
+		},
+		createNote: noteCreator(templaterOf(app), (path, content) => vault.create(normalizePath(path), content)),
+		configDir: vault.configDir,
+		formatNow: (format) => clock().format(format),
+		randomId: () => crypto.randomUUID(),
+		now: () => new Date(),
+	};
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { NoteStore } from "../note-builder";
 import { compatExtractionEntry, registerExtractionBackend } from "./extraction-registry";
-import { type HostEnvironment, localDeviceId, prepareRun, REVIEW_LINK } from "./host";
+import { TFile } from "obsidian";
+import { adapterFiles, coreTemplateFormats, type HostEnvironment, hostEnvironmentFor, intelligenceNotices, localDeviceId, noteCreator, prepareRun, REVIEW_LINK, templaterOf } from "./host";
+import { emptyReport } from "./sync-pass";
 import { emptyIntelligence, EMPTY_INTELLIGENCE_FINGERPRINT, setIntelligenceMode, type IntelligenceSettings } from "./settings";
 import { parseExtraction } from "./extraction";
 import type { IntelligenceState } from "./sync-pass";
@@ -40,8 +42,8 @@ function env(files: Record<string, string> = {}): HostEnvironment & { files: Hos
 		noteStore,
 		readVaultNote: async () => null,
 		createNote: async () => {},
-		formatDate: () => "D",
-		formatTime: () => "T",
+		configDir: ".obsidian",
+		formatNow: (format) => `<${format}>`,
 		randomId: () => `rand-${++n}-0123456789`,
 		now: () => new Date("2026-09-28T10:00:00.000Z"),
 	};
@@ -82,16 +84,16 @@ describe("prepareRun", () => {
 	});
 
 	it("writes a page note through the environment: template, dates, ids, one base folder", async () => {
-		const e = env({ "plugin/device-id": "device-a" });
+		const e = env({ "plugin/device-id": "device-a", ".obsidian/templates.json": JSON.stringify({ dateFormat: "DD.MM.YYYY" }) });
 		const created: Record<string, string> = {};
-		e.readVaultNote = async (path) => (path === "T.md" ? "{{date}} {{time}}\n## Tasks\n{{ts.tasks}}\n" : null);
+		e.readVaultNote = async (path) => (path === "T.md" ? "{{date}} {{time}} {{time:ss}}\n## Tasks\n{{ts.tasks}}\n" : null);
 		e.createNote = async (path, content) => void (created[path] = content);
 		const settings: IntelligenceSettings = { ...onDevice(ON), backend: "hostfake", profiles: [{ id: "p", name: "P", description: "", template: "T.md", slots: ["tasks"] }], mappings: { work: { ...ON.mappings.work, profiles: ["p"] } } };
 		const run = await prepareRun(e, { settings, tagFolderMap: MAP, pro: true, transcriptionBackend: "vision", providerSettings: {} });
 		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: "2026-09-01T00:00:00.000Z" } };
 		const page = { id: "p1", ordinal: 1, hash: "h", modified: Date.parse("2026-09-02T00:00:00.000Z") };
 		await run.hook!.process({ docId: "d", name: "N", legacy: false, pages: [page], units: [{ tag: "work", scope: "notebook", pageIds: ["p1"] }], transcribe: async () => new Map([["p1", "call Bob"]]), writeRender: async () => "a.pdf" }, state);
-		expect(created).toEqual({ "Work/N/2026-09-02 N p1.md": "D T\n## Tasks\n- [ ] Call Bob\n" });
+		expect(created).toEqual({ "Work/N/2026-09-02 N p1.md": "<DD.MM.YYYY> <HH:mm> <ss>\n## Tasks\n- [ ] Call Bob\n" });
 		expect(state.rows["d:p1:work"]).toMatchObject({ noteId: "rand-1-0123456789", syncedAt: "2026-09-28T10:00:00.000Z" });
 		expect(e.files.dirs).toEqual(["plugin/base"]);
 		expect(Object.keys(e.files.data)).toContain("plugin/base/rand-1-0123456789.json");
@@ -118,5 +120,98 @@ describe("prepareRun", () => {
 		expect(report.notesWritten).toBe(0);
 		expect(e.files.dirs).toEqual([]);
 		expect(REVIEW_LINK).toBe("obsidian://tagged-sync-review");
+	});
+});
+
+describe("the Obsidian glue", () => {
+	it("reads an absent file as null, and removes or makes a folder only when that changes something", async () => {
+		const files = new Map<string, string>([["a", "1"]]);
+		const calls: string[] = [];
+		const adapter = {
+			exists: async (p: string) => files.has(p),
+			read: async (p: string) => files.get(p)!,
+			write: async (p: string, d: string) => void files.set(p, d),
+			remove: async (p: string) => void (calls.push(`rm ${p}`), files.delete(p)),
+			mkdir: async (p: string) => void (calls.push(`mkdir ${p}`), files.set(p, "")),
+		};
+		const f = adapterFiles(adapter);
+		expect([await f.read("a"), await f.read("b")]).toEqual(["1", null]);
+		await f.write("b", "2");
+		await f.remove("b");
+		await f.remove("b");
+		await f.mkdir("dir");
+		await f.mkdir("dir");
+		expect(calls).toEqual(["rm b", "mkdir dir"]);
+	});
+
+	it("finds Templater only when its API is there", () => {
+		const api = { create_new_note_from_template: async () => null };
+		expect(templaterOf({ plugins: { plugins: { "templater-obsidian": { templater: api } } } })).toBe(api);
+		expect(templaterOf({ plugins: { plugins: { "templater-obsidian": { templater: {} } } } })).toBeNull();
+		expect(templaterOf({})).toBeNull();
+	});
+
+	it("creates a note through Templater with folder and name, falls back when it throws, and uses create without it", async () => {
+		const created: string[] = [];
+		const create = async (path: string, content: string) => void created.push(`${path}=${content}`);
+		const seen: unknown[][] = [];
+		await noteCreator({ create_new_note_from_template: async (...args) => void seen.push(args) }, create)("Work/N/p1.md", "body");
+		await noteCreator({ create_new_note_from_template: async (...args) => void seen.push(args) }, create)("root.md", "top");
+		expect(seen).toEqual([
+			["body", "Work/N", "p1", false],
+			["top", "", "root", false],
+		]);
+		await noteCreator({ create_new_note_from_template: () => Promise.reject(new Error("syntax")) }, create)("a.md", "x");
+		await noteCreator(null, create)("b.md", "y");
+		expect(created).toEqual(["a.md=x", "b.md=y"]);
+	});
+
+	it("reads core Templates' date and time formats, ignoring blanks and a broken file", async () => {
+		const read = (text: string | null) => ({ read: async () => text });
+		expect(await coreTemplateFormats(read(JSON.stringify({ dateFormat: "DD.MM.YYYY", timeFormat: "HH:mm" })), ".obsidian")).toEqual({ date: "DD.MM.YYYY", time: "HH:mm" });
+		expect(await coreTemplateFormats(read(JSON.stringify({ dateFormat: "", timeFormat: 3 })), ".obsidian")).toEqual({ date: null, time: null });
+		expect(await coreTemplateFormats(read(null), ".obsidian")).toEqual({ date: null, time: null });
+		expect(await coreTemplateFormats(read("{broken"), ".obsidian")).toEqual({ date: null, time: null });
+	});
+});
+
+describe("intelligenceNotices", () => {
+	it("says a pause, the engine's own notices, and the pending proposals with where to review them", () => {
+		expect(intelligenceNotices(null, emptyReport())).toEqual([]);
+		expect(intelligenceNotices("Paused.", { ...emptyReport(), notices: ["Page 3 failed 3 times."], proposals: 1, proposalNotes: 1 })).toEqual([
+			"Paused.",
+			"Page 3 failed 3 times.",
+			'1 proposal in 1 note waiting for review — run "Review proposals" or click the callout in a note.',
+		]);
+		expect(intelligenceNotices(null, { ...emptyReport(), proposals: 4, proposalNotes: 2 })).toEqual(['4 proposals in 2 notes waiting for review — run "Review proposals" or click the callout in a note.']);
+	});
+});
+
+describe("hostEnvironmentFor", () => {
+	it("reaches the app through the vault: plugin folder, templates, note creation and the clock", async () => {
+		const template = Object.assign(Object.create(TFile.prototype) as TFile, { path: "T.md" });
+		const created: string[] = [];
+		const app = {
+			vault: {
+				configDir: ".obsidian",
+				adapter: { exists: async () => false, read: async () => "", write: async () => {}, remove: async () => {}, mkdir: async () => {} },
+				getAbstractFileByPath: (path: string) => (path === "T.md" ? template : path === "Folder" ? {} : null),
+				read: async () => "template text",
+				create: async (path: string, content: string) => void created.push(`${path}=${content}`),
+			},
+		};
+		const store = env().noteStore;
+		const e = hostEnvironmentFor(app, { id: "remarkable-tagged-sync" }, store, () => ({ format: (f) => `now(${f})` }));
+		expect(e.pluginDir).toBe(".obsidian/plugins/remarkable-tagged-sync");
+		expect(hostEnvironmentFor(app, { id: "x", dir: "custom/dir" }, store, () => ({ format: () => "" })).pluginDir).toBe("custom/dir");
+		expect([await e.readVaultNote("T.md"), await e.readVaultNote("Folder"), await e.readVaultNote("gone.md")]).toEqual(["template text", null, null]);
+		await e.createNote("Work/p1.md", "body");
+		expect(created).toEqual(["Work/p1.md=body"]);
+		expect(e.formatNow("YYYY")).toBe("now(YYYY)");
+		expect(e.randomId()).toMatch(/^[0-9a-f-]{36}$/);
+		expect(e.now()).toBeInstanceOf(Date);
+		expect(e.noteStore).toBe(store);
+		expect(e.configDir).toBe(".obsidian");
+		expect(await e.files.read("x")).toBeNull();
 	});
 });

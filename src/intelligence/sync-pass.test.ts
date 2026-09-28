@@ -136,6 +136,17 @@ describe("processDocument > after the scan", () => {
 		expect(state.seenPages["d1:p3:work"].pageHash).toBe("h3b");
 	});
 
+	it("counts the notes that hold proposals", async () => {
+		const mem = memory();
+		const state = fresh();
+		const review = { ...settings(), slots: defaultSlots() };
+		const d = deps(mem, { settings: review });
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		completeScans(review, MAP, ["work"], state);
+		const report = await processDocument(d, doc([page("p3", 3, "h3b", AFTER + 1)], { p3: "todo Call todo Email todo Fax" }), state);
+		expect(report).toMatchObject({ proposals: 2, proposalNotes: 1 });
+	});
+
 	it("brings an old page in once the user writes on it", async () => {
 		const { mem, state, d } = await synced();
 		const report = await processDocument(d, doc([page("p1", 1, "h1b", AFTER + 5), page("p3", 3, "h3", AFTER)], { p1: "todo Plan" }), state);
