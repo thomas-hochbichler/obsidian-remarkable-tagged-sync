@@ -77,15 +77,34 @@ export function renderTagModes(row: Setting, tag: string, host: IntelligenceSett
 				await host.saveAndRedraw();
 			}),
 	);
+	if (!modes.transcript && modes.intelligence) row.setDesc("Transcript off: search the full text in the reMarkable app; Obsidian holds only what the engine extracted.");
 	// The Profile only matters, and is only offered, where page notes are on.
 	if (!modes.intelligence) return;
+	const setProfiles = (profiles: string[]) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), profiles } } }));
+	if (!host.pro) {
+		row.addDropdown((dropdown) => {
+			dropdown.addOption("", genericProfile(host.pro).name);
+			for (const profile of settings.profiles) dropdown.addOption(profile.id, profile.name);
+			dropdown.setValue(modes.profiles[0] ?? "");
+			dropdown.onChange(async (id) => setProfiles(id === "" ? [] : [id]));
+		});
+		return;
+	}
+	// Pro: several Profiles per tag; with more than one, each new page is sorted by its description (spec §5.1).
+	for (const id of modes.profiles) {
+		const name = settings.profiles.find((profile) => profile.id === id)?.name ?? id;
+		row.addButton((button) => button.setButtonText(`${name} ×`).setTooltip(`Stop offering ${name} for this tag`).onClick(async () => setProfiles(modes.profiles.filter((other) => other !== id))));
+	}
+	const addable = settings.profiles.filter((profile) => !modes.profiles.includes(profile.id));
+	if (addable.length === 0) return;
 	row.addDropdown((dropdown) => {
-		dropdown.addOption("", genericProfile(host.pro).name);
-		for (const profile of settings.profiles) dropdown.addOption(profile.id, profile.name);
-		dropdown.setValue(modes.profiles[0] ?? "");
-		dropdown.onChange(async (id) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), profiles: id === "" ? [] : [id] } } })));
+		dropdown.addOption("", modes.profiles.length === 0 ? `${genericProfile(host.pro).name}; add a profile…` : "Add a profile…");
+		for (const profile of addable) dropdown.addOption(profile.id, profile.name);
+		dropdown.setValue("");
+		dropdown.onChange(async (id) => {
+			if (id !== "") await setProfiles([...modes.profiles, id]);
+		});
 	});
-	if (!modes.transcript && modes.intelligence) row.setDesc("Transcript off: search the full text in the reMarkable app; Obsidian holds only what the engine extracted.");
 }
 
 export function renderIntelligenceSection(containerEl: HTMLElement, host: IntelligenceSettingsHost): void {

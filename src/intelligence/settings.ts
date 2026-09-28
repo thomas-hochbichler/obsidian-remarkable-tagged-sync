@@ -77,6 +77,8 @@ export interface IntelligenceSettings {
 	autoExtractMetered: boolean;
 	/** Consent to run the local model for extraction in a background sync; off by default. */
 	autoExtractLocal: boolean;
+	/** Notices the engine gives once and never again, by key. */
+	saidOnce: string[];
 }
 
 export const DEFAULT_MODES: Readonly<MappingModes> = Object.freeze({ transcript: true, intelligence: false, profiles: [] as string[] });
@@ -108,7 +110,7 @@ export function genericProfile(pro: boolean): ProfileDef {
 }
 
 export function emptyIntelligence(): IntelligenceSettings {
-	return { mappings: {}, profiles: [], slots: defaultSlots(), backend: null, model: null, engineDeviceId: null, autoExtractMetered: false, autoExtractLocal: false };
+	return { mappings: {}, profiles: [], slots: defaultSlots(), backend: null, model: null, engineDeviceId: null, autoExtractMetered: false, autoExtractLocal: false, saidOnce: [] };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -151,6 +153,7 @@ export function readIntelligence(saved: unknown, now: Date): IntelligenceSetting
 		engineDeviceId: stringOr(saved.engineDeviceId, null),
 		autoExtractMetered: saved.autoExtractMetered === true,
 		autoExtractLocal: saved.autoExtractLocal === true,
+		saidOnce: Array.isArray(saved.saidOnce) ? saved.saidOnce.filter((key): key is string => typeof key === "string") : [],
 	};
 }
 
@@ -204,4 +207,10 @@ export function slotIdFor(name: string, taken: readonly string[]): string {
 	let id = stem;
 	for (let n = 2; taken.includes(id); n++) id = `${stem}-${n}`;
 	return id;
+}
+
+/** Records notices as said, so they are never said again. Unchanged settings come back as they were. */
+export function markSaid(settings: IntelligenceSettings, keys: readonly string[]): IntelligenceSettings {
+	const fresh = [...new Set(keys)].filter((key) => !settings.saidOnce.includes(key));
+	return fresh.length === 0 ? settings : { ...settings, saidOnce: [...settings.saidOnce, ...fresh] };
 }

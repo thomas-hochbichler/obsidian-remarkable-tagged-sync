@@ -1892,6 +1892,7 @@ function mergeReport(into: PassReport, from: PassReport): void {
 	into.failures.push(...from.failures);
 	for (const notice of from.notices) if (!into.notices.includes(notice)) into.notices.push(notice);
 	for (const id of from.usedSlots) if (!into.usedSlots.includes(id)) into.usedSlots.push(id);
+	for (const key of from.saidOnce) if (!into.saidOnce.includes(key)) into.saidOnce.push(key);
 }
 
 /**

@@ -78,8 +78,8 @@ describe("renderTagModes", () => {
 		expect(row(host(on, false), "work").toggles[1].disabled).toBe(false);
 	});
 
-	it("switches the transcript note, picks a Profile, and says what transcript off means", async () => {
-		const h = host({ ...setIntelligenceMode(emptyIntelligence(), "work", true, new Date()), profiles: [{ id: "p", name: "Meetings", description: "", template: null, slots: [] }] }, true);
+	it("switches the transcript note, picks a Profile without Pro, and says what transcript off means", async () => {
+		const h = host({ ...setIntelligenceMode(emptyIntelligence(), "work", true, new Date()), profiles: [{ id: "p", name: "Meetings", description: "", template: null, slots: [] }] }, false);
 		const r = row(h, "work");
 		r.toggles[0].toggle(false);
 		await flush();
@@ -90,6 +90,30 @@ describe("renderTagModes", () => {
 		row(h, "work").dropdowns[0].pick("");
 		await flush();
 		expect(h.settings().mappings.work.profiles).toEqual([]);
+	});
+
+	it("offers several Profiles per tag with Pro: added from a list, removed one by one", async () => {
+		const profiles = [
+			{ id: "m", name: "Meetings", description: "", template: null, slots: [] },
+			{ id: "j", name: "Journal", description: "", template: null, slots: [] },
+		];
+		const h = host({ ...setIntelligenceMode(emptyIntelligence(), "work", true, new Date()), profiles }, true);
+		expect(Object.values(row(h, "work").dropdowns[0].options)).toEqual(["Generic; add a profile…", "Meetings", "Journal"]);
+		row(h, "work").dropdowns[0].pick("m");
+		await flush();
+		row(h, "work").dropdowns[0].pick("");
+		row(h, "work").dropdowns[0].pick("j");
+		await flush();
+		expect(h.settings().mappings.work.profiles).toEqual(["m", "j"]);
+		const full = row(h, "work");
+		expect(full.buttons.map((b) => b.text)).toEqual(["Meetings ×", "Journal ×"]);
+		expect(full.dropdowns).toHaveLength(0);
+		full.buttons[0].click();
+		await flush();
+		expect(h.settings().mappings.work.profiles).toEqual(["j"]);
+		expect(Object.values(row(h, "work").dropdowns[0].options)[0]).toBe("Add a profile…");
+		h.update({ ...h.settings(), mappings: { work: { ...h.settings().mappings.work, profiles: ["gone"] } } });
+		expect(row(h, "work").buttons[0].text).toBe("gone ×");
 	});
 });
 

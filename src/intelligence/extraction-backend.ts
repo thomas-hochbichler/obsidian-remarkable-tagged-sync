@@ -44,6 +44,36 @@ export interface ExtractionBackend {
 	/** An 8B-class model on the user's machine or server: its first topical pick is proposed, not written (spec §7.4). */
 	readonly local?: boolean;
 	extract(input: ExtractionInput): Promise<ExtractionOutcome>;
+	/**
+	 * Picks one of a tag's Profiles for a new page, from their one-line descriptions (spec §5.1). Cloud
+	 * only: a local model picked right 5 times in 10 (research 10), so a local backend has none.
+	 */
+	classify?(input: ClassifyInput): Promise<ClassifyOutcome>;
+}
+
+export interface ClassifyInput {
+	transcript: string;
+	profiles: readonly { id: string; description: string }[];
+}
+
+export type ClassifyOutcome = { kind: "ok"; id: string } | { kind: "failed"; reason: string };
+
+/** One call under a schema whose only answer is one of the Profile ids. */
+function classifyWith(complete: Complete): (input: ClassifyInput) => Promise<ClassifyOutcome> {
+	return async (input) => {
+		const ids = input.profiles.map((profile) => profile.id);
+		const outcome = await complete({
+			system: "You sort one handwritten notebook page into one of the given page types. Answer with the id of the type that fits best.",
+			user: [...input.profiles.map((profile) => `- ${profile.id}: ${profile.description}`), "", "## Page text", input.transcript].join("\n"),
+			schema: { type: "object", properties: { profile: { type: "string", enum: ids } }, required: ["profile"], additionalProperties: false },
+			maxTokens: 200,
+		});
+		if (outcome.kind === "truncated") return { kind: "failed", reason: "The answer was cut off." };
+		if (outcome.kind === "failed") return outcome;
+		const answer = readJson(outcome.text) as { profile?: unknown } | undefined;
+		const id = answer?.profile;
+		return typeof id === "string" && ids.includes(id) ? { kind: "ok", id } : { kind: "failed", reason: "The answer named no known profile." };
+	};
 }
 
 /** The format pass cap: enough for a 20-item page, small enough that a runaway answer fails fast. */
@@ -64,6 +94,7 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
 	return {
 		id,
 		metered,
+		classify: classifyWith(complete),
 		async extract(input) {
 			const { system, user } = buildPrompt(input);
 			const outcome = await complete({ system, user, schema: buildSchema(input.slots), maxTokens: EXTRACTION_MAX_TOKENS });
