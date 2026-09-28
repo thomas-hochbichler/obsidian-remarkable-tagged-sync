@@ -48,11 +48,22 @@ describe("managedServer", () => {
 		expect(s.killed()).toBe(1);
 	});
 
-	it("says so when the server stops while starting, and tries again on the next use", async () => {
+	it("says so when the server stops while starting, and tells every later page at once, also after a rest", async () => {
 		const s = fakeServer({ readyAfter: 99, exitAfter: 2 });
 		const server = managedServer(s.deps, "srv", "m");
 		await expect(server.baseURL()).rejects.toThrow("The local model stopped while starting (exit 1).");
+		server.dispose();
 		await expect(server.baseURL()).rejects.toThrow(/stopped while starting/);
+		expect(s.spawned).toHaveLength(1);
+	});
+
+	it("starts again after a rest between documents", async () => {
+		const s = fakeServer();
+		const backend = managedLocalBackend(managedServer(s.deps, "srv", "m"), s.deps);
+		await backend.extract(INPUT);
+		backend.rest();
+		expect(s.killed()).toBe(1);
+		await backend.extract(INPUT);
 		expect(s.spawned).toHaveLength(2);
 	});
 

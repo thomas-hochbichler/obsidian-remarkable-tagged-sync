@@ -99,6 +99,8 @@ export interface IntelligenceRun {
 }
 
 const NOTHING_HELD = () => {};
+/** The managed local model's transcription backend id (`LOCAL_BACKEND_ID`), named here to keep its platform code out. */
+const LOCAL_TRANSCRIPTION = "local";
 
 /** What a review reads and writes, from the environment of the running app. */
 export function reviewStoresFor(env: HostEnvironment, rows: Record<string, IntelligenceRow>): { rows: Record<string, IntelligenceRow>; baseStore: BaseStore; noteStore: NoteStore; newId: () => string } {
@@ -150,7 +152,9 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 	const hook: IntelligenceHook = {
 		fingerprint,
 		scansDue: (scanned) => scansDue(input.settings, input.tagFolderMap, input.pro, scanned),
-		process: (doc, state) => processDocument(deps, doc, state),
+		// The local model transcribes each document before its pages are extracted: the server steps
+		// aside after each one, so the two never hold the model at once.
+		process: (doc, state) => processDocument(deps, doc, state).finally(input.transcriptionBackend === LOCAL_TRANSCRIPTION ? () => backend.rest?.() : NOTHING_HELD),
 		completeScans: (state) => completeScans(input.settings, input.tagFolderMap, Object.keys(input.tagFolderMap).filter((tag) => modes(tag).intelligence), state),
 		beforeRun: async (state) => void (await followRetargets(state, input.tagFolderMap, env.noteStore)),
 	};

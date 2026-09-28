@@ -2683,10 +2683,10 @@
 
     - id: V43.2
       scenario: "The server crashes while loading"
-      expect: "A reason with the exit code; the next page tries again"
+      expect: "A reason with the exit code; every later page in this sync gets it at once, even after a rest"
       layer: unit
       file: src/intelligence/local-server.test.ts
-      test: "managedServer > says so when the server stops while starting, and tries again on the next use"
+      test: "managedServer > says so when the server stops while starting, and tells every later page at once, also after a rest"
 
     - id: V43.3
       scenario: "The server never answers, or is killed"
@@ -2869,3 +2869,27 @@
       layer: unit
       file: src/intelligence/extraction.test.ts
       test: "parseExtraction > splits a Templater tag in what the model read, so a created note never runs it, but keeps the source as read"
+
+- feature: V51
+  name: "The local model is never loaded twice at once"
+  code: src/intelligence/local-server.ts
+  tier: free
+  scenarios:
+    - id: V51.1
+      scenario: "The server rests after a document"
+      expect: "It is stopped, and the next document's first page starts it again"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > starts again after a rest between documents"
+
+- feature: V52
+  name: "The server rests between documents when the local model also transcribes"
+  code: src/intelligence/host.ts
+  tier: free
+  scenarios:
+    - id: V52.1
+      scenario: "Transcription runs on the local model, or on another backend"
+      expect: "With the local model the extraction backend rests after every document; otherwise it keeps running"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > lets the extraction backend rest after each document only when the local model also transcribes"
