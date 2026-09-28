@@ -94,7 +94,11 @@ export interface IntelligenceRun {
 	paused: string | null;
 	/** What the hook runs on; present exactly when `hook` is, for a run over a single note. */
 	deps?: IntelligencePassDeps;
+	/** Releases what the run's backend holds -- the local model's server. Called when the sync ends, however it ends. */
+	dispose(): void;
 }
+
+const NOTHING_HELD = () => {};
 
 /** What a review reads and writes, from the environment of the running app. */
 export function reviewStoresFor(env: HostEnvironment, rows: Record<string, IntelligenceRow>): { rows: Record<string, IntelligenceRow>; baseStore: BaseStore; noteStore: NoteStore; newId: () => string } {
@@ -109,14 +113,14 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 	const modes = effectiveModes(input.settings, input.tagFolderMap, input.pro);
 	const fingerprint = intelligenceFingerprint(input.settings.mappings);
 	const wanted = Object.keys(input.tagFolderMap).some((tag) => modes(tag).intelligence);
-	if (!wanted || !isEngineDevice(input.settings, await localDeviceId(env, false))) return { modes, fingerprint, hook: undefined, paused: null };
+	if (!wanted || !isEngineDevice(input.settings, await localDeviceId(env, false))) return { modes, fingerprint, hook: undefined, paused: null, dispose: NOTHING_HELD };
 
 	const choice = chooseExtractionBackend({ settings: input.settings, transcriptionBackend: input.transcriptionBackend, pro: input.pro, lookup: extractionBackendEntry });
-	if (input.background && choice.kind === "ready" && !backgroundExtractionAllowed(choice.entry, input.settings)) return { modes, fingerprint, hook: undefined, paused: null };
+	if (input.background && choice.kind === "ready" && !backgroundExtractionAllowed(choice.entry, input.settings)) return { modes, fingerprint, hook: undefined, paused: null, dispose: NOTHING_HELD };
 	const backend = choice.kind === "ready" ? choice.entry.create(input.providerSettings[choice.entry.id] ?? {}, input.settings.model) : null;
 	if (backend === null) {
 		const reason = choice.kind === "paused" ? choice.reason : `The extraction backend ${choice.entry.label} is not set up yet: it needs its key or address. The engine is paused.`;
-		return { modes, fingerprint, hook: undefined, paused: reason };
+		return { modes, fingerprint, hook: undefined, paused: reason, dispose: NOTHING_HELD };
 	}
 
 	const formats = await coreTemplateFormats(env.files, env.configDir);
@@ -144,7 +148,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		completeScans: (state) => completeScans(input.settings, input.tagFolderMap, Object.keys(input.tagFolderMap).filter((tag) => modes(tag).intelligence), state),
 		beforeRun: async (state) => void (await followRetargets(state, input.tagFolderMap, env.noteStore)),
 	};
-	return { modes, fingerprint, hook, paused: null, deps };
+	return { modes, fingerprint, hook, paused: null, deps, dispose: () => backend.dispose?.() };
 }
 
 /** The slice of `vault.adapter` the host needs. */

@@ -2668,3 +2668,97 @@
       layer: vault
       file: src/intelligence-plugin.test.ts
       test: "the review in the running plugin > offers Change profile with Pro and says it is Pro without"
+
+- feature: V43
+  name: "The managed local model extracts through its own server, started once per sync"
+  code: src/intelligence/local-server.ts
+  tier: free
+  scenarios:
+    - id: V43.1
+      scenario: "The first page of a sync is extracted locally"
+      expect: "llama-server starts once with the model, -c 8192 and a local port; the run waits for /health"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > starts the server once, on first use, with the model, context and a local port, and waits until it answers"
+
+    - id: V43.2
+      scenario: "The server crashes while loading"
+      expect: "A reason with the exit code; the next page tries again"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > says so when the server stops while starting, and tries again on the next use"
+
+    - id: V43.3
+      scenario: "The server never answers, or is killed"
+      expect: "Stopped after two minutes; a signal named as such"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > gives up after two minutes of waiting, stopping what it started, and names a signal as a signal"
+
+    - id: V43.4
+      scenario: "A local extraction runs"
+      expect: "Two passes, temperature 0, seed 42; the server stops when the sync ends"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedLocalBackend > asks the managed server both passes with temperature 0 and seed 42, and stops it on dispose"
+
+    - id: V43.5
+      scenario: "The server cannot start"
+      expect: "Each page fails with that reason and retries next sync"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedLocalBackend > fails each page with the server's reason when it will not start"
+
+    - id: V43.6
+      scenario: "The model is missing or ready"
+      expect: "No backend while missing; the free local backend when ready; no process until a page needs it"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedLocalEntry > is the free, measured local entry, and has no backend while the model cannot run"
+
+- feature: V44
+  name: "The managed download holds the extraction server"
+  code: src/intelligence/local-server-node.ts
+  tier: free
+  scenarios:
+    - id: V44.1
+      scenario: "The model is downloaded and verified"
+      expect: "llama-server beside llama-mtmd-cli; .exe on Windows"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "managedModelFiles > finds the server beside the transcription runtime, with .exe on Windows"
+
+    - id: V44.2
+      scenario: "The model is missing, downloading or busy"
+      expect: "Nothing: extraction waits"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "managedModelFiles > has nothing while the model is missing, unverified, or busy transcribing"
+
+    - id: V44.3
+      scenario: "A server starts"
+      expect: "A port from 49152 upward"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > picks a port from the dynamic range"
+
+    - id: V44.4
+      scenario: "A real process is spawned and stopped"
+      expect: "Its end is heard"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > spawns a real process on the desktop, hears it end, and stops it"
+
+    - id: V44.5
+      scenario: "Mobile"
+      expect: "No spawn, a reason"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > refuses to spawn off the desktop"
+
+    - id: V43.7
+      scenario: "An extraction backend is registered"
+      expect: "It has a line in BACKEND_TIER, and its licence flag agrees with it"
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "nothing gated escapes the list > declares every extraction backend too, and keeps its flag saying the same as the declaration"

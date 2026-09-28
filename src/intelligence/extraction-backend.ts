@@ -44,6 +44,8 @@ export interface ExtractionBackend {
 	/** An 8B-class model on the user's machine or server: its first topical pick is proposed, not written (spec §7.4). */
 	readonly local?: boolean;
 	extract(input: ExtractionInput): Promise<ExtractionOutcome>;
+	/** Releases what the backend holds for a run -- the managed local server. Called when the sync ends. */
+	dispose?(): void;
 	/**
 	 * Picks one of a tag's Profiles for a new page, from their one-line descriptions (spec §5.1). Cloud
 	 * only: a local model picked right 5 times in 10 (research 10), so a local backend has none.
@@ -179,6 +181,8 @@ export interface OpenAiCompatOptions {
 	deterministic?: boolean;
 	/** OpenRouter: only route to a provider that honours the schema. */
 	requireParameters?: boolean;
+	/** A fixed sampling seed, for a local model that should answer the same page the same way. */
+	seed?: number;
 	fetchFn?: typeof fetch;
 	sleepFn?: Sleep;
 }
@@ -204,6 +208,7 @@ export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
 			...(request.schema ? { response_format: { type: "json_schema", json_schema: { name: "extraction", strict: true, schema: request.schema } } } : {}),
 			...(options.requireParameters ? { provider: { require_parameters: true } } : {}),
 			...(options.deterministic ? { temperature: 0 } : {}),
+			...(options.seed === undefined ? {} : { seed: options.seed }),
 		};
 		try {
 			const response = await fetchWithRetry(options.fetchFn ?? obsidianFetch, url, { method: "POST", headers, body: JSON.stringify(body) }, options.sleepFn);
