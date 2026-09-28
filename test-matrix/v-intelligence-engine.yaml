@@ -1400,7 +1400,7 @@
       expect: "Scans marked for tags that are on; the deleted document's rows orphaned and seen entries pruned"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
-      test: "completeScans and sweepDeletedDocuments > marks scans done only for tags that are on, and orphans rows and prunes seen entries of deleted documents"
+      test: "completeScans and sweepDeletedDocuments > marks scans done only for the given tags that are on, and orphans rows and prunes seen entries of deleted documents"
 
 - feature: V15
   name: "TagRouter carries each mapped tag's modes"
@@ -1671,3 +1671,50 @@
       layer: unit
       file: src/intelligence/plugin-rules.test.ts
       test: "chooseExtractionBackend > pauses when nothing is set and the transcription backend cannot extract"
+
+- feature: V20
+  name: "The engine's footing in the running plugin"
+  code: src/intelligence/host.ts
+  tier: free
+  scenarios:
+    - id: V20.1
+      scenario: "The engine device is claimed or checked"
+      expect: "An id in the unsynced plugin folder, minted only on a claim"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "localDeviceId > reads the id from the plugin folder, and mints one only when asked"
+
+    - id: V20.2
+      scenario: "A device that is not the engine device syncs"
+      expect: "Modes and print as everywhere; no extraction"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > gives every device the modes and the print, but no engine off the engine device"
+
+    - id: V20.3
+      scenario: "No tag has Intelligence Mode on"
+      expect: "No engine, no notice"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > builds no engine when no tag asks for one"
+
+    - id: V20.4
+      scenario: "Cloud backend without Pro, or without its key"
+      expect: "Paused, with a reason for one notice"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > pauses with a reason when the backend is Pro and the vault is not, or when it lacks its key"
+
+    - id: V20.5
+      scenario: "A new page is processed on the engine device"
+      expect: "The note is created from the Profile's template with core dates; ids minted; the base folder made once; a deleted note's base is discarded"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > writes a page note through the environment: template, dates, ids, one base folder"
+
+    - id: V20.6
+      scenario: "The engine device with a working backend"
+      expect: "A hook with the modes print, due scans and scan completion"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > builds the engine hook on the engine device with a working backend"
