@@ -103,6 +103,10 @@ export function progressStatus(progress: SyncProgress, stopRequested: boolean, l
 			detail: progress.document,
 		};
 	}
+	if (progress.phase === "extracting") {
+		// Its own count, not the transcription bar: the engine's pages were never in that total.
+		return { state: "busy", text: `Tagged Sync: extracting ${progress.done}/${progress.total}`, bar: null, document: progress.document, detail: `${progress.document}\nextracting page ${progress.done} of ${progress.total}` };
+	}
 	return {
 		state: "busy",
 		// The document's name alone, without the usual "Tagged Sync:" -- the icon says whose item this

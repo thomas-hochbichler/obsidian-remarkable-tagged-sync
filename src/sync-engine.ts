@@ -284,6 +284,13 @@ export type SyncProgress =
 			/** Pages of *this* unit -- what explains a bar sitting still on a forty-page notebook. */
 			unitDone: number;
 			unitTotal: number;
+	  }
+	| {
+			/** The Intelligence Engine at work on one notebook's new and changed pages (spec §9). */
+			phase: "extracting";
+			done: number;
+			total: number;
+			document: string;
 	  };
 
 export interface SyncDeps {
@@ -2485,6 +2492,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pages: pageOrder.map((id, index) => ({ id, ordinal: index + 1, hash: pageHashes.get(id) ?? null, modified: pageModified(cPages.get(id)) })),
 					units: [...notebookUnits, ...pageUnits],
 					transcribe: (ids) => transcribeForEngine(api, ocrBackend, entry.id, ids, pageHashes, pageTexts),
+					onProgress: (done, total) => report({ phase: "extracting", done, total, document: entry.visibleName }),
 					frontmatter: (tag, pageId) => {
 						const fields = unitFrontmatter(tag, pageId);
 						return fields === null ? null : { fields, version: FRONTMATTER_KEYS_VERSION };

@@ -100,6 +100,12 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		expect(mem.bases.has("plugin/base/note1.json")).toBe(true);
 	});
 
+	it("says which page it is on before each extraction", async () => {
+		const seen: string[] = [];
+		await processDocument(deps(memory()), doc([page("p1", 1, "h1", AFTER), page("p2", 2, "h2", AFTER)], { p1: "todo A", p2: "todo B" }, { onProgress: (done, total) => void seen.push(`${done}/${total}`) }), fresh());
+		expect(seen).toEqual(["1/2", "2/2"]);
+	});
+
 	it("skips a page never drawn on, so its first ink counts as new", async () => {
 		const state = fresh();
 		await processDocument(deps(memory()), doc([page("p1", 1, null, AFTER)], {}), state);

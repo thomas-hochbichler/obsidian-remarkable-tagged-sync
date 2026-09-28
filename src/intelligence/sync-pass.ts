@@ -78,6 +78,8 @@ export interface IntelligenceDocument {
 	transcribe: (pageIds: string[]) => Promise<Map<string, string>>;
 	/** Writes the page render and returns its vault path. */
 	writeRender: (pageId: string) => Promise<string>;
+	/** Before each page is extracted: which of this document's pages the engine is on. */
+	onProgress?: (done: number, total: number) => void;
 	/**
 	 * The plugin's frontmatter keys for a page note (Pro), exactly as a page-tag note gets them -- or
 	 * null with the feature off. Page notes are synced notes: `FROM #remarkable` finds them (spec §7.4).
@@ -212,7 +214,8 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 
 	const texts = await doc.transcribe([...new Set(work.map((item) => item.page.id))]);
 
-	for (const { unit, page, key, seen } of work) {
+	for (const [index, { unit, page, key, seen }] of work.entries()) {
+		doc.onProgress?.(index + 1, work.length);
 		const row = state.rows[key];
 		const noteText = row ? await deps.noteStore.read(row.notePath) : null;
 		// One revive rule (§4.1): a row whose note is gone starts over with a fresh id and no base --
