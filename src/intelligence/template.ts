@@ -43,16 +43,16 @@ export interface TemplateValues {
 }
 
 /**
- * Fills the template. An unknown `{{ts.*}}` is left as written, so a typo shows in the note instead of
- * vanishing; a Slot with nothing extracted fills in as an empty region under its heading.
+ * Fills the template. A `{{ts.*}}` without a value -- a Slot this Profile does not run, or nothing
+ * extracted -- fills in empty, so the heading above it stays as an empty region the Slot can adopt
+ * if it is added to the Profile later.
  */
 export function renderTemplate(template: string, values: TemplateValues): string {
-	return template.replace(/\{\{\s*(ts\.[\w.-]+|title|date|time)(?::([^}]*))?\s*\}\}/g, (whole, name: string, format: string | undefined) => {
+	return template.replace(/\{\{\s*(ts\.[\w.-]+|title|date|time)(?::([^}]*))?\s*\}\}/g, (_whole, name: string, format: string | undefined) => {
 		if (name === "title") return values.title;
 		if (name === "date") return values.formatDate(format ?? null);
 		if (name === "time") return values.formatTime(format ?? null);
-		const value = values.ts[name.slice(3)];
-		return value === undefined ? whole : value;
+		return values.ts[name.slice(3)] ?? "";
 	});
 }
 
