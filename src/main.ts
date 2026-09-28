@@ -474,6 +474,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// One does: the local model's download runs on promises and a `window` interval, and a reload
 		// mid-download used to leave both running with no way to reach them.
 		for (const entry of ocrBackendEntries()) entry.onPluginUnload?.();
+		// A sync still running holds the local model's server, a separate process that outlives the plugin.
+		this.runningIntelligence?.dispose();
 	}
 
 	/**
@@ -657,6 +659,9 @@ export default class TaggedSyncPlugin extends Plugin {
 	}
 
 	/** The engine's commands reach the plugin through this; see `intelligence/commands.ts`. */
+	/** The engine's side of the sync in progress, so an unload mid-sync can stop the local model's server. */
+	private runningIntelligence: IntelligenceRun | null = null;
+
 	private readonly intelligenceCommands: IntelligenceCommandsHost = {
 		app: this.app,
 		addCommand: (command) => this.addCommand(command),
@@ -702,6 +707,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// The per-tag modes and their print go to every device; the engine itself only to the one
 			// that runs it, and only with a backend that can (Intelligence Engine §9).
 			intelligence = await prepareRun(this.intelligenceEnv(), this.intelligenceInputs(tagFolderMap, backend.id, auto));
+			this.runningIntelligence = intelligence;
 			const result = await runSync(
 				{
 					api: session.api,
@@ -808,6 +814,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		} finally {
 			await session?.close();
 			intelligence?.dispose();
+			this.runningIntelligence = null;
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.

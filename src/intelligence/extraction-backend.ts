@@ -47,6 +47,12 @@ export interface ExtractionBackend {
 	/** Releases what the backend holds for a run -- the managed local server. Called when the sync ends. */
 	dispose?(): void;
 	/**
+	 * Frees the model's memory between documents while keeping the run going: the next document's
+	 * transcription loads the same model file, and two copies of an 8B model do not fit beside each
+	 * other on a 16 GB machine. The next `extract` starts it again.
+	 */
+	rest?(): void;
+	/**
 	 * Picks one of a tag's Profiles for a new page, from their one-line descriptions (spec §5.1). Cloud
 	 * only: a local model picked right 5 times in 10 (research 10), so a local backend has none.
 	 */

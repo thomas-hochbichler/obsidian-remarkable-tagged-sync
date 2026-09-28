@@ -35,13 +35,17 @@ const POLL_MS = 250;
 export interface ManagedServer {
 	/** The server's OpenAI-compatible base URL, starting it on first use. Rejects with a reason a user can act on. */
 	baseURL(): Promise<string>;
-	/** Stops the server if it runs. Safe to call twice, or never started. */
+	/**
+	 * Stops the server if it runs. Safe to call twice, or never started. A start that failed stays
+	 * failed: every later page is told at once, instead of waiting two minutes each.
+	 */
 	dispose(): void;
 }
 
 export function managedServer(deps: ServerDeps, executable: string, model: string): ManagedServer {
 	let starting: Promise<string> | null = null;
 	let process: ServerProcess | null = null;
+	let failed: Error | null = null;
 
 	const start = async (): Promise<string> => {
 		const port = deps.port();
@@ -63,10 +67,13 @@ export function managedServer(deps: ServerDeps, executable: string, model: strin
 	};
 
 	return {
-		baseURL: () => (starting ??= start().catch((error: unknown) => {
-			starting = null;
-			throw error;
-		})),
+		baseURL: () =>
+			failed !== null
+				? Promise.reject(failed)
+				: (starting ??= start().catch((error: Error) => {
+						failed = error;
+						throw error;
+					})),
 		dispose: () => {
 			process?.kill();
 			process = null;
@@ -76,7 +83,7 @@ export function managedServer(deps: ServerDeps, executable: string, model: strin
 }
 
 /** The two-call backend on the managed server. A server that will not start fails each page with its reason. */
-export function managedLocalBackend(server: ManagedServer, deps: Pick<ServerDeps, "fetchFn">): ExtractionBackend & { dispose(): void } {
+export function managedLocalBackend(server: ManagedServer, deps: Pick<ServerDeps, "fetchFn">): ExtractionBackend & { dispose(): void; rest(): void } {
 	const complete: Complete = async (request) => {
 		let baseURL: string;
 		try {
@@ -86,7 +93,7 @@ export function managedLocalBackend(server: ManagedServer, deps: Pick<ServerDeps
 		}
 		return openAiCompatComplete({ baseURL, model: "local", deterministic: true, seed: LOCAL_SEED, fetchFn: deps.fetchFn })(request);
 	};
-	return { ...twoCallBackend("local", false, complete), dispose: () => server.dispose() };
+	return { ...twoCallBackend("local", false, complete), dispose: () => server.dispose(), rest: () => server.dispose() };
 }
 
 /**

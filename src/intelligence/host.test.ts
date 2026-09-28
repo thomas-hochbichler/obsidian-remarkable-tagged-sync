@@ -20,6 +20,15 @@ registerExtractionBackend({
 		extract: async (input) => ({ kind: "ok", result: parseExtraction({ tasks: [{ source: "call Bob", reason: "", id: "new", text: "Call Bob", due: null, done: false }], summary: "" }, input.slots, input.referenceDate)! }),
 	}),
 });
+let rests = 0;
+registerExtractionBackend({
+	id: "hostresting",
+	label: "Host resting",
+	metered: false,
+	requiresLicence: false,
+	measured: false,
+	create: () => ({ id: "hostresting", metered: false, extract: async () => ({ kind: "failed", reason: "x" }), rest: () => void rests++ }),
+});
 registerExtractionBackend(
 	compatExtractionEntry({ id: "hostcloud", label: "Host cloud", kind: "cloud", resolve: (s) => ({ baseURL: "https://x/v1", model: "m", apiKey: (s.apiKey as string) ?? null }) }),
 );
@@ -142,6 +151,20 @@ describe("prepareRun", () => {
 		expect(report.notesWritten).toBe(0);
 		expect(e.files.dirs).toEqual([]);
 		expect(REVIEW_LINK).toBe("obsidian://tagged-sync-review");
+	});
+
+	it("lets the extraction backend rest after each document only when the local model also transcribes", async () => {
+		const e = env({ "plugin/device-id": "device-a" });
+		const doc = { docId: "d", name: "N", legacy: false, pages: [], units: [], transcribe: async () => new Map<string, string>(), writeRender: async () => "" };
+		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: {} };
+		rests = 0;
+		const local = await prepareRun(e, { settings: { ...onDevice(ON), backend: "hostresting" }, tagFolderMap: MAP, pro: true, transcriptionBackend: "local", providerSettings: {}, background: false });
+		await local.hook!.process(doc, state);
+		await local.hook!.process(doc, state);
+		expect(rests).toBe(2);
+		const cloud = await prepareRun(e, { settings: { ...onDevice(ON), backend: "hostresting" }, tagFolderMap: MAP, pro: true, transcriptionBackend: "vision", providerSettings: {}, background: false });
+		await cloud.hook!.process(doc, state);
+		expect(rests).toBe(2);
 	});
 });
 
