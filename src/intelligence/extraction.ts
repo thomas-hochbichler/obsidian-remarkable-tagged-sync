@@ -123,9 +123,21 @@ function readValue(raw: unknown, slot: SlotDef): string | string[] | null {
  * Reads one answer. Null when it is not an object at all -- a failure outcome, retried on the next
  * sync. A Slot missing from an otherwise good answer reads as empty.
  */
+/**
+ * Templater runs every `<%` in a note it creates as a command (spec §5.4), and what the model read off
+ * the page is part of that note. A zero-width space splits the tag, so the text still reads as
+ * written but never runs. `source` stays as read: it is matched against the transcript, never written.
+ */
+export function defuseTemplater(value: unknown, key = ""): unknown {
+	if (typeof value === "string") return key === "source" ? value : value.split("<%").join("<\u200B%");
+	if (Array.isArray(value)) return value.map((item) => defuseTemplater(item));
+	if (typeof value === "object" && value !== null) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, defuseTemplater(v, k)]));
+	return value;
+}
+
 export function parseExtraction(raw: unknown, slots: readonly SlotDef[], fallbackDate: Date): ExtractionResult | null {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-	const answer = raw as Record<string, unknown>;
+	const answer = defuseTemplater(raw) as Record<string, unknown>;
 	const writtenDate = resolveWrittenDate(typeof answer[PAGE_DATE_KEY] === "string" ? answer[PAGE_DATE_KEY] : null, fallbackDate);
 	const pageDate = writtenDate ?? calendarDay(fallbackDate.getUTCFullYear(), fallbackDate.getUTCMonth(), fallbackDate.getUTCDate());
 	const result: Record<string, SlotResult> = {};

@@ -173,19 +173,27 @@ describe("the Obsidian glue", () => {
 		expect(templaterOf({})).toBeNull();
 	});
 
-	it("creates a note through Templater with folder and name, falls back when it throws, and uses create without it", async () => {
+	it("creates a note through Templater with folder and name, falls back when it throws or returns no file, and uses create without it", async () => {
 		const created: string[] = [];
 		const create = async (path: string, content: string) => void created.push(`${path}=${content}`);
 		const seen: unknown[][] = [];
-		await noteCreator({ create_new_note_from_template: async (...args) => void seen.push(args) }, create)("Work/N/p1.md", "body");
-		await noteCreator({ create_new_note_from_template: async (...args) => void seen.push(args) }, create)("root.md", "top");
+		const templater = {
+			create_new_note_from_template: async (...args: unknown[]) => {
+				seen.push(args);
+				return { path: "made" };
+			},
+		};
+		await noteCreator(templater, create)("Work/N/p1.md", "body");
+		await noteCreator(templater, create)("root.md", "top");
 		expect(seen).toEqual([
 			["body", "Work/N", "p1", false],
 			["top", "", "root", false],
 		]);
 		await noteCreator({ create_new_note_from_template: () => Promise.reject(new Error("syntax")) }, create)("a.md", "x");
+		// Templater's own parse error: a notice, the file it began deleted, and nothing returned.
+		await noteCreator({ create_new_note_from_template: async () => undefined }, create)("c.md", "z");
 		await noteCreator(null, create)("b.md", "y");
-		expect(created).toEqual(["a.md=x", "b.md=y"]);
+		expect(created).toEqual(["a.md=x", "c.md=z", "b.md=y"]);
 	});
 
 	it("reads core Templates' date and time formats, ignoring blanks and a broken file", async () => {

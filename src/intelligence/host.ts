@@ -193,16 +193,18 @@ export function templaterOf(app: unknown): TemplaterApi | null {
 
 /**
  * Creates a note in one call, never an empty file first: through Templater when it is there, so its
- * own syntax in the user's template runs; else the vault's `create`. A Templater that throws falls
- * back to `create` -- the page note matters more than the template's scripting.
+ * own syntax in the user's template runs; else the vault's `create`. A Templater that fails falls
+ * back to `create` -- the page note matters more than the template's scripting. Templater says it
+ * failed by returning nothing, not by throwing: it shows its own notice and deletes the file it began.
  */
 export function noteCreator(templater: TemplaterApi | null, create: (path: string, content: string) => Promise<unknown>): (path: string, content: string) => Promise<void> {
 	return async (path, content) => {
 		if (templater !== null) {
 			const cut = path.lastIndexOf("/");
 			try {
-				await templater.create_new_note_from_template(content, cut === -1 ? "" : path.slice(0, cut), path.slice(cut + 1).replace(/\.md$/, ""), false);
-				return;
+				const created = await templater.create_new_note_from_template(content, cut === -1 ? "" : path.slice(0, cut), path.slice(cut + 1).replace(/\.md$/, ""), false);
+				if (created !== undefined && created !== null) return;
+				console.warn("Tagged Sync: Templater did not create the page note, writing it plainly");
 			} catch (error) {
 				console.warn("Tagged Sync: Templater could not create the page note, writing it plainly", error);
 			}
