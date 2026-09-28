@@ -841,3 +841,50 @@
       layer: unit
       file: src/intelligence/settings.test.ts
       test: "genericProfile > runs Tasks and Summary, plus Tags with Pro"
+
+- feature: V8
+  name: The base is a device-local file that can always be rebuilt from the note
+  code: src/intelligence/base-store.ts
+  tier: free
+  scenarios:
+    - id: V8.1
+      scenario: "A base file is named"
+      expect: "By noteId under the plugin folder"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > keys the file by noteId, never by syncKey, whose colons Windows rejects"
+
+    - id: V8.2
+      scenario: "A base is written and read"
+      expect: "Round trip"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > saves and loads a base"
+
+    - id: V8.3
+      scenario: "The file is missing, broken, of another version or another note's"
+      expect: "Missing -- the note is rebuilt instead of trusted"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > treats a missing, garbled, foreign-shaped or misfiled base as missing, so the note is rebuilt"
+
+    - id: V8.4
+      scenario: "An orphaned row is revived without its note"
+      expect: "The old base is deleted"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > discards a base"
+
+    - id: V8.5
+      scenario: "The base is gone (reinstall, other device)"
+      expect: "Items with no source span, so nothing is dropped on the first run; the page is re-read"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "rebuildBase > reads the note back as the base: items without a source, fresh ids, ticks kept, no transcript"
+
+    - id: V8.6
+      scenario: "A Slot heading was deleted"
+      expect: "That Slot is left out of the rebuilt base"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "rebuildBase > leaves out a region whose heading is gone, and Value Slots, which live in frontmatter"
