@@ -10,7 +10,7 @@
 
 import type { ItemFormat } from "./item-format";
 import type { ListBase, Proposal } from "./merge";
-import { findRegion, parseRegion, readTextRegion, type Heading } from "./regions";
+import { findRegion, parseRegion, type Heading } from "./regions";
 import type { Shape } from "./settings";
 
 export const BASE_VERSION = 1;
@@ -125,7 +125,10 @@ export function rebuildBase(input: { lines: readonly string[]; slots: readonly R
 			continue;
 		}
 		if (slot.shape === "text") {
-			slots[slot.id] = { shape: "text", heading: slot.heading, text: readTextRegion(input.lines, region), proposals: [] };
+			// An empty base, not the region's text: whatever stands there may be the user's own words, and
+			// a Text region untouched since its base is replaced outright. With "" as the base, text in the
+			// note reads as edited, so a new summary becomes a proposal instead of overwriting it.
+			slots[slot.id] = { shape: "text", heading: slot.heading, text: "", proposals: [] };
 			continue;
 		}
 		const items = parseRegion(input.lines, region, slot.format).map((line) => ({

@@ -877,10 +877,10 @@
 
     - id: V8.5
       scenario: "The base is gone (reinstall, other device)"
-      expect: "Items with no source span, so nothing is dropped on the first run; the page is re-read"
+      expect: "Items with no source span, so nothing is dropped on the first run; an empty summary base, so text in the note is never overwritten silently; the page is re-read"
       layer: unit
       file: src/intelligence/base-store.test.ts
-      test: "rebuildBase > reads the note back as the base: items without a source, fresh ids, ticks kept, no transcript"
+      test: "rebuildBase > reads the note back as the base: items without a source, fresh ids, ticks kept, an empty summary base, no transcript"
 
     - id: V8.6
       scenario: "A Slot heading was deleted"
@@ -1277,3 +1277,127 @@
       layer: unit
       file: src/intelligence/page-engine.test.ts
       test: "processPage > an existing note > passes the base's items with their ids to the model"
+
+- feature: V14
+  name: "The engine's pass over one synced document"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V14.1
+      scenario: "Intelligence Mode was just switched on"
+      expect: "Old and never-stamped pages go into the seen-set; the page written after the toggle becomes a page note in <folder>/<notebook>/"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > stamps the pages written before the toggle and turns the one written after it into a note"
+
+    - id: V14.2
+      scenario: "A blank page"
+      expect: "No note, no seen entry"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > skips a page never drawn on, so its first ink counts as new"
+
+    - id: V14.3
+      scenario: "Nothing changed on the page"
+      expect: "No extraction call, no write"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > does nothing for pages whose ink did not change"
+
+    - id: V14.4
+      scenario: "A page changed; the user added a line"
+      expect: "Merged; the user's line stays; the seen hash moves"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > merges a changed page into its note, keeping the user's own lines"
+
+    - id: V14.5
+      scenario: "An old page is written on"
+      expect: "It gets a note, named after its first-seen date"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > brings an old page in once the user writes on it"
+
+    - id: V14.6
+      scenario: "A notebook tagged after the toggle"
+      expect: "Its old pages are seen, not extracted"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > records an unseen page written before the toggle as old without a note -- a notebook tagged later"
+
+    - id: V14.7
+      scenario: "A legacy notebook without page stamps"
+      expect: "One notice, once"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > names a legacy notebook once, when its pages are first recorded"
+
+    - id: V14.8
+      scenario: "Extraction fails three syncs in a row"
+      expect: "No note; the page retries; the third failure is a notice; the noteId stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > failures > keeps a failed page out of the seen hash so it retries, and says so on the third failure"
+
+    - id: V14.9
+      scenario: "The transcript is missing"
+      expect: "A failure line"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > failures > reports a page the transcription could not read"
+
+    - id: V14.10
+      scenario: "The tag is removed on the tablet"
+      expect: "Row orphaned, note kept"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > orphans a row whose tag left the page on the tablet and leaves its note"
+
+    - id: V14.11
+      scenario: "Mode switched off, page changes"
+      expect: "Nothing written; rows stay active"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > leaves rows alone while Intelligence Mode is off"
+
+    - id: V14.12
+      scenario: "The user deleted the note; the page changes"
+      expect: "A fresh note with a new id; the old base is discarded"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > starts a deleted note over with a fresh id and no old base once the page changes"
+
+    - id: V14.13
+      scenario: "The base is missing"
+      expect: "Rebuilt from the note; the user's line survives"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > rebuilds a missing base from the note, so a line typed there is not lost"
+
+    - id: V14.14
+      scenario: "The base is missing; a Slot sits under its default heading; the user wrote there"
+      expect: "Found by that heading; the user's text is not overwritten"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > rebuilds a Slot the template does not place from the heading it was given"
+
+    - id: V14.15
+      scenario: "A Slot heading was deleted"
+      expect: "A notice names it"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > says which region it could not find"
+
+    - id: V14.16
+      scenario: "A mapping names a Profile with a template, then the template is gone"
+      expect: "The template is used; without it, the starter template"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > Profiles and templates > uses the mapping's Profile and its template, and falls back to the starter when the template is gone"
+
+    - id: V14.17
+      scenario: "A run finishes; a document was deleted"
+      expect: "Scans marked for tags that are on; the deleted document's rows orphaned and seen entries pruned"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "completeScans and sweepDeletedDocuments > marks scans done only for tags that are on, and orphans rows and prunes seen entries of deleted documents"

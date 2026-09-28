@@ -59,7 +59,7 @@ describe("rebuildBase", () => {
 	];
 	const note = ["## Tasks", "- [ ] Call Bob 📅 2026-10-02", "- [x] Buy milk", "", "## Summary", "Met Bob.", "", "## Tags", "- x"];
 
-	it("reads the note back as the base: items without a source, fresh ids, ticks kept, no transcript", () => {
+	it("reads the note back as the base: items without a source, fresh ids, ticks kept, an empty summary base, no transcript", () => {
 		let n = 0;
 		const rebuilt = rebuildBase({ lines: note, slots, noteId: "n1", syncKey: "k", newId: () => `r${++n}` });
 		expect(rebuilt.transcript).toBeNull();
@@ -76,7 +76,8 @@ describe("rebuildBase", () => {
 				proposals: [],
 			},
 		});
-		expect(rebuilt.slots.summary).toEqual({ shape: "text", heading: { level: 2, text: "Summary" }, text: "Met Bob.", proposals: [] });
+		// Empty, so "Met Bob." reads as the user's and is never overwritten silently.
+		expect(rebuilt.slots.summary).toEqual({ shape: "text", heading: { level: 2, text: "Summary" }, text: "", proposals: [] });
 	});
 
 	it("settles a region whose heading is gone so it is never re-added, and skips Value Slots, which live in frontmatter", () => {

@@ -1,0 +1,288 @@
+import { describe, expect, it } from "vitest";
+import type { NoteStore } from "../note-builder";
+import { createBaseStore, type BaseFiles } from "./base-store";
+import type { ExtractionBackend } from "./extraction-backend";
+import { parseExtraction } from "./extraction";
+import { defaultSlots, emptyIntelligence, setIntelligenceMode, type IntelligenceSettings } from "./settings";
+import { completeScans, type DocPage, type IntelligenceDocument, type IntelligencePassDeps, type IntelligenceState, processDocument, sweepDeletedDocuments } from "./sync-pass";
+
+const ENABLED = new Date("2026-09-28T08:00:00.000Z");
+const BEFORE = ENABLED.getTime() - 86_400_000;
+const AFTER = ENABLED.getTime() + 3_600_000;
+const MAP = { work: "Work" };
+
+function memory() {
+	const notes = new Map<string, string>();
+	const bases = new Map<string, string>();
+	const noteStore: NoteStore = {
+		read: async (path) => notes.get(path) ?? null,
+		exists: async (path) => notes.has(path),
+		write: async (path, content) => void notes.set(path, content),
+		ensureFolder: async () => {},
+		move: async () => {},
+	};
+	const files: BaseFiles = { read: async (p) => bases.get(p) ?? null, write: async (p, c) => void bases.set(p, c), remove: async (p) => void bases.delete(p) };
+	return { notes, bases, noteStore, baseStore: createBaseStore(files, "plugin") };
+}
+
+/** Answers from the transcript: every "todo X" line is a task. */
+const reader = (calls: string[] = []): ExtractionBackend => ({
+	id: "fake",
+	metered: false,
+	async extract(input) {
+		calls.push(input.transcript);
+		if (input.transcript.includes("FAIL")) return { kind: "failed", reason: "model down" };
+		const tasks = [...input.transcript.matchAll(/todo (\w+)/g)].map((m) => {
+			const known = (input.known.tasks ?? []).find((item) => item.text === m[1]);
+			return { source: m[0], reason: "", id: known?.id ?? "new", text: m[1], due: null, done: false };
+		});
+		return { kind: "ok", result: parseExtraction({ page_date_text: null, tasks, summary: "" }, input.slots, input.referenceDate)! };
+	},
+});
+
+function settings(on = true): IntelligenceSettings {
+	const base = { ...emptyIntelligence(), slots: defaultSlots().map((slot) => (slot.id === "tasks" ? { ...slot, review: false } : slot)) };
+	return on ? setIntelligenceMode(base, "work", true, ENABLED) : base;
+}
+
+function deps(mem: ReturnType<typeof memory>, overrides: Partial<IntelligencePassDeps> = {}): IntelligencePassDeps {
+	let n = 0;
+	return {
+		settings: settings(),
+		tagFolderMap: MAP,
+		effectiveSlots: (_profile, slots) => slots,
+		pro: false,
+		noteStore: mem.noteStore,
+		baseStore: mem.baseStore,
+		backend: reader(),
+		loadTemplate: async () => null,
+		createNote: async (path, content) => void mem.notes.set(path, content),
+		now: () => new Date(2026, 8, 29, 12),
+		newId: () => `i${++n}`,
+		newNoteId: () => `note${++n}`,
+		formatDate: () => "D",
+		formatTime: () => "T",
+		reviewLink: "obsidian://review",
+		...overrides,
+	};
+}
+
+const page = (id: string, ordinal: number, hash: string | null, modified: number | null): DocPage => ({ id, ordinal, hash, modified });
+
+function doc(pages: DocPage[], texts: Record<string, string>, extra: Partial<IntelligenceDocument> = {}): IntelligenceDocument {
+	return {
+		docId: "d1",
+		name: "Work log",
+		legacy: false,
+		pages,
+		units: [{ tag: "work", scope: "notebook", pageIds: pages.map((p) => p.id) }],
+		transcribe: async (ids) => new Map(ids.filter((id) => texts[id] !== undefined).map((id) => [id, texts[id]])),
+		writeRender: async (id) => `attachments/d1-${id}.pdf`,
+		...extra,
+	};
+}
+
+const fresh = (): IntelligenceState => ({ seenPages: {}, rows: {}, scans: {} });
+
+describe("processDocument > switching Intelligence Mode on", () => {
+	it("stamps the pages written before the toggle and turns the one written after it into a note", async () => {
+		const mem = memory();
+		const state = fresh();
+		const report = await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE), page("p2", 2, "h2", null), page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		expect(report).toMatchObject({ notesWritten: 1, failures: [], notices: [] });
+		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work", "d1:p2:work", "d1:p3:work"]);
+		expect(state.seenPages["d1:p1:work"]).toEqual({ scope: "notebook", pageHash: "h1", firstSeen: BEFORE });
+		const path = "Work/Work log/2026-09-28 Work log p3.md";
+		expect(mem.notes.get(path)).toContain("## Tasks\n- [ ] Call\n");
+		expect(mem.notes.get(path)).toContain("[[attachments/d1-p3.pdf|Page 3]]");
+		expect(state.rows["d1:p3:work"]).toMatchObject({ notePath: path, folder: "Work", status: "active", noteId: "note1", profileId: "generic", scope: "notebook" });
+		expect(state.seenPages["d1:p3:work"]).toEqual({ scope: "notebook", pageHash: "h3", firstSeen: AFTER, noteId: "note1" });
+		expect(mem.bases.has("plugin/base/note1.json")).toBe(true);
+	});
+
+	it("skips a page never drawn on, so its first ink counts as new", async () => {
+		const state = fresh();
+		await processDocument(deps(memory()), doc([page("p1", 1, null, AFTER)], {}), state);
+		expect(state.seenPages).toEqual({});
+	});
+});
+
+describe("processDocument > after the scan", () => {
+	async function synced() {
+		const mem = memory();
+		const state = fresh();
+		const calls: string[] = [];
+		const d = deps(mem, { backend: reader(calls) });
+		await processDocument(d, doc([page("p1", 1, "h1", BEFORE), page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		completeScans(d.settings, MAP, state);
+		return { mem, state, d, calls };
+	}
+
+	it("does nothing for pages whose ink did not change", async () => {
+		const { mem, state, d, calls } = await synced();
+		const report = await processDocument(d, doc([page("p1", 1, "h1", BEFORE), page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		expect(report).toMatchObject({ notesWritten: 0, notesUpdated: 0 });
+		expect(calls).toHaveLength(1);
+		expect(mem.notes.size).toBe(1);
+	});
+
+	it("merges a changed page into its note, keeping the user's own lines", async () => {
+		const { mem, state, d } = await synced();
+		const path = state.rows["d1:p3:work"].notePath;
+		mem.notes.set(path, mem.notes.get(path)!.replace("- [ ] Call\n", "- [ ] Call\n- [ ] Mine\n"));
+		const report = await processDocument(d, doc([page("p1", 1, "h1", BEFORE), page("p3", 3, "h3b", AFTER + 1)], { p3: "todo Call todo Email" }), state);
+		expect(report.notesUpdated).toBe(1);
+		expect(mem.notes.get(path)).toContain("- [ ] Call\n- [ ] Mine\n- [ ] Email\n");
+		expect(state.seenPages["d1:p3:work"].pageHash).toBe("h3b");
+	});
+
+	it("brings an old page in once the user writes on it", async () => {
+		const { mem, state, d } = await synced();
+		const report = await processDocument(d, doc([page("p1", 1, "h1b", AFTER + 5), page("p3", 3, "h3", AFTER)], { p1: "todo Plan" }), state);
+		expect(report.notesWritten).toBe(1);
+		expect([...mem.notes.keys()]).toContain("Work/Work log/2026-09-27 Work log p1.md");
+	});
+
+	it("records an unseen page written before the toggle as old without a note -- a notebook tagged later", async () => {
+		const mem = memory();
+		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: ENABLED.toISOString() } };
+		const report = await processDocument(deps(mem), doc([page("p9", 9, "h9", BEFORE)], { p9: "todo Old" }), state);
+		expect(report.notesWritten).toBe(0);
+		expect(state.seenPages["d1:p9:work"]).toEqual({ scope: "notebook", pageHash: "h9", firstSeen: BEFORE });
+	});
+
+	it("names a legacy notebook once, when its pages are first recorded", async () => {
+		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: ENABLED.toISOString() } };
+		const legacy = doc([page("p1", 1, "h1", null)], {}, { legacy: true });
+		expect((await processDocument(deps(memory()), legacy, state)).notices).toEqual([expect.stringContaining('"Work log" was written before the tablet stamped page dates')]);
+		expect((await processDocument(deps(memory()), legacy, state)).notices).toEqual([]);
+	});
+});
+
+describe("processDocument > failures", () => {
+	it("keeps a failed page out of the seen hash so it retries, and says so on the third failure", async () => {
+		const mem = memory();
+		const state = fresh();
+		const d = deps(mem);
+		const failing = doc([page("p3", 3, "h3", AFTER)], { p3: "FAIL todo Call" });
+		const first = await processDocument(d, failing, state);
+		expect(first.failures).toEqual(['page 3 of "Work log": model down']);
+		expect(state.seenPages["d1:p3:work"]).toEqual({ scope: "notebook", pageHash: null, firstSeen: AFTER, noteId: "note1" });
+		expect(mem.notes.size).toBe(0);
+		expect((await processDocument(d, failing, state)).notices).toEqual([]);
+		expect((await processDocument(d, failing, state)).notices).toEqual([expect.stringContaining("could not be extracted 3 times: model down")]);
+		expect(state.seenPages["d1:p3:work"].noteId).toBe("note1");
+	});
+
+	it("reports a page the transcription could not read", async () => {
+		const report = await processDocument(deps(memory()), doc([page("p3", 3, "h3", AFTER)], {}), fresh());
+		expect(report.failures).toEqual(['page 3 of "Work log": the page could not be read']);
+	});
+});
+
+describe("processDocument > rows", () => {
+	async function withNote() {
+		const mem = memory();
+		const state = fresh();
+		const d = deps(mem);
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		completeScans(d.settings, MAP, state);
+		return { mem, state, d };
+	}
+
+	it("orphans a row whose tag left the page on the tablet and leaves its note", async () => {
+		const { mem, state, d } = await withNote();
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], {}, { units: [] }), state);
+		expect(state.rows["d1:p3:work"].status).toBe("orphaned");
+		expect(mem.notes.size).toBe(1);
+	});
+
+	it("leaves rows alone while Intelligence Mode is off", async () => {
+		const { mem, state, d } = await withNote();
+		const off = setIntelligenceMode(d.settings, "work", false, ENABLED);
+		const report = await processDocument({ ...d, settings: off }, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Other" }), state);
+		expect(report.notesUpdated).toBe(0);
+		expect(state.rows["d1:p3:work"].status).toBe("active");
+		expect(mem.notes.get(state.rows["d1:p3:work"].notePath)).not.toContain("Other");
+	});
+
+	it("starts a deleted note over with a fresh id and no old base once the page changes", async () => {
+		const { mem, state, d } = await withNote();
+		const oldPath = state.rows["d1:p3:work"].notePath;
+		mem.notes.delete(oldPath);
+		await processDocument(d, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Again" }), state);
+		expect(state.rows["d1:p3:work"]).toMatchObject({ noteId: "note3", status: "active", notePath: oldPath });
+		expect(mem.bases.has("plugin/base/note1.json")).toBe(false);
+		expect(mem.notes.get(oldPath)).toContain("- [ ] Again");
+	});
+
+	it("rebuilds a missing base from the note, so a line typed there is not lost", async () => {
+		const { mem, state, d } = await withNote();
+		const path = state.rows["d1:p3:work"].notePath;
+		mem.notes.set(path, mem.notes.get(path)!.replace("- [ ] Call\n", "- [ ] Call\n- [ ] Mine\n"));
+		mem.bases.clear();
+		await processDocument(d, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Call" }), state);
+		expect(mem.notes.get(path)).toContain("- [ ] Call\n- [ ] Mine\n");
+	});
+
+	it("rebuilds a Slot the template does not place from the heading it was given", async () => {
+		const mem = memory();
+		const state = fresh();
+		const d = deps(mem, { loadTemplate: async () => "## Tasks\n{{ts.tasks}}\n", settings: { ...settings(), profiles: [{ id: "p", name: "P", description: "", template: "T.md", slots: ["tasks", "summary"] }], mappings: { work: { ...settings().mappings.work, profiles: ["p"] } } } });
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		completeScans(d.settings, MAP, state);
+		const path = state.rows["d1:p3:work"].notePath;
+		mem.notes.set(path, mem.notes.get(path)!.replace("## Summary\n", "## Summary\nMy words.\n"));
+		mem.bases.clear();
+		const report = await processDocument(d, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Call" }), state);
+		expect(report.notices).toEqual([]);
+		expect(mem.notes.get(path)).toContain("## Summary\nMy words.");
+	});
+
+	it("says which region it could not find", async () => {
+		const { mem, state, d } = await withNote();
+		const path = state.rows["d1:p3:work"].notePath;
+		mem.notes.set(path, mem.notes.get(path)!.replace(/## Summary\n/, ""));
+		const report = await processDocument(d, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Call" }), state);
+		expect(report.notices).toEqual([`"${path}": the heading for summary is gone, so it was not updated.`]);
+	});
+});
+
+describe("processDocument > Profiles and templates", () => {
+	it("uses the mapping's Profile and its template, and falls back to the starter when the template is gone", async () => {
+		const mem = memory();
+		const s = settings();
+		const withProfile: IntelligenceSettings = {
+			...s,
+			mappings: { work: { ...s.mappings.work, profiles: ["journal"] } },
+			profiles: [{ id: "journal", name: "Journal", description: "Diary", template: "T/Journal.md", slots: ["tasks"] }],
+		};
+		const state = fresh();
+		await processDocument(deps(mem, { settings: withProfile, loadTemplate: async () => "# Journal\n## Tasks\n{{ts.tasks}}\n" }), doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		expect(state.rows["d1:p3:work"].profileId).toBe("journal");
+		expect([...mem.notes.values()][0]).toBe("# Journal\n## Tasks\n- [ ] Call\n");
+
+		const mem2 = memory();
+		await processDocument(deps(mem2, { settings: withProfile }), doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), fresh());
+		expect([...mem2.notes.values()][0]).toBe("## Tasks\n- [ ] Call\n\n## Page\n[[attachments/d1-p3.pdf|Page 3]]\n");
+	});
+});
+
+describe("completeScans and sweepDeletedDocuments", () => {
+	it("marks scans done only for tags that are on, and orphans rows and prunes seen entries of deleted documents", () => {
+		const state: IntelligenceState = {
+			seenPages: { "d1:p1:work": { scope: "notebook", pageHash: "h", firstSeen: null }, "d2:p1:work": { scope: "notebook", pageHash: "h", firstSeen: null } },
+			rows: {
+				"d2:p1:work": { syncKey: "d2:p1:work", unitKey: "d2:p1:work", docId: "d2", pageId: "p1", tag: "work", scope: "notebook", notePath: "n", folder: "Work", status: "active", noteId: "x", profileId: "generic", baseHash: "", syncedAt: "" },
+				"d3:p1:work": { syncKey: "d3:p1:work", unitKey: "d3:p1:work", docId: "d3", pageId: "p1", tag: "work", scope: "notebook", notePath: "m", folder: "Work", status: "orphaned", noteId: "y", profileId: "generic", baseHash: "", syncedAt: "" },
+			},
+			scans: {},
+		};
+		completeScans(settings(), { work: "Work", home: "Home" }, state);
+		expect(state.scans).toEqual({ work: ENABLED.toISOString() });
+		sweepDeletedDocuments(state, new Set(["d1"]));
+		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work"]);
+		expect(state.rows["d2:p1:work"].status).toBe("orphaned");
+		expect(state.rows["d3:p1:work"].status).toBe("orphaned");
+	});
+});
