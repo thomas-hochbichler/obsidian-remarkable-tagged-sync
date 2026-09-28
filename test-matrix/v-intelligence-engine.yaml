@@ -2893,3 +2893,34 @@
       layer: unit
       file: src/intelligence/host.test.ts
       test: "prepareRun > lets the extraction backend rest after each document only when the local model also transcribes"
+
+- feature: V53
+  name: "Page-note commands wait for a running sync"
+  code: src/intelligence/commands.ts
+  tier: free
+  scenarios:
+    - id: V53.1
+      scenario: "Re-run extraction, Change profile or Re-transcribe is used while a sync runs"
+      expect: "Nothing runs and the index stays as it is; the user is told to try again after the sync"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > does nothing to the index or the note while a sync runs"
+
+    - id: V53.2
+      scenario: "A proposal is accepted while a sync runs"
+      expect: "The row stays in the list and can be decided once the sync has finished"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > keeps a row to decide again when a sync was running"
+
+- feature: V54
+  name: "The running plugin holds the sync lock for page-note commands"
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: V54.1
+      scenario: "Re-transcribe on a page note during a sync; the plugin unloads mid-sync"
+      expect: "The index is untouched and the user is told to wait; the sync's local server is stopped on unload"
+      layer: integration
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > leaves a page note alone while a sync runs, and stops a running sync's local server on unload"

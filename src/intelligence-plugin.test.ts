@@ -59,6 +59,20 @@ describe("the review in the running plugin", () => {
 		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
 	});
 
+	it("leaves a page note alone while a sync runs, and stops a running sync's local server on unload", async () => {
+		const plugin = await load(withPageNote);
+		const internals = plugin as unknown as { syncing: boolean; runningIntelligence: { dispose(): void } | null; onunload(): void };
+		internals.syncing = true;
+		takeNotices();
+		await plugin.reTranscribeNote(file("Work/p.md"));
+		expect(plugin.data.syncIndex.seenPages!["d:p:work"].pageHash).toBe("h");
+		expect(takeNotices()).toEqual(["A sync is running. Try again when it has finished."]);
+		let disposed = 0;
+		internals.runningIntelligence = { dispose: () => void disposed++ };
+		internals.onunload();
+		expect(disposed).toBe(1);
+	});
+
 	it("runs Re-run extraction on the note on screen, and says why when this device does not extract", async () => {
 		const plugin = await load(withPageNote);
 		const rerun = plugin.commands.find((command) => command.id === "rerun-extraction")!;

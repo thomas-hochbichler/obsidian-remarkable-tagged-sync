@@ -20,7 +20,7 @@ export class ReviewModal extends Modal {
 	constructor(
 		app: App,
 		private readonly items: ReviewItem[],
-		private readonly apply: (item: ReviewItem, accept: boolean) => Promise<ApplyOutcome>,
+		private readonly apply: (item: ReviewItem, accept: boolean) => Promise<ApplyOutcome | typeof BUSY>,
 	) {
 		super(app);
 	}
@@ -57,8 +57,14 @@ export class ReviewModal extends Modal {
 	private async decide(row: { item: ReviewItem; el: HTMLElement }, accept: boolean, rows: { item: ReviewItem; el: HTMLElement }[]): Promise<void> {
 		// Out of the list before the await: a second click on the same row must not decide it twice.
 		if (!rows.includes(row)) return;
-		rows.splice(rows.indexOf(row), 1);
+		const at = rows.indexOf(row);
+		rows.splice(at, 1);
 		const outcome = await this.apply(row.item, accept);
+		// A sync is writing the same notes and bases: the row stays, to be decided once it has finished.
+		if (outcome === BUSY) {
+			rows.splice(at, 0, row);
+			return;
+		}
 		if (outcome === "applied" || outcome === "stale") {
 			row.el.remove();
 			return;
@@ -77,6 +83,12 @@ export interface IntelligenceCommandsHost {
 	index(): SyncIndex;
 	/** Persists a changed index. */
 	setIndex(index: SyncIndex): Promise<void>;
+	/**
+	 * Runs `work` while no sync can start, or answers {@link BUSY} -- having said so -- while one runs.
+	 * A command reads the index and writes notes and bases a sync is writing too; the sync saves the
+	 * index it began with, so a command's change made meanwhile would be lost.
+	 */
+	exclusive<T>(work: () => Promise<T>): Promise<T | typeof BUSY>;
 	/** "Re-run extraction" on one page note, with this run's backend and settings. */
 	rerun(notePath: string): Promise<RerunOutcome>;
 	/** "Change Profile for this page" (Pro). */
@@ -84,6 +96,9 @@ export interface IntelligenceCommandsHost {
 	profiles(): readonly { id: string; name: string }[];
 	pro(): boolean;
 }
+
+/** What {@link IntelligenceCommandsHost.exclusive} answers while a sync runs. */
+export const BUSY = "busy";
 
 export const CHANGE_PROFILE_PRO = "Changing the profile of one page is part of Tagged Sync Pro.";
 
@@ -123,7 +138,7 @@ async function say(host: IntelligenceCommandsHost, outcome: RerunOutcome): Promi
  */
 export async function reTranscribePageNote(host: IntelligenceCommandsHost, notePath: string): Promise<boolean> {
 	if (!isPageNote(host.index(), notePath)) return false;
-	await say(host, markForRereading(host.index(), notePath));
+	await host.exclusive(() => say(host, markForRereading(host.index(), notePath)));
 	return true;
 }
 
@@ -131,7 +146,7 @@ export async function reTranscribePageNote(host: IntelligenceCommandsHost, noteP
 export async function openReview(host: IntelligenceCommandsHost): Promise<ReviewModal> {
 	const deps = host.review();
 	const items = await loadReview(deps.rows, deps.baseStore);
-	const modal = new ReviewModal(host.app, items, (item, accept) => applyReview(item, accept, { ...deps, reviewLink: REVIEW_LINK }));
+	const modal = new ReviewModal(host.app, items, (item, accept) => host.exclusive(() => applyReview(item, accept, { ...deps, reviewLink: REVIEW_LINK })));
 	modal.open();
 	return modal;
 }
@@ -146,7 +161,7 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 			if (file === null || file.extension !== "md") return false;
 			if (checking) return true;
 			if (!host.pro()) new Notice(CHANGE_PROFILE_PRO);
-			else new ProfileChoiceModal(host.app, host.profiles(), (id) => void host.changeProfile(file.path, id).then((outcome) => say(host, outcome))).open();
+			else new ProfileChoiceModal(host.app, host.profiles(), (id) => void host.exclusive(async () => say(host, await host.changeProfile(file.path, id)))).open();
 			return true;
 		},
 	});
@@ -158,7 +173,7 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 		checkCallback: (checking) => {
 			const file = host.app.workspace.getActiveFile();
 			if (file === null || file.extension !== "md") return false;
-			if (!checking) void host.rerun(file.path).then((outcome) => say(host, outcome));
+			if (!checking) void host.exclusive(async () => say(host, await host.rerun(file.path)));
 			return true;
 		},
 	});
