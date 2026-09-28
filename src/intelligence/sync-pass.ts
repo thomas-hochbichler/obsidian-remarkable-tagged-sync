@@ -8,6 +8,7 @@
  * -- and in the device-local base files. It never writes a transcript note.
  */
 
+import { applyFrontmatter, formatLocalMinute, type NoteFrontmatter } from "../frontmatter";
 import { blockHashOf, type NoteStore, resolveFreePath, sanitizeFilenamePart } from "../note-builder";
 import type { BaseStore, PageBase } from "./base-store";
 import { rebuildBase } from "./base-store";
@@ -77,6 +78,11 @@ export interface IntelligenceDocument {
 	transcribe: (pageIds: string[]) => Promise<Map<string, string>>;
 	/** Writes the page render and returns its vault path. */
 	writeRender: (pageId: string) => Promise<string>;
+	/**
+	 * The plugin's frontmatter keys for a page note (Pro), exactly as a page-tag note gets them -- or
+	 * null with the feature off. Page notes are synced notes: `FROM #remarkable` finds them (spec §7.4).
+	 */
+	frontmatter?: (tag: string, pageId: string) => { fields: Omit<NoteFrontmatter, "synced" | "noteId">; version: number } | null;
 }
 
 export interface IntelligencePassDeps {
@@ -269,15 +275,25 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 			continue;
 		}
 
+		// The plugin's keys ride along on every write; an unchanged note is not written for them alone.
+		const keys = outcome.content === null ? null : (doc.frontmatter?.(unit.tag, page.id) ?? null);
+		let ownTags = alive ? row.frontmatterTags : undefined;
+		let content = outcome.content;
+		if (keys !== null && content !== null) {
+			const applied = applyFrontmatter(content, { ...keys.fields, synced: formatLocalMinute(deps.now()), noteId }, ownTags ?? []);
+			content = applied.content;
+			ownTags = applied.ownTags;
+		}
+
 		let notePath = alive ? row.notePath : "";
 		if (outcome.created) {
 			const name = sanitizeFilenamePart(`${isoDay(outcome.pageDate)} ${doc.name} p${page.ordinal}`);
 			await deps.noteStore.ensureFolder(folder);
 			notePath = await resolveFreePath(deps.noteStore, folder, name, unit.tag, doc.docId);
-			await deps.createNote(notePath, outcome.content!);
+			await deps.createNote(notePath, content!);
 			report.notesWritten++;
-		} else if (outcome.content !== null) {
-			await deps.noteStore.write(notePath, outcome.content);
+		} else if (content !== null) {
+			await deps.noteStore.write(notePath, content);
 			report.notesUpdated++;
 		}
 		for (const id of outcome.missingRegions) report.notices.push(`"${notePath}": the heading for ${id} is gone, so it was not updated.`);
@@ -302,6 +318,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 			profileId: profile.id,
 			baseHash: baseHash(outcome.base),
 			syncedAt: deps.now().toISOString(),
+			...(keys === null ? {} : { frontmatterTags: ownTags, frontmatterVersion: keys.version }),
 		};
 	}
 	return report;

@@ -2231,3 +2231,29 @@
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "followRetargets > moves a note to the vault root when the mapping points there, and skips a tag that is no longer mapped"
+
+- feature: V34
+  name: "Page notes carry the plugin's frontmatter keys (Pro)"
+  code: src/intelligence/sync-pass.ts
+  tier: pro
+  scenarios:
+    - id: V34.1
+      scenario: "Frontmatter properties are on; a page note is written, then the user adds a tag, then the page changes"
+      expect: "remarkable-* keys and remarkable/<tag> on every write, as on a page-tag note; the user's tag stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > frontmatter (Pro) > writes the plugin's keys into a new page note and into every later write, keeping the user's own tags"
+
+    - id: V34.2
+      scenario: "Frontmatter properties are off"
+      expect: "No block is written"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > frontmatter (Pro) > writes no keys with the feature off"
+
+    - id: V34.3
+      scenario: "The sync hands a notebook to the engine with the feature on and off"
+      expect: "The same keys a page-tag note gets (page ordinal, pages 1), or none"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off"

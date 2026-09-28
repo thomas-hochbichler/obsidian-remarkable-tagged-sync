@@ -160,6 +160,16 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(result.index).toMatchObject({ intelligenceMappings: "modes-1", seenPages: { "doc-1:x:work": { pageHash: "h" } }, intelligenceRows: {} });
 	});
 
+	it("gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off", async () => {
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }, { id: "p2" }]) }, { "doc-1": { p1: "h1", p2: "h2" } });
+		const on = hook();
+		await runSync({ ...deps(a), intelligence: on.value, frontmatter: true }, EMPTY_SYNC_INDEX);
+		expect(on.docs[0].frontmatter!("work", "p2")).toMatchObject({ version: 2, fields: { page: 2, pages: 1, uuid: "doc-1", tags: expect.arrayContaining(["remarkable/work"]) } });
+		const off = hook();
+		await runSync({ ...deps(a), intelligence: off.value }, EMPTY_SYNC_INDEX);
+		expect(off.docs[0].frontmatter!("work", "p2")).toBeNull();
+	});
+
 	it("gives the engine the page text the transcript note already read, and reads only what is missing", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }, { id: "p2" }]) }, { "doc-1": { p1: "h1", p2: "h2" } });
 		const ocr = reader();
