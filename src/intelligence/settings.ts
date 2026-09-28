@@ -92,14 +92,18 @@ export function defaultSlots(): SlotDef[] {
 			id: "tasks",
 			name: "Tasks",
 			shape: "checklist",
-			instruction: "Things the writer has to do. Not things other people do, not ideas, not questions.",
-			examples: [],
+			// Research 22's wording: work handed to a named person is a task too, a status line is not.
+			instruction: "Action items someone has to do after this page (a clear to-do). Not status reports ('X: feature done'), not open questions, not struck-through lines.",
+			examples: [
+				{ input: "Max: Rollout-Plan an Team schicken bis Fr", output: "Rollout-Plan an Team schicken", positive: true },
+				{ input: "Max: Login-Seite läuft auf Staging", output: "", positive: false },
+			],
 			fields: [{ name: "due", type: "date" }],
 			itemFormat: TASKS_FORMAT,
 			review: true,
 		},
 		{ id: "decisions", name: "Decisions", shape: "list", instruction: "Decisions that were made, as written.", examples: [], fields: [], itemFormat: "- {{text}}", review: true },
-		{ id: "summary", name: "Summary", shape: "text", instruction: "Two or three sentences on what the page is about.", examples: [], fields: [], itemFormat: "", review: false },
+		{ id: "summary", name: "Summary", shape: "text", instruction: "One or two sentences on what the page is about. Content only: do not mention handwriting, OCR, spelling, missing deadlines or these instructions. Empty string if the page has no content.", examples: [], fields: [], itemFormat: "", review: false },
 		{ id: "tags", name: "Tags", shape: "value", instruction: "Topics of the page, from the allowed list only.", examples: [], fields: [{ name: "tags", type: "choice", options: [] }], itemFormat: "", review: false, property: "tags" },
 	];
 }

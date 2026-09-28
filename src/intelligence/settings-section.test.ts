@@ -318,7 +318,9 @@ describe("renderIntelligenceSection > own Slots (Pro)", () => {
 	});
 
 	it("edits examples and counter-examples", async () => {
-		const h = host(emptyIntelligence(), true);
+		const empty = emptyIntelligence();
+		// The default Tasks Slot ships with two examples; this starts from none.
+		const h = host({ ...empty, slots: empty.slots.map((slot, index) => (index === 0 ? { ...slot, examples: [] } : slot)) }, true);
 		named(section(h), "Add an example").buttons[0].click();
 		named(section(h), "Add an example").buttons[1].click();
 		await flush();

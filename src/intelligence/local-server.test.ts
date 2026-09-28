@@ -87,7 +87,7 @@ describe("managedLocalBackend", () => {
 		const backend = managedLocalBackend(managedServer(s.deps, "srv", "m"), s.deps);
 		expect(backend).toMatchObject({ id: "local", metered: false, local: true });
 		expect(await backend.extract(INPUT)).toMatchObject({ kind: "ok" });
-		expect(s.bodies[0]).toMatchObject({ model: "local", temperature: 0, seed: 42, max_tokens: 2000 });
+		expect(s.bodies[0]).toMatchObject({ model: "local", temperature: 0, seed: 42, max_tokens: 3000 });
 		backend.dispose();
 		expect(s.killed()).toBe(1);
 	});

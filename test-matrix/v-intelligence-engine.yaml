@@ -1110,7 +1110,7 @@
       expect: "temperature 0, no key, no schema"
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
-      test: "openAiCompatComplete > sends temperature 0 and no auth or schema to the user's own server when asked for free text"
+      test: "openAiCompatComplete > sends temperature 0 and no auth or schema to the user's own server when asked for free text, and a prefill as the assistant's turn"
 
     - id: V12.5
       scenario: "No model is configured"
@@ -1548,7 +1548,7 @@
       expect: "Pass 1 free text (2 000 tokens), pass 2 under the schema (4 000) with the page text"
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
-      test: "twoCallBackend > writes free-text notes first, then formats them under the schema with the page beside them"
+      test: "twoCallBackend > writes free-text notes first, line by line, then formats them under the schema with the page beside them"
 
     - id: V17.2
       scenario: "Pass 1 says NONE everywhere"
@@ -2924,3 +2924,15 @@
       layer: integration
       file: src/intelligence-plugin.test.ts
       test: "the review in the running plugin > leaves a page note alone while a sync runs, and stops a running sync's local server on unload"
+
+- feature: V55
+  name: "The measured local prompt (research 22)"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V55.1
+      scenario: "A Profile without the tasks Slot runs on the local model"
+      expect: "No line pass and no prefill; each Slot gets its own answer line, list Fields as columns"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > asks for no line pass without a tasks Slot, and lists items and values per Slot"

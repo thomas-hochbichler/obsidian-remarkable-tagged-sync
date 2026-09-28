@@ -34,6 +34,8 @@ describe("FIELD_TYPES", () => {
 		expect(FIELD_TYPES.date.resolve({ words: 3, rel: "tomorrow" }, def("date"), ctx)).toBe("2026-09-29");
 		expect(FIELD_TYPES.date.resolve({ words: "demain", rel: "sometime" }, def("date"), ctx)).toBeNull();
 		expect(FIELD_TYPES.date.resolve(null, def("date"), ctx)).toBeNull();
+		// A local format pass copies the notes' "NONE" into the words, whatever class it picks.
+		expect(FIELD_TYPES.date.resolve({ words: " none ", rel: "tomorrow" }, def("date"), ctx)).toBeNull();
 	});
 
 	it("resolves text trimmed and empty text as null", () => {
