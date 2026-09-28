@@ -303,6 +303,13 @@
       file: test-stubs/fake-obsidian.test.ts
       test: "the plugin host > holds an onLayoutReady callback until the workspace is ready, then runs it"
 
+    - id: T9.3
+      scenario: A plugin registers an obsidian:// handler, as the review callout needs
+      expect: The handler is kept by its action, so a test opens the link by calling it
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the plugin host > keeps each obsidian:// handler by its action, so a test can open the link"
+
 - feature: T10
   name: The settings controls the plugin reaches past
   code: test-stubs/fake-obsidian.ts

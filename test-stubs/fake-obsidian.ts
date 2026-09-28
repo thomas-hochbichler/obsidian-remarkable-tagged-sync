@@ -1146,6 +1146,8 @@ export class Plugin {
 	readonly eventRefs: EventRef[] = [];
 	readonly domEvents: { el: FakeEl; type: string }[] = [];
 	readonly codeBlockProcessors = new Map<string, (source: string, el: FakeEl, ctx: unknown) => unknown>();
+	/** `obsidian://<action>` handlers, by action -- a test opens such a link by calling one. */
+	readonly protocolHandlers = new Map<string, (params: Record<string, string>) => unknown>();
 	readonly statusBarItems: FakeEl[] = [];
 	readonly cleanups: (() => void)[] = [];
 	/** What `loadData()` returns. A test sets it to the `data.json` it wants to arrive with. */
@@ -1196,6 +1198,9 @@ export class Plugin {
 		handler: (source: string, el: FakeEl, ctx: unknown) => unknown,
 	): void {
 		this.codeBlockProcessors.set(language, handler);
+	}
+	registerObsidianProtocolHandler(action: string, handler: (params: Record<string, string>) => unknown): void {
+		this.protocolHandlers.set(action, handler);
 	}
 	onload(): void | Promise<void> {}
 	onunload(): void {}

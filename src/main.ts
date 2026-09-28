@@ -73,7 +73,8 @@ import {
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
-import { hostEnvironmentFor, intelligenceNotices, prepareRun } from "./intelligence/host";
+import { hostEnvironmentFor, intelligenceNotices, prepareRun, reviewStoresFor } from "./intelligence/host";
+import { registerIntelligenceCommands } from "./intelligence/commands";
 import { intelligenceProAllowed } from "./intelligence/plugin-rules";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
@@ -447,6 +448,12 @@ export default class TaggedSyncPlugin extends Plugin {
 		// The Pro half -- the desktop-app connection and write-back -- is refused in place where it
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
+		registerIntelligenceCommands({
+			app: this.app,
+			addCommand: (command) => this.addCommand(command),
+			registerObsidianProtocolHandler: (action, handler) => this.registerObsidianProtocolHandler(action, handler),
+			review: () => reviewStoresFor(hostEnvironmentFor(this.app, this.manifest, createNoteStore(this.app), moment), this.data.syncIndex.intelligenceRows ?? {}),
+		});
 
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));

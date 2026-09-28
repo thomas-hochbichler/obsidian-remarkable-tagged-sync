@@ -312,6 +312,14 @@ describe("the plugin host", () => {
 		expect(plugin.saves).toEqual([{ deviceToken: "abc" }]);
 	});
 
+	it("keeps each obsidian:// handler by its action, so a test can open the link", () => {
+		const plugin = new Plugin(new FakeApp());
+		const opened: string[] = [];
+		plugin.registerObsidianProtocolHandler("tagged-sync-review", (params) => opened.push(params.action));
+		plugin.protocolHandlers.get("tagged-sync-review")!({ action: "tagged-sync-review" });
+		expect(opened).toEqual(["tagged-sync-review"]);
+	});
+
 	it("holds an onLayoutReady callback until the workspace is ready, then runs it", async () => {
 		// A plugin loaded during Obsidian's own startup sees a workspace that is not ready yet. Running
 		// the callback at once would make "waits for the workspace" untestable and always true.

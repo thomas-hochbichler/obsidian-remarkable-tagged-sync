@@ -12,6 +12,16 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **The Intelligence Engine: one Obsidian note per handwritten page, with its tasks and a summary.**
+  Switch on Intelligence Mode for a tag, and every page you write from then on becomes a note built
+  from your own template. Tasks land as Tasks-plugin checkboxes with their due dates, a summary under
+  its own heading. When the page changes, the note is updated line by line, and nothing you edited
+  in Obsidian is overwritten: what the engine is unsure about waits for you under
+  **Review proposals**, one list over all notes. A tick on the page ticks the task in the note.
+  Pages written before you switched the mode on are left alone.
+
 ## [1.8.2] - 2026-09-27
 
 ### Fixed

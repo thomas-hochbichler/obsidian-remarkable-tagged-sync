@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NoteStore } from "../note-builder";
 import { compatExtractionEntry, registerExtractionBackend } from "./extraction-registry";
 import { TFile } from "obsidian";
-import { adapterFiles, coreTemplateFormats, type HostEnvironment, hostEnvironmentFor, intelligenceNotices, localDeviceId, noteCreator, prepareRun, REVIEW_LINK, templaterOf } from "./host";
+import { adapterFiles, coreTemplateFormats, type HostEnvironment, hostEnvironmentFor, intelligenceNotices, localDeviceId, noteCreator, prepareRun, REVIEW_LINK, reviewStoresFor, templaterOf } from "./host";
 import { emptyReport } from "./sync-pass";
 import { emptyIntelligence, EMPTY_INTELLIGENCE_FINGERPRINT, setIntelligenceMode, type IntelligenceSettings } from "./settings";
 import { parseExtraction } from "./extraction";
@@ -213,5 +213,16 @@ describe("hostEnvironmentFor", () => {
 		expect(e.noteStore).toBe(store);
 		expect(e.configDir).toBe(".obsidian");
 		expect(await e.files.read("x")).toBeNull();
+	});
+});
+
+describe("reviewStoresFor", () => {
+	it("reads bases from the plugin folder and notes through the vault, with short item ids", async () => {
+		const e = env({ "plugin/base/n1.json": "{}" });
+		const stores = reviewStoresFor(e, {});
+		expect(await stores.baseStore.load("n1")).toBeNull();
+		expect(stores.noteStore).toBe(e.noteStore);
+		expect(stores.newId()).toBe("rand-1-0");
+		expect(stores.rows).toEqual({});
 	});
 });

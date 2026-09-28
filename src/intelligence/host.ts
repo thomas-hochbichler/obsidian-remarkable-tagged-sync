@@ -8,11 +8,11 @@ import { normalizePath, TFile } from "obsidian";
 import type { NoteStore } from "../note-builder";
 import type { BackendSettings } from "../ocr-registry";
 import type { IntelligenceHook } from "../sync-engine";
-import { createBaseStore, type BaseFiles } from "./base-store";
+import { type BaseFiles, type BaseStore, createBaseStore } from "./base-store";
 import { extractionBackendEntry } from "./extraction-registry";
 import { chooseExtractionBackend, effectiveModes, effectiveSlotsFor, isEngineDevice, scansDue } from "./plugin-rules";
 import { intelligenceFingerprint, type IntelligenceSettings } from "./settings";
-import { completeScans, type PassReport, processDocument } from "./sync-pass";
+import { completeScans, type IntelligenceRow, type PassReport, processDocument } from "./sync-pass";
 
 /** A plain file API over the plugin folder: `vault.adapter` in the app. */
 export interface PluginFiles {
@@ -90,6 +90,11 @@ export interface IntelligenceRun {
 	hook: IntelligenceHook | undefined;
 	/** Why the engine will not run although a tag asks for it; said once per run. */
 	paused: string | null;
+}
+
+/** What a review reads and writes, from the environment of the running app. */
+export function reviewStoresFor(env: HostEnvironment, rows: Record<string, IntelligenceRow>): { rows: Record<string, IntelligenceRow>; baseStore: BaseStore; noteStore: NoteStore; newId: () => string } {
+	return { rows, baseStore: createBaseStore(baseFiles(env), env.pluginDir), noteStore: env.noteStore, newId: () => env.randomId().slice(0, 8) };
 }
 
 /** The template's own `{{date:FORMAT}}`, else core Templates' setting, else Obsidian's default. */
