@@ -2111,3 +2111,83 @@
       layer: unit
       file: src/intelligence/settings-section.test.ts
       test: "renderIntelligenceSection > asks for consent to extract in automatic syncs, per kind of backend"
+
+- feature: V31
+  name: "Re-run extraction and Re-transcribe on a page note"
+  code: src/intelligence/rerun.ts
+  tier: free
+  scenarios:
+    - id: V31.1
+      scenario: "Re-run extraction on a page note the user edited"
+      expect: "Re-extracted from the base's transcript; a deleted task stays deleted, the user's line stays"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > extracts the page again from its stored transcript, through the merge, keeping the user's lines"
+
+    - id: V31.2
+      scenario: "The re-run changes the note, or the model fails"
+      expect: "Said plainly, in one sentence"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > says what it did when the note changed, and what failed when the model did"
+
+    - id: V31.3
+      scenario: "The seen entry is missing"
+      expect: "It runs and records one"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > still runs on an index that lost the page's seen entry"
+
+    - id: V31.4
+      scenario: "The base is gone"
+      expect: "The page is marked for the next sync, which reads it again"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > marks the page for reading on the next sync when its base is gone"
+
+    - id: V31.5
+      scenario: "Another note, another device, no backend"
+      expect: "A sentence each, nothing written"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > refuses on a note that is not a page note, and off the engine device"
+
+    - id: V31.6
+      scenario: "Re-transcribe on a page note"
+      expect: "Its seen hash is cleared, the note id kept"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "markForRereading and isPageNote > clears the seen hash of a page note, keeping its id; says so for any other note"
+
+- feature: V32
+  name: "The page-note commands in the palette"
+  code: src/intelligence/commands.ts
+  tier: free
+  scenarios:
+    - id: V32.1
+      scenario: "Re-run extraction is asked for with or without a Markdown note on screen"
+      expect: "Offered on Markdown notes; runs on the note on screen and says what happened"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > offers Re-run extraction on a Markdown note only, and runs it on the one on screen, saying what happened"
+
+    - id: V32.2
+      scenario: "Re-transcribe on a page note and on another note"
+      expect: "The page note's page is marked for the next sync; any other note goes to the transcript command"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > marks a page note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command"
+
+    - id: V32.3
+      scenario: "Re-transcribe this note on a page note, in the running plugin"
+      expect: "Marked for the next sync, and said"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > re-transcribes a page note by marking its page for the next sync"
+
+    - id: V32.4
+      scenario: "Re-run extraction in the running plugin, off the engine device, on another note, on a fresh vault"
+      expect: "A sentence each: which device extracts, or that this is no page note"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > runs Re-run extraction on the note on screen, and says why when this device does not extract"
