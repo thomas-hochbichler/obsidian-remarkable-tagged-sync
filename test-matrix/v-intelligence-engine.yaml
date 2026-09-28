@@ -2520,3 +2520,22 @@
       layer: unit
       file: src/intelligence/settings.test.ts
       test: "slotIdFor > makes a readable id from the name, unique among the Slots"
+
+- feature: V40
+  name: "The Profile editor says what each Slot will do"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V40.1
+      scenario: "A Profile's template places Slots under a heading, inline, not at all, or in frontmatter"
+      expect: "Each Slot row says where it lands and whether it is kept up to date"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > what a Profile's Slots will do > says per Slot where the template puts it, and whether it is kept up to date"
+
+    - id: V40.2
+      scenario: "A Profile has more than seven Slots on a local, a cloud, or no set backend"
+      expect: "A warning on the local one only"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > what a Profile's Slots will do > warns about many Slots on a local model, and not on a cloud one"

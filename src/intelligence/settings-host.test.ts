@@ -57,5 +57,6 @@ describe("settingsHostFor", () => {
 		expect(folders).toEqual(["Templates"]);
 		expect(written).toEqual(["Templates/My pages.md=## Tasks", "Root.md=x"]);
 		expect([host.pro, host.now().toISOString(), host.randomId()]).toEqual([true, "2026-09-28T00:00:00.000Z", "rid"]);
+		expect(await host.readTemplate("T.md")).toBeNull();
 	});
 });

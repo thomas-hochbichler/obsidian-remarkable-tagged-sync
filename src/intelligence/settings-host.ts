@@ -62,6 +62,7 @@ export function settingsHostFor(input: SettingsHostInput): IntelligenceSettingsH
 			await env.noteStore.write(free, content);
 			return free;
 		},
+		readTemplate: (path) => env.readVaultNote(path),
 		now: () => env.now(),
 		randomId: () => env.randomId(),
 	};
