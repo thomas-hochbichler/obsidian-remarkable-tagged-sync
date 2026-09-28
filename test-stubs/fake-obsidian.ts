@@ -503,16 +503,35 @@ export class FakeVault {
 	}
 
 	/**
-	 * The filesystem, not the index -- the only member of `vault.adapter` this plugin reaches, and
-	 * the one `Vault.create` itself calls before it throws.
+	 * The filesystem, not the index -- the member of `vault.adapter` the note paths reach, and the one
+	 * `Vault.create` itself calls before it throws.
 	 *
 	 * app.js: `fsPromises.access(fullPath)`, false on any error. So the *filesystem* decides, which
 	 * means it folds case wherever the platform does. The real signature takes a second `sensitive`
 	 * argument that adds an exact-case confirmation on top; nothing in this plugin passes it, so
 	 * nothing here models it.
 	 */
+	/**
+	 * Files outside the note index -- the plugin folder, where the Intelligence Engine keeps its bases
+	 * and the device id (it reads and writes them through `vault.adapter`, as Obsidian has no index
+	 * entry for them). Kept apart from `fileMap` on purpose: nothing written here appears as a note.
+	 */
+	readonly adapterFiles = new Map<string, string>();
+	/** Obsidian's default; a vault can rename it, which is why the plugin always asks. */
+	readonly configDir = ".obsidian";
+	readonly adapterFolders = new Set<string>();
+
 	readonly adapter = {
-		exists: async (path: string): Promise<boolean> => this.existsOnDisk(path) !== null,
+		exists: async (path: string): Promise<boolean> => this.existsOnDisk(path) !== null || this.adapterFiles.has(path) || this.adapterFolders.has(path),
+		read: async (path: string): Promise<string> => {
+			const content = this.adapterFiles.get(path);
+			// app.js: an fs read of a missing file rejects -- the plugin asks `exists` first.
+			if (content === undefined) throw new Error(`ENOENT: no such file, open '${path}'`);
+			return content;
+		},
+		write: async (path: string, data: string): Promise<void> => void this.adapterFiles.set(path, data),
+		remove: async (path: string): Promise<void> => void this.adapterFiles.delete(path),
+		mkdir: async (path: string): Promise<void> => void this.adapterFolders.add(path),
 	};
 
 	// app.js: `fileMap.hasOwnProperty(p)` and an instance check. Exact string, no folding. The
