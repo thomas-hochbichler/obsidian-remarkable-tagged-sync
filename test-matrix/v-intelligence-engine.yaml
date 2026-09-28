@@ -888,3 +888,50 @@
       layer: unit
       file: src/intelligence/base-store.test.ts
       test: "rebuildBase > leaves out a region whose heading is gone, and Value Slots, which live in frontmatter"
+
+- feature: V9
+  name: Any Markdown note can be a template
+  code: src/intelligence/template.ts
+  tier: free
+  scenarios:
+    - id: V9.1
+      scenario: "A Slot placeholder stands alone under a heading"
+      expect: "A merged region under that heading"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "analyseTemplate > makes a placeholder alone under its own heading a region, blank lines allowed"
+
+    - id: V9.2
+      scenario: "A placeholder shares a heading, sits inline, in a callout or above every heading"
+      expect: "Filled once at creation, never merged -- the editor says so"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "analyseTemplate > fills a placeholder once when it shares its heading, sits in a sentence, a callout or before any heading"
+
+    - id: V9.3
+      scenario: "The Profile runs a Slot the template lacks"
+      expect: "Reported, so the editor can hint"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "analyseTemplate > reports a Slot the template does not place"
+
+    - id: V9.4
+      scenario: "A template uses ts variables and core date/time with formats"
+      expect: "All filled"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "renderTemplate > fills ts variables and the core title, date and time, with formats"
+
+    - id: V9.5
+      scenario: "A misspelt ts placeholder and an empty Slot"
+      expect: "The typo stays visible; the empty Slot fills with nothing"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "renderTemplate > leaves an unknown placeholder as written so a typo shows, and fills an empty Slot with nothing"
+
+    - id: V9.6
+      scenario: "Create template writes a starter"
+      expect: "Every Slot a region, plus the page link"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "starterTemplate > gives every Slot its own heading, so every Slot is a region"
