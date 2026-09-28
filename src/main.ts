@@ -19,7 +19,7 @@ import { createPolarLicenceApi } from "./licence-client";
 import { endedUnannounced, type Entitlement, entitlementOf } from "./licence-state";
 import { attestTrial, createTrialIssuer, TRIAL_PUBLIC_KEY, type TrialIssuer, vaultHashOf } from "./trial-ticket";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import { remapRows, rowForNotePath } from "./note-rename";
+import { rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import {
@@ -75,6 +75,7 @@ import {
 import { TagRouter } from "./tag-router";
 import { hostEnvironmentFor, intelligenceNotices, prepareRun, reviewStoresFor } from "./intelligence/host";
 import { registerIntelligenceCommands } from "./intelligence/commands";
+import { followVaultRename } from "./intelligence/vault-follow";
 import { intelligenceProAllowed } from "./intelligence/plugin-rules";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
@@ -488,9 +489,11 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (this.syncing) return;
 		const kind = file instanceof TFolder ? "folder" : file instanceof TFile ? "file" : null;
 		if (kind === null) return;
-		const rows = remapRows(this.data.syncIndex.rows, { kind, from: oldPath, to: file.path });
-		if (rows === null) return;
-		this.data.syncIndex.rows = rows;
+		// Transcript notes, page notes and Profile templates alike: the path is all that follows.
+		const followed = followVaultRename(this.data, { kind, from: oldPath, to: file.path });
+		if (followed === null) return;
+		this.data.syncIndex = followed.syncIndex;
+		this.data.intelligence = followed.intelligence;
 		await this.saveData(this.data);
 	}
 
