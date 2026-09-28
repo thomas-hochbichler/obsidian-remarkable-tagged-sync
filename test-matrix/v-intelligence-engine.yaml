@@ -656,3 +656,99 @@
       layer: unit
       file: src/intelligence/regions.test.ts
       test: "setProposalCallout > removes the callout once everything is decided, and leaves a region without one alone"
+
+- feature: V6
+  name: Due dates are resolved in code from the words on the page
+  code: src/intelligence/dates.ts
+  tier: free
+  scenarios:
+    - id: V6.1
+      scenario: "A task names an absolute date in any common form"
+      expect: "The ISO date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > absolute dates > reads ISO, German day-month with and without year, and month names in both languages"
+
+    - id: V6.2
+      scenario: "A December page says `bis 15.1.`"
+      expect: "January next year; a date just past stays this year (overdue)"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > absolute dates > puts a due date without a year into next year when this year's is long past"
+
+    - id: V6.3
+      scenario: "The words hold a time or 31 February"
+      expect: "No date rather than a wrong one"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > absolute dates > reads nothing from a time or an impossible date"
+
+    - id: V6.4
+      scenario: "heute / morgen / übermorgen, and English"
+      expect: "Relative to the page's date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads today, tomorrow and the day after in German and English"
+
+    - id: V6.5
+      scenario: "bis Freitag, Fr., do"
+      expect: "The next such day after the page's date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads a weekday as its next occurrence after the page's date"
+
+    - id: V6.6
+      scenario: "English words like do and so"
+      expect: "No date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > does not read an English word as a German weekday abbreviation"
+
+    - id: V6.7
+      scenario: "nächste Woche, Monatsende"
+      expect: "That week's Friday, the month's last day"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads this week and next week as their Friday, and month ends as the last day"
+
+    - id: V6.8
+      scenario: "in 6 Wochen, in drei Tagen"
+      expect: "Counted from the page's date; month overflow clamps"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads in N days, weeks and months, in digits or words"
+
+    - id: V6.9
+      scenario: "irgendwann, someday"
+      expect: "No date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads someday as no date"
+
+    - id: V6.10
+      scenario: "A French due phrase with the model's class"
+      expect: "The class decides; for German/English the words win"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > fallback to the model's class > uses the class only for words no language table reads"
+
+    - id: V6.11
+      scenario: "No words, no class"
+      expect: "No date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > fallback to the model's class > gives no date when neither the words nor the class name one"
+
+    - id: V6.12
+      scenario: "The page says `Mo 28.9.`"
+      expect: "That date; a late-December date read in January is last year's"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveWrittenDate > reads the date written on the page, preferring the past for a date without a year"
+
+    - id: V6.13
+      scenario: "The page says heute, or nothing"
+      expect: "No written date -- the chain falls to first-seen"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveWrittenDate > reads nothing relative or missing"
