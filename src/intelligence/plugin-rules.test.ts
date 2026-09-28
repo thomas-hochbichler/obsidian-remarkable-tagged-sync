@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExtractionBackendEntry } from "./extraction-registry";
-import { chooseExtractionBackend, effectiveModes, effectiveSlotsFor, freeSlots, freeTag, isEngineDevice, scansDue } from "./plugin-rules";
+import { backgroundExtractionAllowed, chooseExtractionBackend, effectiveModes, effectiveSlotsFor, freeSlots, freeTag, isEngineDevice, scansDue } from "./plugin-rules";
 import { defaultSlots, emptyIntelligence, genericProfile, setIntelligenceMode, TASKS_FORMAT, type IntelligenceSettings } from "./settings";
 
 const MAP = { work: "Work", home: "Home", misc: "Misc" };
@@ -94,5 +94,15 @@ describe("chooseExtractionBackend", () => {
 
 	it("pauses when nothing is set and the transcription backend cannot extract", () => {
 		expect(chooseExtractionBackend({ settings: emptyIntelligence(), transcriptionBackend: "vision", pro: true, lookup: registry() })).toEqual({ kind: "paused", reason: expect.stringContaining("No extraction backend is set") });
+	});
+});
+
+describe("backgroundExtractionAllowed", () => {
+	it("asks a paid backend for consent to spend and the local model for consent to run, and lets the user's own server run", () => {
+		const none = emptyIntelligence();
+		const both = { ...none, autoExtractMetered: true, autoExtractLocal: true };
+		expect([backgroundExtractionAllowed({ id: "openrouter", metered: true }, none), backgroundExtractionAllowed({ id: "openrouter", metered: true }, both)]).toEqual([false, true]);
+		expect([backgroundExtractionAllowed({ id: "local", metered: false }, none), backgroundExtractionAllowed({ id: "local", metered: false }, both)]).toEqual([false, true]);
+		expect(backgroundExtractionAllowed({ id: "ollama", metered: false }, none)).toBe(true);
 	});
 });

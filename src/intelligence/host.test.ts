@@ -65,21 +65,21 @@ describe("localDeviceId", () => {
 
 describe("prepareRun", () => {
 	it("gives every device the modes and the print, but no engine off the engine device", async () => {
-		const run = await prepareRun(env({ "plugin/device-id": "device-b" }), { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: {} });
+		const run = await prepareRun(env({ "plugin/device-id": "device-b" }), { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: {}, background: false });
 		expect(run.modes("work")).toEqual({ transcript: true, intelligence: true });
 		expect(run.fingerprint).not.toBe(EMPTY_INTELLIGENCE_FINGERPRINT);
 		expect(run).toMatchObject({ hook: undefined, paused: null });
 	});
 
 	it("builds no engine when no tag asks for one", async () => {
-		const run = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: onDevice(emptyIntelligence()), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: {} });
+		const run = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: onDevice(emptyIntelligence()), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: {}, background: false });
 		expect(run).toMatchObject({ hook: undefined, paused: null, fingerprint: EMPTY_INTELLIGENCE_FINGERPRINT });
 	});
 
 	it("pauses with a reason when the backend is Pro and the vault is not, or when it lacks its key", async () => {
-		const free = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: onDevice(ON), tagFolderMap: MAP, pro: false, transcriptionBackend: "hostcloud", providerSettings: {} });
+		const free = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: onDevice(ON), tagFolderMap: MAP, pro: false, transcriptionBackend: "hostcloud", providerSettings: {}, background: false });
 		expect(free.paused).toContain("part of Tagged Sync Pro");
-		const keyless = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: {} });
+		const keyless = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: {}, background: false });
 		expect(keyless.paused).toContain("Host cloud is not set up yet");
 	});
 
@@ -89,7 +89,7 @@ describe("prepareRun", () => {
 		e.readVaultNote = async (path) => (path === "T.md" ? "{{date}} {{time}} {{time:ss}}\n## Tasks\n{{ts.tasks}}\n" : null);
 		e.createNote = async (path, content) => void (created[path] = content);
 		const settings: IntelligenceSettings = { ...onDevice(ON), backend: "hostfake", profiles: [{ id: "p", name: "P", description: "", template: "T.md", slots: ["tasks"] }], mappings: { work: { ...ON.mappings.work, profiles: ["p"] } } };
-		const run = await prepareRun(e, { settings, tagFolderMap: MAP, pro: true, transcriptionBackend: "vision", providerSettings: {} });
+		const run = await prepareRun(e, { settings, tagFolderMap: MAP, pro: true, transcriptionBackend: "vision", providerSettings: {}, background: false });
 		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: "2026-09-01T00:00:00.000Z" } };
 		const page = { id: "p1", ordinal: 1, hash: "h", modified: Date.parse("2026-09-02T00:00:00.000Z") };
 		await run.hook!.process({ docId: "d", name: "N", legacy: false, pages: [page], units: [{ tag: "work", scope: "notebook", pageIds: ["p1"] }], transcribe: async () => new Map([["p1", "call Bob"]]), writeRender: async () => "a.pdf" }, state);
@@ -105,9 +105,17 @@ describe("prepareRun", () => {
 		expect(Object.keys(e.files.data)).not.toContain("plugin/base/rand-1-0123456789.json");
 	});
 
+	it("leaves extraction out of a background sync without consent to spend, and in with it", async () => {
+		const input = { tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: { hostcloud: { apiKey: "k" } }, background: true };
+		const refused = await prepareRun(env({ "plugin/device-id": "device-a" }), { ...input, settings: onDevice(ON) });
+		expect(refused).toMatchObject({ hook: undefined, paused: null });
+		const allowed = await prepareRun(env({ "plugin/device-id": "device-a" }), { ...input, settings: { ...onDevice(ON), autoExtractMetered: true } });
+		expect(allowed.hook).toBeDefined();
+	});
+
 	it("builds the engine hook on the engine device with a working backend", async () => {
 		const e = env({ "plugin/device-id": "device-a" });
-		const run = await prepareRun(e, { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: { hostcloud: { apiKey: "k" } } });
+		const run = await prepareRun(e, { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: { hostcloud: { apiKey: "k" } }, background: false });
 		expect(run.paused).toBeNull();
 		const hook = run.hook!;
 		expect(hook.fingerprint).toBe(run.fingerprint);

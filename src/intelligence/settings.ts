@@ -71,6 +71,10 @@ export interface IntelligenceSettings {
 	model: string | null;
 	/** The device that runs the engine; synced, compared with a device-local id. */
 	engineDeviceId: string | null;
+	/** Consent to extract with a paid backend in a background sync (spec §6); off by default. */
+	autoExtractMetered: boolean;
+	/** Consent to run the local model for extraction in a background sync; off by default. */
+	autoExtractLocal: boolean;
 }
 
 export const DEFAULT_MODES: Readonly<MappingModes> = Object.freeze({ transcript: true, intelligence: false, profiles: [] as string[] });
@@ -102,7 +106,7 @@ export function genericProfile(pro: boolean): ProfileDef {
 }
 
 export function emptyIntelligence(): IntelligenceSettings {
-	return { mappings: {}, profiles: [], slots: defaultSlots(), backend: null, model: null, engineDeviceId: null };
+	return { mappings: {}, profiles: [], slots: defaultSlots(), backend: null, model: null, engineDeviceId: null, autoExtractMetered: false, autoExtractLocal: false };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -143,6 +147,8 @@ export function readIntelligence(saved: unknown, now: Date): IntelligenceSetting
 		backend: stringOr(saved.backend, null),
 		model: stringOr(saved.model, null),
 		engineDeviceId: stringOr(saved.engineDeviceId, null),
+		autoExtractMetered: saved.autoExtractMetered === true,
+		autoExtractLocal: saved.autoExtractLocal === true,
 	};
 }
 

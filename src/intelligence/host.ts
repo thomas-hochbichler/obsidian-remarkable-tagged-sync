@@ -10,7 +10,7 @@ import type { BackendSettings } from "../ocr-registry";
 import type { IntelligenceHook } from "../sync-engine";
 import { type BaseFiles, type BaseStore, createBaseStore } from "./base-store";
 import { extractionBackendEntry } from "./extraction-registry";
-import { chooseExtractionBackend, effectiveModes, effectiveSlotsFor, isEngineDevice, scansDue } from "./plugin-rules";
+import { backgroundExtractionAllowed, chooseExtractionBackend, effectiveModes, effectiveSlotsFor, isEngineDevice, scansDue } from "./plugin-rules";
 import { intelligenceFingerprint, type IntelligenceSettings } from "./settings";
 import { completeScans, type IntelligenceRow, type PassReport, processDocument } from "./sync-pass";
 
@@ -79,6 +79,8 @@ export interface RunInputs {
 	transcriptionBackend: string;
 	/** `llmProviders`: a provider's key and URL, shared with transcription. */
 	providerSettings: Record<string, BackendSettings>;
+	/** A background sync: extraction runs only with its consent, and waits silently without it. */
+	background: boolean;
 }
 
 export interface IntelligenceRun {
@@ -108,6 +110,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 	if (!wanted || !isEngineDevice(input.settings, await localDeviceId(env, false))) return { modes, fingerprint, hook: undefined, paused: null };
 
 	const choice = chooseExtractionBackend({ settings: input.settings, transcriptionBackend: input.transcriptionBackend, pro: input.pro, lookup: extractionBackendEntry });
+	if (input.background && choice.kind === "ready" && !backgroundExtractionAllowed(choice.entry, input.settings)) return { modes, fingerprint, hook: undefined, paused: null };
 	const backend = choice.kind === "ready" ? choice.entry.create(input.providerSettings[choice.entry.id] ?? {}, input.settings.model) : null;
 	if (backend === null) {
 		const reason = choice.kind === "paused" ? choice.reason : `The extraction backend ${choice.entry.label} is not set up yet: it needs its key or address. The engine is paused.`;

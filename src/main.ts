@@ -675,6 +675,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				pro: intelligenceProAllowed(this.entitlement()),
 				transcriptionBackend: backend.id,
 				providerSettings: this.data.llmProviders,
+				background: auto,
 			});
 			const result = await runSync(
 				{

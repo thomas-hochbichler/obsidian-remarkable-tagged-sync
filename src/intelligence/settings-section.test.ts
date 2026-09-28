@@ -142,6 +142,14 @@ describe("renderIntelligenceSection", () => {
 		expect(Object.values(named(section(host(emptyIntelligence(), true)), "Extraction backend").dropdowns[0].options)).toContain("Section cloud");
 	});
 
+	it("asks for consent to extract in automatic syncs, per kind of backend", async () => {
+		const h = host(emptyIntelligence(), true);
+		named(section(h), "Extract in automatic syncs with a paid backend").toggles[0].toggle(true);
+		named(section(h), "Extract in automatic syncs with the local model").toggles[0].toggle(true);
+		await flush();
+		expect([h.settings().autoExtractMetered, h.settings().autoExtractLocal]).toEqual([true, true]);
+	});
+
 	it("adds one Profile without Pro and more with it; edits, removes, and creates its template", async () => {
 		const h = host(setIntelligenceMode(emptyIntelligence(), "work", true, new Date()), false);
 		named(section(h), "Add a profile").buttons[0].click();

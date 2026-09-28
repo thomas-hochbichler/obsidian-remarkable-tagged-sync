@@ -131,6 +131,16 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 				.onChange(async (model) => typed(host, (s) => ({ ...s, model: model.trim() === "" ? null : model.trim() }))),
 		);
 
+	// The same two questions automatic sync asks the transcription backend (spec §6), each its own row.
+	new Setting(containerEl)
+		.setName("Extract in automatic syncs with a paid backend")
+		.setDesc("Off: an automatic sync with a paid extraction backend transcribes, and the pages wait for a sync you start.")
+		.addToggle((toggle) => toggle.setValue(settings.autoExtractMetered).onChange(async (on) => withSettings(host, (s) => ({ ...s, autoExtractMetered: on }))));
+	new Setting(containerEl)
+		.setName("Extract in automatic syncs with the local model")
+		.setDesc("Off: the local model extracts only in a sync you start, so it never runs unattended.")
+		.addToggle((toggle) => toggle.setValue(settings.autoExtractLocal).onChange(async (on) => withSettings(host, (s) => ({ ...s, autoExtractLocal: on }))));
+
 	renderProfiles(containerEl, host);
 	renderSlots(containerEl, host);
 }
