@@ -79,3 +79,15 @@ export function chooseExtractionBackend(input: { settings: IntelligenceSettings;
 	if (chosen !== null) return { kind: "paused", reason: `Extraction with ${chosen.label} is part of Tagged Sync Pro. Pick your own server or the local model under Intelligence in the settings.` };
 	return { kind: "paused", reason: "No extraction backend is set. Pick one under Intelligence in the settings." };
 }
+
+/**
+ * Whether a background sync may extract with this backend (spec §6). The same two questions the
+ * auto-sync gate asks the transcription backend: a paid backend needs consent to spend, the local
+ * model consent to run unattended. Refused, the background run still syncs and transcribes; only
+ * extraction waits for the next sync the user starts.
+ */
+export function backgroundExtractionAllowed(entry: Pick<ExtractionBackendEntry, "id" | "metered">, settings: IntelligenceSettings): boolean {
+	if (entry.metered) return settings.autoExtractMetered;
+	if (entry.id === "local") return settings.autoExtractLocal;
+	return true;
+}

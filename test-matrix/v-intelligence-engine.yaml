@@ -2085,3 +2085,29 @@
       layer: vault
       file: src/settings-tab-intelligence.test.ts
       test: "the Intelligence section in the settings tab > asks before moving the engine from another device, with this device's id kept in the plugin folder"
+
+- feature: V30
+  name: "Automatic sync never extracts without consent"
+  code: src/intelligence/plugin-rules.ts
+  tier: free
+  scenarios:
+    - id: V30.1
+      scenario: "An automatic sync meets a paid, the local, or the user's own extraction backend"
+      expect: "Paid needs consent to spend, local needs consent to run unattended, the user's own server runs"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "backgroundExtractionAllowed > asks a paid backend for consent to spend and the local model for consent to run, and lets the user's own server run"
+
+    - id: V30.2
+      scenario: "An automatic sync on the engine device with a paid backend"
+      expect: "Without consent the run syncs and transcribes and leaves extraction out, silently; with it the engine runs"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > leaves extraction out of a background sync without consent to spend, and in with it"
+
+    - id: V30.3
+      scenario: "The user gives consent for each kind of backend"
+      expect: "Two rows, each saved"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > asks for consent to extract in automatic syncs, per kind of backend"

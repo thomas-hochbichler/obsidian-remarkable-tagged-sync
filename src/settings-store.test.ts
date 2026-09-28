@@ -131,6 +131,8 @@ describe("migrateSettings", () => {
 				backend: "openrouter",
 				model: "anthropic/claude-sonnet-5",
 				engineDeviceId: "device-1",
+				autoExtractMetered: true,
+				autoExtractLocal: false,
 			},
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);
