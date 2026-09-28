@@ -124,8 +124,14 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 	}
 
 	const formats = await coreTemplateFormats(env.files, env.configDir);
+	// Without Pro, only the free tag keeps page notes: the run sees the others as off, so it neither
+	// extracts nor re-runs them (spec §11). Their configuration stays untouched in `data.json`.
+	const runSettings: IntelligenceSettings = {
+		...input.settings,
+		mappings: Object.fromEntries(Object.entries(input.settings.mappings).map(([tag, m]) => [tag, { ...m, intelligence: modes(tag).intelligence }])),
+	};
 	const deps: IntelligencePassDeps = {
-		settings: input.settings,
+		settings: runSettings,
 		tagFolderMap: input.tagFolderMap,
 		effectiveSlots: effectiveSlotsFor(input.pro),
 		pro: input.pro,

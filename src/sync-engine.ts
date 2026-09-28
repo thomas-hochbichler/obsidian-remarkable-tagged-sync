@@ -2496,6 +2496,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					transcribe: (ids) => transcribeForEngine(api, ocrBackend, entry.id, ids, pageHashes, pageTexts),
 					onProgress: (done, total) => report({ phase: "extracting", done, total, document: entry.visibleName }),
 					shouldStop,
+					checkpoint,
 					frontmatter: (tag, pageId) => {
 						const fields = unitFrontmatter(tag, pageId);
 						return fields === null ? null : { fields, version: FRONTMATTER_KEYS_VERSION };

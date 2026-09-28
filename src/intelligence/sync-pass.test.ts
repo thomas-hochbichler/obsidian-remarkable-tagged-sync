@@ -201,6 +201,31 @@ describe("processDocument > failures", () => {
 		expect(state.seenPages["d1:p3:work"].noteId).toBe("note1");
 	});
 
+	it("keeps going when one page throws, saving after each page, and survives a transcription that throws", async () => {
+		const mem = memory();
+		const state = fresh();
+		let saves = 0;
+		const report = await processDocument(
+			deps(mem),
+			doc([page("p1", 1, "h1", AFTER), page("p2", 2, "h2", AFTER)], { p1: "todo A", p2: "todo B" }, {
+				writeRender: async (id) => {
+					if (id === "p1") throw new Error("render timed out");
+					return "a.pdf";
+				},
+				checkpoint: async () => void saves++,
+			}),
+			state,
+		);
+		expect(report.failures).toEqual(['page 1 of "Work log": render timed out']);
+		expect(report.notesWritten).toBe(1);
+		expect(saves).toBe(2);
+		expect(state.seenPages["d1:p1:work"].pageHash).toBeNull();
+		const unread = await processDocument(deps(memory()), doc([page("p1", 1, "h1", AFTER)], {}, { transcribe: () => Promise.reject(new Error("offline")) }), fresh());
+		expect(unread.failures).toEqual(['page 1 of "Work log": the page could not be read']);
+		const odd = await processDocument(deps(memory()), doc([page("p1", 1, "h1", AFTER)], { p1: "todo A" }, { writeRender: () => Promise.reject("odd") }), fresh());
+		expect(odd.failures).toEqual(['page 1 of "Work log": odd']);
+	});
+
 	it("reports a page the transcription could not read", async () => {
 		const report = await processDocument(deps(memory()), doc([page("p3", 3, "h3", AFTER)], {}), fresh());
 		expect(report.failures).toEqual(['page 3 of "Work log": the page could not be read']);
@@ -313,9 +338,21 @@ describe("processDocument > a mapped tag renamed on the tablet", () => {
 		await processDocument(d, doc([page("p1", 1, "h1", BEFORE)], {}, { units: [{ tag: "job", scope: "notebook", pageIds: ["p1"] }] }), state);
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:job"]);
 		const two = doc([page("p1", 1, "h1", BEFORE)], {}, { units: [{ tag: "work", scope: "notebook", pageIds: ["p1"] }, { tag: "home", scope: "notebook", pageIds: ["p1"] }] });
-		await processDocument(d, two, state);
-		// Not a rename: "job" keeps its entry, "work" is recorded afresh, "home" has page notes off.
-		expect(Object.keys(state.seenPages).sort()).toEqual(["d1:p1:job", "d1:p1:work"]);
+		await processDocument({ ...d, settings: setIntelligenceMode(s, "home", true, ENABLED) }, two, state);
+		// Not a rename: "job" keeps its entry, "work" and "home" are recorded afresh.
+		expect(Object.keys(state.seenPages).sort()).toEqual(["d1:p1:home", "d1:p1:job", "d1:p1:work"]);
+	});
+
+	it("orphans a removed page-note tag instead of renaming it to a transcript-only tag on the notebook", async () => {
+		const mem = memory();
+		const state = fresh();
+		const map = { work: "Work", archive: "Archive" };
+		const d = deps(mem, { tagFolderMap: map });
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }, { units: [{ tag: "work", scope: "notebook", pageIds: ["p3"] }, { tag: "archive", scope: "notebook", pageIds: ["p3"] }] }), state);
+		completeScans(d.settings, map, ["work"], state);
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], {}, { units: [{ tag: "archive", scope: "notebook", pageIds: ["p3"] }] }), state);
+		expect(state.rows["d1:p3:work"].status).toBe("orphaned");
+		expect(state.rows["d1:p3:archive"]).toBeUndefined();
 	});
 });
 
