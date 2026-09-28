@@ -1747,10 +1747,10 @@
 
     - id: V21.3
       scenario: "A page note is created"
-      expect: "Through Templater with folder and name; plain create when it throws or is absent"
+      expect: "Through Templater with folder and name; plain create when it throws, returns no file, or is absent"
       layer: unit
       file: src/intelligence/host.test.ts
-      test: "the Obsidian glue > creates a note through Templater with folder and name, falls back when it throws, and uses create without it"
+      test: "the Obsidian glue > creates a note through Templater with folder and name, falls back when it throws or returns no file, and uses create without it"
 
     - id: V21.4
       scenario: "core Templates has date/time formats, blanks, or a broken file"
@@ -2857,3 +2857,15 @@
       layer: unit
       file: src/intelligence/value-merge.test.ts
       test: "mergeValue > keeps a first pick under review on the next run, follows the page's new pick, and drops it when the page has none"
+
+- feature: V50
+  name: "Handwriting never runs as a Templater command"
+  code: src/intelligence/extraction.ts
+  tier: free
+  scenarios:
+    - id: V50.1
+      scenario: "The model reads a Templater tag such as <%* … %> off the page"
+      expect: "The tag is split by a zero-width space in every written text; the source used for matching stays as read"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > splits a Templater tag in what the model read, so a created note never runs it, but keeps the source as read"

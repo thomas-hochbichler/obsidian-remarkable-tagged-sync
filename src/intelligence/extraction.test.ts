@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calendarDay, isoDay } from "./dates";
-import { buildPrompt, buildSchema, PAGE_DATE_KEY, parseExtraction } from "./extraction";
+import { buildPrompt, buildSchema, defuseTemplater, PAGE_DATE_KEY, parseExtraction } from "./extraction";
 import { defaultSlots, genericProfile, type SlotDef } from "./settings";
 
 const [TASKS, DECISIONS, SUMMARY, TAGS] = defaultSlots();
@@ -101,6 +101,14 @@ describe("parseExtraction", () => {
 		const bare: SlotDef = { ...MOOD, fields: [{ name: "mood", type: "choice" }] };
 		expect((buildSchema([bare]).properties as Record<string, unknown>).mood).toEqual({ anyOf: [{ type: "string", enum: [] }, { type: "null" }] });
 		expect(parseExtraction({ mood: "good" }, [bare], MON)!.slots.mood).toEqual({ kind: "value", value: null });
+	});
+
+	it("splits a Templater tag in what the model read, so a created note never runs it, but keeps the source as read", () => {
+		const out = parseExtraction({ tasks: [{ source: "<% x %>", reason: "", id: "new", text: "Run <%* evil() %>", due: null, done: false }], summary: "a <%+ b %> c", decisions: [] }, defaultSlots(), MON)!;
+		const [item] = (out.slots.tasks as { items: { text: string; source: string | null }[] }).items;
+		expect(item).toMatchObject({ text: "Run <\u200B%* evil() %>", source: "<% x %>" });
+		expect(out.slots.summary).toEqual({ kind: "text", text: "a <\u200B%+ b %> c" });
+		expect(defuseTemplater([1, null, "<%"])).toEqual([1, null, "<\u200B%"]);
 	});
 
 	it("fails an answer that is not an object, so the page is retried", () => {
