@@ -1979,3 +1979,109 @@
       layer: unit
       file: src/intelligence/vault-follow.test.ts
       test: "followVaultRename > is null when the rename touched nothing the plugin keeps"
+
+- feature: V27
+  name: "The Intelligence settings: modes per tag, device, backend, Profiles, Slots"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V27.1
+      scenario: "A tag's page notes are switched on"
+      expect: "enabledAt and firstEnabledAt stamped; the first device claims the engine"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > switches Intelligence Mode on with its stamps and claims this device when no device runs the engine"
+
+    - id: V27.2
+      scenario: "Another device already runs the engine"
+      expect: "It stays there"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > leaves the engine where it runs when a second tag is switched on"
+
+    - id: V27.3
+      scenario: "A free vault has page notes on one tag"
+      expect: "The toggle on every other tag is locked (Pro); the free tag stays switchable"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > locks page notes on a second tag without Pro, and not with it"
+
+    - id: V27.4
+      scenario: "Transcript off, a Profile picked, then Generic again"
+      expect: "Saved; the row explains transcript off"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > switches the transcript note, picks a Profile, and says what transcript off means"
+
+    - id: V27.5
+      scenario: "The engine runs elsewhere, or nowhere"
+      expect: "It moves only after a confirmation; switching off releases it only from this device"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > shows the device switch as this device's state, and moves the engine here only after asking"
+
+    - id: V27.6
+      scenario: "The backend list is drawn"
+      expect: "Pro and unmeasured backends are marked; the model saves as typed, without a redraw"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > offers every extraction backend, marking Pro and unmeasured ones, and saves the model as typed"
+
+    - id: V27.7
+      scenario: "Profiles are added, edited, given a template and removed"
+      expect: "One Profile free, more with Pro; a starter template in the template folder; a removed Profile leaves every mapping"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > adds one Profile without Pro and more with it; edits, removes, and creates its template"
+
+    - id: V27.8
+      scenario: "Slots are edited free and with Pro"
+      expect: "Instructions editable; review and item format are Pro; a format without {{text}} is never saved"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > edits a Slot's instruction, and keeps review and item format Pro, with presets and no format without {{text}}"
+
+- feature: V28
+  name: "The Intelligence settings reach the vault and the plugin folder"
+  code: src/intelligence/settings-host.ts
+  tier: free
+  scenarios:
+    - id: V28.1
+      scenario: "Create template needs a folder"
+      expect: "Core Templates', else Templater's, else the root"
+      layer: unit
+      file: src/intelligence/settings-host.test.ts
+      test: "templateFolder > takes core Templates' folder, else Templater's, else the vault root"
+
+    - id: V28.2
+      scenario: "A note of that name exists"
+      expect: "A numbered name instead"
+      layer: unit
+      file: src/intelligence/settings-host.test.ts
+      test: "freeTemplatePath > never writes over a note"
+
+    - id: V28.3
+      scenario: "The section changes settings and creates a template"
+      expect: "Settings saved (redrawn only when the tab changes); the template's folder is made first"
+      layer: unit
+      file: src/intelligence/settings-host.test.ts
+      test: "settingsHostFor > reads and writes the settings block, saves with and without a redraw, and creates a template in its folder"
+
+- feature: V29
+  name: "The Intelligence section inside the real settings tab"
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: V29.1
+      scenario: "The user types a model and picks a backend"
+      expect: "data.json saved each time"
+      layer: vault
+      file: src/settings-tab-intelligence.test.ts
+      test: "the Intelligence section in the settings tab > saves a typed model without redrawing, and a picked backend with a redraw"
+
+    - id: V29.2
+      scenario: "Another device runs the engine"
+      expect: "A confirmation opens; cancelled, nothing moves; the device id sits in the plugin folder"
+      layer: vault
+      file: src/settings-tab-intelligence.test.ts
+      test: "the Intelligence section in the settings tab > asks before moving the engine from another device, with this device's id kept in the plugin folder"

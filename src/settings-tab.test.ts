@@ -291,6 +291,11 @@ describe("the shape of the settings screen", () => {
 			"Tag routing",
 			"Vault output",
 			"Transcription",
+			// Right after transcription: the engine reads what transcription produced, and its backend
+			// is chosen next to that one.
+			"Intelligence",
+			"Profiles",
+			"Slots",
 			"Automatic sync",
 			// Between automatic sync and the Pro section: it is a Pro feature, set up once, and it reads
 			// as what it is where it sits next to the thing that unlocks it.

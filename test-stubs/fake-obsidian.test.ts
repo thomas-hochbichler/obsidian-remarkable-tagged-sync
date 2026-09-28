@@ -300,6 +300,20 @@ describe("writing through the vault", () => {
 	});
 });
 
+describe("files outside the note index", () => {
+	it("reads back what was written through the adapter, never as a note, rejects a missing file, and has the default config folder", async () => {
+		const vault = new FakeVault();
+		await vault.adapter.write("plugin/device-id", "abc");
+		await vault.adapter.mkdir("plugin/base");
+		expect([await vault.adapter.exists("plugin/device-id"), await vault.adapter.exists("plugin/base"), await vault.adapter.exists("plugin/none")]).toEqual([true, true, false]);
+		expect(await vault.adapter.read("plugin/device-id")).toBe("abc");
+		expect(vault.getAbstractFileByPath("plugin/device-id")).toBeNull();
+		await vault.adapter.remove("plugin/device-id");
+		await expect(vault.adapter.read("plugin/device-id")).rejects.toThrow(/ENOENT/);
+		expect(vault.configDir).toBe(".obsidian");
+	});
+});
+
 describe("the plugin host", () => {
 	it("hands loadData whatever the test says data.json holds, and records every save", async () => {
 		const plugin = new Plugin(new FakeApp());
