@@ -2283,3 +2283,10 @@
       layer: engine
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > Intelligence Engine seam > reports the engine's progress as its own phase, with the notebook's name"
+
+    - id: V35.4
+      scenario: "Stop sync is pressed while the engine works through a notebook"
+      expect: "No further page starts; the page already done keeps its note, the rest wait for the next sync"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > starts no further page once Stop sync is pressed, and keeps what it wrote"

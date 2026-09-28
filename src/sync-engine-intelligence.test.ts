@@ -167,6 +167,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		await runSync({ ...deps(a), intelligence: h.value, onProgress: (p) => void progress.push(p) }, EMPTY_SYNC_INDEX);
 		h.docs[0].onProgress!(1, 2);
 		expect(progress.at(-1)).toEqual({ phase: "extracting", done: 1, total: 2, document: "Work log" });
+		expect(h.docs[0].shouldStop!()).toBe(false);
 	});
 
 	it("gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off", async () => {
