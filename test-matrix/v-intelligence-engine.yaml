@@ -2290,3 +2290,50 @@
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > switching Intelligence Mode on > starts no further page once Stop sync is pressed, and keeps what it wrote"
+
+- feature: V36
+  name: "A Value Slot's frontmatter property is read and written line by line"
+  code: src/intelligence/frontmatter-values.ts
+  tier: pro
+  scenarios:
+    - id: V36.1
+      scenario: "A property in any common form"
+      expect: "Its value"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "readProperty > reads a scalar, a block list, an inline list and an empty one"
+
+    - id: V36.2
+      scenario: "No such key, a blank one, no block"
+      expect: "Null"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "readProperty > is null for a key that is absent or blank, and for a note with no block"
+
+    - id: V36.3
+      scenario: "A scalar is updated"
+      expect: "Only its line changes"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > replaces a scalar in place and leaves every other line as it was"
+
+    - id: V36.4
+      scenario: "A list is updated"
+      expect: "Written as a block list in place"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > replaces a block list with a block list, and an inline list with one"
+
+    - id: V36.5
+      scenario: "A new key, or a value YAML would misread"
+      expect: "Appended; quoted where needed"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > adds a missing key at the end of the block, quoting what YAML would misread"
+
+    - id: V36.6
+      scenario: "A key is removed; a note has no block"
+      expect: "Removed; a block appears only for something to write"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > removes a key with null, and gives a note without a block one only when there is something to write"
