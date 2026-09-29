@@ -119,9 +119,15 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 		.setName("Run page extraction on this device")
 		.setDesc("Sync and transcription run on every device; extraction runs on one, so two devices never write the same page note.")
 		.addToggle((toggle) => {
-			// `void` inside: a component is a thenable (`BaseComponent.then`), see the placement hint below.
-			void host.deviceId(false).then((id) => void toggle.setValue(isEngineDevice(host.settings(), id)));
-			toggle.onChange(async (on) => {
+			// The handler goes on only once the value is set: Obsidian's `setValue` fires `onChange`, and
+			// this handler redraws the tab, which set the value again -- the tab re-rendered without end
+			// and every dropdown on it closed as soon as it opened (live test, 2026-09-29). `void` inside:
+			// a component is a thenable (`BaseComponent.then`), see the placement hint below.
+			void host.deviceId(false).then((id) => {
+				toggle.setValue(isEngineDevice(host.settings(), id));
+				toggle.onChange(onToggle);
+			});
+			const onToggle = async (on: boolean) => {
 				const id = await host.deviceId(true);
 				const holder = host.settings().engineDeviceId;
 				if (on && holder !== null && holder !== id && !(await host.confirm("Run the engine here", "Another device extracts pages for this vault. Extract here instead? That device stops extracting.", "Run it here"))) {
@@ -129,7 +135,7 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 					return;
 				}
 				await withSettings(host, (s) => ({ ...s, engineDeviceId: on ? id : s.engineDeviceId === id ? null : s.engineDeviceId }));
-			});
+			};
 		});
 
 	new Setting(containerEl)
