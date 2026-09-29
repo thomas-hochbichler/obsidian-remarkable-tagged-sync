@@ -19,6 +19,8 @@ export interface ExtractionBackendEntry {
 	readonly measured: boolean;
 	/** The backend for one sync, or null when it cannot run (no key, no URL). */
 	create(settings: BackendSettings, model: string | null): ExtractionBackend | null;
+	/** What the pause says when `create` has nothing; unset, it names a missing key or address. */
+	readonly notReady?: string;
 }
 
 const entries = new Map<string, ExtractionBackendEntry>();

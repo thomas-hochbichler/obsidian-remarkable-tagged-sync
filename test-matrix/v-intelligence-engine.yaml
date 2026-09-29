@@ -934,7 +934,7 @@
       expect: "Every Slot a region, plus the page link"
       layer: unit
       file: src/intelligence/template.test.ts
-      test: "starterTemplate > gives every Slot its own heading, so every Slot is a region"
+      test: "starterTemplate > gives every body Slot its own heading, so every Slot is a region, and a frontmatter Slot none"
 
 - feature: V10
   name: "Field types are one table: schema and resolution"
@@ -2726,14 +2726,14 @@
       expect: "llama-server beside llama-mtmd-cli; .exe on Windows"
       layer: unit
       file: src/intelligence/local-server-node.test.ts
-      test: "managedModelFiles > finds the server beside the transcription runtime, with .exe on Windows"
+      test: "managedModelFiles > finds the server beside the runtime and always the 8B model, whichever one transcribes, with .exe on Windows"
 
     - id: V44.2
       scenario: "The model is missing, downloading or busy"
       expect: "Nothing: extraction waits"
       layer: unit
       file: src/intelligence/local-server-node.test.ts
-      test: "managedModelFiles > has nothing while the model is missing, unverified, or busy transcribing"
+      test: "managedModelFiles > has nothing while the 8B model is missing, unverified, or busy transcribing"
 
     - id: V44.3
       scenario: "A server starts"

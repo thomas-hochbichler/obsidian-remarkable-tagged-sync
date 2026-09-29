@@ -104,7 +104,7 @@ export interface ModelGeneration {
  * Two builds of this model exist at identical file sizes and different hashes; the publisher's own is
  * pinned because a third-party mirror can be deleted and this URL has to work for years.
  */
-const QWEN3_VL_8B: ModelGeneration = {
+export const QWEN3_VL_8B: ModelGeneration = {
 	dir: "qwen3-vl-8b-instruct-q4_k_m",
 	label: "Qwen3-VL-8B-Instruct",
 	modelBytes: 5_027_784_800,

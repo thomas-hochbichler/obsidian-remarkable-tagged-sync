@@ -42,11 +42,13 @@ describe("renderTemplate", () => {
 });
 
 describe("starterTemplate", () => {
-	it("gives every Slot its own heading, so every Slot is a region", () => {
+	it("gives every body Slot its own heading, so every Slot is a region, and a frontmatter Slot none", () => {
 		const starter = starterTemplate([
 			{ id: "tasks", name: "Tasks" },
 			{ id: "summary", name: "Summary" },
+			{ id: "tags", name: "Tags", property: "tags" },
 		]);
+		expect(starter).not.toContain("Tags");
 		expect(analyseTemplate(starter, ["tasks", "summary"])).toEqual({
 			tasks: { kind: "region", heading: { level: 2, text: "Tasks" } },
 			summary: { kind: "region", heading: { level: 2, text: "Summary" } },

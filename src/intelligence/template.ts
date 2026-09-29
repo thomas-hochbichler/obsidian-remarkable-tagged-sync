@@ -56,7 +56,12 @@ export function renderTemplate(template: string, values: TemplateValues): string
 	});
 }
 
-/** The built-in default template, and the starter "Create template" writes: one heading and placeholder per Slot, plus the page link. */
-export function starterTemplate(slots: readonly { id: string; name: string }[]): string {
-	return [...slots.flatMap((slot) => [`## ${slot.name}`, slotPlaceholder(slot.id), ""]), "## Page", "{{ts.page.link}}", ""].join("\n");
+/**
+ * The built-in default template, and the starter "Create template" writes: one heading and placeholder
+ * per body Slot, plus the page link. A Slot written to a frontmatter property gets none: its heading
+ * would stay empty in every note.
+ */
+export function starterTemplate(slots: readonly { id: string; name: string; property?: string }[]): string {
+	const body = slots.filter((slot) => slot.property === undefined);
+	return [...body.flatMap((slot) => [`## ${slot.name}`, slotPlaceholder(slot.id), ""]), "## Page", "{{ts.page.link}}", ""].join("\n");
 }
