@@ -2679,7 +2679,7 @@
       expect: "llama-server starts once with the model, -c 8192 and a local port; the run waits for /health"
       layer: unit
       file: src/intelligence/local-server.test.ts
-      test: "managedServer > starts the server once, on first use, with the model, context and a local port, and waits until it answers"
+      test: "managedServer > starts the server once, on first use, with the model, context, no prompt cache and a local port, and waits until it answers"
 
     - id: V43.2
       scenario: "The server crashes while loading"
@@ -2936,3 +2936,15 @@
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
       test: "twoCallBackend > asks for no line pass without a tasks Slot, and lists items and values per Slot"
+
+- feature: V56
+  name: "Apple Vision keeps a line split in two in one piece"
+  code: src/vision-ocr-backend.ts
+  tier: free
+  scenarios:
+    - id: V56.1
+      scenario: "Vision returns one row of handwriting as two lines, next to lines above, below and overlapping"
+      expect: "Only the right-hand half on the same row is joined onto its line; other lines stay as they are"
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "VisionOcrBackend > joins a line Vision split in two on one row, and nothing above, below or to the left"

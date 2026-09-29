@@ -31,6 +31,13 @@ workflow publishes the section as the GitHub release body. See
   An older version writes its settings without the page-note setup, and that would remove it on
   every device.
 
+### Changed
+
+- **Apple Vision keeps a line in one piece.** Vision sometimes split one line of handwriting in two,
+  such as "Backup → Anna", and the transcript showed the halves on separate lines. Parts on the same
+  row are now joined again. On our reference pages the reading is exactly as accurate as before; on
+  real work pages, page notes find more of your tasks and invent fewer.
+
 ## [1.8.2] - 2026-09-27
 
 ### Fixed

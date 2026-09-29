@@ -5,7 +5,9 @@
  * extracts, and stopped when that sync ends. Loading an 8B model per question would cost more than the
  * questions.
  *
- * Settings follow research 15: context 8192, temperature 0, seed 42.
+ * Settings follow research 15: context 8192, temperature 0, seed 42. `--cache-ram 0` turns off the
+ * server's prompt cache, which grew it from 6.2 to 12 GB over 18 pages and to 18 GB over two hours;
+ * without it the server stays at 6.3 GB for about 1 s more per page (research 23).
  */
 
 import type { BackendSettings } from "../ocr-registry";
@@ -50,7 +52,7 @@ export function managedServer(deps: ServerDeps, executable: string, model: strin
 	const start = async (): Promise<string> => {
 		const port = deps.port();
 		let exited: number | null | undefined;
-		process = deps.spawn(executable, ["-m", model, "-c", String(LOCAL_CONTEXT), "--host", "127.0.0.1", "--port", String(port)]);
+		process = deps.spawn(executable, ["-m", model, "-c", String(LOCAL_CONTEXT), "--cache-ram", "0", "--host", "127.0.0.1", "--port", String(port)]);
 		process.onExit((code) => void (exited = code));
 		const url = `http://127.0.0.1:${port}`;
 		for (let waited = 0; waited < START_TIMEOUT_MS; waited += POLL_MS) {

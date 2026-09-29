@@ -35,13 +35,13 @@ function fakeServer(options: { readyAfter?: number; exitAfter?: number } = {}) {
 const INPUT = { profile: genericProfile(false), slots: defaultSlots().slice(0, 1), transcript: "a page", referenceDate: calendarDay(2026, 8, 28), known: {} };
 
 describe("managedServer", () => {
-	it("starts the server once, on first use, with the model, context and a local port, and waits until it answers", async () => {
+	it("starts the server once, on first use, with the model, context, no prompt cache and a local port, and waits until it answers", async () => {
 		const s = fakeServer({ readyAfter: 3 });
 		const server = managedServer(s.deps, "/bin/llama-server", "/m/model.gguf");
 		expect(s.spawned).toEqual([]);
 		const [a, b] = await Promise.all([server.baseURL(), server.baseURL()]);
 		expect([a, b]).toEqual(["http://127.0.0.1:50001/v1", "http://127.0.0.1:50001/v1"]);
-		expect(s.spawned).toEqual([["/bin/llama-server", "-m", "/m/model.gguf", "-c", "8192", "--host", "127.0.0.1", "--port", "50001"]]);
+		expect(s.spawned).toEqual([["/bin/llama-server", "-m", "/m/model.gguf", "-c", "8192", "--cache-ram", "0", "--host", "127.0.0.1", "--port", "50001"]]);
 		expect(s.polls()).toBe(3);
 		server.dispose();
 		server.dispose();

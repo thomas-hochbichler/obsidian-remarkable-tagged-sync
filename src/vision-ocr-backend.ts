@@ -224,6 +224,29 @@ function insertTypedText(read: ReadLines, page: RmPage): void {
  * Vision's per-process warm-up. `confidence` is permanently `null` -- Vision reports a constant 1.0
  * even over misread text (spec §3.6), so surfacing it would put a fabricated score in frontmatter.
  */
+/**
+ * Joins a line Vision split in two back onto the line it came from: both from the page pass, on one
+ * row (vertical centres closer than half the smaller box's height), the second starting right of the
+ * first's middle. Vision cuts "Backup → Anna" into two lines, and a small model then reads the second
+ * half as a note under the first (research 23: on 18 real pages the local extraction found 42 of 55
+ * tasks instead of 36, with 7 invented instead of 19). Rescued lines and typed text are never joined:
+ * their boxes are not the page pass's.
+ */
+function rejoinSplitLines(read: ReadLines, pagePass: Set<VisionBox>): void {
+	for (let i = 1; i < read.lines.length; i++) {
+		const a = read.boxes[i - 1];
+		const b = read.boxes[i];
+		if (!pagePass.has(a) || !pagePass.has(b)) continue;
+		const sameRow = Math.abs(a.y + a.h / 2 - (b.y + b.h / 2)) < 0.5 * Math.min(a.h, b.h);
+		if (!sameRow || b.x < a.x + 0.5 * a.w) continue;
+		const joined: VisionBox = { x: a.x, y: Math.min(a.y, b.y), w: b.x + b.w - a.x, h: Math.max(a.y + a.h, b.y + b.h) - Math.min(a.y, b.y) };
+		pagePass.add(joined);
+		read.lines.splice(i - 1, 2, `${read.lines[i - 1].trimEnd()} ${read.lines[i].trim()}`);
+		read.boxes.splice(i - 1, 2, joined);
+		i--;
+	}
+}
+
 export class VisionOcrBackend implements OcrBackend {
 	readonly id = "vision" as const;
 	readonly metered = false;
@@ -301,11 +324,14 @@ export class VisionOcrBackend implements OcrBackend {
 			const perPage = await this.read(pages.map((page) => encodeGrayscalePng(rasterizePage(page))));
 			const reads = perPage.map((result): ReadLines | null => ("lines" in result ? { lines: [...result.lines], boxes: [...result.boxes] } : null));
 			for (const result of perPage) if ("revision" in result && result.revision !== undefined) visionRunStats.revision = result.revision;
+			const pagePass = new Set(reads.flatMap((read) => read?.boxes ?? []));
 
 			await this.rescue(pages, reads);
 			reads.forEach((read, index) => {
 				if (read) insertTypedText(read, pages[index]);
 			});
+			// After the rescue: a joined box spans the gap between its halves, and ink there is the rescue's to read.
+			for (const read of reads) if (read) rejoinSplitLines(read, pagePass);
 
 			// One entry per input page, in input order. The per-page outcome was always computed here --
 			// `VisionBatchResult` is `{ lines } | { error }` -- and used to be thrown away by a `.filter()`
