@@ -110,6 +110,7 @@ export function managedLocalEntry(files: (settings: BackendSettings) => { execut
 		metered: false,
 		requiresLicence: false,
 		measured: true,
+		notReady: "Page notes on this computer need the Qwen3-VL-8B-Instruct model. Download it under Transcription in the settings. The engine is paused until then.",
 		create: (settings) => {
 			const found = files(settings);
 			if (found === null) return null;

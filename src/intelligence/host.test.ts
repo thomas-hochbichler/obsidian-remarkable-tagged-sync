@@ -20,6 +20,7 @@ registerExtractionBackend({
 		extract: async (input) => ({ kind: "ok", result: parseExtraction({ tasks: [{ source: "call Bob", reason: "", id: "new", text: "Call Bob", due: null, done: false }], summary: "" }, input.slots, input.referenceDate)! }),
 	}),
 });
+registerExtractionBackend({ id: "hostmodelless", label: "Host modelless", metered: false, requiresLicence: false, measured: true, notReady: "Download the model first.", create: () => null });
 let rests = 0;
 registerExtractionBackend({
 	id: "hostresting",
@@ -90,6 +91,8 @@ describe("prepareRun", () => {
 		expect(free.paused).toContain("part of Tagged Sync Pro");
 		const keyless = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: onDevice(ON), tagFolderMap: MAP, pro: true, transcriptionBackend: "hostcloud", providerSettings: {}, background: false });
 		expect(keyless.paused).toContain("Host cloud is not set up yet");
+		const modelless = await prepareRun(env({ "plugin/device-id": "device-a" }), { settings: { ...onDevice(ON), backend: "hostmodelless" }, tagFolderMap: MAP, pro: true, transcriptionBackend: "vision", providerSettings: {}, background: false });
+		expect(modelless.paused).toBe("Download the model first.");
 	});
 
 	it("writes a page note through the environment: template, dates, ids, one base folder", async () => {

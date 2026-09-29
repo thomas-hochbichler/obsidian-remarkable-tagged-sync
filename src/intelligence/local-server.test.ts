@@ -105,6 +105,7 @@ describe("managedLocalEntry", () => {
 		const s = fakeServer();
 		const entry = managedLocalEntry((settings) => (settings.ready === true ? { executable: "srv", model: "m" } : null), () => s.deps);
 		expect(entry).toMatchObject({ id: "local", metered: false, requiresLicence: false, measured: true });
+		expect(entry.notReady).toContain("need the Qwen3-VL-8B-Instruct model");
 		expect(entry.create({}, null)).toBeNull();
 		expect(entry.create({ ready: true }, null)).toMatchObject({ id: "local", local: true });
 		expect(s.spawned).toEqual([]);

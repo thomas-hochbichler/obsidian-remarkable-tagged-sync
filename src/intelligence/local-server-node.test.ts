@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
 import { dynamicPort, managedModelFiles, nodeServerDeps } from "./local-server-node";
 
-const runtime = vi.hoisted(() => ({ resolved: null as unknown, state: "ready", busy: false }));
+const runtime = vi.hoisted(() => ({ paths: null as unknown, asked: [] as unknown[], state: "ready", busy: false }));
 vi.mock("../local-model-runtime", () => ({
-	resolveLocalModel: () => runtime.resolved,
+	pathsForGeneration: (_pluginId: string, generation: { dir: string }) => (runtime.asked.push(generation.dir), runtime.paths),
 	readLocalModelState: () => runtime.state,
 }));
 vi.mock("../local-ocr-runtime", () => ({ isLocalModelBusy: () => runtime.busy }));
@@ -13,26 +13,28 @@ const PATHS = { runtimeExecutable: "/App/bin/llama-b10295/llama-mtmd-cli", model
 
 describe("managedModelFiles", () => {
 	beforeEach(() => {
-		runtime.resolved = { paths: PATHS, generation: {} };
+		runtime.paths = PATHS;
+		runtime.asked = [];
 		runtime.state = "ready";
 		runtime.busy = false;
 	});
 
-	it("finds the server beside the transcription runtime, with .exe on Windows", () => {
-		expect(managedModelFiles({}, "p")).toEqual({ executable: "/App/bin/llama-b10295/llama-server", model: "/App/models/q/model.gguf" });
-		runtime.resolved = { paths: { ...PATHS, runtimeExecutable: "C:\\\\App\\\\bin\\\\llama-mtmd-cli.exe" }, generation: {} };
-		expect(managedModelFiles({}, "p", true)?.executable).toBe("C:\\\\App\\\\bin\\\\llama-server.exe");
+	it("finds the server beside the runtime and always the 8B model, whichever one transcribes, with .exe on Windows", () => {
+		expect(managedModelFiles("p")).toEqual({ executable: "/App/bin/llama-b10295/llama-server", model: "/App/models/q/model.gguf" });
+		expect(runtime.asked).toEqual(["qwen3-vl-8b-instruct-q4_k_m"]);
+		runtime.paths = { ...PATHS, runtimeExecutable: "C:\\\\App\\\\bin\\\\llama-mtmd-cli.exe" };
+		expect(managedModelFiles("p", true)?.executable).toBe("C:\\\\App\\\\bin\\\\llama-server.exe");
 	});
 
-	it("has nothing while the model is missing, unverified, or busy transcribing", () => {
-		runtime.resolved = null;
-		expect(managedModelFiles({}, "p", false)).toBeNull();
-		runtime.resolved = { paths: PATHS, generation: {} };
+	it("has nothing while the 8B model is missing, unverified, or busy transcribing", () => {
+		runtime.paths = null;
+		expect(managedModelFiles("p", false)).toBeNull();
+		runtime.paths = PATHS;
 		runtime.state = "downloading";
-		expect(managedModelFiles({}, "p", false)).toBeNull();
+		expect(managedModelFiles("p", false)).toBeNull();
 		runtime.state = "ready";
 		runtime.busy = true;
-		expect(managedModelFiles({}, "p", false)).toBeNull();
+		expect(managedModelFiles("p", false)).toBeNull();
 	});
 });
 

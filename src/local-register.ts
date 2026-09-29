@@ -460,5 +460,5 @@ if (offeredOnThisPlatform()) {
 		},
 	});
 	// The same download as an extraction backend: the Free default for page notes (Intelligence Engine §6, §11).
-	registerExtractionBackend(managedLocalEntry((settings) => managedModelFiles(settings, PLUGIN_ID), nodeServerDeps));
+	registerExtractionBackend(managedLocalEntry(() => managedModelFiles(PLUGIN_ID), nodeServerDeps));
 }

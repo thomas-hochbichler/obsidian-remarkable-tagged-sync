@@ -6,22 +6,22 @@
 import { Platform } from "obsidian";
 import type { ChildProcess } from "child_process";
 import { realSleep } from "../llm-transcript";
-import { readLocalModelState, resolveLocalModel } from "../local-model-runtime";
-import { readLocalModelSettings } from "../local-model-settings";
+import { QWEN3_VL_8B } from "../local-model-artefacts";
+import { pathsForGeneration, readLocalModelState } from "../local-model-runtime";
 import { isLocalModelBusy } from "../local-ocr-runtime";
 import { obsidianFetch } from "../obsidian-fetch";
-import type { BackendSettings } from "../ocr-registry";
 import type { ServerDeps } from "./local-server";
 
 /**
- * The server and model of the managed download, or null when it cannot run now: not downloaded, not
- * verified, or busy transcribing. The server ships beside `llama-mtmd-cli` in the same archive.
+ * The server and the 8B model of the managed download, or null when it cannot run now: not
+ * downloaded, not verified, or busy transcribing. Always the 8B, whichever model transcribes: the
+ * extraction prompt is measured on it only, and the 2B copies the transcript into its notes and then
+ * breaks the format pass (live test, 2026-09-29). The server ships beside `llama-mtmd-cli`.
  */
-export function managedModelFiles(settings: BackendSettings, pluginId: string, windows: boolean = Platform.isWin): { executable: string; model: string } | null {
-	const resolved = resolveLocalModel(pluginId, readLocalModelSettings(settings).preferredModelDir);
-	if (resolved === null) return null;
-	const { paths, generation } = resolved;
-	if (readLocalModelState(paths, Date.now(), generation) !== "ready" || isLocalModelBusy(paths)) return null;
+export function managedModelFiles(pluginId: string, windows: boolean = Platform.isWin): { executable: string; model: string } | null {
+	const paths = pathsForGeneration(pluginId, QWEN3_VL_8B);
+	if (paths === null) return null;
+	if (readLocalModelState(paths, Date.now(), QWEN3_VL_8B) !== "ready" || isLocalModelBusy(paths)) return null;
 	const cut = Math.max(paths.runtimeExecutable.lastIndexOf("/"), paths.runtimeExecutable.lastIndexOf("\\"));
 	return { executable: `${paths.runtimeExecutable.slice(0, cut + 1)}llama-server${windows ? ".exe" : ""}`, model: paths.modelFile };
 }

@@ -121,7 +121,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 	if (input.background && choice.kind === "ready" && !backgroundExtractionAllowed(choice.entry, input.settings)) return { modes, fingerprint, hook: undefined, paused: null, dispose: NOTHING_HELD };
 	const backend = choice.kind === "ready" ? choice.entry.create(input.providerSettings[choice.entry.id] ?? {}, input.settings.model) : null;
 	if (backend === null) {
-		const reason = choice.kind === "paused" ? choice.reason : `The extraction backend ${choice.entry.label} is not set up yet: it needs its key or address. The engine is paused.`;
+		const reason = choice.kind === "paused" ? choice.reason : (choice.entry.notReady ?? `The extraction backend ${choice.entry.label} is not set up yet: it needs its key or address. The engine is paused.`);
 		return { modes, fingerprint, hook: undefined, paused: reason, dispose: NOTHING_HELD };
 	}
 
