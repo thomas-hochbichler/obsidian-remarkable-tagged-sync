@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { OcrTimeoutError } from "../llm-transcript";
 import { calendarDay } from "./dates";
-import { type Complete, type CompletionRequest, type CompletionOutcome, notesAreEmpty, oneCallBackend, openAiCompatComplete, twoCallBackend } from "./extraction-backend";
+import { askedInput, type Complete, type CompletionRequest, type CompletionOutcome, notesAreEmpty, oneCallBackend, openAiCompatComplete, twoCallBackend } from "./extraction-backend";
 import { defaultSlots, genericProfile } from "./settings";
 
 const viaObsidian = vi.hoisted(() => vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), { status: 200 })));
@@ -100,11 +100,27 @@ describe("twoCallBackend", () => {
 		const [, DECISIONS, , TAGS] = defaultSlots();
 		const { complete, requests } = scripted({ kind: "ok", text: "## decisions\nNONE\n## tags\nNONE" });
 		const owned = { ...DECISIONS, fields: [{ name: "owner", type: "text" as const }] };
-		await twoCallBackend("local", false, complete).extract({ ...INPUT, slots: [owned, { ...TAGS, property: undefined }] });
+		await twoCallBackend("local", false, complete).extract({ ...INPUT, slots: [owned, { ...TAGS, property: undefined, fields: [{ name: "tags", type: "choice", options: ["work"] }] }] });
 		expect(requests[0].prefill).toBeUndefined();
 		expect(requests[0].system).not.toContain("LINES");
 		expect(requests[0].system).toContain('Under "## decisions" write one line per item: "- <text> | SOURCE: <the transcript line, copied exactly> | owner: <value, or NONE>".');
 		expect(requests[0].system).toContain('Under "## tags" write the value.');
+	});
+
+	it("never asks either backend for a Choice Slot with no options, and reads it as empty", async () => {
+		const [, , , TAGS] = defaultSlots();
+		const withTags = { ...INPUT, slots: [TASKS, SUMMARY, TAGS] };
+		const local = scripted({ kind: "ok", text: "## tasks\n- Call Bob | SOURCE: call Bob" }, { kind: "ok", text: ANSWER });
+		expect(await twoCallBackend("local", false, local.complete).extract(withTags)).toMatchObject({ kind: "ok", result: { slots: { tags: { kind: "value", value: [] } } } });
+		const cloud = scripted({ kind: "ok", text: ANSWER });
+		await oneCallBackend("c", true, cloud.complete).extract(withTags);
+		for (const request of [...local.requests, ...cloud.requests]) {
+			expect(`${request.system}${request.user}`).not.toContain("### tags");
+			expect(Object.keys((request.schema?.properties as object | undefined) ?? {})).not.toContain("tags");
+		}
+		const closed = { ...TAGS, fields: [{ name: "tags", type: "choice" as const, options: ["work"] }] };
+		expect(askedInput({ ...INPUT, slots: [closed] }).slots).toEqual([closed]);
+		expect(askedInput({ ...INPUT, slots: [{ ...TAGS, fields: [{ name: "tags", type: "choice" }] }] }).slots).toEqual([]);
 	});
 
 	it("skips the format pass when the notes found nothing, so a small model cannot invent items there", async () => {

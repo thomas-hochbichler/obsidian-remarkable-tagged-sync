@@ -2948,3 +2948,15 @@
       layer: unit
       file: src/vision-ocr-backend.test.ts
       test: "VisionOcrBackend > joins a line Vision split in two on one row, and nothing above, below or to the left"
+
+- feature: V57
+  name: "A Choice Slot with no options is never asked for"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V57.1
+      scenario: "The default Tags Slot has no options yet and a local model wants to write a tag"
+      expect: "Neither backend puts the Slot in its prompt or schema, so the grammar has no dead end; the Slot reads as empty"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > never asks either backend for a Choice Slot with no options, and reads it as empty"

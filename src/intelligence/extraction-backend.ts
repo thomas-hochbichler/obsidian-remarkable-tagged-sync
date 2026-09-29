@@ -99,6 +99,17 @@ function readJson(text: string): unknown {
 	}
 }
 
+/**
+ * The input as the model sees it: without a Slot that can hold no value -- a Choice whose option list
+ * was never filled, like the default Tags Slot. Its schema is an empty enum, and a local model that
+ * wants to write a tag there runs the grammar into a dead end: llama-server answers 500 (live test,
+ * 2026-09-29). Parsing still reads every Slot, so such a Slot comes out empty.
+ */
+export function askedInput(input: ExtractionInput): ExtractionInput {
+	const empty = (slot: SlotDef) => slot.fields.some((field) => field.type === "choice" && (field.options?.length ?? 0) === 0);
+	return { ...input, slots: input.slots.filter((slot) => !empty(slot)) };
+}
+
 /** One call per page under a strict schema: the cloud path. */
 export function oneCallBackend(id: string, metered: boolean, complete: Complete): ExtractionBackend {
 	return {
@@ -106,8 +117,9 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
 		metered,
 		classify: classifyWith(complete),
 		async extract(input) {
-			const { system, user } = buildPrompt(input);
-			const outcome = await complete({ system, user, schema: buildSchema(input.slots), maxTokens: EXTRACTION_MAX_TOKENS });
+			const asked = askedInput(input);
+			const { system, user } = buildPrompt(asked);
+			const outcome = await complete({ system, user, schema: buildSchema(asked.slots), maxTokens: EXTRACTION_MAX_TOKENS });
 			if (outcome.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (outcome.kind === "failed") return outcome;
 			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate);
@@ -207,16 +219,17 @@ export function twoCallBackend(id: string, metered: boolean, complete: Complete)
 		metered,
 		local: true,
 		async extract(input) {
-			const read = localReadPrompt(input);
+			const asked = askedInput(input);
+			const read = localReadPrompt(asked);
 			// The line pass costs about 600 output tokens before the first heading (research 22).
 			const notes = await complete({ ...read, schema: null, maxTokens: 3000 });
 			if (notes.kind === "truncated") return { kind: "failed", reason: "The notes pass was cut off at the token limit." };
 			if (notes.kind === "failed") return notes;
-			if (notesAreEmpty(notes.text, input.slots.map((slot) => slot.id))) {
+			if (notesAreEmpty(notes.text, asked.slots.map((slot) => slot.id))) {
 				return { kind: "ok", result: parseExtraction({}, input.slots, input.referenceDate)! };
 			}
-			const format = localFormatPrompt(input, notes.text);
-			const formatted = await complete({ ...format, schema: buildSchema(input.slots), maxTokens: EXTRACTION_MAX_TOKENS });
+			const format = localFormatPrompt(asked, notes.text);
+			const formatted = await complete({ ...format, schema: buildSchema(asked.slots), maxTokens: EXTRACTION_MAX_TOKENS });
 			if (formatted.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (formatted.kind === "failed") return formatted;
 			const result = parseExtraction(readJson(formatted.text), input.slots, input.referenceDate);
