@@ -118,6 +118,15 @@ describe("renderTagModes", () => {
 });
 
 describe("renderIntelligenceSection", () => {
+	it("shows the switch on for the engine device without saving or redrawing, so the tab does not redraw itself forever", async () => {
+		const here = host({ ...emptyIntelligence(), engineDeviceId: "this-device" }, true, { device: "this-device" });
+		const toggle = named(section(here), "Run page extraction on this device").toggles[0];
+		await flush();
+		await flush();
+		expect(toggle.getValue()).toBe(true);
+		expect(here.log).toEqual([]);
+	});
+
 	it("shows the device switch as this device's state, and moves the engine here only after asking", async () => {
 		const elsewhere = host({ ...emptyIntelligence(), engineDeviceId: "other" }, true, { device: "this-device" });
 		const settings = section(elsewhere);
@@ -128,20 +137,27 @@ describe("renderIntelligenceSection", () => {
 		await flush();
 		expect(elsewhere.settings().engineDeviceId).toBe("other");
 
+		// The switch as it stands once the tab has read this device's id, which is when a user can click it.
+		// Wrapped: a component is a thenable, and an async function returning one never settles.
+		const shown = async (h: IntelligenceSettingsHost) => {
+			const toggle = named(section(h), "Run page extraction on this device").toggles[0];
+			await flush();
+			return { toggle };
+		};
 		const agreed = host({ ...emptyIntelligence(), engineDeviceId: "other" }, true, { device: "this-device", confirm: true });
-		named(section(agreed), "Run page extraction on this device").toggles[0].toggle(true);
+		(await shown(agreed)).toggle.toggle(true);
 		await flush();
 		expect(agreed.settings().engineDeviceId).toBe("this-device");
-		named(section(agreed), "Run page extraction on this device").toggles[0].toggle(false);
+		(await shown(agreed)).toggle.toggle(false);
 		await flush();
 		expect(agreed.settings().engineDeviceId).toBeNull();
 
 		const unclaimed = host(emptyIntelligence(), true);
-		named(section(unclaimed), "Run page extraction on this device").toggles[0].toggle(true);
+		(await shown(unclaimed)).toggle.toggle(true);
 		await flush();
 		expect(unclaimed.settings().engineDeviceId).toBe("this-device");
 		const keep = host({ ...emptyIntelligence(), engineDeviceId: "other" }, true, { device: "this-device" });
-		named(section(keep), "Run page extraction on this device").toggles[0].toggle(false);
+		(await shown(keep)).toggle.toggle(false);
 		await flush();
 		expect(keep.settings().engineDeviceId).toBe("other");
 	});

@@ -2960,3 +2960,15 @@
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
       test: "twoCallBackend > never asks either backend for a Choice Slot with no options, and reads it as empty"
+
+- feature: V58
+  name: "The settings tab does not redraw itself"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V58.1
+      scenario: "The settings open on the device that runs page extraction"
+      expect: "The device switch shows on without saving or redrawing; the tab stays still, so its dropdowns stay open"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > shows the switch on for the engine device without saving or redrawing, so the tab does not redraw itself forever"

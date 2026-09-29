@@ -50,7 +50,10 @@ describe("the Intelligence section in the settings tab", () => {
 	it("asks before moving the engine from another device, with this device's id kept in the plugin folder", async () => {
 		const { app, plugin, draw } = await tab({ intelligence: { engineDeviceId: "other-device" } });
 		takeModals();
-		named(draw(), "Run page extraction on this device").toggles[0].toggle(true);
+		const device = named(draw(), "Run page extraction on this device").toggles[0];
+		// Clicked once the tab has read this device's id, as a user does: the switch listens from then on.
+		await flush();
+		device.toggle(true);
 		await flush();
 		const [dialog] = takeModals();
 		expect((dialog.titleEl as unknown as FakeEl).text).toBe("Run the engine here");

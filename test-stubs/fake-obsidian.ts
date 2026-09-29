@@ -938,8 +938,14 @@ export class ToggleComponent {
 	value = false;
 	disabled = false;
 	private changed: ((value: boolean) => unknown) | null = null;
+	/**
+	 * app.js 1.13.7: `setValue` fires the change callback when the value changes -- so a value set
+	 * after `onChange` runs the handler, and a handler that redraws the tab loops forever.
+	 */
 	setValue(value: boolean): this {
+		if (this.value === value) return this;
 		this.value = value;
+		this.changed?.(value);
 		return this;
 	}
 	getValue(): boolean {
