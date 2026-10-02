@@ -7,11 +7,21 @@ import { emptyIntelligence, setIntelligenceMode, TASKS_FORMAT, type Intelligence
 
 registerExtractionBackend({ id: "sectioncloud", label: "Section cloud", metered: true, requiresLicence: true, measured: true, create: () => null });
 registerExtractionBackend({ id: "sectionlocal", label: "Section local", metered: false, requiresLicence: false, measured: false, create: () => null });
+// A server that reports reasoning for the model "thinker", and for its own default when none is typed.
+registerExtractionBackend({
+	id: "sectionserver",
+	label: "Section server",
+	metered: false,
+	requiresLicence: false,
+	measured: false,
+	create: () => null,
+	reasoningModel: async (settings, model) => ((model ?? String(settings.model)) === "thinker" ? "thinker" : null),
+});
 
 const MAP = { work: "Work", home: "Home" };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function host(initial: IntelligenceSettings, pro: boolean, options: { device?: string | null; confirm?: boolean; templates?: Record<string, string> } = {}) {
+function host(initial: IntelligenceSettings, pro: boolean, options: { device?: string | null; confirm?: boolean; templates?: Record<string, string>; transcription?: string; providers?: Record<string, Record<string, unknown>> } = {}) {
 	let settings = initial;
 	let device = options.device ?? null;
 	const log: string[] = [];
@@ -33,6 +43,8 @@ function host(initial: IntelligenceSettings, pro: boolean, options: { device?: s
 		readTemplate: async (path) => options.templates?.[path] ?? null,
 		now: () => new Date("2026-09-28T10:00:00.000Z"),
 		randomId: () => "0123456789abcdef",
+		transcriptionBackend: () => options.transcription ?? "vision",
+		providerSettings: (id) => options.providers?.[id] ?? {},
 	};
 	return h;
 }
@@ -181,6 +193,29 @@ describe("renderIntelligenceSection", () => {
 		expect(h.settings().model).toBeNull();
 		expect(h.log.filter((entry) => entry === "save")).toHaveLength(2);
 		expect(Object.values(named(section(host(emptyIntelligence(), true)), "Extraction backend").dropdowns[0].options)).toContain("Section cloud");
+	});
+
+	it("warns under the extraction model when its server says it reasons, and takes the warning back when another is typed", async () => {
+		const BASE = "Empty: the model set for that provider.";
+		const h = host({ ...emptyIntelligence(), backend: "sectionserver", model: "thinker" }, true);
+		const row = named(section(h), "Extraction model");
+		await flush();
+		expect(row.desc).toBe(`${BASE} ⚠ "thinker" reasons before answering. On a server of your own, a model like that can return the page-note answer inside its reasoning, and extraction then fails. Pick one that doesn't reason (often the "-instruct" build).`);
+		row.texts[0].type("instruct");
+		await flush();
+		expect(row.desc).toBe(BASE);
+
+		// No backend picked: the transcription backend extracts, with the model set for it there.
+		const same = named(section(host(emptyIntelligence(), true, { transcription: "sectionserver", providers: { sectionserver: { model: "thinker" } } })), "Extraction model");
+		await flush();
+		expect(same.desc).toContain('"thinker" reasons before answering');
+
+		// A backend that cannot be asked, and one that is not registered at all, say nothing.
+		for (const backend of ["sectioncloud", "gone"]) {
+			const quiet = named(section(host({ ...emptyIntelligence(), backend, model: "thinker" }, true)), "Extraction model");
+			await flush();
+			expect(quiet.desc).toBe(BASE);
+		}
 	});
 
 	it("asks for consent to extract in automatic syncs, per kind of backend", async () => {

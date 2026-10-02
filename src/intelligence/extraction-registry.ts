@@ -21,6 +21,13 @@ export interface ExtractionBackendEntry {
 	create(settings: BackendSettings, model: string | null): ExtractionBackend | null;
 	/** What the pause says when `create` has nothing; unset, it names a missing key or address. */
 	readonly notReady?: string;
+	/**
+	 * The name of the model this backend would extract with, when its server says the model reasons
+	 * unasked; else null. Only the user's own servers answer: there a reasoning model returns a
+	 * schema-bound answer inside its reasoning and the page fails (`REASONED_ONLY`). A cloud provider
+	 * keeps the two apart, so it has nothing to warn about.
+	 */
+	reasoningModel?(settings: BackendSettings, model: string | null): Promise<string | null>;
 }
 
 const entries = new Map<string, ExtractionBackendEntry>();
@@ -45,6 +52,8 @@ export interface CompatProvider {
 	extraHeaders?: Record<string, string>;
 	deterministic?: boolean;
 	resolve(settings: BackendSettings): { baseURL: string; model: string; apiKey: string | null };
+	/** Whether the server says this model reasons unasked; see `ExtractionBackendEntry.reasoningModel`. */
+	reasons?(endpoint: { baseURL: string; model: string; apiKey: string | null }): Promise<boolean>;
 }
 
 /**
@@ -74,5 +83,14 @@ export function compatExtractionEntry(provider: CompatProvider): ExtractionBacke
 			});
 			return cloud ? oneCallBackend(provider.id, true, complete) : twoCallBackend(provider.id, false, complete);
 		},
+		...(provider.reasons === undefined
+			? {}
+			: {
+					async reasoningModel(settings, model) {
+						const endpoint = provider.resolve(settings);
+						const used = model?.trim() || endpoint.model;
+						return (await provider.reasons!({ ...endpoint, model: used })) ? used : null;
+					},
+				}),
 	};
 }

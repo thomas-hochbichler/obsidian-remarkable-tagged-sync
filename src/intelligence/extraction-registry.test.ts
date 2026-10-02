@@ -27,6 +27,21 @@ describe("compatExtractionEntry", () => {
 	});
 });
 
+describe("compatExtractionEntry > the reasoning probe", () => {
+	it("asks the provider about the model that will extract, and names it only when the server says it reasons", async () => {
+		const asked: unknown[] = [];
+		const entry = compatExtractionEntry({ ...provider("local", "lmstudio"), reasons: async (endpoint) => (asked.push(endpoint), endpoint.model === "thinker") });
+		expect(await entry.reasoningModel!({ baseURL: "http://h/v1" }, " thinker ")).toBe("thinker");
+		expect(await entry.reasoningModel!({}, null)).toBeNull();
+		expect(asked).toEqual([
+			{ baseURL: "http://h/v1", model: "thinker", apiKey: null },
+			{ baseURL: "https://x/v1", model: "default-model", apiKey: null },
+		]);
+		// A provider that cannot be asked has no probe at all: the settings say nothing.
+		expect(compatExtractionEntry(provider("cloud")).reasoningModel).toBeUndefined();
+	});
+});
+
 describe("the registry", () => {
 	it("keeps entries by id, in registration order", () => {
 		registerExtractionBackend(compatExtractionEntry(provider("local", "ollama")));

@@ -3165,3 +3165,29 @@
       layer: unit
       file: src/intelligence/extraction-backend.test.ts
       test: "openAiCompatComplete > says so when a reasoning model put its schema-bound answer into its reasoning, instead of calling the answer empty or reading it from there"
+
+- feature: V66
+  name: "The extraction model says when it reasons"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V66.1
+      scenario: "The extraction model on the user's own server is one the server reports as reasoning; then another is typed; then no backend is picked; then a backend that cannot be asked"
+      expect: "A warning under the model field names the model and what fails; it goes when another model is typed; the transcription backend's model is asked when none is picked; a cloud or unknown backend says nothing"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > warns under the extraction model when its server says it reasons, and takes the warning back when another is typed"
+
+    - id: V66.2
+      scenario: "An OpenAI-compatible provider is asked whether its extraction model reasons"
+      expect: "It is asked about the model that will extract -- the typed one, else the provider's -- and the model is named only on a yes; a provider with no probe has none"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "compatExtractionEntry > the reasoning probe > asks the provider about the model that will extract, and names it only when the server says it reasons"
+
+    - id: V66.3
+      scenario: "Ollama, LM Studio or a custom server is the extraction backend"
+      expect: "The probe behind the transcription model's thinking line answers for the extraction model too; off and unknown say nothing"
+      layer: unit
+      file: src/localhost-register.test.ts
+      test: "the same servers as extraction backends > name the extraction model when the server says it reasons, and nothing when it does not or cannot say"

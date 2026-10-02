@@ -5,7 +5,8 @@
  */
 
 import { Setting } from "obsidian";
-import { extractionBackendEntries } from "./extraction-registry";
+import type { BackendSettings } from "../ocr-registry";
+import { extractionBackendEntries, extractionBackendEntry } from "./extraction-registry";
 import { freeTag, isEngineDevice } from "./plugin-rules";
 import { type FieldDef, type FieldType, genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, setIntelligenceMode, type Shape, type SlotDef, slotIdFor, TASKS_FORMAT } from "./settings";
 import { analyseTemplate, starterTemplate } from "./template";
@@ -30,9 +31,24 @@ export interface IntelligenceSettingsHost {
 	readTemplate(path: string): Promise<string | null>;
 	now(): Date;
 	randomId(): string;
+	/** The transcription backend's id: what extracts while no extraction backend is picked. */
+	transcriptionBackend(): string;
+	/** A provider's own settings: its address, key and model. */
+	providerSettings(id: string): BackendSettings;
 }
 
 const PRO = " (Pro)";
+const MODEL_DESC = "Empty: the model set for that provider.";
+
+/**
+ * Said under the extraction model when its server reports that it reasons unasked. Not the
+ * transcription pane's sentence (`localhost-register.ts`): there a reasoning model is slow, here its
+ * page notes fail -- LM Studio returns the schema-bound answer inside the reasoning (live test
+ * 2026-10-02). "Can", because that is measured on LM Studio only.
+ */
+function reasoningWarning(model: string): string {
+	return `⚠ "${model}" reasons before answering. On a server of your own, a model like that can return the page-note answer inside its reasoning, and extraction then fails. Pick one that doesn't reason (often the "-instruct" build).`;
+}
 const FREE_SLOTS = new Set(["tasks", "summary"]);
 const ITEM_FORMAT_PRESETS: Record<string, string> = { Tasks: TASKS_FORMAT, Dataview: "- [ ] {{text}} [due:: {{due}}]", Plain: "- [ ] {{text}}" };
 
@@ -149,15 +165,24 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 			dropdown.setValue(settings.backend ?? "");
 			dropdown.onChange(async (id) => withSettings(host, (s) => ({ ...s, backend: id === "" ? null : id })));
 		});
-	new Setting(containerEl)
-		.setName("Extraction model")
-		.setDesc("Empty: the model set for that provider.")
-		.addText((text) =>
-			text
-				.setValue(settings.model ?? "")
-				.setPlaceholder("Model name")
-				.onChange(async (model) => typed(host, (s) => ({ ...s, model: model.trim() === "" ? null : model.trim() }))),
-		);
+	const modelRow = new Setting(containerEl).setName("Extraction model").setDesc(MODEL_DESC);
+	// Asked of the backend that will extract: the picked one, else the transcription backend's. `void`
+	// on purpose, as in `renderProfile`: a `Setting` has a `then` of its own.
+	const entry = extractionBackendEntry(settings.backend ?? host.transcriptionBackend());
+	const probeModel = async (): Promise<void> => {
+		const reasoning = (await entry?.reasoningModel?.(host.providerSettings(entry.id), host.settings().model)) ?? null;
+		modelRow.setDesc(reasoning === null ? MODEL_DESC : `${MODEL_DESC} ${reasoningWarning(reasoning)}`);
+	};
+	modelRow.addText((text) =>
+		text
+			.setValue(settings.model ?? "")
+			.setPlaceholder("Model name")
+			.onChange(async (model) => {
+				await typed(host, (s) => ({ ...s, model: model.trim() === "" ? null : model.trim() }));
+				await probeModel();
+			}),
+	);
+	void probeModel();
 
 	// The same two questions automatic sync asks the transcription backend (spec §6), each its own row.
 	new Setting(containerEl)

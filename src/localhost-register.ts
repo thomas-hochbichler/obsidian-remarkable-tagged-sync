@@ -303,7 +303,14 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 // Registered after Vision and the managed local model, so they sit below both in the dropdown.
 for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 	// The same server as an extraction backend (Intelligence Engine §6): same key, same URL, its own model.
-	registerExtractionBackend(compatExtractionEntry({ ...meta, resolve: (settings) => resolveProviderEndpoint(meta, settings) }));
+	registerExtractionBackend(
+		compatExtractionEntry({
+			...meta,
+			resolve: (settings) => resolveProviderEndpoint(meta, settings),
+			// The probe the model field above uses (#116), asked for the extraction model.
+			reasons: async (endpoint) => (await detectLocalhostVisionCapability({ provider: meta.id, ...endpoint })).thinking === "on",
+		}),
+	);
 	registerOcrBackend({
 		id: meta.id,
 		label: meta.label,

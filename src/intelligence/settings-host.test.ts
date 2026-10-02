@@ -39,7 +39,7 @@ describe("settingsHostFor", () => {
 			randomId: () => "rid",
 			now: () => new Date("2026-09-28T00:00:00.000Z"),
 		};
-		const data = { intelligence: emptyIntelligence(), tagFolderMap: { work: "Work" } };
+		const data = { intelligence: emptyIntelligence(), tagFolderMap: { work: "Work" }, ocrBackend: "lmstudio", llmProviders: { lmstudio: { model: "m" } } };
 		const log: string[] = [];
 		const host = settingsHostFor({ env, data, pro: true, save: async () => void log.push("save"), redraw: () => void log.push("redraw"), confirm: async () => true });
 
@@ -58,5 +58,6 @@ describe("settingsHostFor", () => {
 		expect(written).toEqual(["Templates/My pages.md=## Tasks", "Root.md=x"]);
 		expect([host.pro, host.now().toISOString(), host.randomId()]).toEqual([true, "2026-09-28T00:00:00.000Z", "rid"]);
 		expect(await host.readTemplate("T.md")).toBeNull();
+		expect([host.transcriptionBackend(), host.providerSettings("lmstudio"), host.providerSettings("ollama")]).toEqual(["lmstudio", { model: "m" }, {}]);
 	});
 });

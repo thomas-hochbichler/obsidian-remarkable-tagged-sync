@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEl, takeSettings } from "../test-stubs/fake-obsidian";
+import { extractionBackendEntry } from "./intelligence/extraction-registry";
 import { ocrBackendEntry } from "./ocr-registry";
 import { unreachableMessage } from "./localhost-register";
 import { LOCALHOST_PROVIDERS } from "./localhost-providers";
@@ -189,5 +190,22 @@ describe("the thinking line in the localhost callout", () => {
 		await settle();
 
 		expect(lines(callout)).toEqual(['✓ "qwen2.5vl:7b" supports image input.']);
+	});
+});
+
+describe("the same servers as extraction backends", () => {
+	it("name the extraction model when the server says it reasons, and nothing when it does not or cannot say", async () => {
+		const before = probe.verdict;
+		try {
+			probe.verdict = { vision: "supported", thinking: "on" };
+			expect(await extractionBackendEntry("lmstudio")!.reasoningModel!({ model: "set-there" }, null)).toBe("set-there");
+			expect(await extractionBackendEntry("ollama")!.reasoningModel!({ model: "set-there" }, "typed")).toBe("typed");
+			for (const thinking of ["off", "unknown"]) {
+				probe.verdict = { vision: "supported", thinking };
+				expect(await extractionBackendEntry("lmstudio")!.reasoningModel!({ model: "m" }, null)).toBeNull();
+			}
+		} finally {
+			probe.verdict = before;
+		}
 	});
 });
