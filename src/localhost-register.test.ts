@@ -7,7 +7,7 @@ import { LOCALHOST_PROVIDERS } from "./localhost-providers";
 import { OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import "./localhost-register";
 
-const probe = vi.hoisted(() => ({ verdict: { vision: "supported", thinking: "unknown" } as { vision: string; thinking: string } }));
+const probe = vi.hoisted(() => ({ verdict: { vision: "supported", thinking: "unknown" } as { vision: string; thinking: string; missing?: { suggestion: string | null } } }));
 
 vi.mock("./localhost-vision-detect", async (importOriginal) => ({
 	...(await importOriginal<typeof import("./localhost-vision-detect")>()),
@@ -173,6 +173,16 @@ describe("the thinking line in the localhost callout", () => {
 		expect(callout.children.map((line) => line.style["color"])).toEqual(["var(--text-success)", "var(--text-warning)"]);
 	});
 
+	it("says only that the server has no such model, with the name that fits, in the error colour", async () => {
+		probe.verdict = { vision: "supported", thinking: "on", missing: { suggestion: "qwen/qwen3-vl-8b" } };
+		const callout = show("lmstudio", { model: "qwen3-vl-8b" });
+
+		await settle();
+
+		expect(lines(callout)).toEqual(['⚠ The server has no model "qwen3-vl-8b". Did you mean "qwen/qwen3-vl-8b"?']);
+		expect(callout.children[0].style["color"]).toBe("var(--text-error)");
+	});
+
 	it("keeps the field for the urgent half when the model cannot see images", async () => {
 		probe.verdict = { vision: "unsupported", thinking: "on" };
 		const callout = show("ollama", { model: "llama3.2" });
@@ -194,16 +204,18 @@ describe("the thinking line in the localhost callout", () => {
 });
 
 describe("the same servers as extraction backends", () => {
-	it("name the extraction model when the server says it reasons, and nothing when it does not or cannot say", async () => {
+	it("name the extraction model when the server says it reasons or does not have it, and nothing when it does not or cannot say", async () => {
 		const before = probe.verdict;
 		try {
 			probe.verdict = { vision: "supported", thinking: "on" };
-			expect(await extractionBackendEntry("lmstudio")!.reasoningModel!({ model: "set-there" }, null)).toBe("set-there");
-			expect(await extractionBackendEntry("ollama")!.reasoningModel!({ model: "set-there" }, "typed")).toBe("typed");
+			expect(await extractionBackendEntry("lmstudio")!.modelNote!({ model: "set-there" }, null)).toEqual({ kind: "reasons", model: "set-there" });
+			expect(await extractionBackendEntry("ollama")!.modelNote!({ model: "set-there" }, "typed")).toEqual({ kind: "reasons", model: "typed" });
 			for (const thinking of ["off", "unknown"]) {
 				probe.verdict = { vision: "supported", thinking };
-				expect(await extractionBackendEntry("lmstudio")!.reasoningModel!({ model: "m" }, null)).toBeNull();
+				expect(await extractionBackendEntry("lmstudio")!.modelNote!({ model: "m" }, null)).toBeNull();
 			}
+			probe.verdict = { vision: "supported", thinking: "unknown", missing: { suggestion: "qwen/qwen3-vl-8b" } };
+			expect(await extractionBackendEntry("lmstudio")!.modelNote!({ model: "m" }, "qwen3-vl-8b")).toEqual({ kind: "missing", model: "qwen3-vl-8b", suggestion: "qwen/qwen3-vl-8b" });
 		} finally {
 			probe.verdict = before;
 		}

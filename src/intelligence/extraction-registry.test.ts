@@ -36,12 +36,12 @@ describe("compatExtractionEntry", () => {
 describe("compatExtractionEntry > which answer an own server is asked for", () => {
 	it("takes a model as reasoning from the server's flag or from a model it learned, and keeps a learned one in the provider's settings", async () => {
 		const settings: Record<string, unknown> = { reasoningModels: ["seen-before"] };
-		const flagged = vi.fn(async (endpoint: { model: string }) => endpoint.model === "flagged");
-		const entry = compatExtractionEntry({ ...provider("local", "lmstudio"), reasons: flagged });
-		expect(await entry.reasoningModel!(settings, "seen-before")).toBe("seen-before");
-		expect(await entry.reasoningModel!(settings, "flagged")).toBe("flagged");
-		expect(await entry.reasoningModel!(settings, "plain")).toBeNull();
-		expect(await compatExtractionEntry(provider("user", "custom")).reasoningModel!(settings, "plain")).toBeNull();
+		const flagged = vi.fn(async (endpoint: { model: string }) => ({ reasons: endpoint.model === "flagged", missing: null }));
+		const entry = compatExtractionEntry({ ...provider("local", "lmstudio"), probe: flagged });
+		expect(await entry.modelNote!(settings, "seen-before")).toEqual({ kind: "reasons", model: "seen-before" });
+		expect(await entry.modelNote!(settings, "flagged")).toEqual({ kind: "reasons", model: "flagged" });
+		expect(await entry.modelNote!(settings, "plain")).toBeNull();
+		expect(await compatExtractionEntry(provider("user", "custom")).modelNote!(settings, "plain")).toBeNull();
 
 		// An answer that reasoned teaches the provider's settings; the next sync asks for the plain schema.
 		const answer = JSON.stringify({ page_date_text: null, tasks: [], summary: "" });
@@ -50,7 +50,7 @@ describe("compatExtractionEntry > which answer an own server is asked for", () =
 		const input = { profile: genericProfile(false), slots, transcript: "x", referenceDate: new Date(0), known: {} };
 		expect(await entry.create(settings, "plain")!.extract(input)).toMatchObject({ kind: "ok" });
 		expect(settings.reasoningModels).toEqual(["seen-before", "plain"]);
-		expect(await entry.reasoningModel!(settings, "plain")).toBe("plain");
+		expect(await entry.modelNote!(settings, "plain")).toEqual({ kind: "reasons", model: "plain" });
 		vi.mocked(openAiCompatComplete).mockReturnValueOnce(async () => ({ kind: "ok", text: answer, reasoned: true }));
 		const fresh: Record<string, unknown> = { reasoningModels: "garbled" };
 		await entry.create(fresh, "plain")!.extract(input);
@@ -63,18 +63,23 @@ describe("compatExtractionEntry > which answer an own server is asked for", () =
 	});
 });
 
-describe("compatExtractionEntry > the reasoning probe", () => {
+describe("compatExtractionEntry > the model probe", () => {
 	it("asks the provider about the model that will extract, and names it only when the server says it reasons", async () => {
 		const asked: unknown[] = [];
-		const entry = compatExtractionEntry({ ...provider("local", "lmstudio"), reasons: async (endpoint) => (asked.push(endpoint), endpoint.model === "thinker") });
-		expect(await entry.reasoningModel!({ baseURL: "http://h/v1" }, " thinker ")).toBe("thinker");
-		expect(await entry.reasoningModel!({}, null)).toBeNull();
+		const entry = compatExtractionEntry({ ...provider("local", "lmstudio"), probe: async (endpoint) => (asked.push(endpoint), { reasons: endpoint.model === "thinker", missing: null }) });
+		expect(await entry.modelNote!({ baseURL: "http://h/v1" }, " thinker ")).toEqual({ kind: "reasons", model: "thinker" });
+		expect(await entry.modelNote!({}, null)).toBeNull();
 		expect(asked).toEqual([
 			{ baseURL: "http://h/v1", model: "thinker", apiKey: null },
 			{ baseURL: "https://x/v1", model: "default-model", apiKey: null },
 		]);
 		// A provider that cannot be asked has no probe at all: the settings say nothing.
-		expect(compatExtractionEntry(provider("cloud")).reasoningModel).toBeUndefined();
+		expect(compatExtractionEntry(provider("cloud")).modelNote).toBeUndefined();
+	});
+
+	it("says first that the server has no model of that name, with the one it has that fits, even for a model learned to reason", async () => {
+		const entry = compatExtractionEntry({ ...provider("local", "lmstudio"), probe: async () => ({ reasons: false, missing: { suggestion: "qwen/qwen3-vl-8b" } }) });
+		expect(await entry.modelNote!({ reasoningModels: ["qwen3-vl-8b"] }, "qwen3-vl-8b")).toEqual({ kind: "missing", model: "qwen3-vl-8b", suggestion: "qwen/qwen3-vl-8b" });
 	});
 });
 

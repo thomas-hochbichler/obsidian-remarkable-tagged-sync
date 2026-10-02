@@ -6,7 +6,8 @@ import { emptyIntelligence, setIntelligenceMode, TASKS_FORMAT, type Intelligence
 
 registerExtractionBackend({ id: "sectioncloud", label: "Section cloud", metered: true, requiresLicence: true, measured: true, create: () => null });
 registerExtractionBackend({ id: "sectionlocal", label: "Section local", metered: false, requiresLicence: false, measured: false, create: () => null });
-// A server that reports reasoning for the model "thinker", and for its own default when none is typed.
+// A server that reports reasoning for the model "thinker", and for its own default when none is typed,
+// and that has no model "typo".
 registerExtractionBackend({
 	id: "sectionserver",
 	label: "Section server",
@@ -14,7 +15,11 @@ registerExtractionBackend({
 	requiresLicence: false,
 	measured: false,
 	create: () => null,
-	reasoningModel: async (settings, model) => ((model ?? String(settings.model)) === "thinker" ? "thinker" : null),
+	modelNote: async (settings, model) => {
+		const used = model ?? String(settings.model);
+		if (used === "typo") return { kind: "missing", model: used, suggestion: "pub/typo-1" };
+		return used === "thinker" ? { kind: "reasons", model: used } : null;
+	},
 });
 
 const MAP = { work: "Work", home: "Home" };
@@ -225,7 +230,7 @@ describe("renderIntelligenceSection", () => {
 		expect(Object.values(named(section(host(emptyIntelligence(), true)), "Extraction backend").dropdowns[0].options)).toContain("Section cloud");
 	});
 
-	it("warns under the extraction model when its server says it reasons, and takes the warning back when another is typed", async () => {
+	it("warns under the extraction model when its server says it reasons or has no such model, and takes the warning back when another is typed", async () => {
 		const BASE = "Leave it empty to use the model set for this provider under Transcription.";
 		// The warning is its own line, in the warning colour, under the description.
 		const warning = (row: FakeSetting) => row.descEl.children.find((child) => child.classes.has("tagged-sync-verdict"))!;
@@ -238,6 +243,10 @@ describe("renderIntelligenceSection", () => {
 		row.texts[0].type("instruct");
 		await flush();
 		expect(warning(row).text).toBe("");
+		// A name the server does not have: every page would fail, so that is said first, with the name that fits.
+		row.texts[0].type("typo");
+		await flush();
+		expect(warning(row).text).toBe('⚠ The server has no model "typo". Did you mean "pub/typo-1"?');
 
 		// No backend picked: the transcription backend extracts, with the model set for it there.
 		const same = named(section(host(emptyIntelligence(), true, { transcription: "sectionserver", providers: { sectionserver: { model: "thinker" } } })), "Extraction model");

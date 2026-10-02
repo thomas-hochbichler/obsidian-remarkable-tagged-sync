@@ -3176,21 +3176,21 @@
       expect: "A warning line in the warning colour under the model field names the model and what it costs; it goes when another model is typed; the transcription backend's model is asked when none is picked; a cloud or unknown backend says nothing"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderIntelligenceSection > warns under the extraction model when its server says it reasons, and takes the warning back when another is typed"
+      test: "renderIntelligenceSection > warns under the extraction model when its server says it reasons or has no such model, and takes the warning back when another is typed"
 
     - id: V66.2
       scenario: "An OpenAI-compatible provider is asked whether its extraction model reasons"
       expect: "It is asked about the model that will extract -- the typed one, else the provider's -- and the model is named only on a yes; a provider with no probe has none"
       layer: unit
       file: src/intelligence/extraction-registry.test.ts
-      test: "compatExtractionEntry > the reasoning probe > asks the provider about the model that will extract, and names it only when the server says it reasons"
+      test: "compatExtractionEntry > the model probe > asks the provider about the model that will extract, and names it only when the server says it reasons"
 
     - id: V66.3
       scenario: "Ollama, LM Studio or a custom server is the extraction backend"
       expect: "The probe behind the transcription model's thinking line answers for the extraction model too; off and unknown say nothing"
       layer: unit
       file: src/localhost-register.test.ts
-      test: "the same servers as extraction backends > name the extraction model when the server says it reasons, and nothing when it does not or cannot say"
+      test: "the same servers as extraction backends > name the extraction model when the server says it reasons or does not have it, and nothing when it does not or cannot say"
 
 - feature: V67
   name: "On a server of the user's own, the schema goes as a tool call"
@@ -3298,3 +3298,43 @@
       layer: unit
       file: src/intelligence/settings-section.test.ts
       test: "renderIntelligenceSection > own Slots (Pro) > lists a Slot on one line: its Shape, the Profiles that fill it, and whether it is reviewed"
+
+- feature: V70
+  name: "A model name the user's own server does not have is said under the model field, not found out by a failed sync"
+  code: src/localhost-vision-detect.ts
+  tier: free
+  scenarios:
+    - id: V70.1
+      scenario: "LM Studio is asked about a name it does not list (qwen3-vl-8b for qwen/qwen3-vl-8b), and about one it does"
+      expect: "Missing, with the listed model whose name fits; a listed one is not missing"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, a model the server does not have > says LM Studio has no such model, and names the one it has that fits"
+
+    - id: V70.2
+      scenario: "Ollama answers 404 for the model, or fails otherwise"
+      expect: "404 is missing, with no suggestion; any other failure says nothing about the name"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, a model the server does not have > says Ollama has no such model when it answers 404, and nothing about the name when the server fails otherwise"
+
+    - id: V70.3
+      scenario: "A typed name is matched against the listed ones"
+      expect: "The same name first, then with a publisher in front, then one containing it, ignoring case; none fits, no suggestion"
+      layer: unit
+      file: src/localhost-vision-detect.test.ts
+      test: "detectLocalhostVisionCapability, a model the server does not have > fits a name the same, with a publisher in front, or contained, in that order, ignoring case"
+
+    - id: V70.4
+      scenario: "The transcription model field holds a name the server does not have"
+      expect: "Only that is said, with the name that fits, in the error colour"
+      layer: unit
+      file: src/localhost-register.test.ts
+      test: "the thinking line in the localhost callout > says only that the server has no such model, with the name that fits, in the error colour"
+
+    - id: V70.5
+      scenario: "The extraction model is missing on the server, even one learned to reason"
+      expect: "The settings note says it is missing, with the suggestion, before anything about reasoning"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "compatExtractionEntry > the model probe > says first that the server has no model of that name, with the one it has that fits, even for a model learned to reason"

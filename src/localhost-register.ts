@@ -17,7 +17,7 @@ import {
 	type ProviderMeta,
 	resolveProviderEndpoint,
 } from "./localhost-providers";
-import { detectLocalhostVisionCapability, type ModelCapabilities, type VisionVerdict } from "./localhost-vision-detect";
+import { detectLocalhostVisionCapability, missingModelSentence, type ModelCapabilities, type VisionVerdict } from "./localhost-vision-detect";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { OpenAiCompatOcrBackend, OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
@@ -122,6 +122,12 @@ function renderCapabilities(el: HTMLElement, caps: ModelCapabilities, model: str
 	// Painted per line from here on, so the container's own colour must not linger from a previous
 	// single-line state (`Checking…`, the empty-model message).
 	el.style.color = NO_COLOR;
+
+	// A name the server does not have fails every page; nothing else about it is worth saying.
+	if (caps.missing !== undefined) {
+		paintLine(el, missingModelSentence(model, caps.missing.suggestion), ERROR_COLOR);
+		return;
+	}
 
 	const vision = visionSentence(caps.vision, model, meta, baseURL);
 	if (vision) paintLine(el, vision.text, vision.color);
@@ -308,7 +314,10 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 			...meta,
 			resolve: (settings) => resolveProviderEndpoint(meta, settings),
 			// The probe the model field above uses (#116), asked for the extraction model.
-			reasons: async (endpoint) => (await detectLocalhostVisionCapability({ provider: meta.id, ...endpoint })).thinking === "on",
+			probe: async (endpoint) => {
+				const caps = await detectLocalhostVisionCapability({ provider: meta.id, ...endpoint });
+				return { reasons: caps.thinking === "on", missing: caps.missing ?? null };
+			},
 		}),
 	);
 	registerOcrBackend({

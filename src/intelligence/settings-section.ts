@@ -7,7 +7,8 @@
 
 import { Setting } from "obsidian";
 import type { BackendSettings } from "../ocr-registry";
-import { extractionBackendEntries, extractionBackendEntry } from "./extraction-registry";
+import { missingModelSentence } from "../localhost-vision-detect";
+import { extractionBackendEntries, extractionBackendEntry, type ModelNote } from "./extraction-registry";
 import { freeTag, isEngineDevice } from "./plugin-rules";
 import { type FieldDef, type FieldType, genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, setIntelligenceMode, type Shape, type SlotDef, slotIdFor, TASKS_FORMAT } from "./settings";
 import { analyseTemplate, starterTemplate } from "./template";
@@ -45,12 +46,14 @@ const PRO = " (Pro)";
 const MODEL_DESC = "Leave it empty to use the model set for this provider under Transcription.";
 
 /**
- * Said under the extraction model when its server reports that it reasons unasked. It extracts --
- * the schema goes as a tool call, which lets it think first -- but takes 5–30 s a page where a model
- * that does not reason takes 2–4 s (five LM Studio models, 2026-10-02).
+ * Said under the extraction model when its server has no model of that name -- every page would fail
+ * -- or reports that it reasons unasked. A reasoning model extracts -- the schema goes as a tool
+ * call, which lets it think first -- but takes 5–30 s a page where a model that does not reason takes
+ * 2–4 s (five LM Studio models, 2026-10-02).
  */
-function reasoningWarning(model: string): string {
-	return `⚠ "${model}" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`;
+function modelWarning(note: ModelNote): string {
+	if (note.kind === "missing") return missingModelSentence(note.model, note.suggestion);
+	return `⚠ "${note.model}" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`;
 }
 const FREE_SLOTS = new Set(["tasks", "summary"]);
 const ITEM_FORMAT_PRESETS: Record<string, string> = { Tasks: TASKS_FORMAT, Dataview: "- [ ] {{text}} [due:: {{due}}]", Plain: "- [ ] {{text}}" };
@@ -202,8 +205,8 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 	// on purpose, as in `renderProfile`: a `Setting` has a `then` of its own.
 	const entry = extractionBackendEntry(settings.backend ?? host.transcriptionBackend());
 	const probeModel = async (): Promise<void> => {
-		const reasoning = (await entry?.reasoningModel?.(host.providerSettings(entry.id), host.settings().model)) ?? null;
-		warningEl.setText(reasoning === null ? "" : reasoningWarning(reasoning));
+		const note = (await entry?.modelNote?.(host.providerSettings(entry.id), host.settings().model)) ?? null;
+		warningEl.setText(note === null ? "" : modelWarning(note));
 	};
 	modelRow.addText((text) =>
 		text

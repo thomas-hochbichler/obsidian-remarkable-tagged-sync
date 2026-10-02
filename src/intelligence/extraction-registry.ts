@@ -22,13 +22,15 @@ export interface ExtractionBackendEntry {
 	/** What the pause says when `create` has nothing; unset, it names a missing key or address. */
 	readonly notReady?: string;
 	/**
-	 * The name of the model this backend would extract with, when its server says the model reasons
-	 * unasked; else null. Only the user's own servers answer: there a reasoning model returns a
-	 * schema-bound answer inside its reasoning and the page fails (`REASONED_ONLY`). A cloud provider
-	 * keeps the two apart, so it has nothing to warn about.
+	 * What the settings say under the extraction model, about the model this backend would extract
+	 * with: that its server has no model of that name (every page would fail), or that it reasons
+	 * unasked (every page is slower); else null. Only the user's own servers are asked.
 	 */
-	reasoningModel?(settings: BackendSettings, model: string | null): Promise<string | null>;
+	modelNote?(settings: BackendSettings, model: string | null): Promise<ModelNote | null>;
 }
+
+/** See `ExtractionBackendEntry.modelNote`. */
+export type ModelNote = { kind: "reasons"; model: string } | { kind: "missing"; model: string; suggestion: string | null };
 
 const entries = new Map<string, ExtractionBackendEntry>();
 
@@ -60,8 +62,8 @@ export interface CompatProvider {
 	extraHeaders?: Record<string, string>;
 	deterministic?: boolean;
 	resolve(settings: BackendSettings): { baseURL: string; model: string; apiKey: string | null };
-	/** Whether the server says this model reasons unasked; see `ExtractionBackendEntry.reasoningModel`. */
-	reasons?(endpoint: { baseURL: string; model: string; apiKey: string | null }): Promise<boolean>;
+	/** What the server says about this model: whether it reasons unasked, and whether it has it at all. */
+	probe?(endpoint: { baseURL: string; model: string; apiKey: string | null }): Promise<{ reasons: boolean; missing: { suggestion: string | null } | null }>;
 }
 
 /**
@@ -98,7 +100,7 @@ export function compatExtractionEntry(provider: CompatProvider): ExtractionBacke
 			return ownServerBackend(
 				provider.id,
 				complete,
-				async () => knownToReason(settings, used) || ((await provider.reasons?.({ ...endpoint, model: used })) ?? false),
+				async () => knownToReason(settings, used) || ((await provider.probe?.({ ...endpoint, model: used }))?.reasons ?? false),
 				// Into the provider's own settings blob, which the plugin saves after every sync.
 				() => void (settings[REASONING_MODELS] = [...new Set([...readList(settings[REASONING_MODELS]), used])]),
 			);
@@ -106,10 +108,12 @@ export function compatExtractionEntry(provider: CompatProvider): ExtractionBacke
 		...(cloud
 			? {}
 			: {
-					async reasoningModel(settings, model) {
+					async modelNote(settings, model): Promise<ModelNote | null> {
 						const endpoint = provider.resolve(settings);
 						const used = model?.trim() || endpoint.model;
-						return knownToReason(settings, used) || ((await provider.reasons?.({ ...endpoint, model: used })) ?? false) ? used : null;
+						const probe = await provider.probe?.({ ...endpoint, model: used });
+						if (probe?.missing) return { kind: "missing", model: used, suggestion: probe.missing.suggestion };
+						return knownToReason(settings, used) || probe?.reasons === true ? { kind: "reasons", model: used } : null;
 					},
 				}),
 	};
