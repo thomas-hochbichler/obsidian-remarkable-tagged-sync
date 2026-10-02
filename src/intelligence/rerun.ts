@@ -27,6 +27,11 @@ export function isPageNote(index: SyncIndex, notePath: string): boolean {
 	return pageRow(index, notePath) !== undefined;
 }
 
+/** The Profile an active page note was made with, or null for any other note. */
+export function pageProfile(index: SyncIndex, notePath: string): string | null {
+	return pageRow(index, notePath)?.profileId ?? null;
+}
+
 /** Marks the page to be read again on the next sync. */
 export function markForRereading(index: SyncIndex, notePath: string): RerunOutcome {
 	const row = pageRow(index, notePath);
@@ -48,7 +53,7 @@ export async function rerunExtraction(env: HostEnvironment, run: RunInputs, inde
 	if (row === undefined) return { message: NOT_A_PAGE_NOTE };
 	const prepared = await prepareRun(env, { ...run, background: false });
 	try {
-		if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Intelligence in the settings." };
+		if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Page notes in the settings." };
 		const base = await reviewStoresFor(env, {}).baseStore.load(row.noteId);
 		if (base?.transcript == null) return markForRereading(index, notePath);
 

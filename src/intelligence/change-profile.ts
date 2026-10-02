@@ -21,7 +21,7 @@ export async function changeProfile(env: HostEnvironment, run: RunInputs, index:
 	if (row === undefined) return { message: "This note is not a page note from the Intelligence Engine." };
 	const prepared = await prepareRun(env, { ...run, background: false });
 	try {
-		if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Intelligence in the settings." };
+		if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Page notes in the settings." };
 		const deps = prepared.deps;
 		const profile = deps.settings.profiles.find((candidate) => candidate.id === profileId);
 		if (profile === undefined) return { message: "That profile no longer exists." };

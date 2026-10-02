@@ -2650,10 +2650,17 @@
 
     - id: V42.7
       scenario: "The command is run with and without Pro"
-      expect: "A choice of Profiles with Pro; a sentence that it is Pro without"
+      expect: "With Pro, a row per Profile, named and described, with what a change does and that the page has the generic one; a sentence that it is Pro without"
       layer: unit
       file: src/intelligence/commands.test.ts
       test: "the page-note commands > changes a page note's Profile through a choice of Profiles, and says it is Pro without it"
+
+    - id: V42.7.1
+      scenario: "The choice is opened on a page note made with one of the Profiles"
+      expect: "That Profile is marked Current, with no button to choose it again"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > marks the Profile the page has now, and offers it no button to choose it again"
 
     - id: V42.8
       scenario: "There is no Profile to choose"

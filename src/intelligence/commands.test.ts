@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import { describe, expect, it } from "vitest";
-import { FakeEl, takeModals, takeNotices, TFile } from "../../test-stubs/fake-obsidian";
+import { FakeEl, takeModals, takeNotices, takeSettings, TFile } from "../../test-stubs/fake-obsidian";
 import type { SyncIndex } from "../sync-engine";
 import type { NoteStore } from "../note-builder";
 import { BASE_VERSION, createBaseStore, NO_FAILURES } from "./base-store";
@@ -159,7 +159,10 @@ describe("the page-note commands", () => {
 			exclusive: async (work) => (syncing ? BUSY : work()),
 			rerun: async (path) => (reran.push(path), { message: "Extracted again; the note is updated.", index: { ...index, rootHash: "rerun" } }),
 			changeProfile: async (path, id) => (reran.push(`${path}->${id}`), { message: "The note is made again." }),
-			profiles: () => [{ id: "a", name: "A" }],
+			profiles: () => [
+				{ id: "a", name: "A", description: "Meetings" },
+				{ id: "b", name: "B", description: "Journal" },
+			],
 			pro: () => pro,
 		};
 		registerIntelligenceCommands(host);
@@ -196,10 +199,18 @@ describe("the page-note commands", () => {
 		expect(changeCommand.checkCallback!(true)).toBe(true);
 		takeModals();
 		takeNotices();
+		takeSettings();
 		changeCommand.checkCallback!(false);
 		const [chooser] = takeModals();
 		expect((chooser.titleEl as unknown as FakeEl).text).toBe("Change profile for this page");
-		buttons(chooser.contentEl as unknown as FakeEl)[0].dispatch("click");
+		// A row per Profile, named and described; the page has the generic one, which is said above them.
+		expect((chooser.contentEl as unknown as FakeEl).allText()).toContain("This page has the generic profile now.");
+		const rows = takeSettings();
+		expect(rows.map((r) => [r.name, r.desc, r.buttons[0].text])).toEqual([
+			["A", "Meetings", "Use"],
+			["B", "Journal", "Use"],
+		]);
+		rows[0].buttons[0].click();
 		await flush();
 		expect(reran).toEqual(["Work/p.md->a"]);
 		expect(takeNotices()).toEqual(["The note is made again."]);
@@ -212,15 +223,26 @@ describe("the page-note commands", () => {
 		const before = index();
 		rerunCommand.checkCallback!(false);
 		changeCommand.checkCallback!(false);
-		buttons(takeModals()[0].contentEl as unknown as FakeEl)[0].dispatch("click");
+		takeSettings().at(-1)!.buttons[0].click();
 		expect(await reTranscribePageNote(host, "Work/p.md")).toBe(true);
 		await flush();
 		expect(reran).toEqual([]);
 		expect(index()).toBe(before);
 	});
 
+	it("marks the Profile the page has now, and offers it no button to choose it again", () => {
+		takeSettings();
+		const modal = new ProfileChoiceModal(new App() as never, [{ id: "a", name: "A", description: "" }, { id: "b", name: "B", description: "" }], "b", () => undefined);
+		modal.open();
+		expect((modal.contentEl as unknown as FakeEl).allText()).not.toContain("This page has the generic profile now.");
+		expect(takeSettings().map((r) => [r.name, r.buttons[0].text, r.buttons[0].disabled])).toEqual([
+			["A", "Use", false],
+			["B", "Current", true],
+		]);
+	});
+
 	it("says there is no Profile yet when there is none to choose", () => {
-		const modal = new ProfileChoiceModal(new App() as never, [], () => undefined);
+		const modal = new ProfileChoiceModal(new App() as never, [], null, () => undefined);
 		modal.open();
 		expect((modal.contentEl as unknown as FakeEl).allText()).toEqual(["There is no profile yet. Add one in the plugin settings."]);
 	});

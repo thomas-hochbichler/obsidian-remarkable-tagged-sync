@@ -4,7 +4,7 @@ import type { SyncIndex } from "../sync-engine";
 import { parseExtraction } from "./extraction";
 import { registerExtractionBackend } from "./extraction-registry";
 import { type HostEnvironment, prepareRun } from "./host";
-import { isPageNote, markForRereading, rerunExtraction } from "./rerun";
+import { isPageNote, markForRereading, pageProfile, rerunExtraction } from "./rerun";
 import { emptyIntelligence, setIntelligenceMode, type IntelligenceSettings } from "./settings";
 import type { IntelligenceState } from "./sync-pass";
 
@@ -118,6 +118,7 @@ describe("markForRereading and isPageNote", () => {
 		const e = env();
 		const { index, path } = await synced(e);
 		expect([isPageNote(index, path), isPageNote(index, "Other.md"), isPageNote({ rootHash: null, rows: {} }, path)]).toEqual([true, false, false]);
+		expect([pageProfile(index, path), pageProfile(index, "Other.md")]).toEqual(["generic", null]);
 		expect(markForRereading(index, path).index!.seenPages!["d:p1:work"].pageHash).toBeNull();
 		expect(markForRereading({ ...index, intelligencePending: ["d", "e"] }, path).index!.intelligencePending).toEqual(["d", "e"]);
 		expect(markForRereading(index, path).index!.intelligencePending).toEqual(["d"]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeApp, FakeEl, takeModals, takeNotices, TFile } from "../test-stubs/fake-obsidian";
+import { FakeApp, FakeEl, takeModals, takeNotices, takeSettings, TFile } from "../test-stubs/fake-obsidian";
 import { FakeClock } from "../test-stubs/fake-clock";
 import { ProfileChoiceModal, ReviewModal } from "./intelligence/commands";
 import { NO_LICENCE } from "./licence-state";
@@ -83,7 +83,7 @@ describe("the review in the running plugin", () => {
 			await settle();
 			await settle();
 		}
-		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Intelligence in the settings.", "This note is not a page note from the Intelligence Engine."]);
+		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Page notes in the settings.", "This note is not a page note from the Intelligence Engine."]);
 
 		// A vault that never had a page note has no rows to look in at all.
 		const fresh = await load({});
@@ -100,12 +100,13 @@ describe("the review in the running plugin", () => {
 		pro.app.workspace.activeFile = file("Work/p.md");
 		takeModals();
 		takeNotices();
+		takeSettings();
 		pro.commands.find((command) => command.id === "change-profile")!.checkCallback!(false);
-		const [chooser] = takeModals().filter((modal) => modal instanceof ProfileChoiceModal);
-		(chooser.contentEl as unknown as FakeEl).children[0].dispatch("click");
+		expect(takeModals().filter((modal) => modal instanceof ProfileChoiceModal)).toHaveLength(1);
+		takeSettings().find((setting) => setting.name === "A")!.buttons[0].click();
 		await settle();
 		await settle();
-		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Intelligence in the settings."]);
+		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Page notes in the settings."]);
 
 		const free = await load(withPageNote);
 		free.app.workspace.activeFile = file("Work/p.md");

@@ -3,9 +3,9 @@
  * proposal callout in a note carries (spec §8). Both open one Modal over all page notes.
  */
 
-import { type App, type Command, Modal, Notice } from "obsidian";
+import { type App, type Command, Modal, Notice, Setting } from "obsidian";
 import type { SyncIndex } from "../sync-engine";
-import { isPageNote, markForRereading, type RerunOutcome } from "./rerun";
+import { isPageNote, markForRereading, pageProfile, type RerunOutcome } from "./rerun";
 import type { NoteStore } from "../note-builder";
 import type { BaseStore } from "./base-store";
 import { REVIEW_ACTION, REVIEW_LINK } from "./host";
@@ -93,7 +93,7 @@ export interface IntelligenceCommandsHost {
 	rerun(notePath: string): Promise<RerunOutcome>;
 	/** "Change Profile for this page" (Pro). */
 	changeProfile(notePath: string, profileId: string): Promise<RerunOutcome>;
-	profiles(): readonly { id: string; name: string }[];
+	profiles(): readonly { id: string; name: string; description: string }[];
 	pro(): boolean;
 }
 
@@ -102,11 +102,17 @@ export const BUSY = "busy";
 
 export const CHANGE_PROFILE_PRO = "Changing the profile of one page is part of Tagged Sync Pro.";
 
-/** One button per Profile; choosing closes the Modal and hands the id on. */
+/**
+ * The Profiles to move one page note to: a row each, named and described, the one the note has now
+ * marked "Current". It was a row of bare buttons, which said neither which Profile the page has nor
+ * what the others are for (live test, 2026-10-02). Choosing closes the Modal and hands the id on.
+ */
 export class ProfileChoiceModal extends Modal {
 	constructor(
 		app: App,
-		private readonly profiles: readonly { id: string; name: string }[],
+		private readonly profiles: readonly { id: string; name: string; description: string }[],
+		/** The Profile the note has now; `generic` or a removed one is in no row. */
+		private readonly current: string | null,
 		private readonly choose: (id: string) => void,
 	) {
 		super(app);
@@ -118,11 +124,28 @@ export class ProfileChoiceModal extends Modal {
 			this.contentEl.createEl("p", { text: "There is no profile yet. Add one in the plugin settings." });
 			return;
 		}
+		this.contentEl.createEl("p", {
+			cls: "setting-item-description",
+			text: "The note is made again with the profile you pick. If you have edited it, it stays as it is and a second note is made beside it.",
+		});
+		if (!this.profiles.some((profile) => profile.id === this.current)) {
+			this.contentEl.createEl("p", { cls: "setting-item-description", text: "This page has the generic profile now." });
+		}
 		for (const profile of this.profiles) {
-			this.contentEl.createEl("button", { text: profile.name }).addEventListener("click", () => {
-				this.close();
-				this.choose(profile.id);
-			});
+			const row = new Setting(this.contentEl).setName(profile.name).setDesc(profile.description);
+			if (profile.id === this.current) {
+				row.addButton((button) => button.setButtonText("Current").setDisabled(true));
+				continue;
+			}
+			row.addButton((button) =>
+				button
+					.setButtonText("Use")
+					.setCta()
+					.onClick(() => {
+						this.close();
+						this.choose(profile.id);
+					}),
+			);
 		}
 	}
 }
@@ -161,7 +184,7 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 			if (file === null || file.extension !== "md") return false;
 			if (checking) return true;
 			if (!host.pro()) new Notice(CHANGE_PROFILE_PRO);
-			else new ProfileChoiceModal(host.app, host.profiles(), (id) => void host.exclusive(async () => say(host, await host.changeProfile(file.path, id)))).open();
+			else new ProfileChoiceModal(host.app, host.profiles(), pageProfile(host.index(), file.path), (id) => void host.exclusive(async () => say(host, await host.changeProfile(file.path, id)))).open();
 			return true;
 		},
 	});
