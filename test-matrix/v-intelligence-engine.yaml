@@ -3123,7 +3123,26 @@
 
     - id: V63.4
       scenario: "A tag removed on the tablet is put back on an unchanged page; then again after the user deleted the note"
-      expect: "Note still there: the row is active again at once. Note deleted: it stays orphaned until the page is written on"
+      expect: "The row is active again at once; a note deleted meanwhile is made again, like any deleted page note"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
-      test: "processDocument > rows > takes an orphaned row back when its tag returns to the page and the note is still there, though the page did not change"
+      test: "processDocument > rows > takes an orphaned row back when its tag returns to the page, though the page did not change, and makes a deleted note again"
+
+- feature: V64
+  name: "A page note deleted by hand is made again, like a transcript note"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V64.1
+      scenario: "The user deletes a page note; the page on the tablet does not change"
+      expect: "The next sync makes the note again at its path, from the transcript the base kept, with a fresh id; with no base the page is read again; nothing is made while page notes are off for the tag"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > makes a deleted page note again at the next sync, like a transcript note, though the page did not change"
+
+    - id: V64.2
+      scenario: "A page note is missing and nothing on the tablet changed"
+      expect: "The sync opens that notebook for the engine; not while the note is there, not for an orphaned row, not with page notes off for the tag"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > reopens a notebook whose page note was deleted on an unchanged tablet, and only while its tag makes page notes"

@@ -2074,6 +2074,13 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// Only a scan that opens every document may be marked done: a page not opened was not stamped.
 	const scanDue = scansDue.length > 0;
 	const pending = new Set(previousIndex.intelligencePending ?? []);
+	// A page note deleted by hand is made again, as a transcript note is (see `hasMissingActiveNote`):
+	// nothing on the device says so, so its notebook is owed -- where its tag still makes page notes.
+	if (intelligence !== undefined) {
+		for (const row of Object.values(previousIndex.intelligenceRows ?? {})) {
+			if (row.status === "active" && tagRouter.extracts(row.tag) && !(await deps.noteStore.exists(row.notePath))) pending.add(row.docId);
+		}
+	}
 	/** A due scan opens every document; owed page-note work opens its own, once the engine can run. */
 	const forceOpen = (docId: string) => scanDue || (intelligence !== undefined && pending.has(docId));
 	// A document the run could not read leaves the scan unfinished: its pages were never stamped.

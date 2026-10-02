@@ -343,6 +343,28 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(quiet.documentIds).toBeNull();
 	});
 
+	it("reopens a notebook whose page note was deleted on an unchanged tablet, and only while its tag makes page notes", async () => {
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } }, "root-1");
+		const store = noteStore();
+		store.files["Work/Work log.md"] = "note";
+		const rows = { "doc-1:work": { syncKey: "doc-1:work", docId: "doc-1", pageId: null, tag: "work", entryHash: "hash-1", pageHash: null, notePath: "Work/Work log.md", folder: "Work", status: "active" as const, syncedAt: NOW, renderVersion: 9999 } };
+		const pageNote = { syncKey: "doc-1:p1:work", unitKey: "doc-1:p1:work", docId: "doc-1", pageId: "p1", tag: "work", scope: "notebook" as const, notePath: "Work/Work log/p1.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "b", syncedAt: NOW };
+		const previous: SyncIndex = { ...settled(rows), intelligenceRows: { "doc-1:p1:work": pageNote } };
+		const extracting = new TagRouter({ work: "Work" }, () => ({ transcript: true, intelligence: true }));
+		const run = (overrides: Record<string, unknown>, index = previous) => {
+			const h = hook();
+			return runSync({ ...deps(a), noteStore: store, tagRouter: extracting, intelligence: h.value, modesFingerprint: "modes-1", ...overrides }, index).then((result) => ({ result, h }));
+		};
+
+		expect((await run({})).h.docs).toHaveLength(1);
+		// Not while the note is there, not for an orphaned row, and not with page notes off for the tag.
+		store.files["Work/Work log/p1.md"] = "page note";
+		expect((await run({})).result.documentIds).toBeNull();
+		delete store.files["Work/Work log/p1.md"];
+		expect((await run({}, { ...previous, intelligenceRows: { "doc-1:p1:work": { ...pageNote, status: "orphaned" } } })).result.documentIds).toBeNull();
+		expect((await run({ tagRouter: new TagRouter({ work: "Work" }) })).result.documentIds).toBeNull();
+	});
+
 	it("owes an extracting notebook to the next run the engine can do, and drops a document gone from the tablet", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
 		const router = new TagRouter({ work: "Work" }, () => ({ transcript: true, intelligence: true }));

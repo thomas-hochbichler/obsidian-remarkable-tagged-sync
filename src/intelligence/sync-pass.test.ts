@@ -283,7 +283,35 @@ describe("processDocument > rows", () => {
 		expect(mem.notes.get(state.rows["d1:p3:work"].notePath)).toContain("- [ ] Again");
 	});
 
-	it("takes an orphaned row back when its tag returns to the page and the note is still there, though the page did not change", async () => {
+	it("makes a deleted page note again at the next sync, like a transcript note, though the page did not change", async () => {
+		const { mem, state, d } = await withNote();
+		const path = state.rows["d1:p3:work"].notePath;
+		mem.notes.delete(path);
+		let read = 0;
+		const resting = doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }, { transcribe: async (ids) => (read += ids.length, new Map(ids.map((id) => [id, "todo Call"]))) });
+		const report = await processDocument(d, resting, state);
+		expect(report.notesWritten).toBe(1);
+		expect(mem.notes.get(path)).toContain("- [ ] Call");
+		// From the transcript the base kept: the page is not read a second time. The dead note's base goes.
+		expect(read).toBe(0);
+		expect(state.rows["d1:p3:work"]).toMatchObject({ status: "active", notePath: path });
+		expect(state.rows["d1:p3:work"].noteId).not.toBe("note1");
+		expect(mem.bases.has("plugin/base/note1.json")).toBe(false);
+
+		// With no base to take the transcript from, the page is read again.
+		mem.notes.delete(path);
+		mem.bases.clear();
+		await processDocument(d, resting, state);
+		expect(read).toBe(1);
+		expect(mem.notes.get(path)).toContain("- [ ] Call");
+
+		// Nothing is made while page notes are switched off for the tag.
+		mem.notes.delete(path);
+		await processDocument({ ...d, settings: setIntelligenceMode(d.settings, "work", false, ENABLED) }, resting, state);
+		expect(mem.notes.has(path)).toBe(false);
+	});
+
+	it("takes an orphaned row back when its tag returns to the page, though the page did not change, and makes a deleted note again", async () => {
 		const { mem, state, d } = await withNote();
 		const gone = doc([page("p3", 3, "h3", AFTER)], {}, { units: [] });
 		const back = doc([page("p3", 3, "h3", AFTER)], {});
@@ -291,11 +319,12 @@ describe("processDocument > rows", () => {
 		expect(state.rows["d1:p3:work"].status).toBe("orphaned");
 		await processDocument(d, back, state);
 		expect(state.rows["d1:p3:work"].status).toBe("active");
-		// A note the user deleted meanwhile is not the unit's any more: writing on the page is the way back.
+		// A note the user deleted meanwhile is made again with the tag's return, like any deleted page note.
 		await processDocument(d, gone, state);
 		mem.notes.delete(state.rows["d1:p3:work"].notePath);
-		await processDocument(d, back, state);
-		expect(state.rows["d1:p3:work"].status).toBe("orphaned");
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
+		expect(state.rows["d1:p3:work"].status).toBe("active");
+		expect(mem.notes.get(state.rows["d1:p3:work"].notePath)).toContain("- [ ] Call");
 	});
 
 	it("rebuilds a missing base from the note, so a line typed there is not lost", async () => {

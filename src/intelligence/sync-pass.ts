@@ -202,15 +202,15 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	// Tag gone from the notebook or page on the tablet: the row is orphaned and its note stays. A tag
 	// whose Intelligence Mode is merely off is still here, and its rows stay active and untouched.
 	const present = new Set(doc.units.flatMap((unit) => unit.pageIds.map((pageId) => intelligenceSyncKey(doc.docId, pageId, unit.tag))));
-	// The tag back on the page with the note still there: the row is the unit's again, without waiting
-	// for new ink (the revive rule, spec §4.1). A note deleted meanwhile waits for the page to be written on.
+	// The tag back on the page: the row is the unit's again, without waiting for new ink (the revive
+	// rule, spec §4.1). A note deleted meanwhile is made again below, like any deleted page note.
 	for (const [key, row] of Object.entries(state.rows)) {
 		if (row.docId !== doc.docId) continue;
 		if (row.status === "active" && !options.partial && !present.has(key)) state.rows[key] = { ...row, status: "orphaned" };
-		else if (row.status === "orphaned" && present.has(key) && (await deps.noteStore.exists(row.notePath))) state.rows[key] = { ...row, status: "active" };
+		else if (row.status === "orphaned" && present.has(key)) state.rows[key] = { ...row, status: "active" };
 	}
 
-	const work: { unit: DocUnit; page: DocPage; key: string; seen: SeenEntry | undefined }[] = [];
+	const work: WorkItem[] = [];
 	let legacyRecorded = false;
 
 	for (const unit of doc.units) {
@@ -240,6 +240,11 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 				state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: page.modified };
 			} else if (kind !== "unchanged") {
 				work.push({ unit, page, key, seen });
+			} else {
+				// A page note deleted by hand is made again, as a transcript note is (spec §4.1, 2026-10-02):
+				// from the transcript its base kept, so a resting page is not read a second time.
+				const row = state.rows[key];
+				if (row?.status === "active" && !(await deps.noteStore.exists(row.notePath))) work.push({ unit, page, key, seen, kept: (await deps.baseStore.load(row.noteId))?.transcript });
 			}
 		}
 	}
@@ -248,7 +253,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 
 	let texts: Map<string, string>;
 	try {
-		texts = await doc.transcribe([...new Set(work.map((item) => item.page.id))]);
+		texts = await doc.transcribe([...new Set(work.filter((item) => typeof item.kept !== "string").map((item) => item.page.id))]);
 	} catch (error) {
 		// Every page then fails as unread and retries; the sync itself goes on.
 		console.warn("Tagged Sync: the Intelligence Engine could not read its pages", error);
@@ -270,14 +275,16 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	return report;
 }
 
-async function processItem(
-	deps: IntelligencePassDeps,
-	doc: IntelligenceDocument,
-	state: IntelligenceState,
-	report: PassReport,
-	{ unit, page, key, seen }: { unit: DocUnit; page: DocPage; key: string; seen: SeenEntry | undefined },
-	texts: Map<string, string>,
-): Promise<void> {
+interface WorkItem {
+	unit: DocUnit;
+	page: DocPage;
+	key: string;
+	seen: SeenEntry | undefined;
+	/** The transcript a deleted note's base kept, for a page that did not change. */
+	kept?: string | null;
+}
+
+async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState, report: PassReport, { unit, page, key, seen, kept }: WorkItem, texts: Map<string, string>): Promise<void> {
 	const row = state.rows[key];
 	const noteText = row ? await deps.noteStore.read(row.notePath) : null;
 	// One revive rule (§4.1): a row whose note is gone starts over with a fresh id and no base --
@@ -289,12 +296,13 @@ async function processItem(
 	if (row !== undefined && !alive) await deps.baseStore.discard(row.noteId);
 	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId };
 
-	const transcript = texts.get(page.id);
+	const transcript = kept ?? texts.get(page.id);
 	if (transcript === undefined) {
 		report.failures.push(`page ${page.ordinal} of "${doc.name}": the page could not be read`);
 		return;
 	}
-	const profile = await profileFor(deps, unit.tag, alive ? row.profileId : undefined, transcript, report);
+	// The Profile stays frozen on the page when its note is made again.
+	const profile = await profileFor(deps, unit.tag, row?.profileId, transcript, report);
 	const slots = slotsOf(deps, profile);
 	const template = await templateFor(deps, profile, slots);
 	let base = await deps.baseStore.load(noteId);
