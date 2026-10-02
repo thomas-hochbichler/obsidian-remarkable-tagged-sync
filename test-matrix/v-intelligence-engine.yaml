@@ -2972,3 +2972,29 @@
       layer: unit
       file: src/intelligence/settings-section.test.ts
       test: "renderIntelligenceSection > shows the switch on for the engine device without saving or redrawing, so the tab does not redraw itself forever"
+
+- feature: V59
+  name: "Code review fixes: a Value never costs the user's text or the note's frontmatter"
+  code: src/intelligence/page-engine.ts
+  tier: pro
+  scenarios:
+    - id: V59.1
+      scenario: "A Value Slot's property is the last one in the block and the page no longer holds it; or the template left an empty block"
+      expect: "The emptied block goes entirely, so no second block is stacked on it; an empty block is filled, and the body is never taken for frontmatter"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > drops a block it emptied, and fills an empty one the user left, without taking the body for frontmatter"
+
+    - id: V59.2
+      scenario: "A Value Slot new to the Profile adopts a heading the user already wrote under, and the user accepts the proposal"
+      expect: "The proposal carries the value: ✓ writes it instead of emptying the region"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > proposes a Value for a heading the user already wrote under, and accepting it writes the value"
+
+    - id: V59.3
+      scenario: "A used Value Slot's frontmatter property is cleared, set, or renamed in the settings"
+      expect: "Existing notes keep the value where it was written; the page does not fail on every sync"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > leaves a Value alone whose Slot moved between the frontmatter and the body, instead of failing the page"

@@ -9,7 +9,10 @@
 
 export type PropertyValue = string | string[];
 
-const BLOCK = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+// The body group is absent for an empty block (`---` right under `---`), as a template can hold one.
+// Tried first (`??`), or the block would run on to the next `---` in the body.
+const BLOCK = /^---\r?\n(?:([\s\S]*?)\r?\n)??---(?:\r?\n|$)/;
+const blockLines = (block: RegExpExecArray): string[] => (block[1] === undefined ? [] : block[1].split(/\r?\n/));
 
 function unquote(raw: string): string {
 	const text = raw.trim();
@@ -33,7 +36,7 @@ function locate(lines: readonly string[], key: string): { at: number; span: numb
 export function readProperty(content: string, key: string): PropertyValue | null {
 	const block = BLOCK.exec(content);
 	if (!block) return null;
-	const lines = block[1].split(/\r?\n/);
+	const lines = blockLines(block);
 	const found = locate(lines, key);
 	if (found === null) return null;
 	const inline = lines[found.at].slice(lines[found.at].indexOf(":") + 1).trim();
@@ -50,11 +53,14 @@ export function writeProperty(content: string, key: string, value: PropertyValue
 	const rendered = value === null ? [] : Array.isArray(value) ? [`${key}:`, ...value.map((entry) => `  - ${quote(entry)}`)] : [`${key}: ${quote(value)}`];
 	const block = BLOCK.exec(content);
 	if (!block) return rendered.length === 0 ? content : `---\n${rendered.join("\n")}\n---\n${content}`;
-	const lines = block[1].split(/\r?\n/);
+	const lines = blockLines(block);
 	const found = locate(lines, key);
 	if (found === null) lines.push(...rendered);
 	else lines.splice(found.at, found.span, ...rendered);
-	// The closing line keeps the ending it had, and an emptied block leaves no blank line behind.
+	// A block this emptied goes entirely, as in `removeFrontmatter`: `src/frontmatter.ts` does not take
+	// `---` right under `---` for a block, and would put a second one in front of it.
+	if (found !== null && lines.every((line) => line.trim() === "")) return content.slice(block[0].length);
+	// The closing line keeps the ending it had.
 	const closing = /\r?\n$/.test(block[0]) ? "\n" : "";
 	return `---\n${lines.length === 0 ? "" : `${lines.join("\n")}\n`}---${closing}${content.slice(block[0].length)}`;
 }

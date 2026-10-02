@@ -176,6 +176,6 @@ describe("decide > a Value", () => {
 		expect((run(list, lines, "mood", "v1", true) as { lines: string[] }).lines).toEqual(["## Mood", ""]);
 		const property = valued("mood");
 		(property.slots.mood as { proposals: Proposal[] }).proposals = [{ kind: "replace", id: "v1", text: "" }];
-		expect((run(property, ["---", "mood: x", "---"], "mood", "v1", true) as { lines: string[] }).lines).toEqual(["---", "---"]);
+		expect((run(property, ["---", "mood: x", "---", "Body"], "mood", "v1", true) as { lines: string[] }).lines).toEqual(["Body"]);
 	});
 });
