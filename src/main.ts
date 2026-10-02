@@ -843,8 +843,10 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.lastSyncError = errors.length > 0 ? errors.join("\n") : null;
 			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
 
-			this.applyStatus(outcomeStatus(result));
-			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten: result.notesWritten, background: auto });
+			// Page notes are notes too: a sync that made or updated only those is not "up to date".
+			const notesWritten = result.notesWritten + result.intelligence.notesWritten + result.intelligence.notesUpdated;
+			this.applyStatus(outcomeStatus({ stopped: result.stopped, notesWritten }));
+			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten, background: auto });
 			if (outcome !== null) new Notice(outcome);
 			// Both of these used to be console-only while the notice still reported plain success. A
 			// stopped run's skips and failures are just as real as a completed one's.
@@ -854,7 +856,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// said there once, not at every interval.
 			const paused = pauseToSay(intelligence.paused, auto, this.lastEnginePause);
 			this.lastEnginePause = intelligence.paused;
-			for (const line of intelligenceNotices(paused, result.intelligence)) new Notice(line);
+			for (const line of intelligenceNotices(paused, result.intelligence, !auto)) new Notice(line);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");

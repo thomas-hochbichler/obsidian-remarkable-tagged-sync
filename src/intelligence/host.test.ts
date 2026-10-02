@@ -231,6 +231,16 @@ describe("the Obsidian glue", () => {
 	});
 });
 
+describe("intelligenceNotices > a page note that could not be made", () => {
+	it("is said after every sync the user starts, with the reason, and not after a background one", () => {
+		const one = { ...emptyReport(), failures: ['page 1 of "Sample": The server sent an empty answer.', 'choosing a profile under "work": slow; used "A"'] };
+		expect(intelligenceNotices(null, one, true)).toEqual(['Could not make a page note; the next sync tries again. Page 1 of "Sample": The server sent an empty answer.']);
+		expect(intelligenceNotices(null, one, false)).toEqual([]);
+		const two = { ...emptyReport(), failures: ['page 1 of "Sample": model down', 'page 2 of "Sample": model down'] };
+		expect(intelligenceNotices(null, two, true)).toEqual(['Could not make 2 page notes; the next sync tries again. Page 1 of "Sample": model down']);
+	});
+});
+
 describe("pauseToSay", () => {
 	it("says a standing pause once in background runs, again when it changes, and always in a sync the user starts", () => {
 		expect(pauseToSay("Paused.", true, null)).toBe("Paused.");
@@ -243,13 +253,13 @@ describe("pauseToSay", () => {
 
 describe("intelligenceNotices", () => {
 	it("says a pause, the engine's own notices, and the pending proposals with where to review them", () => {
-		expect(intelligenceNotices(null, emptyReport())).toEqual([]);
-		expect(intelligenceNotices("Paused.", { ...emptyReport(), notices: ["Page 3 failed 3 times."], proposals: 1, proposalNotes: 1 })).toEqual([
+		expect(intelligenceNotices(null, emptyReport(), true)).toEqual([]);
+		expect(intelligenceNotices("Paused.", { ...emptyReport(), notices: ["Page 3 failed 3 times."], proposals: 1, proposalNotes: 1 }, false)).toEqual([
 			"Paused.",
 			"Page 3 failed 3 times.",
 			'1 proposal in 1 note waiting for review — run "Review proposals" or click the callout in a note.',
 		]);
-		expect(intelligenceNotices(null, { ...emptyReport(), proposals: 4, proposalNotes: 2 })).toEqual(['4 proposals in 2 notes waiting for review — run "Review proposals" or click the callout in a note.']);
+		expect(intelligenceNotices(null, { ...emptyReport(), proposals: 4, proposalNotes: 2 }, false)).toEqual(['4 proposals in 2 notes waiting for review — run "Review proposals" or click the callout in a note.']);
 	});
 });
 

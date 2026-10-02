@@ -253,8 +253,10 @@ export interface OpenAiCompatOptions {
 	sleepFn?: Sleep;
 }
 
+export const REASONED_ONLY = "The model answered only in its reasoning, which a reasoning model does when it has to follow a JSON schema. Choose an extraction model that does not reason.";
+
 interface ChatResponse {
-	choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
+	choices?: Array<{ message?: { content?: string | null; reasoning_content?: string | null }; finish_reason?: string }>;
 }
 
 /** One `POST {baseURL}/chat/completions`. Never throws: every problem is an outcome with a reason a user can act on. */
@@ -284,6 +286,12 @@ export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
 			const choice = json.choices?.[0];
 			if (choice?.finish_reason === "length") return { kind: "truncated" };
 			const text = choice?.message?.content;
+			// LM Studio files a reasoning model's schema-bound answer under `reasoning_content` and leaves
+			// `content` empty: the grammar starts the JSON where the model would open its thinking, and no
+			// request switch changes that. It is not read from there: written in that place the JSON holds
+			// the schema and loses the page -- one task's text under another's source (qwen3.6 on MLX,
+			// live test 2026-10-02). The reason says what to change instead.
+			if (!text?.trim() && request.schema && choice?.message?.reasoning_content?.trim()) return { kind: "failed", reason: REASONED_ONLY };
 			return typeof text === "string" && text.trim() !== "" ? { kind: "ok", text } : { kind: "failed", reason: "The server sent an empty answer." };
 		} catch (error) {
 			if (error instanceof OcrTimeoutError) return { kind: "failed", reason: `The server at ${options.baseURL} did not answer in time.` };

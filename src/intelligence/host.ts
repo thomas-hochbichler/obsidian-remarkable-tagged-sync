@@ -235,9 +235,15 @@ export function pauseToSay(paused: string | null, background: boolean, lastSeen:
 	return background && paused === lastSeen ? null : paused;
 }
 
-/** What the user hears from the engine after a run: a pause, what it could not do, and pending proposals (spec §8, §9). */
-export function intelligenceNotices(paused: string | null, report: PassReport): string[] {
+/** What the user hears from the engine after a run: a pause, what it could not do, and pending proposals (spec §8, §9). `watched`: the user started the sync. */
+export function intelligenceNotices(paused: string | null, report: PassReport, watched: boolean): string[] {
 	const lines = [...(paused === null ? [] : [paused]), ...report.notices];
+	// A sync the user started says a page note it could not make every time, not only the third: the
+	// run would read "Already up to date" with a note missing. A background run waits for the third.
+	const failed = report.failures.filter((line) => line.startsWith("page "));
+	if (watched && failed.length > 0) {
+		lines.push(`Could not make ${failed.length === 1 ? "a page note" : `${failed.length} page notes`}; the next sync tries again. P${failed[0].slice(1)}`);
+	}
 	if (report.proposals > 0) {
 		const proposals = `${report.proposals} ${report.proposals === 1 ? "proposal" : "proposals"}`;
 		const notes = `${report.proposalNotes} ${report.proposalNotes === 1 ? "note" : "notes"}`;

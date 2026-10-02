@@ -71,7 +71,7 @@ export async function rerunExtraction(env: HostEnvironment, run: RunInputs, inde
 			{ force: new Set([row.syncKey]), partial: true },
 		);
 		// The pass words a failure for a sync over many pages ("page 3 of …: reason"); here there is one.
-		const said = [...report.failures.map((line) => `Extraction failed: ${line.slice(line.indexOf(": ") + 2)}`), ...intelligenceNotices(null, report)];
+		const said = [...report.failures.map((line) => `Extraction failed: ${line.slice(line.indexOf(": ") + 2)}`), ...intelligenceNotices(null, report, false)];
 		return {
 			message: said.length > 0 ? said.join(" ") : report.notesUpdated > 0 ? "Extracted again; the note is updated." : "Extracted again; nothing on the page changed what the note says.",
 			index: { ...index, seenPages: state.seenPages, intelligenceRows: state.rows },

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { OcrTimeoutError } from "../llm-transcript";
 import { calendarDay } from "./dates";
-import { askedInput, type Complete, type CompletionRequest, type CompletionOutcome, notesAreEmpty, oneCallBackend, openAiCompatComplete, twoCallBackend } from "./extraction-backend";
+import { askedInput, type Complete, type CompletionRequest, type CompletionOutcome, notesAreEmpty, oneCallBackend, openAiCompatComplete, REASONED_ONLY, twoCallBackend } from "./extraction-backend";
 import { defaultSlots, genericProfile } from "./settings";
 
 const viaObsidian = vi.hoisted(() => vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), { status: 200 })));
@@ -191,6 +191,16 @@ describe("openAiCompatComplete", () => {
 		expect(await openAiCompatComplete({ baseURL: "u", model: "m", fetchFn: fakeFetch(() => chat("{", "length")).fn })(request)).toEqual({ kind: "truncated" });
 		expect(await openAiCompatComplete({ baseURL: "u", model: "m", fetchFn: fakeFetch(() => chat(null)).fn })(request)).toEqual({ kind: "failed", reason: "The server sent an empty answer." });
 		expect(await openAiCompatComplete({ baseURL: "u", model: "m", fetchFn: fakeFetch(() => new Response("{}", { status: 200 })).fn })(request)).toMatchObject({ kind: "failed" });
+	});
+
+	it("says so when a reasoning model put its schema-bound answer into its reasoning, instead of calling the answer empty or reading it from there", async () => {
+		const filed = (reasoning: string | null) => () => new Response(JSON.stringify({ choices: [{ message: { content: "", reasoning_content: reasoning }, finish_reason: "stop" }] }), { status: 200 });
+		const ask = (reasoning: string | null, schema: Record<string, unknown> | null) => openAiCompatComplete({ baseURL: "u", model: "m", fetchFn: fakeFetch(filed(reasoning)).fn })({ ...request, schema });
+		expect(await ask('{"tasks":[]}', { type: "object" })).toEqual({ kind: "failed", reason: REASONED_ONLY });
+		expect(REASONED_ONLY).toMatch(/does not reason/);
+		// A free-text pass that came back empty, and a schema one with nothing anywhere, are just empty.
+		expect(await ask("thinking…", null)).toEqual({ kind: "failed", reason: "The server sent an empty answer." });
+		expect(await ask(null, { type: "object" })).toEqual({ kind: "failed", reason: "The server sent an empty answer." });
 	});
 
 	it("explains a refusal with the server's own message", async () => {

@@ -3146,3 +3146,22 @@
       layer: engine
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > Intelligence Engine seam > reopens a notebook whose page note was deleted on an unchanged tablet, and only while its tag makes page notes"
+
+- feature: V65
+  name: "A sync the user starts says what happened to the page notes"
+  code: src/intelligence/host.ts
+  tier: free
+  scenarios:
+    - id: V65.1
+      scenario: "A page note could not be made in a sync the user started; and in a background one"
+      expect: "Said after every such sync, with the count and the first reason; a background run waits for the third failure"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "intelligenceNotices > a page note that could not be made > is said after every sync the user starts, with the reason, and not after a background one"
+
+    - id: V65.2
+      scenario: "A reasoning model in LM Studio answers a schema-bound request in its reasoning and leaves the answer empty"
+      expect: "The page fails with a reason that says to choose a model that does not reason; the JSON is not read from the reasoning"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > says so when a reasoning model put its schema-bound answer into its reasoning, instead of calling the answer empty or reading it from there"
