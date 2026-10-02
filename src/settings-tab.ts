@@ -1062,9 +1062,10 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 								await persist();
 							}),
 					);
-				// Drawn as a tag pill, Obsidian's own `.tag`, so the line reads as a tag at a glance.
+				// Drawn as a tag pill, so the line reads as a tag at a glance. Its own class: Obsidian styles
+				// `.tag` only inside notes, not on the settings tab (live test, 2026-10-02).
 				row.nameEl.empty();
-				row.nameEl.createSpan({ cls: "tag", text: item.tag });
+				row.nameEl.createSpan({ cls: "tagged-sync-tag", text: item.tag });
 				continue;
 			}
 			// The tags a scan found and nobody routed: one dropdown, not a row each. Picking one opens its

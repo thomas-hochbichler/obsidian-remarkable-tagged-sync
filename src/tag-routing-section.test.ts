@@ -221,8 +221,8 @@ describe("the free version's tag cap", () => {
 		const mapped = rows(draw(tab)).filter((row) => row.name !== "Add a tag");
 		expect(mapped.map((row) => row.name)).toEqual(["#home", "#ideas", "#work"]);
 		expect(mapped[0].desc).toBe("Home · Transcript note");
-		// Drawn as a tag pill, Obsidian's own `.tag`.
-		expect(mapped[0].nameEl.children.map((child) => [[...child.classes], child.text])).toEqual([[["tag"], "#home"]]);
+		// Drawn as a tag pill.
+		expect(mapped[0].nameEl.children.map((child) => [[...child.classes], child.text])).toEqual([[["tagged-sync-tag"], "#home"]]);
 		for (const row of mapped) {
 			expect(row.dropdowns).toHaveLength(0);
 			expect(row.buttons.map((button) => [button.icon, button.tooltip])).toEqual([
