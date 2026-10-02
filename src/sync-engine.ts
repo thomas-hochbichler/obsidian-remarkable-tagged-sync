@@ -1105,6 +1105,8 @@ interface WrittenUnit {
 	 * Engine so a page is transcribed once per sync, not once per note (spec §3).
 	 */
 	pageTexts: ReadonlyMap<string, string>;
+	/** The pages sent to transcription that came back failed; see `pageFailuresOf`. */
+	pageFailures: ReadonlySet<string>;
 }
 
 interface WriteUnitResult {
@@ -1356,6 +1358,7 @@ async function writeUnit(
 			shrink: shrinkWarning(params, highlightCount),
 			zoteroNotices: zotero?.notices ?? [],
 			pageTexts: pageTextsOf(params, ocr),
+			pageFailures: pageFailuresOf(params, ocr),
 		},
 	};
 }
@@ -1369,6 +1372,21 @@ function pageTextsOf(params: UnitParams, ocr: UnitOcr): Map<string, string> {
 		if (id !== null && result?.status === "ok") texts.set(id, result.text);
 	});
 	return texts;
+}
+
+/**
+ * The pages this unit sent to transcription and got nothing back for. The engine does not ask for
+ * them again in the same sync: a model that reasons without end failed one page twice there, ten
+ * minutes each, before the sync could finish (live test, 2026-10-02). The next sync tries again.
+ */
+function pageFailuresOf(params: UnitParams, ocr: UnitOcr): Set<string> {
+	const failed = new Set<string>();
+	params.ocrPages.forEach((page, index) => {
+		const id = page.id ?? params.pageId;
+		const status = ocr.pages === null ? ocr.status : ocr.pages[index]?.status;
+		if (id !== null && status === "failed") failed.add(id);
+	});
+	return failed;
 }
 
 /**
@@ -2027,10 +2045,12 @@ function mergeReport(into: PassReport, from: PassReport): void {
  * for the rest. A page of typed text (Type Folio) is its typed layer, never OCR (spec §4). A page the
  * backend could not read is left out of the map -- the engine counts it as a failed attempt.
  */
-async function transcribeForEngine(api: SyncApi, backend: OcrBackend, docId: string, pageIds: string[], pageHashes: Map<string, string>, known: ReadonlyMap<string, string>): Promise<Map<string, string>> {
+async function transcribeForEngine(api: SyncApi, backend: OcrBackend, docId: string, pageIds: string[], pageHashes: Map<string, string>, known: ReadonlyMap<string, string>, failed: ReadonlySet<string>): Promise<Map<string, string>> {
 	const texts = new Map<string, string>();
 	const missing: { id: string; scene: RmPage }[] = [];
 	for (const id of pageIds) {
+		// Failed once this sync already: no text, so the page fails as unread and the next sync retries it.
+		if (failed.has(id)) continue;
 		const text = known.get(id);
 		if (text !== undefined) {
 			texts.set(id, text);
@@ -2294,8 +2314,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		}
 		const pageOrder = docPages.map((page) => page.id);
 		const pageRefById = new Map(docPages.map((page) => [page.id, page]));
-		// Every page text a transcript note read this round, for the engine below.
+		// Every page text a transcript note read this round, for the engine below -- and every page it
+		// failed to read, which the engine then leaves to the next sync rather than trying again.
 		const pageTexts = new Map<string, string>();
+		const pageFailures = new Set<string>();
 
 		// Defined here rather than beside `frontmatterBase`, because the page keys are per *unit* and
 		// need `docPages`: a notebook-tag note covers every live page, a page-tag note exactly one, and
@@ -2531,6 +2553,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const { row, ocr, ocrWarnings, shrink } = written;
 			reportZotero(written.zoteroNotices);
 			for (const [id, text] of written.pageTexts) pageTexts.set(id, text);
+			for (const id of written.pageFailures) pageFailures.add(id);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = withOcrRetry({ ...row, folder }, digest.ocrRetry);
 			notesWritten++;
@@ -2648,6 +2671,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const { row, ocr, ocrWarnings, shrink } = written;
 			reportZotero(written.zoteroNotices);
 			for (const [id, text] of written.pageTexts) pageTexts.set(id, text);
+			for (const id of written.pageFailures) pageFailures.add(id);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = withOcrRetry({ ...row, folder }, digest.ocrRetry);
 			notesWritten++;
@@ -2693,7 +2717,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					legacy: cPages.size === 0,
 					pages: pageOrder.map((id, index) => ({ id, ordinal: index + 1, hash: pageHashes.get(id) ?? null, modified: pageModified(cPages.get(id)) })),
 					units: [...notebookUnits, ...pageUnits],
-					transcribe: (ids) => transcribeForEngine(api, ocrBackend, entry.id, ids, pageHashes, pageTexts),
+					transcribe: (ids) => transcribeForEngine(api, ocrBackend, entry.id, ids, pageHashes, pageTexts, pageFailures),
 					onProgress: (done, total) => report({ phase: "extracting", done, total, document: entry.visibleName }),
 					shouldStop,
 					checkpoint,

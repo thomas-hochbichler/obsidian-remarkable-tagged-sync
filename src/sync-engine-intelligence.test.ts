@@ -214,6 +214,28 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(h.texts[0].has("p1")).toBe(true);
 	});
 
+	it("does not send a page the transcript note failed on to the backend a second time in the same sync", async () => {
+		// Live test, 2026-10-02: a model reasoning without end failed one page twice, ten minutes each.
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }, { id: "p2" }]) }, { "doc-1": { p1: "h1", p2: "h2" } });
+		const halfRead: OcrBackend = {
+			id: "vision",
+			metered: false,
+			fingerprint: "t",
+			recognize: vi.fn(async (): Promise<OcrResult> => ({ status: "ok", pages: [{ status: "failed", text: "" }, { status: "ok", text: "ink" }], text: "", confidence: null })),
+		};
+		const h = hook({ read: true });
+		await runSync({ ...deps(a), ocrBackend: halfRead, intelligence: h.value }, EMPTY_SYNC_INDEX);
+		expect(halfRead.recognize).toHaveBeenCalledTimes(1);
+		expect([...h.texts[0]]).toEqual([["p2", "ink"]]);
+
+		// The whole unit failing, with no page of its own: every page of it is left to the next sync.
+		const down: OcrBackend = { id: "vision", metered: false, fingerprint: "t", recognize: vi.fn(async (): Promise<OcrResult> => ({ status: "failed", pages: null, text: "", confidence: null })) };
+		const h2 = hook({ read: true });
+		await runSync({ ...deps(a), ocrBackend: down, intelligence: h2.value }, EMPTY_SYNC_INDEX);
+		expect(down.recognize).toHaveBeenCalledTimes(1);
+		expect(h2.texts[0].size).toBe(0);
+	});
+
 	it("keeps an empty page's empty text but leaves out a page the backend failed on", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }, { id: "p2" }]) }, { "doc-1": { p1: "h1", p2: "h2" } });
 		const mixed: OcrBackend = {

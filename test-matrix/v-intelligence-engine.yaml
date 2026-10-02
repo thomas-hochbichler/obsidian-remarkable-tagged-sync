@@ -3359,3 +3359,15 @@
       layer: unit
       file: src/intelligence/extraction-registry.test.ts
       test: "compatExtractionEntry > the model probe > says first that the server has no model of that name, with the one it has that fits, even for a model learned to reason"
+
+- feature: V71
+  name: "A page whose transcription failed is not sent again by the engine in the same sync"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V71.1
+      scenario: "The transcript note's transcription fails one page, or the whole unit with no page of its own"
+      expect: "The backend is called once; the engine gets no text for the failed pages, so they fail as unread and the next sync retries them (live test: a reasoning model failed one page twice, ten minutes each)"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > does not send a page the transcript note failed on to the backend a second time in the same sync"
