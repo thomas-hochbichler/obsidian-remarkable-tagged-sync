@@ -90,6 +90,11 @@
 	padding-top: var(--size-4-1);
 }
 
+/* A verdict that is always a warning when it says anything: the reasoning line under the extraction model. */
+.tagged-sync-verdict.mod-warning {
+	color: var(--text-warning);
+}
+
 /*
  * The local model's setup card: one block that carries prose, a progress bar and a button row, so it
  * takes the card treatment itself rather than sitting between the cards as loose text.

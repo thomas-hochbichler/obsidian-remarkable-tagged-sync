@@ -38,7 +38,8 @@ export interface IntelligenceSettingsHost {
 }
 
 const PRO = " (Pro)";
-const MODEL_DESC = "Empty: the model set for that provider.";
+// Says what an empty field does, since an empty field is the default (asked about in the live test).
+const MODEL_DESC = "Leave it empty to use the model set for this provider under Transcription.";
 
 /**
  * Said under the extraction model when its server reports that it reasons unasked. It extracts --
@@ -165,12 +166,16 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 			dropdown.onChange(async (id) => withSettings(host, (s) => ({ ...s, backend: id === "" ? null : id })));
 		});
 	const modelRow = new Setting(containerEl).setName("Extraction model").setDesc(MODEL_DESC);
+	// Its own line in the warning colour, like the thinking line under the transcription model
+	// (`localhost-register.ts`); empty while there is nothing to say.
+	const warningEl = modelRow.descEl.createDiv({ cls: "tagged-sync-verdict" });
+	warningEl.addClass("mod-warning");
 	// Asked of the backend that will extract: the picked one, else the transcription backend's. `void`
 	// on purpose, as in `renderProfile`: a `Setting` has a `then` of its own.
 	const entry = extractionBackendEntry(settings.backend ?? host.transcriptionBackend());
 	const probeModel = async (): Promise<void> => {
 		const reasoning = (await entry?.reasoningModel?.(host.providerSettings(entry.id), host.settings().model)) ?? null;
-		modelRow.setDesc(reasoning === null ? MODEL_DESC : `${MODEL_DESC} ${reasoningWarning(reasoning)}`);
+		warningEl.setText(reasoning === null ? "" : reasoningWarning(reasoning));
 	};
 	modelRow.addText((text) =>
 		text

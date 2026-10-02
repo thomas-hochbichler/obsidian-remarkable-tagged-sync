@@ -196,25 +196,29 @@ describe("renderIntelligenceSection", () => {
 	});
 
 	it("warns under the extraction model when its server says it reasons, and takes the warning back when another is typed", async () => {
-		const BASE = "Empty: the model set for that provider.";
+		const BASE = "Leave it empty to use the model set for this provider under Transcription.";
+		// The warning is its own line, in the warning colour, under the description.
+		const warning = (row: FakeSetting) => row.descEl.children.find((child) => child.classes.has("tagged-sync-verdict"))!;
 		const h = host({ ...emptyIntelligence(), backend: "sectionserver", model: "thinker" }, true);
 		const row = named(section(h), "Extraction model");
 		await flush();
-		expect(row.desc).toBe(`${BASE} ⚠ "thinker" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`);
+		expect(row.desc).toBe(BASE);
+		expect(warning(row).text).toBe(`⚠ "thinker" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`);
+		expect(warning(row).classes.has("mod-warning")).toBe(true);
 		row.texts[0].type("instruct");
 		await flush();
-		expect(row.desc).toBe(BASE);
+		expect(warning(row).text).toBe("");
 
 		// No backend picked: the transcription backend extracts, with the model set for it there.
 		const same = named(section(host(emptyIntelligence(), true, { transcription: "sectionserver", providers: { sectionserver: { model: "thinker" } } })), "Extraction model");
 		await flush();
-		expect(same.desc).toContain('"thinker" reasons before answering');
+		expect(warning(same).text).toContain('"thinker" reasons before answering');
 
 		// A backend that cannot be asked, and one that is not registered at all, say nothing.
 		for (const backend of ["sectioncloud", "gone"]) {
 			const quiet = named(section(host({ ...emptyIntelligence(), backend, model: "thinker" }, true)), "Extraction model");
 			await flush();
-			expect(quiet.desc).toBe(BASE);
+			expect(warning(quiet).text).toBe("");
 		}
 	});
 

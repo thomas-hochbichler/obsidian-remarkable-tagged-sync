@@ -3173,7 +3173,7 @@
   scenarios:
     - id: V66.1
       scenario: "The extraction model on the user's own server is one the server reports as reasoning; then another is typed; then no backend is picked; then a backend that cannot be asked"
-      expect: "A warning under the model field names the model and what fails; it goes when another model is typed; the transcription backend's model is asked when none is picked; a cloud or unknown backend says nothing"
+      expect: "A warning line in the warning colour under the model field names the model and what it costs; it goes when another model is typed; the transcription backend's model is asked when none is picked; a cloud or unknown backend says nothing"
       layer: unit
       file: src/intelligence/settings-section.test.ts
       test: "renderIntelligenceSection > warns under the extraction model when its server says it reasons, and takes the warning back when another is typed"
