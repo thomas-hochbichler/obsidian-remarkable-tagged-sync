@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isoDay } from "./dates";
 import type { ExtractionBackend, ExtractionInput } from "./extraction-backend";
 import { processPage, type PageRun } from "./page-engine";
-import { decide, pendingProposals } from "./review";
+import { decide, pendingProposals, uneditedSinceBase } from "./review";
 import { defaultSlots, genericProfile, type SlotDef } from "./settings";
 
 const [TASKS, DECISIONS, SUMMARY, TAGS] = defaultSlots();
@@ -60,6 +60,9 @@ describe("processPage > a new note", () => {
 		);
 		expect(Object.keys(out.base.slots)).toEqual(["tasks", "summary"]);
 		expect(out.base).toMatchObject({ noteId: "note-1", syncKey: "doc:p1:work", unitKey: "doc:p1:work", transcript: PAGE, settled: [] });
+		// The fingerprint is the template's own lines, and the note as written reads as untouched, date field included.
+		expect(out.base.outside).toBe("# 2026-09-28 Work p1\nWritten: 2026-09-28 · seen 2026-09-28 · synced 2026-09-29\n## Page\n[[p1.png|Page 1]]");
+		expect(uneditedSinceBase(out.base, out.content!.split("\n"))).toBe(true);
 	});
 
 	it("gives a Slot the template does not place its own heading at the end, and settles one filled inline", async () => {

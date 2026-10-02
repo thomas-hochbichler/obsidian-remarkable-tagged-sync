@@ -9,10 +9,10 @@
  * - replace: the base takes the model's text, so only a *new* summary is proposed again.
  */
 
-import type { PageBase, SlotBase } from "./base-store";
+import { foreignLines, type PageBase, type SlotBase } from "./base-store";
 import { compileItemFormat } from "./item-format";
 import { matchItems, normaliseText } from "./matcher";
-import type { Proposal } from "./merge";
+import { fieldsEqual, isTicked, type Proposal } from "./merge";
 import { writeProperty } from "./frontmatter-values";
 import { applyListOps, findRegion, parseRegion, readTextRegion, setProposalCallout, writeTextRegion } from "./regions";
 
@@ -113,11 +113,15 @@ export function decide(input: { base: PageBase; lines: readonly string[]; slotId
 
 /**
  * Whether the user has touched a page note since the engine last wrote it (spec §5.1, "Change Profile
- * for this page"): every region parses to exactly the base's items, a Text or Value region reads what
- * the base holds, and no line was added. Template prose and frontmatter outside the regions are not
- * compared -- they are the template's, not the engine's. A region that is gone counts as touched.
+ * for this page"). Untouched means all of: every region parses to exactly the base's items -- text,
+ * fields and tick -- with none of them typed by the user; a Text or Value region reads what the base
+ * holds; and the lines no Slot fills are the ones the note was made with (`PageBase.outside`), so a
+ * section or a line of the user's own counts. Frontmatter is not compared: the plugin's keys and the
+ * Value Slots write there. A region that is gone counts as touched, and so does a note with no
+ * fingerprint -- "touched" only costs a second note, "untouched" overwrites this one.
  */
 export function uneditedSinceBase(base: PageBase, lines: readonly string[]): boolean {
+	if (base.outside === undefined) return false;
 	for (const slot of Object.values(base.slots)) {
 		if (slot.heading === null) continue;
 		const format = compileItemFormat("list" in slot ? slot.itemFormat : "- {{text}}");
@@ -130,7 +134,11 @@ export function uneditedSinceBase(base: PageBase, lines: readonly string[]): boo
 		}
 		const items = parseRegion(lines, region, format);
 		if (items.length !== slot.list.items.length) return false;
-		if (items.some((item, index) => normaliseText(item.text) !== normaliseText(slot.list.items[index].text))) return false;
+		const touched = items.some((line, index) => {
+			const item = slot.list.items[index];
+			return item.origin === "user" || normaliseText(line.text) !== normaliseText(item.text) || isTicked(line.checkbox) !== item.done || !fieldsEqual(item.fields, line.fields);
+		});
+		if (touched) return false;
 	}
-	return true;
+	return foreignLines(base.slots, lines) === base.outside;
 }

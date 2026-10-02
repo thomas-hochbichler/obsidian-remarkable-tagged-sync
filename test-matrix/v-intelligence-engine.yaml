@@ -3058,3 +3058,36 @@
       layer: unit
       file: src/intelligence/local-server-node.test.ts
       test: "nodeServerDeps > hears a server that cannot be started as ended, instead of an uncaught error"
+
+- feature: V62
+  name: "Change Profile never overwrites a note the user wrote in"
+  code: src/intelligence/review.ts
+  tier: pro
+  scenarios:
+    - id: V62.1
+      scenario: "The user adds a section of their own, prose between the tasks, a tick or a date; or typed a task before the last sync; or the note has no fingerprint"
+      expect: "The note counts as touched; the plugin's frontmatter and blank lines do not"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "uneditedSinceBase > is false for a section of the user's own, prose between the tasks, a tick, a date, a task the user typed, and a note with no fingerprint"
+
+    - id: V62.2
+      scenario: "Change Profile is run on a note with a section of the user's own and untouched Slot regions"
+      expect: "The note stays as it is; the new Profile's note is made beside it"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > leaves a note with a section of the user's own as it is, though no Slot's region was touched"
+
+    - id: V62.3
+      scenario: "A note is made from a template with prose, a callout and frontmatter around the Slots"
+      expect: "The fingerprint holds the lines no Slot fills, and nothing of the frontmatter, the Slots, callouts or blank lines"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "foreignLines > keeps what no Slot fills: not the frontmatter, a Slot's heading, its items or text, a callout or a blank line"
+
+    - id: V62.4
+      scenario: "A note has no frontmatter, or a block that never closes"
+      expect: "Every line counts as body"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "foreignLines > takes a note with no frontmatter, or an unclosed one, as all body"

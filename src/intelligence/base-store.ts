@@ -8,10 +8,10 @@
  * write it. That is survivable by design: {@link rebuildBase} reads the note back as the base.
  */
 
-import type { ItemFormat } from "./item-format";
+import { compileItemFormat, type ItemFormat } from "./item-format";
 import type { PropertyValue } from "./frontmatter-values";
 import type { ListBase, Proposal } from "./merge";
-import { findRegion, parseRegion, type Heading } from "./regions";
+import { findRegion, parseRegion, PROPOSAL_CALLOUT, type Heading } from "./regions";
 import type { Shape } from "./settings";
 
 export const BASE_VERSION = 1;
@@ -68,6 +68,12 @@ export interface PageBase {
 	 */
 	settled: string[];
 	extraction: ExtractionState;
+	/**
+	 * The note's fingerprint from the moment it was made: {@link foreignLines} of what the engine
+	 * wrote. "Change Profile" reads it to tell an untouched note from one the user wrote in. Absent on a
+	 * rebuilt base and on notes made before it existed -- nothing then says what the engine wrote.
+	 */
+	outside?: string;
 }
 
 export interface BaseFiles {
@@ -110,6 +116,32 @@ export function createBaseStore(files: BaseFiles, dir: string): BaseStore {
 		save: (base) => files.write(basePath(dir, base.noteId), JSON.stringify(base)),
 		discard: (noteId) => files.remove(basePath(dir, noteId)),
 	};
+}
+
+const isFence = (line: string) => line.trimEnd() === "---";
+
+/**
+ * The lines of a page note that no Slot fills: everything but the frontmatter, the Slots' headings,
+ * the item lines of a list region, the body of a Text or Value region, proposal callouts and blank
+ * lines. Template prose is among them, and so is whatever the user wrote beside the Slots.
+ */
+export function foreignLines(slots: Record<string, SlotBase>, lines: readonly string[]): string {
+	const own = new Set<number>();
+	const close = lines.findIndex(isFence) === 0 ? lines.findIndex((line, at) => at > 0 && isFence(line)) : -1;
+	for (let at = 0; at <= close; at++) own.add(at);
+	for (const slot of Object.values(slots)) {
+		if (slot.heading === null) continue;
+		const format = compileItemFormat("list" in slot ? slot.itemFormat : "- {{text}}");
+		const region = findRegion(lines, slot.heading, format);
+		if (region === null) continue;
+		own.add(region.heading);
+		if ("list" in slot) for (const item of parseRegion(lines, region, format)) own.add(item.line);
+		else for (let at = region.start; at < region.end; at++) own.add(at);
+	}
+	return lines
+		.filter((line, at) => !own.has(at) && line.trim() !== "" && !PROPOSAL_CALLOUT.test(line))
+		.map((line) => line.trimEnd())
+		.join("\n");
 }
 
 export interface RebuildSlot {
