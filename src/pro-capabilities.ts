@@ -141,8 +141,8 @@ const TAG_MAPPING_CAPABILITY: ProCapability = {
 		site: "src/tag-routing-view.ts planTagRouting",
 		/**
 		 * Driven, not grepped: one tag already mapped and a second discovered is exactly the state the
-		 * cap exists for, so the plan's own items say whether it closed -- and `capped` is what makes
-		 * the refusal visible in place rather than silent.
+		 * cap exists for, so the plan's own items say whether it closed -- and a `capped` add row is what
+		 * makes the refusal visible in place rather than silent.
 		 */
 		run: (entitlement) => {
 			const view = planTagRouting({
@@ -151,7 +151,7 @@ const TAG_MAPPING_CAPABILITY: ProCapability = {
 				folderPaths: ["/", "Inbox", "Archive"],
 				entitlement,
 			});
-			return view.items.some((item) => item.kind === "capped") ? "refused-in-place" : "allowed";
+			return view.items.some((item) => item.kind === "add" && item.capped) ? "refused-in-place" : "allowed";
 		},
 	},
 };

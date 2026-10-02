@@ -141,10 +141,10 @@
   scenarios:
     - id: B2.1
       scenario: The settings tab is opened before any scan has run
-      expect: The section draws nothing at all -- no headings, no notices, no empty-state row
+      expect: The section draws only the add row, empty -- it is where a scan starts; no notices
       layer: unit
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > draws nothing at all before a scan has found anything"
+      test: "planTagRouting > draws only the add row, empty, before a scan has found anything -- it is where a scan starts"
 
     - id: B2.2
       scenario: A scan found one tag and the vault has folders
@@ -182,11 +182,11 @@
       test: "planTagRouting > draws no unmapped section when everything discovered is already mapped"
 
     - id: B2.7
-      scenario: The shipped settings tab draws that first mappable row
-      expect: A real dropdown carrying the placeholder, the root and the vault's folders
+      scenario: The shipped settings tab offers that first tag
+      expect: The one add row lists it beside Scan; its dialog has a real folder dropdown with the placeholder, the root and the vault's folders
       layer: vault
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > offers a folder dropdown for the first tag a free user maps"
+      test: "the free version's tag cap > offers the first tag a free user found in the one add row, and its folders in its dialog"
 
 - feature: B3
   name: Re-target a mapped tag
@@ -206,18 +206,18 @@
   tier: free
   scenarios:
     - id: B4.1
-      scenario: Nothing is mapped yet
-      expect: The sentence about what removal does is not shown -- there is nothing to remove
-      layer: unit
-      file: src/tag-routing-view.test.ts
-      test: "planTagRouting > says nothing about removal when there is nothing to remove"
-
-    - id: B4.2
-      scenario: One tag is mapped and another was discovered
-      expect: Only the mapped row carries Remove; an unmapped row has no button at all
+      scenario: A mapped tag's Remove is pressed, then cancelled, then confirmed
+      expect: The question says what removal does; cancelled, the mapping stays; confirmed, it goes
       layer: vault
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > offers Remove on a mapped tag only -- there is nothing to remove from an unmapped one"
+      test: "the free version's tag cap > removes a mapped tag only once asked, saying what removal does"
+
+    - id: B4.2
+      scenario: Discovered tags nobody mapped
+      expect: They share the one add row instead of a row each, so there is no Remove to offer on them
+      layer: unit
+      file: src/tag-routing-view.test.ts
+      test: "planTagRouting > puts every unmapped tag in the one add row, not a row each"
 
 - feature: B5
   name: Missing folder stays selectable
@@ -252,11 +252,11 @@
   scenarios:
     - id: B13.1
       scenario: A free user has one mapped tag and the scan found a second
-      expect: The second row renders as "Not synced." with the reason above it -- a readable explanation, not a disabled control
+      expect: The add row is closed with the reason above it, and the second tag's dialog offers no folder
       layer: vault
       tier: free
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > refuses the second tag: no dropdown, a read-only row, and the cap sentence above it"
+      test: "the free version's tag cap > refuses the second tag: the add row closed, its dialog empty, and the cap sentence above it"
 
     - id: B13.2
       scenario: A user whose licence ended still has three tags mapped. The sync engine is never told the entitlement, so what is mapped is what syncs
@@ -276,11 +276,11 @@
 
     - id: B13.4
       scenario: A licence has ended while three tags are mapped, and the tab is drawn again
-      expect: The mappings are never revoked or deleted; every one of them keeps its dropdown and Remove button
+      expect: The mappings are never revoked or deleted; every one keeps its line, with Edit and Remove, its folder and what it makes
       layer: vault
       tier: pro
       file: src/tag-routing-section.test.ts
-      test: "the free version's tag cap > never revokes a mapping the user already has, even past the cap"
+      test: "the free version's tag cap > lists every mapped tag on one line, even past the cap, with its folder and what it makes"
 
     - id: B13.5
       scenario: The licence server is unreachable when the tag dropdown changes
@@ -292,11 +292,11 @@
 
     - id: B13.6
       scenario: The plan is asked for that same refused second tag
-      expect: A capped row with no options, and the cap sentence placed above the rows it explains
+      expect: A capped add row, and the cap sentence placed above it, both before the mapped list
       layer: unit
       tier: free
       file: src/tag-routing-view.test.ts
-      test: "planTagRouting > refuses the second tag, and says why above the rows it refuses"
+      test: "planTagRouting > refuses the second tag, and says why above the row it refuses, which comes before the list"
 
     - id: B13.7
       scenario: The limit is read for a free user

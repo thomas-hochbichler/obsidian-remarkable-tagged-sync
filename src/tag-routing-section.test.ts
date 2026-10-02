@@ -7,6 +7,7 @@ import {
 	FakeApp,
 	FakeEl,
 	type Setting,
+	takeModals,
 	takeSettings,
 } from "../test-stubs/fake-obsidian";
 import { TAG_CAP_MESSAGE } from "./licence-messages";
@@ -39,13 +40,12 @@ const PRO = { key: "test-key", activationId: "act-1", validatedAt: new Date().to
 const PRO_ENTITLEMENT: Entitlement = { tier: "pro", since: PRO.validatedAt, stale: false };
 const FREE_ENTITLEMENT: Entitlement = { tier: "free", reason: "revoked" };
 
-const CAP_ROW_DESC = "Not synced.";
-const MAPPABLE_ROW_DESC = "Not synced until mapped to a folder.";
 const REMOVAL_NOTE = "Removing a tag stops syncing it. Notes already in your vault stay where they are.";
 
 interface Tab {
 	discoveredTags: string[];
 	renderTagRouting(container: FakeEl): void;
+	renderTagDialog(container: FakeEl, tag: string): void;
 }
 
 interface Plugin {
@@ -103,7 +103,7 @@ async function tabWith(setup: {
  * is a decision -- a cap sentence below the rows it explains is a different screen from one above
  * them -- so both go into one list rather than being asserted separately.
  *
- * The heading and the Scan button are dropped: they are the same two rows in every scenario.
+ * The heading is dropped: it is the same row in every scenario.
  */
 function draw(tab: Tab): Drawn[] {
 	takeSettings();
@@ -122,7 +122,24 @@ function draw(tab: Tab): Drawn[] {
 				}
 			: { kind: "note" as const, text: child.text };
 	});
-	return drawn.slice(2);
+	return drawn.slice(1);
+}
+
+/** The rows of a tag's dialog, as it stands now. */
+function dialog(tab: Tab, tag: string): Setting[] {
+	takeSettings();
+	tab.renderTagDialog(new FakeEl(), tag);
+	return takeSettings();
+}
+
+/** The one row that adds a tag. */
+function adder(drawn: Drawn[]): Extract<Drawn, { kind: "row" }> {
+	return rows(drawn).find((row) => row.name === "Add a tag")!;
+}
+
+/** The rows a modal holds after `act`, which opened or redrew it. */
+function modalRows(modal: { contentEl: FakeEl }, settings: Setting[]): Setting[] {
+	return settings.filter((setting) => setting.containerEl === modal.contentEl);
 }
 
 /** Lets the `onChange` handler's promise chain finish -- `pick()` cannot await it. */
@@ -140,17 +157,29 @@ describe("the free version's tag cap", () => {
 		takeSettings();
 	});
 
-	it("offers a folder dropdown for the first tag a free user maps", async () => {
+	it("offers the first tag a free user found in the one add row, and its folders in its dialog", async () => {
 		const { tab } = await tabWith({ discovered: ["#work"], folders: ["Work"] });
 
 		const [row, ...rest] = rows(draw(tab));
 		expect(rest).toEqual([]);
-		expect(row.name).toBe("#work");
-		expect(row.desc).toBe(MAPPABLE_ROW_DESC);
-		expect(Object.keys(row.dropdowns[0].options)).toEqual(["", "/", "Work"]);
+		expect(row.name).toBe("Add a tag");
+		expect(row.dropdowns[0].options).toEqual({ "": "Choose a tag… (1 found)", "#work": "#work" });
+		expect(row.dropdowns[0].disabled).toBe(false);
+		expect(row.buttons.map((button) => button.text)).toEqual(["Scan"]);
+		const folder = dialog(tab, "#work");
+		expect(folder.map((setting) => setting.name)).toEqual(["Folder"]);
+		expect(Object.keys(folder[0].dropdowns[0].options)).toEqual(["", "/", "Work"]);
 	});
 
-	it("refuses the second tag: no dropdown, a read-only row, and the cap sentence above it", async () => {
+	it("says to scan first, and offers nothing, before a scan", async () => {
+		const { tab } = await tabWith({});
+		const row = adder(draw(tab));
+		expect(row.desc).toBe("Scan your reMarkable notebooks and pages for tags, then pick one to sync.");
+		expect(row.dropdowns[0].options).toEqual({ "": "No tags to add" });
+		expect(row.dropdowns[0].disabled).toBe(true);
+	});
+
+	it("refuses the second tag: the add row closed, its dialog empty, and the cap sentence above it", async () => {
 		const { tab } = await tabWith({
 			mapping: { "#work": "Work" },
 			discovered: ["#work", "#home"],
@@ -158,15 +187,11 @@ describe("the free version's tag cap", () => {
 		});
 
 		const drawn = draw(tab);
-		expect(notes(drawn)).toEqual([REMOVAL_NOTE, TAG_CAP_MESSAGE]);
-		// The cap sentence explains the rows under it, so it has to be above them.
-		expect(drawn.findIndex((item) => item.kind === "note" && item.text === TAG_CAP_MESSAGE)).toBeLessThan(
-			drawn.findIndex((item) => item.kind === "row" && item.name === "#home"),
-		);
-
-		const home = rows(drawn).find((row) => row.name === "#home");
-		expect(home?.desc).toBe(CAP_ROW_DESC);
-		expect(home?.dropdowns).toEqual([]);
+		expect(notes(drawn)).toEqual([TAG_CAP_MESSAGE]);
+		// The cap sentence explains the row under it, so it has to be above it.
+		expect(drawn.findIndex((item) => item.kind === "note")).toBeLessThan(drawn.findIndex((item) => item.kind === "row" && item.name === "Add a tag"));
+		expect(adder(drawn).dropdowns[0].disabled).toBe(true);
+		expect(dialog(tab, "#home")).toEqual([]);
 	});
 
 	it("lets a Pro user map the second tag", async () => {
@@ -178,13 +203,12 @@ describe("the free version's tag cap", () => {
 		});
 
 		const drawn = draw(tab);
-		expect(notes(drawn)).toEqual([REMOVAL_NOTE]);
-		const home = rows(drawn).find((row) => row.name === "#home");
-		expect(home?.desc).toBe(MAPPABLE_ROW_DESC);
-		expect(Object.keys(home?.dropdowns[0].options ?? {})).toEqual(["", "/", "Home", "Work"]);
+		expect(notes(drawn)).toEqual([]);
+		expect(Object.keys(adder(drawn).dropdowns[0].options)).toEqual(["", "#home"]);
+		expect(Object.keys(dialog(tab, "#home")[0].dropdowns[0].options)).toEqual(["", "/", "Home", "Work"]);
 	});
 
-	it("never revokes a mapping the user already has, even past the cap", async () => {
+	it("lists every mapped tag on one line, even past the cap, with its folder and what it makes", async () => {
 		// A Pro user who mapped three tags and then let the licence lapse. The cap blocks adding; it
 		// must not take away what is already syncing.
 		const { tab } = await tabWith({
@@ -193,18 +217,24 @@ describe("the free version's tag cap", () => {
 			folders: ["Work", "Home", "Ideas"],
 		});
 
-		const mapped = rows(draw(tab)).filter((row) => row.name !== "#new");
+		const mapped = rows(draw(tab)).filter((row) => row.name !== "Add a tag");
 		expect(mapped.map((row) => row.name)).toEqual(["#home", "#ideas", "#work"]);
+		expect(mapped[0].desc).toBe("Home · Transcript note");
 		for (const row of mapped) {
-			expect(row.dropdowns).toHaveLength(1);
-			expect(row.buttons.map((button) => button.text)).toEqual(["Remove"]);
+			expect(row.dropdowns).toHaveLength(0);
+			expect(row.buttons.map((button) => [button.icon, button.tooltip])).toEqual([
+				["pencil", "Edit"],
+				["trash", "Remove"],
+			]);
 		}
+		// Its dialog: the folder, then what it makes.
+		expect(dialog(tab, "#home").map((setting) => setting.name)).toEqual(["Folder", "Transcript note", "Page notes"]);
 	});
 
 	it("makes no licence call for the very first mapping -- a free user never talks to Polar", async () => {
 		const { plugin, tab, refreshLicence } = await tabWith({ discovered: ["#work"], folders: ["Work"] });
 
-		rows(draw(tab))[0].dropdowns[0].pick("Work");
+		dialog(tab, "#work")[0].dropdowns[0].pick("Work");
 		await settle();
 
 		expect(refreshLicence).not.toHaveBeenCalled();
@@ -213,9 +243,9 @@ describe("the free version's tag cap", () => {
 	});
 
 	it("re-checks the licence when a Pro render maps a further tag, and refuses if it has ended", async () => {
-		// The only way to reach the live re-check: the row carried a dropdown, which means the render
-		// was under the cap, which past the free limit means the user had Pro when the tab drew -- and
-		// has lost it by the time they pick a folder.
+		// The only way to reach the live re-check: the tag could be added, which means the render was
+		// under the cap, which past the free limit means the user had Pro when the tab drew -- and has
+		// lost it by the time they pick a folder.
 		const { plugin, tab, refreshLicence } = await tabWith({
 			mapping: { "#work": "Work" },
 			licence: PRO,
@@ -224,8 +254,7 @@ describe("the free version's tag cap", () => {
 			recheck: FREE_ENTITLEMENT,
 		});
 
-		const home = rows(draw(tab)).find((row) => row.name === "#home");
-		home?.dropdowns[0].pick("Home");
+		dialog(tab, "#home")[0].dropdowns[0].pick("Home");
 		await settle();
 
 		expect(refreshLicence).toHaveBeenCalledTimes(1);
@@ -242,8 +271,7 @@ describe("the free version's tag cap", () => {
 			recheck: PRO_ENTITLEMENT,
 		});
 
-		const home = rows(draw(tab)).find((row) => row.name === "#home");
-		home?.dropdowns[0].pick("Home");
+		dialog(tab, "#home")[0].dropdowns[0].pick("Home");
 		await settle();
 
 		expect(refreshLicence).toHaveBeenCalledTimes(1);
@@ -261,31 +289,65 @@ describe("the free version's tag cap", () => {
 			folders: ["Work", "Home"],
 		});
 
-		const work = rows(draw(tab)).find((row) => row.name === "#work");
-		work?.dropdowns[0].pick("Home");
+		dialog(tab, "#work")[0].dropdowns[0].pick("Home");
 		await settle();
 
 		expect(refreshLicence).not.toHaveBeenCalled();
 		expect(plugin.data.tagFolderMap).toEqual({ "#work": "Home" });
 	});
 
-	it("offers Remove on a mapped tag only -- there is nothing to remove from an unmapped one", async () => {
-		const { tab } = await tabWith({
-			mapping: { "#work": "Work" },
-			licence: PRO,
-			discovered: ["#work", "#home"],
-			folders: ["Work", "Home"],
-		});
+	it("removes a mapped tag only once asked, saying what removal does", async () => {
+		const { plugin, tab } = await tabWith({ mapping: { "#work": "Work" }, licence: PRO, folders: ["Work"] });
+		const trash = () => rows(draw(tab)).find((row) => row.name === "#work")!.buttons[1];
 
-		const drawn = rows(draw(tab));
-		expect(drawn.find((row) => row.name === "#work")?.buttons.map((b) => b.text)).toEqual(["Remove"]);
-		expect(drawn.find((row) => row.name === "#home")?.buttons).toEqual([]);
+		takeModals();
+		trash().click();
+		const [ask] = takeModals();
+		expect(ask.contentEl.allText()).toContain(REMOVAL_NOTE);
+		takeSettings().at(-1)!.buttons[0].click(); // Cancel
+		await settle();
+		expect(plugin.data.tagFolderMap).toEqual({ "#work": "Work" });
+
+		trash().click();
+		takeSettings().at(-1)!.buttons[1].click(); // Remove
+		await settle();
+		expect(plugin.data.tagFolderMap).toEqual({});
+	});
+
+	it("opens a tag's dialog from the add row and from its pencil, and keeps it current as the tag is mapped", async () => {
+		const { plugin, tab } = await tabWith({ discovered: ["#work"], folders: ["Work"] });
+		takeModals();
+		// The placeholder opens nothing.
+		adder(draw(tab)).dropdowns[0].pick("");
+		expect(takeModals()).toEqual([]);
+		adder(draw(tab)).dropdowns[0].pick("#work");
+		const [opened] = takeModals();
+		expect(opened.titleEl.text).toBe("Tag: #work");
+		const before = modalRows(opened, takeSettings());
+		expect(before.map((setting) => setting.name)).toEqual(["Folder"]);
+
+		// The folder placeholder maps nothing; choosing a folder maps the tag, and the dialog, drawn again
+		// with the tab, now offers what it makes.
+		before[0].dropdowns[0].pick("");
+		await settle();
+		expect(plugin.data.tagFolderMap).toEqual({});
+		before[0].dropdowns[0].pick("Work");
+		await settle();
+		expect(plugin.data.tagFolderMap).toEqual({ "#work": "Work" });
+		expect(modalRows(opened, takeSettings()).map((setting) => setting.name)).toEqual(["Folder", "Transcript note", "Page notes"]);
+
+		opened.close();
+		takeSettings();
+		rows(draw(tab)).find((row) => row.name === "#work")!.buttons[0].click();
+		const [edit] = takeModals();
+		expect(edit.titleEl.text).toBe("Tag: #work");
+		expect(modalRows(edit, takeSettings())[0].dropdowns[0].value).toBe("Work");
 	});
 
 	it("keeps a mapped-but-missing folder selectable, labelled (missing)", async () => {
 		const { tab } = await tabWith({ mapping: { "#work": "Gone" }, discovered: ["#work"], folders: ["Work"] });
 
-		const dropdown = rows(draw(tab))[0].dropdowns[0];
+		const dropdown = dialog(tab, "#work")[0].dropdowns[0];
 		expect(dropdown.options["Gone"]).toBe("Gone (missing)");
 		expect(dropdown.value).toBe("Gone");
 	});

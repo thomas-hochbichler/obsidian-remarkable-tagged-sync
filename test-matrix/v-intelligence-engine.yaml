@@ -2028,11 +2028,11 @@
       test: "renderIntelligenceSection > offers every extraction backend, marking Pro and unmeasured ones, and saves the model as typed"
 
     - id: V27.7
-      scenario: "Profiles are added, edited, given a template and removed"
-      expect: "One Profile free, more with Pro; a starter template in the template folder; a removed Profile leaves every mapping"
+      scenario: "Profiles are edited in their dialog and given a template"
+      expect: "Name, description, template and Slots as they stand now; a starter template in the template folder; a Slot's pencil opens that Slot"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderIntelligenceSection > adds one Profile without Pro and more with it; edits, removes, and creates its template"
+      test: "renderIntelligenceSection > edits a Profile in its dialog, and creates its template"
 
     - id: V27.8
       scenario: "Slots are edited free and with Pro"
@@ -2470,14 +2470,14 @@
       expect: "With a readable unique id and the Shape's defaults; nothing without a name; locked without Pro"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderIntelligenceSection > own Slots (Pro) > adds a Slot with a name and a Shape, and not without a name or without Pro"
+      test: "renderIntelligenceSection > own Slots (Pro) > adds a Slot with a name and a Shape and opens it, and not without a name or without Pro"
 
     - id: V39.2
-      scenario: "A Slot is duplicated, then deleted"
-      expect: "The copy is unused and editable; a deleted Slot leaves every Profile"
+      scenario: "A Slot is duplicated twice, then deleted"
+      expect: "Each copy is unused, editable and named apart; a delete is asked first, and a deleted Slot leaves every Profile"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderIntelligenceSection > own Slots (Pro) > duplicates and deletes a Slot, taking a deleted one out of every Profile"
+      test: "renderIntelligenceSection > own Slots (Pro) > duplicates under a name of its own, and deletes a Slot only once asked, taking it out of every Profile"
 
     - id: V39.3
       scenario: "The Shape is changed before and after use"
@@ -2531,14 +2531,14 @@
       expect: "Each Slot row says where it lands and whether it is kept up to date"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderIntelligenceSection > what a Profile's Slots will do > says per Slot where the template puts it, and whether it is kept up to date"
+      test: "renderProfileEditor > what a Profile's Slots will do > says per Slot where the template puts it, and whether it is kept up to date"
 
     - id: V40.2
       scenario: "A Profile has more than seven Slots on a local, a cloud, or no set backend"
       expect: "A warning on the local one only"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderIntelligenceSection > what a Profile's Slots will do > warns about many Slots on a local model, and not on a cloud one"
+      test: "renderProfileEditor > what a Profile's Slots will do > warns about many Slots on a local model, and not on a cloud one"
 
 - feature: V41
   name: "Several Profiles per tag, sorted by a classifier (Pro)"
@@ -3031,11 +3031,11 @@
   tier: free
   scenarios:
     - id: V61.1
-      scenario: "A name, template path or instruction is typed, then a toggle, preset or button of the same card is used"
+      scenario: "A name, template path or instruction is typed, then a toggle, preset or button of the same dialog is used"
       expect: "Every control edits the Profile or Slot as it stands now; nothing typed is reverted"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderIntelligenceSection > keeps what was just typed when a toggle, a preset or a button of the same card follows"
+      test: "renderIntelligenceSection > keeps what was just typed when a toggle, a preset or a button of the same dialog follows"
 
     - id: V61.2
       scenario: "Frontmatter properties are switched off while page notes carry the plugin's keys"
@@ -3243,3 +3243,58 @@
       layer: unit
       file: src/intelligence/extraction-registry.test.ts
       test: "compatExtractionEntry > which answer an own server is asked for > takes a model as reasoning from the server's flag or from a model it learned, and keeps a learned one in the provider's settings"
+
+- feature: V69
+  name: "The settings list tags, Profiles and Slots one line each, and edit each in a dialog"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V69.1
+      scenario: "The tab is opened before any scan"
+      expect: "The add row says to scan first, beside Scan, and offers no tag"
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > says to scan first, and offers nothing, before a scan"
+
+    - id: V69.2
+      scenario: "A tag is picked in the add row, given a folder, closed, then opened by its pencil"
+      expect: "Its dialog opens titled by the tag; once mapped it redraws with the transcript note and page notes; the pencil opens it on the folder set"
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "the free version's tag cap > opens a tag's dialog from the add row and from its pencil, and keeps it current as the tag is mapped"
+
+    - id: V69.3
+      scenario: "A mapped tag makes a transcript note, page notes with the generic or picked Profiles, or nothing"
+      expect: "Its line says so in a few words"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > sums up what a tag makes in a few words, for its line in the list"
+
+    - id: V69.4
+      scenario: "Profiles are added, without Pro and with it, three times over"
+      expect: "One Profile free, more with Pro; named My pages, My pages 2, My pages 3; each opens its dialog"
+      layer: unit
+      tier: pro
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > adds one Profile without Pro and more with it, each with a name of its own, and opens it"
+
+    - id: V69.5
+      scenario: "Profiles with and without Slots, template and tags are listed"
+      expect: "One line each: the Slots, the template or the built-in one, the tags that use it; Edit, Duplicate and Delete"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > lists a Profile on one line: its Slots, its template and the tags that use it"
+
+    - id: V69.6
+      scenario: "A Profile is opened, renamed in its dialog, duplicated, and deleted after a refusal"
+      expect: "The copy is of what was typed and named apart; duplicating is Pro; nothing goes until confirmed, then it leaves every mapping and its dialog draws nothing"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > opens, duplicates under a name of its own, and deletes a Profile only once asked"
+
+    - id: V69.7
+      scenario: "Slots of each Shape, in some Profiles or none, reviewed or not, are listed"
+      expect: "One line each: the Shape, the Profiles that fill it, and Reviewed where its items are (always without Pro)"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > lists a Slot on one line: its Shape, the Profiles that fill it, and whether it is reviewed"

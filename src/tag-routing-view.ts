@@ -35,13 +35,9 @@ export function tagLimitFor(entitlement: Entitlement): number {
 	return entitlement.tier === "free" ? FREE_TAG_LIMIT : Number.POSITIVE_INFINITY;
 }
 
-/** Said under the mapped rows, because removal is the one action there whose effect is not obvious. */
+/** Asked before a tag is removed, because removal is the one action here whose effect is not obvious. */
 export const REMOVAL_MESSAGE = "Removing a tag stops syncing it. Notes already in your vault stay where they are.";
 
-/** A discovered tag nobody has routed yet. */
-export const MAPPABLE_DESC = "Not synced until mapped to a folder.";
-/** The same tag, once the cap refuses it. A different sentence, because it is a different situation. */
-export const CAPPED_DESC = "Not synced.";
 const CHOOSE_LABEL = "Choose a folder…";
 const ROOT_LABEL = "Vault root";
 
@@ -60,30 +56,29 @@ export interface MappedItem {
 	readonly options: readonly FolderOption[];
 }
 
-/** A discovered tag the user may map right now. */
-export interface MappableItem {
-	readonly kind: "mappable";
-	readonly tag: string;
-	readonly desc: string;
+/**
+ * The discovered tags nobody has routed yet, as one row to add from. They used to get a row each,
+ * which buried the few tags that sync under every tag the tablet has ever seen (14 of 15 rows in the
+ * 2026-10-02 live test said "Not synced").
+ */
+export interface AddItem {
+	readonly kind: "add";
+	readonly tags: readonly string[];
+	/** The cap refuses them: listed, so the refusal is visible, but not offered. */
+	readonly capped: boolean;
+	/** The folder dropdown a newly picked tag starts from. */
 	readonly options: readonly FolderOption[];
 }
 
-/** A discovered tag the cap refuses. Stated, not silently disabled -- a silent refusal reads as a bug. */
-export interface CappedItem {
-	readonly kind: "capped";
-	readonly tag: string;
-	readonly desc: string;
-}
-
 /** One thing the section draws, in the order it draws it. */
-export type TagRoutingItem = { readonly kind: "notice"; readonly text: string } | MappedItem | MappableItem | CappedItem;
+export type TagRoutingItem = { readonly kind: "notice"; readonly text: string } | MappedItem | AddItem;
 
 export interface TagRoutingView {
 	readonly items: readonly TagRoutingItem[];
 	/**
-	 * Whether choosing a folder on a `mappable` row must re-check the licence with Polar first.
+	 * Whether choosing a folder for a newly added tag must re-check the licence with Polar first.
 	 *
-	 * It is only ever true on a render that was *above* the free limit and still offered dropdowns --
+	 * It is only ever true on a render that was *above* the free limit and still offered tags to add --
 	 * which means the user had Pro or a trial when the tab drew. So the case it catches is narrow and
 	 * real: a licence that ended between the tab opening and the folder being picked.
 	 */
@@ -122,26 +117,19 @@ export function planTagRouting(input: {
 				: [...folderOptions, { value: folder, label: `${folder} (missing)` }],
 		});
 	}
-	if (mappedTags.length > 0) items.push({ kind: "notice", text: REMOVAL_MESSAGE });
-
 	const unmappedTags = discoveredTags.filter((tag) => !(tag in mapping));
-	if (unmappedTags.length === 0) return { items, recheckLicenceBeforeAdd: false };
-
-	// The cap only ever blocks *adding*. It must never unmap a tag that is already mapped, and a silent
-	// refusal reads as a bug -- so the reason is stated, above the rows it applies to.
-	if (mappedTags.length >= tagLimitFor(entitlement)) {
-		items.push({ kind: "notice", text: TAG_CAP_MESSAGE });
-		for (const tag of unmappedTags) items.push({ kind: "capped", tag, desc: CAPPED_DESC });
+	if (unmappedTags.length === 0) {
+		// Still drawn, empty: the row is also where a scan starts.
+		items.unshift({ kind: "add", tags: [], capped: false, options: [] });
 		return { items, recheckLicenceBeforeAdd: false };
 	}
 
-	for (const tag of unmappedTags) {
-		items.push({
-			kind: "mappable",
-			tag,
-			desc: MAPPABLE_DESC,
-			options: [{ value: "", label: CHOOSE_LABEL }, ...folderOptions],
-		});
-	}
-	return { items, recheckLicenceBeforeAdd: mappedTags.length >= FREE_TAG_LIMIT };
+	// Above the list, as "Add" is above the Profiles and Slots. The cap only ever blocks *adding*: it
+	// must never unmap a tag that is already mapped, and a silent refusal reads as a bug -- so the
+	// reason is stated, above the row it applies to.
+	const capped = mappedTags.length >= tagLimitFor(entitlement);
+	const adding: TagRoutingItem[] = [{ kind: "add", tags: unmappedTags, capped, options: [{ value: "", label: CHOOSE_LABEL }, ...folderOptions] }];
+	if (capped) adding.unshift({ kind: "notice", text: TAG_CAP_MESSAGE });
+	items.unshift(...adding);
+	return { items, recheckLicenceBeforeAdd: !capped && mappedTags.length >= FREE_TAG_LIMIT };
 }

@@ -13,6 +13,7 @@ import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { isMeteredProvider } from "./auto-sync";
 import { buildDiagnostics } from "./diagnostics";
 import { confirmDialog } from "./confirm-modal";
+import { EditorDialog } from "./editor-dialog";
 import { explainError } from "./explain-error";
 import { frontmatterAllowed } from "./frontmatter";
 import { activateKey, deactivateHere } from "./licence-check";
@@ -30,7 +31,7 @@ import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transpo
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { invalidateRenders, pendingOcrRetries } from "./sync-engine";
-import { planTagRouting } from "./tag-routing-view";
+import { type AddItem, type MappedItem, planTagRouting, REMOVAL_MESSAGE } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
@@ -39,7 +40,7 @@ import type { ZoteroGroup } from "./zotero-client";
 import { visionRunStats } from "./vision-ocr-backend";
 import { hostEnvironmentFor } from "./intelligence/host";
 import { intelligenceProAllowed } from "./intelligence/plugin-rules";
-import { type IntelligenceSettingsHost, renderIntelligenceSection, renderTagModes } from "./intelligence/settings-section";
+import { type IntelligenceSettingsHost, renderIntelligenceSection, renderTagModes, tagModesSummary } from "./intelligence/settings-section";
 import { settingsHostFor } from "./intelligence/settings-host";
 import { createNoteStore } from "./vault-stores";
 
@@ -88,6 +89,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	/** What the pairing row holds between keystrokes. The password is dropped the moment it is used. */
 	private deviceHost = "";
 	private devicePassword = "";
+	/** The dialogs open over this tab: drawn again with it, so they never show a stale value. */
+	private readonly dialogs = new Set<EditorDialog>();
 
 	constructor(
 		app: App,
@@ -121,6 +124,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		this.renderZotero(containerEl);
 		this.renderPro(containerEl);
 		this.renderActions(containerEl, connected);
+		for (const dialog of this.dialogs) dialog.redraw();
 		// After the content is back, so there is something to scroll through. A page that got shorter
 		// clamps this itself, which is the right answer -- there is nowhere further to be.
 		containerEl.scrollTop = offset;
@@ -1007,50 +1011,28 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			save: () => this.plugin.saveData(this.plugin.data),
 			redraw: () => this.display(),
 			confirm: (title, text, cta) => confirmDialog(this.app, title, text, cta),
+			dialog: (title, draw) => this.openDialog(title, draw),
 		});
+	}
+
+	/**
+	 * Opens a dialog over the tab. Closing it redraws the tab, because a text field in it saves without
+	 * a redraw -- so a name typed there would otherwise stay old on the tab's list.
+	 */
+	private openDialog(title: string, draw: (containerEl: HTMLElement) => void): void {
+		const dialog = new EditorDialog(this.app, title, draw, (closed) => {
+			this.dialogs.delete(closed);
+			this.display();
+		});
+		this.dialogs.add(dialog);
+		dialog.open();
 	}
 
 	private renderTagRouting(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Tag routing").setHeading();
 
-		new Setting(containerEl)
-			.setName("Discover tags")
-			.setDesc("Scan your reMarkable notebooks and pages for tags.")
-			.addButton((button) =>
-				button.setButtonText("Scan").onClick(async () => {
-					button.setDisabled(true);
-					let session: TransportSession | null = null;
-					try {
-						// Through the same chain a sync uses, so a vault that configured a fallback gets one
-						// here too rather than only on the job this was written for.
-						session = (await this.plugin.openSource()).session;
-						const notebooks = await enumerateNotebookTags(session.api);
-						this.discoveredTags = collectTagNames(notebooks);
-						new Notice(`Found ${this.discoveredTags.length} tag(s).`);
-					} catch (error) {
-						new Notice(`Failed to discover tags: ${(error as Error).message}`);
-					} finally {
-						await session?.close();
-					}
-					this.display();
-				}),
-			);
-
 		const mapping = this.plugin.data.tagFolderMap;
-		const view = planTagRouting({
-			mapping,
-			discoveredTags: this.discoveredTags,
-			// The root always exists, so even a brand-new empty vault has one valid target.
-			folderPaths: [
-				"/",
-				...this.app.vault
-					.getAllLoadedFiles()
-					.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
-					.map((folder) => folder.path)
-					.sort(),
-			],
-			entitlement: this.plugin.entitlement(),
-		});
+		const view = this.tagPlan();
 
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
@@ -1063,44 +1045,117 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				containerEl.createDiv({ cls: "tagged-sync-note", text: item.text });
 				continue;
 			}
-			const row = new Setting(containerEl).setName(item.tag).setDesc(item.desc);
-			if (item.kind === "capped") continue;
+			if (item.kind === "mapped") {
+				// One line a tag: what it syncs to and what it makes. Everything else is in its dialog --
+				// the line used to hold six controls, and squeezed the tag's own name out of sight.
+				new Setting(containerEl)
+					.setName(item.tag)
+					.setDesc(`${item.desc} · ${tagModesSummary(item.tag, intelligence)}`)
+					.addExtraButton((button) => button.setIcon("pencil").setTooltip("Edit").onClick(() => this.openDialog(`Tag: ${item.tag}`, (el) => this.renderTagDialog(el, item.tag))))
+					.addExtraButton((button) =>
+						button
+							.setIcon("trash")
+							.setTooltip("Remove")
+							.onClick(async () => {
+								if (!(await confirmDialog(this.app, `Remove ${item.tag}`, REMOVAL_MESSAGE, "Remove"))) return;
+								delete mapping[item.tag];
+								await persist();
+							}),
+					);
+				continue;
+			}
+			// The tags a scan found and nobody routed: one dropdown, not a row each. Picking one opens its
+			// dialog, where choosing a folder is what maps it.
+			const found = item.tags.length;
+			new Setting(containerEl)
+				.setName("Add a tag")
+				.setDesc(
+					this.discoveredTags.length === 0
+						? "Scan your reMarkable notebooks and pages for tags, then pick one to sync."
+						: found === 0
+							? "Every tag the scan found syncs. Scan again after tagging something new."
+							: "Pick a tag the scan found to choose its folder.",
+				)
+				.addDropdown((dropdown) => {
+					dropdown.addOption("", found === 0 ? "No tags to add" : `Choose a tag… (${found} found)`);
+					for (const tag of item.tags) dropdown.addOption(tag, tag);
+					dropdown.setValue("").setDisabled(found === 0 || item.capped);
+					dropdown.onChange((tag) => {
+						if (tag !== "") this.openDialog(`Tag: ${tag}`, (el) => this.renderTagDialog(el, tag));
+					});
+				})
+				.addButton((button) =>
+					button.setButtonText("Scan").onClick(async () => {
+						button.setDisabled(true);
+						let session: TransportSession | null = null;
+						try {
+							// Through the same chain a sync uses, so a vault that configured a fallback gets one
+							// here too rather than only on the job this was written for.
+							session = (await this.plugin.openSource()).session;
+							const notebooks = await enumerateNotebookTags(session.api);
+							this.discoveredTags = collectTagNames(notebooks);
+							new Notice(`Found ${this.discoveredTags.length} tag(s).`);
+						} catch (error) {
+							new Notice(`Failed to discover tags: ${(error as Error).message}`);
+						} finally {
+							await session?.close();
+						}
+						this.display();
+					}),
+				);
+		}
+	}
 
-			// A mapped tag used to render read-only, so a wrong first choice could only be undone by
-			// editing data.json by hand. Harmless before the cap; a trap with it, since the one slot
-			// would be stuck.
-			row.addDropdown((dropdown) => {
-				for (const option of item.options) dropdown.addOption(option.value, option.label);
-				if (item.kind === "mapped") dropdown.setValue(item.folder);
+	private tagPlan(): ReturnType<typeof planTagRouting> {
+		return planTagRouting({
+			mapping: this.plugin.data.tagFolderMap,
+			discoveredTags: this.discoveredTags,
+			// The root always exists, so even a brand-new empty vault has one valid target.
+			folderPaths: [
+				"/",
+				...this.app.vault
+					.getAllLoadedFiles()
+					.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
+					.map((folder) => folder.path)
+					.sort(),
+			],
+			entitlement: this.plugin.entitlement(),
+		});
+	}
+
+	/**
+	 * One tag, whole: its folder, then -- once it has one -- what it makes. Drawn from the plan as it
+	 * stands, so the dialog of a tag just added turns into a mapped tag's the moment its folder is set.
+	 */
+	private renderTagDialog(containerEl: HTMLElement, tag: string): void {
+		const mapping = this.plugin.data.tagFolderMap;
+		const view = this.tagPlan();
+		const mapped = view.items.find((item): item is MappedItem => item.kind === "mapped" && item.tag === tag);
+		// The plan always holds the add row: it is where a scan starts.
+		const adding = view.items.find((item): item is AddItem => item.kind === "add")!;
+		const options = mapped?.options ?? adding.options;
+		// A mapped folder may be changed, and so may a new tag's while the cap allows adding it.
+		if (mapped === undefined && !(adding.tags.includes(tag) && !adding.capped)) return;
+		new Setting(containerEl)
+			.setName("Folder")
+			.setDesc("Where this tag's notes go in your vault.")
+			.addDropdown((dropdown) => {
+				for (const option of options) dropdown.addOption(option.value, option.label);
+				if (mapped !== undefined) dropdown.setValue(mapped.folder);
 				dropdown.onChange(async (value) => {
 					if (!value) return;
 					// The one gated feature that exists today: a mapping past the free cap. This is the
 					// moment the licence is *used*, so it is the moment it is re-checked -- not on load,
 					// and never for a free user, who cannot reach this branch at all.
-					if (
-						item.kind === "mappable" &&
-						view.recheckLicenceBeforeAdd &&
-						(await this.plugin.refreshLicence()).tier === "free"
-					) {
-						this.display();
-						return;
+					const refused = mapped === undefined && view.recheckLicenceBeforeAdd && (await this.plugin.refreshLicence()).tier === "free";
+					if (!refused) {
+						mapping[tag] = value;
+						await this.plugin.saveData(this.plugin.data);
 					}
-					mapping[item.tag] = value;
-					await persist();
+					this.display();
 				});
 			});
-			if (item.kind !== "mapped") continue;
-			// Transcript note, page notes, Profile: what this mapping produces (Intelligence Engine §10).
-			renderTagModes(row, item.tag, intelligence);
-			row.addButton((button) => {
-				button.setButtonText("Remove").onClick(async () => {
-					delete mapping[item.tag];
-					await persist();
-				});
-				// `setWarning()` is deprecated and `setDestructive()` needs 1.13, while the manifest
-				// floor is 1.5.7 -- the class both of them set predates both.
-				button.buttonEl.addClass("mod-warning");
-			});
-		}
+		// Transcript note, page notes, Profile: what this mapping produces (Intelligence Engine §10).
+		if (mapped !== undefined) renderTagModes(containerEl, tag, this.intelligence());
 	}
 }

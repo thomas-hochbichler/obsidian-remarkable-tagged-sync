@@ -1,6 +1,7 @@
 /**
  * The Intelligence Engine's settings (spec §10): per tag mapping, the two modes and the Profile; then
- * the Intelligence section -- device switch, extraction backend, Profiles and Slots. Free vaults see
+ * the Page notes section -- device switch, extraction backend, Profiles and Slots. Profiles and Slots
+ * are lists of one line each; each is edited in a dialog (`host.dialog`). Free vaults see
  * every Pro control, disabled and marked "(Pro)": a feature nobody can see is one nobody decides to buy.
  */
 
@@ -35,6 +36,8 @@ export interface IntelligenceSettingsHost {
 	transcriptionBackend(): string;
 	/** A provider's own settings: its address, key and model. */
 	providerSettings(id: string): BackendSettings;
+	/** Opens a dialog that `draw` fills, and fills again whenever the tab redraws. */
+	dialog(title: string, draw: (containerEl: HTMLElement) => void): void;
 }
 
 const PRO = " (Pro)";
@@ -70,35 +73,47 @@ async function claimIfUnclaimed(host: IntelligenceSettingsHost): Promise<void> {
 	host.update({ ...host.settings(), engineDeviceId: id });
 }
 
-/** The two modes and the Profile of one mapped tag, on its row in Tag routing. */
-export function renderTagModes(row: Setting, tag: string, host: IntelligenceSettingsHost): void {
+/**
+ * The two modes and the Profiles of one mapped tag, in its dialog: a row each, named. They were two
+ * bare switches on the tag's line, told apart only by a tooltip -- which a phone does not show.
+ */
+export function renderTagModes(containerEl: HTMLElement, tag: string, host: IntelligenceSettingsHost): void {
 	const settings = host.settings();
 	const modes = modesFor(settings, host.tagFolderMap(), tag);
 	const free = freeTag(settings, host.tagFolderMap());
 	const locked = !host.pro && free !== null && free !== tag;
-	row.addToggle((toggle) =>
-		toggle
-			.setTooltip("Transcript note: one note per notebook, as always")
-			.setValue(modes.transcript)
-			.onChange(async (on) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), transcript: on } } }))),
-	);
-	row.addToggle((toggle) =>
-		toggle
-			.setTooltip(locked ? `Page notes on more than one tag${PRO}` : "Page notes: one note per page, with its tasks and a summary")
-			.setValue(modes.intelligence)
-			.setDisabled(locked && !modes.intelligence)
-			.onChange(async (on) => {
-				host.update(setIntelligenceMode(host.settings(), tag, on, host.now()));
-				if (on) await claimIfUnclaimed(host);
-				await host.saveAndRedraw();
-			}),
-	);
-	if (!modes.transcript && modes.intelligence) row.setDesc("Transcript off: search the full text in the reMarkable app; Obsidian holds only what the engine extracted.");
+	new Setting(containerEl)
+		.setName("Transcript note")
+		.setDesc("One note per notebook, with the text of every page, as always.")
+		.addToggle((toggle) =>
+			toggle
+				.setValue(modes.transcript)
+				.onChange(async (on) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), transcript: on } } }))),
+		);
+	new Setting(containerEl)
+		.setName(locked ? `Page notes${PRO}` : "Page notes")
+		.setDesc(
+			!modes.transcript && modes.intelligence
+				? "Transcript off: search the full text in the reMarkable app; Obsidian holds only what the engine extracted."
+				: locked
+					? "Page notes on more than one tag."
+					: "One note per page, with its tasks and a summary.",
+		)
+		.addToggle((toggle) =>
+			toggle
+				.setValue(modes.intelligence)
+				.setDisabled(locked && !modes.intelligence)
+				.onChange(async (on) => {
+					host.update(setIntelligenceMode(host.settings(), tag, on, host.now()));
+					if (on) await claimIfUnclaimed(host);
+					await host.saveAndRedraw();
+				}),
+		);
 	// The Profile only matters, and is only offered, where page notes are on.
 	if (!modes.intelligence) return;
 	const setProfiles = (profiles: string[]) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), profiles } } }));
 	if (!host.pro) {
-		row.addDropdown((dropdown) => {
+		new Setting(containerEl).setName("Profile").addDropdown((dropdown) => {
 			dropdown.addOption("", genericProfile(host.pro).name);
 			for (const profile of settings.profiles) dropdown.addOption(profile.id, profile.name);
 			dropdown.setValue(modes.profiles[0] ?? "");
@@ -107,6 +122,7 @@ export function renderTagModes(row: Setting, tag: string, host: IntelligenceSett
 		return;
 	}
 	// Pro: several Profiles per tag; with more than one, each new page is sorted by its description (spec §5.1).
+	const row = new Setting(containerEl).setName("Profiles").setDesc("With more than one, each new page goes to the profile its description fits.");
 	for (const id of modes.profiles) {
 		const name = settings.profiles.find((profile) => profile.id === id)?.name ?? id;
 		row.addButton((button) => button.setButtonText(`${name} ×`).setTooltip(`Stop offering ${name} for this tag`).onClick(async () => setProfiles(modes.profiles.filter((other) => other !== id))));
@@ -123,9 +139,21 @@ export function renderTagModes(row: Setting, tag: string, host: IntelligenceSett
 	});
 }
 
+/** What a mapped tag makes, in a few words, for its line in Tag routing. */
+export function tagModesSummary(tag: string, host: IntelligenceSettingsHost): string {
+	const settings = host.settings();
+	const modes = modesFor(settings, host.tagFolderMap(), tag);
+	const names = modes.profiles.map((id) => settings.profiles.find((profile) => profile.id === id)?.name ?? id);
+	const parts = [
+		...(modes.transcript ? ["Transcript note"] : []),
+		...(modes.intelligence ? [`Page notes: ${names.length === 0 ? genericProfile(host.pro).name : names.join(", ")}`] : []),
+	];
+	return parts.length === 0 ? "Writes nothing" : parts.join(" · ");
+}
+
 export function renderIntelligenceSection(containerEl: HTMLElement, host: IntelligenceSettingsHost): void {
 	const settings = host.settings();
-	new Setting(containerEl).setName("Intelligence").setHeading();
+	new Setting(containerEl).setName("Page notes").setHeading();
 	containerEl.createDiv({
 		cls: "tagged-sync-note",
 		text: "A tag with page notes on turns every page you write from then on into its own note, from your template, with its tasks and a summary. Pages written before are left alone.",
@@ -202,10 +230,29 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 	renderSlots(containerEl, host);
 }
 
+/** `name`, or `name 2`, `name 3`…: five Profiles all called "My pages" could not be told apart in a tag's list. */
+export function uniqueName(name: string, taken: readonly string[]): string {
+	if (!taken.includes(name)) return name;
+	for (let n = 2; ; n++) if (!taken.includes(`${name} ${n}`)) return `${name} ${n}`;
+}
+
+function openProfile(host: IntelligenceSettingsHost, id: string): void {
+	host.dialog("Edit profile", (containerEl) => renderProfileEditor(containerEl, host, id));
+}
+
+function openSlot(host: IntelligenceSettingsHost, id: string): void {
+	host.dialog("Edit slot", (containerEl) => renderSlotEditor(containerEl, host, id));
+}
+
 function renderProfiles(containerEl: HTMLElement, host: IntelligenceSettingsHost): void {
 	const settings = host.settings();
 	new Setting(containerEl).setName("Profiles").setHeading();
 	const canAdd = host.pro || settings.profiles.length === 0;
+	const add = (profile: Omit<ProfileDef, "id" | "name"> & { name: string }) => async () => {
+		const id = host.randomId().slice(0, 8);
+		await withSettings(host, (s) => ({ ...s, profiles: [...s.profiles, { ...profile, id, name: uniqueName(profile.name, s.profiles.map((p) => p.name)) }] }));
+		openProfile(host, id);
+	};
 	new Setting(containerEl)
 		.setName(canAdd ? "Add a profile" : `Add a profile${PRO}`)
 		.setDesc("A profile is a template and the slots it fills. A tag uses the generic profile until you pick one.")
@@ -213,46 +260,73 @@ function renderProfiles(containerEl: HTMLElement, host: IntelligenceSettingsHost
 			button
 				.setButtonText("Add")
 				.setDisabled(!canAdd)
-				.onClick(async () => {
-					const profile: ProfileDef = { id: host.randomId().slice(0, 8), name: "My pages", description: "Handwritten notes", template: null, slots: [...genericProfile(false).slots] };
-					await withSettings(host, (s) => ({ ...s, profiles: [...s.profiles, profile] }));
-				}),
+				.onClick(add({ name: "My pages", description: "Handwritten notes", template: null, slots: [...genericProfile(false).slots] })),
 		);
-	for (const profile of settings.profiles) renderProfile(containerEl, host, profile);
+	for (const profile of settings.profiles) {
+		new Setting(containerEl)
+			.setName(profile.name)
+			.setDesc(profileSummary(host, profile))
+			.addExtraButton((button) => button.setIcon("pencil").setTooltip("Edit").onClick(() => openProfile(host, profile.id)))
+			.addExtraButton((button) => button.setIcon("copy").setTooltip(host.pro ? "Duplicate" : `Duplicate${PRO}`).setDisabled(!host.pro).onClick(async () => {
+				// As it stands now: the dialog saves typing without redrawing this list.
+				const now = host.settings().profiles.find((p) => p.id === profile.id)!;
+				await add({ ...now, name: `${now.name} copy` })();
+			}))
+			.addExtraButton((button) =>
+				button
+					.setIcon("trash")
+					.setTooltip("Delete")
+					.onClick(async () => {
+						if (!(await host.confirm("Delete profile", `Delete "${profile.name}"? Tags that use it go back to the generic profile; page notes already made stay as they are.`, "Delete"))) return;
+						await withSettings(host, (s) => ({
+							...s,
+							profiles: s.profiles.filter((p) => p.id !== profile.id),
+							mappings: Object.fromEntries(Object.entries(s.mappings).map(([tag, m]) => [tag, { ...m, profiles: m.profiles.filter((id) => id !== profile.id) }])),
+						}));
+					}),
+			);
+	}
 }
 
-function renderProfile(containerEl: HTMLElement, host: IntelligenceSettingsHost, profile: ProfileDef): void {
+/** A Profile's line in the list: its Slots, its template, the tags that use it. */
+function profileSummary(host: IntelligenceSettingsHost, profile: ProfileDef): string {
+	const settings = host.settings();
+	const slots = profile.slots.flatMap((id) => settings.slots.filter((slot) => slot.id === id).map((slot) => slot.name));
+	const tags = Object.keys(host.tagFolderMap()).filter((tag) => settings.mappings[tag]?.intelligence === true && settings.mappings[tag].profiles.includes(profile.id));
+	return [
+		slots.length === 0 ? "Fills nothing" : slots.join(", "),
+		profile.template ?? "Built-in template",
+		tags.length === 0 ? "No tag uses it" : `Used by ${tags.join(", ")}`,
+	].join(" · ");
+}
+
+/** One Profile, whole, in its dialog. Empty once the Profile is gone. */
+export function renderProfileEditor(containerEl: HTMLElement, host: IntelligenceSettingsHost, id: string): void {
+	const profile = host.settings().profiles.find((p) => p.id === id);
+	if (profile === undefined) return;
 	// Every control edits the Profile as it stands now, not as it was drawn: a text field saves without
 	// a redraw, so the drawn `profile` is behind as soon as one was typed in.
-	const change = (next: (now: ProfileDef) => ProfileDef) => (s: IntelligenceSettings) => ({ ...s, profiles: s.profiles.map((p) => (p.id === profile.id ? next(p) : p)) });
+	const change = (next: (now: ProfileDef) => ProfileDef) => (s: IntelligenceSettings) => ({ ...s, profiles: s.profiles.map((p) => (p.id === id ? next(p) : p)) });
 	const edit = (patch: Partial<ProfileDef>) => change((now) => ({ ...now, ...patch }));
+	new Setting(containerEl).setName("Name").addText((text) => text.setValue(profile.name).onChange(async (name) => typed(host, edit({ name }))));
 	new Setting(containerEl)
-		.setName(profile.name)
-		.setDesc(profile.description)
-		.addText((text) => text.setValue(profile.name).onChange(async (name) => typed(host, edit({ name }))))
-		.addText((text) => text.setValue(profile.description).setPlaceholder("One line: what these pages are").onChange(async (description) => typed(host, edit({ description }))))
-		.addButton((button) =>
-			button.setButtonText("Remove").onClick(async () =>
-				withSettings(host, (s) => ({
-					...s,
-					profiles: s.profiles.filter((p) => p.id !== profile.id),
-					mappings: Object.fromEntries(Object.entries(s.mappings).map(([tag, m]) => [tag, { ...m, profiles: m.profiles.filter((id) => id !== profile.id) }])),
-				})),
-			),
-		);
+		.setName("Description")
+		.setDesc("With several profiles on a tag, a new page goes to the one this fits.")
+		.addText((text) => text.setValue(profile.description).setPlaceholder("One line: what these pages are").onChange(async (description) => typed(host, edit({ description }))));
 	new Setting(containerEl)
 		.setName("Template")
 		.setDesc("Any note. Each slot fills its own heading; a template change reaches new page notes only.")
 		.addText((text) => text.setValue(profile.template ?? "").setPlaceholder("Templates/Page.md").onChange(async (path) => typed(host, edit({ template: path.trim() === "" ? null : path.trim() }))))
 		.addButton((button) =>
 			button.setButtonText("Create template").onClick(async () => {
-				const now = host.settings().profiles.find((p) => p.id === profile.id)!;
-				const slots = now.slots.flatMap((id) => host.settings().slots.filter((slot) => slot.id === id));
+				const now = host.settings().profiles.find((p) => p.id === id)!;
+				const slots = now.slots.flatMap((slotId) => host.settings().slots.filter((slot) => slot.id === slotId));
 				const folder = await host.templateFolder();
 				const path = await host.createTemplate(`${folder === "" ? "" : `${folder}/`}${now.name}.md`, starterTemplate(slots));
 				await withSettings(host, edit({ template: path }));
 			}),
 		);
+	new Setting(containerEl).setName("Fills").setHeading();
 	// A small model loses tasks when asked for many things at once (research 15): warned, never refused.
 	const backend = extractionBackendEntries().find((entry) => entry.id === host.settings().backend);
 	if (backend !== undefined && !backend.metered && profile.slots.length > LOCAL_SLOT_WARNING) {
@@ -260,12 +334,15 @@ function renderProfile(containerEl: HTMLElement, host: IntelligenceSettingsHost,
 	}
 	for (const slot of host.settings().slots) {
 		const pro = !host.pro && !FREE_SLOTS.has(slot.id);
-		const row = new Setting(containerEl).setName(`Fills ${slot.name}${pro ? PRO : ""}`).addToggle((toggle) =>
-			toggle
-				.setValue(profile.slots.includes(slot.id))
-				.setDisabled(pro)
-				.onChange(async (on) => withSettings(host, change((now) => ({ ...now, slots: on ? [...now.slots, slot.id] : now.slots.filter((id) => id !== slot.id) })))),
-		);
+		const row = new Setting(containerEl)
+			.setName(`${slot.name}${pro ? PRO : ""}`)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(profile.slots.includes(slot.id))
+					.setDisabled(pro)
+					.onChange(async (on) => withSettings(host, change((now) => ({ ...now, slots: on ? [...now.slots, slot.id] : now.slots.filter((other) => other !== slot.id) })))),
+			)
+			.addExtraButton((button) => button.setIcon("pencil").setTooltip(`Edit the ${slot.name} slot`).onClick(() => openSlot(host, slot.id)));
 		// Where the template puts it decides whether it is ever updated (spec §5.4), so the row says so.
 		// `void` on purpose: a `Setting` has a `then` of its own, so returning it from the callback would
 		// make the promise adopt it -- and `Setting.then` calls straight back, forever.
@@ -316,42 +393,74 @@ function renderSlots(containerEl: HTMLElement, host: IntelligenceSettingsHost): 
 				.setDisabled(!host.pro)
 				.onClick(async () => {
 					if (draft.name.trim() === "") return;
-					await withSettings(host, (s) => ({ ...s, slots: [...s.slots, newSlot(draft.name.trim(), draft.shape, s.slots.map((slot) => slot.id))] }));
+					const slot = newSlot(draft.name.trim(), draft.shape, host.settings().slots.map((c) => c.id));
+					await withSettings(host, (s) => ({ ...s, slots: [...s.slots, slot] }));
+					openSlot(host, slot.id);
 				}),
 		);
-	for (const slot of host.settings().slots) renderSlot(containerEl, host, slot);
+	for (const slot of host.settings().slots) {
+		const proSlot = !host.pro && !FREE_SLOTS.has(slot.id);
+		new Setting(containerEl)
+			.setName(`${slot.name}${proSlot ? PRO : ""}`)
+			.setDesc(slotSummary(host, slot))
+			.addExtraButton((button) => button.setIcon("pencil").setTooltip("Edit").onClick(() => openSlot(host, slot.id)))
+			.addExtraButton((button) =>
+				button
+					.setIcon("copy")
+					.setTooltip(host.pro ? "Duplicate" : `Duplicate${PRO}`)
+					.setDisabled(!host.pro)
+					.onClick(async () =>
+						withSettings(host, (s) => {
+							const name = uniqueName(`${slot.name} copy`, s.slots.map((c) => c.name));
+							const copy = { ...s.slots.find((c) => c.id === slot.id)!, id: slotIdFor(name, s.slots.map((c) => c.id)), name, used: false };
+							return { ...s, slots: [...s.slots, copy] };
+						}),
+					),
+			)
+			.addExtraButton((button) =>
+				button
+					.setIcon("trash")
+					.setTooltip(host.pro ? "Delete" : `Delete${PRO}`)
+					.setDisabled(!host.pro)
+					.onClick(async () => {
+						if (!(await host.confirm("Delete slot", `Delete "${slot.name}"? Every profile stops filling it; what page notes already hold stays, no longer updated.`, "Delete"))) return;
+						// Notes keep the regions it filled; they are no longer updated (spec §5.3).
+						await withSettings(host, (s) => ({ ...s, slots: s.slots.filter((c) => c.id !== slot.id), profiles: s.profiles.map((p) => ({ ...p, slots: p.slots.filter((id) => id !== slot.id) })) }));
+					}),
+			);
+	}
 }
 
-function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, slot: SlotDef): void {
-	// As in `renderProfile`: the Slot as it stands now, not as it was drawn.
-	const change = (next: (now: SlotDef) => SlotDef) => (s: IntelligenceSettings) => ({ ...s, slots: s.slots.map((candidate) => (candidate.id === slot.id ? next(candidate) : candidate)) });
+function usedBy(host: IntelligenceSettingsHost, slot: SlotDef): string[] {
+	return host.settings().profiles.filter((profile) => profile.slots.includes(slot.id)).map((profile) => profile.name);
+}
+
+/** A Slot's line in the list: its Shape, the Profiles that fill it, whether its items are reviewed. */
+function slotSummary(host: IntelligenceSettingsHost, slot: SlotDef): string {
+	const profiles = usedBy(host, slot);
+	const list = slot.shape === "list" || slot.shape === "checklist";
+	return [
+		SHAPES[slot.shape],
+		profiles.length === 0 ? "In no profile" : `In ${profiles.join(", ")}`,
+		...(list && (slot.review || !host.pro) ? ["Reviewed"] : []),
+	].join(" · ");
+}
+
+/** One Slot, whole, in its dialog. Empty once the Slot is gone. */
+export function renderSlotEditor(containerEl: HTMLElement, host: IntelligenceSettingsHost, id: string): void {
+	const slot = host.settings().slots.find((c) => c.id === id);
+	if (slot === undefined) return;
+	// As in `renderProfileEditor`: the Slot as it stands now, not as it was drawn.
+	const change = (next: (now: SlotDef) => SlotDef) => (s: IntelligenceSettings) => ({ ...s, slots: s.slots.map((candidate) => (candidate.id === id ? next(candidate) : candidate)) });
 	const edit = (patch: Partial<SlotDef>) => change((now) => ({ ...now, ...patch }));
-	const usedBy = host.settings().profiles.filter((profile) => profile.slots.includes(slot.id)).map((profile) => profile.name);
+	const profiles = usedBy(host, slot);
 	const proSlot = !host.pro && !FREE_SLOTS.has(slot.id);
+	// Said first, where it is read before anything is changed.
+	if (profiles.length > 1) containerEl.createDiv({ cls: "tagged-sync-note", text: `Used by ${profiles.join(", ")}: an edit here changes all of them.` });
 	new Setting(containerEl)
 		.setName(`${slot.name}${proSlot ? PRO : ""}`)
-		.setDesc(usedBy.length > 1 ? `Used by ${usedBy.join(", ")}: an edit here changes all of them.` : "What to extract, in your words.")
-		.addTextArea((text) => text.setValue(slot.instruction).setDisabled(proSlot).onChange(async (instruction) => typed(host, edit({ instruction }))))
-		.addButton((button) =>
-			button
-				.setButtonText("Duplicate")
-				.setDisabled(!host.pro)
-				.onClick(async () =>
-					withSettings(host, (s) => {
-						const copy = { ...s.slots.find((c) => c.id === slot.id)!, id: slotIdFor(`${slot.name} copy`, s.slots.map((c) => c.id)), name: `${slot.name} copy`, used: false };
-						return { ...s, slots: [...s.slots, copy] };
-					}),
-				),
-		)
-		.addButton((button) =>
-			button
-				.setButtonText("Delete")
-				.setDisabled(!host.pro)
-				.onClick(async () =>
-					// Notes keep the regions it filled; they are no longer updated (spec §5.3).
-					withSettings(host, (s) => ({ ...s, slots: s.slots.filter((c) => c.id !== slot.id), profiles: s.profiles.map((p) => ({ ...p, slots: p.slots.filter((id) => id !== slot.id) })) })),
-				),
-		);
+		.setDesc("What to extract, in your words.")
+		.addTextArea((text) => text.setValue(slot.instruction).setDisabled(proSlot).onChange(async (instruction) => typed(host, edit({ instruction }))));
 	// The Shape is what code branches on; once a note holds this slot's region, it is fixed.
 	new Setting(containerEl)
 		.setName(`Shape${slot.used === true ? " (fixed: duplicate to change it)" : ""}`)

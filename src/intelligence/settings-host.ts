@@ -39,6 +39,7 @@ export interface SettingsHostInput {
 	save: () => Promise<void>;
 	redraw: () => void;
 	confirm: (title: string, text: string, cta: string) => Promise<boolean>;
+	dialog: (title: string, draw: (containerEl: HTMLElement) => void) => void;
 }
 
 export function settingsHostFor(input: SettingsHostInput): IntelligenceSettingsHost {
@@ -55,6 +56,7 @@ export function settingsHostFor(input: SettingsHostInput): IntelligenceSettingsH
 		save: () => input.save(),
 		deviceId: (mint) => localDeviceId(env, mint),
 		confirm: input.confirm,
+		dialog: input.dialog,
 		templateFolder: () => templateFolder(env.files, env.configDir),
 		createTemplate: async (path, content) => {
 			const free = await freeTemplatePath(env.noteStore, path);

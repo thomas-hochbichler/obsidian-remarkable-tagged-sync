@@ -41,7 +41,7 @@ describe("settingsHostFor", () => {
 		};
 		const data = { intelligence: emptyIntelligence(), tagFolderMap: { work: "Work" }, ocrBackend: "lmstudio", llmProviders: { lmstudio: { model: "m" } } };
 		const log: string[] = [];
-		const host = settingsHostFor({ env, data, pro: true, save: async () => void log.push("save"), redraw: () => void log.push("redraw"), confirm: async () => true });
+		const host = settingsHostFor({ env, data, pro: true, save: async () => void log.push("save"), redraw: () => void log.push("redraw"), confirm: async () => true, dialog: () => undefined });
 
 		host.update({ ...host.settings(), model: "m" });
 		expect(data.intelligence.model).toBe("m");
