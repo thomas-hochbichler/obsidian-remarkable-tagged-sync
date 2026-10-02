@@ -283,6 +283,21 @@ describe("processDocument > rows", () => {
 		expect(mem.notes.get(state.rows["d1:p3:work"].notePath)).toContain("- [ ] Again");
 	});
 
+	it("takes an orphaned row back when its tag returns to the page and the note is still there, though the page did not change", async () => {
+		const { mem, state, d } = await withNote();
+		const gone = doc([page("p3", 3, "h3", AFTER)], {}, { units: [] });
+		const back = doc([page("p3", 3, "h3", AFTER)], {});
+		await processDocument(d, gone, state);
+		expect(state.rows["d1:p3:work"].status).toBe("orphaned");
+		await processDocument(d, back, state);
+		expect(state.rows["d1:p3:work"].status).toBe("active");
+		// A note the user deleted meanwhile is not the unit's any more: writing on the page is the way back.
+		await processDocument(d, gone, state);
+		mem.notes.delete(state.rows["d1:p3:work"].notePath);
+		await processDocument(d, back, state);
+		expect(state.rows["d1:p3:work"].status).toBe("orphaned");
+	});
+
 	it("rebuilds a missing base from the note, so a line typed there is not lost", async () => {
 		const { mem, state, d } = await withNote();
 		const path = state.rows["d1:p3:work"].notePath;

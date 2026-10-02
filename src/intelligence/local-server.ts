@@ -110,7 +110,8 @@ export function managedLocalEntry(files: (settings: BackendSettings) => { execut
 		metered: false,
 		requiresLicence: false,
 		measured: true,
-		notReady: "Page notes on this computer need the Qwen3-VL-8B-Instruct model. Download it under Transcription in the settings. The engine is paused until then.",
+		// One sentence for both reasons `files` has nothing: not downloaded, or busy transcribing.
+		notReady: "Page notes on this computer need the Qwen3-VL-8B-Instruct model, and it is not ready: download it under Transcription in the settings, or sync again once it has finished transcribing. The engine is paused until then.",
 		create: (settings) => {
 			const found = files(settings);
 			if (found === null) return null;
