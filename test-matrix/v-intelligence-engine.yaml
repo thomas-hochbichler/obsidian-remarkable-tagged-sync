@@ -3024,3 +3024,37 @@
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > rows > counts a failing page's attempts on one base when its note was deleted"
+
+- feature: V61
+  name: "Code review fixes: settings, cleanup, pause notice, a server that cannot start"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V61.1
+      scenario: "A name, template path or instruction is typed, then a toggle, preset or button of the same card is used"
+      expect: "Every control edits the Profile or Slot as it stands now; nothing typed is reverted"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > keeps what was just typed when a toggle, a preset or a button of the same card follows"
+
+    - id: V61.2
+      scenario: "Frontmatter properties are switched off while page notes carry the plugin's keys"
+      tier: pro
+      expect: "Page notes lose the plugin's keys and tags too; the user's and the Slots' properties stay"
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "cleanupFrontmatter (toggle off) > cleans the Intelligence Engine's page notes too, keeping what the user and the engine's Slots put there"
+
+    - id: V61.3
+      scenario: "The engine is paused and automatic syncs keep running"
+      expect: "The pause is said once in background runs, again when its reason changes, and always in a sync the user starts"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "pauseToSay > says a standing pause once in background runs, again when it changes, and always in a sync the user starts"
+
+    - id: V61.4
+      scenario: "The local model's server binary is missing or blocked by the system"
+      expect: "The start hears it as ended at once; no uncaught error, no two-minute wait"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > hears a server that cannot be started as ended, instead of an uncaught error"

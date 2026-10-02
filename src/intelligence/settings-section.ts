@@ -193,9 +193,10 @@ function renderProfiles(containerEl: HTMLElement, host: IntelligenceSettingsHost
 }
 
 function renderProfile(containerEl: HTMLElement, host: IntelligenceSettingsHost, profile: ProfileDef): void {
-	const replace = (next: ProfileDef) => (s: IntelligenceSettings) => ({ ...s, profiles: s.profiles.map((p) => (p.id === profile.id ? next : p)) });
-	// Text fields edit the Profile as it stands now, not as it was drawn: several keystrokes, one field each.
-	const edit = (patch: Partial<ProfileDef>) => (s: IntelligenceSettings) => ({ ...s, profiles: s.profiles.map((p) => (p.id === profile.id ? { ...p, ...patch } : p)) });
+	// Every control edits the Profile as it stands now, not as it was drawn: a text field saves without
+	// a redraw, so the drawn `profile` is behind as soon as one was typed in.
+	const change = (next: (now: ProfileDef) => ProfileDef) => (s: IntelligenceSettings) => ({ ...s, profiles: s.profiles.map((p) => (p.id === profile.id ? next(p) : p)) });
+	const edit = (patch: Partial<ProfileDef>) => change((now) => ({ ...now, ...patch }));
 	new Setting(containerEl)
 		.setName(profile.name)
 		.setDesc(profile.description)
@@ -216,10 +217,11 @@ function renderProfile(containerEl: HTMLElement, host: IntelligenceSettingsHost,
 		.addText((text) => text.setValue(profile.template ?? "").setPlaceholder("Templates/Page.md").onChange(async (path) => typed(host, edit({ template: path.trim() === "" ? null : path.trim() }))))
 		.addButton((button) =>
 			button.setButtonText("Create template").onClick(async () => {
-				const slots = profile.slots.flatMap((id) => host.settings().slots.filter((slot) => slot.id === id));
+				const now = host.settings().profiles.find((p) => p.id === profile.id)!;
+				const slots = now.slots.flatMap((id) => host.settings().slots.filter((slot) => slot.id === id));
 				const folder = await host.templateFolder();
-				const path = await host.createTemplate(`${folder === "" ? "" : `${folder}/`}${profile.name}.md`, starterTemplate(slots));
-				await withSettings(host, replace({ ...profile, template: path }));
+				const path = await host.createTemplate(`${folder === "" ? "" : `${folder}/`}${now.name}.md`, starterTemplate(slots));
+				await withSettings(host, edit({ template: path }));
 			}),
 		);
 	// A small model loses tasks when asked for many things at once (research 15): warned, never refused.
@@ -233,7 +235,7 @@ function renderProfile(containerEl: HTMLElement, host: IntelligenceSettingsHost,
 			toggle
 				.setValue(profile.slots.includes(slot.id))
 				.setDisabled(pro)
-				.onChange(async (on) => withSettings(host, replace({ ...profile, slots: on ? [...profile.slots, slot.id] : profile.slots.filter((id) => id !== slot.id) }))),
+				.onChange(async (on) => withSettings(host, change((now) => ({ ...now, slots: on ? [...now.slots, slot.id] : now.slots.filter((id) => id !== slot.id) })))),
 		);
 		// Where the template puts it decides whether it is ever updated (spec §5.4), so the row says so.
 		// `void` on purpose: a `Setting` has a `then` of its own, so returning it from the callback would
@@ -292,8 +294,9 @@ function renderSlots(containerEl: HTMLElement, host: IntelligenceSettingsHost): 
 }
 
 function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, slot: SlotDef): void {
-	const replace = (next: SlotDef) => (s: IntelligenceSettings) => ({ ...s, slots: s.slots.map((candidate) => (candidate.id === slot.id ? next : candidate)) });
-	const edit = (patch: Partial<SlotDef>) => (s: IntelligenceSettings) => ({ ...s, slots: s.slots.map((candidate) => (candidate.id === slot.id ? { ...candidate, ...patch } : candidate)) });
+	// As in `renderProfile`: the Slot as it stands now, not as it was drawn.
+	const change = (next: (now: SlotDef) => SlotDef) => (s: IntelligenceSettings) => ({ ...s, slots: s.slots.map((candidate) => (candidate.id === slot.id ? next(candidate) : candidate)) });
+	const edit = (patch: Partial<SlotDef>) => change((now) => ({ ...now, ...patch }));
 	const usedBy = host.settings().profiles.filter((profile) => profile.slots.includes(slot.id)).map((profile) => profile.name);
 	const proSlot = !host.pro && !FREE_SLOTS.has(slot.id);
 	new Setting(containerEl)
@@ -306,7 +309,7 @@ function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, sl
 				.setDisabled(!host.pro)
 				.onClick(async () =>
 					withSettings(host, (s) => {
-						const copy = { ...slot, id: slotIdFor(`${slot.name} copy`, s.slots.map((c) => c.id)), name: `${slot.name} copy`, used: false };
+						const copy = { ...s.slots.find((c) => c.id === slot.id)!, id: slotIdFor(`${slot.name} copy`, s.slots.map((c) => c.id)), name: `${slot.name} copy`, used: false };
 						return { ...s, slots: [...s.slots, copy] };
 					}),
 				),
@@ -328,7 +331,7 @@ function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, sl
 			dropdown
 				.setValue(slot.shape)
 				.setDisabled(!host.pro || slot.used === true)
-				.onChange(async (shape) => withSettings(host, replace({ ...newSlot(slot.name, shape as Shape, []), id: slot.id, instruction: slot.instruction, examples: slot.examples })));
+				.onChange(async (shape) => withSettings(host, change((now) => ({ ...newSlot(now.name, shape as Shape, []), id: now.id, instruction: now.instruction, examples: now.examples }))));
 		});
 	renderExamples(containerEl, host, slot, edit);
 	if (slot.shape === "value") {
@@ -343,7 +346,7 @@ function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, sl
 	const freeLocked = !host.pro;
 	new Setting(containerEl)
 		.setName(`Review new and dropped ${slot.name.toLowerCase()}${freeLocked ? PRO : ""}`)
-		.addToggle((toggle) => toggle.setValue(freeLocked || slot.review).setDisabled(freeLocked).onChange(async (review) => withSettings(host, replace({ ...slot, review }))));
+		.addToggle((toggle) => toggle.setValue(freeLocked || slot.review).setDisabled(freeLocked).onChange(async (review) => withSettings(host, edit({ review }))));
 	new Setting(containerEl)
 		.setName(`Item format${freeLocked ? PRO : ""}`)
 		.setDesc(freeLocked ? TASKS_FORMAT : slot.itemFormat)
@@ -352,7 +355,7 @@ function renderSlot(containerEl: HTMLElement, host: IntelligenceSettingsHost, sl
 			for (const name of Object.keys(ITEM_FORMAT_PRESETS)) dropdown.addOption(name, name);
 			dropdown.setDisabled(freeLocked);
 			dropdown.onChange(async (name) => {
-				if (name !== "") await withSettings(host, replace({ ...slot, itemFormat: ITEM_FORMAT_PRESETS[name] }));
+				if (name !== "") await withSettings(host, edit({ itemFormat: ITEM_FORMAT_PRESETS[name] }));
 			});
 		})
 		.addText((text) =>

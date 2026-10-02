@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NoteStore } from "../note-builder";
 import { compatExtractionEntry, registerExtractionBackend } from "./extraction-registry";
 import { TFile } from "obsidian";
-import { adapterFiles, coreTemplateFormats, type HostEnvironment, hostEnvironmentFor, intelligenceNotices, localDeviceId, noteCreator, prepareRun, REVIEW_LINK, reviewStoresFor, templaterOf } from "./host";
+import { adapterFiles, coreTemplateFormats, type HostEnvironment, hostEnvironmentFor, intelligenceNotices, localDeviceId, noteCreator, pauseToSay, prepareRun, REVIEW_LINK, reviewStoresFor, templaterOf } from "./host";
 import { emptyReport } from "./sync-pass";
 import { emptyIntelligence, EMPTY_INTELLIGENCE_FINGERPRINT, setIntelligenceMode, type IntelligenceSettings } from "./settings";
 import { parseExtraction } from "./extraction";
@@ -228,6 +228,16 @@ describe("the Obsidian glue", () => {
 		expect(await coreTemplateFormats(read(JSON.stringify({ dateFormat: "", timeFormat: 3 })), ".obsidian")).toEqual({ date: null, time: null });
 		expect(await coreTemplateFormats(read(null), ".obsidian")).toEqual({ date: null, time: null });
 		expect(await coreTemplateFormats(read("{broken"), ".obsidian")).toEqual({ date: null, time: null });
+	});
+});
+
+describe("pauseToSay", () => {
+	it("says a standing pause once in background runs, again when it changes, and always in a sync the user starts", () => {
+		expect(pauseToSay("Paused.", true, null)).toBe("Paused.");
+		expect(pauseToSay("Paused.", true, "Paused.")).toBeNull();
+		expect(pauseToSay("No key.", true, "Paused.")).toBe("No key.");
+		expect(pauseToSay("Paused.", false, "Paused.")).toBe("Paused.");
+		expect(pauseToSay(null, true, "Paused.")).toBeNull();
 	});
 });
 

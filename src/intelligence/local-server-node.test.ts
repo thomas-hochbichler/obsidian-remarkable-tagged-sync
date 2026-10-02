@@ -59,6 +59,17 @@ describe("nodeServerDeps", () => {
 		}
 	});
 
+	it("hears a server that cannot be started as ended, instead of an uncaught error", async () => {
+		const desktop = Platform.isDesktop;
+		(Platform as { isDesktop: boolean }).isDesktop = true;
+		try {
+			const child = nodeServerDeps().spawn("/nowhere/llama-server", []);
+			expect(await new Promise<number | null>((resolve) => child.onExit(resolve))).toBeNull();
+		} finally {
+			(Platform as { isDesktop: boolean }).isDesktop = desktop;
+		}
+	});
+
 	it("refuses to spawn off the desktop", () => {
 		const desktop = Platform.isDesktop;
 		(Platform as { isDesktop: boolean }).isDesktop = false;
