@@ -268,6 +268,21 @@ describe("processDocument > rows", () => {
 		expect(mem.notes.get(oldPath)).toContain("- [ ] Again");
 	});
 
+	it("counts a failing page's attempts on one base when its note was deleted", async () => {
+		const { mem, state, d } = await withNote();
+		mem.notes.delete(state.rows["d1:p3:work"].notePath);
+		const failing = doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "FAIL todo Again" });
+		await processDocument(d, failing, state);
+		await processDocument(d, failing, state);
+		const third = await processDocument(d, failing, state);
+		expect(third.notices).toEqual([expect.stringContaining("could not be extracted 3 times: model down")]);
+		expect(mem.bases.size).toBe(1);
+		// A seen entry lost along with the note starts over just the same.
+		delete state.seenPages["d1:p3:work"];
+		await processDocument(d, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Again" }), state);
+		expect(mem.notes.get(state.rows["d1:p3:work"].notePath)).toContain("- [ ] Again");
+	});
+
 	it("rebuilds a missing base from the note, so a line typed there is not lost", async () => {
 		const { mem, state, d } = await withNote();
 		const path = state.rows["d1:p3:work"].notePath;
@@ -341,6 +356,27 @@ describe("processDocument > a mapped tag renamed on the tablet", () => {
 		await processDocument({ ...d, settings: setIntelligenceMode(s, "home", true, ENABLED) }, two, state);
 		// Not a rename: "job" keeps its entry, "work" and "home" are recorded afresh.
 		expect(Object.keys(state.seenPages).sort()).toEqual(["d1:p1:home", "d1:p1:job", "d1:p1:work"]);
+	});
+
+	it("does not read a tag whose Intelligence Mode is merely off as renamed to the tag switched on beside it", async () => {
+		const mem = memory();
+		const state = fresh();
+		const map = { work: "Work", job: "Job" };
+		const both = [{ tag: "work", scope: "notebook" as const, pageIds: ["p3"] }, { tag: "job", scope: "notebook" as const, pageIds: ["p3"] }];
+		const d = deps(mem, { tagFolderMap: map });
+		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }, { units: both }), state);
+		completeScans(d.settings, map, ["work"], state);
+		// Another notebook's row and seen entry are not this document's to move.
+		state.rows["d2:q1:work"] = { ...state.rows["d1:p3:work"], syncKey: "d2:q1:work", docId: "d2", pageId: "q1" };
+		state.seenPages["d2:q1:work"] = { scope: "notebook", pageHash: "hq", firstSeen: AFTER };
+		const swapped = setIntelligenceMode(setIntelligenceMode(d.settings, "work", false, ENABLED), "job", true, ENABLED);
+		await processDocument({ ...d, settings: swapped }, doc([page("p3", 3, "h3b", AFTER + 9)], { p3: "todo Call todo Pay" }, { units: both }), state);
+		expect(state.rows["d1:p3:work"]).toMatchObject({ tag: "work", status: "active", noteId: "note1", folder: "Work" });
+		expect(state.rows["d1:p3:job"]).toMatchObject({ tag: "job", folder: "Job" });
+		expect(state.rows["d1:p3:job"].notePath.startsWith("Job/")).toBe(true);
+		expect(mem.notes.get(state.rows["d1:p3:work"].notePath)).not.toContain("Pay");
+		expect(state.rows["d2:q1:work"]).toMatchObject({ tag: "work", status: "active" });
+		expect(state.seenPages["d2:q1:work"]).toBeDefined();
 	});
 
 	it("orphans a removed page-note tag instead of renaming it to a transcript-only tag on the notebook", async () => {

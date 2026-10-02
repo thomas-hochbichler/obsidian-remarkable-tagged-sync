@@ -275,9 +275,11 @@ async function processItem(
 	const row = state.rows[key];
 	const noteText = row ? await deps.noteStore.read(row.notePath) : null;
 	// One revive rule (§4.1): a row whose note is gone starts over with a fresh id and no base --
-	// merging against the dead note's base would tombstone everything.
+	// merging against the dead note's base would tombstone everything. A retry of that start keeps the
+	// id its first try left on the seen entry, so the failed attempts count up on one base.
 	const alive = row !== undefined && noteText !== null;
-	const noteId = alive ? row.noteId : row !== undefined ? deps.newNoteId() : (seen?.noteId ?? deps.newNoteId());
+	const firstTry = row !== undefined && seen?.noteId === row.noteId;
+	const noteId = alive ? row.noteId : firstTry ? deps.newNoteId() : (seen?.noteId ?? deps.newNoteId());
 	if (row !== undefined && !alive) await deps.baseStore.discard(row.noteId);
 	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId };
 
@@ -387,18 +389,26 @@ const keyParts = (key: string) => {
 };
 
 function followTagRenames(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState): void {
+	// The tags each page of this document is known under, per scope: read once, not once per page.
+	const known = new Map<string, Set<string>>();
+	const know = (pageId: string, scope: string, tag: string) => {
+		const at = `${pageId}:${scope}`;
+		known.set(at, (known.get(at) ?? new Set<string>()).add(tag));
+	};
+	for (const row of Object.values(state.rows)) if (row.status === "active" && row.docId === doc.docId) know(row.pageId, row.scope, row.tag);
+	for (const [key, seen] of Object.entries(state.seenPages)) {
+		const parts = keyParts(key);
+		if (parts.docId === doc.docId) know(parts.pageId, seen.scope, parts.tag);
+	}
 	for (const page of doc.pages) {
 		for (const scope of ["notebook", "page"] as const) {
+			const previous = known.get(`${page.id}:${scope}`);
+			if (previous === undefined) continue;
+			const onPage = doc.units.filter((unit) => unit.scope === scope && unit.pageIds.includes(page.id)).map((unit) => unit.tag);
+			// Only a tag gone from the tablet was renamed: one whose Intelligence Mode is merely off is still here.
+			const removed = [...previous].filter((tag) => !onPage.includes(tag));
 			// Only tags that make page notes can be the new name: a transcript-only tag was never this unit's.
-			const current = doc.units.filter((unit) => unit.scope === scope && unit.pageIds.includes(page.id) && modesFor(deps.settings, deps.tagFolderMap, unit.tag).intelligence).map((unit) => unit.tag);
-			const previous = new Set<string>();
-			for (const row of Object.values(state.rows)) if (row.status === "active" && row.docId === doc.docId && row.pageId === page.id && row.scope === scope) previous.add(row.tag);
-			for (const [key, seen] of Object.entries(state.seenPages)) {
-				const parts = keyParts(key);
-				if (parts.docId === doc.docId && parts.pageId === page.id && seen.scope === scope) previous.add(parts.tag);
-			}
-			const removed = [...previous].filter((tag) => !current.includes(tag));
-			const added = current.filter((tag) => !previous.has(tag));
+			const added = onPage.filter((tag) => !previous.has(tag) && modesFor(deps.settings, deps.tagFolderMap, tag).intelligence);
 			if (removed.length !== 1 || added.length !== 1) continue;
 			const from = intelligenceSyncKey(doc.docId, page.id, removed[0]);
 			const to = intelligenceSyncKey(doc.docId, page.id, added[0]);
