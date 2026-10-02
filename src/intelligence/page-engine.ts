@@ -7,7 +7,7 @@
  */
 
 import { type BaseItem } from "./merge";
-import { NO_FAILURES, BASE_VERSION, type ListSlotBase, type PageBase, type SlotBase, type ValueSlotBase } from "./base-store";
+import { NO_FAILURES, BASE_VERSION, foreignLines, type ListSlotBase, type PageBase, type SlotBase, type ValueSlotBase } from "./base-store";
 import { type PropertyValue, readProperty, writeProperty } from "./frontmatter-values";
 import { mergeTagList, mergeValue } from "./value-merge";
 import { calendarDay, isoDay } from "./dates";
@@ -313,7 +313,7 @@ function create(run: PageRun, runSlots: readonly SlotDef[], result: ExtractionRe
 		lines = setProposalCallout(lines, findRegion(lines, heading, compileItemFormat("- {{text}}"))!, pendingCount(slot), run.reviewLink);
 	}
 	const content = mergeProperties(lines.join("\n"), runSlots, results, slots, run);
-	const base: PageBase = { ...freshBase(run), transcript, slots, settled };
+	const base: PageBase = { ...freshBase(run), transcript, slots, settled, outside: foreignLines(slots, content.split("\n")) };
 	const proposals = Object.values(slots).reduce((sum, slot) => sum + pendingCount(slot), 0);
 	return { kind: "written", content, created: true, base, proposals, pageDate, missingRegions: [] };
 }

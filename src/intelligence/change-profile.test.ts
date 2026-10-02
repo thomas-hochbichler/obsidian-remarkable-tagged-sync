@@ -81,9 +81,27 @@ describe("uneditedSinceBase", () => {
 		expect(uneditedSinceBase(base, note.replace("- [ ] Pay", "- [ ] Pay\n- [ ] Mine").split("\n"))).toBe(false);
 		expect(uneditedSinceBase(base, note.replace("- [ ] Pay", "- [ ] Pay the rent").split("\n"))).toBe(false);
 		expect(uneditedSinceBase(base, note.replace("## Tasks", "## Other").split("\n"))).toBe(false);
-		const withText = { ...base, slots: { ...base.slots, summary: { shape: "text", heading: { level: 2, text: "Summary" }, text: "A page.", proposals: [] }, mood: { shape: "value", property: null, heading: { level: 2, text: "Mood" }, value: "ok", proposals: [] }, tags: { shape: "value", property: "tags", heading: null, value: null, proposals: [] } } };
+		const withText = { ...base, outside: "", slots: { ...base.slots, summary: { shape: "text", heading: { level: 2, text: "Summary" }, text: "A page.", proposals: [] }, mood: { shape: "value", property: null, heading: { level: 2, text: "Mood" }, value: "ok", proposals: [] }, tags: { shape: "value", property: "tags", heading: null, value: null, proposals: [] } } };
 		expect(uneditedSinceBase(withText, "## Tasks\n- [ ] Call\n- [ ] Pay\n## Summary\nA page.\n## Mood\nok".split("\n"))).toBe(true);
 		expect(uneditedSinceBase(withText, "## Tasks\n- [ ] Call\n- [ ] Pay\n## Summary\nMy words.\n## Mood\nok".split("\n"))).toBe(false);
+	});
+
+	it("is false for a section of the user's own, prose between the tasks, a tick, a date, a task the user typed, and a note with no fingerprint", async () => {
+		const e = env();
+		const { index, path } = await synced(e, "todo Call todo Pay");
+		const base = JSON.parse(e.data.get(`plugin/base/${index.intelligenceRows!["d:p1:work"].noteId}.json`)!);
+		const note = `---\nremarkable-uuid: d\n---\n${e.notes.get(path)!}`;
+		// The plugin's frontmatter and blank lines are not the user's writing.
+		expect(uneditedSinceBase(base, `${note}\n\n`.split("\n"))).toBe(true);
+		expect(uneditedSinceBase(base, `${note}\n## My thoughts\nAsk Anna about the budget.\n`.split("\n"))).toBe(false);
+		expect(uneditedSinceBase(base, note.replace("- [ ] Call", "- [ ] Call\nBob is away until Monday.").split("\n"))).toBe(false);
+		expect(uneditedSinceBase(base, note.replace("- [ ] Call", "- [x] Call").split("\n"))).toBe(false);
+		expect(uneditedSinceBase(base, note.replace("- [ ] Call", "- [ ] Call 📅 2026-10-05").split("\n"))).toBe(false);
+		// A line the user typed is in the base after the next sync, as theirs.
+		const typed = { ...base, slots: { tasks: { ...base.slots.tasks, list: { ...base.slots.tasks.list, items: base.slots.tasks.list.items.map((item: object, at: number) => (at === 1 ? { ...item, origin: "user" } : item)) } } } };
+		expect(uneditedSinceBase(typed, note.split("\n"))).toBe(false);
+		// Made before the fingerprint, or a base rebuilt from the note: nothing says what the engine wrote.
+		expect(uneditedSinceBase({ ...base, outside: undefined }, note.split("\n"))).toBe(false);
 	});
 });
 
@@ -115,6 +133,17 @@ describe("changeProfile", () => {
 		expect(row.notePath).toBe("Work/Log/2026-09-02 Log p1 (work).md");
 		expect(e.notes.get(path)).toBe(edited);
 		expect(e.notes.get(row.notePath)).toContain("## Summary");
+		expect(out.message).toContain("stays as it is");
+	});
+
+	it("leaves a note with a section of the user's own as it is, though no Slot's region was touched", async () => {
+		const e = env();
+		const { index, path } = await synced(e);
+		const edited = `${e.notes.get(path)!}\n## My thoughts\nAsk Anna about the budget.\n`;
+		e.notes.set(path, edited);
+		const out = await changeProfile(e, run(), index, path, "decided", "a/d-p1.pdf");
+		expect(e.notes.get(path)).toBe(edited);
+		expect(out.index!.intelligenceRows!["d:p1:work"].notePath).not.toBe(path);
 		expect(out.message).toContain("stays as it is");
 	});
 

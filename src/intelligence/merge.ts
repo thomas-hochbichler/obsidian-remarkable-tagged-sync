@@ -85,9 +85,9 @@ export interface ListMergeResult {
 	ops: ListOp[];
 }
 
-const isTicked = (checkbox: string | null) => checkbox === "x" || checkbox === "X";
+export const isTicked = (checkbox: string | null) => checkbox === "x" || checkbox === "X";
 
-function fieldsEqual(a: Fields, b: Record<string, string | null>): boolean {
+export function fieldsEqual(a: Fields, b: Record<string, string | null>): boolean {
 	const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
 	for (const key of keys) if ((a[key] ?? null) !== (b[key] ?? null)) return false;
 	return true;

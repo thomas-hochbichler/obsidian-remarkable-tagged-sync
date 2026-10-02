@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BASE_VERSION, basePath, createBaseStore, NO_FAILURES, rebuildBase, type BaseFiles, type PageBase } from "./base-store";
+import { BASE_VERSION, basePath, createBaseStore, foreignLines, NO_FAILURES, rebuildBase, type BaseFiles, type PageBase, type SlotBase } from "./base-store";
 import { compileItemFormat } from "./item-format";
 
 function memoryFiles(): BaseFiles & { files: Map<string, string> } {
@@ -89,5 +89,24 @@ describe("rebuildBase", () => {
 		expect(rebuilt.slots.mood).toEqual({ shape: "value", property: null, heading: { level: 2, text: "Tags" }, value: null, proposals: [] });
 		const plain = rebuildBase({ lines: note, slots: [{ ...slots[3], property: "mood" }], noteId: "n1", syncKey: "k", newId: () => "r" });
 		expect(plain.slots.tags).toEqual({ shape: "value", property: "mood", heading: null, value: null, proposals: [] });
+	});
+});
+
+describe("foreignLines", () => {
+	const slots: Record<string, SlotBase> = {
+		tasks: { shape: "checklist", heading: { level: 2, text: "Tasks" }, itemFormat: "- [ ] {{text}}", list: { items: [], tombstones: [], proposals: [] } },
+		summary: { shape: "text", heading: { level: 2, text: "Summary" }, text: "", proposals: [] },
+		project: { shape: "value", property: "project", heading: null, value: null, proposals: [] },
+		gone: { shape: "text", heading: { level: 2, text: "Gone" }, text: "", proposals: [] },
+	};
+
+	it("keeps what no Slot fills: not the frontmatter, a Slot's heading, its items or text, a callout or a blank line", () => {
+		const note = ["---", "project: A", "---", "# Title  ", "", "## Tasks", "> [!todo] 1 proposal — [Review](x)", "Do these first:", "- [ ] Call", "", "## Summary", "Met Bob.", "", "## Page", "[[p1.pdf]]"];
+		expect(foreignLines(slots, note)).toBe("# Title\nDo these first:\n## Page\n[[p1.pdf]]");
+	});
+
+	it("takes a note with no frontmatter, or an unclosed one, as all body", () => {
+		expect(foreignLines(slots, ["Intro", "## Summary", "Met Bob."])).toBe("Intro");
+		expect(foreignLines({}, ["---", "not: closed"])).toBe("---\nnot: closed");
 	});
 });
