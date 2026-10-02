@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTE_TRANSCRIPTION_PROMPT, OCR_REQUEST_TIMEOUT_MS, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { ocrImage } from "./ocr-backend";
-import { OpenAiCompatOcrBackend } from "./openai-compat-ocr-backend";
+import { OpenAiCompatOcrBackend, OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import type { RmPage } from "./rm-parser";
 
 const fetchMock = vi.fn();
@@ -601,6 +601,15 @@ describe("deterministic sampling", () => {
 		await backend.recognize([page()]);
 
 		expect(JSON.parse(fetchMock.mock.calls[0][1].body).temperature).toBe(0);
+	});
+
+	it("caps the answer, reasoning included, when told to, as for a server the user runs (research 30)", async () => {
+		fetchMock.mockResolvedValue(chatResponse("text"));
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "m", fetchFn: fetchMock, deterministic: true, maxTokens: OWN_SERVER_MAX_TOKENS });
+
+		await backend.recognize([page()]);
+
+		expect(JSON.parse(fetchMock.mock.calls[0][1].body).max_tokens).toBe(16_384);
 	});
 
 	/**
