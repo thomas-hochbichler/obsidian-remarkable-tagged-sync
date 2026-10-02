@@ -5,7 +5,7 @@
 
 import { type App, type Command, Modal, Notice, Setting } from "obsidian";
 import type { SyncIndex } from "../sync-engine";
-import { isPageNote, markForRereading, pageProfile, type RerunOutcome } from "./rerun";
+import { isPageNote, markForRereading, NOT_A_PAGE_NOTE, pageProfile, type RerunOutcome } from "./rerun";
 import type { NoteStore } from "../note-builder";
 import type { BaseStore } from "./base-store";
 import { REVIEW_ACTION, REVIEW_LINK } from "./host";
@@ -112,7 +112,7 @@ export class ProfileChoiceModal extends Modal {
 		app: App,
 		private readonly profiles: readonly { id: string; name: string; description: string }[],
 		/** The Profile the note has now; `generic` or a removed one is in no row. */
-		private readonly current: string | null,
+		private readonly current: string,
 		private readonly choose: (id: string) => void,
 	) {
 		super(app);
@@ -128,9 +128,9 @@ export class ProfileChoiceModal extends Modal {
 			cls: "setting-item-description",
 			text: "The note is made again with the profile you pick. If you have edited it, it stays as it is and a second note is made beside it.",
 		});
-		if (!this.profiles.some((profile) => profile.id === this.current)) {
-			this.contentEl.createEl("p", { cls: "setting-item-description", text: "This page has the generic profile now." });
-		}
+		// The generic profile is in no row; nor is one removed since. Either is said, so no row reads as current by mistake.
+		if (this.current === "generic") this.contentEl.createEl("p", { cls: "setting-item-description", text: "This page has the generic profile now." });
+		else if (!this.profiles.some((profile) => profile.id === this.current)) this.contentEl.createEl("p", { cls: "setting-item-description", text: "The profile this page was made with no longer exists." });
 		for (const profile of this.profiles) {
 			const row = new Setting(this.contentEl).setName(profile.name).setDesc(profile.description);
 			if (profile.id === this.current) {
@@ -183,8 +183,15 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 			const file = host.app.workspace.getActiveFile();
 			if (file === null || file.extension !== "md") return false;
 			if (checking) return true;
-			if (!host.pro()) new Notice(CHANGE_PROFILE_PRO);
-			else new ProfileChoiceModal(host.app, host.profiles(), pageProfile(host.index(), file.path), (id) => void host.exclusive(async () => say(host, await host.changeProfile(file.path, id)))).open();
+			if (!host.pro()) {
+				new Notice(CHANGE_PROFILE_PRO);
+				return true;
+			}
+			// Asked before the choice opens: a note kept beside a new one after a change is the user's
+			// now, and offering it Profiles read as if it still had one (live test, 2026-10-02).
+			const current = pageProfile(host.index(), file.path);
+			if (current === null) new Notice(NOT_A_PAGE_NOTE);
+			else new ProfileChoiceModal(host.app, host.profiles(), current, (id) => void host.exclusive(async () => say(host, await host.changeProfile(file.path, id)))).open();
 			return true;
 		},
 	});

@@ -2662,6 +2662,20 @@
       file: src/intelligence/commands.test.ts
       test: "the page-note commands > marks the Profile the page has now, and offers it no button to choose it again"
 
+    - id: V42.7.2
+      scenario: "The command is run on a note that is no longer a page note -- one kept beside a new note after a change"
+      expect: "No choice opens; a sentence says it is not a page note"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > offers no choice on a note that is no longer a page note, such as one kept beside a new one"
+
+    - id: V42.7.3
+      scenario: "The page was made with a profile that has since been removed"
+      expect: "Said above the rows, and not called generic"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > says when the profile the page was made with no longer exists"
+
     - id: V42.8
       scenario: "There is no Profile to choose"
       expect: "The chooser says where to add one"

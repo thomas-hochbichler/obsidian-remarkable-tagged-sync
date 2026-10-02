@@ -16,7 +16,7 @@ export interface RerunOutcome {
 	index?: SyncIndex;
 }
 
-const NOT_A_PAGE_NOTE = "This note is not a page note from the Intelligence Engine.";
+export const NOT_A_PAGE_NOTE = "This note is not a page note from the Intelligence Engine.";
 
 function pageRow(index: SyncIndex, notePath: string): IntelligenceRow | undefined {
 	return Object.values(index.intelligenceRows ?? {}).find((row) => row.notePath === notePath && row.status === "active");

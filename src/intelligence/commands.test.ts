@@ -230,6 +230,23 @@ describe("the page-note commands", () => {
 		expect(index()).toBe(before);
 	});
 
+	it("offers no choice on a note that is no longer a page note, such as one kept beside a new one", () => {
+		const { changeCommand } = commandHost(file("Work/kept.md"));
+		takeModals();
+		takeNotices();
+		changeCommand.checkCallback!(false);
+		expect(takeModals()).toEqual([]);
+		expect(takeNotices()).toEqual(["This note is not a page note from the Intelligence Engine."]);
+	});
+
+	it("says when the profile the page was made with no longer exists", () => {
+		const modal = new ProfileChoiceModal(new App() as never, [{ id: "a", name: "A", description: "" }], "gone", () => undefined);
+		modal.open();
+		const text = (modal.contentEl as unknown as FakeEl).allText();
+		expect(text).toContain("The profile this page was made with no longer exists.");
+		expect(text).not.toContain("This page has the generic profile now.");
+	});
+
 	it("marks the Profile the page has now, and offers it no button to choose it again", () => {
 		takeSettings();
 		const modal = new ProfileChoiceModal(new App() as never, [{ id: "a", name: "A", description: "" }, { id: "b", name: "B", description: "" }], "b", () => undefined);
@@ -242,7 +259,7 @@ describe("the page-note commands", () => {
 	});
 
 	it("says there is no Profile yet when there is none to choose", () => {
-		const modal = new ProfileChoiceModal(new App() as never, [], null, () => undefined);
+		const modal = new ProfileChoiceModal(new App() as never, [], "generic", () => undefined);
 		modal.open();
 		expect((modal.contentEl as unknown as FakeEl).allText()).toEqual(["There is no profile yet. Add one in the plugin settings."]);
 	});

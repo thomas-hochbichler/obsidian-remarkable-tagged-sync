@@ -133,7 +133,7 @@ describe("changeProfile", () => {
 		expect(row.notePath).toBe("Work/Log/2026-09-02 Log p1 (work).md");
 		expect(e.notes.get(path)).toBe(edited);
 		expect(e.notes.get(row.notePath)).toContain("## Summary");
-		expect(out.message).toContain("stays as it is");
+		expect(out.message).toContain("stays as it is and is yours now: no sync updates it.");
 	});
 
 	it("leaves a note with a section of the user's own as it is, though no Slot's region was touched", async () => {

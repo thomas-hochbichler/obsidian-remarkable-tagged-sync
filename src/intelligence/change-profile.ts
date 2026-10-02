@@ -81,7 +81,7 @@ export async function changeProfile(env: HostEnvironment, run: RunInputs, index:
 		await stores.baseStore.save(outcome.base);
 		const nextRow = { ...row, notePath: path, noteId, profileId, baseHash: baseHash(outcome.base), syncedAt: deps.now().toISOString(), frontmatterTags: undefined, frontmatterVersion: undefined };
 		return {
-			message: unedited ? `The note is made again with "${profile.name}".` : `The note has your edits, so it stays as it is; "${profile.name}" makes a new note beside it: ${path}.`,
+			message: unedited ? `The note is made again with "${profile.name}".` : `The note has your edits, so it stays as it is and is yours now: no sync updates it. "${profile.name}" makes a new page note beside it: ${path}.`,
 			index: {
 				...index,
 				seenPages: { ...index.seenPages, [row.syncKey]: { scope: row.scope, pageHash, firstSeen, noteId } },
