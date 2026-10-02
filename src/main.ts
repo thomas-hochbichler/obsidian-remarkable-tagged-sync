@@ -73,7 +73,7 @@ import {
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
-import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, type IntelligenceRun, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
+import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, type IntelligenceRun, pauseToSay, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
 import { BUSY, type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscribePageNote } from "./intelligence/commands";
 import { rerunExtraction } from "./intelligence/rerun";
 import { changeProfile } from "./intelligence/change-profile";
@@ -660,6 +660,8 @@ export default class TaggedSyncPlugin extends Plugin {
 
 	/** The engine's side of the sync in progress, so an unload mid-sync can stop the local model's server. */
 	private runningIntelligence: IntelligenceRun | null = null;
+	/** The engine's pause as the last sync left it; see `pauseToSay`. */
+	private lastEnginePause: string | null = null;
 
 	/** The engine's commands reach the plugin through this; see `intelligence/commands.ts`. */
 	private readonly intelligenceCommands: IntelligenceCommandsHost = {
@@ -818,8 +820,11 @@ export default class TaggedSyncPlugin extends Plugin {
 			// stopped run's skips and failures are just as real as a completed one's.
 			if (speak) this.reportPartialOutcomes(result);
 			// What the engine has to say -- a pause, a page that keeps failing, pending proposals -- is
-			// said in a background run too: nobody else will ever tell the user.
-			for (const line of intelligenceNotices(intelligence.paused, result.intelligence)) new Notice(line);
+			// said in a background run too: nobody else will ever tell the user. A pause that stands is
+			// said there once, not at every interval.
+			const paused = pauseToSay(intelligence.paused, auto, this.lastEnginePause);
+			this.lastEnginePause = intelligence.paused;
+			for (const line of intelligenceNotices(paused, result.intelligence)) new Notice(line);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");

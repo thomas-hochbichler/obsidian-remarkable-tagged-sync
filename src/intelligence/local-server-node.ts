@@ -38,7 +38,12 @@ export function nodeServerDeps(): ServerDeps {
 			// eslint-disable-next-line @typescript-eslint/no-require-imports -- Deliberate: a static import would load node modules on mobile, where they do not exist.
 			const { spawn } = require("child_process") as typeof import("child_process");
 			const child: ChildProcess = spawn(command, args, { stdio: "ignore" });
-			return { kill: () => void child.kill(), onExit: (listener) => void child.on("exit", listener) };
+			return {
+				kill: () => void child.kill(),
+				// A binary that cannot be started (missing, quarantined) emits `error` and never `exit`:
+				// unheard, that is an uncaught exception, and the start waits out its whole two minutes.
+				onExit: (listener) => void child.on("exit", listener).on("error", () => listener(null)),
+			};
 		},
 		fetchFn: obsidianFetch,
 		sleep: realSleep,

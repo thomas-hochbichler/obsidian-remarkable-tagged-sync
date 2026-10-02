@@ -195,6 +195,17 @@ describe("cleanupFrontmatter (toggle off)", () => {
 		expect(await cleanupFrontmatter(store, index)).toBe(1);
 		expect(store.files["Target/Old.md"]).toBe(BODY);
 	});
+
+	it("cleans the Intelligence Engine's page notes too, keeping what the user and the engine's Slots put there", async () => {
+		const pageNote = "---\nmood: good\ntags:\n  - mine\n  - remarkable/work\nremarkable-uuid: doc-1\n---\n## Tasks\n";
+		const store = fakeNoteStore({ "Work/Page.md": pageNote });
+		const pageRow = { syncKey: "doc-1:p1:work", unitKey: "doc-1:p1:work", docId: "doc-1", pageId: "p1", tag: "work", scope: "notebook" as const, notePath: "Work/Page.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "h", syncedAt: SYNCED_AT, frontmatterTags: ["remarkable/work"], frontmatterVersion: FRONTMATTER_KEYS_VERSION };
+		const index: SyncIndex = { rootHash: "r", rows: {}, intelligenceRows: { "doc-1:p1:work": pageRow } };
+
+		expect(await cleanupFrontmatter(store, index)).toBe(1);
+		expect(store.files["Work/Page.md"]).toBe("---\nmood: good\ntags:\n  - mine\n---\n## Tasks\n");
+		expect(index.intelligenceRows!["doc-1:p1:work"]).toEqual({ ...pageRow, frontmatterTags: undefined, frontmatterVersion: undefined });
+	});
 });
 
 describe("backfillFrontmatter and the page keys (#107)", () => {

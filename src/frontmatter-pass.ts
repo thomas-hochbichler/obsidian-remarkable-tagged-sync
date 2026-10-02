@@ -117,25 +117,33 @@ export async function backfillFrontmatter(api: PassApi, noteStore: NoteStore, in
  * Toggle-off: removes the plugin's keys and its tracked tags from every note the index knows --
  * orphaned rows included, because their notes may still sit in the vault -- and forgets the
  * tracked tags. User frontmatter stays. Needs no device: everything it removes is written down
- * locally. Mutates `index.rows` in place; the caller persists. Returns how many notes changed.
+ * locally. Mutates `index.rows` and `index.intelligenceRows` in place; the caller persists. Returns
+ * how many notes changed.
  */
 export async function cleanupFrontmatter(noteStore: NoteStore, index: SyncIndex): Promise<number> {
 	let cleaned = 0;
-	for (const [syncKey, row] of Object.entries(index.rows)) {
+	const strip = async (row: { notePath: string; frontmatterTags?: string[] }): Promise<void> => {
 		const note = await noteStore.read(row.notePath);
-		if (note !== null) {
-			const stripped = removeFrontmatter(note, row.frontmatterTags ?? []);
-			if (stripped !== null) {
-				await noteStore.write(row.notePath, stripped);
-				cleaned++;
-			}
-		}
+		const stripped = note === null ? null : removeFrontmatter(note, row.frontmatterTags ?? []);
+		if (stripped === null) return;
+		await noteStore.write(row.notePath, stripped);
+		cleaned++;
+	};
+	for (const [syncKey, row] of Object.entries(index.rows)) {
+		await strip(row);
 		// The tracked tags and the key-set stamp go; `noteId` stays. Turning the feature back on should
 		// give a note the identity it had before, not a new one -- and the row is where that lives.
 		if (row.frontmatterTags !== undefined || row.frontmatterVersion !== undefined) {
 			const { frontmatterTags: _tags, frontmatterVersion: _version, ...rest } = row;
 			index.rows[syncKey] = rest;
 		}
+	}
+	// Page notes carry the same keys (spec §7.4). A Value Slot's properties and the Tags Slot's tags are
+	// not among them: the row tracks only what the plugin's own keys added.
+	for (const [syncKey, row] of Object.entries(index.intelligenceRows ?? {})) {
+		await strip(row);
+		const { frontmatterTags: _tags, frontmatterVersion: _version, ...rest } = row;
+		index.intelligenceRows![syncKey] = rest;
 	}
 	return cleaned;
 }

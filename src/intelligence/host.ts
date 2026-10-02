@@ -227,6 +227,14 @@ export async function coreTemplateFormats(files: Pick<PluginFiles, "read">, conf
 	}
 }
 
+/**
+ * The pause to say after a run. A background run says a standing pause once, not at every interval;
+ * a sync the user starts always says it. `lastSeen` is the pause of the run before, null for none.
+ */
+export function pauseToSay(paused: string | null, background: boolean, lastSeen: string | null): string | null {
+	return background && paused === lastSeen ? null : paused;
+}
+
 /** What the user hears from the engine after a run: a pause, what it could not do, and pending proposals (spec §8, §9). */
 export function intelligenceNotices(paused: string | null, report: PassReport): string[] {
 	const lines = [...(paused === null ? [] : [paused]), ...report.notices];

@@ -249,6 +249,42 @@ describe("renderIntelligenceSection", () => {
 		expect(root.settings().profiles[0].template).toBe("My pages.md");
 	});
 
+	it("keeps what was just typed when a toggle, a preset or a button of the same card follows", async () => {
+		const h = host({ ...emptyIntelligence(), profiles: [{ id: "a", name: "A", description: "", template: null, slots: ["tasks"] }] }, true);
+		let settings = section(h);
+		named(settings, "A").texts[0].type("Journal");
+		named(settings, "Template").texts[0].type("T/J.md");
+		named(settings, "Fills Summary").toggles[0].toggle(true);
+		await flush();
+		expect(h.settings().profiles[0]).toMatchObject({ name: "Journal", template: "T/J.md", slots: ["tasks", "summary"] });
+
+		settings = section(h);
+		named(settings, "Journal").texts[0].type("Diary");
+		named(settings, "Template").buttons[0].click();
+		await flush();
+		expect(h.log).toContain("create Templates/Diary.md:## Tasks");
+		expect(h.settings().profiles[0]).toMatchObject({ name: "Diary", template: "Templates/Diary.md" });
+
+		settings = section(h);
+		named(settings, "Tasks").texts[0].type("Only mine");
+		named(settings, "Review new and dropped tasks").toggles[0].toggle(false);
+		named(settings, "Item format").dropdowns[0].pick("Dataview");
+		await flush();
+		expect(h.settings().slots[0]).toMatchObject({ instruction: "Only mine", review: false, itemFormat: "- [ ] {{text}} [due:: {{due}}]" });
+
+		const decisions = () => section(h).find((s) => s.name === "Decisions" && s.buttons.length === 2)!;
+		settings = section(h);
+		settings.find((s) => s.name === "Decisions" && s.buttons.length === 2)!.texts[0].type("As written");
+		settings.filter((s) => s.name.startsWith("Shape"))[1].dropdowns[0].pick("checklist");
+		await flush();
+		expect(h.settings().slots[1]).toMatchObject({ shape: "checklist", instruction: "As written" });
+		const card = decisions();
+		card.texts[0].type("Typed, then copied");
+		card.buttons[0].click();
+		await flush();
+		expect(h.settings().slots.at(-1)).toMatchObject({ id: "decisions-copy", instruction: "Typed, then copied" });
+	});
+
 	it("edits a Slot's instruction, and keeps review and item format Pro, with presets and no format without {{text}}", async () => {
 		const free = host(emptyIntelligence(), false);
 		let settings = section(free);
