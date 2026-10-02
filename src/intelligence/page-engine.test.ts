@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isoDay } from "./dates";
 import type { ExtractionBackend, ExtractionInput } from "./extraction-backend";
 import { processPage, type PageRun } from "./page-engine";
+import { decide, pendingProposals } from "./review";
 import { defaultSlots, genericProfile, type SlotDef } from "./settings";
 
 const [TASKS, DECISIONS, SUMMARY, TAGS] = defaultSlots();
@@ -172,6 +173,34 @@ describe("processPage > Value Slots", () => {
 		const nothing = await processPage(run({ template: "## Mood\n{{ts.mood}}\n", slots: [MOOD], base: { ...first.base, slots: {} }, note: "## Mood\n", backend: backend({ mood: null }) }));
 		if (nothing.kind !== "written") throw new Error(nothing.kind);
 		expect(nothing.base.slots.mood).toMatchObject({ value: null });
+	});
+
+	it("proposes a Value for a heading the user already wrote under, and accepting it writes the value", async () => {
+		const first = (await processPage(run({ slots: [TASKS] }))) as Extract<Awaited<ReturnType<typeof processPage>>, { kind: "written" }>;
+		const out = await processPage(run({ template: "## Mood\n{{ts.mood}}\n", slots: [MOOD], base: { ...first.base, slots: {} }, note: "## Mood\nmy own words\n", backend: backend({ mood: "ok" }) }));
+		if (out.kind !== "written") throw new Error(out.kind);
+		expect(out.content).toBe("## Mood\n> [!todo] 1 proposal — [Review](obsidian://review)\nmy own words\n");
+		const [{ proposal }] = pendingProposals(out.base);
+		const accepted = decide({ base: out.base, lines: out.content!.split("\n"), slotId: "mood", proposalId: proposal.id, accept: true, newId: () => "x", reviewLink: "obsidian://review" });
+		if (accepted.kind !== "applied") throw new Error(accepted.kind);
+		expect(accepted.lines.join("\n")).toBe("## Mood\nok");
+		expect(accepted.base.slots.mood).toMatchObject({ value: "ok", proposals: [] });
+		// Nothing on the page for it: the user's words stay, and nothing is proposed.
+		const silent = await processPage(run({ template: "## Mood\n{{ts.mood}}\n", slots: [MOOD], base: { ...first.base, slots: {} }, note: "## Mood\nmy own words\n", backend: backend({ mood: null }) }));
+		expect(silent).toMatchObject({ kind: "written", content: null, proposals: 0 });
+	});
+
+	it("leaves a Value alone whose Slot moved between the frontmatter and the body, instead of failing the page", async () => {
+		const first = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, PROJECT], backend: backend({ mood: "good", project: "B" }) }));
+		if (first.kind !== "written") throw new Error(first.kind);
+		const toBody = await processPage(run({ template: TEMPLATE_V, slots: [MOOD, { ...PROJECT, property: undefined }], base: first.base, note: first.content, backend: backend({ mood: "good", project: "A" }) }));
+		if (toBody.kind !== "written") throw new Error(toBody.kind);
+		expect(toBody.content).toBeNull();
+		expect(toBody.base.slots.project).toEqual(first.base.slots.project);
+		const toProperty = await processPage(run({ template: TEMPLATE_V, slots: [{ ...MOOD, property: "mood" }, PROJECT], base: first.base, note: first.content, backend: backend({ mood: "bad", project: "B" }) }));
+		if (toProperty.kind !== "written") throw new Error(toProperty.kind);
+		expect(toProperty.content).toBeNull();
+		expect(toProperty.base.slots.mood).toEqual(first.base.slots.mood);
 	});
 });
 

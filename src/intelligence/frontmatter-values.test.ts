@@ -40,6 +40,15 @@ describe("writeProperty", () => {
 		expect(writeProperty("Body", "mood", "gut")).toBe("---\nmood: gut\n---\nBody");
 		expect(writeProperty("Body", "mood", null)).toBe("Body");
 		expect(writeProperty(NOTE, "none", null)).toBe(NOTE);
-		expect(writeProperty("---\nmood: gut\n---", "mood", null)).toBe("---\n---");
+		expect(writeProperty("---\nmood: gut\n---", "mood", null)).toBe("");
+	});
+
+	it("drops a block it emptied, and fills an empty one the user left, without taking the body for frontmatter", () => {
+		expect(writeProperty("---\nmood: gut\n---\nBody\n\n---\nBelow the rule", "mood", null)).toBe("Body\n\n---\nBelow the rule");
+		const userEmpty = "---\n---\nBody\n\n---\nBelow the rule";
+		expect(readProperty(userEmpty, "mood")).toBeNull();
+		expect(writeProperty(userEmpty, "mood", null)).toBe(userEmpty);
+		expect(writeProperty(userEmpty, "mood", "ok")).toBe("---\nmood: ok\n---\nBody\n\n---\nBelow the rule");
+		expect(writeProperty("---\nmood: gut\n---", "mood", "ok")).toBe("---\nmood: ok\n---");
 	});
 });

@@ -144,6 +144,9 @@ function mergeProperties(content: string, runSlots: readonly SlotDef[], results:
 	for (const slot of runSlots.filter(isProperty)) {
 		const property = slot.property!;
 		const stored = slots[slot.id] as ValueSlotBase | undefined;
+		// A Value moved from the body into the frontmatter, or to another property: left where it was
+		// written, like a Slot whose Shape drifted, until the Slot and the base agree again.
+		if (stored !== undefined && stored.property !== property) continue;
 		const model = valueOf(results[slot.id]);
 		const current = readProperty(out, property);
 		if (property === "tags") {
@@ -212,12 +215,21 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 			}
 			// The template's heading is already in the note, left empty when the note was made: the Slot
 			// adopts it. Empty → written like a first extraction; the user wrote there → merged, never overwritten.
-			if (fresh.base.shape === "text" || fresh.base.shape === "value") {
+			if (fresh.base.shape === "text") {
 				const current = readTextRegion(lines, existing);
-				const model = fresh.base.shape === "text" ? fresh.base.text : fresh.body;
-				const merged = mergeText({ base: current === "" ? null : "", note: current, model, proposals: [], newId: run.newId });
+				const merged = mergeText({ base: current === "" ? null : "", note: current, model: fresh.base.text, proposals: [], newId: run.newId });
 				if (merged.write !== null) lines = writeTextRegion(lines, existing, merged.write);
-				slots[slot.id] = fresh.base.shape === "text" ? { ...fresh.base, text: merged.base, proposals: merged.proposals } : { ...fresh.base, value: merged.base || null, proposals: [...fresh.base.proposals, ...merged.proposals] };
+				slots[slot.id] = { ...fresh.base, text: merged.base, proposals: merged.proposals };
+			} else if (fresh.base.shape === "value") {
+				const current = readTextRegion(lines, existing);
+				if (current === "") {
+					if (fresh.body !== "") lines = writeTextRegion(lines, existing, fresh.body);
+					slots[slot.id] = fresh.base;
+				} else {
+					// Merged as a Value, not as text: its proposal carries the value that ✓ writes.
+					const merged = mergeValue({ base: null, note: current, model: renderValue(valueOf(got)) || null, proposals: fresh.base.proposals, proposeFirst: false, newId: run.newId });
+					slots[slot.id] = { ...fresh.base, value: merged.base, proposals: merged.proposals };
+				}
 			} else {
 				const items = parseRegion(lines, existing, format);
 				const merged = mergeList({ base: items.length === 0 ? null : { items: [], tombstones: [], proposals: [] }, note: items, model: itemsOf(got), transcript, review: slot.review, newId: run.newId });
@@ -231,7 +243,9 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 		// still disagree with the base. Merging a list into a text base would lose the note's lines, so
 		// the Slot's region is left as it is until the Slot and the base agree again.
 		if ((isList(slot) ? "list" : slot.shape) !== ("list" in stored ? "list" : stored.shape)) continue;
-		const storedHeading = headingOf(stored)!;
+		// The same for a Value moved from the frontmatter into the body: its base has no heading to find.
+		const storedHeading = headingOf(stored);
+		if (storedHeading === null) continue;
 		const format = compileItemFormat("list" in stored ? stored.itemFormat : "- {{text}}");
 		const region = findRegion(lines, storedHeading, format, "list" in stored ? stored.list.items.map((item) => item.text) : []);
 		if (region === null) {
