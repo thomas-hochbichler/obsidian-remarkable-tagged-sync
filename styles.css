@@ -274,15 +274,23 @@ mark.tagged-sync-hl-gray { background-color: rgba(170, 170, 170, 0.4); }
 .theme-dark mark.tagged-sync-hl-orange { background-color: rgba(241, 152, 55, 0.3); }
 .theme-dark mark.tagged-sync-hl-gray { background-color: rgba(170, 170, 170, 0.3); }
 
-/* A mapped tag's name in Tag routing, drawn as a tag pill from the theme's own tag variables:
-   Obsidian styles `.tag` only inside notes, not on the settings tab. */
+/* A mapped tag's name in Tag routing, drawn as a tag pill in the theme's tag colours: Obsidian
+   styles `.tag` only inside notes, not on the settings tab. A full pill with room around it and a
+   "#" in front, so it reads as a tag rather than as highlighted text (live test, 2026-10-02). */
 .tagged-sync-tag {
-	background-color: var(--tag-background);
+	display: inline-block;
+	margin-bottom: var(--size-4-1);
+	padding: 2px var(--size-4-3);
 	border: var(--tag-border-width) solid var(--tag-border-color);
-	border-radius: var(--tag-radius);
+	border-radius: 999px;
+	background-color: var(--tag-background);
 	color: var(--tag-color);
-	font-size: var(--tag-size);
-	font-weight: var(--tag-weight);
-	padding: var(--tag-padding-y) var(--tag-padding-x);
-	line-height: 1;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	line-height: 1.5;
+}
+.tagged-sync-tag::before {
+	content: "#";
+	margin-right: 1px;
+	opacity: 0.6;
 }
