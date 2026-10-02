@@ -57,7 +57,7 @@ interface Plugin {
 
 /** One thing the section drew, in draw order -- a `Setting` row or a bare note div. */
 type Drawn =
-	| { kind: "row"; name: string; desc: string; dropdowns: DropdownComponent[]; buttons: ButtonComponent[] }
+	| { kind: "row"; name: string; nameEl: FakeEl; desc: string; dropdowns: DropdownComponent[]; buttons: ButtonComponent[] }
 	| { kind: "note"; text: string };
 
 /**
@@ -116,6 +116,7 @@ function draw(tab: Tab): Drawn[] {
 			? {
 					kind: "row" as const,
 					name: setting.name,
+					nameEl: setting.nameEl,
 					desc: setting.desc,
 					dropdowns: setting.dropdowns,
 					buttons: setting.buttons,
@@ -220,6 +221,8 @@ describe("the free version's tag cap", () => {
 		const mapped = rows(draw(tab)).filter((row) => row.name !== "Add a tag");
 		expect(mapped.map((row) => row.name)).toEqual(["#home", "#ideas", "#work"]);
 		expect(mapped[0].desc).toBe("Home · Transcript note");
+		// Drawn as a tag pill, Obsidian's own `.tag`.
+		expect(mapped[0].nameEl.children.map((child) => [[...child.classes], child.text])).toEqual([[["tag"], "#home"]]);
 		for (const row of mapped) {
 			expect(row.dropdowns).toHaveLength(0);
 			expect(row.buttons.map((button) => [button.icon, button.tooltip])).toEqual([

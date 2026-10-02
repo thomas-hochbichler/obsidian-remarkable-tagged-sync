@@ -1048,7 +1048,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			if (item.kind === "mapped") {
 				// One line a tag: what it syncs to and what it makes. Everything else is in its dialog --
 				// the line used to hold six controls, and squeezed the tag's own name out of sight.
-				new Setting(containerEl)
+				const row = new Setting(containerEl)
 					.setName(item.tag)
 					.setDesc(`${item.desc} · ${tagModesSummary(item.tag, intelligence)}`)
 					.addExtraButton((button) => button.setIcon("pencil").setTooltip("Edit").onClick(() => this.openDialog(`Tag: ${item.tag}`, (el) => this.renderTagDialog(el, item.tag))))
@@ -1062,6 +1062,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 								await persist();
 							}),
 					);
+				// Drawn as a tag pill, Obsidian's own `.tag`, so the line reads as a tag at a glance.
+				row.nameEl.empty();
+				row.nameEl.createSpan({ cls: "tag", text: item.tag });
 				continue;
 			}
 			// The tags a scan found and nobody routed: one dropdown, not a row each. Picking one opens its
