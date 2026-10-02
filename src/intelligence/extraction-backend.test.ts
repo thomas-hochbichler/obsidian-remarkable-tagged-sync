@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { OcrTimeoutError } from "../llm-transcript";
 import { calendarDay } from "./dates";
-import { askedInput, type Complete, type CompletionRequest, type CompletionOutcome, notesAreEmpty, oneCallBackend, openAiCompatComplete, REASONED_ONLY, twoCallBackend } from "./extraction-backend";
+import { askedInput, type Complete, type CompletionRequest, type CompletionOutcome, notesAreEmpty, oneCallBackend, openAiCompatComplete, ownServerBackend, REASONED_ONLY, twoCallBackend } from "./extraction-backend";
 import { defaultSlots, genericProfile } from "./settings";
 
 const viaObsidian = vi.hoisted(() => vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), { status: 200 })));
@@ -139,6 +139,58 @@ describe("twoCallBackend", () => {
 	});
 });
 
+describe("ownServerBackend", () => {
+	function scripted(...answers: CompletionOutcome[]) {
+		const requests: CompletionRequest[] = [];
+		const complete: Complete = async (request) => {
+			requests.push(request);
+			return answers.shift()!;
+		};
+		return { complete, requests };
+	}
+	const props = (request: CompletionRequest) => Object.keys((request.schema as { properties: Record<string, unknown> }).properties);
+
+	it("asks a model that does not reason for the line pass first in the JSON, in one call", async () => {
+		const { complete, requests } = scripted({ kind: "ok", text: ANSWER });
+		const outcome = await ownServerBackend("lmstudio", complete, async () => false, () => {}).extract(INPUT);
+		expect(outcome.kind).toBe("ok");
+		expect(requests).toHaveLength(1);
+		expect(props(requests[0])[0]).toBe("lines");
+		expect((requests[0].schema as { required: string[] }).required[0]).toBe("lines");
+		expect(requests[0].system).toContain("First `lines`: go through the page text");
+		expect(requests[0].system).toContain("A line is NOT a task");
+	});
+
+	it("asks a reasoning model for the plain schema, and learns from an answer that reasoned although the server did not say so", async () => {
+		const plain = scripted({ kind: "ok", text: ANSWER });
+		await ownServerBackend("lmstudio", plain.complete, async () => true, () => {}).extract(INPUT);
+		expect(props(plain.requests[0])).not.toContain("lines");
+
+		const learned: string[] = [];
+		let asked = 0;
+		const { complete, requests } = scripted({ kind: "ok", text: ANSWER, reasoned: true }, { kind: "ok", text: ANSWER, reasoned: true });
+		const backend = ownServerBackend("lmstudio", complete, async () => (asked++, false), () => void learned.push("x"));
+		await backend.extract(INPUT);
+		await backend.extract(INPUT);
+		expect(props(requests[0])[0]).toBe("lines");
+		expect(props(requests[1])).not.toContain("lines");
+		expect([learned, asked]).toEqual([["x"], 1]);
+	});
+
+	it("skips the line pass without a tasks Slot, and fails a cut-off, refused or unreadable answer", async () => {
+		const noTasks = scripted({ kind: "ok", text: '{"summary":"x"}' });
+		await ownServerBackend("lmstudio", noTasks.complete, async () => false, () => {}).extract({ ...INPUT, slots: INPUT.slots.filter((slot) => slot.id !== "tasks") });
+		expect(props(noTasks.requests[0])).not.toContain("lines");
+		for (const [answer, reason] of [
+			[{ kind: "truncated" }, "The answer was cut off at the token limit."],
+			[{ kind: "failed", reason: "down" }, "down"],
+			[{ kind: "ok", text: "prose" }, "The answer was not the JSON object that was asked for."],
+		] as [CompletionOutcome, string][]) {
+			expect(await ownServerBackend("lmstudio", scripted(answer).complete, async () => false, () => {}).extract(INPUT)).toEqual({ kind: "failed", reason });
+		}
+	});
+});
+
 describe("notesAreEmpty", () => {
 	it("treats a one-word item as a find, not as a heading", () => {
 		expect(notesAreEmpty("- Milk", ["tasks"])).toBe(false);
@@ -201,6 +253,28 @@ describe("openAiCompatComplete", () => {
 		// A free-text pass that came back empty, and a schema one with nothing anywhere, are just empty.
 		expect(await ask("thinking…", null)).toEqual({ kind: "failed", reason: "The server sent an empty answer." });
 		expect(await ask(null, { type: "object" })).toEqual({ kind: "failed", reason: "The server sent an empty answer." });
+	});
+
+	it("sends the schema as the one tool to call for a server of the user's own, and reads its arguments, or plain content", async () => {
+		const { fn, calls } = fakeFetch(() => new Response(JSON.stringify({ choices: [{ message: { content: null, tool_calls: [{ function: { arguments: '{"tasks":[]}' } }] }, finish_reason: "tool_calls" }] }), { status: 200 }));
+		expect(await openAiCompatComplete({ baseURL: "u", model: "m", schemaAsTool: true, fetchFn: fn })(request)).toEqual({ kind: "ok", text: '{"tasks":[]}' });
+		expect(calls[0].body).toMatchObject({ tools: [{ type: "function", function: { name: "save_extraction", parameters: { type: "object" } } }], tool_choice: "required", max_tokens: 12000 });
+		expect(calls[0].body.response_format).toBeUndefined();
+		// The model wrote the JSON as its answer instead of calling the tool: taken just the same.
+		expect(await openAiCompatComplete({ baseURL: "u", model: "m", schemaAsTool: true, fetchFn: fakeFetch(() => chat('{"tasks":[]}')).fn })(request)).toEqual({ kind: "ok", text: '{"tasks":[]}' });
+		// Free text is never a tool call.
+		const free = fakeFetch(() => chat("notes"));
+		await openAiCompatComplete({ baseURL: "u", model: "m", schemaAsTool: true, fetchFn: free.fn })({ ...request, schema: null });
+		expect(free.calls[0].body).toMatchObject({ max_tokens: 4000 });
+		expect(free.calls[0].body.tools).toBeUndefined();
+	});
+
+	it("says when the model reasoned before it answered, from the reasoning tokens or the reasoning text", async () => {
+		const answer = (extra: Record<string, unknown>, message: Record<string, unknown> = {}) => () => new Response(JSON.stringify({ choices: [{ message: { content: "{}", ...message }, finish_reason: "stop" }], ...extra }), { status: 200 });
+		const ask = (respond: () => Response) => openAiCompatComplete({ baseURL: "u", model: "m", fetchFn: fakeFetch(respond).fn })(request);
+		expect(await ask(answer({ usage: { completion_tokens_details: { reasoning_tokens: 900 } } }))).toEqual({ kind: "ok", text: "{}", reasoned: true });
+		expect(await ask(answer({}, { reasoning_content: "hm" }))).toEqual({ kind: "ok", text: "{}", reasoned: true });
+		expect(await ask(answer({ usage: { completion_tokens_details: { reasoning_tokens: 0 } } }))).toEqual({ kind: "ok", text: "{}" });
 	});
 
 	it("explains a refusal with the server's own message", async () => {

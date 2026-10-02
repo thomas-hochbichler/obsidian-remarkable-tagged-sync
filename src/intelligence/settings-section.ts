@@ -41,13 +41,12 @@ const PRO = " (Pro)";
 const MODEL_DESC = "Empty: the model set for that provider.";
 
 /**
- * Said under the extraction model when its server reports that it reasons unasked. Not the
- * transcription pane's sentence (`localhost-register.ts`): there a reasoning model is slow, here its
- * page notes fail -- LM Studio returns the schema-bound answer inside the reasoning (live test
- * 2026-10-02). "Can", because that is measured on LM Studio only.
+ * Said under the extraction model when its server reports that it reasons unasked. It extracts --
+ * the schema goes as a tool call, which lets it think first -- but takes 5–30 s a page where a model
+ * that does not reason takes 2–4 s (five LM Studio models, 2026-10-02).
  */
 function reasoningWarning(model: string): string {
-	return `⚠ "${model}" reasons before answering. On a server of your own, a model like that can return the page-note answer inside its reasoning, and extraction then fails. Pick one that doesn't reason (often the "-instruct" build).`;
+	return `⚠ "${model}" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`;
 }
 const FREE_SLOTS = new Set(["tasks", "summary"]);
 const ITEM_FORMAT_PRESETS: Record<string, string> = { Tasks: TASKS_FORMAT, Dataview: "- [ ] {{text}} [due:: {{due}}]", Plain: "- [ ] {{text}}" };

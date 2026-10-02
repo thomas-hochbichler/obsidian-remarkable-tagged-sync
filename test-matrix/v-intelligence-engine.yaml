@@ -1585,10 +1585,10 @@
 
     - id: V18.2
       scenario: "The user's own server is registered"
-      expect: "Free, marked unmeasured, two calls; nothing without a URL"
+      expect: "Free, marked unmeasured, local, one call with the schema as a tool call, no classifier; nothing without a URL"
       layer: unit
       file: src/intelligence/extraction-registry.test.ts
-      test: "compatExtractionEntry > makes the user's own server a free, unmeasured two-call backend, and needs a URL"
+      test: "compatExtractionEntry > makes the user's own server a free, unmeasured, local one-call backend with the schema as a tool call, no classifier, and needs a URL"
 
     - id: V18.3
       scenario: "Backends are registered"
@@ -3191,3 +3191,55 @@
       layer: unit
       file: src/localhost-register.test.ts
       test: "the same servers as extraction backends > name the extraction model when the server says it reasons, and nothing when it does not or cannot say"
+
+- feature: V67
+  name: "On a server of the user's own, the schema goes as a tool call"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V67.1
+      scenario: "A page is extracted on Ollama, LM Studio or a custom server, by a reasoning model or a plain one"
+      expect: "One call; the schema is the one tool the model must call, with room to think first; its arguments are the answer, or plain content when the model wrote the JSON there; free text is never a tool call"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > sends the schema as the one tool to call for a server of the user's own, and reads its arguments, or plain content"
+
+- feature: V68
+  name: "An own server's model gets the answer it can give: the line pass in the JSON, or the plain schema"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V68.1
+      scenario: "A model that does not reason extracts a page with a tasks Slot"
+      expect: "One call; the JSON starts with every transcript line and its verdict, and the prompt carries the task criteria (research 24: 3 instead of 22 invented tasks)"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "ownServerBackend > asks a model that does not reason for the line pass first in the JSON, in one call"
+
+    - id: V68.2
+      scenario: "A reasoning model extracts a page; or a model the server did not flag answers with reasoning"
+      expect: "The plain schema for a reasoning model; an answer that reasoned is learned once, and the next page gets the plain schema"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "ownServerBackend > asks a reasoning model for the plain schema, and learns from an answer that reasoned although the server did not say so"
+
+    - id: V68.3
+      scenario: "A page without a tasks Slot; an answer cut off, refused or not JSON"
+      expect: "No line pass without tasks; the page fails with a reason and retries"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "ownServerBackend > skips the line pass without a tasks Slot, and fails a cut-off, refused or unreadable answer"
+
+    - id: V68.4
+      scenario: "The server counts reasoning tokens, or returns reasoning text, beside the answer"
+      expect: "The answer is marked as reasoned; zero reasoning tokens is not"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > says when the model reasoned before it answered, from the reasoning tokens or the reasoning text"
+
+    - id: V68.5
+      scenario: "A model is flagged by its server, was learned before, or reasons for the first time in a sync"
+      expect: "Flagged or learned counts as reasoning, in the sync and under the settings' model field; a learned model is kept in the provider's settings, which are saved after the sync"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "compatExtractionEntry > which answer an own server is asked for > takes a model as reasoning from the server's flag or from a model it learned, and keeps a learned one in the provider's settings"

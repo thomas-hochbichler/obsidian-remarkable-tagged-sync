@@ -6,7 +6,7 @@
  */
 
 import type { BackendSettings } from "../ocr-registry";
-import { type ExtractionBackend, oneCallBackend, openAiCompatComplete, twoCallBackend } from "./extraction-backend";
+import { type ExtractionBackend, oneCallBackend, openAiCompatComplete, ownServerBackend } from "./extraction-backend";
 
 export interface ExtractionBackendEntry {
 	readonly id: string;
@@ -31,6 +31,14 @@ export interface ExtractionBackendEntry {
 }
 
 const entries = new Map<string, ExtractionBackendEntry>();
+
+/**
+ * Models an answer showed to reason although their server did not say so (LM Studio reports no
+ * reasoning config for some, qwen3.6 on MLX among them), kept per provider in its settings blob.
+ */
+const REASONING_MODELS = "reasoningModels";
+const readList = (value: unknown): string[] => (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []);
+const knownToReason = (settings: BackendSettings, model: string): boolean => readList(settings[REASONING_MODELS]).includes(model);
 
 export function registerExtractionBackend(entry: ExtractionBackendEntry): void {
 	entries.set(entry.id, entry);
@@ -57,9 +65,12 @@ export interface CompatProvider {
 }
 
 /**
- * Cloud providers get one call under a strict schema; the user's own servers get the two-call local
- * path, because what they serve is typically an 8B-class model (research 10). Only OpenRouter is
- * measured (research 10, 15); the rest carry `measured: false`.
+ * One call per page for every provider: under a strict schema in the cloud, as a tool call on the
+ * user's own servers (`schemaAsTool`). The own servers had the managed model's two-call path until
+ * 2026-10-02; with the schema as `response_format` reasoning models failed there, and the tool call
+ * works for reasoning and plain models alike in one call. They stay local in every other respect: no
+ * classifier, a first topical pick proposed. Only OpenRouter is measured (research 10, 15); the rest
+ * carry `measured: false`.
  */
 export function compatExtractionEntry(provider: CompatProvider): ExtractionBackendEntry {
 	const cloud = provider.kind === "cloud";
@@ -80,16 +91,25 @@ export function compatExtractionEntry(provider: CompatProvider): ExtractionBacke
 				extraHeaders: provider.extraHeaders,
 				deterministic: provider.deterministic,
 				requireParameters: provider.id === "openrouter",
+				schemaAsTool: !cloud,
 			});
-			return cloud ? oneCallBackend(provider.id, true, complete) : twoCallBackend(provider.id, false, complete);
+			if (cloud) return oneCallBackend(provider.id, true, complete);
+			const used = model?.trim() || endpoint.model;
+			return ownServerBackend(
+				provider.id,
+				complete,
+				async () => knownToReason(settings, used) || ((await provider.reasons?.({ ...endpoint, model: used })) ?? false),
+				// Into the provider's own settings blob, which the plugin saves after every sync.
+				() => void (settings[REASONING_MODELS] = [...new Set([...readList(settings[REASONING_MODELS]), used])]),
+			);
 		},
-		...(provider.reasons === undefined
+		...(cloud
 			? {}
 			: {
 					async reasoningModel(settings, model) {
 						const endpoint = provider.resolve(settings);
 						const used = model?.trim() || endpoint.model;
-						return (await provider.reasons!({ ...endpoint, model: used })) ? used : null;
+						return knownToReason(settings, used) || ((await provider.reasons?.({ ...endpoint, model: used })) ?? false) ? used : null;
 					},
 				}),
 	};

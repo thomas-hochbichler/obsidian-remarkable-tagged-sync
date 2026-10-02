@@ -200,7 +200,7 @@ describe("renderIntelligenceSection", () => {
 		const h = host({ ...emptyIntelligence(), backend: "sectionserver", model: "thinker" }, true);
 		const row = named(section(h), "Extraction model");
 		await flush();
-		expect(row.desc).toBe(`${BASE} ⚠ "thinker" reasons before answering. On a server of your own, a model like that can return the page-note answer inside its reasoning, and extraction then fails. Pick one that doesn't reason (often the "-instruct" build).`);
+		expect(row.desc).toBe(`${BASE} ⚠ "thinker" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`);
 		row.texts[0].type("instruct");
 		await flush();
 		expect(row.desc).toBe(BASE);

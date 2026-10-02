@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { compatExtractionEntry, extractionBackendEntries, extractionBackendEntry, registerExtractionBackend } from "./extraction-registry";
+import { openAiCompatComplete } from "./extraction-backend";
+import { defaultSlots, genericProfile } from "./settings";
 
 const complete = vi.hoisted(() => vi.fn());
 vi.mock("./extraction-backend", async (importOriginal) => {
@@ -18,12 +20,46 @@ describe("compatExtractionEntry", () => {
 		expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({ model: "my-model", apiKey: "k", requireParameters: true }));
 	});
 
-	it("makes the user's own server a free, unmeasured two-call backend, and needs a URL", () => {
+	it("makes the user's own server a free, unmeasured, local one-call backend with the schema as a tool call, no classifier, and needs a URL", () => {
 		const entry = compatExtractionEntry(provider("user", "custom"));
 		expect(entry).toMatchObject({ metered: false, requiresLicence: false, measured: false });
 		expect(entry.create({ baseURL: "" }, null)).toBeNull();
-		expect(entry.create({}, null)).toMatchObject({ id: "custom", metered: false });
-		expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({ model: "default-model", requireParameters: false }));
+		const backend = entry.create({}, null)!;
+		expect(backend).toMatchObject({ id: "custom", metered: false, local: true });
+		expect(backend.classify).toBeUndefined();
+		expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({ model: "default-model", requireParameters: false, schemaAsTool: true }));
+		compatExtractionEntry(provider("cloud")).create({ apiKey: "k" }, null);
+		expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({ schemaAsTool: false }));
+	});
+});
+
+describe("compatExtractionEntry > which answer an own server is asked for", () => {
+	it("takes a model as reasoning from the server's flag or from a model it learned, and keeps a learned one in the provider's settings", async () => {
+		const settings: Record<string, unknown> = { reasoningModels: ["seen-before"] };
+		const flagged = vi.fn(async (endpoint: { model: string }) => endpoint.model === "flagged");
+		const entry = compatExtractionEntry({ ...provider("local", "lmstudio"), reasons: flagged });
+		expect(await entry.reasoningModel!(settings, "seen-before")).toBe("seen-before");
+		expect(await entry.reasoningModel!(settings, "flagged")).toBe("flagged");
+		expect(await entry.reasoningModel!(settings, "plain")).toBeNull();
+		expect(await compatExtractionEntry(provider("user", "custom")).reasoningModel!(settings, "plain")).toBeNull();
+
+		// An answer that reasoned teaches the provider's settings; the next sync asks for the plain schema.
+		const answer = JSON.stringify({ page_date_text: null, tasks: [], summary: "" });
+		vi.mocked(openAiCompatComplete).mockReturnValueOnce(async () => ({ kind: "ok", text: answer, reasoned: true }));
+		const slots = defaultSlots().filter((slot) => slot.id === "tasks" || slot.id === "summary");
+		const input = { profile: genericProfile(false), slots, transcript: "x", referenceDate: new Date(0), known: {} };
+		expect(await entry.create(settings, "plain")!.extract(input)).toMatchObject({ kind: "ok" });
+		expect(settings.reasoningModels).toEqual(["seen-before", "plain"]);
+		expect(await entry.reasoningModel!(settings, "plain")).toBe("plain");
+		vi.mocked(openAiCompatComplete).mockReturnValueOnce(async () => ({ kind: "ok", text: answer, reasoned: true }));
+		const fresh: Record<string, unknown> = { reasoningModels: "garbled" };
+		await entry.create(fresh, "plain")!.extract(input);
+		expect(fresh.reasoningModels).toEqual(["plain"]);
+		// A provider that cannot be asked takes a model it never saw reason as one that does not.
+		let asked: { schema: { properties: Record<string, unknown> } } | null = null;
+		vi.mocked(openAiCompatComplete).mockReturnValueOnce(async (request) => ((asked = request as never), { kind: "ok", text: answer }));
+		await compatExtractionEntry(provider("user", "custom")).create({}, "plain")!.extract(input);
+		expect(Object.keys(asked!.schema.properties)[0]).toBe("lines");
 	});
 });
 

@@ -23,7 +23,8 @@ export interface CompletionRequest {
 	maxTokens: number;
 }
 
-export type CompletionOutcome = { kind: "ok"; text: string } | { kind: "truncated" } | { kind: "failed"; reason: string };
+/** `reasoned`: the model thought before it answered (the server counted reasoning tokens); set only when it did. */
+export type CompletionOutcome = { kind: "ok"; text: string; reasoned?: true } | { kind: "truncated" } | { kind: "failed"; reason: string };
 
 export type Complete = (request: CompletionRequest) => Promise<CompletionOutcome>;
 
@@ -133,12 +134,16 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
  * The line pass carries the gain: without it an 8B found 24 of 38 real tasks, with it 36. One changed
  * clause made the model skip it on every page, so the answer is started with `LINES:` for it.
  */
-const TASK_LINES = [
+/** What a task is in terse handwritten notes (research 22): shared by the line pass in prose and in JSON. */
+const TASK_CRITERIA = [
 	"How to recognise a task in handwritten notes. Notes are terse, so a task rarely looks like a full sentence. A line is a task when it says what someone should still do:",
 	"- it starts with or contains a verb of doing (check, fix, ask, run, deploy, test, create, merge, switch, move, prepare, send, call, plan, analyse, restart, upgrade, prüfen, schicken, anrufen, erledigen, ...), even if misspelled;",
 	'- or it assigns a piece of work to a person with an arrow, colon or dash ("Backup -> Anna", "Max: Rollout-Plan");',
 	"- or it is a numbered step or an item under a heading such as To do, Plan, Prepare, Sprint planning, Don't forget, Next.",
 	"A line is NOT a task when it is a status or result (\"done\", \"deployed at 14:00\", a tick mark), an observation, an insight or a question, a heading, or one of several names/components listed under a task line (those belong to the task above; do not list them one by one).",
+];
+const TASK_LINES = [
+	...TASK_CRITERIA,
 	"",
 	"Work in two steps.",
 	'Step 1. Write "LINES:" and then go through the transcript from the first to the last line. For every line write one short line: "<first words of the line> => TASK" or "=> PART" (only a bare name listed under a task line, with no work of its own) or "=> NO". Do not skip lines.',
@@ -249,6 +254,15 @@ export interface OpenAiCompatOptions {
 	requireParameters?: boolean;
 	/** A fixed sampling seed, for a local model that should answer the same page the same way. */
 	seed?: number;
+	/**
+	 * Send the schema as the one tool the model must call, not as `response_format` -- for the user's
+	 * own servers. Under `response_format` a reasoning model may not think: the grammar starts the JSON
+	 * where its thinking would open, LM Studio files it as reasoning and `content` stays empty, and
+	 * without the thinking the JSON is wrong. As a tool call the model thinks first and then fills the
+	 * arguments, which the server checks against the schema. Measured on five LM Studio models,
+	 * 2026-10-02: 15 of 15 answers valid (`response_format`: 9 of 15; one model refuses it outright).
+	 */
+	schemaAsTool?: boolean;
 	fetchFn?: typeof fetch;
 	sleepFn?: Sleep;
 }
@@ -256,8 +270,14 @@ export interface OpenAiCompatOptions {
 export const REASONED_ONLY = "The model answered only in its reasoning, which a reasoning model does when it has to follow a JSON schema. Choose an extraction model that does not reason.";
 
 interface ChatResponse {
-	choices?: Array<{ message?: { content?: string | null; reasoning_content?: string | null }; finish_reason?: string }>;
+	usage?: { completion_tokens_details?: { reasoning_tokens?: number } };
+	choices?: Array<{ message?: { content?: string | null; reasoning_content?: string | null; tool_calls?: Array<{ function?: { arguments?: string } }> }; finish_reason?: string }>;
 }
+
+/** The one tool a `schemaAsTool` request offers. */
+const TOOL_NAME = "save_extraction";
+/** Room for a reasoning model's thinking before the tool call: it counts against `max_tokens` (3.6k seen). */
+const TOOL_MAX_TOKENS = 12000;
 
 /** One `POST {baseURL}/chat/completions`. Never throws: every problem is an outcome with a reason a user can act on. */
 export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
@@ -273,8 +293,12 @@ export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
 				{ role: "user", content: request.user },
 				...(request.prefill === undefined ? [] : [{ role: "assistant", content: request.prefill }]),
 			],
-			max_tokens: request.maxTokens,
-			...(request.schema ? { response_format: { type: "json_schema", json_schema: { name: "extraction", strict: true, schema: request.schema } } } : {}),
+			max_tokens: request.schema && options.schemaAsTool ? Math.max(request.maxTokens, TOOL_MAX_TOKENS) : request.maxTokens,
+			...(request.schema && options.schemaAsTool
+				? { tools: [{ type: "function", function: { name: TOOL_NAME, description: "Save what was taken out of the page.", parameters: request.schema } }], tool_choice: "required" }
+				: request.schema
+					? { response_format: { type: "json_schema", json_schema: { name: "extraction", strict: true, schema: request.schema } } }
+					: {}),
 			...(options.requireParameters ? { provider: { require_parameters: true } } : {}),
 			...(options.deterministic ? { temperature: 0 } : {}),
 			...(options.seed === undefined ? {} : { seed: options.seed }),
@@ -285,18 +309,80 @@ export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
 			const json = (await response.json()) as ChatResponse;
 			const choice = json.choices?.[0];
 			if (choice?.finish_reason === "length") return { kind: "truncated" };
-			const text = choice?.message?.content;
+			// A model offered the tool sometimes writes the same JSON as plain content instead (3 of 15).
+			const text = choice?.message?.tool_calls?.[0]?.function?.arguments || choice?.message?.content;
 			// LM Studio files a reasoning model's schema-bound answer under `reasoning_content` and leaves
 			// `content` empty: the grammar starts the JSON where the model would open its thinking, and no
 			// request switch changes that. It is not read from there: written in that place the JSON holds
 			// the schema and loses the page -- one task's text under another's source (qwen3.6 on MLX,
 			// live test 2026-10-02). The reason says what to change instead.
 			if (!text?.trim() && request.schema && choice?.message?.reasoning_content?.trim()) return { kind: "failed", reason: REASONED_ONLY };
-			return typeof text === "string" && text.trim() !== "" ? { kind: "ok", text } : { kind: "failed", reason: "The server sent an empty answer." };
+			if (typeof text !== "string" || text.trim() === "") return { kind: "failed", reason: "The server sent an empty answer." };
+			const reasoned = (json.usage?.completion_tokens_details?.reasoning_tokens ?? 0) > 0 || Boolean(choice?.message?.reasoning_content?.trim());
+			return reasoned ? { kind: "ok", text, reasoned } : { kind: "ok", text };
 		} catch (error) {
 			if (error instanceof OcrTimeoutError) return { kind: "failed", reason: `The server at ${options.baseURL} did not answer in time.` };
 			if (isUnreachable(error)) return { kind: "failed", reason: `Could not reach the server at ${options.baseURL}. Is it running?` };
 			return { kind: "failed", reason: error instanceof Error ? error.message : String(error) };
 		}
+	};
+}
+
+/** The line pass as the first field of the answer: every transcript line with its verdict, before the Slots. */
+const LINES_KEY = "lines";
+const LINES_SCHEMA = {
+	type: "array",
+	items: { type: "object", properties: { line: { type: "string" }, verdict: { type: "string", enum: ["TASK", "PART", "NO"] } }, required: ["line", "verdict"], additionalProperties: false },
+};
+const LINES_STEPS = [
+	"",
+	...TASK_CRITERIA,
+	"",
+	"Fill the fields in order.",
+	`First \`${LINES_KEY}\`: go through the page text from the first to the last line. For every line add one entry: \`line\` = the first words of the line, \`verdict\` = "TASK", "PART" (only a bare name listed under a task line, with no work of its own) or "NO". Do not skip lines.`,
+	`Then \`${LOCAL_TASK_SLOT}\`: one item for every line you marked TASK, and no other. Then the other fields.`,
+];
+
+/**
+ * One call per page on a server of the user's own, with the schema as a tool call (`schemaAsTool`).
+ * Which answer it asks for depends on the model (research 24, five LM Studio models on the corpus,
+ * 2026-10-02):
+ *
+ * - A model that does not reason gets the line pass of research 22 as the first field of the JSON.
+ *   Without it an 8B marks almost every line a task (22 invented on the real pages, 66 on Vision
+ *   transcripts); with it 3 and 2, as few as the managed model's two calls, in one.
+ * - A model that reasons gets the plain schema. It does the line pass in its thinking; asked to write
+ *   it out as well it ran out of tokens on 7 to 13 of 23 pages (gemma, ornith).
+ *
+ * `reasons` answers before the first page: the server's own flag, or what an earlier answer showed.
+ * An answer that shows reasoning the flag did not report is passed to `learnReasons`, so the next page
+ * of that model gets the plain schema.
+ */
+export function ownServerBackend(id: string, complete: Complete, reasons: () => Promise<boolean>, learnReasons: () => void): ExtractionBackend {
+	let thinker: Promise<boolean> | null = null;
+	return {
+		id,
+		metered: false,
+		local: true,
+		async extract(input) {
+			const asked = askedInput(input);
+			const { system, user } = buildPrompt(asked);
+			const schema = buildSchema(asked.slots) as { properties: Record<string, unknown>; required: string[] };
+			thinker ??= reasons();
+			const linePass = !(await thinker) && asked.slots.some((slot) => slot.id === LOCAL_TASK_SLOT);
+			const outcome = await complete(
+				linePass
+					? { system: [system, ...LINES_STEPS].join("\n"), user, schema: { ...schema, properties: { [LINES_KEY]: LINES_SCHEMA, ...schema.properties }, required: [LINES_KEY, ...schema.required] }, maxTokens: EXTRACTION_MAX_TOKENS }
+					: { system, user, schema, maxTokens: EXTRACTION_MAX_TOKENS },
+			);
+			if (outcome.kind === "ok" && outcome.reasoned && !(await thinker)) {
+				thinker = Promise.resolve(true);
+				learnReasons();
+			}
+			if (outcome.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
+			if (outcome.kind === "failed") return outcome;
+			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate);
+			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
+		},
 	};
 }
