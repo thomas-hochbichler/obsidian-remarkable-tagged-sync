@@ -134,6 +134,9 @@ export function emptyReport(): PassReport {
 	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [], saidOnce: [] };
 }
 
+/** The command that makes page notes for pages left alone; the sync's notice names it. */
+export const EARLIER_PAGES_COMMAND = "Make page notes for this notebook's earlier pages";
+
 export function intelligenceSyncKey(docId: string, pageId: string, tag: string): string {
 	return `${docId}:${pageId}:${tag}`;
 }
@@ -212,6 +215,10 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 
 	const work: WorkItem[] = [];
 	let legacyRecorded = false;
+	// Pages newly recorded as written before page notes were switched on, and so left without one: said
+	// once, when it happens. A switch off and on again moves that point to now, and the pages behind it
+	// went without a word (live test, 2026-10-02).
+	let leftAlone = 0;
 
 	for (const unit of doc.units) {
 		const modes = modesFor(deps.settings, deps.tagFolderMap, unit.tag);
@@ -229,6 +236,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 			// The scan re-stamps every page written up to the toggle, known or not, so pages written
 			// while the mode was off count as old. A page written after it is left to the two questions.
 			if (scanDue && !options.force?.has(key) && switchOnStamp(page.modified, enabledAt)) {
+				if (seen?.pageHash !== page.hash && state.rows[key]?.status !== "active") leftAlone++;
 				seen = { ...seen, scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified };
 				state.seenPages[key] = seen;
 				continue;
@@ -236,7 +244,8 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 
 			const kind = options.force?.has(key) ? "changed" : classifyUnit({ seen, pageHash: page.hash, modified: page.modified, enabledAt, legacy: doc.legacy });
 			if (kind === "old") {
-				if (doc.legacy && seen === undefined) legacyRecorded = true;
+				if (doc.legacy) legacyRecorded = true;
+				else leftAlone++;
 				state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: page.modified };
 			} else if (kind !== "unchanged") {
 				work.push({ unit, page, key, seen });
@@ -247,6 +256,12 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 				if (row?.status === "active" && !(await deps.noteStore.exists(row.notePath))) work.push({ unit, page, key, seen, kept: (await deps.baseStore.load(row.noteId))?.transcript });
 			}
 		}
+	}
+	if (leftAlone > 0) {
+		report.notices.push(
+			`"${doc.name}": ${leftAlone} page${leftAlone === 1 ? " was" : "s were"} written before page notes were switched on, so ${leftAlone === 1 ? "it gets" : "they get"} none. ` +
+				`Write on a page to bring it in, or run "${EARLIER_PAGES_COMMAND}" on its transcript note.`,
+		);
 	}
 	if (legacyRecorded) report.notices.push(`"${doc.name}" was written before the tablet stamped page dates, so none of its pages counts as new. Write on a page to bring it in.`);
 	if (work.length === 0) return report;

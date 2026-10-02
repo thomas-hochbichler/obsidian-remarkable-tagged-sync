@@ -59,6 +59,17 @@ describe("the review in the running plugin", () => {
 		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
 	});
 
+	it("makes page notes for a notebook's earlier pages from its transcript note, once page notes are on for its tag", async () => {
+		const transcript = { syncKey: "d::work", docId: "d", pageId: null, tag: "work", entryHash: "e", pageHash: null, notePath: "Work/Log.md", status: "active", syncedAt: "" };
+		const plugin = await load({ ...withPageNote, syncIndex: { ...withPageNote.syncIndex, rows: { "d::work": transcript } } });
+		plugin.app.workspace.activeFile = file("Work/Log.md");
+		takeNotices();
+		plugin.commands.find((command) => command.id === "earlier-pages")!.checkCallback!(false);
+		await settle();
+		// Page notes are off for "work" in this vault, so the command says so and changes nothing.
+		expect(takeNotices()).toEqual(['Page notes are off for the tag "work". Switch them on under Tag routing first.']);
+	});
+
 	it("leaves a page note alone while a sync runs, and stops a running sync's local server on unload", async () => {
 		const plugin = await load(withPageNote);
 		const internals = plugin as unknown as { syncing: boolean; runningIntelligence: { dispose(): void } | null; onunload(): void };

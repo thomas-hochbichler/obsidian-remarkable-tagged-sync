@@ -8,7 +8,9 @@
 
 import type { SyncIndex } from "../sync-engine";
 import { type HostEnvironment, intelligenceNotices, prepareRun, reviewStoresFor, type RunInputs } from "./host";
-import { processDocument, type IntelligenceRow, type IntelligenceState } from "./sync-pass";
+import { EARLIER_PAGES_COMMAND, processDocument, type IntelligenceRow, type IntelligenceState } from "./sync-pass";
+
+export { EARLIER_PAGES_COMMAND };
 
 export interface RerunOutcome {
 	message: string;
@@ -43,6 +45,32 @@ export function markForRereading(index: SyncIndex, notePath: string): RerunOutco
 			...index,
 			seenPages: { ...index.seenPages, [row.syncKey]: { scope: row.scope, firstSeen: seen?.firstSeen ?? null, noteId: row.noteId, pageHash: null } },
 			// Nothing changes on the tablet, so the document has to be named for the next sync to open it.
+			intelligencePending: [...new Set([...(index.intelligencePending ?? []), row.docId])],
+		},
+	};
+}
+
+/**
+ * On a transcript note: marks the pages of its notebook that have no page note -- left alone as
+ * written before page notes were switched on (spec §3.1) -- so the next sync makes theirs. The way
+ * "Re-transcribe" marks one page: a cleared seen hash counts as changed. Switching page notes off and
+ * on again moves that point to now, and the pages written before it were lost to the engine with
+ * nothing said (live test, 2026-10-02).
+ */
+export function wantEarlierPages(index: SyncIndex, notePath: string, pageNotesOn: (tag: string) => boolean): RerunOutcome {
+	const row = Object.values(index.rows).find((candidate) => candidate.notePath === notePath && candidate.status === "active");
+	if (row === undefined) return { message: "This note is not a transcript note from Tagged Sync." };
+	if (!pageNotesOn(row.tag)) return { message: `Page notes are off for the tag "${row.tag}". Switch them on under Tag routing first.` };
+	const made = new Set(Object.values(index.intelligenceRows ?? {}).flatMap((page) => (page.status === "active" ? [page.syncKey] : [])));
+	// A page-tag note covers its one page; a notebook note every page the engine has seen under its tag.
+	const covers = (key: string) => (row.pageId === null ? key.startsWith(`${row.docId}:`) && key.endsWith(`:${row.tag}`) : key === `${row.docId}:${row.pageId}:${row.tag}`);
+	const wanted = Object.entries(index.seenPages ?? {}).filter(([key, seen]) => covers(key) && !made.has(key) && seen.pageHash !== null);
+	if (wanted.length === 0) return { message: "Every page of this notebook has its page note, or waits for the next sync to make it." };
+	return {
+		message: `${wanted.length} earlier page${wanted.length === 1 ? "" : "s"} of this notebook get${wanted.length === 1 ? "s its" : " their"} page note${wanted.length === 1 ? "" : "s"} on the next sync.`,
+		index: {
+			...index,
+			seenPages: { ...index.seenPages, ...Object.fromEntries(wanted.map(([key, seen]) => [key, { ...seen, pageHash: null }])) },
 			intelligencePending: [...new Set([...(index.intelligencePending ?? []), row.docId])],
 		},
 	};

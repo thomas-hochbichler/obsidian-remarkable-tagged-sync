@@ -4,7 +4,7 @@ import type { SyncIndex } from "../sync-engine";
 import { parseExtraction } from "./extraction";
 import { registerExtractionBackend } from "./extraction-registry";
 import { type HostEnvironment, prepareRun } from "./host";
-import { isPageNote, markForRereading, pageProfile, rerunExtraction } from "./rerun";
+import { isPageNote, markForRereading, pageProfile, rerunExtraction, wantEarlierPages } from "./rerun";
 import { emptyIntelligence, setIntelligenceMode, type IntelligenceSettings } from "./settings";
 import type { IntelligenceState } from "./sync-pass";
 
@@ -125,5 +125,53 @@ describe("markForRereading and isPageNote", () => {
 		const bare = { ...index, seenPages: undefined };
 		expect(markForRereading(bare, path).index!.seenPages!["d:p1:work"]).toMatchObject({ pageHash: null, firstSeen: null });
 		expect(markForRereading(index, "Other.md")).toEqual({ message: "This note is not a page note from the Intelligence Engine." });
+	});
+});
+
+describe("wantEarlierPages", () => {
+	const transcriptRow = (notePath: string, pageId: string | null) => ({ syncKey: `d:${pageId ?? ""}:work`, docId: "d", pageId, tag: "work", entryHash: "e", pageHash: null, notePath, status: "active" as const, syncedAt: "" });
+	const old = { scope: "notebook" as const, pageHash: "h", firstSeen: 1 };
+
+	it("marks the pages of a transcript note's notebook that have no page note, and owes the notebook to the next sync", () => {
+		const index: SyncIndex = {
+			rootHash: null,
+			rows: { log: transcriptRow("Log.md", null), one: transcriptRow("Log — Page 2.md", "p2") },
+			seenPages: { "d:p1:work": old, "d:p2:work": old, "d:p3:work": { ...old, pageHash: null }, "d:p4:work": old, "d:p1:home": old, "e:p1:work": old },
+			// An orphaned page note does not count as made: its page gets a new one.
+			intelligenceRows: { "d:p4:work": { syncKey: "d:p4:work", status: "active" } as never, "d:p2:work": { syncKey: "d:p2:work", status: "orphaned" } as never },
+			intelligencePending: ["x"],
+		};
+		const out = wantEarlierPages(index, "Log.md", () => true);
+		// p3 already waits; p4 has its note; another tag and another notebook are not this note's.
+		expect(out.message).toBe("2 earlier pages of this notebook get their page notes on the next sync.");
+		expect(Object.entries(out.index!.seenPages!).filter(([, seen]) => seen.pageHash === null).map(([key]) => key)).toEqual(["d:p1:work", "d:p2:work", "d:p3:work"]);
+		expect(out.index!.seenPages!["d:p1:work"]).toEqual({ ...old, pageHash: null });
+		expect(out.index!.intelligencePending).toEqual(["x", "d"]);
+		// A page-tag note covers its own page only.
+		expect(wantEarlierPages(index, "Log — Page 2.md", () => true).message).toBe("1 earlier page of this notebook gets its page note on the next sync.");
+	});
+
+	it("says why it does nothing: not a transcript note, page notes off, or nothing left", () => {
+		// A vault that never extracted holds neither the seen-set nor page rows.
+		const index: SyncIndex = { rootHash: null, rows: { log: transcriptRow("Log.md", null) } };
+		expect(wantEarlierPages(index, "Other.md", () => true)).toEqual({ message: "This note is not a transcript note from Tagged Sync." });
+		expect(wantEarlierPages(index, "Log.md", () => false)).toEqual({ message: 'Page notes are off for the tag "work". Switch them on under Tag routing first.' });
+		expect(wantEarlierPages(index, "Log.md", () => true)).toEqual({ message: "Every page of this notebook has its page note, or waits for the next sync to make it." });
+	});
+
+	it("gets a page left alone at switch-on its page note on the next sync", async () => {
+		const e = env();
+		const prepared = await prepareRun(e, run());
+		const page = { id: "p1", ordinal: 1, hash: "h1", modified: Date.parse("2026-08-01T00:00:00.000Z") };
+		const doc = { docId: "d", name: "Log", legacy: false, pages: [page], units: [{ tag: "work", scope: "notebook" as const, pageIds: ["p1"] }], transcribe: async () => new Map([["p1", "todo Call"]]), writeRender: async () => "a/d-p1.pdf" };
+		// Written before page notes were switched on: recorded, and left alone.
+		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: ENABLED.toISOString() } };
+		await prepared.hook!.process(doc, state);
+		expect(state.rows).toEqual({});
+		const index: SyncIndex = { rootHash: null, rows: { log: transcriptRow("Log.md", null) }, seenPages: state.seenPages };
+		const marked = wantEarlierPages(index, "Log.md", () => true).index!;
+		const again: IntelligenceState = { seenPages: marked.seenPages!, rows: {}, scans: state.scans };
+		await prepared.hook!.process(doc, again);
+		expect(Object.values(again.rows).map((row) => row.status)).toEqual(["active"]);
 	});
 });

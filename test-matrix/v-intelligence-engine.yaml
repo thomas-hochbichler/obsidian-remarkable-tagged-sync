@@ -3371,3 +3371,50 @@
       layer: engine
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > Intelligence Engine seam > does not send a page the transcript note failed on to the backend a second time in the same sync"
+
+- feature: V72
+  name: "Pages written before page notes were switched on: said once, and made on request"
+  code: src/intelligence/rerun.ts
+  tier: free
+  scenarios:
+    - id: V72.1
+      scenario: "A page written before the switch-on turns up after the switch-on scan, in one sync and the next"
+      expect: "One notice names the notebook, the count and the two ways to bring them in; the next sync says nothing again"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > says so for one page found later that was written before the switch-on, once"
+
+    - id: V72.2
+      scenario: "Make page notes for this notebook's earlier pages, on a notebook note and on a page-tag note"
+      expect: "Every page under the note's tag without a page note is marked to be read, not one already waiting or of another tag or notebook; the notebook is owed to the next sync"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "wantEarlierPages > marks the pages of a transcript note's notebook that have no page note, and owes the notebook to the next sync"
+
+    - id: V72.3
+      scenario: "The command on a note that is not a transcript note, with page notes off, or with nothing left"
+      expect: "A sentence for each, and nothing changed"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "wantEarlierPages > says why it does nothing: not a transcript note, page notes off, or nothing left"
+
+    - id: V72.4
+      scenario: "A page left alone at switch-on is marked, and the next sync runs"
+      expect: "Its page note is made"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "wantEarlierPages > gets a page left alone at switch-on its page note on the next sync"
+
+    - id: V72.5
+      scenario: "The command is run from the palette"
+      expect: "Offered on a Markdown note only; it runs on the note on screen and says what it did"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > runs Make page notes for earlier pages on the note on screen, and says what it did"
+
+    - id: V72.6
+      scenario: "The command runs in the loaded plugin on a transcript note whose tag has page notes off"
+      expect: "The plugin asks its own settings, and the command says to switch them on first"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > makes page notes for a notebook's earlier pages from its transcript note, once page notes are on for its tag"

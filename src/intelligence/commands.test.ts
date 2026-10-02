@@ -110,6 +110,7 @@ describe("registerIntelligenceCommands", () => {
 			rerun: async () => ({ message: "" }),
 			changeProfile: async () => ({ message: "" }),
 			profiles: () => [],
+			pageNotesOn: () => false,
 			pro: () => true,
 			addCommand: (command) => commands.push(command as { id: string; callback?: () => unknown }),
 			registerObsidianProtocolHandler: (action, handler) => void (handlers[action] = handler),
@@ -121,7 +122,7 @@ describe("registerIntelligenceCommands", () => {
 			}),
 		};
 		registerIntelligenceCommands(host);
-		expect(commands.map((c) => c.id)).toEqual(["review-proposals", "change-profile", "rerun-extraction"]);
+		expect(commands.map((c) => c.id)).toEqual(["review-proposals", "change-profile", "rerun-extraction", "earlier-pages"]);
 		expect(Object.keys(handlers)).toEqual(["tagged-sync-review"]);
 
 		const modalOpened = await openReview(host);
@@ -164,9 +165,10 @@ describe("the page-note commands", () => {
 				{ id: "b", name: "B", description: "Journal" },
 			],
 			pro: () => pro,
+			pageNotesOn: (tag) => tag === "work",
 		};
 		registerIntelligenceCommands(host);
-		return { host, rerunCommand: commands.find((c) => c.id === "rerun-extraction")!, changeCommand: commands.find((c) => c.id === "change-profile")!, reran, index: () => index };
+		return { host, earlierCommand: commands.find((c) => c.id === "earlier-pages")!, rerunCommand: commands.find((c) => c.id === "rerun-extraction")!, changeCommand: commands.find((c) => c.id === "change-profile")!, reran, index: () => index };
 	}
 	const file = (path: string, extension = "md") => Object.assign(Object.create(TFile.prototype) as TFile, { path, extension });
 
@@ -216,6 +218,17 @@ describe("the page-note commands", () => {
 		expect(takeNotices()).toEqual(["The note is made again."]);
 		commandHost(file("Work/p.md"), false).changeCommand.checkCallback!(false);
 		expect(takeNotices()).toEqual(["Changing the profile of one page is part of Tagged Sync Pro."]);
+	});
+
+	it("runs Make page notes for earlier pages on the note on screen, and says what it did", async () => {
+		const { earlierCommand } = commandHost(file("Work/p.md"));
+		expect(earlierCommand.checkCallback!(true)).toBe(true);
+		takeNotices();
+		earlierCommand.checkCallback!(false);
+		await flush();
+		// A page note is not a transcript note; the rules themselves are `wantEarlierPages`'.
+		expect(takeNotices()).toEqual(["This note is not a transcript note from Tagged Sync."]);
+		expect(commandHost(null).earlierCommand.checkCallback!(true)).toBe(false);
 	});
 
 	it("does nothing to the index or the note while a sync runs", async () => {

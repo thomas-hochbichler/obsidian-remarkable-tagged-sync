@@ -88,8 +88,15 @@ describe("processDocument > switching Intelligence Mode on", () => {
 	it("stamps the pages written before the toggle and turns the one written after it into a note", async () => {
 		const mem = memory();
 		const state = fresh();
-		const report = await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE), page("p2", 2, "h2", null), page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
-		expect(report).toMatchObject({ notesWritten: 1, failures: [], notices: [] });
+		const pages = [page("p1", 1, "h1", BEFORE), page("p2", 2, "h2", null), page("p3", 3, "h3", AFTER)];
+		const report = await processDocument(deps(mem), doc(pages, { p3: "todo Call" }), state);
+		// The two pages left alone are said once, with the two ways to bring them in.
+		expect(report).toMatchObject({
+			notesWritten: 1,
+			failures: [],
+			notices: ['"Work log": 2 pages were written before page notes were switched on, so they get none. Write on a page to bring it in, or run "Make page notes for this notebook\'s earlier pages" on its transcript note.'],
+		});
+		expect((await processDocument(deps(mem), doc(pages, { p3: "todo Call" }), state)).notices).toEqual([]);
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work", "d1:p2:work", "d1:p3:work"]);
 		expect(state.seenPages["d1:p1:work"]).toEqual({ scope: "notebook", pageHash: "h1", firstSeen: BEFORE });
 		const path = "Work/Work log/2026-09-28 Work log p3.md";
@@ -99,6 +106,15 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		expect(state.seenPages["d1:p3:work"]).toEqual({ scope: "notebook", pageHash: "h3", firstSeen: AFTER, noteId: "note1" });
 		expect(mem.bases.has("plugin/base/note1.json")).toBe(true);
 		expect(report.usedSlots).toEqual(["tasks", "summary"]);
+	});
+
+	it("says so for one page found later that was written before the switch-on, once", async () => {
+		const mem = memory();
+		// The switch-on scan has run; the page turns up afterwards, written before it.
+		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: ENABLED.toISOString() } };
+		const report = await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE)], {}), state);
+		expect(report.notices).toEqual(['"Work log": 1 page was written before page notes were switched on, so it gets none. Write on a page to bring it in, or run "Make page notes for this notebook\'s earlier pages" on its transcript note.']);
+		expect((await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE)], {}), state)).notices).toEqual([]);
 	});
 
 	it("says which page it is on before each extraction", async () => {

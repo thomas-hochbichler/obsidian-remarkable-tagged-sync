@@ -81,7 +81,7 @@ import { rerunExtraction } from "./intelligence/rerun";
 import { changeProfile } from "./intelligence/change-profile";
 import { followVaultRename } from "./intelligence/vault-follow";
 import { intelligenceProAllowed } from "./intelligence/plugin-rules";
-import { markSaid, markSlotsUsed } from "./intelligence/settings";
+import { markSaid, markSlotsUsed, modesFor } from "./intelligence/settings";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
 import { UnavailableOcrBackend, visionRunStats } from "./vision-ocr-backend";
@@ -711,6 +711,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		changeProfile: async (notePath, profileId) => changeProfile(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, profileId, this.pageRenderPath(notePath)),
 		profiles: () => this.data.intelligence.profiles,
 		pro: () => intelligenceProAllowed(this.entitlement()),
+		pageNotesOn: (tag) => modesFor(this.data.intelligence, this.data.tagFolderMap, tag).intelligence,
 	};
 
 	/** The render a page note's row points at, for a re-run: the same attachment the sync writes. */

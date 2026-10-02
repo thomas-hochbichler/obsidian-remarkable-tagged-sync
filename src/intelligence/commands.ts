@@ -5,7 +5,7 @@
 
 import { type App, type Command, Modal, Notice, Setting } from "obsidian";
 import type { SyncIndex } from "../sync-engine";
-import { isPageNote, markForRereading, NOT_A_PAGE_NOTE, pageProfile, type RerunOutcome } from "./rerun";
+import { EARLIER_PAGES_COMMAND, isPageNote, markForRereading, NOT_A_PAGE_NOTE, pageProfile, type RerunOutcome, wantEarlierPages } from "./rerun";
 import type { NoteStore } from "../note-builder";
 import type { BaseStore } from "./base-store";
 import { REVIEW_ACTION, REVIEW_LINK } from "./host";
@@ -95,6 +95,8 @@ export interface IntelligenceCommandsHost {
 	changeProfile(notePath: string, profileId: string): Promise<RerunOutcome>;
 	profiles(): readonly { id: string; name: string; description: string }[];
 	pro(): boolean;
+	/** Whether page notes are on for a tag. */
+	pageNotesOn(tag: string): boolean;
 }
 
 /** What {@link IntelligenceCommandsHost.exclusive} answers while a sync runs. */
@@ -204,6 +206,17 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 			const file = host.app.workspace.getActiveFile();
 			if (file === null || file.extension !== "md") return false;
 			if (!checking) void host.exclusive(async () => say(host, await host.rerun(file.path)));
+			return true;
+		},
+	});
+	host.addCommand({
+		id: "earlier-pages",
+		name: EARLIER_PAGES_COMMAND,
+		// On every Markdown file, as above; a note that is not a transcript note earns a sentence.
+		checkCallback: (checking) => {
+			const file = host.app.workspace.getActiveFile();
+			if (file === null || file.extension !== "md") return false;
+			if (!checking) void host.exclusive(async () => say(host, wantEarlierPages(host.index(), file.path, (tag) => host.pageNotesOn(tag))));
 			return true;
 		},
 	});
