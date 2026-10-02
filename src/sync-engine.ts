@@ -2503,7 +2503,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (intelligence === undefined && !pdfBacked && (engineTags.some((tag) => tagRouter.extracts(tag)) || hasPageNotes)) pending.add(entry.id);
 		// The hook decides per unit which tags extract; it only needs every mapped notebook.
 		if (intelligence !== undefined && !pdfBacked && (engineTags.length > 0 || hasPageNotes)) {
-			if (shouldStop()) return stopHere();
+			// Stopped before the page notes: the transcript rows already carry this entry hash, so only the
+			// debt reopens the notebook on the next run.
+			if (shouldStop()) {
+				pending.add(entry.id);
+				return stopHere();
+			}
 			const cPages = new Map((content.cPages?.pages ?? []).map((page) => [page.id, page]));
 			const notebookUnits = mapped.notebook.map((tag) => ({ tag, scope: "notebook" as const, pageIds: pageOrder }));
 			// A page under a notebook tag and the same tag on the page is one unit, not two notes.
@@ -2533,7 +2538,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			);
 			mergeReport(intelligenceReport, pass);
 			// A page that failed retries on the next sync, not when the notebook next changes (spec §9).
-			if (pass.failures.some((line) => line.startsWith("page "))) pending.add(entry.id);
+			// So do the pages a Stop left unread: the pass starts no further page once it is pressed.
+			if (shouldStop() || pass.failures.some((line) => line.startsWith("page "))) pending.add(entry.id);
 			else pending.delete(entry.id);
 		}
 

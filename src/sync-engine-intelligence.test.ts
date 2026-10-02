@@ -274,6 +274,20 @@ describe("runSync > Intelligence Engine seam", () => {
 		const result = await runSync({ ...deps(a), noteStore: store, intelligence: h.value, shouldStop: () => stop }, EMPTY_SYNC_INDEX);
 		expect(result.stopped).toBe(true);
 		expect(h.docs).toEqual([]);
+		// The transcript row already carries the new entry hash: without the debt, nothing reopens the notebook.
+		expect(result.index.intelligencePending).toEqual(["doc-1"]);
+	});
+
+	it("owes a notebook's remaining pages to the next run when Stop is pressed while they are extracted", async () => {
+		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
+		let stop = false;
+		const h = hook();
+		h.value.process = async () => {
+			stop = true;
+			return emptyReport();
+		};
+		const result = await runSync({ ...deps(a), intelligence: h.value, shouldStop: () => stop }, EMPTY_SYNC_INDEX);
+		expect(result.index.intelligencePending).toEqual(["doc-1"]);
 	});
 
 	it("does not give annotated PDFs or EPUBs to the engine", async () => {

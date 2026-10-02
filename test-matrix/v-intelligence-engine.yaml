@@ -2998,3 +2998,29 @@
       layer: unit
       file: src/intelligence/page-engine.test.ts
       test: "processPage > Value Slots > leaves a Value alone whose Slot moved between the frontmatter and the body, instead of failing the page"
+
+- feature: V60
+  name: "Code review fixes: no page is dropped, and no note changes hands"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V60.1
+      scenario: "Stop is pressed while a notebook's pages are extracted"
+      expect: "The notebook stays owed, so the next run reopens it for the pages left"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > owes a notebook's remaining pages to the next run when Stop is pressed while they are extracted"
+
+    - id: V60.2
+      scenario: "A notebook carries two mapped tags; page notes are switched off for one and on for the other"
+      expect: "Not a rename: the first tag's rows and notes stay its own, the second makes its own notes"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > does not read a tag whose Intelligence Mode is merely off as renamed to the tag switched on beside it"
+
+    - id: V60.3
+      scenario: "A page note was deleted and the page's extraction then keeps failing"
+      expect: "The retries share one note id and one base, so the third failure is said and no base files pile up"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > counts a failing page's attempts on one base when its note was deleted"
