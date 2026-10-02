@@ -3091,3 +3091,39 @@
       layer: unit
       file: src/intelligence/base-store.test.ts
       test: "foreignLines > takes a note with no frontmatter, or an unclosed one, as all body"
+
+- feature: V63
+  name: "Code review, the rest: an empty frontmatter block, a tag that returns"
+  code: src/frontmatter.ts
+  tier: free
+  scenarios:
+    - id: V63.1
+      scenario: "A page note's template holds an empty frontmatter block and the plugin's keys are written"
+      tier: pro
+      expect: "The keys fill that block; no second block is stacked on it and the body is not taken for frontmatter"
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "an empty frontmatter block, as a template can hold one > is filled by applyFrontmatter, instead of a second block stacked on it or the body taken for frontmatter"
+
+    - id: V63.2
+      scenario: "Frontmatter properties are switched off and a note holds an empty block"
+      tier: pro
+      expect: "The note is left as it is: nothing in the block is the plugin's"
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "an empty frontmatter block, as a template can hold one > is left as it is by removeFrontmatter: nothing in it is the plugin's"
+
+    - id: V63.3
+      scenario: "Change Profile is run on a note with an empty frontmatter block and a rule further down"
+      tier: pro
+      expect: "The empty block is carried over as that; the old note's body is not copied into the new note"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > carries an empty frontmatter block over as that, not the body up to its first rule"
+
+    - id: V63.4
+      scenario: "A tag removed on the tablet is put back on an unchanged page; then again after the user deleted the note"
+      expect: "Note still there: the row is active again at once. Note deleted: it stays orphaned until the page is written on"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > takes an orphaned row back when its tag returns to the page and the note is still there, though the page did not change"

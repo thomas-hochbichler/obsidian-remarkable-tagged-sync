@@ -147,6 +147,16 @@ describe("changeProfile", () => {
 		expect(out.message).toContain("stays as it is");
 	});
 
+	it("carries an empty frontmatter block over as that, not the body up to its first rule", async () => {
+		const e = env();
+		const { index, path } = await synced(e);
+		e.notes.set(path, `---\n---\n${e.notes.get(path)!}\n---\nMine\n`);
+		const out = await changeProfile(e, run(), index, path, "decided", "a/d-p1.pdf");
+		const made = e.notes.get(out.index!.intelligenceRows!["d:p1:work"].notePath)!;
+		expect(made.startsWith("---\n---\n## Summary")).toBe(true);
+		expect(made).not.toContain("## Tasks");
+	});
+
 	it("freezes the choice for the next sync when there is no transcript to extract from", async () => {
 		const e = env();
 		const { index, path } = await synced(e);

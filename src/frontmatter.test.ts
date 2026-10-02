@@ -94,6 +94,21 @@ describe("applyFrontmatter on a note the user already gave frontmatter", () => {
 	});
 });
 
+describe("an empty frontmatter block, as a template can hold one", () => {
+	const EMPTY = "---\n---\nBody\n\n---\nBelow the rule\n";
+
+	it("is filled by applyFrontmatter, instead of a second block stacked on it or the body taken for frontmatter", () => {
+		const { content } = applyFrontmatter(EMPTY, fields(), []);
+		expect(content.startsWith("---\ntags:\n  - remarkable/projekt-x\n")).toBe(true);
+		expect(content.endsWith("\n---\nBody\n\n---\nBelow the rule\n")).toBe(true);
+		expect(content).not.toContain("---\n---");
+	});
+
+	it("is left as it is by removeFrontmatter: nothing in it is the plugin's", () => {
+		expect(removeFrontmatter(EMPTY, [])).toBeNull();
+	});
+});
+
 describe("the shared tags key", () => {
 	it("merges its tags into a user block list without touching the user's entries", () => {
 		const existing = "---\ntags:\n  - daily\n  - '#quoted'\n---\n" + BODY;

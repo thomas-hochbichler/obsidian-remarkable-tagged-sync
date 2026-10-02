@@ -13,7 +13,8 @@ import type { RerunOutcome } from "./rerun";
 import { uneditedSinceBase } from "./review";
 import { baseHash, slotsOf, templateFor } from "./sync-pass";
 
-const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
+// An empty block (`---` right under `---`) is tried first, or it would run on to the body's next `---`.
+const FRONTMATTER = /^---\r?\n(?:[\s\S]*?\r?\n)??---(?:\r?\n|$)/;
 
 export async function changeProfile(env: HostEnvironment, run: RunInputs, index: SyncIndex, notePath: string, profileId: string, renderPath: string): Promise<RerunOutcome> {
 	const row = Object.values(index.intelligenceRows ?? {}).find((candidate) => candidate.notePath === notePath && candidate.status === "active");

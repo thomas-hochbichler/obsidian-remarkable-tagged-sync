@@ -202,7 +202,13 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	// Tag gone from the notebook or page on the tablet: the row is orphaned and its note stays. A tag
 	// whose Intelligence Mode is merely off is still here, and its rows stay active and untouched.
 	const present = new Set(doc.units.flatMap((unit) => unit.pageIds.map((pageId) => intelligenceSyncKey(doc.docId, pageId, unit.tag))));
-	for (const [key, row] of Object.entries(state.rows)) if (!options.partial && row.docId === doc.docId && row.status === "active" && !present.has(key)) state.rows[key] = { ...row, status: "orphaned" };
+	// The tag back on the page with the note still there: the row is the unit's again, without waiting
+	// for new ink (the revive rule, spec §4.1). A note deleted meanwhile waits for the page to be written on.
+	for (const [key, row] of Object.entries(state.rows)) {
+		if (row.docId !== doc.docId) continue;
+		if (row.status === "active" && !options.partial && !present.has(key)) state.rows[key] = { ...row, status: "orphaned" };
+		else if (row.status === "orphaned" && present.has(key) && (await deps.noteStore.exists(row.notePath))) state.rows[key] = { ...row, status: "active" };
+	}
 
 	const work: { unit: DocUnit; page: DocPage; key: string; seen: SeenEntry | undefined }[] = [];
 	let legacyRecorded = false;
