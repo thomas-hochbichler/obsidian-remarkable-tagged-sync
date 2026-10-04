@@ -34,6 +34,9 @@ import { type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, offeredGen
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { registerExtractionBackend } from "./intelligence/extraction-registry";
+import { managedLocalEntry } from "./intelligence/local-server";
+import { managedModelFiles, nodeServerDeps } from "./intelligence/local-server-node";
 
 export const LOCAL_BACKEND_ID = "local";
 const LOCAL_BACKEND_LABEL = "Downloaded model (managed by this plugin)";
@@ -456,6 +459,6 @@ if (offeredOnThisPlatform()) {
 				backgroundConsentDesc(resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
 		},
 	});
+	// The same download as an extraction backend: the Free default for page notes (Intelligence Engine §6, §11).
+	registerExtractionBackend(managedLocalEntry(() => managedModelFiles(PLUGIN_ID), nodeServerDeps));
 }
-
-

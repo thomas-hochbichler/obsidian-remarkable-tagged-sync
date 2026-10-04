@@ -1,0 +1,3129 @@
+# The Intelligence Engine (1.9.0): one Obsidian note per handwritten page, built from the user's
+# template, with tasks and other Slots extracted by an LLM and merged item by item with what the
+# user edited in Obsidian.
+
+- feature: V1
+  name: Only new pages are processed
+  code: src/intelligence/seen-set.ts
+  tier: free
+  scenarios:
+    - id: V1.1
+      scenario: A page carries `modifed` as the device writes it, as a string
+      expect: It is read as epoch ms
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "pageModified > reads the epoch-ms string the device stamps on an edited page"
+
+    - id: V1.2
+      scenario: A page was never edited since the device started stamping
+      expect: No stamp, so null -- which the two questions read as old
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "pageModified > is null for a page never edited since the device started stamping it"
+
+    - id: V1.3
+      scenario: The stamp is garbled or empty
+      expect: Null, never NaN -- NaN compares false both ways and would decide new/old by accident
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "pageModified > is null for a value that is not a number, rather than NaN"
+
+    - id: V1.4
+      scenario: A page already in the seen-set is synced again
+      expect: Changed only when its `.rm` hash differs
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls a seen page changed only when its hash differs"
+
+    - id: V1.5
+      scenario: A page seen before it had any ink gets its first stroke
+      expect: A change -- the null hash differs from the first real one
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > counts the first ink on a page that had no .rm when seen as a change"
+
+    - id: V1.6
+      scenario: A page not in the seen-set carries a stamp
+      expect: New only when edited strictly after Intelligence Mode was switched on
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls an unseen page new only when it was edited after Intelligence Mode was switched on"
+
+    - id: V1.7
+      scenario: An old notebook without stamps is tagged today
+      expect: Its pages are old -- no extraction, no spend
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls an unseen page without a modified stamp old, so a notebook from 2025 tagged today costs nothing"
+
+    - id: V1.8
+      scenario: A legacy `pages[]` document is tagged
+      expect: Every page is old
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "classifyUnit > calls every page of a legacy pages[] document old, whatever the clock says"
+
+    - id: V1.9
+      scenario: The switch-on scan meets a page written between the click and the sync
+      expect: It is not stamped as seen; the two questions process it in the same run
+      layer: unit
+      file: src/intelligence/seen-set.test.ts
+      test: "switchOnStamp > stamps pages written before the toggle or never stamped, and leaves a page written after it to the two questions"
+
+- feature: V2
+  name: Item formats write and read one item per line
+  code: src/intelligence/item-format.ts
+  tier: free
+  scenarios:
+    - id: V2.1
+      scenario: "An item is written through a Tasks and a Dataview format"
+      expect: "The fields land where the format puts them"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > writes an item through the format"
+
+    - id: V2.2
+      scenario: "A field is empty"
+      expect: "Its label goes too -- a stray 📅 or `[due:: ]` would make a query read a date that is not there"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > drops a field together with the words that label it when the field is empty"
+
+    - id: V2.3
+      scenario: "A ticked line with a Tasks done date is rewritten"
+      expect: "The tick and `✅ date` survive"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > writes the checkbox state it is given and keeps the trailing fields of the line it replaces"
+
+    - id: V2.4
+      scenario: "A List format has no checkbox"
+      expect: "No `[x]` is invented"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > ignores a checkbox state for a format without a checkbox"
+
+    - id: V2.5
+      scenario: "Two placeholders share one word and only one has a value"
+      expect: "The other is written empty, not as `undefined`"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > leaves a second field in the same word empty when only the first has a value"
+
+    - id: V2.6
+      scenario: "A format ends in a literal like `#task`"
+      expect: "The literal is always written"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > render > keeps literal words after the last placeholder"
+
+    - id: V2.7
+      scenario: "A line the engine wrote is read back"
+      expect: "Same text and fields -- the merge compares against them"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > reads text and fields back from a line it wrote"
+
+    - id: V2.8
+      scenario: "The user deleted the due date"
+      expect: "The line still parses, with no field"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > reads a line whose optional field the user removed"
+
+    - id: V2.9
+      scenario: "A line carries `[x]` or a custom status like `[/]`"
+      expect: "It parses, and the character is kept"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > treats the checkbox character as a wildcard"
+
+    - id: V2.10
+      scenario: "Tasks appended priority, recurrence and a done date"
+      expect: "They are split off as a tail, never read as item text"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > tolerates the trailing fields the Tasks plugin appends"
+
+    - id: V2.11
+      scenario: "A line is indented or has doubled spaces"
+      expect: "It still parses"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > tolerates indentation and extra spaces"
+
+    - id: V2.12
+      scenario: "A region holds prose, a callout, a heading or an empty checkbox"
+      expect: "Not an item -- the parser skips it"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > returns null for a line that is not an item: prose, callouts, headings, blank lines"
+
+    - id: V2.13
+      scenario: "A format contains `$`, `(` or `)`"
+      expect: "They match literally"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > reads a line with a format's regex characters literally"
+
+    - id: V2.14
+      scenario: "The Profile editor asks which Fields a format places"
+      expect: "Only the fields, never `text`"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > parse > names the fields a format places"
+
+    - id: V2.15
+      scenario: "A format lacks `{{text}}`"
+      expect: "Compiling it throws, naming the missing placeholder"
+      layer: unit
+      file: src/intelligence/item-format.test.ts
+      test: "compileItemFormat > rejects > a format without {{text}}"
+
+- feature: V3
+  name: Note lines are matched to base items without visible ids
+  code: src/intelligence/matcher.ts
+  tier: free
+  scenarios:
+    - id: V3.1
+      scenario: "A line differs from its item only in case, punctuation or spacing"
+      expect: "Same normalised text"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "normaliseText > ignores case, punctuation and spacing"
+
+    - id: V3.2
+      scenario: "A German line has umlauts"
+      expect: "They are letters, not punctuation"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "normaliseText > keeps letters with accents and umlauts"
+
+    - id: V3.3
+      scenario: "Two texts share all or none of their words"
+      expect: "1 or 0"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "similarity > is 1 for the same words in another order and 0 for no shared word"
+
+    - id: V3.4
+      scenario: "Both texts are empty"
+      expect: "0 -- NaN would slip past every threshold comparison"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "similarity > is 0 for two empty texts rather than NaN"
+
+    - id: V3.5
+      scenario: "Lines were reordered, a dot added"
+      expect: "Each finds its item by exact normalised text"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > matches lines whose text is unchanged up to case and punctuation"
+
+    - id: V3.6
+      scenario: "The user added two words to a task"
+      expect: "Still the same item (similarity >= 0.6)"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > matches a lightly edited line to its item"
+
+    - id: V3.7
+      scenario: "The user rewrote a task entirely"
+      expect: "A user line plus a tombstone -- nothing lost, nothing duplicated"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > reads a heavy rewrite as a user-added line and a deleted item"
+
+    - id: V3.8
+      scenario: "The user duplicated a line"
+      expect: "Only one line is the item; the copy is user-added"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > matches one to one, so two lines never claim the same item"
+
+    - id: V3.9
+      scenario: "Two lines resemble one item"
+      expect: "The closer line wins"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > gives an item to the most similar line first"
+
+    - id: V3.10
+      scenario: "Two lines match two items equally"
+      expect: "Position decides"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > breaks a tie by position"
+
+    - id: V3.11
+      scenario: "An exact match sits further away than a fuzzy one"
+      expect: "Exact wins"
+      layer: unit
+      file: src/intelligence/matcher.test.ts
+      test: "matchItems > prefers an exact match over a closer position"
+
+- feature: V4
+  name: Item-level three-way merge never overwrites what the user edited
+  code: src/intelligence/merge.ts
+  tier: free
+  scenarios:
+    - id: V4.1
+      scenario: "A stored source span is looked up in a re-read transcript"
+      expect: "Found despite spacing and case"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "inTranscript > finds a span despite OCR spacing and case drift"
+
+    - id: V4.2
+      scenario: "A span is missing or only punctuation"
+      expect: "Never counts as on the page"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "inTranscript > never finds an empty or missing span"
+
+    - id: V4.3
+      scenario: "A Slot is extracted for the first time"
+      expect: "Items are written directly; one with an invented or missing source is dropped"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > first extraction > writes every item directly and drops one whose source is not on the page"
+
+    - id: V4.4
+      scenario: "The model rewords an item and changes a field, same ink"
+      expect: "Nothing changes -- rewording is model noise"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the page did not change behind an item > ignores a reworded item and a changed field while the ink is the same"
+
+    - id: V4.5
+      scenario: "The model forgets an item whose words are still on the page"
+      expect: "The item stays"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the page did not change behind an item > ignores an item the model forgot while its ink is still on the page"
+
+    - id: V4.6
+      scenario: "The ink behind a task changed its due date, review on"
+      expect: "A change proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > proposes the new field with review on"
+
+    - id: V4.7
+      scenario: "Same, review off"
+      expect: "The line is updated"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > applies it with review off"
+
+    - id: V4.8
+      scenario: "Same, but the user edited that line"
+      expect: "A proposal, whatever the toggle"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > proposes it even with review off when the user edited that line"
+
+    - id: V4.9
+      scenario: "The ink moved but the answer is the same, with null Fields from the strict schema"
+      expect: "Only the stored span moves; no proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > only moves the source when the model's answer is otherwise the same, an empty field included"
+
+    - id: V4.10
+      scenario: "The page shows a task ticked"
+      expect: "The note line is ticked directly"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > ticks the note from the page directly, even with review on"
+
+    - id: V4.11
+      scenario: "The user unticked in Obsidian what the page ticked"
+      expect: "It stays unticked"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > does not tick again a line the user unticked after the page ticked it"
+
+    - id: V4.12
+      scenario: "Page and note are both ticked"
+      expect: "No write"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > records the tick without a write when the note is already ticked"
+
+    - id: V4.13
+      scenario: "The model ticks a known item but omits its source"
+      expect: "The tick applies; the stored span stays"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > takes a tick for a known item even when the model gave no source span"
+
+    - id: V4.14
+      scenario: "The page shows no tick, the note does"
+      expect: "The note stays ticked"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > ticks > never unticks from the page"
+
+    - id: V4.15
+      scenario: "A task's words are gone from the page, review on"
+      expect: "A remove proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > proposes the removal with review on"
+
+    - id: V4.16
+      scenario: "Same, review off"
+      expect: "The line is removed"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > removes the line with review off"
+
+    - id: V4.17
+      scenario: "The line is ticked"
+      expect: "Proposal, even with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > never removes a ticked line without review"
+
+    - id: V4.18
+      scenario: "The user edited the line"
+      expect: "Proposal, even with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > never removes a line the user edited without review"
+
+    - id: V4.19
+      scenario: "The user added a due date to the line"
+      expect: "Counts as an edit: proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > counts a field the user added as an edit"
+
+    - id: V4.20
+      scenario: "A line the user typed gained a source span, then its ink went"
+      expect: "Proposal, even with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > items whose ink is gone > never removes a user-typed item without review once it gained a source"
+
+    - id: V4.21
+      scenario: "The user types a task in Obsidian"
+      expect: "It is kept across syncs and never removed"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > keeps a typed line as a user item that is never a drop candidate"
+
+    - id: V4.22
+      scenario: "The model finds a task the user already typed"
+      expect: "No proposal; the line gains the source"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > does not propose an item the user already typed"
+
+    - id: V4.23
+      scenario: "A pending add proposal is typed by the user"
+      expect: "The proposal disappears"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > drops a pending proposal the user has since typed themselves"
+
+    - id: V4.24
+      scenario: "The user deleted a line; the model keeps finding it"
+      expect: "Tombstone; it never comes back"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > turns a deleted line into a tombstone and never brings the item back"
+
+    - id: V4.25
+      scenario: "A tombstone without a source meets the same text"
+      expect: "Suppressed by text"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the user's own lines > does not bring back a deleted item the model returns under new words and no known source"
+
+    - id: V4.26
+      scenario: "The model finds a new task"
+      expect: "Proposal with review on, inserted with review off"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > proposes a new item with review on and inserts it with review off"
+
+    - id: V4.27
+      scenario: "The same new task on two syncs"
+      expect: "One proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > keeps one pending proposal across syncs instead of piling up copies"
+
+    - id: V4.28
+      scenario: "The model loses a known item's id"
+      expect: "Folded onto the item, not proposed twice"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > folds an item the model calls new onto the live item it really is"
+
+    - id: V4.29
+      scenario: "A new item has no source"
+      expect: "Ignored"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > ignores a new item without a source span"
+
+    - id: V4.30
+      scenario: "The model returns a tombstoned id"
+      expect: "Ignored"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > ignores an id the user deleted"
+
+    - id: V4.31
+      scenario: "A pending change gets newer content"
+      expect: "One proposal, newest content, stable id"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeProposals > replaces the content of a pending proposal with the same key and keeps its id"
+
+    - id: V4.32
+      scenario: "First summary"
+      expect: "Written"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > writes the first summary"
+
+    - id: V4.33
+      scenario: "The user never edited the summary"
+      expect: "Replaced; stale proposal dropped"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > replaces an untouched summary and drops a stale replace proposal"
+
+    - id: V4.34
+      scenario: "The new summary reads the same"
+      expect: "No write"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > writes nothing when the untouched summary already reads the same"
+
+    - id: V4.35
+      scenario: "The user edited the summary"
+      expect: "Kept; one Replace proposal, updated not duplicated"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > keeps an edited summary and proposes the new one once"
+
+    - id: V4.36
+      scenario: "The model repeats the base"
+      expect: "No proposal"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeText > proposes nothing when the model says what the base already said"
+
+- feature: V5
+  name: Regions under template headings are written line by line
+  code: src/intelligence/regions.ts
+  tier: free
+  scenarios:
+    - id: V5.1
+      scenario: "A code block in the note contains a `##` line"
+      expect: "Not a heading, so no region ends there"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "headings > ignores a heading inside fenced code"
+
+    - id: V5.2
+      scenario: "A Slot heading has a sub-heading below it"
+      expect: "The sub-heading is inside the region"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > runs from the heading to the next heading of the same or a higher level"
+
+    - id: V5.3
+      scenario: "The user renamed the Tasks heading"
+      expect: "The region is found by its items"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > finds a renamed heading again through the items it holds"
+
+    - id: V5.4
+      scenario: "Several headings hold some of the items"
+      expect: "The one with most matches wins"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > takes the renamed heading that holds the most of the base's items"
+
+    - id: V5.5
+      scenario: "No heading matches"
+      expect: "Null -- nothing is written, a notice is shown"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "findRegion > gives up rather than guess when no heading holds the base's items"
+
+    - id: V5.6
+      scenario: "A region mixes prose, items and a plain `- ` line"
+      expect: "Items are read; the plain list line is a user item"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "parseRegion > reads item lines, skips prose and sub-headings, and keeps a list line the format cannot read"
+
+    - id: V5.7
+      scenario: "A ticked line with a done date is updated"
+      expect: "Tick and done date survive"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > updates a line in place, keeping its tick and the Tasks fields after it"
+
+    - id: V5.8
+      scenario: "An accepted change hits a plain list line"
+      expect: "It is rewritten in the Slot's format"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > rewrites a loose list line through the format when it is updated"
+
+    - id: V5.9
+      scenario: "The line is indented"
+      expect: "Indentation kept"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > keeps the indentation of an updated line"
+
+    - id: V5.10
+      scenario: "The page ticks an item"
+      expect: "Only `[ ]` becomes `[x]`"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > ticks a line without touching the rest of it"
+
+    - id: V5.11
+      scenario: "Removes and inserts in one sync"
+      expect: "Every line the engine does not own is unchanged"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > removes lines and inserts new ones after the last item, leaving every other line alone"
+
+    - id: V5.12
+      scenario: "The region is empty but has a callout"
+      expect: "New items go under the callout"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > inserts into an empty region under the heading and its callout, before the blank line"
+
+    - id: V5.13
+      scenario: "The region ends the note"
+      expect: "Appended at the end"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "applyListOps > appends at the end of the note when the region is the last one"
+
+    - id: V5.14
+      scenario: "A summary region carries a callout"
+      expect: "The callout is not part of the text"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "Text regions > reads the body without the proposal callout"
+
+    - id: V5.15
+      scenario: "The summary is replaced"
+      expect: "Callout and spacing kept"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "Text regions > replaces the body, keeping the callout and the blank line before the next heading"
+
+    - id: V5.16
+      scenario: "The summary is the last region"
+      expect: "Written at the end"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "Text regions > writes into the last region of the note"
+
+    - id: V5.17
+      scenario: "A region gets its first proposal"
+      expect: "The callout appears under the heading"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "setProposalCallout > adds the callout right under the heading"
+
+    - id: V5.18
+      scenario: "More proposals arrive"
+      expect: "The count changes in place"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "setProposalCallout > updates the count of an existing callout"
+
+    - id: V5.19
+      scenario: "All proposals are decided"
+      expect: "The callout goes; nothing else changes"
+      layer: unit
+      file: src/intelligence/regions.test.ts
+      test: "setProposalCallout > removes the callout once everything is decided, and leaves a region without one alone"
+
+- feature: V6
+  name: Due dates are resolved in code from the words on the page
+  code: src/intelligence/dates.ts
+  tier: free
+  scenarios:
+    - id: V6.1
+      scenario: "A task names an absolute date in any common form"
+      expect: "The ISO date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > absolute dates > reads ISO, German day-month with and without year, and month names in both languages"
+
+    - id: V6.2
+      scenario: "A December page says `bis 15.1.`"
+      expect: "January next year; a date just past stays this year (overdue)"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > absolute dates > puts a due date without a year into next year when this year's is long past"
+
+    - id: V6.3
+      scenario: "The words hold a time or 31 February"
+      expect: "No date rather than a wrong one"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > absolute dates > reads nothing from a time or an impossible date"
+
+    - id: V6.4
+      scenario: "heute / morgen / übermorgen, and English"
+      expect: "Relative to the page's date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads today, tomorrow and the day after in German and English"
+
+    - id: V6.5
+      scenario: "bis Freitag, Fr., do"
+      expect: "The next such day after the page's date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads a weekday as its next occurrence after the page's date"
+
+    - id: V6.6
+      scenario: "English words like do and so"
+      expect: "No date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > does not read an English word as a German weekday abbreviation"
+
+    - id: V6.7
+      scenario: "nächste Woche, Monatsende"
+      expect: "That week's Friday, the month's last day"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads this week and next week as their Friday, and month ends as the last day"
+
+    - id: V6.8
+      scenario: "in 6 Wochen, in drei Tagen"
+      expect: "Counted from the page's date; month overflow clamps"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads in N days, weeks and months, in digits or words"
+
+    - id: V6.9
+      scenario: "irgendwann, someday"
+      expect: "No date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > relative words > reads someday as no date"
+
+    - id: V6.10
+      scenario: "A French due phrase with the model's class"
+      expect: "The class decides; for German/English the words win"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > fallback to the model's class > uses the class only for words no language table reads"
+
+    - id: V6.11
+      scenario: "No words, no class"
+      expect: "No date"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > fallback to the model's class > gives no date when neither the words nor the class name one"
+
+    - id: V6.12
+      scenario: "The page says `Mo 28.9.`"
+      expect: "That date; a late-December date read in January is last year's"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveWrittenDate > reads the date written on the page, preferring the past for a date without a year"
+
+    - id: V6.13
+      scenario: "The page says heute, or nothing"
+      expect: "No written date -- the chain falls to first-seen"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveWrittenDate > reads nothing relative or missing"
+
+- feature: V7
+  name: The intelligence settings block reads totally and never costs a scan by itself
+  code: src/intelligence/settings.ts
+  tier: free
+  scenarios:
+    - id: V7.1
+      scenario: "The block is absent or junk"
+      expect: "A complete block with Tasks, Decisions, Summary, Tags"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > gives a complete block with the default Slots for anything that is not a stored block"
+
+    - id: V7.2
+      scenario: "A migrated block is read again later"
+      expect: "It reads to itself -- no re-stamp"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > is idempotent"
+
+    - id: V7.3
+      scenario: "The user deleted every Slot"
+      expect: "They stay deleted"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > does not bring back a default Slot the user deleted"
+
+    - id: V7.4
+      scenario: "A mapping is partial or junk"
+      expect: "Each field gets its default; junk Profile ids are dropped"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > fills each mapping field on its own and drops junk inside it"
+
+    - id: V7.5
+      scenario: "Intelligence Mode is on with no stamp"
+      expect: "Stamped with the load time in memory; onload writes nothing"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > stamps a mapping that is on but was never stamped with the load time, in memory"
+
+    - id: V7.6
+      scenario: "A newer install wrote fields this one does not know"
+      expect: "They are carried, not dropped for every device"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "readIntelligence > carries Profiles and Slots whole, unknown fields included, and reads the backend"
+
+    - id: V7.7
+      scenario: "A mapped tag has no intelligence entry"
+      expect: "Transcript on, Intelligence off"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "modesFor > gives a mapped tag its modes and an unmentioned one the defaults"
+
+    - id: V7.8
+      scenario: "The folder mapping was removed but the entry remains"
+      expect: "The entry is ignored"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "modesFor > ignores the modes of a tag whose mapping was removed"
+
+    - id: V7.9
+      scenario: "Intelligence Mode is switched on, off, on"
+      expect: "enabledAt moves each time; firstEnabledAt keeps the first"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "setIntelligenceMode > stamps enabledAt on every switch-on and firstEnabledAt only once"
+
+    - id: V7.10
+      scenario: "The block is reordered or gains a default entry"
+      expect: "Same print as before"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "intelligenceFingerprint > ignores key order and entries equal to the defaults, so an upgrade and a no-op write cost no scan"
+
+    - id: V7.11
+      scenario: "A mode, stamp or Profile list changes"
+      expect: "A new print -- the gate opens"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "intelligenceFingerprint > changes on a toggle, a re-stamp or a Profile list change"
+
+    - id: V7.12
+      scenario: "A mapping has Intelligence Mode on and no Profile"
+      expect: "Tasks + Summary; Tags only with Pro"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "genericProfile > runs Tasks and Summary, plus Tags with Pro"
+
+- feature: V8
+  name: The base is a device-local file that can always be rebuilt from the note
+  code: src/intelligence/base-store.ts
+  tier: free
+  scenarios:
+    - id: V8.1
+      scenario: "A base file is named"
+      expect: "By noteId under the plugin folder"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > keys the file by noteId, never by syncKey, whose colons Windows rejects"
+
+    - id: V8.2
+      scenario: "A base is written and read"
+      expect: "Round trip"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > saves and loads a base"
+
+    - id: V8.3
+      scenario: "The file is missing, broken, of another version or another note's"
+      expect: "Missing -- the note is rebuilt instead of trusted"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > treats a missing, garbled, foreign-shaped or misfiled base as missing, so the note is rebuilt"
+
+    - id: V8.4
+      scenario: "An orphaned row is revived without its note"
+      expect: "The old base is deleted"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "createBaseStore > discards a base"
+
+    - id: V8.5
+      scenario: "The base is gone (reinstall, other device)"
+      expect: "Items with no source span, so nothing is dropped on the first run; an empty summary base, so text in the note is never overwritten silently; the page is re-read"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "rebuildBase > reads the note back as the base: items without a source, fresh ids, ticks kept, an empty summary base, no transcript"
+
+    - id: V8.6
+      scenario: "A Slot heading was deleted"
+      expect: "That Slot is settled: left out of the rebuilt base and never re-added"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "rebuildBase > settles a region whose heading is gone so it is never re-added, and gives Values an empty base"
+
+- feature: V9
+  name: Any Markdown note can be a template
+  code: src/intelligence/template.ts
+  tier: free
+  scenarios:
+    - id: V9.1
+      scenario: "A Slot placeholder stands alone under a heading"
+      expect: "A merged region under that heading"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "analyseTemplate > makes a placeholder alone under its own heading a region, blank lines allowed"
+
+    - id: V9.2
+      scenario: "A placeholder shares a heading, sits inline, in a callout or above every heading"
+      expect: "Filled once at creation, never merged -- the editor says so"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "analyseTemplate > fills a placeholder once when it shares its heading, sits in a sentence, a callout or before any heading"
+
+    - id: V9.3
+      scenario: "The Profile runs a Slot the template lacks"
+      expect: "Reported, so the editor can hint"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "analyseTemplate > reports a Slot the template does not place"
+
+    - id: V9.4
+      scenario: "A template uses ts variables and core date/time with formats"
+      expect: "All filled"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "renderTemplate > fills ts variables and the core title, date and time, with formats"
+
+    - id: V9.5
+      scenario: "The template places a Slot this Profile does not run, and one with nothing extracted"
+      expect: "Both fill with nothing, leaving an empty region the Slot can adopt later; other braces stay"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "renderTemplate > fills a Slot the Profile does not run, or one with nothing extracted, with nothing, and leaves other braces alone"
+
+    - id: V9.6
+      scenario: "Create template writes a starter"
+      expect: "Every Slot a region, plus the page link"
+      layer: unit
+      file: src/intelligence/template.test.ts
+      test: "starterTemplate > gives every body Slot its own heading, so every Slot is a region, and a frontmatter Slot none"
+
+- feature: V10
+  name: "Field types are one table: schema and resolution"
+  code: src/intelligence/field-types.ts
+  tier: free
+  scenarios:
+    - id: V10.1
+      scenario: "An amount is written as 12,90 € or 1.234,50"
+      expect: "A plain decimal"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "parseNumber > reads German and English decimals, thousands separators and currency noise"
+
+    - id: V10.2
+      scenario: "The amount is a word or two numbers"
+      expect: "No value rather than a wrong one"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "parseNumber > gives null for words or a malformed number"
+
+    - id: V10.3
+      scenario: "The strict schema is built"
+      expect: "Every Field may be null; a Choice only offers its options"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > makes every field nullable in the schema, a choice closed to its options"
+
+    - id: V10.4
+      scenario: "A Date field comes back as words and class"
+      expect: "Code resolves the date"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > resolves a date from the copied words, falling back to the class"
+
+    - id: V10.5
+      scenario: "A Text field is blank"
+      expect: "Null"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > resolves text trimmed and empty text as null"
+
+    - id: V10.6
+      scenario: "A Number field comes back as text or number"
+      expect: "A plain decimal either way"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > resolves a number copied as text or given as a number"
+
+    - id: V10.7
+      scenario: "The model answers outside the list"
+      expect: "Null -- never an invented option"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > keeps a choice only when it is one of the options"
+
+    - id: V10.8
+      scenario: "A Link comes back bare or bracketed"
+      expect: "Always one pair of brackets"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > wraps a link in brackets whether or not the model already did"
+
+- feature: V11
+  name: "One schema per page, and a defensive reader for the answer"
+  code: src/intelligence/extraction.ts
+  tier: free
+  scenarios:
+    - id: V11.1
+      scenario: "A Profile's Slots become a schema"
+      expect: "Strict: all keys required, none extra, plus the hidden page date"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildSchema > asks for the page date and every Slot, all keys required, nothing extra"
+
+    - id: V11.2
+      scenario: "A List/Checklist item schema is built"
+      expect: "source first, then reason, then the value"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildSchema > orders item keys evidence, reason, id, text, fields, done"
+
+    - id: V11.3
+      scenario: "Value Slots with and without a choice list, and Tags"
+      expect: "Closed enums; Tags an array"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildSchema > closes a Value to its choice list, and makes the tags Value a list"
+
+    - id: V11.4
+      scenario: "The cloud prompt is assembled"
+      expect: "Description, weekday date, Slot instructions and examples, known ids, then the page"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildPrompt > carries the Profile description, the date with its weekday, each Slot, the known ids and the page"
+
+    - id: V11.5
+      scenario: "An answer with a known and a new item"
+      expect: "Typed items; 'new' becomes no id; an empty source becomes none"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > reads items with resolved fields, known ids, ticks and a missing source"
+
+    - id: V11.6
+      scenario: "The page carries its own date"
+      expect: "Due words resolve against it, not the sync time"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > resolves due dates against the date written on the page when there is one"
+
+    - id: V11.7
+      scenario: "NONE items, junk and a missing Slot"
+      expect: "Dropped; the missing Slot is empty"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > drops 'none' items and junk, and reads a missing Slot as empty"
+
+    - id: V11.8
+      scenario: "A summary, or None"
+      expect: "Trimmed text, or empty"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > reads a summary, and 'none' as an empty summary"
+
+    - id: V11.9
+      scenario: "Values outside the list, repeated tags"
+      expect: "Out-of-list becomes null; tags de-duplicated"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > keeps a Value only inside its choice list, and de-duplicates tags"
+
+    - id: V11.10
+      scenario: "A Choice with no options"
+      expect: "Schema offers nothing; any answer is null"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > reads nothing from a choice Value whose option list was never filled"
+
+    - id: V11.11
+      scenario: "The answer is not a JSON object"
+      expect: "A failure outcome, retried on the next sync"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > fails an answer that is not an object, so the page is retried"
+
+- feature: V12
+  name: "Extraction backends: one call on cloud, never a throw"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V12.1
+      scenario: "A cloud backend extracts a page"
+      expect: "One call with the Profile's schema and the 4 000-token cap; a fenced answer is read too"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "oneCallBackend > sends one call under the strict schema and reads the answer"
+
+    - id: V12.2
+      scenario: "The answer is cut off, refused or prose"
+      expect: "A failure outcome with a reason; the page is retried"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "oneCallBackend > fails a truncated, refused or unreadable answer, so the page is retried"
+
+    - id: V12.3
+      scenario: "A cloud call is made"
+      expect: "Strict json_schema, bearer key, max_tokens and require_parameters"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > posts system and user messages with the schema, the key, the cap and OpenRouter's routing guard"
+
+    - id: V12.4
+      scenario: "A local free-text pass"
+      expect: "temperature 0, no key, no schema"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > sends temperature 0 and no auth or schema to the user's own server when asked for free text, and a prefill as the assistant's turn"
+
+    - id: V12.5
+      scenario: "No model is configured"
+      expect: "No request; the reason says where to set one"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > names a missing model instead of sending a request"
+
+    - id: V12.6
+      scenario: "finish_reason length, or no content"
+      expect: "Truncated, or failed"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > reports a cut-off answer as truncated and an empty one as failed"
+
+    - id: V12.7
+      scenario: "The provider refuses with 402"
+      expect: "The reason quotes the provider's message"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > explains a refusal with the server's own message"
+
+    - id: V12.8
+      scenario: "Timeout, refused connection, other errors"
+      expect: "A readable reason each; nothing throws"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > turns a timeout, an unreachable server and any other throw into a reason"
+
+    - id: V12.9
+      scenario: "No fetch is injected, as in the shipped plugin"
+      expect: "The call goes through the requestUrl wrapper, never the global fetch"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > goes through Obsidian's requestUrl wrapper when no fetch is injected, never the global fetch"
+
+- feature: V13
+  name: "One page through the engine: create from the template, or merge into the user's note"
+  code: src/intelligence/page-engine.ts
+  tier: free
+  scenarios:
+    - id: V13.1
+      scenario: "A page gets its first note"
+      expect: "The template filled with Slots, dates and page link; regions recorded"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > renders the template with every Slot, the page's dates and link, and records the regions in the base"
+
+    - id: V13.2
+      scenario: "The template lacks one Slot and places another inline"
+      expect: "Missing Slot gets a heading at the end; the inline one is settled"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > gives a Slot the template does not place its own heading at the end, and settles one filled inline"
+
+    - id: V13.3
+      scenario: "No written date, no first-seen stamp"
+      expect: "The sync day names the note; date variables stay empty"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > names the note after the sync day when the page has neither a written date nor a first-seen stamp"
+
+    - id: V13.4
+      scenario: "A task is ticked on the page at the first extraction"
+      expect: "Written as [x]"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > writes a task already ticked on the page as ticked"
+
+    - id: V13.5
+      scenario: "The Profile holds a Value Slot"
+      expect: "Not sent to the model in phase 1"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > sends every Slot to the model, Values included"
+
+    - id: V13.6
+      scenario: "Extraction fails repeatedly, then the page changes"
+      expect: "Transcript kept; attempts count up, reset on a new hash; no note"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a failed extraction > keeps the transcript in the base and counts attempts per page hash"
+
+    - id: V13.7
+      scenario: "The same answer again"
+      expect: "No write at all"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > changes nothing when the page says what it said"
+
+    - id: V13.8
+      scenario: "A new task appears, review on; the user added a line"
+      expect: "A proposal and a callout; the user's line stays"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > proposes a new task under review and puts the callout under the heading, leaving the user's lines alone"
+
+    - id: V13.9
+      scenario: "Review off; summary never edited"
+      expect: "Task inserted; summary replaced"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > applies a new task directly with review off and replaces an untouched summary"
+
+    - id: V13.10
+      scenario: "The user renamed the Tasks heading"
+      expect: "Found again by its items; the new name is remembered"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > follows a renamed heading and keeps its new name in the base"
+
+    - id: V13.11
+      scenario: "The user deleted a Slot's heading and body"
+      expect: "Nothing written there; reported for a notice; base kept"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > writes nothing into a region it cannot find, and reports it"
+
+    - id: V13.12
+      scenario: "A Slot is added to the Profile"
+      expect: "Its region goes right after the preceding Slot's; deleted again, it stays deleted"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adds a Slot new to the Profile right after the region before it, once"
+
+    - id: V13.13
+      scenario: "A new Slot comes first in the Profile, another is inline in the template"
+      expect: "Appended at the end; the inline one settled without a write"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > appends a new Slot at the end when no earlier Slot has a region, and settles one the template places inline"
+
+    - id: V13.14
+      scenario: "A new Summary with nothing to say"
+      expect: "A bare heading"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adds a new Summary Slot the template does not place as a bare heading when there is nothing to say"
+
+    - id: V13.15
+      scenario: "The note already has the new Slot's empty template heading"
+      expect: "That heading is used; no second one"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adopts the empty template heading a newly added Slot already has in the note"
+
+    - id: V13.16
+      scenario: "The user wrote under that heading"
+      expect: "Their lines and text stay; the model's output becomes proposals"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > never overwrites what the user wrote under a heading a newly added Slot adopts"
+
+    - id: V13.17
+      scenario: "The adopted task heading is empty"
+      expect: "Written directly like a first extraction"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adopts an empty task heading by writing the page's tasks directly"
+
+    - id: V13.18
+      scenario: "A page is re-extracted"
+      expect: "The model sees each known item with its id"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > passes the base's items with their ids to the model"
+
+- feature: V14
+  name: "The engine's pass over one synced document"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V14.1
+      scenario: "Intelligence Mode was just switched on"
+      expect: "Old and never-stamped pages go into the seen-set; the page written after the toggle becomes a page note in <folder>/<notebook>/"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > stamps the pages written before the toggle and turns the one written after it into a note"
+
+    - id: V14.2
+      scenario: "A blank page"
+      expect: "No note, no seen entry"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > skips a page never drawn on, so its first ink counts as new"
+
+    - id: V14.3
+      scenario: "Nothing changed on the page"
+      expect: "No extraction call, no write"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > does nothing for pages whose ink did not change"
+
+    - id: V14.4
+      scenario: "A page changed; the user added a line"
+      expect: "Merged; the user's line stays; the seen hash moves"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > merges a changed page into its note, keeping the user's own lines"
+
+    - id: V14.5
+      scenario: "An old page is written on"
+      expect: "It gets a note, named after its first-seen date"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > brings an old page in once the user writes on it"
+
+    - id: V14.18
+      scenario: "Review is on and a changed page brings new tasks"
+      expect: "The report counts the proposals and the notes that hold them"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > counts the notes that hold proposals"
+
+    - id: V14.6
+      scenario: "A notebook tagged after the toggle"
+      expect: "Its old pages are seen, not extracted"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > records an unseen page written before the toggle as old without a note -- a notebook tagged later"
+
+    - id: V14.7
+      scenario: "A legacy notebook without page stamps"
+      expect: "One notice, once"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > after the scan > names a legacy notebook once, when its pages are first recorded"
+
+    - id: V14.8
+      scenario: "Extraction fails three syncs in a row"
+      expect: "No note; the page retries; the third failure is a notice; the noteId stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > failures > keeps a failed page out of the seen hash so it retries, and says so on the third failure"
+
+    - id: V14.9
+      scenario: "The transcript is missing"
+      expect: "A failure line"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > failures > reports a page the transcription could not read"
+
+    - id: V14.10
+      scenario: "The tag is removed on the tablet"
+      expect: "Row orphaned, note kept"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > orphans a row whose tag left the page on the tablet and leaves its note"
+
+    - id: V14.11
+      scenario: "Mode switched off, page changes"
+      expect: "Nothing written; rows stay active"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > leaves rows alone while Intelligence Mode is off"
+
+    - id: V14.12
+      scenario: "The user deleted the note; the page changes"
+      expect: "A fresh note with a new id; the old base is discarded"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > starts a deleted note over with a fresh id and no old base once the page changes"
+
+    - id: V14.13
+      scenario: "The base is missing"
+      expect: "Rebuilt from the note; the user's line survives"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > rebuilds a missing base from the note, so a line typed there is not lost"
+
+    - id: V14.14
+      scenario: "The base is missing; a Slot sits under its default heading; the user wrote there"
+      expect: "Found by that heading; the user's text is not overwritten"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > rebuilds a Slot the template does not place from the heading it was given"
+
+    - id: V14.15
+      scenario: "A Slot heading was deleted"
+      expect: "A notice names it"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > says which region it could not find"
+
+    - id: V14.16
+      scenario: "A mapping names a Profile with a template, then the template is gone"
+      expect: "The template is used; without it, the starter template"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > Profiles and templates > uses the mapping's Profile and its template, and falls back to the starter when the template is gone"
+
+    - id: V14.17
+      scenario: "A run finishes; a document was deleted"
+      expect: "Scans marked for tags that are on; the deleted document's rows orphaned and seen entries pruned"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "completeScans and sweepDeletedDocuments > marks scans done only for the given tags that are on, and orphans rows and prunes seen entries of deleted documents"
+
+- feature: V15
+  name: "TagRouter carries each mapped tag's modes"
+  code: src/tag-router.ts
+  tier: free
+  scenarios:
+    - id: V15.1
+      scenario: "A caller gives no modes"
+      expect: "Every mapped tag writes its transcript note, none extracts"
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "TagRouter > transcribes and does not extract a mapped tag when no modes are given, as before the Intelligence Engine"
+
+    - id: V15.2
+      scenario: "Modes are given; a tag is unmapped"
+      expect: "Modes apply to mapped tags only"
+      layer: unit
+      file: src/tag-router.test.ts
+      test: "TagRouter > follows the modes it is given, but only for a tag that is mapped"
+
+- feature: V16
+  name: "The sync engine hands handwritten pages to the Intelligence Engine"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V16.1
+      scenario: "A tagged notebook is opened on the engine device"
+      expect: "Pages with ordinal, hash and modified stamp; one unit per tag (a page tag duplicating the notebook tag is not a second unit); the engine's failures reach diagnostics"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > hands a handwritten notebook's pages, stamps and units to the engine, and reports what it did"
+
+    - id: V16.2
+      scenario: "Transcript note on or off"
+      expect: "A page is transcribed once per sync; the engine reads only what no note read"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > gives the engine the page text the transcript note already read, and reads only what is missing"
+
+    - id: V16.3
+      scenario: "A Type Folio page"
+      expect: "Its typed text, no OCR call"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > reads a typed page from its text layer, never through OCR"
+
+    - id: V16.4
+      scenario: "One page comes back empty, one failed"
+      expect: "The empty text is kept; the failed page is left out and retries"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > keeps an empty page's empty text but leaves out a page the backend failed on"
+
+    - id: V16.5
+      scenario: "The backend throws"
+      expect: "No texts; the engine counts failed attempts"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > leaves a page the backend could not read out of the engine's texts"
+
+    - id: V16.6
+      scenario: "Only a page tag; a blank page; a legacy pages[] notebook"
+      expect: "Page-scope unit; null hash; legacy flag"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > hands over a page-tag-only notebook, a page with no ink file, and a legacy notebook without page stamps"
+
+    - id: V16.7
+      scenario: "Two documents give the same notice"
+      expect: "Said once"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > says a notice the engine gave for two documents once, and names each used Slot once"
+
+    - id: V16.8
+      scenario: "Stop pressed after the transcript note"
+      expect: "The engine does not start; the run is stopped"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > stops between a notebook's transcript note and its page notes, leaving the pages for the next run"
+
+    - id: V16.9
+      scenario: "An EPUB is tagged"
+      expect: "Its digest note as always; no page notes"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > does not give annotated PDFs or EPUBs to the engine"
+
+    - id: V16.10
+      scenario: "A scan is due and nothing changed on the tablet"
+      expect: "Every document is opened; the scan is marked done at the end"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > opens every document while a switch-on scan is due, and marks the scan done only after the whole run"
+
+    - id: V16.11
+      scenario: "A run is stopped mid-way"
+      expect: "The modes print and scans stay old so the scan re-runs; seen entries are kept"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > keeps the previous modes print and scans when a run is stopped, but keeps what the engine recorded"
+
+    - id: V16.12
+      scenario: "A document is deleted"
+      expect: "Its page-note rows orphaned, seen entries pruned"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > sweeps the engine's rows and seen entries of a document gone from the tablet"
+
+    - id: V16.13
+      scenario: "Transcript off for a tag; the notebook changed"
+      expect: "No note written; row active; entry hash kept for a full round later"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > transcript notes switched off > writes no transcript note, orphans nothing, and keeps the row's entry hash so switching back on re-reads the notebook"
+
+    - id: V16.14
+      scenario: "The switched-off note was deleted"
+      expect: "The level-1 gate stays shut"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > transcript notes switched off > does not open anything for a switched-off note the user deleted"
+
+    - id: V16.15
+      scenario: "Only the per-tag modes changed"
+      expect: "A full scan; the new modes print is stored"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > transcript notes switched off > opens the level-1 gate when only the modes changed"
+
+- feature: V17
+  name: "Local extraction takes two calls: notes, then format"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V17.1
+      scenario: "A local model extracts a page"
+      expect: "Pass 1 free text (2 000 tokens), pass 2 under the schema (4 000) with the page text"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > writes free-text notes first, line by line, then formats them under the schema with the page beside them"
+
+    - id: V17.2
+      scenario: "Pass 1 says NONE everywhere"
+      expect: "No second call; every Slot empty"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > skips the format pass when the notes found nothing, so a small model cannot invent items there"
+
+    - id: V17.3
+      scenario: "Either pass is cut off or fails, or pass 2 is prose"
+      expect: "A failure outcome; the page retries"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > fails on a cut-off or failed pass and on an answer that is not JSON"
+
+    - id: V17.4
+      scenario: "Pass 1 lists a one-word item"
+      expect: "It counts as found; a bare Slot id or NONE does not"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "notesAreEmpty > treats a one-word item as a find, not as a heading"
+
+- feature: V18
+  name: "Extraction backends are registered per provider"
+  code: src/intelligence/extraction-registry.ts
+  tier: free
+  scenarios:
+    - id: V18.1
+      scenario: "A cloud provider is registered"
+      expect: "Metered, Pro, one call; nothing without a key; the Profile's model overrides the provider's"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "compatExtractionEntry > makes a cloud provider a metered, Pro, one-call backend that needs a key"
+
+    - id: V18.2
+      scenario: "The user's own server is registered"
+      expect: "Free, marked unmeasured, two calls; nothing without a URL"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "compatExtractionEntry > makes the user's own server a free, unmeasured two-call backend, and needs a URL"
+
+    - id: V18.3
+      scenario: "Backends are registered"
+      expect: "Found by id"
+      layer: unit
+      file: src/intelligence/extraction-registry.test.ts
+      test: "the registry > keeps entries by id, in registration order"
+
+- feature: V19
+  name: "Free and Pro around the engine: free tag, Slots, engine device, backend"
+  code: src/intelligence/plugin-rules.ts
+  tier: pro
+  scenarios:
+    - id: V19.1
+      scenario: "Several tags have Intelligence Mode on"
+      expect: "The one switched on first is free; a tie goes by name"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeTag > is the mapping switched on first, ties broken by name, and none when nothing is on"
+
+    - id: V19.2
+      scenario: "The first tag was toggled off and on"
+      expect: "It stays the free tag"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeTag > keeps the first tag even after it was switched off and on again"
+
+    - id: V19.3
+      scenario: "The first tag is off now"
+      expect: "The next one is free"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeTag > skips a tag whose Intelligence Mode is off now"
+
+    - id: V19.4
+      scenario: "Pro is active"
+      expect: "Every tag keeps its modes"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "effectiveModes > keeps Intelligence Mode on every tag with Pro"
+
+    - id: V19.5
+      scenario: "Pro lapsed"
+      expect: "Only the free tag extracts; transcript switches are unchanged"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "effectiveModes > keeps it only on the free tag without Pro, transcript modes untouched"
+
+    - id: V19.6
+      scenario: "A Free vault runs a Profile"
+      expect: "Tasks + Summary; Tasks format and review locked; the instruction stays editable"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "freeSlots > runs Tasks and Summary only, Tasks in the Tasks format with review locked on"
+
+    - id: V19.7
+      scenario: "Several devices share the vault"
+      expect: "Only the named device extracts"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "isEngineDevice > is true only on the device the synced setting names"
+
+    - id: V19.8
+      scenario: "A tag was switched on or re-stamped"
+      expect: "Its scan is due until a full run marks it"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "scansDue > names the effective Intelligence tags whose current enabledAt has not been scanned"
+
+    - id: V19.9
+      scenario: "A backend is set, or none"
+      expect: "The set one; else the transcription backend if it can extract"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "chooseExtractionBackend > takes the configured backend, else the transcription backend when it can extract"
+
+    - id: V19.10
+      scenario: "A cloud backend without Pro"
+      expect: "The local model, else paused with a reason"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "chooseExtractionBackend > falls back from a Pro backend to the local model without Pro, and pauses when there is none"
+
+    - id: V19.11
+      scenario: "Vision transcription and no extraction backend"
+      expect: "Paused with a reason pointing to settings"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "chooseExtractionBackend > pauses when nothing is set and the transcription backend cannot extract"
+
+- feature: V20
+  name: "The engine's footing in the running plugin"
+  code: src/intelligence/host.ts
+  tier: free
+  scenarios:
+    - id: V20.1
+      scenario: "The engine device is claimed or checked"
+      expect: "An id in the unsynced plugin folder, minted only on a claim"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "localDeviceId > reads the id from the plugin folder, and mints one only when asked"
+
+    - id: V20.2
+      scenario: "A device that is not the engine device syncs"
+      expect: "Modes and print as everywhere; no extraction"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > gives every device the modes and the print, but no engine off the engine device"
+
+    - id: V20.3
+      scenario: "No tag has Intelligence Mode on"
+      expect: "No engine, no notice"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > builds no engine when no tag asks for one"
+
+    - id: V20.4
+      scenario: "Cloud backend without Pro, or without its key"
+      expect: "Paused, with a reason for one notice"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > pauses with a reason when the backend is Pro and the vault is not, or when it lacks its key"
+
+    - id: V20.5
+      scenario: "A new page is processed on the engine device"
+      expect: "The note is created from the Profile's template with core dates; ids minted; the base folder made once; a deleted note's base is discarded"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > writes a page note through the environment: template, dates, ids, one base folder"
+
+    - id: V20.6
+      scenario: "The engine device with a working backend"
+      expect: "A hook with the modes print, due scans and scan completion"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > builds the engine hook on the engine device with a working backend"
+
+- feature: V21
+  name: "The engine reaches Obsidian through a thin, tested seam"
+  code: src/intelligence/host.ts
+  tier: free
+  scenarios:
+    - id: V21.1
+      scenario: "The plugin folder is read and written"
+      expect: "Absent reads as null; remove and mkdir only when needed"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > reads an absent file as null, and removes or makes a folder only when that changes something"
+
+    - id: V21.2
+      scenario: "Templater is installed, half-installed, or absent"
+      expect: "Its API only when the create call exists"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > finds Templater only when its API is there"
+
+    - id: V21.3
+      scenario: "A page note is created"
+      expect: "Through Templater with folder and name; plain create when it throws, returns no file, or is absent"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > creates a note through Templater with folder and name, falls back when it throws or returns no file, and uses create without it"
+
+    - id: V21.4
+      scenario: "core Templates has date/time formats, blanks, or a broken file"
+      expect: "The formats, else none"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "the Obsidian glue > reads core Templates' date and time formats, ignoring blanks and a broken file"
+
+    - id: V21.5
+      scenario: "A run ends"
+      expect: "A pause, failures and 'N proposals in M notes' with where to review"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "intelligenceNotices > says a pause, the engine's own notices, and the pending proposals with where to review them"
+
+    - id: V21.6
+      scenario: "The plugin builds the engine's environment"
+      expect: "Plugin folder, template reads, note creation, moment formats, ids and clock"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "hostEnvironmentFor > reaches the app through the vault: plugin folder, templates, note creation and the clock"
+
+- feature: V22
+  name: "Deciding a proposal changes the note and teaches the base"
+  code: src/intelligence/review.ts
+  tier: free
+  scenarios:
+    - id: V22.1
+      scenario: "The review lists a page's proposals"
+      expect: "Every pending one, with its Slot"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "pendingProposals > lists every pending proposal of a page with its Slot"
+
+    - id: V22.2
+      scenario: "A new task is accepted"
+      expect: "Inserted after the last item; the callout counts down"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a new item > ✓ inserts the line after the last item and updates the callout's count"
+
+    - id: V22.3
+      scenario: "A new task is rejected"
+      expect: "A tombstone; the callout goes with the last proposal"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a new item > ✗ writes a tombstone so the item stays out, and removes the callout with the last proposal"
+
+    - id: V22.4
+      scenario: "A removal is accepted"
+      expect: "The line goes; the item is tombstoned"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a dropped item > ✓ removes the line and tombstones the item"
+
+    - id: V22.5
+      scenario: "A removal is rejected"
+      expect: "The line stays; the engine no longer owns the item and never proposes it again"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a dropped item > ✗ keeps the line and takes the item out of the engine's hands for good"
+
+    - id: V22.6
+      scenario: "The line is already gone"
+      expect: "No line changes"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a dropped item > ✓ on an item whose line the user already deleted changes no line"
+
+    - id: V22.7
+      scenario: "A field change is accepted"
+      expect: "Line and item updated"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a changed field > ✓ rewrites the line and the item"
+
+    - id: V22.8
+      scenario: "A field change is rejected"
+      expect: "The line stays; the same ink is no longer a change"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a changed field > ✗ keeps the line and moves the item's source, so the same ink is not proposed again"
+
+    - id: V22.9
+      scenario: "The line was deleted"
+      expect: "Only the base changes"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a changed field > ✓ with the line gone only updates the base"
+
+    - id: V22.10
+      scenario: "A summary replacement is accepted or rejected"
+      expect: "Replaced, or kept with the model's text remembered"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a summary > ✓ replaces the text; ✗ keeps it and remembers the model's text so only a new one is proposed"
+
+    - id: V22.11
+      scenario: "The proposal, Slot or item is gone"
+      expect: "Stale, or applied without a line change"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > nothing to decide > is stale for a proposal or Slot that is gone, or an item that is gone"
+
+    - id: V22.12
+      scenario: "The heading is gone"
+      expect: "Nothing written"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > nothing to decide > writes nothing when the note has lost the Slot's heading"
+
+- feature: V23
+  name: "Reviewing proposals in one Modal over all notes"
+  code: src/intelligence/review-session.ts
+  tier: free
+  scenarios:
+    - id: V23.1
+      scenario: "The review opens"
+      expect: "Every pending proposal of every active page note, with the page's words, never a model explanation"
+      layer: unit
+      file: src/intelligence/review-session.test.ts
+      test: "loadReview > lists every pending proposal of every active note with its words and the page's words behind it"
+
+    - id: V23.2
+      scenario: "A proposal is accepted"
+      expect: "Note and base written; the same proposal is stale afterwards"
+      layer: unit
+      file: src/intelligence/review-session.test.ts
+      test: "applyReview > writes the note and the base when the decision changes the note"
+
+    - id: V23.3
+      scenario: "A rejection changes no line, or the note/heading is gone"
+      expect: "Only the base saved; gone or no-region said"
+      layer: unit
+      file: src/intelligence/review-session.test.ts
+      test: "applyReview > saves only the base when the note does not change, and says when the note or base is gone or the heading lost"
+
+- feature: V24
+  name: "The review Modal and its entry points"
+  code: src/intelligence/commands.ts
+  tier: free
+  scenarios:
+    - id: V24.1
+      scenario: "No proposal is pending"
+      expect: "Says so"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > says there is nothing to review"
+
+    - id: V24.2
+      scenario: "Proposals in two notes"
+      expect: "Grouped by note, each with the page's words and ✓ ✗"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > groups proposals by note and shows each with the page's words"
+
+    - id: V24.3
+      scenario: "A row is clicked twice"
+      expect: "Decided once, then gone from the list"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > applies ✓ and ✗ per row and takes a decided row out of the list, once"
+
+    - id: V24.4
+      scenario: "Accept all over rows that fail differently"
+      expect: "Each accepted; a lost heading or note is said in its row"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > accepts everything left with Accept all, and says why a row could not be written"
+
+    - id: V24.5
+      scenario: "The plugin loads"
+      expect: "The command and the obsidian:// link both open the review"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "registerIntelligenceCommands > registers the command and the callout's link, both opening the review over every page note"
+
+- feature: V25
+  name: "The review reaches the running plugin"
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: V25.1
+      scenario: "The plugin loads on a fresh and on a synced vault"
+      expect: "The command and the callout's link both open the review; with no base on this device it says there is nothing to review"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > opens from the command palette and from the callout's link, on a vault that never synced and on one that did"
+
+    - id: V25.2
+      scenario: "The review opens"
+      expect: "Bases from the plugin folder, notes through the vault, short item ids"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "reviewStoresFor > reads bases from the plugin folder and notes through the vault, with short item ids"
+
+- feature: V26
+  name: "A rename in the vault is followed for page notes and templates"
+  code: src/intelligence/vault-follow.ts
+  tier: free
+  scenarios:
+    - id: V26.1
+      scenario: "The user moves a page note"
+      expect: "Its row follows; nothing else changes"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > follows a moved page note and leaves the rest as it was"
+
+    - id: V26.2
+      scenario: "The user renames the mapped folder"
+      expect: "Transcript and page-note rows follow together"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > follows a renamed folder for transcript notes and page notes at once"
+
+    - id: V26.3
+      scenario: "The user renames a Profile's template"
+      expect: "The Profile follows; an older index is untouched"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > follows a renamed template, and keeps an index written before page notes existed as it was"
+
+    - id: V26.4
+      scenario: "An unrelated file is renamed"
+      expect: "Nothing is saved"
+      layer: unit
+      file: src/intelligence/vault-follow.test.ts
+      test: "followVaultRename > is null when the rename touched nothing the plugin keeps"
+
+- feature: V27
+  name: "The Intelligence settings: modes per tag, device, backend, Profiles, Slots"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V27.1
+      scenario: "A tag's page notes are switched on"
+      expect: "enabledAt and firstEnabledAt stamped; the first device claims the engine"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > switches Intelligence Mode on with its stamps and claims this device when no device runs the engine"
+
+    - id: V27.2
+      scenario: "Another device already runs the engine"
+      expect: "It stays there"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > leaves the engine where it runs when a second tag is switched on"
+
+    - id: V27.3
+      scenario: "A free vault has page notes on one tag"
+      expect: "The toggle on every other tag is locked (Pro); the free tag stays switchable"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > locks page notes on a second tag without Pro, and not with it"
+
+    - id: V27.4
+      scenario: "Transcript off, a Profile picked, then Generic again"
+      expect: "Saved; the row explains transcript off"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > switches the transcript note, picks a Profile without Pro, and says what transcript off means"
+
+    - id: V27.5
+      scenario: "The engine runs elsewhere, or nowhere"
+      expect: "It moves only after a confirmation; switching off releases it only from this device"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > shows the device switch as this device's state, and moves the engine here only after asking"
+
+    - id: V27.6
+      scenario: "The backend list is drawn"
+      expect: "Pro and unmeasured backends are marked; the model saves as typed, without a redraw"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > offers every extraction backend, marking Pro and unmeasured ones, and saves the model as typed"
+
+    - id: V27.7
+      scenario: "Profiles are added, edited, given a template and removed"
+      expect: "One Profile free, more with Pro; a starter template in the template folder; a removed Profile leaves every mapping"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > adds one Profile without Pro and more with it; edits, removes, and creates its template"
+
+    - id: V27.8
+      scenario: "Slots are edited free and with Pro"
+      expect: "Instructions editable; review and item format are Pro; a format without {{text}} is never saved"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > edits a Slot's instruction, and keeps review and item format Pro, with presets and no format without {{text}}"
+
+- feature: V28
+  name: "The Intelligence settings reach the vault and the plugin folder"
+  code: src/intelligence/settings-host.ts
+  tier: free
+  scenarios:
+    - id: V28.1
+      scenario: "Create template needs a folder"
+      expect: "Core Templates', else Templater's, else the root"
+      layer: unit
+      file: src/intelligence/settings-host.test.ts
+      test: "templateFolder > takes core Templates' folder, else Templater's, else the vault root"
+
+    - id: V28.2
+      scenario: "A note of that name exists"
+      expect: "A numbered name instead"
+      layer: unit
+      file: src/intelligence/settings-host.test.ts
+      test: "freeTemplatePath > never writes over a note"
+
+    - id: V28.3
+      scenario: "The section changes settings and creates a template"
+      expect: "Settings saved (redrawn only when the tab changes); the template's folder is made first"
+      layer: unit
+      file: src/intelligence/settings-host.test.ts
+      test: "settingsHostFor > reads and writes the settings block, saves with and without a redraw, and creates a template in its folder"
+
+- feature: V29
+  name: "The Intelligence section inside the real settings tab"
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: V29.1
+      scenario: "The user types a model and picks a backend"
+      expect: "data.json saved each time"
+      layer: vault
+      file: src/settings-tab-intelligence.test.ts
+      test: "the Intelligence section in the settings tab > saves a typed model without redrawing, and a picked backend with a redraw"
+
+    - id: V29.2
+      scenario: "Another device runs the engine"
+      expect: "A confirmation opens; cancelled, nothing moves; the device id sits in the plugin folder"
+      layer: vault
+      file: src/settings-tab-intelligence.test.ts
+      test: "the Intelligence section in the settings tab > asks before moving the engine from another device, with this device's id kept in the plugin folder"
+
+- feature: V30
+  name: "Automatic sync never extracts without consent"
+  code: src/intelligence/plugin-rules.ts
+  tier: free
+  scenarios:
+    - id: V30.1
+      scenario: "An automatic sync meets a paid, the local, or the user's own extraction backend"
+      expect: "Paid needs consent to spend, local needs consent to run unattended, the user's own server runs"
+      layer: unit
+      file: src/intelligence/plugin-rules.test.ts
+      test: "backgroundExtractionAllowed > asks a paid backend for consent to spend and the local model for consent to run, and lets the user's own server run"
+
+    - id: V30.2
+      scenario: "An automatic sync on the engine device with a paid backend"
+      expect: "Without consent the run syncs and transcribes and leaves extraction out, silently; with it the engine runs"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > leaves extraction out of a background sync without consent to spend, and in with it"
+
+    - id: V30.3
+      scenario: "The user gives consent for each kind of backend"
+      expect: "Two rows, each saved"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > asks for consent to extract in automatic syncs, per kind of backend"
+
+- feature: V31
+  name: "Re-run extraction and Re-transcribe on a page note"
+  code: src/intelligence/rerun.ts
+  tier: free
+  scenarios:
+    - id: V31.1
+      scenario: "Re-run extraction on a page note the user edited"
+      expect: "Re-extracted from the base's transcript; a deleted task stays deleted, the user's line stays"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > extracts the page again from its stored transcript, through the merge, keeping the user's lines"
+
+    - id: V31.2
+      scenario: "The re-run changes the note, or the model fails"
+      expect: "Said plainly, in one sentence"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > says what it did when the note changed, and what failed when the model did"
+
+    - id: V31.3
+      scenario: "The seen entry is missing"
+      expect: "It runs and records one"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > still runs on an index that lost the page's seen entry"
+
+    - id: V31.4
+      scenario: "The base is gone"
+      expect: "The page is marked for the next sync, which reads it again"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > marks the page for reading on the next sync when its base is gone"
+
+    - id: V31.5
+      scenario: "Another note, another device, no backend"
+      expect: "A sentence each, nothing written"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > refuses on a note that is not a page note, and off the engine device"
+
+    - id: V31.6
+      scenario: "Re-transcribe on a page note"
+      expect: "Its seen hash is cleared, the note id kept"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "markForRereading and isPageNote > clears the seen hash of a page note, keeping its id, and owes its notebook to the next sync; says so for any other note"
+
+- feature: V32
+  name: "The page-note commands in the palette"
+  code: src/intelligence/commands.ts
+  tier: free
+  scenarios:
+    - id: V32.1
+      scenario: "Re-run extraction is asked for with or without a Markdown note on screen"
+      expect: "Offered on Markdown notes; runs on the note on screen and says what happened"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > offers Re-run extraction on a Markdown note only, and runs it on the one on screen, saying what happened"
+
+    - id: V32.2
+      scenario: "Re-transcribe on a page note and on another note"
+      expect: "The page note's page is marked for the next sync; any other note goes to the transcript command"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > marks a page note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command"
+
+    - id: V32.3
+      scenario: "Re-transcribe this note on a page note, in the running plugin"
+      expect: "Marked for the next sync, and said"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > re-transcribes a page note by marking its page for the next sync"
+
+    - id: V32.4
+      scenario: "Re-run extraction in the running plugin, off the engine device, on another note, on a fresh vault"
+      expect: "A sentence each: which device extracts, or that this is no page note"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > runs Re-run extraction on the note on screen, and says why when this device does not extract"
+
+- feature: V33
+  name: "Page notes follow a renamed tag and a re-targeted mapping"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V33.1
+      scenario: "A mapped tag is renamed on the tablet"
+      expect: "Row and seen entry move to the new key; the note stays, keeps its id, and is updated from then on"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > moves the row and seen entry to the new tag, keeps the note and its id, and takes the new mapping's folder"
+
+    - id: V33.2
+      scenario: "The row has no seen entry"
+      expect: "It still moves"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > moves a row that lost its seen entry too"
+
+    - id: V33.3
+      scenario: "A page seen but never noted is renamed; later two page-note tags replace one"
+      expect: "The seen entry moves; two new tags are no rename"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > does not read two new tags as a rename, and moves a seen-only page too"
+
+    - id: V33.4
+      scenario: "A mapping is re-targeted in settings"
+      expect: "Notes inside the old folder move with their notebook subfolder (suffix on collision); a note the user sorted away stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "followRetargets > moves a page note still inside the old folder into the new one, keeping its notebook subfolder, and leaves a sorted-away note"
+
+    - id: V33.5
+      scenario: "The mapping points at the vault root, or is gone"
+      expect: "Moved to the root; an unmapped tag's note stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "followRetargets > moves a note to the vault root when the mapping points there, and skips a tag that is no longer mapped"
+
+- feature: V34
+  name: "Page notes carry the plugin's frontmatter keys (Pro)"
+  code: src/intelligence/sync-pass.ts
+  tier: pro
+  scenarios:
+    - id: V34.1
+      scenario: "Frontmatter properties are on; a page note is written, then the user adds a tag, then the page changes"
+      expect: "remarkable-* keys and remarkable/<tag> on every write, as on a page-tag note; the user's tag stays"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > frontmatter (Pro) > writes the plugin's keys into a new page note and into every later write, keeping the user's own tags"
+
+    - id: V34.2
+      scenario: "Frontmatter properties are off"
+      expect: "No block is written"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > frontmatter (Pro) > writes no keys with the feature off"
+
+    - id: V34.3
+      scenario: "The sync hands a notebook to the engine with the feature on and off"
+      expect: "The same keys a page-tag note gets (page ordinal, pages 1), or none"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off"
+
+- feature: V35
+  name: "The status bar says when the engine extracts"
+  code: src/status-model.ts
+  tier: free
+  scenarios:
+    - id: V35.1
+      scenario: "The engine is on page 2 of 3 of a notebook"
+      expect: "'Tagged Sync: extracting 2/3', the notebook in the detail, no transcription bar"
+      layer: unit
+      file: src/status-model.test.ts
+      test: "progressStatus while the Intelligence Engine extracts > counts the notebook's pages on its own, without the transcription bar"
+
+    - id: V35.2
+      scenario: "A notebook has two pages to extract"
+      expect: "1/2, then 2/2, before each extraction"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > says which page it is on before each extraction"
+
+    - id: V35.3
+      scenario: "The sync hands the engine a notebook"
+      expect: "Its progress is reported as the extracting phase, with the notebook's name"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > reports the engine's progress as its own phase, with the notebook's name"
+
+    - id: V35.4
+      scenario: "Stop sync is pressed while the engine works through a notebook"
+      expect: "No further page starts; the page already done keeps its note, the rest wait for the next sync"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > switching Intelligence Mode on > starts no further page once Stop sync is pressed, and keeps what it wrote"
+
+- feature: V36
+  name: "A Value Slot's frontmatter property is read and written line by line"
+  code: src/intelligence/frontmatter-values.ts
+  tier: pro
+  scenarios:
+    - id: V36.1
+      scenario: "A property in any common form"
+      expect: "Its value"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "readProperty > reads a scalar, a block list, an inline list and an empty one"
+
+    - id: V36.2
+      scenario: "No such key, a blank one, no block"
+      expect: "Null"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "readProperty > is null for a key that is absent or blank, and for a note with no block"
+
+    - id: V36.3
+      scenario: "A scalar is updated"
+      expect: "Only its line changes"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > replaces a scalar in place and leaves every other line as it was"
+
+    - id: V36.4
+      scenario: "A list is updated"
+      expect: "Written as a block list in place"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > replaces a block list with a block list, and an inline list with one"
+
+    - id: V36.5
+      scenario: "A new key, or a value YAML would misread"
+      expect: "Appended; quoted where needed"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > adds a missing key at the end of the block, quoting what YAML would misread"
+
+    - id: V36.6
+      scenario: "A key is removed; a note has no block"
+      expect: "Removed; a block appears only for something to write"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > removes a key with null, and gives a note without a block one only when there is something to write"
+
+- feature: V37
+  name: "Value Slots and tags merge without overwriting the user"
+  code: src/intelligence/value-merge.ts
+  tier: pro
+  scenarios:
+    - id: V37.1
+      scenario: "First value of a Slot"
+      expect: "Written directly"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > writes the first value directly, and nothing when the note already says it"
+
+    - id: V37.2
+      scenario: "A local model picks a topical Choice first"
+      expect: "A proposal, not a write (position bias)"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > proposes a first topical pick of a local model instead of writing it, and writes nothing for no pick"
+
+    - id: V37.3
+      scenario: "The value is untouched since the base"
+      expect: "It follows the page, also to empty"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > follows the page while the user has not touched the value, and clears a stale proposal"
+
+    - id: V37.4
+      scenario: "The user edited the value"
+      expect: "Kept; one Replace proposal"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > keeps a value the user edited and proposes a new one once; proposes nothing when the page says what it said"
+
+    - id: V37.5
+      scenario: "The page brings tags"
+      expect: "Added beside the user's and the plugin's; tracked as the engine's"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > adds the page's tags beside the user's and remembers which are the engine's"
+
+    - id: V37.6
+      scenario: "The page drops a tag"
+      expect: "Only the engine's own tag leaves"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > removes only its own tags when the page drops them, never the user's or the plugin's"
+
+    - id: V37.7
+      scenario: "The user removed an engine tag"
+      expect: "Never added again"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > buries a tag of its own the user removed and never adds it again"
+
+    - id: V37.8
+      scenario: "Same tags again"
+      expect: "No write"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeTagList > changes nothing when the page says what it said"
+
+- feature: V38
+  name: "Value Slots in page notes: under a heading, in frontmatter, and tags"
+  code: src/intelligence/page-engine.ts
+  tier: pro
+  scenarios:
+    - id: V38.1
+      scenario: "A Profile has a mood, a project property and Tags"
+      expect: "Mood under its heading, project in frontmatter, tags beside the user's"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > writes a Value under its heading, a property into the frontmatter, and tags beside the user's"
+
+    - id: V38.2
+      scenario: "A local model picks from a topical list and a mood"
+      expect: "The topical pick is proposed; the mood written; a choice without options written directly"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > proposes a local model's first topical pick instead of writing it, also when read again before the review, but writes a mood"
+
+    - id: V38.3
+      scenario: "Values change on the page, then the user edits them"
+      expect: "Untouched Values follow; edited ones stay, with a proposal"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > follows the page while the user has not touched a Value, and proposes once they have"
+
+    - id: V38.4
+      scenario: "tags written as a scalar; a mood gone from the page"
+      expect: "Read as a list; the mood cleared"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > reads a single tag written as a scalar, and clears a Value the page no longer holds"
+
+    - id: V38.5
+      scenario: "The user removed an engine tag"
+      expect: "It never comes back"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > never adds back a tag the user removed"
+
+    - id: V38.6
+      scenario: "A Value Slot is added to the Profile"
+      expect: "Its own heading, or the empty template heading adopted"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > adds a Value Slot new to the Profile under its own heading, and adopts an empty one"
+
+    - id: V38.7
+      scenario: "A Value proposal is decided, in frontmatter and under a heading"
+      expect: "✓ writes it; ✗ keeps the user's and remembers the model's"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a Value > ✓ writes a property into the frontmatter; ✗ keeps the note's and remembers the model's"
+
+    - id: V38.8
+      scenario: "A Value under a heading is decided, as a list, as nothing, or rejected"
+      expect: "Written joined or empty; ✗ keeps the user's text"
+      layer: unit
+      file: src/intelligence/review.test.ts
+      test: "decide > a Value > ✓ writes a Value under its heading, a list joined and nothing as nothing; ✗ keeps the user's"
+
+- feature: V39
+  name: "Own Slots in the settings (Pro)"
+  code: src/intelligence/settings-section.ts
+  tier: pro
+  scenarios:
+    - id: V39.1
+      scenario: "A Slot is added"
+      expect: "With a readable unique id and the Shape's defaults; nothing without a name; locked without Pro"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > adds a Slot with a name and a Shape, and not without a name or without Pro"
+
+    - id: V39.2
+      scenario: "A Slot is duplicated, then deleted"
+      expect: "The copy is unused and editable; a deleted Slot leaves every Profile"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > duplicates and deletes a Slot, taking a deleted one out of every Profile"
+
+    - id: V39.3
+      scenario: "The Shape is changed before and after use"
+      expect: "Free before; fixed once a note holds it"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > changes a Shape until the Slot is used in a note, then keeps it fixed"
+
+    - id: V39.4
+      scenario: "Examples are added, typed and removed"
+      expect: "Saved as typed; a counter-example has no output"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > edits examples and counter-examples"
+
+    - id: V39.5
+      scenario: "A Value's target is set or cleared"
+      expect: "A property, or the body"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > points a Value at a frontmatter property, or back into the body"
+
+    - id: V39.6
+      scenario: "Fields are edited"
+      expect: "At most five; typed; a Choice with its options; removable; locked without Pro"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > own Slots (Pro) > adds up to five fields, types them, gives a choice its options, and removes them"
+
+    - id: V39.7
+      scenario: "A sync writes Slots into page notes"
+      expect: "They are marked used, which fixes their Shape; unchanged settings stay the same object"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "markSlotsUsed > marks the Slots a sync wrote, and hands back the same settings when nothing changes"
+
+    - id: V39.8
+      scenario: "A Slot is named"
+      expect: "A readable id, unique among the Slots"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "slotIdFor > makes a readable id from the name, unique among the Slots"
+
+- feature: V40
+  name: "The Profile editor says what each Slot will do"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V40.1
+      scenario: "A Profile's template places Slots under a heading, inline, not at all, or in frontmatter"
+      expect: "Each Slot row says where it lands and whether it is kept up to date"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > what a Profile's Slots will do > says per Slot where the template puts it, and whether it is kept up to date"
+
+    - id: V40.2
+      scenario: "A Profile has more than seven Slots on a local, a cloud, or no set backend"
+      expect: "A warning on the local one only"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > what a Profile's Slots will do > warns about many Slots on a local model, and not on a cloud one"
+
+- feature: V41
+  name: "Several Profiles per tag, sorted by a classifier (Pro)"
+  code: src/intelligence/sync-pass.ts
+  tier: pro
+  scenarios:
+    - id: V41.1
+      scenario: "A cloud backend sorts a page among a tag's Profiles"
+      expect: "One call under a schema of Profile ids; the pick read back"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "classify > asks one question under a schema whose only answers are the Profile ids, and reads the pick"
+
+    - id: V41.2
+      scenario: "The classifier answers wrongly, is cut off, fails; a local backend"
+      expect: "A failure outcome; a local backend has no classifier"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "classify > fails on an unknown pick, a cut-off or failed call, and prose"
+
+    - id: V41.3
+      scenario: "A new page under a tag with two Profiles, then a change to it"
+      expect: "The classifier picks; the pick is frozen on the page"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > lets the classifier pick the Profile of a new page, and freezes it for the page"
+
+    - id: V41.4
+      scenario: "The classifier fails"
+      expect: "The first Profile, and a failure line"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > takes the first Profile when the pick fails, and says so"
+
+    - id: V41.5
+      scenario: "Several Profiles on a local backend, and without Pro"
+      expect: "The first Profile; a local backend says so once ever; without Pro nobody is asked"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > takes the first Profile on a local backend, saying so once ever, and without Pro asks nobody"
+
+    - id: V41.6
+      scenario: "A once-only notice is said"
+      expect: "Recorded once; not again"
+      layer: unit
+      file: src/intelligence/settings.test.ts
+      test: "markSaid > records a notice as said once, and hands back the same settings when it already was"
+
+    - id: V41.7
+      scenario: "A Pro user offers several Profiles on a tag"
+      expect: "Added from a list, removed one by one; a vanished Profile still shows by id"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > offers several Profiles per tag with Pro: added from a list, removed one by one"
+
+    - id: V41.8
+      scenario: "A tag lists a Profile that was deleted, beside one that exists"
+      expect: "The deleted one is skipped; with one left nobody is asked"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > choosing among a tag's Profiles > skips a listed Profile that was deleted, and asks nobody when one is left"
+
+- feature: V42
+  name: "Change the Profile of one page note (Pro)"
+  code: src/intelligence/change-profile.ts
+  tier: pro
+  scenarios:
+    - id: V42.1
+      scenario: "Is a page note as the engine wrote it, or touched by the user?"
+      expect: "Untouched only when every region reads exactly the base and no line was added; a lost heading counts as touched"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "uneditedSinceBase > is true for a note as the engine wrote it, and false for an added line, an edited summary, or a lost heading"
+
+    - id: V42.2
+      scenario: "The user changes the Profile of an untouched page note"
+      expect: "Made again where it is with the new Profile, its frontmatter kept, a fresh note id, the old base gone"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > makes an untouched note again with the new Profile, where it is, keeping its frontmatter"
+
+    - id: V42.3
+      scenario: "The user changes the Profile of an edited page note"
+      expect: "The edited note stays as it is; a new note is made beside it"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > leaves an edited note as it is and makes a new one beside it"
+
+    - id: V42.4
+      scenario: "The base holds no transcript"
+      expect: "The choice is frozen; the next sync that reads the page uses it"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > freezes the choice for the next sync when there is no transcript to extract from"
+
+    - id: V42.5
+      scenario: "Another note, another device, an unknown Profile, a failed extraction, no rows"
+      expect: "A sentence each, nothing written"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > refuses another note, another device, an unknown Profile, and says when extraction fails"
+
+    - id: V42.6
+      scenario: "The page's seen entry went missing"
+      expect: "It still works, recording a new entry"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > still works for a page whose seen entry went missing"
+
+    - id: V42.7
+      scenario: "The command is run with and without Pro"
+      expect: "A choice of Profiles with Pro; a sentence that it is Pro without"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > changes a page note's Profile through a choice of Profiles, and says it is Pro without it"
+
+    - id: V42.8
+      scenario: "There is no Profile to choose"
+      expect: "The chooser says where to add one"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > says there is no Profile yet when there is none to choose"
+
+    - id: V42.9
+      scenario: "The command in the running plugin, with a trial and without a licence"
+      expect: "The chooser, then a sentence which device extracts; or that it is Pro"
+      layer: vault
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > offers Change profile with Pro and says it is Pro without"
+
+- feature: V43
+  name: "The managed local model extracts through its own server, started once per sync"
+  code: src/intelligence/local-server.ts
+  tier: free
+  scenarios:
+    - id: V43.1
+      scenario: "The first page of a sync is extracted locally"
+      expect: "llama-server starts once with the model, -c 8192 and a local port; the run waits for /health"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > starts the server once, on first use, with the model, context, no prompt cache and a local port, and waits until it answers"
+
+    - id: V43.2
+      scenario: "The server crashes while loading"
+      expect: "A reason with the exit code; every later page in this sync gets it at once, even after a rest"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > says so when the server stops while starting, and tells every later page at once, also after a rest"
+
+    - id: V43.3
+      scenario: "The server never answers, or is killed"
+      expect: "Stopped after two minutes; a signal named as such"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > gives up after two minutes of waiting, stopping what it started, and names a signal as a signal"
+
+    - id: V43.4
+      scenario: "A local extraction runs"
+      expect: "Two passes, temperature 0, seed 42; the server stops when the sync ends"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedLocalBackend > asks the managed server both passes with temperature 0 and seed 42, and stops it on dispose"
+
+    - id: V43.5
+      scenario: "The server cannot start"
+      expect: "Each page fails with that reason and retries next sync"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedLocalBackend > fails each page with the server's reason when it will not start"
+
+    - id: V43.6
+      scenario: "The model is missing or ready"
+      expect: "No backend while missing; the free local backend when ready; no process until a page needs it"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedLocalEntry > is the free, measured local entry, and has no backend while the model cannot run"
+
+- feature: V44
+  name: "The managed download holds the extraction server"
+  code: src/intelligence/local-server-node.ts
+  tier: free
+  scenarios:
+    - id: V44.1
+      scenario: "The model is downloaded and verified"
+      expect: "llama-server beside llama-mtmd-cli; .exe on Windows"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "managedModelFiles > finds the server beside the runtime and always the 8B model, whichever one transcribes, with .exe on Windows"
+
+    - id: V44.2
+      scenario: "The model is missing, downloading or busy"
+      expect: "Nothing: extraction waits"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "managedModelFiles > has nothing while the 8B model is missing, unverified, or busy transcribing"
+
+    - id: V44.3
+      scenario: "A server starts"
+      expect: "A port from 49152 upward"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > picks a port from the dynamic range"
+
+    - id: V44.4
+      scenario: "A real process is spawned and stopped"
+      expect: "Its end is heard"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > spawns a real process on the desktop, hears it end, and stops it"
+
+    - id: V44.5
+      scenario: "Mobile"
+      expect: "No spawn, a reason"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > refuses to spawn off the desktop"
+
+    - id: V43.7
+      scenario: "An extraction backend is registered"
+      expect: "It has a line in BACKEND_TIER, and its licence flag agrees with it"
+      layer: unit
+      file: src/pro-capabilities.test.ts
+      test: "nothing gated escapes the list > declares every extraction backend too, and keeps its flag saying the same as the declaration"
+
+- feature: V45
+  name: "Review fixes: the engine never takes the sync down, and holds its gates"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V45.1
+      scenario: "A page's render or write throws; the transcription throws"
+      expect: "That page fails and retries; the others are written; the index is saved after each page"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > failures > keeps going when one page throws, saving after each page, and survives a transcription that throws"
+
+    - id: V45.2
+      scenario: "A page-note tag is removed while a transcript-only tag stays on the notebook"
+      expect: "The page note's row is orphaned, not renamed to the transcript-only tag"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > orphans a removed page-note tag instead of renaming it to a transcript-only tag on the notebook"
+
+    - id: V45.3
+      scenario: "Pro lapsed with page notes on two tags"
+      expect: "Only the free tag's pages are processed; the settings keep the other switched on"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > runs only the free tag's pages without Pro, though the others stay switched on in the settings"
+
+- feature: V46
+  name: "Owed page-note work reopens its notebook"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V46.1
+      scenario: "A page failed last run; nothing changed on the tablet"
+      expect: "The notebook is opened again; it stays owed while a page fails and leaves the list once all pages pass"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > reopens a document with owed page-note work on an unchanged tablet, and keeps it owed while a page fails"
+
+    - id: V46.2
+      scenario: "The engine cannot run here (another device, no consent)"
+      expect: "An extracting notebook is owed to a later run; a transcript-only one is not; a deleted document leaves the list"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > owes an extracting notebook to the next run the engine can do, and drops a document gone from the tablet"
+
+    - id: V46.3
+      scenario: "The last Intelligence tag is removed from a notebook with page notes"
+      expect: "The engine still gets the notebook, with no units, so it can orphan the page notes"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > hands the engine a notebook whose last Intelligence tag left, so its page notes are orphaned"
+
+    - id: V46.4
+      scenario: "A switch-on scan runs and one document cannot be read"
+      expect: "The scan is not marked done, so the next sync scans again"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > leaves a switch-on scan unfinished when a document could not be read"
+
+- feature: V47
+  name: "A second read failing leaves the switch-on scan open"
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: V47.1
+      scenario: "A document reads in the scan but fails when the run opens it"
+      expect: "The failure is reported and the scan is not marked done"
+      layer: unit
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > leaves a switch-on scan unfinished when a document read in the scan fails when the run reads it again"
+
+- feature: V48
+  name: "Guards against Shape drift and an unreviewed first pick"
+  code: src/intelligence/page-engine.ts
+  tier: free
+  scenarios:
+    - id: V48.1
+      scenario: "A Slot's Shape in the settings differs from the Shape stored in the page's base"
+      expect: "The region and the base stay as they are; nothing crashes and no lines are lost"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > leaves a region alone whose Slot's Shape no longer matches the base, instead of merging across Shapes"
+
+- feature: V49
+  name: "A first pick stays a proposal until reviewed"
+  code: src/intelligence/value-merge.ts
+  tier: free
+  scenarios:
+    - id: V49.1
+      scenario: "A local model's first topical pick waits for review and the page is read again"
+      expect: "It stays a proposal, updated to the page's new pick, and is dropped when the page has none"
+      layer: unit
+      file: src/intelligence/value-merge.test.ts
+      test: "mergeValue > keeps a first pick under review on the next run, follows the page's new pick, and drops it when the page has none"
+
+- feature: V50
+  name: "Handwriting never runs as a Templater command"
+  code: src/intelligence/extraction.ts
+  tier: free
+  scenarios:
+    - id: V50.1
+      scenario: "The model reads a Templater tag such as <%* … %> off the page"
+      expect: "The tag is split by a zero-width space in every written text; the source used for matching stays as read"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > splits a Templater tag in what the model read, so a created note never runs it, but keeps the source as read"
+
+- feature: V51
+  name: "The local model is never loaded twice at once"
+  code: src/intelligence/local-server.ts
+  tier: free
+  scenarios:
+    - id: V51.1
+      scenario: "The server rests after a document"
+      expect: "It is stopped, and the next document's first page starts it again"
+      layer: unit
+      file: src/intelligence/local-server.test.ts
+      test: "managedServer > starts again after a rest between documents"
+
+- feature: V52
+  name: "The server rests between documents when the local model also transcribes"
+  code: src/intelligence/host.ts
+  tier: free
+  scenarios:
+    - id: V52.1
+      scenario: "Transcription runs on the local model, or on another backend"
+      expect: "With the local model the extraction backend rests after every document; otherwise it keeps running"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "prepareRun > lets the extraction backend rest after each document only when the local model also transcribes"
+
+- feature: V53
+  name: "Page-note commands wait for a running sync"
+  code: src/intelligence/commands.ts
+  tier: free
+  scenarios:
+    - id: V53.1
+      scenario: "Re-run extraction, Change profile or Re-transcribe is used while a sync runs"
+      expect: "Nothing runs and the index stays as it is; the user is told to try again after the sync"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the page-note commands > does nothing to the index or the note while a sync runs"
+
+    - id: V53.2
+      scenario: "A proposal is accepted while a sync runs"
+      expect: "The row stays in the list and can be decided once the sync has finished"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "ReviewModal > keeps a row to decide again when a sync was running"
+
+- feature: V54
+  name: "The running plugin holds the sync lock for page-note commands"
+  code: src/main.ts
+  tier: free
+  scenarios:
+    - id: V54.1
+      scenario: "Re-transcribe on a page note during a sync; the plugin unloads mid-sync"
+      expect: "The index is untouched and the user is told to wait; the sync's local server is stopped on unload"
+      layer: integration
+      file: src/intelligence-plugin.test.ts
+      test: "the review in the running plugin > leaves a page note alone while a sync runs, and stops a running sync's local server on unload"
+
+- feature: V55
+  name: "The measured local prompt (research 22)"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V55.1
+      scenario: "A Profile without the tasks Slot runs on the local model"
+      expect: "No line pass and no prefill; each Slot gets its own answer line, list Fields as columns"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > asks for no line pass without a tasks Slot, and lists items and values per Slot"
+
+- feature: V56
+  name: "Apple Vision keeps a line split in two in one piece"
+  code: src/vision-ocr-backend.ts
+  tier: free
+  scenarios:
+    - id: V56.1
+      scenario: "Vision returns one row of handwriting as two lines, next to lines above, below and overlapping"
+      expect: "Only the right-hand half on the same row is joined onto its line; other lines stay as they are"
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "VisionOcrBackend > joins a line Vision split in two on one row, and nothing above, below or to the left"
+
+- feature: V57
+  name: "A Choice Slot with no options is never asked for"
+  code: src/intelligence/extraction-backend.ts
+  tier: free
+  scenarios:
+    - id: V57.1
+      scenario: "The default Tags Slot has no options yet and a local model wants to write a tag"
+      expect: "Neither backend puts the Slot in its prompt or schema, so the grammar has no dead end; the Slot reads as empty"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > never asks either backend for a Choice Slot with no options, and reads it as empty"
+
+- feature: V58
+  name: "The settings tab does not redraw itself"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V58.1
+      scenario: "The settings open on the device that runs page extraction"
+      expect: "The device switch shows on without saving or redrawing; the tab stays still, so its dropdowns stay open"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > shows the switch on for the engine device without saving or redrawing, so the tab does not redraw itself forever"
+
+- feature: V59
+  name: "Code review fixes: a Value never costs the user's text or the note's frontmatter"
+  code: src/intelligence/page-engine.ts
+  tier: pro
+  scenarios:
+    - id: V59.1
+      scenario: "A Value Slot's property is the last one in the block and the page no longer holds it; or the template left an empty block"
+      expect: "The emptied block goes entirely, so no second block is stacked on it; an empty block is filled, and the body is never taken for frontmatter"
+      layer: unit
+      file: src/intelligence/frontmatter-values.test.ts
+      test: "writeProperty > drops a block it emptied, and fills an empty one the user left, without taking the body for frontmatter"
+
+    - id: V59.2
+      scenario: "A Value Slot new to the Profile adopts a heading the user already wrote under, and the user accepts the proposal"
+      expect: "The proposal carries the value: ✓ writes it instead of emptying the region"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > proposes a Value for a heading the user already wrote under, and accepting it writes the value"
+
+    - id: V59.3
+      scenario: "A used Value Slot's frontmatter property is cleared, set, or renamed in the settings"
+      expect: "Existing notes keep the value where it was written; the page does not fail on every sync"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > Value Slots > leaves a Value alone whose Slot moved between the frontmatter and the body, instead of failing the page"
+
+- feature: V60
+  name: "Code review fixes: no page is dropped, and no note changes hands"
+  code: src/intelligence/sync-pass.ts
+  tier: free
+  scenarios:
+    - id: V60.1
+      scenario: "Stop is pressed while a notebook's pages are extracted"
+      expect: "The notebook stays owed, so the next run reopens it for the pages left"
+      layer: engine
+      file: src/sync-engine-intelligence.test.ts
+      test: "runSync > Intelligence Engine seam > owes a notebook's remaining pages to the next run when Stop is pressed while they are extracted"
+
+    - id: V60.2
+      scenario: "A notebook carries two mapped tags; page notes are switched off for one and on for the other"
+      expect: "Not a rename: the first tag's rows and notes stay its own, the second makes its own notes"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > a mapped tag renamed on the tablet > does not read a tag whose Intelligence Mode is merely off as renamed to the tag switched on beside it"
+
+    - id: V60.3
+      scenario: "A page note was deleted and the page's extraction then keeps failing"
+      expect: "The retries share one note id and one base, so the third failure is said and no base files pile up"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > counts a failing page's attempts on one base when its note was deleted"
+
+- feature: V61
+  name: "Code review fixes: settings, cleanup, pause notice, a server that cannot start"
+  code: src/intelligence/settings-section.ts
+  tier: free
+  scenarios:
+    - id: V61.1
+      scenario: "A name, template path or instruction is typed, then a toggle, preset or button of the same card is used"
+      expect: "Every control edits the Profile or Slot as it stands now; nothing typed is reverted"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > keeps what was just typed when a toggle, a preset or a button of the same card follows"
+
+    - id: V61.2
+      scenario: "Frontmatter properties are switched off while page notes carry the plugin's keys"
+      tier: pro
+      expect: "Page notes lose the plugin's keys and tags too; the user's and the Slots' properties stay"
+      layer: unit
+      file: src/frontmatter-pass.test.ts
+      test: "cleanupFrontmatter (toggle off) > cleans the Intelligence Engine's page notes too, keeping what the user and the engine's Slots put there"
+
+    - id: V61.3
+      scenario: "The engine is paused and automatic syncs keep running"
+      expect: "The pause is said once in background runs, again when its reason changes, and always in a sync the user starts"
+      layer: unit
+      file: src/intelligence/host.test.ts
+      test: "pauseToSay > says a standing pause once in background runs, again when it changes, and always in a sync the user starts"
+
+    - id: V61.4
+      scenario: "The local model's server binary is missing or blocked by the system"
+      expect: "The start hears it as ended at once; no uncaught error, no two-minute wait"
+      layer: unit
+      file: src/intelligence/local-server-node.test.ts
+      test: "nodeServerDeps > hears a server that cannot be started as ended, instead of an uncaught error"
+
+- feature: V62
+  name: "Change Profile never overwrites a note the user wrote in"
+  code: src/intelligence/review.ts
+  tier: pro
+  scenarios:
+    - id: V62.1
+      scenario: "The user adds a section of their own, prose between the tasks, a tick or a date; or typed a task before the last sync; or the note has no fingerprint"
+      expect: "The note counts as touched; the plugin's frontmatter and blank lines do not"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "uneditedSinceBase > is false for a section of the user's own, prose between the tasks, a tick, a date, a task the user typed, and a note with no fingerprint"
+
+    - id: V62.2
+      scenario: "Change Profile is run on a note with a section of the user's own and untouched Slot regions"
+      expect: "The note stays as it is; the new Profile's note is made beside it"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > leaves a note with a section of the user's own as it is, though no Slot's region was touched"
+
+    - id: V62.3
+      scenario: "A note is made from a template with prose, a callout and frontmatter around the Slots"
+      expect: "The fingerprint holds the lines no Slot fills, and nothing of the frontmatter, the Slots, callouts or blank lines"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "foreignLines > keeps what no Slot fills: not the frontmatter, a Slot's heading, its items or text, a callout or a blank line"
+
+    - id: V62.4
+      scenario: "A note has no frontmatter, or a block that never closes"
+      expect: "Every line counts as body"
+      layer: unit
+      file: src/intelligence/base-store.test.ts
+      test: "foreignLines > takes a note with no frontmatter, or an unclosed one, as all body"
+
+- feature: V63
+  name: "Code review, the rest: an empty frontmatter block, a tag that returns"
+  code: src/frontmatter.ts
+  tier: free
+  scenarios:
+    - id: V63.1
+      scenario: "A page note's template holds an empty frontmatter block and the plugin's keys are written"
+      tier: pro
+      expect: "The keys fill that block; no second block is stacked on it and the body is not taken for frontmatter"
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "an empty frontmatter block, as a template can hold one > is filled by applyFrontmatter, instead of a second block stacked on it or the body taken for frontmatter"
+
+    - id: V63.2
+      scenario: "Frontmatter properties are switched off and a note holds an empty block"
+      tier: pro
+      expect: "The note is left as it is: nothing in the block is the plugin's"
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "an empty frontmatter block, as a template can hold one > is left as it is by removeFrontmatter: nothing in it is the plugin's"
+
+    - id: V63.3
+      scenario: "Change Profile is run on a note with an empty frontmatter block and a rule further down"
+      tier: pro
+      expect: "The empty block is carried over as that; the old note's body is not copied into the new note"
+      layer: unit
+      file: src/intelligence/change-profile.test.ts
+      test: "changeProfile > carries an empty frontmatter block over as that, not the body up to its first rule"
+
+    - id: V63.4
+      scenario: "A tag removed on the tablet is put back on an unchanged page; then again after the user deleted the note"
+      expect: "Note still there: the row is active again at once. Note deleted: it stays orphaned until the page is written on"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "processDocument > rows > takes an orphaned row back when its tag returns to the page and the note is still there, though the page did not change"

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	ButtonComponent,
 	checkPath,
 	createFragment,
 	debounce,
@@ -10,8 +11,10 @@ import {
 	normalizePath,
 	parseLinktext,
 	Plugin,
+	TextComponent,
 	TFile,
 	TFolder,
+	ToggleComponent,
 } from "./fake-obsidian";
 
 // `rmapi-js` cannot be resolved under vitest at all -- its `dist/raw.js` imports `crc-32/crc32c`,
@@ -300,6 +303,20 @@ describe("writing through the vault", () => {
 	});
 });
 
+describe("files outside the note index", () => {
+	it("reads back what was written through the adapter, never as a note, rejects a missing file, and has the default config folder", async () => {
+		const vault = new FakeVault();
+		await vault.adapter.write("plugin/device-id", "abc");
+		await vault.adapter.mkdir("plugin/base");
+		expect([await vault.adapter.exists("plugin/device-id"), await vault.adapter.exists("plugin/base"), await vault.adapter.exists("plugin/none")]).toEqual([true, true, false]);
+		expect(await vault.adapter.read("plugin/device-id")).toBe("abc");
+		expect(vault.getAbstractFileByPath("plugin/device-id")).toBeNull();
+		await vault.adapter.remove("plugin/device-id");
+		await expect(vault.adapter.read("plugin/device-id")).rejects.toThrow(/ENOENT/);
+		expect(vault.configDir).toBe(".obsidian");
+	});
+});
+
 describe("the plugin host", () => {
 	it("hands loadData whatever the test says data.json holds, and records every save", async () => {
 		const plugin = new Plugin(new FakeApp());
@@ -310,6 +327,14 @@ describe("the plugin host", () => {
 		await plugin.saveData(data);
 		data.deviceToken = "changed-after-the-save";
 		expect(plugin.saves).toEqual([{ deviceToken: "abc" }]);
+	});
+
+	it("keeps each obsidian:// handler by its action, so a test can open the link", () => {
+		const plugin = new Plugin(new FakeApp());
+		const opened: string[] = [];
+		plugin.registerObsidianProtocolHandler("tagged-sync-review", (params) => opened.push(params.action));
+		plugin.protocolHandlers.get("tagged-sync-review")!({ action: "tagged-sync-review" });
+		expect(opened).toEqual(["tagged-sync-review"]);
 	});
 
 	it("holds an onLayoutReady callback until the workspace is ready, then runs it", async () => {
@@ -327,6 +352,16 @@ describe("the plugin host", () => {
 		// Enabled by hand, long after startup: Obsidian runs it straight away.
 		app.workspace.onLayoutReady(() => ran.push("late"));
 		expect(ran).toEqual(["early", "late"]);
+	});
+});
+
+describe("components are thenables, as in Obsidian", () => {
+	it("calls back with the component and hands it back, so a promise returning one never settles", async () => {
+		const toggle = new ToggleComponent();
+		let seen: unknown = null;
+		expect(toggle.then((component) => void (seen = component))).toBe(toggle);
+		expect(seen).toBe(toggle);
+		for (const component of [new TextComponent(), new DropdownComponent(), new ButtonComponent()]) expect(component.then(() => undefined)).toBe(component);
 	});
 });
 

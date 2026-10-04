@@ -1,0 +1,112 @@
+import { describe, expect, it } from "vitest";
+import { BASE_VERSION, basePath, createBaseStore, foreignLines, NO_FAILURES, rebuildBase, type BaseFiles, type PageBase, type SlotBase } from "./base-store";
+import { compileItemFormat } from "./item-format";
+
+function memoryFiles(): BaseFiles & { files: Map<string, string> } {
+	const files = new Map<string, string>();
+	return {
+		files,
+		read: async (path) => files.get(path) ?? null,
+		write: async (path, content) => void files.set(path, content),
+		remove: async (path) => void files.delete(path),
+	};
+}
+
+const DIR = ".obsidian/plugins/remarkable-tagged-sync";
+const base = (noteId = "n1"): PageBase => ({ version: BASE_VERSION, noteId, syncKey: "doc:page:work", unitKey: "doc:page:work", transcript: "Call Bob", slots: {}, settled: [], extraction: { ...NO_FAILURES } });
+
+describe("createBaseStore", () => {
+	it("keys the file by noteId, never by syncKey, whose colons Windows rejects", () => {
+		expect(basePath(DIR, "n1")).toBe(`${DIR}/base/n1.json`);
+	});
+
+	it("saves and loads a base", async () => {
+		const store = createBaseStore(memoryFiles(), DIR);
+		await store.save(base());
+		expect(await store.load("n1")).toEqual(base());
+	});
+
+	it("treats a missing, garbled, foreign-shaped or misfiled base as missing, so the note is rebuilt", async () => {
+		const files = memoryFiles();
+		const store = createBaseStore(files, DIR);
+		expect(await store.load("n1")).toBeNull();
+		files.files.set(basePath(DIR, "n1"), "{not json");
+		expect(await store.load("n1")).toBeNull();
+		files.files.set(basePath(DIR, "n1"), JSON.stringify({ ...base(), version: BASE_VERSION + 1 }));
+		expect(await store.load("n1")).toBeNull();
+		files.files.set(basePath(DIR, "n1"), JSON.stringify(base("n2")));
+		expect(await store.load("n1")).toBeNull();
+		files.files.set(basePath(DIR, "n1"), "null");
+		expect(await store.load("n1")).toBeNull();
+	});
+
+	it("discards a base", async () => {
+		const files = memoryFiles();
+		const store = createBaseStore(files, DIR);
+		await store.save(base());
+		await store.discard("n1");
+		expect(files.files.size).toBe(0);
+	});
+});
+
+describe("rebuildBase", () => {
+	const tasksFormat = "- [ ] {{text}} 📅 {{due}}";
+	const slots = [
+		{ id: "tasks", shape: "checklist" as const, heading: { level: 2, text: "Tasks" }, format: compileItemFormat(tasksFormat), itemFormat: tasksFormat },
+		{ id: "summary", shape: "text" as const, heading: { level: 2, text: "Summary" }, format: compileItemFormat("- {{text}}"), itemFormat: "" },
+		{ id: "gone", shape: "list" as const, heading: { level: 2, text: "Decisions" }, format: compileItemFormat("- {{text}}"), itemFormat: "- {{text}}" },
+		{ id: "tags", shape: "value" as const, heading: { level: 2, text: "Tags" }, format: compileItemFormat("- {{text}}"), itemFormat: "" },
+	];
+	const note = ["## Tasks", "- [ ] Call Bob 📅 2026-10-02", "- [x] Buy milk", "", "## Summary", "Met Bob.", "", "## Tags", "- x"];
+
+	it("reads the note back as the base: items without a source, fresh ids, ticks kept, an empty summary base, no transcript", () => {
+		let n = 0;
+		const rebuilt = rebuildBase({ lines: note, slots, noteId: "n1", syncKey: "k", newId: () => `r${++n}` });
+		expect(rebuilt.transcript).toBeNull();
+		expect(rebuilt.slots.tasks).toEqual({
+			shape: "checklist",
+			heading: { level: 2, text: "Tasks" },
+			itemFormat: tasksFormat,
+			list: {
+				items: [
+					{ id: "r1", text: "Call Bob", fields: { due: "2026-10-02" }, done: false, source: null, origin: "engine" },
+					{ id: "r2", text: "Buy milk", fields: {}, done: true, source: null, origin: "engine" },
+				],
+				tombstones: [],
+				proposals: [],
+			},
+		});
+		// Empty, so "Met Bob." reads as the user's and is never overwritten silently.
+		expect(rebuilt.slots.summary).toEqual({ shape: "text", heading: { level: 2, text: "Summary" }, text: "", proposals: [] });
+	});
+
+	it("settles a region whose heading is gone so it is never re-added, and gives Values an empty base", () => {
+		const withProperty = [...slots.slice(0, 3), { ...slots[3], property: "tags" }, { id: "mood", shape: "value" as const, heading: { level: 2, text: "Tags" }, format: slots[3].format, itemFormat: "" }];
+		const rebuilt = rebuildBase({ lines: note, slots: withProperty, noteId: "n1", syncKey: "k", newId: () => "r" });
+		expect(Object.keys(rebuilt.slots)).toEqual(["tasks", "summary", "tags", "mood"]);
+		expect(rebuilt.settled).toEqual(["gone"]);
+		expect(rebuilt.slots.tags).toEqual({ shape: "value", property: "tags", heading: null, value: null, added: [], buried: [], proposals: [] });
+		expect(rebuilt.slots.mood).toEqual({ shape: "value", property: null, heading: { level: 2, text: "Tags" }, value: null, proposals: [] });
+		const plain = rebuildBase({ lines: note, slots: [{ ...slots[3], property: "mood" }], noteId: "n1", syncKey: "k", newId: () => "r" });
+		expect(plain.slots.tags).toEqual({ shape: "value", property: "mood", heading: null, value: null, proposals: [] });
+	});
+});
+
+describe("foreignLines", () => {
+	const slots: Record<string, SlotBase> = {
+		tasks: { shape: "checklist", heading: { level: 2, text: "Tasks" }, itemFormat: "- [ ] {{text}}", list: { items: [], tombstones: [], proposals: [] } },
+		summary: { shape: "text", heading: { level: 2, text: "Summary" }, text: "", proposals: [] },
+		project: { shape: "value", property: "project", heading: null, value: null, proposals: [] },
+		gone: { shape: "text", heading: { level: 2, text: "Gone" }, text: "", proposals: [] },
+	};
+
+	it("keeps what no Slot fills: not the frontmatter, a Slot's heading, its items or text, a callout or a blank line", () => {
+		const note = ["---", "project: A", "---", "# Title  ", "", "## Tasks", "> [!todo] 1 proposal — [Review](x)", "Do these first:", "- [ ] Call", "", "## Summary", "Met Bob.", "", "## Page", "[[p1.pdf]]"];
+		expect(foreignLines(slots, note)).toBe("# Title\nDo these first:\n## Page\n[[p1.pdf]]");
+	});
+
+	it("takes a note with no frontmatter, or an unclosed one, as all body", () => {
+		expect(foreignLines(slots, ["Intro", "## Summary", "Met Bob."])).toBe("Intro");
+		expect(foreignLines({}, ["---", "not: closed"])).toBe("---\nnot: closed");
+	});
+});

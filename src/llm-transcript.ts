@@ -355,7 +355,7 @@ export type Sleep = (ms: number) => Promise<void>;
  * 2026-09-09 while measuring precision through this adapter: eleven of fifteen rate-limited pages
  * were lost rather than retried, and reported as "the provider could not answer" instead.
  */
-const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * `Retry-After` in ms, in both forms the HTTP spec allows (delta-seconds and a date), or the

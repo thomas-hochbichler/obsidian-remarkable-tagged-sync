@@ -1,0 +1,475 @@
+/**
+ * The Intelligence Engine's half of a sync run, one document at a time. The sync engine opens the
+ * document, writes its transcript notes, and then hands this pass the live pages; this decides per
+ * page whether it is new, changed or old (the seen-set), and turns new and changed pages into page
+ * notes through {@link processPage}.
+ *
+ * Everything this touches lives in two index maps beside `rows` -- `seenPages` and `intelligenceRows`
+ * -- and in the device-local base files. It never writes a transcript note.
+ */
+
+import { applyFrontmatter, formatLocalMinute, type NoteFrontmatter } from "../frontmatter";
+import { blockHashOf, type NoteStore, resolveFreePath, sanitizeFilenamePart } from "../note-builder";
+import type { BaseStore, PageBase } from "./base-store";
+import { rebuildBase } from "./base-store";
+import { isoDay } from "./dates";
+import type { ExtractionBackend } from "./extraction-backend";
+import { compileItemFormat } from "./item-format";
+import { processPage } from "./page-engine";
+import { classifyUnit, type SeenEntry, switchOnStamp } from "./seen-set";
+import { genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, type SlotDef } from "./settings";
+import { analyseTemplate, starterTemplate } from "./template";
+
+/** One page note, in `SyncIndex.intelligenceRows`. Not a `SyncIndexRow`: those are diffed against live page tags. */
+export interface IntelligenceRow {
+	syncKey: string;
+	/** Equals `syncKey` in 1.9.0 (§14). */
+	unitKey: string;
+	docId: string;
+	pageId: string;
+	tag: string;
+	scope: "notebook" | "page";
+	notePath: string;
+	/** The mapping's folder when the note was created or last moved: the re-target check reads it. */
+	folder: string;
+	status: "active" | "orphaned";
+	noteId: string;
+	/** The Profile frozen for this page. */
+	profileId: string;
+	baseHash: string;
+	syncedAt: string;
+	frontmatterTags?: string[];
+	frontmatterVersion?: number;
+}
+
+export interface IntelligenceState {
+	seenPages: Record<string, SeenEntry>;
+	rows: Record<string, IntelligenceRow>;
+	/** Per tag, the `enabledAt` whose switch-on scan has completed. */
+	scans: Record<string, string>;
+}
+
+export interface DocPage {
+	id: string;
+	/** 1-based position in the notebook, frozen into the note's name. */
+	ordinal: number;
+	/** The page's `.rm` hash; null for a page never drawn on. */
+	hash: string | null;
+	/** `cPages.pages[].modifed` as epoch ms, null when absent. */
+	modified: number | null;
+}
+
+/** A mapped tag on this document, and the pages it covers -- every mapped tag, whatever its modes. */
+export interface DocUnit {
+	tag: string;
+	scope: "notebook" | "page";
+	pageIds: string[];
+}
+
+export interface IntelligenceDocument {
+	docId: string;
+	name: string;
+	/** A `pages[]` document with no `modifed` at all: every page is old. */
+	legacy: boolean;
+	pages: DocPage[];
+	/** Every mapped tag's unit: a row whose unit is missing here lost its tag on the tablet. */
+	units: DocUnit[];
+	/** Page texts, read once per sync and shared with the transcript notes; a page missing from the map could not be read. */
+	transcribe: (pageIds: string[]) => Promise<Map<string, string>>;
+	/** Writes the page render and returns its vault path. */
+	writeRender: (pageId: string) => Promise<string>;
+	/** Before each page is extracted: which of this document's pages the engine is on. */
+	onProgress?: (done: number, total: number) => void;
+	/** "Stop sync" was pressed: no further page starts. Pages already done are kept; the rest wait. */
+	shouldStop?: () => boolean;
+	/** Saves the index; called after each page, so a note made is never made twice after a crash. */
+	checkpoint?: () => Promise<void>;
+	/**
+	 * The plugin's frontmatter keys for a page note (Pro), exactly as a page-tag note gets them -- or
+	 * null with the feature off. Page notes are synced notes: `FROM #remarkable` finds them (spec §7.4).
+	 */
+	frontmatter?: (tag: string, pageId: string) => { fields: Omit<NoteFrontmatter, "synced" | "noteId">; version: number } | null;
+}
+
+export interface IntelligencePassDeps {
+	settings: IntelligenceSettings;
+	tagFolderMap: Record<string, string>;
+	/** The Profile's Slots with Free-tier locks applied (§11). */
+	effectiveSlots: (profile: ProfileDef, slots: SlotDef[]) => SlotDef[];
+	pro: boolean;
+	noteStore: NoteStore;
+	baseStore: BaseStore;
+	backend: ExtractionBackend;
+	/** The template note's text, or null when it is gone. */
+	loadTemplate: (path: string) => Promise<string | null>;
+	/** Creates a new note in one call (Templater, when installed, else `vault.create`). */
+	createNote: (path: string, content: string) => Promise<void>;
+	now: () => Date;
+	newId: () => string;
+	newNoteId: () => string;
+	formatDate: (format: string | null) => string;
+	formatTime: (format: string | null) => string;
+	reviewLink: string;
+}
+
+export interface PassReport {
+	notesWritten: number;
+	notesUpdated: number;
+	/** Pending proposals over every page note this run touched, and how many notes hold them. */
+	proposals: number;
+	proposalNotes: number;
+	/** One line per page whose extraction failed this run, for diagnostics. */
+	failures: string[];
+	/** Things said to the user: a page failing a third time, a legacy notebook, a lost region. */
+	notices: string[];
+	/** Slots written into a page note this run: their Shape is locked from now on. */
+	usedSlots: string[];
+	/** Keys of the notices above that are said once ever; the caller records them. */
+	saidOnce: string[];
+}
+
+export const RETRY_NOTICE_AFTER = 3;
+
+export function emptyReport(): PassReport {
+	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [], saidOnce: [] };
+}
+
+export function intelligenceSyncKey(docId: string, pageId: string, tag: string): string {
+	return `${docId}:${pageId}:${tag}`;
+}
+
+export const LOCAL_CLASSIFIER_NOTICE = "local-classifier";
+
+/**
+ * The page's Profile (spec §5.1): the one frozen on its row; else the only one the tag allows; else,
+ * with several, the classifier's pick among them -- cloud only, so a local backend takes the first and
+ * says so once. No Profile at all is the Generic one.
+ */
+async function profileFor(deps: IntelligencePassDeps, tag: string, frozen: string | undefined, transcript: string, report: PassReport): Promise<ProfileDef> {
+	const byId = (id: string | undefined) => deps.settings.profiles.find((profile) => profile.id === id);
+	const pinned = byId(frozen);
+	if (pinned !== undefined) return pinned;
+	const allowed = modesFor(deps.settings, deps.tagFolderMap, tag).profiles.flatMap((id) => byId(id) ?? []);
+	if (allowed.length === 0) return genericProfile(deps.pro);
+	if (allowed.length === 1 || !deps.pro) return allowed[0];
+	if (deps.backend.classify === undefined) {
+		if (!deps.settings.saidOnce.includes(LOCAL_CLASSIFIER_NOTICE) && !report.saidOnce.includes(LOCAL_CLASSIFIER_NOTICE)) {
+			report.notices.push(`A local model does not choose between profiles, so pages under "${tag}" use "${allowed[0].name}", the first one listed. A cloud backend picks per page.`);
+			report.saidOnce.push(LOCAL_CLASSIFIER_NOTICE);
+		}
+		return allowed[0];
+	}
+	const picked = await deps.backend.classify({ transcript, profiles: allowed.map((profile) => ({ id: profile.id, description: profile.description })) });
+	if (picked.kind === "ok") return byId(picked.id)!;
+	report.failures.push(`choosing a profile under "${tag}": ${picked.reason}; used "${allowed[0].name}"`);
+	return allowed[0];
+}
+
+export function slotsOf(deps: IntelligencePassDeps, profile: ProfileDef): SlotDef[] {
+	const all = profile.slots.flatMap((id) => deps.settings.slots.filter((slot) => slot.id === id));
+	return deps.effectiveSlots(profile, all);
+}
+
+export async function templateFor(deps: IntelligencePassDeps, profile: ProfileDef, slots: SlotDef[]): Promise<string> {
+	const stored = profile.template === null ? null : await deps.loadTemplate(profile.template);
+	return stored ?? starterTemplate(slots);
+}
+
+export function baseHash(base: PageBase): string {
+	return blockHashOf(JSON.stringify(base));
+}
+
+/**
+ * Runs the switch-on scan where it is due, then every new or changed page of every Intelligence-mapped
+ * unit of this document through the engine. Mutates `state`; the caller checkpoints it.
+ */
+export interface ProcessOptions {
+	/** Keys processed whatever the seen-set says: "Re-run extraction" on one page note (spec §9). */
+	force?: ReadonlySet<string>;
+	/** Only some of the document's units are given, so a missing one says nothing about its tag. */
+	partial?: boolean;
+}
+
+export async function processDocument(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState, options: ProcessOptions = {}): Promise<PassReport> {
+	const report = emptyReport();
+	const pageById = new Map(doc.pages.map((page) => [page.id, page]));
+
+	// A mapped tag renamed on the tablet: one tag gone and one new at the same page and scope is the same
+	// unit under a new name. Its rows and seen entries move to the new key, its note stays where it is,
+	// and `folder` becomes the new mapping's so the re-target check stays quiet (spec §4.1).
+	if (!options.partial) followTagRenames(deps, doc, state);
+
+	// Tag gone from the notebook or page on the tablet: the row is orphaned and its note stays. A tag
+	// whose Intelligence Mode is merely off is still here, and its rows stay active and untouched.
+	const present = new Set(doc.units.flatMap((unit) => unit.pageIds.map((pageId) => intelligenceSyncKey(doc.docId, pageId, unit.tag))));
+	// The tag back on the page with the note still there: the row is the unit's again, without waiting
+	// for new ink (the revive rule, spec §4.1). A note deleted meanwhile waits for the page to be written on.
+	for (const [key, row] of Object.entries(state.rows)) {
+		if (row.docId !== doc.docId) continue;
+		if (row.status === "active" && !options.partial && !present.has(key)) state.rows[key] = { ...row, status: "orphaned" };
+		else if (row.status === "orphaned" && present.has(key) && (await deps.noteStore.exists(row.notePath))) state.rows[key] = { ...row, status: "active" };
+	}
+
+	const work: { unit: DocUnit; page: DocPage; key: string; seen: SeenEntry | undefined }[] = [];
+	let legacyRecorded = false;
+
+	for (const unit of doc.units) {
+		const modes = modesFor(deps.settings, deps.tagFolderMap, unit.tag);
+		if (!modes.intelligence || modes.enabledAt === undefined) continue;
+		const enabledAt = Date.parse(modes.enabledAt);
+		const scanDue = state.scans[unit.tag] !== modes.enabledAt;
+
+		for (const pageId of unit.pageIds) {
+			const page = pageById.get(pageId);
+			// A page never drawn on gets no note and no seen entry: its first ink is new.
+			if (page === undefined || page.hash === null) continue;
+			const key = intelligenceSyncKey(doc.docId, page.id, unit.tag);
+			let seen = state.seenPages[key];
+
+			// The scan re-stamps every page written up to the toggle, known or not, so pages written
+			// while the mode was off count as old. A page written after it is left to the two questions.
+			if (scanDue && !options.force?.has(key) && switchOnStamp(page.modified, enabledAt)) {
+				seen = { ...seen, scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified };
+				state.seenPages[key] = seen;
+				continue;
+			}
+
+			const kind = options.force?.has(key) ? "changed" : classifyUnit({ seen, pageHash: page.hash, modified: page.modified, enabledAt, legacy: doc.legacy });
+			if (kind === "old") {
+				if (doc.legacy && seen === undefined) legacyRecorded = true;
+				state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: page.modified };
+			} else if (kind !== "unchanged") {
+				work.push({ unit, page, key, seen });
+			}
+		}
+	}
+	if (legacyRecorded) report.notices.push(`"${doc.name}" was written before the tablet stamped page dates, so none of its pages counts as new. Write on a page to bring it in.`);
+	if (work.length === 0) return report;
+
+	let texts: Map<string, string>;
+	try {
+		texts = await doc.transcribe([...new Set(work.map((item) => item.page.id))]);
+	} catch (error) {
+		// Every page then fails as unread and retries; the sync itself goes on.
+		console.warn("Tagged Sync: the Intelligence Engine could not read its pages", error);
+		texts = new Map();
+	}
+
+	for (const [index, item] of work.entries()) {
+		if (doc.shouldStop?.() === true) break;
+		doc.onProgress?.(index + 1, work.length);
+		// One page's failure -- a render that times out, a note that cannot be written -- is that page's,
+		// never the sync's: the notes already made stay, and the index is saved after each one.
+		try {
+			await processItem(deps, doc, state, report, item, texts);
+		} catch (error) {
+			report.failures.push(`page ${item.page.ordinal} of "${doc.name}": ${error instanceof Error ? error.message : String(error)}`);
+		}
+		await doc.checkpoint?.();
+	}
+	return report;
+}
+
+async function processItem(
+	deps: IntelligencePassDeps,
+	doc: IntelligenceDocument,
+	state: IntelligenceState,
+	report: PassReport,
+	{ unit, page, key, seen }: { unit: DocUnit; page: DocPage; key: string; seen: SeenEntry | undefined },
+	texts: Map<string, string>,
+): Promise<void> {
+	const row = state.rows[key];
+	const noteText = row ? await deps.noteStore.read(row.notePath) : null;
+	// One revive rule (§4.1): a row whose note is gone starts over with a fresh id and no base --
+	// merging against the dead note's base would tombstone everything. A retry of that start keeps the
+	// id its first try left on the seen entry, so the failed attempts count up on one base.
+	const alive = row !== undefined && noteText !== null;
+	const firstTry = row !== undefined && seen?.noteId === row.noteId;
+	const noteId = alive ? row.noteId : firstTry ? deps.newNoteId() : (seen?.noteId ?? deps.newNoteId());
+	if (row !== undefined && !alive) await deps.baseStore.discard(row.noteId);
+	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId };
+
+	const transcript = texts.get(page.id);
+	if (transcript === undefined) {
+		report.failures.push(`page ${page.ordinal} of "${doc.name}": the page could not be read`);
+		return;
+	}
+	const profile = await profileFor(deps, unit.tag, alive ? row.profileId : undefined, transcript, report);
+	const slots = slotsOf(deps, profile);
+	const template = await templateFor(deps, profile, slots);
+	let base = await deps.baseStore.load(noteId);
+	if (base === null && alive) {
+		const placements = analyseTemplate(template, slots.map((slot) => slot.id));
+		base = rebuildBase({
+			lines: noteText.split("\n"),
+			slots: slots.map((slot) => {
+				const placement = placements[slot.id];
+				const itemFormat = slot.shape === "list" || slot.shape === "checklist" ? slot.itemFormat : "- {{text}}";
+				return { id: slot.id, shape: slot.shape, heading: placement.kind === "region" ? placement.heading : { level: 2, text: slot.name }, format: compileItemFormat(itemFormat), itemFormat: slot.itemFormat, property: slot.property };
+			}),
+			noteId,
+			syncKey: key,
+			newId: deps.newId,
+		});
+	}
+
+	const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(doc.name)}`;
+	const renderPath = await doc.writeRender(page.id);
+	const outcome = await processPage({
+		unit: { key, pageHash: page.hash, transcript, firstSeen: seen?.firstSeen ?? page.modified },
+		noteId,
+		base,
+		note: alive ? noteText : null,
+		profile,
+		slots,
+		template,
+		backend: deps.backend,
+		syncedAt: deps.now(),
+		title: (pageDate) => `${isoDay(pageDate)} ${doc.name} p${page.ordinal}`,
+		pageLink: `[[${renderPath}|Page ${page.ordinal}]]`,
+		pageEmbed: `![[${renderPath}]]`,
+		reviewLink: deps.reviewLink,
+		formatDate: deps.formatDate,
+		formatTime: deps.formatTime,
+		newId: deps.newId,
+	});
+
+	if (outcome.kind === "failed") {
+		await deps.baseStore.save(outcome.base);
+		report.failures.push(`page ${page.ordinal} of "${doc.name}": ${outcome.reason}`);
+		if (outcome.base.extraction.attempts === RETRY_NOTICE_AFTER) report.notices.push(`Page ${page.ordinal} of "${doc.name}" could not be extracted ${RETRY_NOTICE_AFTER} times: ${outcome.reason}`);
+		return;
+	}
+
+	// The plugin's keys ride along on every write; an unchanged note is not written for them alone.
+	const keys = outcome.content === null ? null : (doc.frontmatter?.(unit.tag, page.id) ?? null);
+	let ownTags = alive ? row.frontmatterTags : undefined;
+	let content = outcome.content;
+	if (keys !== null && content !== null) {
+		const applied = applyFrontmatter(content, { ...keys.fields, synced: formatLocalMinute(deps.now()), noteId }, ownTags ?? []);
+		content = applied.content;
+		ownTags = applied.ownTags;
+	}
+
+	let notePath = alive ? row.notePath : "";
+	if (outcome.created) {
+		const name = sanitizeFilenamePart(`${isoDay(outcome.pageDate)} ${doc.name} p${page.ordinal}`);
+		await deps.noteStore.ensureFolder(folder);
+		notePath = await resolveFreePath(deps.noteStore, folder, name, unit.tag, doc.docId);
+		await deps.createNote(notePath, content!);
+		report.notesWritten++;
+	} else if (content !== null) {
+		await deps.noteStore.write(notePath, content);
+		report.notesUpdated++;
+	}
+	for (const id of outcome.missingRegions) report.notices.push(`"${notePath}": the heading for ${id} is gone, so it was not updated.`);
+	report.proposals += outcome.proposals;
+	if (outcome.proposals > 0) report.proposalNotes++;
+
+	for (const id of Object.keys(outcome.base.slots)) if (!report.usedSlots.includes(id)) report.usedSlots.push(id);
+	await deps.baseStore.save(outcome.base);
+	// The page's hash enters the seen-set only now, after success: a failed page retries next sync.
+	state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified, noteId };
+	state.rows[key] = {
+		...(alive ? row : {}),
+		syncKey: key,
+		unitKey: key,
+		docId: doc.docId,
+		pageId: page.id,
+		tag: unit.tag,
+		scope: unit.scope,
+		notePath,
+		folder: alive ? row.folder : deps.tagFolderMap[unit.tag],
+		status: "active",
+		noteId,
+		profileId: profile.id,
+		baseHash: baseHash(outcome.base),
+		syncedAt: deps.now().toISOString(),
+		...(keys === null ? {} : { frontmatterTags: ownTags, frontmatterVersion: keys.version }),
+	};
+}
+
+const keyParts = (key: string) => {
+	const [docId, pageId, ...tag] = key.split(":");
+	return { docId, pageId, tag: tag.join(":") };
+};
+
+function followTagRenames(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState): void {
+	// The tags each page of this document is known under, per scope: read once, not once per page.
+	const known = new Map<string, Set<string>>();
+	const know = (pageId: string, scope: string, tag: string) => {
+		const at = `${pageId}:${scope}`;
+		known.set(at, (known.get(at) ?? new Set<string>()).add(tag));
+	};
+	for (const row of Object.values(state.rows)) if (row.status === "active" && row.docId === doc.docId) know(row.pageId, row.scope, row.tag);
+	for (const [key, seen] of Object.entries(state.seenPages)) {
+		const parts = keyParts(key);
+		if (parts.docId === doc.docId) know(parts.pageId, seen.scope, parts.tag);
+	}
+	for (const page of doc.pages) {
+		for (const scope of ["notebook", "page"] as const) {
+			const previous = known.get(`${page.id}:${scope}`);
+			if (previous === undefined) continue;
+			const onPage = doc.units.filter((unit) => unit.scope === scope && unit.pageIds.includes(page.id)).map((unit) => unit.tag);
+			// Only a tag gone from the tablet was renamed: one whose Intelligence Mode is merely off is still here.
+			const removed = [...previous].filter((tag) => !onPage.includes(tag));
+			// Only tags that make page notes can be the new name: a transcript-only tag was never this unit's.
+			const added = onPage.filter((tag) => !previous.has(tag) && modesFor(deps.settings, deps.tagFolderMap, tag).intelligence);
+			if (removed.length !== 1 || added.length !== 1) continue;
+			const from = intelligenceSyncKey(doc.docId, page.id, removed[0]);
+			const to = intelligenceSyncKey(doc.docId, page.id, added[0]);
+			if (state.seenPages[from] !== undefined) {
+				state.seenPages[to] = state.seenPages[from];
+				delete state.seenPages[from];
+			}
+			const row = state.rows[from];
+			if (row !== undefined) {
+				// The new tag is on a unit, so it is mapped: its folder is always there.
+				state.rows[to] = { ...row, syncKey: to, unitKey: to, tag: added[0], folder: deps.tagFolderMap[added[0]] };
+				delete state.rows[from];
+			}
+		}
+	}
+}
+
+/**
+ * A mapping re-targeted to another folder in settings: page notes move with it, row by row, into
+ * `<new folder>/<the rest of their path>` -- but only a note still inside the old folder. One the user
+ * sorted elsewhere is never dragged back (#101), and a whole subfolder is never moved: two tags may
+ * share it, and the user's own files may sit in it (spec §4.1). Local only; runs before each sync.
+ */
+export async function followRetargets(state: IntelligenceState, tagFolderMap: Record<string, string>, noteStore: NoteStore): Promise<number> {
+	let moved = 0;
+	for (const [key, row] of Object.entries(state.rows)) {
+		const target = tagFolderMap[row.tag]?.replace(/\/+$/, "");
+		const written = row.folder.replace(/\/+$/, "");
+		if (row.status !== "active" || target === undefined || target === written || !row.notePath.startsWith(`${written}/`)) continue;
+		const rest = row.notePath.slice(written.length + 1);
+		const cut = rest.lastIndexOf("/");
+		const folder = [target, ...(cut === -1 ? [] : [rest.slice(0, cut)])].filter((part) => part !== "").join("/");
+		const name = rest.slice(cut + 1).replace(/\.md$/, "");
+		const notePath = await resolveFreePath(noteStore, folder, name, row.tag, row.docId);
+		if (folder !== "") await noteStore.ensureFolder(folder);
+		await noteStore.move(row.notePath, notePath);
+		state.rows[key] = { ...row, notePath, folder: target };
+		moved++;
+	}
+	return moved;
+}
+
+/**
+ * Marks the scan of each of `tags` done at its current `enabledAt`. Called only when a run walked every
+ * document, and only for the tags that actually ran -- a tag held off without Pro was not scanned.
+ */
+export function completeScans(settings: IntelligenceSettings, tagFolderMap: Record<string, string>, tags: readonly string[], state: IntelligenceState): void {
+	for (const tag of tags) {
+		const modes = modesFor(settings, tagFolderMap, tag);
+		if (modes.intelligence && modes.enabledAt !== undefined) state.scans[tag] = modes.enabledAt;
+	}
+}
+
+/** The deleted-document sweep: rows of documents gone from the tablet are orphaned, their seen entries pruned. */
+export function sweepDeletedDocuments(state: IntelligenceState, liveDocIds: ReadonlySet<string>): void {
+	for (const [key, row] of Object.entries(state.rows)) if (row.status === "active" && !liveDocIds.has(row.docId)) state.rows[key] = { ...row, status: "orphaned" };
+	for (const key of Object.keys(state.seenPages)) if (!liveDocIds.has(key.slice(0, key.indexOf(":")))) delete state.seenPages[key];
+}
