@@ -117,8 +117,11 @@ const ZOTERO_KEY = "zotero-key";
 const ZOTERO_LIBRARY = "zotero-library";
 const CITEKEY = "citekey";
 
-// Same shape note-builder matches: a leading `---` block closed by `---` on its own line.
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/;
+// Same shape note-builder matches: a leading `---` block closed by `---` on its own line. Page notes
+// come from the user's template, which can hold an empty block (`---` right under `---`): its body
+// group is absent, and that is tried first (`??`), or the block would run on to the next `---` in
+// the body.
+const FRONTMATTER_RE = /^---\n(?:([\s\S]*?)\n)??---\n?/;
 
 /**
  * Local ISO 8601 to the minute (`2026-08-26T14:30`) -- Dataview-native, and same-day syncs still
@@ -301,7 +304,7 @@ export function applyFrontmatter(
 		return { content: `---\n${lines.join("\n")}\n---\n${content}`, ownTags: frontmatter.tags };
 	}
 
-	const lines = mergeZoteroKeys(mergeScalars(mergeTags(match[1].split("\n"), frontmatter.tags, previousOwnTags), frontmatter), frontmatter);
+	const lines = mergeZoteroKeys(mergeScalars(mergeTags(match[1]?.split("\n") ?? [], frontmatter.tags, previousOwnTags), frontmatter), frontmatter);
 	return {
 		content: `---\n${lines.join("\n")}\n---\n${content.slice(match[0].length)}`,
 		ownTags: frontmatter.tags,
@@ -319,7 +322,8 @@ export function applyFrontmatter(
  */
 export function removeFrontmatter(content: string, ownTags: string[]): string | null {
 	const match = content.match(FRONTMATTER_RE);
-	if (!match) return null;
+	// No block, or an empty one: nothing in it is the plugin's.
+	if (match?.[1] === undefined) return null;
 
 	let lines = mergeTags(match[1].split("\n"), [], ownTags);
 	lines = lines.filter((line) => ![...MANAGED_KEYS, ZOTERO_KEY, ZOTERO_LIBRARY].some((key) => line.startsWith(`${key}:`)));

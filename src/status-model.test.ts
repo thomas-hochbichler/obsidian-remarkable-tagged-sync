@@ -169,3 +169,15 @@ describe("outcomeStatus", () => {
 		}
 	});
 });
+
+describe("progressStatus while the Intelligence Engine extracts", () => {
+	it("counts the notebook's pages on its own, without the transcription bar", () => {
+		expect(progressStatus({ phase: "extracting", done: 2, total: 3, document: "Work log" }, false, 40)).toEqual({
+			state: "busy",
+			text: "Tagged Sync: extracting 2/3",
+			bar: null,
+			document: "Work log",
+			detail: "Work log\nextracting page 2 of 3",
+		});
+	});
+});

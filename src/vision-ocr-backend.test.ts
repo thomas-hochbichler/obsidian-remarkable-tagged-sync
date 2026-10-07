@@ -338,6 +338,23 @@ describe("VisionOcrBackend", () => {
 	 * The rescue pass and its trigger. Vision reports a confidence of 1.000 over plain misreads, so
 	 * "this writing has no observation over it" is the only signal that a line went missing at all.
 	 */
+	it("joins a line Vision split in two on one row, and nothing above, below or to the left", async () => {
+		const pageRead: VisionBatchResult = {
+			lines: ["Backup", "→ Anna", "Rollout", "plan", "Notes", "margin"],
+			boxes: [
+				{ x: 0, y: 0.9, w: 0.3, h: 0.05 },
+				{ x: 0.2, y: 0.905, w: 0.2, h: 0.05 }, // same row, right of Backup's middle
+				{ x: 0, y: 0.8, w: 0.3, h: 0.05 },
+				{ x: 0.1, y: 0.8, w: 0.2, h: 0.05 }, // same row, but starts left of Rollout's middle
+				{ x: 0, y: 0.7, w: 0.3, h: 0.05 },
+				{ x: 0.5, y: 0.62, w: 0.2, h: 0.05 }, // right, but a row lower
+			],
+		};
+		const { runBatch } = stubRunner([[pageRead]]);
+		const result = await new VisionOcrBackend({ runBatch, probe: available }).recognize([page()]);
+		expect(result.text).toBe("Backup → Anna\nRollout\nplan\nNotes\nmargin");
+	});
+
 	it("re-reads ink no observation covers and splices the line in where its writing sits", async () => {
 		// One observation over the lower line only: the upper line is ink with no text over it.
 		const pageRead: VisionBatchResult = { lines: ["lower"], boxes: [{ x: 0, y: 0, w: 1, h: 0.1 }] };

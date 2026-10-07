@@ -22,6 +22,7 @@ import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { OpenAiCompatOcrBackend } from "./openai-compat-ocr-backend";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { compatExtractionEntry, registerExtractionBackend } from "./intelligence/extraction-registry";
 
 /**
  * What the transcript looks like, in one sentence under the dropdown.
@@ -301,6 +302,8 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 
 // Registered after Vision and the managed local model, so they sit below both in the dropdown.
 for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
+	// The same server as an extraction backend (Intelligence Engine §6): same key, same URL, its own model.
+	registerExtractionBackend(compatExtractionEntry({ ...meta, resolve: (settings) => resolveProviderEndpoint(meta, settings) }));
 	registerOcrBackend({
 		id: meta.id,
 		label: meta.label,

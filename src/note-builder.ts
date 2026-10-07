@@ -503,7 +503,7 @@ export function buildNoteContent(fields: NoteFields, existingContent: string | n
  * "Occupies" is `store.exists`, not `store.read`: see the interface. A path this returns is one the
  * vault will actually accept, which is the whole difference.
  */
-async function resolveFreePath(store: NoteStore, folder: string, baseName: string, tag: string, docId: string): Promise<string> {
+export async function resolveFreePath(store: NoteStore, folder: string, baseName: string, tag: string, docId: string): Promise<string> {
 	const suffixes = ["", ` (${sanitizeFilenamePart(tag)})`, ` (${docId.slice(0, 6)})`];
 
 	for (const suffix of suffixes) {

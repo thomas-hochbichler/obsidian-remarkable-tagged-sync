@@ -12,6 +12,32 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **The Intelligence Engine: one Obsidian note per handwritten page, with its tasks and a summary.**
+  Switch on page notes for a tag, and every page you write from then on becomes a note built from
+  your own template. Tasks land as Tasks-plugin checkboxes with their due dates, a summary under its
+  own heading. When the page changes, the note is updated line by line, and nothing you edited in
+  Obsidian is overwritten: what the engine is unsure about waits for you under **Review proposals**,
+  one list over all notes. A tick on the page ticks the task in the note. Pages written before you
+  switched page notes on are left alone. Free runs on the local model on this computer, for one tag.
+
+- **With Tagged Sync Pro: your own slots, several profiles, and cloud models.** Build your own
+  things to take out of a page — expenses, open questions, a project — as lists, checklists with
+  typed fields, single values, or frontmatter properties and tags. Give a tag several profiles and
+  let a cloud model sort each page into the right one, or change the profile of one page by hand.
+
+- **Before you switch page notes on, update Tagged Sync on every device that shares this vault.**
+  An older version writes its settings without the page-note setup, and that would remove it on
+  every device.
+
+### Changed
+
+- **Apple Vision keeps a line in one piece.** Vision sometimes split one line of handwriting in two,
+  such as "Backup → Anna", and the transcript showed the halves on separate lines. Parts on the same
+  row are now joined again. On our reference pages the reading is exactly as accurate as before; on
+  real work pages, page notes find more of your tasks and invent fewer.
+
 ## [1.8.2] - 2026-09-27
 
 ### Fixed

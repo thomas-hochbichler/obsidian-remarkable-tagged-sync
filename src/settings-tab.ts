@@ -2,6 +2,7 @@ import {
 	type App,
 	apiVersion,
 	debounce,
+	moment,
 	Notice,
 	Platform,
 	PluginSettingTab,
@@ -36,6 +37,11 @@ import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-r
 import { zoteroProAllowed } from "./zotero-settings";
 import type { ZoteroGroup } from "./zotero-client";
 import { visionRunStats } from "./vision-ocr-backend";
+import { hostEnvironmentFor } from "./intelligence/host";
+import { intelligenceProAllowed } from "./intelligence/plugin-rules";
+import { type IntelligenceSettingsHost, renderIntelligenceSection, renderTagModes } from "./intelligence/settings-section";
+import { settingsHostFor } from "./intelligence/settings-host";
+import { createNoteStore } from "./vault-stores";
 
 /**
  * The settings screen, whole.
@@ -110,6 +116,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		}
 		this.renderVaultOutput(containerEl);
 		this.renderOcrSettings(containerEl);
+		renderIntelligenceSection(containerEl, this.intelligence());
 		this.renderAutoSyncSettings(containerEl);
 		this.renderZotero(containerEl);
 		this.renderPro(containerEl);
@@ -989,6 +996,18 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		}
 	}
 
+	/** The Intelligence settings' footing: the settings block, this device, the vault's templates. */
+	private intelligence(): IntelligenceSettingsHost {
+		return settingsHostFor({
+			env: hostEnvironmentFor(this.app, this.plugin.manifest, createNoteStore(this.app), moment),
+			data: this.plugin.data,
+			pro: intelligenceProAllowed(this.plugin.entitlement()),
+			save: () => this.plugin.saveData(this.plugin.data),
+			redraw: () => this.display(),
+			confirm: (title, text, cta) => confirmDialog(this.app, title, text, cta),
+		});
+	}
+
 	private renderTagRouting(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Tag routing").setHeading();
 
@@ -1035,6 +1054,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			await this.plugin.saveData(this.plugin.data);
 			this.display();
 		};
+		const intelligence = this.intelligence();
 
 		for (const item of view.items) {
 			if (item.kind === "notice") {
@@ -1068,6 +1088,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				});
 			});
 			if (item.kind !== "mapped") continue;
+			// Transcript note, page notes, Profile: what this mapping produces (Intelligence Engine §10).
+			renderTagModes(row, item.tag, intelligence);
 			row.addButton((button) => {
 				button.setButtonText("Remove").onClick(async () => {
 					delete mapping[item.tag];

@@ -123,6 +123,17 @@ describe("migrateSettings", () => {
 			marginNotes: true,
 			frontmatter: true,
 			licence: { ...NO_LICENCE, key: "k", activationId: "a", validatedAt: "2026-08-01T00:00:00.000Z" },
+			intelligence: {
+				mappings: { "#work": { transcript: false, intelligence: true, profiles: ["meetings"], enabledAt: "2026-09-28T10:00:00.000Z", firstEnabledAt: "2026-09-20T10:00:00.000Z" } },
+				profiles: [{ id: "meetings", name: "Meetings", description: "Meeting notes", template: "Templates/Meeting.md", slots: ["tasks", "summary"] }],
+				slots: [{ id: "tasks", name: "Tasks", shape: "checklist", instruction: "Mine only", examples: [], fields: [], itemFormat: "- [ ] {{text}}", review: false }],
+				backend: "openrouter",
+				model: "anthropic/claude-sonnet-5",
+				engineDeviceId: "device-1",
+				autoExtractMetered: true,
+				autoExtractLocal: false,
+				saidOnce: ["local-classifier"],
+			},
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);
 	});
