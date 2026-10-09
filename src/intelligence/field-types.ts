@@ -71,6 +71,7 @@ function nearerHeading(anchor: string, source: string | null, ctx: FieldContext)
  * page they count from, such as the day heading the daily-log entry the task stands in -- and gives
  * both as dates too. Code then decides:
  *
+ * - the due words count only when they stand in the item's own words on the page;
  * - the anchor counts only when it stands on the page above the item's words, with no nearer date
  *   heading between them; a small model writes a date it computed instead of copying one, or takes the
  *   entry before, and that check is what catches it;
@@ -87,6 +88,9 @@ function resolveDate(raw: unknown, ctx: FieldContext): string | null {
 	// date as the due date (end-to-end run, 2026-10-09).
 	const words = given(r.words);
 	if (words === null) return null;
+	// The words have to be the item's own: "Jause" under "Für den Ausflug einpacken:" took "Fr. 18.10."
+	// from the trip's line above, a guess at a deadline the page never gave it (live test, 2026-10-09).
+	if (ctx.source !== null && positionIn(words, ctx.source) === -1) return null;
 	const modelDate = isoOf(r.date);
 
 	const anchor = given(r.anchor);

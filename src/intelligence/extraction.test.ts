@@ -83,7 +83,7 @@ describe("parseExtraction", () => {
 	});
 
 	it("resolves due dates against the date written on the page when there is one", () => {
-		const result = parseExtraction({ [PAGE_DATE_KEY]: "Di 22.9.", tasks: [{ source: "s", reason: "", id: "new", text: "t", due: { words: "morgen", rel: "tomorrow" }, done: false }] }, [TASKS], MON)!;
+		const result = parseExtraction({ [PAGE_DATE_KEY]: "Di 22.9.", tasks: [{ source: "t morgen", reason: "", id: "new", text: "t", due: { words: "morgen", anchor: null, anchor_date: null, date: null }, done: false }] }, [TASKS], MON)!;
 		expect(isoDay(result.writtenDate!)).toBe("2026-09-22");
 		expect(result.slots.tasks).toMatchObject({ items: [{ fields: { due: "2026-09-23" } }] });
 	});

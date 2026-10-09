@@ -78,7 +78,7 @@ describe("FIELD_TYPES", () => {
 		expect(due({ words: "bis Fr" }, { ...page, writtenSpanDays: 5 })).toEqual(["2026-10-16", true]);
 		expect(due({ words: "bis Fr" }, { ...page, writtenSpanDays: null })).toEqual(["2026-10-16", false]);
 		// A date of its own needs nothing to count from.
-		expect(due({ words: "bis 20.10." }, { ...page, writtenSpanDays: 5 })).toEqual(["2026-10-20", false]);
+		expect(due({ words: "bis 20.10." }, { ...page, transcript: "Einkauf\nbis 20.10. Paket abholen", source: "bis 20.10. Paket abholen", writtenSpanDays: 5 })).toEqual(["2026-10-20", false]);
 	});
 
 	it("reads a slashed anchor month first when the user writes dates that way", () => {
@@ -91,6 +91,9 @@ describe("FIELD_TYPES", () => {
 		expect(due({ words: 3 })).toEqual([null, false]);
 		expect(due({ words: "irgendwann", date: "2026-10-30" })).toEqual([null, false]);
 		expect(due({ words: " none ", date: null })).toEqual([null, false]);
+		// Words from another line are a guess at a deadline: "Jause" took the trip's date from the line above.
+		const trip = "Ausflug Tierpark Fr. 18.10.\nFür den Ausflug einpacken:\n- Jause";
+		expect(due({ words: "Fr. 18.10.", date: "2026-10-18" }, { transcript: trip, source: "Jause" })).toEqual([null, false]);
 		// A date with no words behind it is made up: the 8B model gave the anchor's own date.
 		expect(due({ words: "NONE", anchor: "02/10/2026", date: "2026-10-02" })).toEqual([null, false]);
 	});

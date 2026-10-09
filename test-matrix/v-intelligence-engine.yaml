@@ -1040,7 +1040,7 @@
       test: "FIELD_TYPES > reads a slashed anchor month first when the user writes dates that way"
 
     - id: V10.4f
-      scenario: "No date object, junk words, irgendwann, NONE"
+      scenario: "No date object, junk words, irgendwann, NONE, due words from another line than the item's"
       expect: "No date"
       layer: unit
       file: src/intelligence/field-types.test.ts
