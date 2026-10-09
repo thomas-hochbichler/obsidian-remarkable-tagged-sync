@@ -60,6 +60,7 @@ export async function changeProfile(env: HostEnvironment, run: RunInputs, index:
 			formatDate: deps.formatDate,
 			formatTime: deps.formatTime,
 			newId: deps.newId,
+			dateOrder: deps.dateOrder,
 		});
 		if (outcome.kind === "failed") return { message: `Extraction failed: ${outcome.reason}` };
 

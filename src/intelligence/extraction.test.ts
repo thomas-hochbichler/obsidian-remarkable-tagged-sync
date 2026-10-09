@@ -43,6 +43,12 @@ describe("buildPrompt", () => {
 		expect(system).toMatch(/recognition errors/);
 		// The summary came back in English for a German page (live test, 2026-10-09).
 		expect(system).toMatch(/in the language the page is written in/);
+		// A Slot with a date Field brings the anchor rule and a calendar; a Profile's own words on dates come along.
+		expect(user).toContain("find its anchor");
+		expect(user).toContain("Mon 2026-09-28");
+		expect(user).not.toContain("About dates on these pages");
+		expect(buildPrompt({ profile: { ...genericProfile(false), dates: "Each entry starts with its date." }, slots: [TASKS], transcript: "x", referenceDate: MON, known: {} }).user).toContain("About dates on these pages, from the user: Each entry starts with its date.");
+		expect(buildPrompt({ profile: genericProfile(false), slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {} }).user).not.toContain("## Due dates");
 		expect(user).toContain("Page type: Work meeting notes");
 		expect(user).toContain("Monday, 2026-09-28");
 		expect(user).toContain('Example: "call Bob" → Call Bob');
@@ -82,15 +88,22 @@ describe("parseExtraction", () => {
 		expect(result.slots.tasks).toMatchObject({ items: [{ fields: { due: "2026-09-23" } }] });
 	});
 
-	// Live test, 2026-10-09: the model took the heading's date for an event's and gave none, so "bis Mo"
-	// counted from the day the page was first seen, Friday 2 October, and landed on the 5th.
-	it("takes a date in the page's first line as the page's date, before what the model read", () => {
-		const page = "\nElternabend 3b - 10.10.\n\nFormular Ausflug unterschreiben bis Mo";
-		const task = { source: "Formular Ausflug unterschreiben bis Mo", reason: "", id: "new", text: "Formular Ausflug unterschreiben", due: { words: "bis Mo", rel: "this-week" }, done: false };
+	// Live test, 2026-10-09: "Elternabend 3b - 10.10." heads page 5, but names the evening, not the day the
+	// page was written. Without an anchor, "bis Mo" counts from the day the page was first seen.
+	it("reads no date off the first line by itself: a heading's date is an anchor only when the model copies it as one", () => {
+		const page = "Elternabend 3b - 10.10.\nFormular Ausflug unterschreiben bis Mo";
+		const task = { source: "Formular Ausflug unterschreiben bis Mo", reason: "", id: "new", text: "Formular Ausflug unterschreiben", due: { words: "bis Mo", anchor: null, anchor_date: null, date: "2026-10-05" }, done: false };
 		const result = parseExtraction({ [PAGE_DATE_KEY]: null, tasks: [task] }, [TASKS], calendarDay(2026, 9, 2), page)!;
-		expect(isoDay(result.writtenDate!)).toBe("2026-10-10");
-		expect(result.slots.tasks).toMatchObject({ items: [{ fields: { due: "2026-10-12" } }] });
-		expect(isoDay(parseExtraction({ [PAGE_DATE_KEY]: "Di 22.9." }, [TASKS], MON, "Einkauf\nDi 22.9.")!.writtenDate!)).toBe("2026-09-22");
+		expect(result.writtenDate).toBeNull();
+		expect(result.slots.tasks).toMatchObject({ items: [{ fields: { due: "2026-10-05" } }] });
+	});
+
+	it("marks an item unsure when its due date could not be anchored, and only then", () => {
+		const page = "02/10/2026\nbis FR Rechnung erstellen";
+		const item = (anchor: string) => ({ source: "bis FR Rechnung erstellen", reason: "", id: "new", text: "Rechnung erstellen", due: { words: "bis FR", anchor, anchor_date: "2026-10-02", date: "2026-10-09" }, done: false });
+		const read = (anchor: string) => (parseExtraction({ tasks: [item(anchor)] }, [TASKS], calendarDay(2026, 9, 21), page)!.slots.tasks as { items: { unsure?: true }[] }).items[0];
+		expect(read("02/10/2026").unsure).toBeUndefined();
+		expect(read("2026-10-02").unsure).toBe(true);
 	});
 
 	it("drops 'none' items and junk, and reads a missing Slot as empty", () => {

@@ -229,6 +229,16 @@ export function renderIntelligenceSection(containerEl: HTMLElement, host: Intell
 		.setDesc("Off: the local model extracts only in a sync you start, so it never runs unattended.")
 		.addToggle((toggle) => toggle.setValue(settings.autoExtractLocal).onChange(async (on) => withSettings(host, (s) => ({ ...s, autoExtractLocal: on }))));
 
+	new Setting(containerEl)
+		.setName("Dates with slashes")
+		.setDesc("How you write a date like 02/10 on your pages, for due dates.")
+		.addDropdown((dropdown) =>
+			dropdown
+				.addOptions({ auto: "As Obsidian's language does", dmy: "Day first (02/10 = 2 October)", mdy: "Month first (02/10 = February 10)" })
+				.setValue(settings.dateOrder)
+				.onChange(async (order) => withSettings(host, (s) => ({ ...s, dateOrder: order as IntelligenceSettings["dateOrder"] }))),
+		);
+
 	renderProfiles(containerEl, host);
 	renderSlots(containerEl, host);
 }
@@ -328,6 +338,16 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 				const path = await host.createTemplate(`${folder === "" ? "" : `${folder}/`}${now.name}.md`, starterTemplate(slots));
 				await withSettings(host, edit({ template: path }));
 			}),
+		);
+	// Research 33: big models find what a due date counts from on their own; this helps the rest.
+	new Setting(containerEl)
+		.setName("Dates on these pages")
+		.setDesc("Optional. How dates work on these pages, in your words; the model reads it before it works out a due date.")
+		.addTextArea((text) =>
+			text
+				.setValue(profile.dates ?? "")
+				.setPlaceholder("Each entry starts with its date, day first. Tasks count from the date of their entry.")
+				.onChange(async (dates) => typed(host, edit({ dates: dates.trim() === "" ? undefined : dates }))),
 		);
 	new Setting(containerEl).setName("Fills").setHeading();
 	// A small model loses tasks when asked for many things at once (research 15): warned, never refused.

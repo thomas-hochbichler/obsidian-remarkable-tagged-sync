@@ -4,7 +4,7 @@ import { createBaseStore, type BaseFiles } from "./base-store";
 import type { ExtractionBackend } from "./extraction-backend";
 import { parseExtraction } from "./extraction";
 import { defaultSlots, emptyIntelligence, setIntelligenceMode, type IntelligenceSettings } from "./settings";
-import { completeScans, type DocPage, followRetargets, type IntelligenceDocument, type IntelligencePassDeps, type IntelligenceState, processDocument, sweepDeletedDocuments } from "./sync-pass";
+import { completeScans, type DocPage, followRetargets, type IntelligenceDocument, type IntelligencePassDeps, type IntelligenceState, processDocument, sweepDeletedDocuments, writtenSpanDays } from "./sync-pass";
 
 const ENABLED = new Date("2026-09-28T08:00:00.000Z");
 const BEFORE = ENABLED.getTime() - 86_400_000;
@@ -98,12 +98,12 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		});
 		expect((await processDocument(deps(mem), doc(pages, { p3: "todo Call" }), state)).notices).toEqual([]);
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work", "d1:p2:work", "d1:p3:work"]);
-		expect(state.seenPages["d1:p1:work"]).toEqual({ scope: "notebook", pageHash: "h1", firstSeen: BEFORE });
+		expect(state.seenPages["d1:p1:work"]).toEqual({ scope: "notebook", pageHash: "h1", firstSeen: BEFORE, modified: BEFORE });
 		const path = "Work/Work log/Work log p3.md";
 		expect(mem.notes.get(path)).toContain("## Tasks\n- [ ] Call\n");
 		expect(mem.notes.get(path)).toContain("[[attachments/d1-p3.pdf|Page 3]]");
 		expect(state.rows["d1:p3:work"]).toMatchObject({ notePath: path, folder: "Work", status: "active", noteId: "note1", profileId: "generic", scope: "notebook" });
-		expect(state.seenPages["d1:p3:work"]).toEqual({ scope: "notebook", pageHash: "h3", firstSeen: AFTER, noteId: "note1" });
+		expect(state.seenPages["d1:p3:work"]).toEqual({ scope: "notebook", pageHash: "h3", firstSeen: AFTER, noteId: "note1", modified: AFTER });
 		expect(mem.bases.has("plugin/base/note1.json")).toBe(true);
 		expect(report.usedSlots).toEqual(["tasks", "summary"]);
 	});
@@ -191,7 +191,7 @@ describe("processDocument > after the scan", () => {
 		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: ENABLED.toISOString() } };
 		const report = await processDocument(deps(mem), doc([page("p9", 9, "h9", BEFORE)], { p9: "todo Old" }), state);
 		expect(report.notesWritten).toBe(0);
-		expect(state.seenPages["d1:p9:work"]).toEqual({ scope: "notebook", pageHash: "h9", firstSeen: BEFORE });
+		expect(state.seenPages["d1:p9:work"]).toEqual({ scope: "notebook", pageHash: "h9", firstSeen: BEFORE, modified: BEFORE });
 	});
 
 	it("names a legacy notebook once, when its pages are first recorded", async () => {
@@ -605,5 +605,18 @@ describe("completeScans and sweepDeletedDocuments", () => {
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work"]);
 		expect(state.rows["d2:p1:work"].status).toBe("orphaned");
 		expect(state.rows["d3:p1:work"].status).toBe("orphaned");
+	});
+});
+
+describe("writtenSpanDays", () => {
+	const DAY = 86_400_000;
+	const seen = (modified?: number | null) => ({ scope: "notebook" as const, pageHash: "h", firstSeen: 0, ...(modified === undefined ? {} : { modified }) });
+	it("spans from the last version's change on the device to this one, else from the previous sync", () => {
+		expect(writtenSpanDays(seen(10 * DAY), 13 * DAY, 1 * DAY)).toBe(3);
+		expect(writtenSpanDays(undefined, 13 * DAY, 12.5 * DAY)).toBe(0.5);
+		// An entry older than the field, or a page the engine never recorded: the previous sync bounds it.
+		expect(writtenSpanDays(seen(), 13 * DAY, 9 * DAY)).toBe(4);
+		expect(writtenSpanDays(undefined, 13 * DAY, null)).toBeNull();
+		expect(writtenSpanDays(seen(10 * DAY), null, 1 * DAY)).toBeNull();
 	});
 });

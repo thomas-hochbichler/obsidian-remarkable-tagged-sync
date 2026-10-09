@@ -37,6 +37,15 @@ describe("mergeList > first extraction", () => {
 		expect(result.ops).toEqual([{ kind: "insert", text: "Call Bob", fields: { due: "Friday" }, done: false }]);
 		expect(result.base.items).toEqual([item("n1", "Call Bob", "call Bob re invoice", { fields: { due: "Friday" } })]);
 	});
+
+	// A due date that could not be anchored (research 33) is asked about, even on the first extraction.
+	it("proposes an unsure item instead of writing it, review on or off", () => {
+		for (const review of [true, false]) {
+			const result = mergeList({ base: null, note: [], model: [said(null, "Buy milk", "buy milk"), said(null, "Call Bob", "call Bob re invoice", { fields: { due: "2026-10-02" }, unsure: true })], transcript: PAGE, review, newId: ids() });
+			expect(result.ops).toEqual([{ kind: "insert", text: "Buy milk", fields: {}, done: false }]);
+			expect(result.base.proposals).toEqual([{ kind: "add", id: "n2", text: "Call Bob", fields: { due: "2026-10-02" }, source: "call Bob re invoice", done: false }]);
+		}
+	});
 });
 
 describe("mergeList > the page did not change behind an item", () => {
@@ -77,6 +86,13 @@ describe("mergeList > the ink behind an item changed", () => {
 		const result = mergeList({ base: base(), note: [line("Call Bob", " ", { due: "Monday" })], model, transcript: PAGE, review: false, newId: ids() });
 		expect(result.ops).toEqual([{ kind: "update", line: 0, text: "Call Bob", fields: { due: "Friday" } }]);
 		expect(result.base.items[0]).toMatchObject({ fields: { due: "Friday" }, source: "call Bob re invoice by Friday" });
+	});
+
+	it("proposes it with review off when the new field is unsure", () => {
+		const unsure = model.map((m) => ({ ...m, unsure: true as const }));
+		const result = mergeList({ base: base(), note: [line("Call Bob", " ", { due: "Monday" })], model: unsure, transcript: PAGE, review: false, newId: ids() });
+		expect(result.ops).toEqual([]);
+		expect(result.base.proposals).toMatchObject([{ kind: "change", fields: { due: "Friday" } }]);
 	});
 
 	it("proposes it even with review off when the user edited that line", () => {
@@ -215,6 +231,12 @@ describe("mergeList > new items", () => {
 		]);
 		const off = mergeList({ base: baseOf(), note: [], model, transcript: PAGE, review: false, newId: ids() });
 		expect(off.ops).toEqual([{ kind: "insert", text: "Buy milk", fields: {}, done: false }]);
+	});
+
+	it("proposes an unsure new item with review off", () => {
+		const result = mergeList({ base: baseOf(), note: [], model: [said(null, "Buy milk", "buy milk", { unsure: true })], transcript: PAGE, review: false, newId: ids() });
+		expect(result.ops).toEqual([]);
+		expect(result.base.proposals).toEqual([{ kind: "add", id: "n1", text: "Buy milk", fields: {}, source: "buy milk", done: false }]);
 	});
 
 	it("keeps one pending proposal across syncs instead of piling up copies", () => {

@@ -10,7 +10,7 @@ import { type BaseItem } from "./merge";
 import { NO_FAILURES, BASE_VERSION, foreignLines, type ListSlotBase, type PageBase, type SlotBase, type ValueSlotBase } from "./base-store";
 import { type PropertyValue, readProperty, writeProperty } from "./frontmatter-values";
 import { mergeTagList, mergeValue } from "./value-merge";
-import { calendarDay, isoDay } from "./dates";
+import { calendarDay, type DateOrder, isoDay } from "./dates";
 import type { ExtractionBackend } from "./extraction-backend";
 import type { ExtractionResult, SlotResult } from "./extraction";
 import { compileItemFormat, type ItemFormat } from "./item-format";
@@ -27,6 +27,11 @@ export interface ExtractionUnit {
 	transcript: string;
 	/** The page's frozen first-seen `modifed`, epoch ms; null when the page had none. */
 	firstSeen: number | null;
+	/**
+	 * Days between the page's last version seen and its change now, its new writing somewhere in
+	 * between; null or absent when not known. See `FieldContext.writtenSpanDays`.
+	 */
+	writtenSpanDays?: number | null;
 }
 
 export interface PageRun {
@@ -51,6 +56,8 @@ export interface PageRun {
 	formatDate: (format: string | null) => string;
 	formatTime: (format: string | null) => string;
 	newId: () => string;
+	/** How the user writes dates with slashes; day/month when absent. */
+	dateOrder?: DateOrder;
 }
 
 export type PageOutcome =
@@ -132,7 +139,7 @@ function createSlotBase(slot: SlotDef, heading: Heading, got: SlotResult, transc
 	}
 	const merged = mergeList({ base: null, note: [], model: itemsOf(got), transcript, review: slot.review, newId: run.newId });
 	const base: ListSlotBase = { shape: slot.shape, heading, itemFormat: slot.itemFormat, list: merged.base };
-	return { base, body: renderItems(compileItemFormat(slot.itemFormat), merged.base.items), proposals: 0 };
+	return { base, body: renderItems(compileItemFormat(slot.itemFormat), merged.base.items), proposals: merged.base.proposals.length };
 }
 
 /**
@@ -169,7 +176,8 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 	const previous = run.base ?? freshBase(run);
 	const runSlots = run.slots;
 
-	const outcome = await run.backend.extract({ profile: run.profile, slots: runSlots, transcript: run.unit.transcript, referenceDate, known: knownItems(run.base) });
+	const dates = { order: run.dateOrder ?? "dmy", writtenSpanDays: run.unit.writtenSpanDays ?? null, userRules: (run.profile.dates ?? "").trim() !== "" } as const;
+	const outcome = await run.backend.extract({ profile: run.profile, slots: runSlots, transcript: run.unit.transcript, referenceDate, known: knownItems(run.base), dates });
 	if (outcome.kind === "failed") {
 		const sameHash = previous.extraction.failedHash === run.unit.pageHash;
 		const attempts = (sameHash ? previous.extraction.attempts : 0) + 1;
@@ -306,11 +314,13 @@ function create(run: PageRun, runSlots: readonly SlotDef[], result: ExtractionRe
 		else settled.push(slot.id);
 	}
 	let lines = renderTemplate(template, { ts, title: run.title, formatDate: run.formatDate, formatTime: run.formatTime }).split("\n");
-	// Only a first pick held back for review is pending on a new note; its region says so from the start.
+	// Pending on a new note: a first pick held back for review, or an item whose due date is not sure.
+	// Its region says so from the start.
 	for (const slot of Object.values(slots)) {
 		if (pendingCount(slot) === 0) continue;
 		const heading = headingOf(slot)!;
-		lines = setProposalCallout(lines, findRegion(lines, heading, compileItemFormat("- {{text}}"))!, pendingCount(slot), run.reviewLink);
+		const format = "list" in slot ? compileItemFormat(slot.itemFormat) : compileItemFormat("- {{text}}");
+		lines = setProposalCallout(lines, findRegion(lines, heading, format)!, pendingCount(slot), run.reviewLink);
 	}
 	const content = mergeProperties(lines.join("\n"), runSlots, results, slots, run);
 	const base: PageBase = { ...freshBase(run), transcript, slots, settled, outside: foreignLines(slots, content.split("\n")) };

@@ -277,9 +277,11 @@ describe("hostEnvironmentFor", () => {
 			},
 		};
 		const store = env().noteStore;
-		const e = hostEnvironmentFor(app, { id: "remarkable-tagged-sync" }, store, () => ({ format: (f) => `now(${f})` }));
+		const e = hostEnvironmentFor(app, { id: "remarkable-tagged-sync" }, store, Object.assign(() => ({ format: (f: string) => `now(${f})` }), { localeData: () => ({ longDateFormat: () => "MM/DD/YYYY" }) }));
 		expect(e.pluginDir).toBe(".obsidian/plugins/remarkable-tagged-sync");
-		expect(hostEnvironmentFor(app, { id: "x", dir: "custom/dir" }, store, () => ({ format: () => "" })).pluginDir).toBe("custom/dir");
+		// Obsidian's language decides the order of a slashed date when the setting says "auto".
+		expect(e.localeDateOrder?.()).toBe("mdy");
+		expect(hostEnvironmentFor(app, { id: "x", dir: "custom/dir" }, store, Object.assign(() => ({ format: () => "" }), { localeData: () => ({ longDateFormat: () => "DD.MM.YYYY" }) })).pluginDir).toBe("custom/dir");
 		expect([await e.readVaultNote("T.md"), await e.readVaultNote("Folder"), await e.readVaultNote("gone.md")]).toEqual(["template text", null, null]);
 		await e.createNote("Work/p1.md", "body");
 		expect(created).toEqual(["Work/p1.md=body"]);

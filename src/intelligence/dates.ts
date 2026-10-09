@@ -104,10 +104,18 @@ function withYear(year: string, month: number, day: number): Date | null {
 	return date.getUTCMonth() === month ? date : null;
 }
 
-/** An absolute date in the words: ISO, `dd.mm.(yy)yy`, or a day with a month name. */
-function absolute(text: string, ref: Date, bias: 1 | -1): Date | null {
+/** How the device's owner writes a date with slashes: `02/10` is 2 October ("dmy") or February 10 ("mdy"). */
+export type DateOrder = "dmy" | "mdy";
+
+/** An absolute date in the words: ISO, `dd/mm` or `mm/dd` by `order`, `dd.mm.(yy)yy`, or a day with a month name. */
+function absolute(text: string, ref: Date, bias: 1 | -1, order: DateOrder = "dmy"): Date | null {
 	const iso = /(\d{4})-(\d{2})-(\d{2})/.exec(text);
 	if (iso) return withYear(iso[1], Number(iso[2]) - 1, Number(iso[3]));
+	const slashed = /(?:^|[^\d/])(\d{1,2})\/(\d{1,2})(?:\/(\d{4}|\d{2}(?!\d)))?(?![\d/])/.exec(text);
+	if (slashed) {
+		const [day, month] = order === "mdy" ? [Number(slashed[2]), Number(slashed[1])] : [Number(slashed[1]), Number(slashed[2])];
+		return slashed[3] ? withYear(slashed[3], month - 1, day) : nearestYear(month - 1, day, ref, bias);
+	}
 	const dotted = /(?:^|[^\d])(\d{1,2})\.(\d{1,2})(?:\.(\d{4}|\d{2}(?!\d))?)?(?![\d.])/.exec(text);
 	if (dotted) return dotted[3] ? withYear(dotted[3], Number(dotted[2]) - 1, Number(dotted[1])) : nearestYear(Number(dotted[2]) - 1, Number(dotted[1]), ref, bias);
 	for (const locale of Object.values(DATE_LOCALES)) {
@@ -202,8 +210,24 @@ export function resolveDue(words: string | null, rel: DateRel | null, pageDate: 
 	return fallback ? isoDay(fallback) : null;
 }
 
-/** The date written on the page ("Mo 28.9."), read against the page's first-seen or sync time. Absolute dates only. */
-export function resolveWrittenDate(words: string | null, ref: Date): Date | null {
+/** The date written on the page ("Mo 28.9.", "02/10/2026"), read against the page's first-seen or sync time. Absolute dates only. */
+export function resolveWrittenDate(words: string | null, ref: Date, order: DateOrder = "dmy"): Date | null {
 	const text = (words ?? "").toLowerCase().trim();
-	return text === "" ? null : absolute(text, ref, -1);
+	return text === "" ? null : absolute(text, ref, -1, order);
+}
+
+/**
+ * Due words read by the tables, counted from `from` (the item's anchor, else the page's date): the
+ * date, null when they name no day ("irgendwann"), undefined when no table reads them -- then the
+ * model's own date is all there is.
+ */
+export function readDue(words: string, from: Date, order: DateOrder): Date | null | undefined {
+	const text = words.toLowerCase().trim();
+	if (text === "") return null;
+	return absolute(text, from, 1, order) ?? relative(text, from);
+}
+
+/** Whether the words name a day of their own (a date, not "bis Fr"): such a day needs no anchor to be right. */
+export function namesOwnDay(words: string, ref: Date, order: DateOrder): boolean {
+	return /\d/.test(words) && absolute(words.toLowerCase(), ref, 1, order) !== null;
 }

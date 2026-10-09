@@ -269,6 +269,15 @@ describe("renderIntelligenceSection", () => {
 		expect([h.settings().autoExtractMetered, h.settings().autoExtractLocal]).toEqual([true, true]);
 	});
 
+	it("sets how slashed dates are written, following Obsidian's language until told otherwise", async () => {
+		const h = host(emptyIntelligence(), true);
+		const row = named(section(h), "Dates with slashes");
+		expect(row.dropdowns[0].value).toBe("auto");
+		row.dropdowns[0].pick("mdy");
+		await flush();
+		expect(h.settings().dateOrder).toBe("mdy");
+	});
+
 	it("adds one Profile without Pro and more with it, each with a name of its own, and opens it", async () => {
 		const h = host(setIntelligenceMode(emptyIntelligence(), "work", true, new Date()), false);
 		named(section(h), "Add a profile").buttons[0].click();
@@ -344,6 +353,12 @@ describe("renderIntelligenceSection", () => {
 		named(editor, "Template").texts[0].type("");
 		await flush();
 		expect(h.settings().profiles[0].template).toBeNull();
+		named(editor, "Dates on these pages").texts[0].type("Each entry starts with its date.");
+		await flush();
+		expect(h.settings().profiles[0].dates).toBe("Each entry starts with its date.");
+		named(editor, "Dates on these pages").texts[0].type("  ");
+		await flush();
+		expect(h.settings().profiles[0]).not.toHaveProperty("dates", expect.anything());
 
 		named(profileEditor(h, "a"), "Template").buttons[0].click();
 		await flush();

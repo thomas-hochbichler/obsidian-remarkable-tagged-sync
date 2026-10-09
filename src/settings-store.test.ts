@@ -134,6 +134,7 @@ describe("migrateSettings", () => {
 				autoExtractMetered: true,
 				autoExtractLocal: false,
 				saidOnce: ["local-classifier"],
+				dateOrder: "mdy",
 			},
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);

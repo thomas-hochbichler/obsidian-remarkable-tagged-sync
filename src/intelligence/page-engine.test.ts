@@ -15,7 +15,7 @@ function backend(answer: Record<string, unknown>, seen: ExtractionInput[] = []):
 		async extract(input) {
 			seen.push(input);
 			const { parseExtraction } = await import("./extraction");
-			return { kind: "ok", result: parseExtraction(answer, input.slots, input.referenceDate)! };
+			return { kind: "ok", result: parseExtraction(answer, input.slots, input.referenceDate, input.transcript, input.dates)! };
 		},
 	};
 }
@@ -62,6 +62,18 @@ describe("processPage > a new note", () => {
 		// The fingerprint is the template's own lines, and the note as written reads as untouched, date field included.
 		expect(out.base.outside).toBe("# Work p1\nWritten: 2026-09-28 · seen 2026-09-28 · synced 2026-09-29\n## Page\n[[p1.png|Page 1]]");
 		expect(uneditedSinceBase(out.base, out.content!.split("\n"))).toBe(true);
+	});
+
+	// Research 33: a due date the model could not anchor on the page is asked about, on a new note too.
+	it("proposes a task whose due date has no anchor on the page, and says so in its region", async () => {
+		const unsure = task("Call Bob", "call Bob by Friday", { due: { words: "by Friday", anchor: "2026-09-28", anchor_date: "2026-09-28", date: "2026-10-02" } });
+		const seen: ExtractionInput[] = [];
+		const out = await processPage(run({ backend: backend({ page_date_text: "Mo 28.9.", tasks: [unsure], summary: "Met Bob." }, seen), unit: { key: "doc:p1:work", pageHash: "h1", transcript: PAGE, firstSeen: new Date(2026, 8, 28, 9).getTime(), writtenSpanDays: 3 }, dateOrder: "mdy" }));
+		if (out.kind !== "written") throw new Error(out.kind);
+		expect(out.proposals).toBe(1);
+		expect(out.content).toContain("## Tasks\n> [!todo] 1 proposal — [Review](obsidian://review)\n");
+		expect(out.content).not.toContain("Call Bob");
+		expect(seen[0].dates).toEqual({ order: "mdy", writtenSpanDays: 3, userRules: false });
 	});
 
 	it("gives a Slot the template does not place its own heading at the end, and settles one filled inline", async () => {

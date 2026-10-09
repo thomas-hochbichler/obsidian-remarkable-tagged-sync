@@ -14,6 +14,11 @@ export interface SeenEntry {
 	firstSeen: number | null;
 	/** Names the base file; minted at the first extraction attempt. */
 	noteId?: string;
+	/**
+	 * The page's `modifed` when `pageHash` was recorded: the next change's new writing happened after
+	 * it, which bounds when a due date without an anchor was written. Absent on entries older than it.
+	 */
+	modified?: number | null;
 }
 
 export type UnitClass = "new" | "changed" | "unchanged" | "old";

@@ -11,6 +11,7 @@
 import { applyFrontmatter, formatLocalMinute, type NoteFrontmatter } from "../frontmatter";
 import { blockHashOf, type NoteStore, resolveFreePath, sanitizeFilenamePart } from "../note-builder";
 import type { BaseStore, PageBase } from "./base-store";
+import type { DateOrder } from "./dates";
 import { rebuildBase } from "./base-store";
 import type { ExtractionBackend } from "./extraction-backend";
 import { compileItemFormat } from "./item-format";
@@ -109,6 +110,10 @@ export interface IntelligencePassDeps {
 	formatDate: (format: string | null) => string;
 	formatTime: (format: string | null) => string;
 	reviewLink: string;
+	/** How the user writes dates with slashes; day/month when absent. */
+	dateOrder?: DateOrder;
+	/** When the last sync ran, epoch ms: the earliest a page new in this one can have been written. */
+	previousSyncAt?: number | null;
 }
 
 export interface PassReport {
@@ -236,7 +241,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 			// while the mode was off count as old. A page written after it is left to the two questions.
 			if (scanDue && !options.force?.has(key) && switchOnStamp(page.modified, enabledAt)) {
 				if (seen?.pageHash !== page.hash && state.rows[key]?.status !== "active") leftAlone++;
-				seen = { ...seen, scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified };
+				seen = { ...seen, scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified, modified: page.modified };
 				state.seenPages[key] = seen;
 				continue;
 			}
@@ -245,7 +250,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 			if (kind === "old") {
 				if (doc.legacy) legacyRecorded = true;
 				else leftAlone++;
-				state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: page.modified };
+				state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: page.modified, modified: page.modified };
 			} else if (kind !== "unchanged") {
 				work.push({ unit, page, key, seen });
 			} else {
@@ -298,6 +303,18 @@ interface WorkItem {
 	kept?: string | null;
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * How many days the page's new writing may span: from its last version's change -- or, for a page the
+ * engine meets for the first time, from the previous sync -- to its change now. A due date with no
+ * anchor on the page is sure only when that is a day or less.
+ */
+export function writtenSpanDays(seen: SeenEntry | undefined, modified: number | null, previousSyncAt: number | null): number | null {
+	const since = seen?.pageHash != null && seen.modified != null ? seen.modified : previousSyncAt;
+	return modified === null || since === null ? null : Math.max(0, modified - since) / DAY_MS;
+}
+
 async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState, report: PassReport, { unit, page, key, seen, kept }: WorkItem, texts: Map<string, string>): Promise<void> {
 	const row = state.rows[key];
 	const noteText = row ? await deps.noteStore.read(row.notePath) : null;
@@ -308,7 +325,7 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 	const firstTry = row !== undefined && seen?.noteId === row.noteId;
 	const noteId = alive ? row.noteId : firstTry ? deps.newNoteId() : (seen?.noteId ?? deps.newNoteId());
 	if (row !== undefined && !alive) await deps.baseStore.discard(row.noteId);
-	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId };
+	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId, ...(seen?.modified === undefined ? {} : { modified: seen.modified }) };
 
 	const transcript = kept ?? texts.get(page.id);
 	if (transcript === undefined) {
@@ -339,7 +356,8 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 	const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(doc.name)}`;
 	const renderPath = await doc.writeRender(page.id);
 	const outcome = await processPage({
-		unit: { key, pageHash: page.hash, transcript, firstSeen: seen?.firstSeen ?? page.modified },
+		unit: { key, pageHash: page.hash, transcript, firstSeen: seen?.firstSeen ?? page.modified, writtenSpanDays: writtenSpanDays(seen, page.modified, deps.previousSyncAt ?? null) },
+		dateOrder: deps.dateOrder,
 		noteId,
 		base,
 		note: alive ? noteText : null,
@@ -392,7 +410,7 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 	for (const id of Object.keys(outcome.base.slots)) if (!report.usedSlots.includes(id)) report.usedSlots.push(id);
 	await deps.baseStore.save(outcome.base);
 	// The page's hash enters the seen-set only now, after success: a failed page retries next sync.
-	state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified, noteId };
+	state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: seen?.firstSeen ?? page.modified, noteId, modified: page.modified };
 	state.rows[key] = {
 		...(alive ? row : {}),
 		syncKey: key,

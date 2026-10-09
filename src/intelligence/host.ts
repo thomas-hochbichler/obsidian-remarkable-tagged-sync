@@ -6,6 +6,7 @@
 
 import { normalizePath, TFile } from "obsidian";
 import type { NoteStore } from "../note-builder";
+import type { DateOrder } from "./dates";
 import type { BackendSettings } from "../ocr-registry";
 import type { IntelligenceHook } from "../sync-engine";
 import { type BaseFiles, type BaseStore, createBaseStore } from "./base-store";
@@ -35,6 +36,8 @@ export interface HostEnvironment {
 	configDir: string;
 	/** Now, in a moment.js format -- `moment().format` in the app. */
 	formatNow(format: string): string;
+	/** How Obsidian's language writes a short date: month first ("MM/DD/YYYY") or not. Day first when absent. */
+	localeDateOrder?(): DateOrder;
 	randomId(): string;
 	now(): Date;
 }
@@ -81,6 +84,8 @@ export interface RunInputs {
 	providerSettings: Record<string, BackendSettings>;
 	/** A background sync: extraction runs only with its consent, and waits silently without it. */
 	background: boolean;
+	/** When the last sync ran (`lastSyncAt`): the earliest a page new in this one can have been written. */
+	previousSyncAt?: string | null;
 }
 
 export interface IntelligenceRun {
@@ -148,6 +153,8 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		formatDate: (format: string | null) => env.formatNow(firstFormat(format, formats.date, "YYYY-MM-DD")),
 		formatTime: (format: string | null) => env.formatNow(firstFormat(format, formats.time, "HH:mm")),
 		reviewLink: REVIEW_LINK,
+		dateOrder: input.settings.dateOrder === "auto" ? (env.localeDateOrder?.() ?? "dmy") : input.settings.dateOrder,
+		previousSyncAt: input.previousSyncAt ? Date.parse(input.previousSyncAt) : null,
 	};
 	const hook: IntelligenceHook = {
 		fingerprint,
@@ -267,7 +274,7 @@ export interface AppLike {
  * The engine's environment in the running app. `clock` is Obsidian's `moment`, handed in rather than
  * imported so this stays testable where there is no app.
  */
-export function hostEnvironmentFor(app: AppLike, manifest: { dir?: string; id: string }, noteStore: NoteStore, clock: () => { format(format: string): string }): HostEnvironment {
+export function hostEnvironmentFor(app: AppLike, manifest: { dir?: string; id: string }, noteStore: NoteStore, clock: { (): { format(format: string): string }; localeData(): { longDateFormat(key: "L"): string } }): HostEnvironment {
 	const vault = app.vault;
 	return {
 		pluginDir: manifest.dir ?? `${vault.configDir}/plugins/${manifest.id}`,
@@ -280,6 +287,7 @@ export function hostEnvironmentFor(app: AppLike, manifest: { dir?: string; id: s
 		createNote: noteCreator(templaterOf(app), (path, content) => vault.create(normalizePath(path), content)),
 		configDir: vault.configDir,
 		formatNow: (format) => clock().format(format),
+		localeDateOrder: () => (/^\s*M/.test(clock.localeData().longDateFormat("L")) ? "mdy" : "dmy"),
 		randomId: () => crypto.randomUUID(),
 		now: () => new Date(),
 	};

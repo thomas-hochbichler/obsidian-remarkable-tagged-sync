@@ -288,6 +288,13 @@
       file: src/intelligence/merge.test.ts
       test: "mergeList > first extraction > writes every item directly and drops one whose source is not on the page"
 
+    - id: V4.3a
+      scenario: "First extraction with an unsure item"
+      expect: "Proposed, review on or off; the rest written"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > first extraction > proposes an unsure item instead of writing it, review on or off"
+
     - id: V4.4
       scenario: "The model rewords an item and changes a field, same ink"
       expect: "Nothing changes -- rewording is model noise"
@@ -315,6 +322,13 @@
       layer: unit
       file: src/intelligence/merge.test.ts
       test: "mergeList > the ink behind an item changed > applies it with review off"
+
+    - id: V4.7a
+      scenario: "Changed ink gives an unsure field, review off"
+      expect: "Proposed as a change"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the ink behind an item changed > proposes it with review off when the new field is unsure"
 
     - id: V4.8
       scenario: "Same, but the user edited that line"
@@ -448,6 +462,13 @@
       layer: unit
       file: src/intelligence/merge.test.ts
       test: "mergeList > new items > proposes a new item with review on and inserts it with review off"
+
+    - id: V4.26a
+      scenario: "An unsure new item, review off"
+      expect: "Proposed, not inserted"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > new items > proposes an unsure new item with review off"
 
     - id: V4.27
       scenario: "The same new task on two syncs"
@@ -970,11 +991,60 @@
       test: "FIELD_TYPES > makes every field nullable in the schema, a choice closed to its options"
 
     - id: V10.4
-      scenario: "A Date field comes back as words and class"
-      expect: "Code resolves the date"
+      scenario: "A due date under a dated daily-log entry, synced weeks later"
+      expect: "Counted from the entry's date the model copied as anchor, not from the sync"
       layer: unit
       file: src/intelligence/field-types.test.ts
-      test: "FIELD_TYPES > resolves a date from the copied words, falling back to the class"
+      test: "FIELD_TYPES > counts due words from the anchor the model copied: the date of the entry the item stands in"
+
+    - id: V10.4a
+      scenario: "The anchor is a date the model computed, or stands below the item"
+      expect: "The item is held back as a proposal (research 33)"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > holds the item back when the anchor is not on the page above it"
+
+    - id: V10.4g
+      scenario: "The anchor is the entry before: a nearer date heading stands between it and the item"
+      expect: "Held back as a proposal; a date merely mentioned in between (Zahnarzt am 14.10.) is no heading"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > holds the item back when a nearer date heading stands between the anchor and it, but not for a date merely mentioned"
+
+    - id: V10.4b
+      scenario: "French words and anchor, no table reads them"
+      expect: "The model's date is taken; an impossible one is none"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > takes the model's date where no table reads the words, from an anchor no table reads either"
+
+    - id: V10.4c
+      scenario: "Model and tables disagree"
+      expect: "The tables win; with Profile date rules the item is proposed"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > lets the tables win a disagreement, and holds the item back when the Profile has date rules of its own"
+
+    - id: V10.4d
+      scenario: "bis Fr with no anchor on a page written over five days"
+      expect: "Proposed; over half a day or unknown, written; a date of its own always written"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > holds back a relative date without an anchor once the page was written over more than a day"
+
+    - id: V10.4e
+      scenario: "10/05/2026 as anchor with month-first dates"
+      expect: "Read as October 5"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > reads a slashed anchor month first when the user writes dates that way"
+
+    - id: V10.4f
+      scenario: "No date object, junk words, irgendwann, NONE"
+      expect: "No date"
+      layer: unit
+      file: src/intelligence/field-types.test.ts
+      test: "FIELD_TYPES > gives no date for nothing, junk, a day that is none, or the NONE a local format pass copies"
 
     - id: V10.5
       scenario: "A Text field is blank"
@@ -1052,11 +1122,18 @@
       test: "parseExtraction > resolves due dates against the date written on the page when there is one"
 
     - id: V11.6a
-      scenario: "The page's first line carries a date the model did not give (Elternabend 3b - 10.10., then bis Mo)"
-      expect: "That date is the page's date, read in code before the model's; bis Mo is Monday 12.10., not the Monday after the first-seen day"
+      scenario: "Live-test page 5: Elternabend 3b - 10.10. heads the page, the model gives no anchor"
+      expect: "No date is read off the first line by code; bis Mo counts from the first-seen day"
       layer: unit
       file: src/intelligence/extraction.test.ts
-      test: "parseExtraction > takes a date in the page's first line as the page's date, before what the model read"
+      test: "parseExtraction > reads no date off the first line by itself: a heading's date is an anchor only when the model copies it as one"
+
+    - id: V11.6b
+      scenario: "One item's anchor is copied, another's is a computed ISO date"
+      expect: "Only the second is marked unsure"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > marks an item unsure when its due date could not be anchored, and only then"
 
     - id: V11.7
       scenario: "NONE items, junk and a missing Slot"
@@ -1172,6 +1249,13 @@
       layer: unit
       file: src/intelligence/page-engine.test.ts
       test: "processPage > a new note > renders the template with every Slot, the page's dates and link, and records the regions in the base"
+
+    - id: V13.1a
+      scenario: "A new note whose only task has a due date the model could not anchor"
+      expect: "The task is a proposal and its region says so; date order and span reach the backend"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > proposes a task whose due date has no anchor on the page, and says so in its region"
 
     - id: V13.2
       scenario: "The template lacks one Slot and places another inline"
@@ -1303,6 +1387,13 @@
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > switching Intelligence Mode on > stamps the pages written before the toggle and turns the one written after it into a note"
+
+    - id: V14.1a
+      scenario: "A page changes after its last version was seen, or is new since the last sync"
+      expect: "Its new writing spans from that change, else from the previous sync, to its change now"
+      layer: unit
+      file: src/intelligence/sync-pass.test.ts
+      test: "writtenSpanDays > spans from the last version's change on the device to this one, else from the previous sync"
 
     - id: V14.2
       scenario: "A blank page"
@@ -2125,6 +2216,13 @@
       layer: unit
       file: src/intelligence/settings-section.test.ts
       test: "renderIntelligenceSection > asks for consent to extract in automatic syncs, per kind of backend"
+
+    - id: V30.3a
+      scenario: "Dates with slashes"
+      expect: "Follows Obsidian's language until a day-first or month-first order is picked"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderIntelligenceSection > sets how slashed dates are written, following Obsidian's language until told otherwise"
 
 - feature: V31
   name: "Re-run extraction and Re-transcribe on a page note"

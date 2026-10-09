@@ -88,7 +88,10 @@ describe("twoCallBackend", () => {
 		expect(requests[0].system).toContain("Profile: Generic: Any handwritten page.");
 		expect(requests[0].system).toContain("Page date: Monday, 2026-09-28.");
 		expect(requests[0].system).toContain('Step 1. Write "LINES:"');
-		expect(requests[0].system).toContain('Under "## tasks" write one line per line you marked TASK: "- <text> | SOURCE: <the transcript line, copied exactly> | due: <date words as written, or NONE>".');
+		expect(requests[0].system).toContain('Under "## tasks" write one line per line you marked TASK: "- <text> | SOURCE: <the transcript line, copied exactly> | due: <date words as written, then @ and the anchor they count from as written, or NONE>".');
+		// A Slot with a date Field brings the date rules, calendar included, into both passes.
+		expect(requests[0].system).toContain("## Due dates");
+		expect(requests[1].system).toContain("Calendar: ");
 		expect(requests[0].system).toContain('Under "## summary" write one or two sentences.');
 		expect(requests[0].user).toBe("Transcript:\n<<<\ncall Bob\n>>>");
 		// Pass 2 sees the notes from the first heading on, not the line verdicts.

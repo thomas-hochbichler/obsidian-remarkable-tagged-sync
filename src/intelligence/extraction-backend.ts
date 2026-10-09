@@ -10,7 +10,7 @@
 
 import { fetchWithRetry, isUnreachable, OcrTimeoutError, refusalDetail, type Sleep } from "../llm-transcript";
 import { obsidianFetch } from "../obsidian-fetch";
-import { buildPrompt, buildSchema, describeSlot, type ExtractionResult, type KnownItem, parseExtraction, WEEKDAYS } from "./extraction";
+import { buildPrompt, buildSchema, type DateReading, dateRules, describeSlot, type ExtractionResult, type KnownItem, parseExtraction, WEEKDAYS } from "./extraction";
 import type { ProfileDef, SlotDef } from "./settings";
 
 export interface CompletionRequest {
@@ -36,6 +36,8 @@ export interface ExtractionInput {
 	referenceDate: Date;
 	/** Per Slot, the base's items with their ids. */
 	known: Record<string, readonly KnownItem[]>;
+	/** How due dates are read; plain day/month with nothing else known when absent. */
+	dates?: DateReading;
 }
 
 export type ExtractionOutcome = { kind: "ok"; result: ExtractionResult } | { kind: "failed"; reason: string };
@@ -123,7 +125,7 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
 			const outcome = await complete({ system, user, schema: buildSchema(asked.slots), maxTokens: EXTRACTION_MAX_TOKENS });
 			if (outcome.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (outcome.kind === "failed") return outcome;
-			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate, input.transcript);
+			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate, input.transcript, input.dates);
 			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
 		},
 	};
@@ -154,7 +156,7 @@ const LOCAL_TASK_SLOT = "tasks";
 
 /** One line per item of a list Slot, with a column per Field; the tasks Slot takes the lines marked TASK. */
 function answerLine(slot: SlotDef): string {
-	const columns = slot.fields.map((field) => ` | ${field.name}: <${field.type === "date" ? "date words as written" : "value"}, or NONE>`).join("");
+	const columns = slot.fields.map((field) => ` | ${field.name}: <${field.type === "date" ? "date words as written, then @ and the anchor they count from as written" : "value"}, or NONE>`).join("");
 	if (slot.shape === "text") return `Under "## ${slot.id}" write one or two sentences.`;
 	if (slot.shape === "value") return `Under "## ${slot.id}" write the value.`;
 	const which = slot.id === LOCAL_TASK_SLOT ? "one line per line you marked TASK" : "one line per item";
@@ -172,6 +174,8 @@ export function localReadPrompt(input: ExtractionInput): { system: string; user:
 	const system = [
 		`You extract structured data from ONE handwritten notebook page. Profile: ${input.profile.name}: ${input.profile.description}`,
 		`Page date: ${WEEKDAYS[day.getUTCDay()]}, ${day.toISOString().slice(0, 10)}.`,
+		...dateRules(input),
+		"",
 		"The transcript comes from handwriting OCR: expect misspellings and garbled words; strike-throughs are not marked. A misspelled line still counts: judge what the writer most likely meant, but never invent items or values. Every slot may be empty.",
 		"",
 		"Slots:",
@@ -200,6 +204,7 @@ export function localFormatPrompt(input: ExtractionInput, notes: string): { syst
 			"",
 			"Slot definitions:",
 			...input.slots.map((slot) => describeSlot(slot, input.known[slot.id] ?? [])),
+			...dateRules(input),
 		].join("\n"),
 		user: `Notes:\n${notesSection(notes)}\n\nOriginal transcript (for verbatim source spans):\n<<<\n${input.transcript}\n>>>`,
 	};
@@ -231,13 +236,13 @@ export function twoCallBackend(id: string, metered: boolean, complete: Complete)
 			if (notes.kind === "truncated") return { kind: "failed", reason: "The notes pass was cut off at the token limit." };
 			if (notes.kind === "failed") return notes;
 			if (notesAreEmpty(notes.text, asked.slots.map((slot) => slot.id))) {
-				return { kind: "ok", result: parseExtraction({}, input.slots, input.referenceDate, input.transcript)! };
+				return { kind: "ok", result: parseExtraction({}, input.slots, input.referenceDate, input.transcript, input.dates)! };
 			}
 			const format = localFormatPrompt(asked, notes.text);
 			const formatted = await complete({ ...format, schema: buildSchema(asked.slots), maxTokens: EXTRACTION_MAX_TOKENS });
 			if (formatted.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (formatted.kind === "failed") return formatted;
-			const result = parseExtraction(readJson(formatted.text), input.slots, input.referenceDate, input.transcript);
+			const result = parseExtraction(readJson(formatted.text), input.slots, input.referenceDate, input.transcript, input.dates);
 			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
 		},
 	};
@@ -381,7 +386,7 @@ export function ownServerBackend(id: string, complete: Complete, reasons: () => 
 			}
 			if (outcome.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (outcome.kind === "failed") return outcome;
-			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate, input.transcript);
+			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate, input.transcript, input.dates);
 			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
 		},
 	};

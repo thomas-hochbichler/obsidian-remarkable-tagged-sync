@@ -675,7 +675,7 @@ export default class TaggedSyncPlugin extends Plugin {
 
 	/** What the engine runs on, decided per run: the sync's and "Re-run extraction"'s alike. */
 	private intelligenceInputs(tagFolderMap: Record<string, string>, transcriptionBackend: string, background: boolean): RunInputs {
-		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background };
+		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background, previousSyncAt: this.data.lastSyncAt };
 	}
 
 	/** The engine's side of the sync in progress, so an unload mid-sync can stop the local model's server. */

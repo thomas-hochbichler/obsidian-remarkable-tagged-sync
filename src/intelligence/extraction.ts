@@ -7,8 +7,8 @@
  * output becomes typed data, so every field is checked here and nothing downstream re-checks.
  */
 
-import { calendarDay, resolveWrittenDate } from "./dates";
-import { FIELD_TYPES } from "./field-types";
+import { calendarDay, type DateOrder, resolveWrittenDate } from "./dates";
+import { type FieldContext, FIELD_TYPES } from "./field-types";
 import type { Fields, ModelItem } from "./merge";
 import type { ProfileDef, SlotDef } from "./settings";
 
@@ -28,6 +28,15 @@ export interface ExtractionResult {
 	pageDate: Date;
 	writtenDate: Date | null;
 }
+
+/** What due dates are read against, beyond the page itself -- see `FieldContext`. */
+export interface DateReading {
+	order: DateOrder;
+	writtenSpanDays: number | null;
+	userRules: boolean;
+}
+
+export const PLAIN_DATES: DateReading = { order: "dmy", writtenSpanDays: null, userRules: false };
 
 const isList = (slot: SlotDef) => slot.shape === "list" || slot.shape === "checklist";
 
@@ -62,6 +71,39 @@ export function buildSchema(slots: readonly SlotDef[]): Record<string, unknown> 
 
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+const DAY_MS = 86_400_000;
+
+/**
+ * Every day from a week before the earliest date on the page to five weeks after the latest, the
+ * reference included, each with its weekday: a model that looks a weekday up instead of counting gets
+ * it right far more often (research 32). Bounded, so a stray year on the page cannot blow it up.
+ */
+export function calendarFor(transcript: string, reference: Date, order: DateOrder): string {
+	const found = transcript.split("\n").map((line) => resolveWrittenDate(line, reference, order)).filter((date): date is Date => date !== null);
+	const times = [reference, ...found].map((date) => date.getTime()).filter((time) => Math.abs(time - reference.getTime()) <= 120 * DAY_MS);
+	const days: string[] = [];
+	for (let time = Math.min(...times) - 7 * DAY_MS; time <= Math.max(...times) + 35 * DAY_MS; time += DAY_MS) {
+		const day = new Date(time);
+		days.push(`${WEEKDAYS[day.getUTCDay()].slice(0, 3)} ${day.toISOString().slice(0, 10)}`);
+	}
+	return days.join(", ");
+}
+
+/** The rules for a due date, when a Slot asks for one: anchor, conventions, calendar, and the user's own words. */
+export function dateRules(input: { profile: ProfileDef; slots: readonly SlotDef[]; transcript: string; referenceDate: Date; dates?: DateReading }): string[] {
+	if (!input.slots.some((slot) => slot.fields.some((field) => field.type === "date"))) return [];
+	const order = (input.dates ?? PLAIN_DATES).order;
+	return [
+		"",
+		"## Due dates",
+		`Dates on this device are written ${order === "mdy" ? "month/day" : "day/month"}. The page may have been written days or weeks before it was first seen.`,
+		"For each due date, find its anchor: the date written on the page that the due words count from -- usually the date of the day, entry or section the item stands under. A date that names an event, an appointment or a deadline is not an anchor. Copy the anchor exactly, and null if the page gives none: then count from the day the page was first seen.",
+		"A weekday means its next occurrence after the anchor; the same weekday means a week later. \"Next week\" without a day, or a week number, means the Friday of that week. A time alone names no day.",
+		...(input.profile.dates?.trim() ? [`About dates on these pages, from the user: ${input.profile.dates.trim()}`] : []),
+		`Calendar: ${calendarFor(input.transcript, input.referenceDate, order)}`,
+	];
+}
+
 export function describeSlot(slot: SlotDef, known: readonly KnownItem[]): string {
 	const lines = [`### ${slot.id} (${slot.name}) — ${slot.shape}`, slot.instruction];
 	for (const field of slot.fields) lines.push(`- field \`${field.name}\`: ${field.type}${field.options?.length ? ` (one of: ${field.options.join(", ")})` : ""}`);
@@ -75,18 +117,19 @@ export function describeSlot(slot: SlotDef, known: readonly KnownItem[]): string
 }
 
 /** The one-call prompt (cloud). The local two-call prompts live with the local backend. */
-export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDef[]; transcript: string; referenceDate: Date; known: Record<string, readonly KnownItem[]> }): { system: string; user: string } {
+export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDef[]; transcript: string; referenceDate: Date; known: Record<string, readonly KnownItem[]>; dates?: DateReading }): { system: string; user: string } {
 	const day = input.referenceDate;
 	const system = [
 		"You extract structured information from one handwritten notebook page.",
 		"The page text below came from handwriting recognition and may contain recognition errors.",
 		"Only extract what is written on the page. Never invent items. Copy `source` exactly from the page text.",
-		"For dates, copy the words as written and pick the closest `rel` class; do not compute dates.",
+		"For due dates, copy the words and their anchor as written, then give both as dates by the rules below.",
 		"Write everything you phrase yourself, such as a summary, in the language the page is written in.",
 	].join("\n");
 	const user = [
 		`Page type: ${input.profile.description}`,
 		`The page was first seen on ${WEEKDAYS[day.getUTCDay()]}, ${day.toISOString().slice(0, 10)}.`,
+		...dateRules(input),
 		"",
 		"## Slots",
 		...input.slots.map((slot) => describeSlot(slot, input.known[slot.id] ?? [])),
@@ -99,16 +142,18 @@ export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDe
 
 const NONE = /^(none|n\/a|nothing|keine?|nichts|-+|—)$/i;
 
-function readItem(raw: unknown, slot: SlotDef, pageDate: Date): ModelItem | null {
+function readItem(raw: unknown, slot: SlotDef, page: Omit<FieldContext, "source" | "unsure">): ModelItem | null {
 	if (typeof raw !== "object" || raw === null) return null;
 	const r = raw as Record<string, unknown>;
 	const text = typeof r.text === "string" ? r.text.trim() : "";
 	if (text === "" || NONE.test(text)) return null;
-	const fields: Fields = {};
-	for (const field of slot.fields) fields[field.name] = FIELD_TYPES[field.type].resolve(r[field.name], field, { pageDate });
 	const id = typeof r.id === "string" && r.id !== "new" && r.id.trim() !== "" ? r.id : null;
 	const source = typeof r.source === "string" && r.source.trim() !== "" ? r.source : null;
+	const ctx: FieldContext = { ...page, source, unsure: false };
+	const fields: Fields = {};
+	for (const field of slot.fields) fields[field.name] = FIELD_TYPES[field.type].resolve(r[field.name], field, ctx);
 	const item: ModelItem = { id, text, fields, source };
+	if (ctx.unsure) item.unsure = true;
 	if (slot.shape === "checklist") item.done = r.done === true;
 	return item;
 }
@@ -136,20 +181,17 @@ export function defuseTemplater(value: unknown, key = ""): unknown {
 	return value;
 }
 
-export function parseExtraction(raw: unknown, slots: readonly SlotDef[], fallbackDate: Date, transcript = ""): ExtractionResult | null {
+export function parseExtraction(raw: unknown, slots: readonly SlotDef[], fallbackDate: Date, transcript = "", dates: DateReading = PLAIN_DATES): ExtractionResult | null {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
 	const answer = defuseTemplater(raw) as Record<string, unknown>;
-	// A date in the page's first line is its date, read in code before the model is asked: the model
-	// took "Elternabend 3b - 10.10." for an event and gave none, so "bis Mo" below it counted from the
-	// day the page was first seen (live test, 2026-10-09).
-	const firstLine = transcript.split("\n").find((line) => line.trim() !== "") ?? null;
-	const writtenDate = resolveWrittenDate(firstLine, fallbackDate) ?? resolveWrittenDate(typeof answer[PAGE_DATE_KEY] === "string" ? answer[PAGE_DATE_KEY] : null, fallbackDate);
+	const writtenDate = resolveWrittenDate(typeof answer[PAGE_DATE_KEY] === "string" ? answer[PAGE_DATE_KEY] : null, fallbackDate, dates.order);
 	const pageDate = writtenDate ?? calendarDay(fallbackDate.getUTCFullYear(), fallbackDate.getUTCMonth(), fallbackDate.getUTCDate());
+	const page = { pageDate, transcript, dateOrder: dates.order, writtenSpanDays: dates.writtenSpanDays, userDateRules: dates.userRules };
 	const result: Record<string, SlotResult> = {};
 	for (const slot of slots) {
 		const value = answer[slot.id];
 		if (isList(slot)) {
-			const items = (Array.isArray(value) ? value : []).map((item) => readItem(item, slot, pageDate)).filter((item): item is ModelItem => item !== null);
+			const items = (Array.isArray(value) ? value : []).map((item) => readItem(item, slot, page)).filter((item): item is ModelItem => item !== null);
 			result[slot.id] = { kind: "items", items };
 		} else if (slot.shape === "text") {
 			const text = typeof value === "string" && !NONE.test(value.trim()) ? value.trim() : "";

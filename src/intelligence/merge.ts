@@ -61,6 +61,8 @@ export interface ModelItem {
 	fields: Fields;
 	source: string | null;
 	done?: boolean;
+	/** A Field could not be settled without asking -- a due date with no anchor it could check, say: proposed, never written. */
+	unsure?: true;
 }
 
 /** Operations on the region's item lines; `line` indexes the `note` array passed in. */
@@ -127,15 +129,21 @@ export function mergeList(input: ListMergeInput): ListMergeResult {
 	const model = input.model.filter((item) => item.source === null || inTranscript(item.source, transcript));
 	const ops: ListOp[] = [];
 
-	// First extraction of this Slot on this page: written directly, Free and Pro alike.
+	// First extraction of this Slot on this page: written directly, Free and Pro alike -- except an item
+	// whose Fields are not sure (a due date it could not anchor), which is proposed.
 	if (input.base === null) {
 		const items: BaseItem[] = [];
+		const proposals: ListProposal[] = [];
 		for (const item of model) {
 			if (item.source === null) continue;
+			if (item.unsure) {
+				proposals.push({ kind: "add", id: newId(), text: item.text, fields: item.fields, source: item.source, done: item.done === true });
+				continue;
+			}
 			items.push({ id: newId(), text: item.text, fields: item.fields, done: item.done === true, source: item.source, origin: "engine" });
 			ops.push({ kind: "insert", text: item.text, fields: item.fields, done: item.done === true });
 		}
-		return { base: { items, tombstones: [], proposals: [] }, ops };
+		return { base: { items, tombstones: [], proposals }, ops };
 	}
 
 	const base = input.base;
@@ -200,7 +208,7 @@ export function mergeList(input: ListMergeInput): ListMergeResult {
 			item.source = got.source;
 			continue;
 		}
-		if (review || edited(item) || item.origin === "user") {
+		if (review || got.unsure || edited(item) || item.origin === "user") {
 			fresh.push({ kind: "change", id: newId(), itemId: id, text: got.text, fields: got.fields, source: got.source });
 		} else {
 			Object.assign(item, { text: got.text, fields: got.fields, source: got.source });
@@ -227,7 +235,7 @@ export function mergeList(input: ListMergeInput): ListMergeResult {
 		if (item.source === null) continue;
 		const buried = tombstones.some((t) => (t.source !== null && normaliseText(t.source) === normaliseText(item.source!)) || matchItems([item], [t]).lineToBase[0] !== null);
 		if (buried) continue;
-		if (review) {
+		if (review || item.unsure) {
 			fresh.push({ kind: "add", id: newId(), text: item.text, fields: item.fields, source: item.source, done: item.done === true });
 		} else {
 			kept.push({ id: newId(), text: item.text, fields: item.fields, done: item.done === true, source: item.source, origin: "engine" });

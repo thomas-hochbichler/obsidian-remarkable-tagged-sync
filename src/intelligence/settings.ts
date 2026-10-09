@@ -8,6 +8,8 @@
  * writes -- a timestamp it has to invent lives in memory until the next save.
  */
 
+import type { DateOrder } from "./dates";
+
 export type Shape = "text" | "value" | "list" | "checklist";
 export type FieldType = "text" | "date" | "number" | "choice" | "link";
 
@@ -51,6 +53,11 @@ export interface ProfileDef {
 	template: string | null;
 	/** Slot ids in order. This list, not the template, decides which Slots run. */
 	slots: string[];
+	/**
+	 * The user's own words on how dates work on these pages ("each entry starts with its date; tasks
+	 * count from their entry"), given to the model as written. Absent or empty: none.
+	 */
+	dates?: string;
 }
 
 export interface MappingModes {
@@ -79,6 +86,8 @@ export interface IntelligenceSettings {
 	autoExtractLocal: boolean;
 	/** Notices the engine gives once and never again, by key. */
 	saidOnce: string[];
+	/** How the user writes dates with slashes, for due dates: from Obsidian's language when "auto". */
+	dateOrder: "auto" | DateOrder;
 }
 
 export const DEFAULT_MODES: Readonly<MappingModes> = Object.freeze({ transcript: true, intelligence: false, profiles: [] as string[] });
@@ -114,7 +123,7 @@ export function genericProfile(pro: boolean): ProfileDef {
 }
 
 export function emptyIntelligence(): IntelligenceSettings {
-	return { mappings: {}, profiles: [], slots: defaultSlots(), backend: null, model: null, engineDeviceId: null, autoExtractMetered: false, autoExtractLocal: false, saidOnce: [] };
+	return { mappings: {}, profiles: [], slots: defaultSlots(), backend: null, model: null, engineDeviceId: null, autoExtractMetered: false, autoExtractLocal: false, saidOnce: [], dateOrder: "auto" };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -158,6 +167,7 @@ export function readIntelligence(saved: unknown, now: Date): IntelligenceSetting
 		autoExtractMetered: saved.autoExtractMetered === true,
 		autoExtractLocal: saved.autoExtractLocal === true,
 		saidOnce: Array.isArray(saved.saidOnce) ? saved.saidOnce.filter((key): key is string => typeof key === "string") : [],
+		dateOrder: saved.dateOrder === "dmy" || saved.dateOrder === "mdy" ? saved.dateOrder : "auto",
 	};
 }
 
