@@ -5,9 +5,10 @@
  * every Pro control, disabled and marked "(Pro)": a feature nobody can see is one nobody decides to buy.
  */
 
-import { Setting } from "obsidian";
+import { Setting, type TextAreaComponent } from "obsidian";
 import type { BackendSettings } from "../ocr-registry";
 import { missingModelSentence } from "../localhost-vision-detect";
+import { BULLET_JOURNAL_SIGNS } from "./extraction";
 import { extractionBackendEntries, extractionBackendEntry, type ModelNote } from "./extraction-registry";
 import { freeTag, isEngineDevice } from "./plugin-rules";
 import { type FieldDef, type FieldType, genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, setIntelligenceMode, type Shape, type SlotDef, slotIdFor, TASKS_FORMAT } from "./settings";
@@ -348,6 +349,24 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 				.setValue(profile.dates ?? "")
 				.setPlaceholder("Each entry starts with its date, day first. Tasks count from the date of their entry.")
 				.onChange(async (dates) => typed(host, edit({ dates: dates.trim() === "" ? undefined : dates }))),
+		);
+	// Research 31: a dot is a task in a Bullet Journal and a plain bullet elsewhere, so the meaning is the Profile's.
+	let signsArea: TextAreaComponent | null = null;
+	new Setting(containerEl)
+		.setName("Signs on these pages")
+		.setDesc("Optional. What the sign at the start of a line means, in your words. Checkboxes and struck-through lines are always read.")
+		.addTextArea((text) => {
+			signsArea = text;
+			text
+				.setValue(profile.signs ?? "")
+				.setPlaceholder("A dot before a line is an open task, a cross one that is done.")
+				.onChange(async (signs) => typed(host, edit({ signs: signs.trim() === "" ? undefined : signs })));
+		})
+		.addButton((button) =>
+			button.setButtonText("Use bullet journal").onClick(async () => {
+				signsArea?.setValue(BULLET_JOURNAL_SIGNS);
+				await typed(host, edit({ signs: BULLET_JOURNAL_SIGNS }));
+			}),
 		);
 	new Setting(containerEl).setName("Fills").setHeading();
 	// A small model loses tasks when asked for many things at once (research 15): warned, never refused.

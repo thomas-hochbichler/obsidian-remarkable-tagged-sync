@@ -16,8 +16,9 @@ const generation: ModelGeneration = {
 	floorGb: { darwin: 16, win32: 24 },
 	contextTokens: 8192,
 	splitsTallPages: true,
+	keepsMarks: false,
 };
-const current = { generations: [generation], promptSha: "635b0b92a4432be2", renderVersion: 31, runtime: "b10295" };
+const current = { generations: [generation], renderVersion: 31, runtime: "b10295" };
 const figure = (over: Partial<LocalFigure> = {}): LocalFigure => ({
 	schema: 1,
 	measuredAt: "2026-09-16T10:00:00.000Z",

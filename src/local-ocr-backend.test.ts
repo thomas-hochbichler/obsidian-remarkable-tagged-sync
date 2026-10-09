@@ -4,12 +4,12 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "../test-stubs/fake-obsidian";
 import { MODEL_GENERATIONS } from "./local-model-artefacts";
-import { isLocalModelBusy, pageArgs } from "./local-ocr-runtime";
+import { isLocalModelBusy, pageArgs, transcriptionPrompt } from "./local-ocr-runtime";
+import { NOTE_TRANSCRIPTION_PROMPT, PLAIN_TRANSCRIPTION_PROMPT, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { writeLock } from "./local-model-runtime";
 import type { LocalModelPaths } from "./local-model-store";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
 import { ENOUGH_PAGES_TO_MEASURE, readLocalModelSettings } from "./local-model-settings";
-import { NOTE_TRANSCRIPTION_PROMPT, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { ocrImage } from "./ocr-backend";
 import type { RmPage } from "./rm-parser";
 
@@ -355,6 +355,18 @@ describe("pageArgs", () => {
 		expect(args.filter((a) => a === "--image")).toHaveLength(1);
 		expect(args[args.indexOf("--temp") + 1]).toBe("0");
 		expect(args[args.indexOf("--seed") + 1]).toBe("42");
+	});
+
+	// Research 35: the 2B looped on three reference pages when asked to copy the signs, so it keeps the prompt it was measured with.
+	it("asks a model to keep the writer's marks only when the generation can take it", () => {
+		const prompt = (keepsMarks: boolean) => transcriptionPrompt({ ...withContext, keepsMarks });
+		expect(prompt(true)).toBe(TRANSCRIPTION_PROMPT);
+		expect(prompt(false)).toBe(PLAIN_TRANSCRIPTION_PROMPT);
+		expect(MODEL_GENERATIONS.map((g) => [g.dir, g.keepsMarks])).toEqual([
+			["qwen3-vl-8b-instruct-q4_k_m", true],
+			["qwen2.5-vl-7b-instruct-q4_k_m", false],
+			["qwen3-vl-2b-instruct-q4_k_m", false],
+		]);
 	});
 });
 

@@ -4,7 +4,7 @@
 // temp directory, runs one process over it, and turns whatever happened into one of three outcomes.
 
 import { Platform } from "obsidian";
-import { sanitizeTranscript } from "./llm-transcript";
+import { PLAIN_TRANSCRIPTION_PROMPT, sanitizeTranscript, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
 import type { ModelGeneration } from "./local-model-artefacts";
 import { readLocalModelSettings } from "./local-model-settings";
@@ -94,6 +94,11 @@ async function repairQuarantine(executable: string): Promise<void> {
  * that decides anything, and what it decides -- whether a context is pinned -- is the difference
  * between 7.99 GB and 42.82 GB of peak memory.
  */
+/** The page prompt this model reads with: the marks-keeping one unless the model cannot take it. */
+export function transcriptionPrompt(generation: ModelGeneration): string {
+	return generation.keepsMarks ? TRANSCRIPTION_PROMPT : PLAIN_TRANSCRIPTION_PROMPT;
+}
+
 export function pageArgs(paths: LocalModelPaths, imageFile: string, generation: ModelGeneration, prompt: string): string[] {
 	return [
 		"-m",

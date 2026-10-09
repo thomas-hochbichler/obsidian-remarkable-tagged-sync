@@ -5,6 +5,7 @@
 
 import { splitAtTypedText, transcriptionPrompt } from "./llm-transcript";
 import type { ModelGeneration } from "./local-model-artefacts";
+import { transcriptionPrompt as pagePrompt } from "./local-ocr-runtime";
 import { recordPageDuration } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
 import { type OcrBackend, type OcrFraming, ocrImage, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
@@ -150,7 +151,8 @@ export class LocalOcrBackend implements OcrBackend {
 					read.push(part.text);
 					continue;
 				}
-				const outcome = await this.runPage(ocrImage(part.scene, framing), transcriptionPrompt(framing));
+				// A page gets this model's page prompt, marks kept or not (research 35); a margin note the note prompt.
+				const outcome = await this.runPage(ocrImage(part.scene, framing), framing === "note" ? transcriptionPrompt(framing) : pagePrompt(this.generation));
 
 				if (outcome.kind === "runtime-broken") {
 					this.runtimeBroken = true;

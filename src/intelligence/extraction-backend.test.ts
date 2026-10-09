@@ -88,6 +88,8 @@ describe("twoCallBackend", () => {
 		expect(requests[0].system).toContain("Profile: Generic: Any handwritten page.");
 		expect(requests[0].system).toContain("Page date: Monday, 2026-09-28.");
 		expect(requests[0].system).toContain('Step 1. Write "LINES:"');
+		// What the marks say comes before the line pass, so the model marks a struck or ticked line by it (research 31).
+		expect(requests[0].system.indexOf("Marks on the page decide")).toBeLessThan(requests[0].system.indexOf("Work in two steps"));
 		expect(requests[0].system).toContain('Under "## tasks" write one line per line you marked TASK: "- <text> | SOURCE: <the transcript line, copied exactly> | due: <date words as written, then @ and the anchor they count from as written, or NONE>".');
 		// A Slot with a date Field brings the date rules, calendar included, into both passes.
 		expect(requests[0].system).toContain("## Due dates");

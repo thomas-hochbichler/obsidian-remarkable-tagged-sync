@@ -227,6 +227,21 @@ extraction backend.
 it. Apart from re-extracting a single insight note, which happens on the spot, each of these starts a
 sync at once; **Sync now** remains the one command that brings both kinds of note up to date.
 
+### Bullet Journal and other signs
+
+A transcript keeps what you marked on the page: struck-through words as ~~struck~~, drawn boxes as
+`- [ ]` and `- [x]`, and the sign a line starts with as you drew it (• X > < ○ —). Insight notes read
+boxes and strike-through the same for everyone: an empty box is an open task, a ticked or crossed one
+is done, a struck line is left out.
+
+What any other sign means is yours to say, in the profile's **Signs on these pages** field. **Use
+bullet journal** fills in Ryder Carroll's key: • an open task, X done, > migrated and < scheduled (not
+open on this page), ○ an event, — a note. Add your own signs to it in plain words.
+
+Transcripts made before version 1.9.0 have no signs in them; **Re-transcribe this note** brings them
+in. Apple Vision reads text only, and the two smaller local models (Qwen3-VL-2B, Qwen2.5-VL-7B) are
+not asked to, so their transcripts keep no signs; the default local model, Qwen3-VL-8B, does.
+
 ## Handwriting transcription
 
 ![A synced note in Obsidian: the two handwritten pages rendered on top, the searchable transcript below them](docs/screenshot-synced-note.png)

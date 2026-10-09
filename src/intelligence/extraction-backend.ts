@@ -10,7 +10,7 @@
 
 import { fetchWithRetry, isUnreachable, OcrTimeoutError, refusalDetail, type Sleep } from "../llm-transcript";
 import { obsidianFetch } from "../obsidian-fetch";
-import { buildPrompt, buildSchema, type DateReading, dateRules, describeSlot, type ExtractionResult, type KnownItem, parseExtraction, TASK_CRITERIA, WEEKDAYS } from "./extraction";
+import { buildPrompt, buildSchema, type DateReading, dateRules, describeSlot, markRules, type ExtractionResult, type KnownItem, parseExtraction, TASK_CRITERIA, WEEKDAYS } from "./extraction";
 import type { ProfileDef, SlotDef } from "./settings";
 
 export interface CompletionRequest {
@@ -136,9 +136,8 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
  * The line pass carries the gain: without it an 8B found 24 of 38 real tasks, with it 36. One changed
  * clause made the model skip it on every page, so the answer is started with `LINES:` for it.
  */
-/** What a task is in terse handwritten notes (research 22): shared by the line pass in prose and in JSON. */
-const TASK_LINES = [
-	...TASK_CRITERIA,
+/** The line pass in prose (research 22), after what a task is (`TASK_CRITERIA`) and what the marks say (`markRules`). */
+const TASK_STEPS = [
 	"",
 	"Work in two steps.",
 	'Step 1. Write "LINES:" and then go through the transcript from the first to the last line. For every line write one short line: "<first words of the line> => TASK" or "=> PART" (only a bare name listed under a task line, with no work of its own) or "=> NO". Do not skip lines.',
@@ -169,13 +168,13 @@ export function localReadPrompt(input: ExtractionInput): { system: string; user:
 		`Page date: ${WEEKDAYS[day.getUTCDay()]}, ${day.toISOString().slice(0, 10)}.`,
 		...dateRules(input),
 		"",
-		"The transcript comes from handwriting OCR: expect misspellings and garbled words; strike-throughs are not marked. A misspelled line still counts: judge what the writer most likely meant, but never invent items or values. Every slot may be empty.",
+		"The transcript comes from handwriting OCR: expect misspellings and garbled words; struck-through text may be marked ~~like this~~. A misspelled line still counts: judge what the writer most likely meant, but never invent items or values. Every slot may be empty.",
 		"",
 		"Slots:",
 		"",
 		...input.slots.map((slot) => describeSlot(slot, input.known[slot.id] ?? [])),
 		"",
-		...(linePass ? TASK_LINES : []),
+		...(linePass ? [...TASK_CRITERIA, ...markRules(input), ...TASK_STEPS] : []),
 		'For every slot write a heading "## <slot>".',
 		...input.slots.map(answerLine),
 		"Write NONE under a slot that has nothing.",

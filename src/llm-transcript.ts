@@ -16,13 +16,26 @@ import { mapWithConcurrency } from "./concurrency";
  *
  * "No page labels" now means what it says: the sync-engine attaches the page header, so a
  * model-written "Page 3" would be a duplicate at best and wrong at worst.
+ *
+ * The last two sentences keep what the writer marked (research 31): without them a model wrote every
+ * Bullet Journal sign as a plain "- ", so a migrated task read as open and an event as a task, and the
+ * extraction could not tell them apart. Measured on 8 local models and Sonnet 5.5 (pages E01–E17): marks
+ * kept 30/57 -> 57/57 on the cloud, CER within 0.6 points on every model.
+ *
+ * `PLAIN_TRANSCRIPTION_PROMPT` is the prompt without them, for a managed model that cannot take them
+ * (`ModelGeneration.keepsMarks`).
  */
-export const TRANSCRIPTION_PROMPT =
+export const PLAIN_TRANSCRIPTION_PROMPT =
 	"Transcribe the handwritten text in this page image into clean Markdown, " +
 	"preserving reading order and visible structure: headings, lists, GFM task lists (- [ ] / - [x]), " +
 	"and tables. Do not invent structure that is not visually present; when unsure, use plain " +
 	"paragraphs. Output only the transcript text -- no commentary, preamble, code fences, or page " +
 	"labels. If the page has no legible text, output nothing.";
+export const TRANSCRIPTION_PROMPT =
+	PLAIN_TRANSCRIPTION_PROMPT +
+	" Keep what the writer marked. Write struck-through text as ~~text~~. Write a drawn checkbox as - [ ] when it is empty " +
+	"and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: • X > < ○ —. " +
+	"Transcribe exactly what is written; do not correct spelling or wording.";
 
 /**
  * The prompt for a margin note: a few handwritten words cut out of a document's margin.

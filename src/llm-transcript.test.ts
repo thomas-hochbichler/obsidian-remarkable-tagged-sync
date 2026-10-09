@@ -74,6 +74,14 @@ describe("TRANSCRIPTION_PROMPT", () => {
 		expect(TRANSCRIPTION_PROMPT).not.toContain("separated by a blank line");
 	});
 
+	// Research 31: without these a model wrote every Bullet Journal sign as "- ", and a migrated task
+	// read as open; boxes and strike-through went missing as well.
+	it("keeps what the writer marked: strike-through, boxes, and the sign a line starts with", () => {
+		expect(TRANSCRIPTION_PROMPT).toContain("Write struck-through text as ~~text~~");
+		expect(TRANSCRIPTION_PROMPT).toContain("- [ ] when it is empty and as - [x] when it holds a tick or a cross");
+		expect(TRANSCRIPTION_PROMPT).toContain("Copy the sign a line starts with exactly as drawn: • X > < ○ —.");
+	});
+
 	// One prompt, shared verbatim by the six Pro providers and the free local model. A second copy
 	// that drifts would silently regress whichever build owns it.
 	it("is one string, not a template", () => {

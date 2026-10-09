@@ -58,6 +58,8 @@ export interface ProfileDef {
 	 * count from their entry"), given to the model as written. Absent or empty: none.
 	 */
 	dates?: string;
+	/** What the signs at the start of a line mean on these pages (a Bullet Journal's • X > < ○ —), as written. Absent or empty: none. */
+	signs?: string;
 }
 
 export interface MappingModes {

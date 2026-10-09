@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeEl, takeSettings, type Setting as FakeSetting } from "../../test-stubs/fake-obsidian";
+import { BULLET_JOURNAL_SIGNS } from "./extraction";
 import { registerExtractionBackend } from "./extraction-registry";
 import { type IntelligenceSettingsHost, renderIntelligenceSection, renderProfileEditor, renderSlotEditor, renderTagModes, tagModesSummary, uniqueName } from "./settings-section";
 import { emptyIntelligence, setIntelligenceMode, TASKS_FORMAT, type IntelligenceSettings } from "./settings";
@@ -359,6 +360,14 @@ describe("renderIntelligenceSection", () => {
 		named(editor, "Dates on these pages").texts[0].type("  ");
 		await flush();
 		expect(h.settings().profiles[0]).not.toHaveProperty("dates", expect.anything());
+		// The signs are the Profile's: typed, or the Bullet Journal's from the button.
+		named(editor, "Signs on these pages").texts[0].type("! means urgent");
+		await flush();
+		expect(h.settings().profiles[0].signs).toBe("! means urgent");
+		named(editor, "Signs on these pages").buttons[0].click();
+		await flush();
+		expect(h.settings().profiles[0].signs).toBe(BULLET_JOURNAL_SIGNS);
+		expect(named(editor, "Signs on these pages").texts[0].value).toBe(BULLET_JOURNAL_SIGNS);
 
 		named(profileEditor(h, "a"), "Template").buttons[0].click();
 		await flush();

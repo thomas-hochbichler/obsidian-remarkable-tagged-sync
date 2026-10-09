@@ -13,7 +13,7 @@
 
 import { createHash } from "node:crypto";
 import type { ModelGeneration } from "../../src/local-model-artefacts";
-import { TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
+import { transcriptionPrompt } from "../../src/local-ocr-runtime";
 import type { BackendStatus, PageMeasurement } from "../nightly/ocr";
 
 export interface LocalFigure {
@@ -39,13 +39,12 @@ export interface LocalFigure {
 }
 
 /** The same sixteen hex characters the nightly writes as `promptSha`. */
-export function promptSha(): string {
-	return createHash("sha256").update(TRANSCRIPTION_PROMPT).digest("hex").slice(0, 16);
+export function promptSha(generation: ModelGeneration): string {
+	return createHash("sha256").update(transcriptionPrompt(generation)).digest("hex").slice(0, 16);
 }
 
 export interface CurrentPins {
 	generations: readonly ModelGeneration[];
-	promptSha: string;
 	renderVersion: number;
 	runtime: string;
 }
@@ -62,7 +61,7 @@ export function checkFigure(figure: LocalFigure, current: CurrentPins): string[]
 	const problems: string[] = [];
 	const generation = current.generations.find((g) => g.dir === figure.generation);
 	if (!generation) return [`${figure.generation}: no such model generation in this build`];
-	if (figure.promptSha !== current.promptSha) problems.push(`${figure.generation}: prompt changed (${figure.promptSha} -> ${current.promptSha})`);
+	if (figure.promptSha !== promptSha(generation)) problems.push(`${figure.generation}: prompt changed (${figure.promptSha} -> ${promptSha(generation)})`);
 	if (figure.renderVersion !== current.renderVersion) problems.push(`${figure.generation}: render version changed (${figure.renderVersion} -> ${current.renderVersion})`);
 	if (figure.runtime !== current.runtime) problems.push(`${figure.generation}: runtime changed (${figure.runtime} -> ${current.runtime})`);
 	const pinned = (fileName: string) => generation.artefacts.find((a) => a.fileName === fileName)?.sha256;
