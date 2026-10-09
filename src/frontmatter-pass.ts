@@ -74,6 +74,8 @@ export async function backfillFrontmatter(api: PassApi, noteStore: NoteStore, in
 			modified: deviceModified(entry.lastModified),
 			folder: folderPathOf(entry, entriesById),
 			type: content.fileType === "epub" ? ("epub" as const) : content.fileType === "pdf" ? ("pdf" as const) : ("notebook" as const),
+			// This pass walks `index.rows` only: every note it touches is a transcript note.
+			kind: "transcript" as const,
 			pinned: entry.pinned,
 			uuid: entry.id,
 		};

@@ -99,7 +99,7 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		expect((await processDocument(deps(mem), doc(pages, { p3: "todo Call" }), state)).notices).toEqual([]);
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work", "d1:p2:work", "d1:p3:work"]);
 		expect(state.seenPages["d1:p1:work"]).toEqual({ scope: "notebook", pageHash: "h1", firstSeen: BEFORE, modified: BEFORE });
-		const path = "Work/Work log/Work log p3.md";
+		const path = "Work/Work log · Insights/Work log · Insight p3.md";
 		expect(mem.notes.get(path)).toContain("## Tasks\n- [ ] Call\n");
 		expect(mem.notes.get(path)).toContain("[[attachments/d1-p3.pdf|Page 3]]");
 		expect(state.rows["d1:p3:work"]).toMatchObject({ notePath: path, folder: "Work", status: "active", noteId: "note1", profileId: "generic", scope: "notebook" });
@@ -183,7 +183,7 @@ describe("processDocument > after the scan", () => {
 		const { mem, state, d } = await synced();
 		const report = await processDocument(d, doc([page("p1", 1, "h1b", AFTER + 5), page("p3", 3, "h3", AFTER)], { p1: "todo Plan" }), state);
 		expect(report.notesWritten).toBe(1);
-		expect([...mem.notes.keys()]).toContain("Work/Work log/Work log p1.md");
+		expect([...mem.notes.keys()]).toContain("Work/Work log · Insights/Work log · Insight p1.md");
 	});
 
 	it("records an unseen page written before the toggle as old without a note -- a notebook tagged later", async () => {
@@ -483,7 +483,7 @@ describe("followRetargets", () => {
 });
 
 describe("processDocument > frontmatter (Pro)", () => {
-	const fields = { tags: ["remarkable/work"], modified: null, folder: null, type: "notebook" as const, pages: 1, page: 3, pinned: false, uuid: "d1" };
+	const fields = { tags: ["remarkable/work"], modified: null, folder: null, type: "notebook" as const, kind: "insight" as const, pages: 1, page: 3, pinned: false, uuid: "d1" };
 
 	it("writes the plugin's keys into a new insight note and into every later write, keeping the user's own tags", async () => {
 		const mem = memory();

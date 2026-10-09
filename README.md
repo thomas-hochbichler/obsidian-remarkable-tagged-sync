@@ -718,6 +718,7 @@ remarkable-modified: 2026-08-25T16:20
 remarkable-synced: 2026-08-25T17:02
 remarkable-folder: Work/Projekt X
 remarkable-type: notebook
+remarkable-kind: transcript
 remarkable-pages: 12
 remarkable-pinned: true
 remarkable-uuid: aaaa0002-0000-0000-0000-000000000000
@@ -736,6 +737,10 @@ remarkable-page: 7
 
 A note made from a notebook tag covers pages 1 to *n* and so carries no `remarkable-page` at all —
 which makes the key itself the filter for "page-tag notes only".
+
+`remarkable-kind` says which of the plugin's two notes this is: `transcript` for a transcript note,
+`insight` for an insight note from Intelligence Mode. Insight notes also say so in their name —
+`Notebook · Insight p5`, in a folder `Notebook · Insights` — but a vault view filters on the key.
 
 Every document tag — the sync tag included — arrives namespaced under `remarkable/`, so each synced
 note answers `FROM #remarkable`. With [Dataview](https://blacksmithgu.github.io/obsidian-dataview/),

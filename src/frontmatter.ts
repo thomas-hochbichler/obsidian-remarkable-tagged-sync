@@ -22,6 +22,11 @@ export interface NoteFrontmatter {
 	folder: string | null;
 	type: "notebook" | "pdf" | "epub";
 	/**
+	 * Which of the plugin's two notes this is: the transcript note (Transcript Mode) or an insight note
+	 * (Intelligence Mode). The file explorer cannot tell them apart; a vault view can, by this.
+	 */
+	kind: "transcript" | "insight";
+	/**
 	 * How many pages this *note* covers -- every live page for a notebook-tag note, 1 for a page-tag
 	 * note. The cost signal issue #107 asked for: a transcription backend is billed one request per
 	 * page of the note, so this is what sorting by "expensive first" before a large sync has to read.
@@ -102,6 +107,7 @@ const MANAGED_KEYS = [
 	"remarkable-synced",
 	"remarkable-folder",
 	"remarkable-type",
+	"remarkable-kind",
 	"remarkable-pages",
 	"remarkable-page",
 	"remarkable-pinned",
@@ -174,6 +180,7 @@ function scalarValues(frontmatter: NoteFrontmatter): Record<(typeof MANAGED_KEYS
 		"remarkable-synced": frontmatter.synced,
 		"remarkable-folder": frontmatter.folder === null ? null : yamlValue(frontmatter.folder),
 		"remarkable-type": frontmatter.type,
+		"remarkable-kind": frontmatter.kind,
 		"remarkable-pages": frontmatter.pages === null ? null : String(frontmatter.pages),
 		"remarkable-page": frontmatter.page === null ? null : String(frontmatter.page),
 		"remarkable-pinned": String(frontmatter.pinned),

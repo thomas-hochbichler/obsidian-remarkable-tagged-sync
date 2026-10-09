@@ -5411,6 +5411,8 @@ describe("frontmatter page keys (Pro, #107)", () => {
 		const notebook = await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath);
 		const page = await deps.noteStore.read(result.index.rows[pageSyncKey("doc-1", "page-b", "todo")].notePath);
 		expect(page).toContain("remarkable-page: 2\n");
+		// Both are transcript notes: a page-tag note is one too, which the file explorer cannot show.
+		expect([notebook, page].every((note) => note!.includes("remarkable-kind: transcript\n"))).toBe(true);
 		// A notebook note covers pages 1..3, so it has no current page -- and that absence is what a
 		// vault view filters on to get the page-tag notes alone.
 		expect(notebook).not.toContain("remarkable-page:");

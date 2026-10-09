@@ -352,8 +352,10 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 		});
 	}
 
-	const title = `${doc.name} p${page.ordinal}`;
-	const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(doc.name)}`;
+	// "· Insight" in both, so the file explorer tells them from the notebook's transcript note, which
+	// sits beside the folder under the notebook's bare name (user, 2026-10-09).
+	const title = `${doc.name} · Insight p${page.ordinal}`;
+	const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(`${doc.name} · Insights`)}`;
 	const renderPath = await doc.writeRender(page.id);
 	const outcome = await processPage({
 		unit: { key, pageHash: page.hash, transcript, firstSeen: seen?.firstSeen ?? page.modified, writtenSpanDays: writtenSpanDays(seen, page.modified, deps.previousSyncAt ?? null) },

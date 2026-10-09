@@ -90,6 +90,8 @@ describe("backfillFrontmatter (toggle on)", () => {
 		expect(note).toContain(`remarkable-synced: ${SYNCED_MINUTE}\n`);
 		expect(note).toContain("remarkable-folder: Work\n");
 		expect(note).toContain("remarkable-type: notebook\n");
+		// Every note this pass reaches is a transcript note: an older one gains the key here.
+		expect(note).toContain("remarkable-kind: transcript\n");
 		expect(note).toContain("remarkable-pinned: true\n");
 		expect(note).toContain("remarkable-uuid: doc-1\n");
 		// The row now knows which tags are the plugin's to remove again.

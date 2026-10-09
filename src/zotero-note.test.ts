@@ -291,6 +291,7 @@ const FRONTMATTER = {
 	synced: "2026-09-11T09:10",
 	folder: null,
 	type: "pdf" as const,
+	kind: "transcript" as const,
 	pages: 1,
 	page: null,
 	pinned: false,

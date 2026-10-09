@@ -174,7 +174,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }, { id: "p2" }]) }, { "doc-1": { p1: "h1", p2: "h2" } });
 		const on = hook();
 		await runSync({ ...deps(a), intelligence: on.value, frontmatter: true }, EMPTY_SYNC_INDEX);
-		expect(on.docs[0].frontmatter!("work", "p2")).toMatchObject({ version: 2, fields: { page: 2, pages: 1, uuid: "doc-1", tags: expect.arrayContaining(["remarkable/work"]) } });
+		expect(on.docs[0].frontmatter!("work", "p2")).toMatchObject({ version: 3, fields: { kind: "insight", page: 2, pages: 1, uuid: "doc-1", tags: expect.arrayContaining(["remarkable/work"]) } });
 		const off = hook();
 		await runSync({ ...deps(a), intelligence: off.value }, EMPTY_SYNC_INDEX);
 		expect(off.docs[0].frontmatter!("work", "p2")).toBeNull();

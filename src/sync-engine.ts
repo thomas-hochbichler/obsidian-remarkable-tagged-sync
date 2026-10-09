@@ -1519,8 +1519,9 @@ function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRout
  * detection leaves an unchanged document unopened).
  *
  * 2: `remarkable-pages`, `remarkable-page` (#107) and `remarkable-note-id` (#109).
+ * 3: `remarkable-kind` -- transcript or insight note, which the file explorer cannot show.
  */
-export const FRONTMATTER_KEYS_VERSION = 2;
+export const FRONTMATTER_KEYS_VERSION = 3;
 
 /**
  * True if this note's frontmatter predates the current key set, and so needs one backfill write.
@@ -2350,11 +2351,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// that difference is the whole point of `remarkable-pages` as a cost signal (#107). A page-tag
 		// unit whose page has since gone from the device still costs one page and simply has no
 		// position, so `page` falls back to absent rather than to 0.
-		const unitFrontmatter = (tag: string, pageId: string | null): Omit<NoteFrontmatter, "synced" | "noteId"> | null =>
+		const unitFrontmatter = (tag: string, pageId: string | null, kind: NoteFrontmatter["kind"] = "transcript"): Omit<NoteFrontmatter, "synced" | "noteId"> | null =>
 			frontmatterBase === null
 				? null
 				: {
 						...frontmatterBase,
+						kind,
 						tags: namespacedTags([...docTags, tag]),
 						pages: pageId === null ? docPages.length : 1,
 						page: pageId === null ? null : pageOrder.indexOf(pageId) + 1 || null,
@@ -2748,7 +2750,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					shouldStop,
 					checkpoint,
 					frontmatter: (tag, pageId) => {
-						const fields = unitFrontmatter(tag, pageId);
+						const fields = unitFrontmatter(tag, pageId, "insight");
 						return fields === null ? null : { fields, version: FRONTMATTER_KEYS_VERSION };
 					},
 					writeRender: async (pageId) => {

@@ -46,7 +46,7 @@ export interface PageRun {
 	template: string;
 	backend: ExtractionBackend;
 	syncedAt: Date;
-	/** The note's name, `{{title}}` in the template: the notebook and the page number, never a date read off the page (live test, 2026-10-09). */
+	/** The note's name, `{{title}}` in the template: notebook, "· Insight" and page number, never a date read off the page (live test, 2026-10-09). */
 	title: string;
 	/** `{{ts.page.link}}`: a link to the page render. */
 	pageLink: string;

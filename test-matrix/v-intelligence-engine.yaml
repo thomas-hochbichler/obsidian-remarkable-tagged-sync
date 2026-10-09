@@ -1266,7 +1266,7 @@
 
     - id: V13.3
       scenario: "No written date, no first-seen stamp"
-      expect: "Date variables stay empty; the note is named after notebook and page, never a date"
+      expect: "Date variables stay empty; the note is named after notebook, Insight and page, never a date"
       layer: unit
       file: src/intelligence/page-engine.test.ts
       test: "processPage > a new note > leaves the date fields empty when the page has neither a written date nor a first-seen stamp"
