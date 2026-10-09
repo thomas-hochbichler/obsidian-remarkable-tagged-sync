@@ -52,6 +52,8 @@ describe("buildPrompt", () => {
 		// The task criteria reach every path that fills the Tasks Slot, a decision named as no task among
 		// them: a reasoning model skipped the local line pass and had nothing else to go by (research 34).
 		expect(system).toContain("records a decision or agreement");
+		// A mind map's "Band fragen" is no task (user, 2026-10-09).
+		expect(system).toContain("Words inside a ```mermaid block are a drawn diagram or mind map: they are NOT tasks");
 		expect(buildPrompt({ profile: genericProfile(false), slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {} }).system).not.toContain("How to recognise a task");
 		// Boxes and strike-through mean the same to everyone; a notation's signs only through the Profile (research 31).
 		expect(system).toContain("An empty checkbox before a line is an open task");

@@ -239,6 +239,10 @@ A transcript keeps what you marked on the page: struck-through words as ~~struck
 boxes and strike-through the same for everyone: an empty box is an open task, a ticked or crossed one
 is done, a struck line is left out.
 
+Words you joined with drawn lines or arrows — a sketch, a mind map, a little flow — come out as a
+diagram: a Mermaid flowchart that Obsidian draws, with your words as its boxes. Insight notes never take
+a task from inside a diagram. Underlines, boxes, brackets and dividers are left as they are.
+
 What any other sign means is yours to say, in the profile's **Signs on these pages** field. **Use
 bullet journal** fills in Ryder Carroll's key: • an open task, X done, > migrated and < scheduled (not
 open on this page), ○ an event, — a note. Add your own signs to it in plain words.

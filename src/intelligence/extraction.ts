@@ -122,6 +122,7 @@ export const TASK_CRITERIA = [
 	'- or it assigns a piece of work to a person with an arrow, colon or dash ("Backup -> Anna", "Max: Rollout-Plan");',
 	"- or it is a numbered step or an item under a heading such as To do, Plan, Prepare, Sprint planning, Don't forget, Next.",
 	"A line is NOT a task when it records a decision or agreement (\"Entsch.:\", \"Decision:\", \"decided:\", \"beschlossen\") -- what was decided is not left to do, even when it names an amount or a date.",
+	"Words inside a ```mermaid block are a drawn diagram or mind map: they are NOT tasks, even when one reads like something to do.",
 	"A line is NOT a task when it is a status or result (\"done\", \"deployed at 14:00\", a tick mark), an observation, an insight or a question, a heading, or one of several names/components listed under a task line (those belong to the task above; do not list them one by one).",
 ];
 

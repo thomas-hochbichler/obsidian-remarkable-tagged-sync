@@ -9,6 +9,7 @@ import {
 	LLM_MAX_PARALLELISM,
 	NOTE_TRANSCRIPTION_PROMPT,
 	pageCount,
+	PLAIN_TRANSCRIPTION_PROMPT,
 	readAgain,
 	refusalDetail,
 	sanitizeTranscript,
@@ -80,6 +81,15 @@ describe("TRANSCRIPTION_PROMPT", () => {
 		expect(TRANSCRIPTION_PROMPT).toContain("Write struck-through text as ~~text~~");
 		expect(TRANSCRIPTION_PROMPT).toContain("- [ ] when it is empty and as - [x] when it holds a tick or a cross");
 		expect(TRANSCRIPTION_PROMPT).toContain("Copy the sign a line starts with exactly as drawn: • X > < ○ —.");
+	});
+
+	// Ticket 38: words joined by drawn lines came out as loose lines that read like sentences.
+	it("writes a drawn diagram as a Mermaid flowchart, and nothing else as one", () => {
+		expect(TRANSCRIPTION_PROMPT).toContain("as a Mermaid flowchart in a ```mermaid block");
+		expect(TRANSCRIPTION_PROMPT).toContain("Add no node, edge or label that is not drawn.");
+		expect(TRANSCRIPTION_PROMPT).toContain("Lines, boxes, brackets and underlines that do not join words are not a diagram.");
+		expect(TRANSCRIPTION_PROMPT).toContain("Every line of text outside the diagram is transcribed as usual, none left out.");
+		expect(PLAIN_TRANSCRIPTION_PROMPT).not.toContain("Mermaid");
 	});
 
 	// One prompt, shared verbatim by the six Pro providers and the free local model. A second copy

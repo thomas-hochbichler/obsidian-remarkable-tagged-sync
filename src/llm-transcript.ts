@@ -22,6 +22,12 @@ import { mapWithConcurrency } from "./concurrency";
  * extraction could not tell them apart. Measured on 8 local models and Sonnet 5.5 (pages E01–E17): marks
  * kept 30/57 -> 57/57 on the cloud, CER within 0.6 points on every model.
  *
+ * The diagram sentence (ticket 38, 2026-10-09): words joined by drawn lines came out as loose lines that
+ * read like sentences. Now a diagram is written as a Mermaid flowchart, which Obsidian draws. Reference
+ * pages E18–E22: Sonnet 5.5, Haiku 5.5 and Qwen3.8-27B drew all 18 lines right, none invented, no text
+ * lost, no diagram where there is none; Qwen3-VL-8B all 18 with 2 invented. On one real page the 27B
+ * dropped the text around the diagram -- if that holds up, local models move to a second request.
+ *
  * `PLAIN_TRANSCRIPTION_PROMPT` is the prompt without them, for a managed model that cannot take them
  * (`ModelGeneration.keepsMarks`).
  */
@@ -35,7 +41,12 @@ export const TRANSCRIPTION_PROMPT =
 	PLAIN_TRANSCRIPTION_PROMPT +
 	" Keep what the writer marked. Write struck-through text as ~~text~~. Write a drawn checkbox as - [ ] when it is empty " +
 	"and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: • X > < ○ —. " +
-	"Transcribe exactly what is written; do not correct spelling or wording.";
+	"Transcribe exactly what is written; do not correct spelling or wording. If words on the page are joined by drawn " +
+	"lines or arrows (a diagram or a mind map), write only those joined words as a Mermaid flowchart in a ```mermaid " +
+	"block -- the one code fence allowed -- placed where the diagram stands on the page: each word a node, copied " +
+	"exactly; each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or " +
+	"label that is not drawn. Lines, boxes, brackets and underlines that do not join words are not a diagram. Every " +
+	"line of text outside the diagram is transcribed as usual, none left out.";
 
 /**
  * The prompt for a margin note: a few handwritten words cut out of a document's margin.

@@ -1,6 +1,6 @@
 {
 	"schema": 1,
-	"measuredAt": "2026-10-09T12:00:01.212Z",
+	"measuredAt": "2026-10-09T14:58:22.668Z",
 	"generation": "qwen3-vl-8b-instruct-q4_k_m",
 	"label": "Qwen3-VL-8B-Instruct",
 	"modelSha256": "67d1659bfe71b89d50b45a4ad1a9e5b997e5bb16ce5da66a6a6167abd569e9e2",
@@ -11,7 +11,7 @@
 		"memoryGb": 128,
 		"os": "macOS 27.0.1"
 	},
-	"promptSha": "1e75d221ac3226e9",
+	"promptSha": "1a478f23ba06c11c",
 	"renderVersion": 31,
 	"contextTokens": 8192,
 	"splitsTallPages": true,
@@ -19,100 +19,100 @@
 	"medianCer": 0.023809523809523808,
 	"pages": {
 		"10": {
-			"cer": 0.05112960760998811,
+			"cer": 0.054696789536266346,
 			"structure": {},
-			"ms": 7008,
-			"peakRssBytes": 8092631040
+			"ms": 4726,
+			"peakRssBytes": 8091303936
 		},
 		"11": {
 			"cer": 0.03188405797101449,
 			"structure": {},
-			"ms": 5700,
-			"peakRssBytes": 8064483328
+			"ms": 3969,
+			"peakRssBytes": 8065105920
 		},
 		"12": {
-			"cer": 0.06442577030812324,
+			"cer": 0.056022408963585436,
 			"structure": {},
-			"ms": 4532,
-			"peakRssBytes": 8062222336
+			"ms": 3310,
+			"peakRssBytes": 8062861312
 		},
 		"13": {
 			"cer": 0.1592920353982301,
 			"structure": {},
-			"ms": 4412,
-			"peakRssBytes": 7974961152
+			"ms": 2368,
+			"peakRssBytes": 7975550976
 		},
 		"14": {
 			"cer": 0.07692307692307693,
 			"structure": {},
-			"ms": 4839,
-			"peakRssBytes": 8128724992
+			"ms": 3638,
+			"peakRssBytes": 8129249280
 		},
 		"15": {
 			"cer": 0.016611295681063124,
 			"structure": {},
-			"ms": 6856,
-			"peakRssBytes": 7757676544
+			"ms": 5811,
+			"peakRssBytes": 7758872576
 		},
 		"01": {
 			"cer": 0.014,
 			"structure": {},
-			"ms": 5303,
-			"peakRssBytes": 8078639104
+			"ms": 3648,
+			"peakRssBytes": 8081702912
 		},
 		"02": {
-			"cer": 0.106,
+			"cer": 0.144,
 			"structure": {},
-			"ms": 6363,
-			"peakRssBytes": 8117436416
+			"ms": 3920,
+			"peakRssBytes": 8118059008
 		},
 		"03": {
 			"cer": 0.01020408163265306,
 			"structure": {
 				"list": "ok"
 			},
-			"ms": 2722,
-			"peakRssBytes": 7898202112
+			"ms": 2051,
+			"peakRssBytes": 7899332608
 		},
 		"04": {
 			"cer": 0.01282051282051282,
 			"structure": {
 				"list": "ok"
 			},
-			"ms": 3424,
-			"peakRssBytes": 7988805632
+			"ms": 2514,
+			"peakRssBytes": 7992033280
 		},
 		"05": {
 			"cer": 0.006134969325153374,
 			"structure": {
 				"table": "ok"
 			},
-			"ms": 3164,
-			"peakRssBytes": 7841988608
+			"ms": 2251,
+			"peakRssBytes": 7842971648
 		},
 		"06": {
 			"cer": 0.023809523809523808,
 			"structure": {},
-			"ms": 2674,
-			"peakRssBytes": 7897972736
+			"ms": 2029,
+			"peakRssBytes": 7899054080
 		},
 		"07": {
 			"cer": 0.002386634844868735,
 			"structure": {},
-			"ms": 4107,
-			"peakRssBytes": 8018624512
+			"ms": 3005,
+			"peakRssBytes": 8019361792
 		},
 		"08": {
-			"cer": 0.2916666666666667,
+			"cer": 0.5833333333333334,
 			"structure": {},
-			"ms": 1610,
-			"peakRssBytes": 7748534272
+			"ms": 1641,
+			"peakRssBytes": 7747846144
 		},
 		"09": {
 			"cer": 0,
 			"structure": {},
-			"ms": 1068,
-			"peakRssBytes": 7620378624
+			"ms": 956,
+			"peakRssBytes": 7623835648
 		}
 	}
 }

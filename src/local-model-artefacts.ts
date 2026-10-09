@@ -149,7 +149,9 @@ export const QWEN3_VL_8B: ModelGeneration = {
 	// tallest page anyone has measured is the 8.77x one in the reference set. Trading a measured
 	// 0.33 pp for the behaviour of a page nobody has written yet is the wrong way round.
 	splitsTallPages: true,
-	// On: 1.79 % -> 2.38 % median on the reference set, four pages up by at most 0.84 points.
+	// On: 1.79 % -> 2.38 % median on the reference set, four pages up by at most 0.84 points. With the
+	// diagram sentence (ticket 38) the median holds; page 08, a diagram, 29 % -> 58 %: drawn, but its
+	// heading dropped and one edge doubled -- the case for a second request if it holds up.
 	keepsMarks: true,
 };
 

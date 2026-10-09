@@ -3611,3 +3611,36 @@
       file: src/intelligence/rerun.test.ts
       test: "rerunExtraction > proposes removing what the model no longer finds, on both Re-extracts, and never on a plain sync"
 
+- feature: V75
+  name: "A drawn diagram is transcribed as a Mermaid flowchart, measured by its words, and yields no tasks"
+  code: src/llm-transcript.ts
+  tier: free
+  scenarios:
+    - id: V75.1
+      scenario: "A page with words joined by drawn lines or arrows, and one with underlines, boxes and brackets"
+      expect: "The transcription prompt asks for a Mermaid flowchart of only the joined words, every other line kept, and no diagram from lines that join nothing"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "TRANSCRIPTION_PROMPT > writes a drawn diagram as a Mermaid flowchart, and nothing else as one"
+
+    - id: V75.2
+      scenario: "Extraction over a transcript with a Mermaid block"
+      expect: "The task criteria say the words of a diagram are no tasks"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "buildPrompt > carries the Profile description, the date with its weekday, each Slot, the known ids and the page"
+
+    - id: V75.3
+      scenario: "The OCR measurement scores a page whose transcript draws its diagram in Mermaid"
+      expect: "The syntax is not counted as misread characters: the node labels stand in for the block"
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "a diagram written as Mermaid > is measured by its node labels, in the order the block names them"
+
+    - id: V75.4
+      scenario: "Mermaid with bare ids, umlauts and edge labels, and a code block of another language"
+      expect: "Labels taken as written; other code left alone"
+      layer: unit
+      file: test-support/cer.test.ts
+      test: "a diagram written as Mermaid > takes bare ids, umlauts and edge labels as they come, and leaves other code alone"
+
