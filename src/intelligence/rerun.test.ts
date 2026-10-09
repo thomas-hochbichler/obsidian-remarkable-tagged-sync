@@ -8,7 +8,9 @@ import { isPageNote, markAllForReextract, markForRereading, markNoteForReextract
 import { emptyIntelligence, setIntelligenceMode, type IntelligenceSettings } from "./settings";
 import type { IntelligenceState } from "./sync-pass";
 
-// Answers with one task per "todo X" in the page text, or fails on "FAIL".
+// Answers with one task per "todo X" in the page text, or fails on "FAIL"; an X in `forgotten` it no longer
+// calls a task -- the rules changed under a page whose ink did not.
+const forgotten = new Set<string>();
 registerExtractionBackend({
 	id: "rerunfake",
 	label: "Rerun fake",
@@ -20,7 +22,7 @@ registerExtractionBackend({
 		metered: false,
 		extract: async (input) => {
 			if (input.transcript.includes("FAIL")) return { kind: "failed", reason: "model down" };
-			const tasks = [...input.transcript.matchAll(/todo (\w+)/g)].map((m) => ({ source: m[0], reason: "", id: (input.known.tasks ?? []).find((k) => k.text === m[1])?.id ?? "new", text: m[1], due: null, done: false }));
+			const tasks = [...input.transcript.matchAll(/todo (\w+)/g)].filter((m) => !forgotten.has(m[1])).map((m) => ({ source: m[0], reason: "", id: (input.known.tasks ?? []).find((k) => k.text === m[1])?.id ?? "new", text: m[1], due: null, done: false }));
 			return { kind: "ok", result: parseExtraction({ tasks, summary: "" }, input.slots, input.referenceDate)! };
 		},
 	}),
@@ -74,6 +76,39 @@ describe("rerunExtraction", () => {
 		expect(e.notes.get(path)).not.toContain("Call");
 		expect(out.message).toBe("Extracted again; nothing on the page changed what the note says.");
 		expect(out.index!.seenPages!["d:p1:work"].pageHash).toBe("h1");
+	});
+
+	// Live test, 2026-10-09: a line read as a task before the Profile's signs said otherwise stayed one.
+	it("proposes removing what the model no longer finds, on both Re-extracts, and never on a plain sync", async () => {
+		const e = env();
+		const { index, path } = await synced(e, "todo Call todo Email");
+		const proposals = () => (JSON.parse(e.files.data.get(`plugin/base/${index.intelligenceRows!["d:p1:work"].noteId}.json`)!) as { slots: { tasks: { list: { proposals: { kind: string }[] } } } }).slots.tasks.list.proposals;
+		forgotten.add("Email");
+		try {
+			const prepared = await prepareRun(e, run());
+			const doc = (hash: string) => ({ docId: "d", name: "Log", legacy: false, pages: [{ id: "p1", ordinal: 1, hash, modified: Date.parse("2026-09-03T00:00:00.000Z") }], units: [{ tag: "work", scope: "notebook" as const, pageIds: ["p1"] }], transcribe: async () => new Map([["p1", "todo Call todo Email todo Pay"]]), writeRender: async () => "a/d-p1.pdf" });
+			// A sync over changed ink: the model may just have forgotten it, so it stays, unasked.
+			await prepared.hook!.process(doc("h2"), { seenPages: { ...index.seenPages }, rows: { ...index.intelligenceRows }, scans: { ...index.intelligenceScans } });
+			expect(e.notes.get(path)).toContain("- [ ] Email\n");
+			expect(proposals()).toEqual([]);
+
+			// "Re-extract this note" on the insight note: asked, so proposed -- and the line stays until the user says.
+			await rerunExtraction(e, run(), index, path, "a/d-p1.pdf");
+			expect(e.notes.get(path)).toContain("- [ ] Email\n");
+			expect(proposals()).toMatchObject([{ kind: "remove" }]);
+
+			// "Re-extract this note" on the transcript note: the same, through the sync it starts.
+			const base = `plugin/base/${index.intelligenceRows!["d:p1:work"].noteId}.json`;
+			const cleared = JSON.parse(e.files.data.get(base)!);
+			cleared.slots.tasks.list.proposals = [];
+			e.files.data.set(base, JSON.stringify(cleared));
+			const log = { syncKey: "d::work", docId: "d", pageId: null, tag: "work", entryHash: "e", pageHash: null, notePath: "Log.md", status: "active" as const, syncedAt: "" };
+			const marked = markNoteForReextract({ ...index, rows: { log } }, "Log.md", () => true).index!;
+			await prepared.hook!.process(doc("h1"), { seenPages: marked.seenPages!, rows: { ...index.intelligenceRows }, scans: { ...index.intelligenceScans } });
+			expect(proposals()).toMatchObject([{ kind: "remove" }]);
+		} finally {
+			forgotten.clear();
+		}
 	});
 
 	it("says what it did when the note changed, and what failed when the model did", async () => {

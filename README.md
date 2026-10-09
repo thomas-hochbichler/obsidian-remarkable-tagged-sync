@@ -223,6 +223,11 @@ switched on included: those get their first insight note.
 with insight notes on. It says how many pages that is and asks first: each page is one request to the
 extraction backend.
 
+When you re-extract, an item the model no longer finds — because you changed the profile, say — is
+not removed on its own: it becomes a proposal to remove it, and you decide in the review. A plain sync
+never does this; there an item stays until its writing is gone from the page, because a model
+sometimes simply overlooks one.
+
 **Re-transcribe this note** on an insight note reads its page off the tablet again, and then extracts
 it. Apart from re-extracting a single insight note, which happens on the spot, each of these starts a
 sync at once; **Sync now** remains the one command that brings both kinds of note up to date.

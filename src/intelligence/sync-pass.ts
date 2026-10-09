@@ -250,7 +250,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 			if (seen?.reextract) {
 				const row = state.rows[key];
 				const kept = seen.pageHash === page.hash && row?.status === "active" ? ((await deps.baseStore.load(row.noteId))?.transcript ?? undefined) : undefined;
-				work.push({ unit, page, key, seen, kept });
+				work.push({ unit, page, key, seen, kept, asked: true });
 				continue;
 			}
 
@@ -260,7 +260,8 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 				else leftAlone++;
 				state.seenPages[key] = { scope: unit.scope, pageHash: page.hash, firstSeen: page.modified, modified: page.modified };
 			} else if (kind !== "unchanged") {
-				work.push({ unit, page, key, seen });
+				// Forced only by "Re-extract this note" on an insight note (`rerunExtraction`).
+				work.push({ unit, page, key, seen, ...(options.force?.has(key) ? { asked: true as const } : {}) });
 			} else {
 				// An insight note deleted by hand is made again, as a transcript note is (spec §4.1, 2026-10-02):
 				// from the transcript its base kept, so a resting page is not read a second time.
@@ -309,6 +310,8 @@ interface WorkItem {
 	seen: SeenEntry | undefined;
 	/** The transcript a deleted note's base kept, for a page that did not change. */
 	kept?: string | null;
+	/** "Re-extract" asked for this page: what the model no longer finds is proposed for removal. */
+	asked?: true;
 }
 
 const DAY_MS = 86_400_000;
@@ -323,7 +326,7 @@ export function writtenSpanDays(seen: SeenEntry | undefined, modified: number | 
 	return modified === null || since === null ? null : Math.max(0, modified - since) / DAY_MS;
 }
 
-async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState, report: PassReport, { unit, page, key, seen, kept }: WorkItem, texts: Map<string, string>): Promise<void> {
+async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument, state: IntelligenceState, report: PassReport, { unit, page, key, seen, kept, asked }: WorkItem, texts: Map<string, string>): Promise<void> {
 	const row = state.rows[key];
 	const noteText = row ? await deps.noteStore.read(row.notePath) : null;
 	// One revive rule (§4.1): a row whose note is gone starts over with a fresh id and no base --
@@ -384,6 +387,7 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 		formatDate: deps.formatDate,
 		formatTime: deps.formatTime,
 		newId: deps.newId,
+		asked,
 	});
 
 	if (outcome.kind === "failed") {

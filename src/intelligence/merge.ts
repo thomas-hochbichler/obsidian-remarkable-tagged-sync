@@ -79,6 +79,13 @@ export interface ListMergeInput {
 	transcript: string;
 	/** The Slot's review toggle. Ticks from the page and user-typed items ignore it. */
 	review: boolean;
+	/**
+	 * The user asked for this page to be extracted again ("Re-extract"): an engine item the model no
+	 * longer returns, though its ink is still on the page, is proposed for removal instead of kept. The
+	 * rules may have changed under it -- a Profile's signs, a Slot's instruction, a corrected transcript --
+	 * and the ink did not, so nothing else could ever take it out (live test, 2026-10-09).
+	 */
+	asked?: boolean;
 	newId: () => string;
 }
 
@@ -216,10 +223,16 @@ export function mergeList(input: ListMergeInput): ListMergeResult {
 		}
 	}
 
-	// 4 · Items the model did not return: dropped only when their ink is gone.
+	// 4 · Items the model did not return: dropped only when their ink is gone. With the ink still there
+	//     the model may just have forgotten it, so it stays -- unless the user asked for the page again,
+	//     and then they are asked; never removed on the model's word alone.
 	const removed = new Set<string>();
 	for (const item of items) {
-		if (returned.has(item.id) || item.source === null || inTranscript(item.source, transcript)) continue;
+		if (returned.has(item.id) || item.source === null) continue;
+		if (inTranscript(item.source, transcript)) {
+			if (input.asked && item.origin === "engine") fresh.push({ kind: "remove", id: newId(), itemId: item.id });
+			continue;
+		}
 		const line = lineOf.get(item.id)!;
 		if (review || isTicked(note[line].checkbox) || item.origin === "user" || edited(item)) {
 			fresh.push({ kind: "remove", id: newId(), itemId: item.id });

@@ -70,6 +70,24 @@ describe("mergeList > the page did not change behind an item", () => {
 		expect(result.ops).toEqual([]);
 		expect(result.base.items).toHaveLength(1);
 	});
+
+	// Live test, 2026-10-09: a Bullet Journal note line ("- Weiter mit …") read as a task before the
+	// Profile's signs existed stayed a task through every Re-extract, because its ink never changed.
+	it("proposes removing an item the model no longer finds when the user asked for the page again", () => {
+		const base = baseOf(item("a", "Buy milk", "buy milk"), item("b", "Call Bob", "call Bob re invoice"));
+		const result = mergeList({ base, note: [line("Buy milk"), line("Call Bob")], model: [said("b", "Call Bob", "call Bob re invoice")], transcript: PAGE, review: false, asked: true, newId: ids() });
+		// Never removed on the model's word alone: the line stays until the user says so.
+		expect(result.ops).toEqual([]);
+		expect(result.base.items).toHaveLength(2);
+		expect(result.base.proposals).toEqual([{ kind: "remove", id: "n1", itemId: "a" }]);
+	});
+
+	it("does not propose removing the user's own line, or proposes it twice", () => {
+		const first = mergeList({ base: baseOf(item("a", "Buy milk", "buy milk")), note: [line("Buy milk"), line("Water plants")], model: [], transcript: PAGE, review: false, asked: true, newId: ids() });
+		expect(first.base.proposals).toEqual([{ kind: "remove", id: "n2", itemId: "a" }]);
+		const again = mergeList({ base: first.base, note: [line("Buy milk"), line("Water plants")], model: [], transcript: PAGE, review: false, asked: true, newId: ids() });
+		expect(again.base.proposals).toEqual([{ kind: "remove", id: "n2", itemId: "a" }]);
+	});
 });
 
 describe("mergeList > the ink behind an item changed", () => {

@@ -3585,3 +3585,29 @@
       file: src/local-ocr-backend.test.ts
       test: "pageArgs > asks a model to keep the writer's marks only when the generation can take it"
 
+- feature: V74
+  name: "Re-extract proposes removing an item the model no longer finds, its ink unchanged"
+  code: src/intelligence/merge.ts
+  tier: free
+  scenarios:
+    - id: V74.1
+      scenario: "Re-extract after the rules changed: one item is no longer returned, its ink still on the page"
+      expect: "A remove proposal; the line stays in the note until the user decides"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the page did not change behind an item > proposes removing an item the model no longer finds when the user asked for the page again"
+
+    - id: V74.2
+      scenario: "Re-extract twice, with a line the user typed"
+      expect: "No proposal for the user's line; the same proposal is not made twice"
+      layer: unit
+      file: src/intelligence/merge.test.ts
+      test: "mergeList > the page did not change behind an item > does not propose removing the user's own line, or proposes it twice"
+
+    - id: V74.3
+      scenario: "A plain sync, Re-extract on the insight note, Re-extract on the transcript note"
+      expect: "No proposal on the plain sync; a remove proposal on each Re-extract"
+      layer: unit
+      file: src/intelligence/rerun.test.ts
+      test: "rerunExtraction > proposes removing what the model no longer finds, on both Re-extracts, and never on a plain sync"
+

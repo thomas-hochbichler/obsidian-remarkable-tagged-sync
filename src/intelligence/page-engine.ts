@@ -58,6 +58,8 @@ export interface PageRun {
 	newId: () => string;
 	/** How the user writes dates with slashes; day/month when absent. */
 	dateOrder?: DateOrder;
+	/** The user asked for this page again ("Re-extract"); see `ListMergeInput.asked`. */
+	asked?: boolean;
 }
 
 export type PageOutcome =
@@ -272,7 +274,7 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 			slots[slot.id] = { ...stored, heading, value: merged.base, proposals: merged.proposals };
 		} else {
 			const items = parseRegion(lines, region, format);
-			const merged = mergeList({ base: stored.list, note: items, model: itemsOf(got), transcript, review: slot.review, newId: run.newId });
+			const merged = mergeList({ base: stored.list, note: items, model: itemsOf(got), transcript, review: slot.review, asked: run.asked, newId: run.newId });
 			lines = applyListOps(lines, region, items, merged.ops, format);
 			slots[slot.id] = { ...stored, heading, list: merged.base };
 		}
