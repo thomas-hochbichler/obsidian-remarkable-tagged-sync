@@ -65,11 +65,18 @@ export function tagSendSkipNotice(title: string, reason: string): string {
 	return `Zotero: "${title}" was not sent — ${reason}.`;
 }
 
+/**
+ * "Already there" is what the last sync saw (`documentsOnTablet`), so a paper deleted on the tablet
+ * since then still reads as there. Said, because the user cannot see that rule and otherwise deletes
+ * everything to get one paper back (found live 2026-10-09).
+ */
+export const DELETED_SINCE_SYNC = "Deleted it on the tablet? Run Sync now once, then send again.";
+
 /** Nothing tagged, or everything tagged already there: the command was pressed, so it answers. */
 export function nothingToSend(count: number, sendTag: string): string {
 	return count === 0
 		? `Zotero: no paper carries the tag ${sendTag}.`
-		: `Zotero: ${count === 1 ? "the paper" : `all ${count} papers`} tagged ${sendTag} ${count === 1 ? "is" : "are"} on your reMarkable already.`;
+		: `Zotero: ${count === 1 ? "the paper" : `all ${count} papers`} tagged ${sendTag} ${count === 1 ? "is" : "are"} on your reMarkable already. ${DELETED_SINCE_SYNC}`;
 }
 
 /** The whole command refused at once: the route, or Zotero itself. */
