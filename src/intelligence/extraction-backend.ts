@@ -10,7 +10,7 @@
 
 import { fetchWithRetry, isUnreachable, OcrTimeoutError, refusalDetail, type Sleep } from "../llm-transcript";
 import { obsidianFetch } from "../obsidian-fetch";
-import { buildPrompt, buildSchema, type DateReading, dateRules, describeSlot, type ExtractionResult, type KnownItem, parseExtraction, WEEKDAYS } from "./extraction";
+import { buildPrompt, buildSchema, type DateReading, dateRules, describeSlot, type ExtractionResult, type KnownItem, parseExtraction, TASK_CRITERIA, WEEKDAYS } from "./extraction";
 import type { ProfileDef, SlotDef } from "./settings";
 
 export interface CompletionRequest {
@@ -137,13 +137,6 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
  * clause made the model skip it on every page, so the answer is started with `LINES:` for it.
  */
 /** What a task is in terse handwritten notes (research 22): shared by the line pass in prose and in JSON. */
-const TASK_CRITERIA = [
-	"How to recognise a task in handwritten notes. Notes are terse, so a task rarely looks like a full sentence. A line is a task when it says what someone should still do:",
-	"- it starts with or contains a verb of doing (check, fix, ask, run, deploy, test, create, merge, switch, move, prepare, send, call, plan, analyse, restart, upgrade, prüfen, schicken, anrufen, erledigen, ...), even if misspelled;",
-	'- or it assigns a piece of work to a person with an arrow, colon or dash ("Backup -> Anna", "Max: Rollout-Plan");',
-	"- or it is a numbered step or an item under a heading such as To do, Plan, Prepare, Sprint planning, Don't forget, Next.",
-	"A line is NOT a task when it is a status or result (\"done\", \"deployed at 14:00\", a tick mark), an observation, an insight or a question, a heading, or one of several names/components listed under a task line (those belong to the task above; do not list them one by one).",
-];
 const TASK_LINES = [
 	...TASK_CRITERIA,
 	"",
@@ -339,9 +332,8 @@ const LINES_SCHEMA = {
 	type: "array",
 	items: { type: "object", properties: { line: { type: "string" }, verdict: { type: "string", enum: ["TASK", "PART", "NO"] } }, required: ["line", "verdict"], additionalProperties: false },
 };
+// The criteria are in the system prompt already (`buildPrompt`); the line pass only adds the steps.
 const LINES_STEPS = [
-	"",
-	...TASK_CRITERIA,
 	"",
 	"Fill the fields in order.",
 	`First \`${LINES_KEY}\`: go through the page text from the first to the last line. For every line add one entry: \`line\` = the first words of the line, \`verdict\` = "TASK", "PART" (only a bare name listed under a task line, with no work of its own) or "NO". Do not skip lines.`,

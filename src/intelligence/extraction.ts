@@ -116,6 +116,15 @@ export function describeSlot(slot: SlotDef, known: readonly KnownItem[]): string
 	return lines.join("\n");
 }
 
+export const TASK_CRITERIA = [
+	"How to recognise a task in handwritten notes. Notes are terse, so a task rarely looks like a full sentence. A line is a task when it says what someone should still do:",
+	"- it starts with or contains a verb of doing (check, fix, ask, run, deploy, test, create, merge, switch, move, prepare, send, call, plan, analyse, restart, upgrade, prüfen, schicken, anrufen, erledigen, ...), even if misspelled;",
+	'- or it assigns a piece of work to a person with an arrow, colon or dash ("Backup -> Anna", "Max: Rollout-Plan");',
+	"- or it is a numbered step or an item under a heading such as To do, Plan, Prepare, Sprint planning, Don't forget, Next.",
+	"A line is NOT a task when it records a decision or agreement (\"Entsch.:\", \"Decision:\", \"decided:\", \"beschlossen\") -- what was decided is not left to do, even when it names an amount or a date.",
+	"A line is NOT a task when it is a status or result (\"done\", \"deployed at 14:00\", a tick mark), an observation, an insight or a question, a heading, or one of several names/components listed under a task line (those belong to the task above; do not list them one by one).",
+];
+
 /** The one-call prompt (cloud). The local two-call prompts live with the local backend. */
 export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDef[]; transcript: string; referenceDate: Date; known: Record<string, readonly KnownItem[]>; dates?: DateReading }): { system: string; user: string } {
 	const day = input.referenceDate;
@@ -125,6 +134,10 @@ export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDe
 		"Only extract what is written on the page. Never invent items. Copy `source` exactly from the page text.",
 		"For due dates, copy the words and their anchor as written, then give both as dates by the rules below.",
 		"Write everything you phrase yourself, such as a summary, in the language the page is written in.",
+		// Every path that fills the Tasks Slot gets the criteria, not only the local line pass: a model that
+		// reasons skipped that pass and, with nothing else said, made "Entsch.: Klassenkasse 15 € pro Kind"
+		// a payment to do and split a packing list into three tasks (live test, 2026-10-09; research 34).
+		...(input.slots.some((slot) => slot.id === "tasks") ? ["", ...TASK_CRITERIA] : []),
 	].join("\n");
 	const user = [
 		`Page type: ${input.profile.description}`,

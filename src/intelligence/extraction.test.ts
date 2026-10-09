@@ -49,6 +49,10 @@ describe("buildPrompt", () => {
 		expect(user).not.toContain("About dates on these pages");
 		expect(buildPrompt({ profile: { ...genericProfile(false), dates: "Each entry starts with its date." }, slots: [TASKS], transcript: "x", referenceDate: MON, known: {} }).user).toContain("About dates on these pages, from the user: Each entry starts with its date.");
 		expect(buildPrompt({ profile: genericProfile(false), slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {} }).user).not.toContain("## Due dates");
+		// The task criteria reach every path that fills the Tasks Slot, a decision named as no task among
+		// them: a reasoning model skipped the local line pass and had nothing else to go by (research 34).
+		expect(system).toContain("records a decision or agreement");
+		expect(buildPrompt({ profile: genericProfile(false), slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {} }).system).not.toContain("How to recognise a task");
 		expect(user).toContain("Page type: Work meeting notes");
 		expect(user).toContain("Monday, 2026-09-28");
 		expect(user).toContain('Example: "call Bob" → Call Bob');
