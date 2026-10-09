@@ -1,5 +1,5 @@
 /**
- * The review Modal's data: every pending proposal over every page note (spec §8: "one Modal over all
+ * The review Modal's data: every pending proposal over every insight note (spec §8: "one Modal over all
  * notes"), and the one step that applies a decision -- read the note and its base, decide, write both.
  */
 
@@ -45,7 +45,7 @@ function describe(base: PageBase, slotId: string, proposal: Proposal): { label: 
 	}
 }
 
-/** Every pending proposal of every active page note whose base is here, grouped by note in index order. */
+/** Every pending proposal of every active insight note whose base is here, grouped by note in index order. */
 export async function loadReview(rows: Record<string, IntelligenceRow>, baseStore: BaseStore): Promise<ReviewItem[]> {
 	const items: ReviewItem[] = [];
 	for (const row of Object.values(rows)) {

@@ -230,11 +230,11 @@ const ZOTERO_CAPABILITY: ProCapability = {
 
 /**
  * Intelligence Mode on more than one tag. Without Pro the engine keeps the tag switched on first; the
- * others keep their configuration, show "(Pro)" and their page notes are no longer updated (spec §11).
+ * others keep their configuration, show "(Pro)" and their insight notes are no longer updated (spec §11).
  */
 const INTELLIGENCE_TAGS_CAPABILITY: ProCapability = {
 	id: "intelligence-beyond-the-first-tag",
-	label: "Page notes from the Intelligence Engine on more than one tag",
+	label: "Insight notes from the Intelligence Engine on more than one tag",
 	locked: (entitlement) => !intelligenceProAllowed(entitlement),
 	whenLocked: "falls-back-to-free",
 	enforcedAt: {
@@ -254,7 +254,7 @@ const INTELLIGENCE_TAGS_CAPABILITY: ProCapability = {
  */
 const INTELLIGENCE_SLOTS_CAPABILITY: ProCapability = {
 	id: "intelligence-own-slots",
-	label: "Own Slots, Decisions and Tags, Item formats and per-Slot review in page notes",
+	label: "Own Slots, Decisions and Tags, Item formats and per-Slot review in insight notes",
 	locked: (entitlement) => !intelligenceProAllowed(entitlement),
 	whenLocked: "falls-back-to-free",
 	enforcedAt: {
@@ -287,10 +287,10 @@ const CLOUD_EXTRACTION_CAPABILITY: ProCapability = {
 	},
 };
 
-/** "Change profile for this page note" (spec §5.1): offered, and refused in place without Pro. */
+/** "Change profile for this insight note" (spec §5.1): offered, and refused in place without Pro. */
 const CHANGE_PROFILE_CAPABILITY: ProCapability = {
 	id: "intelligence-change-profile",
-	label: "Changing the profile of one page note",
+	label: "Changing the profile of one insight note",
 	locked: (entitlement) => !intelligenceProAllowed(entitlement),
 	whenLocked: "refused-in-place",
 	enforcedAt: {

@@ -121,7 +121,7 @@ export function createBaseStore(files: BaseFiles, dir: string): BaseStore {
 const isFence = (line: string) => line.trimEnd() === "---";
 
 /**
- * The lines of a page note that no Slot fills: everything but the frontmatter, the Slots' headings,
+ * The lines of an insight note that no Slot fills: everything but the frontmatter, the Slots' headings,
  * the item lines of a list region, the body of a Text or Value region, proposal callouts and blank
  * lines. Template prose is among them, and so is whatever the user wrote beside the Slots.
  */

@@ -301,7 +301,7 @@ export function renderTranscript(embedPath: string, pages: TranscriptPage[] | nu
 	if ((extras.unitPages ?? pages.length) <= 1) {
 		const page = pages[0];
 		if (page === undefined) return "";
-		// No quotes folded in here, and none are lost: a page note's digest covers its one page, so it
+		// No quotes folded in here, and none are lost: a page-tag note's digest covers its one page, so it
 		// never leaves an uncovered highlight behind (ticket 05).
 		return pageBody(page, [], typedTextLine([page.pageLabel])).join("\n\n");
 	}

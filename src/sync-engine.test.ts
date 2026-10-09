@@ -5403,7 +5403,7 @@ describe("frontmatter page keys (Pro, #107)", () => {
 		expect(page).toContain("remarkable-pages: 1\n");
 	});
 
-	it("writes a page note's position in the document, and none on a notebook note", async () => {
+	it("writes a page-tag note's position in the document, and none on a notebook note", async () => {
 		const deps = { ...baseDeps(threePages(), { sync: "Target", todo: "Pages" }), frontmatter: true };
 
 		const result = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -5412,7 +5412,7 @@ describe("frontmatter page keys (Pro, #107)", () => {
 		const page = await deps.noteStore.read(result.index.rows[pageSyncKey("doc-1", "page-b", "todo")].notePath);
 		expect(page).toContain("remarkable-page: 2\n");
 		// A notebook note covers pages 1..3, so it has no current page -- and that absence is what a
-		// vault view filters on to get the page notes alone.
+		// vault view filters on to get the page-tag notes alone.
 		expect(notebook).not.toContain("remarkable-page:");
 	});
 });

@@ -169,14 +169,14 @@ describe("changeProfile", () => {
 	it("refuses another note, another device, an unknown Profile, and says when extraction fails", async () => {
 		const e = env();
 		const { index, path } = await synced(e);
-		expect((await changeProfile(e, run(), index, "Other.md", "decided", "a")).message).toContain("not a page note");
+		expect((await changeProfile(e, run(), index, "Other.md", "decided", "a")).message).toContain("not an insight note");
 		expect((await changeProfile(e, run({ ...settings(), engineDeviceId: "x" }), index, path, "decided", "a")).message).toContain("another device");
 		expect((await changeProfile(e, run(), index, path, "nope", "a")).message).toBe("That profile no longer exists.");
 		const base = JSON.parse(e.data.get(`plugin/base/${index.intelligenceRows!["d:p1:work"].noteId}.json`)!) as { transcript: string };
 		base.transcript = "FAIL";
 		e.data.set(`plugin/base/${index.intelligenceRows!["d:p1:work"].noteId}.json`, JSON.stringify(base));
 		expect((await changeProfile(e, run(), index, path, "decided", "a")).message).toBe("Extraction failed: model down");
-		expect((await changeProfile(e, run(), { rootHash: null, rows: {} }, path, "decided", "a")).message).toContain("not a page note");
+		expect((await changeProfile(e, run(), { rootHash: null, rows: {} }, path, "decided", "a")).message).toContain("not an insight note");
 	});
 
 	it("still works for a page whose seen entry went missing", async () => {

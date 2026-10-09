@@ -248,15 +248,15 @@ export interface SyncIndex {
 	 * about, note or not. Absent on an index written before 1.9.0.
 	 */
 	seenPages?: Record<string, SeenEntry>;
-	/** One row per page note. Not in `rows`: a row there with a `pageId` *is* a page-tag unit and is diffed against live tags. */
+	/** One row per insight note. Not in `rows`: a row there with a `pageId` *is* a page-tag unit and is diffed against live tags. */
 	intelligenceRows?: Record<string, IntelligenceRow>;
 	/** `intelligenceFingerprint` of the modes the last completed run used; absent = the empty block's. */
 	intelligenceMappings?: string;
 	/** Per tag, the `enabledAt` whose switch-on scan a completed run finished. */
 	intelligenceScans?: Record<string, string>;
 	/**
-	 * Documents with page-note work still owed: the engine did not run on them (another device, no
-	 * consent in a background sync), a page failed, or a page note was marked to be read again. Nothing
+	 * Documents with insight-note work still owed: the engine did not run on them (another device, no
+	 * consent in a background sync), a page failed, or an insight note was marked to be read again. Nothing
 	 * on the tablet changes for any of these, so without this list no sync would ever open them again.
 	 */
 	intelligencePending?: string[];
@@ -395,7 +395,7 @@ export interface SyncDeps {
 	manual?: boolean;
 	/**
 	 * The Intelligence Engine, on the device that runs it (spec §9) -- absent everywhere else, and then
-	 * no page note is written or extracted. Sync and transcription run on every device regardless.
+	 * no insight note is written or extracted. Sync and transcription run on every device regardless.
 	 */
 	intelligence?: IntelligenceHook;
 	/**
@@ -415,7 +415,7 @@ export interface IntelligenceHook {
 	process: (doc: IntelligenceDocument, state: IntelligenceState) => Promise<PassReport>;
 	/** Marks every due scan done; called only after a run that opened every document. */
 	completeScans: (state: IntelligenceState) => void;
-	/** Local work before any document is opened: page notes follow a re-targeted mapping. */
+	/** Local work before any document is opened: insight notes follow a re-targeted mapping. */
 	beforeRun: (state: IntelligenceState) => Promise<void>;
 }
 
@@ -2119,14 +2119,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// Only a scan that opens every document may be marked done: a page not opened was not stamped.
 	const scanDue = scansDue.length > 0;
 	const pending = new Set(previousIndex.intelligencePending ?? []);
-	// A page note deleted by hand is made again, as a transcript note is (see `hasMissingActiveNote`):
-	// nothing on the device says so, so its notebook is owed -- where its tag still makes page notes.
+	// An insight note deleted by hand is made again, as a transcript note is (see `hasMissingActiveNote`):
+	// nothing on the device says so, so its notebook is owed -- where its tag still makes insight notes.
 	if (intelligence !== undefined) {
 		for (const row of Object.values(previousIndex.intelligenceRows ?? {})) {
 			if (row.status === "active" && tagRouter.extracts(row.tag) && !(await deps.noteStore.exists(row.notePath))) pending.add(row.docId);
 		}
 	}
-	/** A due scan opens every document; owed page-note work opens its own, once the engine can run. */
+	/** A due scan opens every document; owed insight-note work opens its own, once the engine can run. */
 	const forceOpen = (docId: string) => scanDue || (intelligence !== undefined && pending.has(docId));
 	// A document the run could not read leaves the scan unfinished: its pages were never stamped.
 	let everyDocumentRead = true;
@@ -2297,7 +2297,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// Nothing mapped now, and nothing previously active to potentially orphan -- truly nothing to do.
 		const hasPreviouslyActiveRow = hasRowWithStatus(rows, entry.id, "active");
-		// Page notes whose tag just left the notebook are the engine's to orphan.
+		// Insight notes whose tag just left the notebook are the engine's to orphan.
 		const hasPageNotes = Object.values(intelligenceState.rows).some((row) => row.docId === entry.id && row.status === "active");
 		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow && !hasPageNotes) continue;
 
@@ -2720,13 +2720,13 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		for (const row of Object.values(rows)) if (row.docId === entry.id && isTranscriptOff(tagRouter, row.tag)) untouchedKeys.add(row.syncKey);
 
 		// The Intelligence Engine: handwritten notebooks only; annotated PDFs and EPUBs (both `pdfBacked`) keep the digest.
-		// A handwritten notebook with a page-note tag, or with page notes whose tag just left it (so they
+		// A handwritten notebook with an insight-note tag, or with insight notes whose tag just left it (so they
 		// are orphaned). Owed when the engine cannot run here: another device, or no background consent.
 		const engineTags = [...mapped.notebook, ...mapped.page.map((pageTag) => pageTag.name)];
 		if (intelligence === undefined && !pdfBacked && (engineTags.some((tag) => tagRouter.extracts(tag)) || hasPageNotes)) pending.add(entry.id);
 		// The hook decides per unit which tags extract; it only needs every mapped notebook.
 		if (intelligence !== undefined && !pdfBacked && (engineTags.length > 0 || hasPageNotes)) {
-			// Stopped before the page notes: the transcript rows already carry this entry hash, so only the
+			// Stopped before the insight notes: the transcript rows already carry this entry hash, so only the
 			// debt reopens the notebook on the next run.
 			if (shouldStop()) {
 				pending.add(entry.id);

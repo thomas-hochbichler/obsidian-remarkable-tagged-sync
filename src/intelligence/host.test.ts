@@ -95,7 +95,7 @@ describe("prepareRun", () => {
 		expect(modelless.paused).toBe("Download the model first.");
 	});
 
-	it("writes a page note through the environment: template, dates, ids, one base folder", async () => {
+	it("writes an insight note through the environment: template, dates, ids, one base folder", async () => {
 		const e = env({ "plugin/device-id": "device-a", ".obsidian/templates.json": JSON.stringify({ dateFormat: "DD.MM.YYYY" }) });
 		const created: Record<string, string> = {};
 		e.readVaultNote = async (path) => (path === "T.md" ? "{{date}} {{time}} {{time:ss}}\n## Tasks\n{{ts.tasks}}\n" : null);
@@ -231,13 +231,13 @@ describe("the Obsidian glue", () => {
 	});
 });
 
-describe("intelligenceNotices > a page note that could not be made", () => {
+describe("intelligenceNotices > an insight note that could not be made", () => {
 	it("is said after every sync the user starts, with the reason, and not after a background one", () => {
 		const one = { ...emptyReport(), failures: ['page 1 of "Sample": The server sent an empty answer.', 'choosing a profile under "work": slow; used "A"'] };
-		expect(intelligenceNotices(null, one, true)).toEqual(['Could not make a page note; the next sync tries again. Page 1 of "Sample": The server sent an empty answer.']);
+		expect(intelligenceNotices(null, one, true)).toEqual(['Could not make an insight note; the next sync tries again. Page 1 of "Sample": The server sent an empty answer.']);
 		expect(intelligenceNotices(null, one, false)).toEqual([]);
 		const two = { ...emptyReport(), failures: ['page 1 of "Sample": model down', 'page 2 of "Sample": model down'] };
-		expect(intelligenceNotices(null, two, true)).toEqual(['Could not make 2 page notes; the next sync tries again. Page 1 of "Sample": model down']);
+		expect(intelligenceNotices(null, two, true)).toEqual(['Could not make 2 insight notes; the next sync tries again. Page 1 of "Sample": model down']);
 	});
 });
 

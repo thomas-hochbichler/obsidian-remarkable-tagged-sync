@@ -1,5 +1,5 @@
 /**
- * One frontmatter property of a page note, read and written line by line: a Value Slot's target
+ * One frontmatter property of an insight note, read and written line by line: a Value Slot's target
  * (spec §5.3). Like `src/frontmatter.ts`, no YAML round trip and no `processFrontMatter` -- every line
  * this does not own stays byte for byte, comments and odd spacing included.
  *

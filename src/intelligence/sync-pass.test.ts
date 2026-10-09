@@ -94,7 +94,7 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		expect(report).toMatchObject({
 			notesWritten: 1,
 			failures: [],
-			notices: ['"Work log": 2 pages were written before page notes were switched on, so they get none. Write on a page to bring it in, or run "Make page notes for this notebook\'s earlier pages" on its transcript note.'],
+			notices: ['"Work log": 2 pages were written before insight notes were switched on, so they get none. Write on a page to bring it in, or run "Make insight notes for this notebook\'s earlier pages" on its transcript note.'],
 		});
 		expect((await processDocument(deps(mem), doc(pages, { p3: "todo Call" }), state)).notices).toEqual([]);
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work", "d1:p2:work", "d1:p3:work"]);
@@ -113,7 +113,7 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		// The switch-on scan has run; the page turns up afterwards, written before it.
 		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: ENABLED.toISOString() } };
 		const report = await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE)], {}), state);
-		expect(report.notices).toEqual(['"Work log": 1 page was written before page notes were switched on, so it gets none. Write on a page to bring it in, or run "Make page notes for this notebook\'s earlier pages" on its transcript note.']);
+		expect(report.notices).toEqual(['"Work log": 1 page was written before insight notes were switched on, so it gets none. Write on a page to bring it in, or run "Make insight notes for this notebook\'s earlier pages" on its transcript note.']);
 		expect((await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE)], {}), state)).notices).toEqual([]);
 	});
 
@@ -299,7 +299,7 @@ describe("processDocument > rows", () => {
 		expect(mem.notes.get(state.rows["d1:p3:work"].notePath)).toContain("- [ ] Again");
 	});
 
-	it("makes a deleted page note again at the next sync, like a transcript note, though the page did not change", async () => {
+	it("makes a deleted insight note again at the next sync, like a transcript note, though the page did not change", async () => {
 		const { mem, state, d } = await withNote();
 		const path = state.rows["d1:p3:work"].notePath;
 		mem.notes.delete(path);
@@ -321,7 +321,7 @@ describe("processDocument > rows", () => {
 		expect(read).toBe(1);
 		expect(mem.notes.get(path)).toContain("- [ ] Call");
 
-		// Nothing is made while page notes are switched off for the tag.
+		// Nothing is made while insight notes are switched off for the tag.
 		mem.notes.delete(path);
 		await processDocument({ ...d, settings: setIntelligenceMode(d.settings, "work", false, ENABLED) }, resting, state);
 		expect(mem.notes.has(path)).toBe(false);
@@ -335,7 +335,7 @@ describe("processDocument > rows", () => {
 		expect(state.rows["d1:p3:work"].status).toBe("orphaned");
 		await processDocument(d, back, state);
 		expect(state.rows["d1:p3:work"].status).toBe("active");
-		// A note the user deleted meanwhile is made again with the tag's return, like any deleted page note.
+		// A note the user deleted meanwhile is made again with the tag's return, like any deleted insight note.
 		await processDocument(d, gone, state);
 		mem.notes.delete(state.rows["d1:p3:work"].notePath);
 		await processDocument(d, doc([page("p3", 3, "h3", AFTER)], { p3: "todo Call" }), state);
@@ -439,7 +439,7 @@ describe("processDocument > a mapped tag renamed on the tablet", () => {
 		expect(state.seenPages["d2:q1:work"]).toBeDefined();
 	});
 
-	it("orphans a removed page-note tag instead of renaming it to a transcript-only tag on the notebook", async () => {
+	it("orphans a removed insight-note tag instead of renaming it to a transcript-only tag on the notebook", async () => {
 		const mem = memory();
 		const state = fresh();
 		const map = { work: "Work", archive: "Archive" };
@@ -455,7 +455,7 @@ describe("processDocument > a mapped tag renamed on the tablet", () => {
 describe("followRetargets", () => {
 	const row = (notePath: string, folder: string, status: "active" | "orphaned" = "active") => ({ syncKey: notePath, unitKey: notePath, docId: "d1", pageId: "p", tag: "work", scope: "notebook" as const, notePath, folder, status, noteId: "n", profileId: "generic", baseHash: "", syncedAt: "" });
 
-	it("moves a page note still inside the old folder into the new one, keeping its notebook subfolder, and leaves a sorted-away note", async () => {
+	it("moves an insight note still inside the old folder into the new one, keeping its notebook subfolder, and leaves a sorted-away note", async () => {
 		const mem = memory();
 		mem.notes.set("Work/Log/p1.md", "x");
 		mem.notes.set("Job/Log/p1.md", "someone else's");
@@ -485,7 +485,7 @@ describe("followRetargets", () => {
 describe("processDocument > frontmatter (Pro)", () => {
 	const fields = { tags: ["remarkable/work"], modified: null, folder: null, type: "notebook" as const, pages: 1, page: 3, pinned: false, uuid: "d1" };
 
-	it("writes the plugin's keys into a new page note and into every later write, keeping the user's own tags", async () => {
+	it("writes the plugin's keys into a new insight note and into every later write, keeping the user's own tags", async () => {
 		const mem = memory();
 		const state = fresh();
 		const d = deps(mem);

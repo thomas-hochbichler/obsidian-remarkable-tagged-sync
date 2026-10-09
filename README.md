@@ -691,7 +691,7 @@ Three things worth knowing before you rely on it:
   touched.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
-- **A page note is named after the page's position in the document at the time it was written.**
+- **A page-tag note is named after the page's position in the document at the time it was written.**
   Insert a page on the tablet and everything after it moves down one — but a note whose own page did
   not change is not rewritten, so it keeps the name it had. Its contents stay right: the links inside
   it address the page of the source PDF, which insertion does not renumber. Only the file name can go
@@ -735,7 +735,7 @@ remarkable-page: 7
 ```
 
 A note made from a notebook tag covers pages 1 to *n* and so carries no `remarkable-page` at all —
-which makes the key itself the filter for "page notes only".
+which makes the key itself the filter for "page-tag notes only".
 
 Every document tag — the sync tag included — arrives namespaced under `remarkable/`, so each synced
 note answers `FROM #remarkable`. With [Dataview](https://blacksmithgu.github.io/obsidian-dataview/),
@@ -766,7 +766,7 @@ up to date — you do not have to toggle anything.
 Two of these fields are meant to be relied on by scripts, so here is exactly what they promise.
 
 - **`remarkable-uuid` is the *document* on your reMarkable.** Several notes can carry the same one:
-  a document routed by two mapped tags produces two notes, and a page note carries its notebook's
+  a document routed by two mapped tags produces two notes, and a page-tag note carries its notebook's
   id. It is the document's identity, not the note's.
 - **`remarkable-note-id` is this one note.** No two notes share it.
 

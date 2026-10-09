@@ -131,7 +131,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 	}
 
 	const formats = await coreTemplateFormats(env.files, env.configDir);
-	// Without Pro, only the free tag keeps page notes: the run sees the others as off, so it neither
+	// Without Pro, only the free tag keeps insight notes: the run sees the others as off, so it neither
 	// extracts nor re-runs them (spec §11). Their configuration stays untouched in `data.json`.
 	const runSettings: IntelligenceSettings = {
 		...input.settings,
@@ -205,7 +205,7 @@ export function templaterOf(app: unknown): TemplaterApi | null {
 /**
  * Creates a note in one call, never an empty file first: through Templater when it is there, so its
  * own syntax in the user's template runs; else the vault's `create`. A Templater that fails falls
- * back to `create` -- the page note matters more than the template's scripting. Templater says it
+ * back to `create` -- the insight note matters more than the template's scripting. Templater says it
  * failed by returning nothing, not by throwing: it shows its own notice and deletes the file it began.
  */
 export function noteCreator(templater: TemplaterApi | null, create: (path: string, content: string) => Promise<unknown>): (path: string, content: string) => Promise<void> {
@@ -215,9 +215,9 @@ export function noteCreator(templater: TemplaterApi | null, create: (path: strin
 			try {
 				const created = await templater.create_new_note_from_template(content, cut === -1 ? "" : path.slice(0, cut), path.slice(cut + 1).replace(/\.md$/, ""), false);
 				if (created !== undefined && created !== null) return;
-				console.warn("Tagged Sync: Templater did not create the page note, writing it plainly");
+				console.warn("Tagged Sync: Templater did not create the insight note, writing it plainly");
 			} catch (error) {
-				console.warn("Tagged Sync: Templater could not create the page note, writing it plainly", error);
+				console.warn("Tagged Sync: Templater could not create the insight note, writing it plainly", error);
 			}
 		}
 		await create(path, content);
@@ -245,11 +245,11 @@ export function pauseToSay(paused: string | null, background: boolean, lastSeen:
 /** What the user hears from the engine after a run: a pause, what it could not do, and pending proposals (spec §8, §9). `watched`: the user started the sync. */
 export function intelligenceNotices(paused: string | null, report: PassReport, watched: boolean): string[] {
 	const lines = [...(paused === null ? [] : [paused]), ...report.notices];
-	// A sync the user started says a page note it could not make every time, not only the third: the
+	// A sync the user started says an insight note it could not make every time, not only the third: the
 	// run would read "Already up to date" with a note missing. A background run waits for the third.
 	const failed = report.failures.filter((line) => line.startsWith("page "));
 	if (watched && failed.length > 0) {
-		lines.push(`Could not make ${failed.length === 1 ? "a page note" : `${failed.length} page notes`}; the next sync tries again. P${failed[0].slice(1)}`);
+		lines.push(`Could not make ${failed.length === 1 ? "an insight note" : `${failed.length} insight notes`}; the next sync tries again. P${failed[0].slice(1)}`);
 	}
 	if (report.proposals > 0) {
 		const proposals = `${report.proposals} ${report.proposals === 1 ? "proposal" : "proposals"}`;

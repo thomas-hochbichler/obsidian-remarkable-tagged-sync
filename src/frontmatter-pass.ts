@@ -138,7 +138,7 @@ export async function cleanupFrontmatter(noteStore: NoteStore, index: SyncIndex)
 			index.rows[syncKey] = rest;
 		}
 	}
-	// Page notes carry the same keys (spec §7.4). A Value Slot's properties and the Tags Slot's tags are
+	// Insight notes carry the same keys (spec §7.4). A Value Slot's properties and the Tags Slot's tags are
 	// not among them: the row tracks only what the plugin's own keys added.
 	for (const [syncKey, row] of Object.entries(index.intelligenceRows ?? {})) {
 		await strip(row);

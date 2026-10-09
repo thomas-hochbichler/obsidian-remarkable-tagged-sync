@@ -85,7 +85,7 @@ describe("ReviewModal", () => {
 });
 
 describe("registerIntelligenceCommands", () => {
-	it("registers the command and the callout's link, both opening the review over every page note", async () => {
+	it("registers the command and the callout's link, both opening the review over every insight note", async () => {
 		const files = new Map<string, string>();
 		const baseStore = createBaseStore({ read: async (p) => files.get(p) ?? null, write: async (p, c) => void files.set(p, c), remove: async () => {} }, "plugin");
 		await baseStore.save({
@@ -141,7 +141,7 @@ describe("registerIntelligenceCommands", () => {
 	});
 });
 
-describe("the page-note commands", () => {
+describe("the insight-note commands", () => {
 	const row = { syncKey: "d:p:work", unitKey: "d:p:work", docId: "d", pageId: "p", tag: "work", scope: "notebook" as const, notePath: "Work/p.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "", syncedAt: "" };
 
 	function commandHost(active: TFile | null, pro = true, syncing = false) {
@@ -186,7 +186,7 @@ describe("the page-note commands", () => {
 		expect(takeNotices()).toEqual(["Extracted again; the note is updated."]);
 	});
 
-	it("marks a page note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command", async () => {
+	it("marks an insight note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command", async () => {
 		const { host, index } = commandHost(null);
 		takeNotices();
 		expect(await reTranscribePageNote(host, "Other.md")).toBe(false);
@@ -195,7 +195,7 @@ describe("the page-note commands", () => {
 		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
 	});
 
-	it("changes a page note's Profile through a choice of Profiles, and says it is Pro without it", async () => {
+	it("changes an insight note's Profile through a choice of Profiles, and says it is Pro without it", async () => {
 		expect(commandHost(null).changeCommand.checkCallback!(true)).toBe(false);
 		const { changeCommand, reran } = commandHost(file("Work/p.md"));
 		expect(changeCommand.checkCallback!(true)).toBe(true);
@@ -220,13 +220,13 @@ describe("the page-note commands", () => {
 		expect(takeNotices()).toEqual(["Changing the profile of one page is part of Tagged Sync Pro."]);
 	});
 
-	it("runs Make page notes for earlier pages on the note on screen, and says what it did", async () => {
+	it("runs Make insight notes for earlier pages on the note on screen, and says what it did", async () => {
 		const { earlierCommand } = commandHost(file("Work/p.md"));
 		expect(earlierCommand.checkCallback!(true)).toBe(true);
 		takeNotices();
 		earlierCommand.checkCallback!(false);
 		await flush();
-		// A page note is not a transcript note; the rules themselves are `wantEarlierPages`'.
+		// An insight note is not a transcript note; the rules themselves are `wantEarlierPages`'.
 		expect(takeNotices()).toEqual(["This note is not a transcript note from Tagged Sync."]);
 		expect(commandHost(null).earlierCommand.checkCallback!(true)).toBe(false);
 	});
@@ -243,13 +243,13 @@ describe("the page-note commands", () => {
 		expect(index()).toBe(before);
 	});
 
-	it("offers no choice on a note that is no longer a page note, such as one kept beside a new one", () => {
+	it("offers no choice on a note that is no longer an insight note, such as one kept beside a new one", () => {
 		const { changeCommand } = commandHost(file("Work/kept.md"));
 		takeModals();
 		takeNotices();
 		changeCommand.checkCallback!(false);
 		expect(takeModals()).toEqual([]);
-		expect(takeNotices()).toEqual(["This note is not a page note from the Intelligence Engine."]);
+		expect(takeNotices()).toEqual(["This note is not an insight note from the Intelligence Engine."]);
 	});
 
 	it("says when the profile the page was made with no longer exists", () => {

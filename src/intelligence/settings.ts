@@ -40,7 +40,7 @@ export interface SlotDef {
 	review: boolean;
 	/** Value only: a frontmatter property instead of the note body. */
 	property?: string;
-	/** Written into a page note at least once: its Shape is fixed from then on (spec §5.3). */
+	/** Written into an insight note at least once: its Shape is fixed from then on (spec §5.3). */
 	used?: boolean;
 }
 

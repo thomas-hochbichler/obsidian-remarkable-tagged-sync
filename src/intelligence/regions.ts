@@ -1,5 +1,5 @@
 /**
- * A Region is the section of a page note under a Slot's template heading, up to the next heading of
+ * A Region is the section of an insight note under a Slot's template heading, up to the next heading of
  * the same or a higher level. There are no markers in the note (users found them confusing), so the
  * heading is the only anchor -- and writing must preserve every line it does not own: the parser
  * skips prose, callouts, blank lines and sub-headings, and ops touch item lines one by one.

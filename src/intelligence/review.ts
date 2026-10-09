@@ -112,7 +112,7 @@ export function decide(input: { base: PageBase; lines: readonly string[]; slotId
 }
 
 /**
- * Whether the user has touched a page note since the engine last wrote it (spec §5.1, "Change Profile
+ * Whether the user has touched an insight note since the engine last wrote it (spec §5.1, "Change Profile
  * for this page"). Untouched means all of: every region parses to exactly the base's items -- text,
  * fields and tick -- with none of them typed by the user; a Text or Value region reads what the base
  * holds; and the lines no Slot fills are the ones the note was made with (`PageBase.outside`), so a

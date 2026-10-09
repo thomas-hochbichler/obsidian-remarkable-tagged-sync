@@ -80,7 +80,7 @@ const lastDialog = (h: { dialogs: { draw: (containerEl: HTMLElement) => void }[]
 
 describe("renderTagModes", () => {
 	const rows = (h: IntelligenceSettingsHost, tag: string) => drawn((el) => renderTagModes(el, tag, h));
-	const pageNotes = (h: IntelligenceSettingsHost, tag: string) => rows(h, tag).find((s) => s.name.startsWith("Page notes"))!;
+	const pageNotes = (h: IntelligenceSettingsHost, tag: string) => rows(h, tag).find((s) => s.name.startsWith("Insight notes"))!;
 
 	it("switches Intelligence Mode on with its stamps and claims this device when no device runs the engine", async () => {
 		const h = host(emptyIntelligence(), false);
@@ -100,11 +100,11 @@ describe("renderTagModes", () => {
 		expect(h.settings().engineDeviceId).toBe("other");
 	});
 
-	it("locks page notes on a second tag without Pro, and not with it", () => {
+	it("locks insight notes on a second tag without Pro, and not with it", () => {
 		const on = setIntelligenceMode(emptyIntelligence(), "work", true, new Date("2026-09-01T00:00:00.000Z"));
 		const locked = pageNotes(host(on, false), "home");
-		expect(locked.name).toBe("Page notes (Pro)");
-		expect(locked.desc).toBe("Page notes on more than one tag.");
+		expect(locked.name).toBe("Insight notes (Pro)");
+		expect(locked.desc).toBe("Insight notes on more than one tag.");
 		expect(locked.toggles[0].disabled).toBe(true);
 		expect(pageNotes(host(on, true), "home").toggles[0].disabled).toBe(false);
 		expect(pageNotes(host(on, false), "work").toggles[0].disabled).toBe(false);
@@ -114,7 +114,7 @@ describe("renderTagModes", () => {
 		const h = host({ ...setIntelligenceMode(emptyIntelligence(), "work", true, new Date()), profiles: [{ id: "p", name: "Meetings", description: "", template: null, slots: [] }] }, false);
 		const r = rows(h, "work");
 		// Each control on a row of its own, named: a tooltip is all the two switches had, and a phone shows none.
-		expect(r.map((s) => s.name)).toEqual(["Transcript note", "Page notes", "Profile"]);
+		expect(r.map((s) => s.name)).toEqual(["Transcript note", "Insight notes", "Profile"]);
 		named(r, "Transcript note").toggles[0].toggle(false);
 		await flush();
 		named(r, "Profile").dropdowns[0].pick("p");
@@ -124,8 +124,8 @@ describe("renderTagModes", () => {
 		named(rows(h, "work"), "Profile").dropdowns[0].pick("");
 		await flush();
 		expect(h.settings().mappings.work.profiles).toEqual([]);
-		// No Profile while page notes are off.
-		expect(rows(host(emptyIntelligence(), false), "work").map((s) => s.name)).toEqual(["Transcript note", "Page notes"]);
+		// No Profile while insight notes are off.
+		expect(rows(host(emptyIntelligence(), false), "work").map((s) => s.name)).toEqual(["Transcript note", "Insight notes"]);
 	});
 
 	it("offers several Profiles per tag with Pro: added from a list, removed one by one", async () => {
@@ -157,9 +157,9 @@ describe("renderTagModes", () => {
 		const profiles = [{ id: "m", name: "Meetings", description: "", template: null, slots: [] }];
 		const on = setIntelligenceMode(emptyIntelligence(), "work", true, new Date());
 		expect(tagModesSummary("work", host(emptyIntelligence(), false))).toBe("Transcript note");
-		expect(tagModesSummary("work", host(on, false))).toBe("Transcript note · Page notes: Generic");
+		expect(tagModesSummary("work", host(on, false))).toBe("Transcript note · Insight notes: Generic");
 		const picked = { ...on, profiles, mappings: { work: { ...on.mappings.work, transcript: false, profiles: ["m", "gone"] } } };
-		expect(tagModesSummary("work", host(picked, true))).toBe("Page notes: Meetings, gone");
+		expect(tagModesSummary("work", host(picked, true))).toBe("Insight notes: Meetings, gone");
 		expect(tagModesSummary("work", host({ ...on, mappings: { work: { ...on.mappings.work, transcript: false, intelligence: false } } }, true))).toBe("Writes nothing");
 	});
 });
@@ -238,7 +238,7 @@ describe("renderIntelligenceSection", () => {
 		const row = named(section(h), "Extraction model");
 		await flush();
 		expect(row.desc).toBe(BASE);
-		expect(warning(row).text).toBe(`⚠ "thinker" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`);
+		expect(warning(row).text).toBe(`⚠ "thinker" reasons before answering — expect insight notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`);
 		expect(warning(row).classes.has("mod-warning")).toBe(true);
 		row.texts[0].type("instruct");
 		await flush();

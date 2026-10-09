@@ -33,7 +33,7 @@ export interface NoteFrontmatter {
 	/**
 	 * Which page of the document this note is, 1-based -- the same ordinal the transcript prints as
 	 * `pageLabel`. Written on page-tag notes only: a notebook-tag note covers pages 1..n and has no
-	 * current page, so it gets no key. That absence doubles as the vault-side filter for "page notes
+	 * current page, so it gets no key. That absence doubles as the vault-side filter for "page-tag notes
 	 * only".
 	 */
 	page: number | null;
@@ -117,7 +117,7 @@ const ZOTERO_KEY = "zotero-key";
 const ZOTERO_LIBRARY = "zotero-library";
 const CITEKEY = "citekey";
 
-// Same shape note-builder matches: a leading `---` block closed by `---` on its own line. Page notes
+// Same shape note-builder matches: a leading `---` block closed by `---` on its own line. Insight notes
 // come from the user's template, which can hold an empty block (`---` right under `---`): its body
 // group is absent, and that is tried first (`??`), or the block would run on to the next `---` in
 // the body.

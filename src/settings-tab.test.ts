@@ -293,7 +293,7 @@ describe("the shape of the settings screen", () => {
 			"Transcription",
 			// Right after transcription: the engine reads what transcription produced, and its backend
 			// is chosen next to that one.
-			"Page notes",
+			"Insight notes",
 			"Profiles",
 			"Slots",
 			"Automatic sync",

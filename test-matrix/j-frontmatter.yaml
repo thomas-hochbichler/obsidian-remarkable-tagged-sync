@@ -398,16 +398,16 @@
   scenarios:
     - id: J8.1
       scenario: A three-page notebook with a notebook tag and a page tag
-      expect: remarkable-pages counts this note -- 3 for the notebook note, 1 for the page note, never the document total on both
+      expect: remarkable-pages counts this note -- 3 for the notebook note, 1 for the page-tag note, never the document total on both
       layer: engine
       file: src/sync-engine.test.ts
       test: "frontmatter page keys (Pro, #107) > counts the pages of the note, not of the document"
     - id: J8.2
       scenario: Which page of the document a note is
-      expect: remarkable-page on the page note only; a notebook note covers 1..n and gets no key at all
+      expect: remarkable-page on the page-tag note only; a notebook note covers 1..n and gets no key at all
       layer: engine
       file: src/sync-engine.test.ts
-      test: "frontmatter page keys (Pro, #107) > writes a page note's position in the document, and none on a notebook note"
+      test: "frontmatter page keys (Pro, #107) > writes a page-tag note's position in the document, and none on a notebook note"
     - id: J8.3
       scenario: The same two rows during the backfill pass
       expect: The pass reads the count from the document's content -- same numbers as the sync writes

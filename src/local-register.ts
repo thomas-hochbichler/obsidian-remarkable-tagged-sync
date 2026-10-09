@@ -459,6 +459,6 @@ if (offeredOnThisPlatform()) {
 				backgroundConsentDesc(resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
 		},
 	});
-	// The same download as an extraction backend: the Free default for page notes (Intelligence Engine §6, §11).
+	// The same download as an extraction backend: the Free default for insight notes (Intelligence Engine §6, §11).
 	registerExtractionBackend(managedLocalEntry(() => managedModelFiles(PLUGIN_ID), nodeServerDeps));
 }

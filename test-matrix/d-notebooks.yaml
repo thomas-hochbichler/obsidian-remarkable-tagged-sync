@@ -17,7 +17,7 @@
 
     - id: D16.2
       scenario: A page-level unit (a page tag) is rendered
-      expect: The path carries both ids, <folder>/<docId>-<pageId>.pdf, so a page note and its notebook note never share a file
+      expect: The path carries both ids, <folder>/<docId>-<pageId>.pdf, so a page-tag note and its notebook note never share a file
       layer: unit
       file: src/attachment-writer.test.ts
       test: "attachmentPath > names a page-level attachment by docId and pageId"

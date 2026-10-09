@@ -231,7 +231,7 @@ describe("the free version's tag cap", () => {
 			]);
 		}
 		// Its dialog: the folder, then what it makes.
-		expect(dialog(tab, "#home").map((setting) => setting.name)).toEqual(["Folder", "Transcript note", "Page notes"]);
+		expect(dialog(tab, "#home").map((setting) => setting.name)).toEqual(["Folder", "Transcript note", "Insight notes"]);
 	});
 
 	it("makes no licence call for the very first mapping -- a free user never talks to Polar", async () => {
@@ -337,7 +337,7 @@ describe("the free version's tag cap", () => {
 		before[0].dropdowns[0].pick("Work");
 		await settle();
 		expect(plugin.data.tagFolderMap).toEqual({ "#work": "Work" });
-		expect(modalRows(opened, takeSettings()).map((setting) => setting.name)).toEqual(["Folder", "Transcript note", "Page notes"]);
+		expect(modalRows(opened, takeSettings()).map((setting) => setting.name)).toEqual(["Folder", "Transcript note", "Insight notes"]);
 
 		opened.close();
 		takeSettings();

@@ -20,7 +20,7 @@ import { classifyUnit, type SeenEntry, switchOnStamp } from "./seen-set";
 import { genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, type SlotDef } from "./settings";
 import { analyseTemplate, starterTemplate } from "./template";
 
-/** One page note, in `SyncIndex.intelligenceRows`. Not a `SyncIndexRow`: those are diffed against live page tags. */
+/** One insight note, in `SyncIndex.intelligenceRows`. Not a `SyncIndexRow`: those are diffed against live page tags. */
 export interface IntelligenceRow {
 	syncKey: string;
 	/** Equals `syncKey` in 1.9.0 (§14). */
@@ -85,8 +85,8 @@ export interface IntelligenceDocument {
 	/** Saves the index; called after each page, so a note made is never made twice after a crash. */
 	checkpoint?: () => Promise<void>;
 	/**
-	 * The plugin's frontmatter keys for a page note (Pro), exactly as a page-tag note gets them -- or
-	 * null with the feature off. Page notes are synced notes: `FROM #remarkable` finds them (spec §7.4).
+	 * The plugin's frontmatter keys for an insight note (Pro), exactly as a page-tag note gets them -- or
+	 * null with the feature off. Insight notes are synced notes: `FROM #remarkable` finds them (spec §7.4).
 	 */
 	frontmatter?: (tag: string, pageId: string) => { fields: Omit<NoteFrontmatter, "synced" | "noteId">; version: number } | null;
 }
@@ -119,14 +119,14 @@ export interface IntelligencePassDeps {
 export interface PassReport {
 	notesWritten: number;
 	notesUpdated: number;
-	/** Pending proposals over every page note this run touched, and how many notes hold them. */
+	/** Pending proposals over every insight note this run touched, and how many notes hold them. */
 	proposals: number;
 	proposalNotes: number;
 	/** One line per page whose extraction failed this run, for diagnostics. */
 	failures: string[];
 	/** Things said to the user: a page failing a third time, a legacy notebook, a lost region. */
 	notices: string[];
-	/** Slots written into a page note this run: their Shape is locked from now on. */
+	/** Slots written into an insight note this run: their Shape is locked from now on. */
 	usedSlots: string[];
 	/** Keys of the notices above that are said once ever; the caller records them. */
 	saidOnce: string[];
@@ -138,8 +138,8 @@ export function emptyReport(): PassReport {
 	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [], saidOnce: [] };
 }
 
-/** The command that makes page notes for pages left alone; the sync's notice names it. */
-export const EARLIER_PAGES_COMMAND = "Make page notes for this notebook's earlier pages";
+/** The command that makes insight notes for pages left alone; the sync's notice names it. */
+export const EARLIER_PAGES_COMMAND = "Make insight notes for this notebook's earlier pages";
 
 export function intelligenceSyncKey(docId: string, pageId: string, tag: string): string {
 	return `${docId}:${pageId}:${tag}`;
@@ -191,7 +191,7 @@ export function baseHash(base: PageBase): string {
  * unit of this document through the engine. Mutates `state`; the caller checkpoints it.
  */
 export interface ProcessOptions {
-	/** Keys processed whatever the seen-set says: "Re-run extraction" on one page note (spec §9). */
+	/** Keys processed whatever the seen-set says: "Re-run extraction" on one insight note (spec §9). */
 	force?: ReadonlySet<string>;
 	/** Only some of the document's units are given, so a missing one says nothing about its tag. */
 	partial?: boolean;
@@ -210,7 +210,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	// whose Intelligence Mode is merely off is still here, and its rows stay active and untouched.
 	const present = new Set(doc.units.flatMap((unit) => unit.pageIds.map((pageId) => intelligenceSyncKey(doc.docId, pageId, unit.tag))));
 	// The tag back on the page: the row is the unit's again, without waiting for new ink (the revive
-	// rule, spec §4.1). A note deleted meanwhile is made again below, like any deleted page note.
+	// rule, spec §4.1). A note deleted meanwhile is made again below, like any deleted insight note.
 	for (const [key, row] of Object.entries(state.rows)) {
 		if (row.docId !== doc.docId) continue;
 		if (row.status === "active" && !options.partial && !present.has(key)) state.rows[key] = { ...row, status: "orphaned" };
@@ -219,7 +219,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 
 	const work: WorkItem[] = [];
 	let legacyRecorded = false;
-	// Pages newly recorded as written before page notes were switched on, and so left without one: said
+	// Pages newly recorded as written before insight notes were switched on, and so left without one: said
 	// once, when it happens. A switch off and on again moves that point to now, and the pages behind it
 	// went without a word (live test, 2026-10-02).
 	let leftAlone = 0;
@@ -254,7 +254,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 			} else if (kind !== "unchanged") {
 				work.push({ unit, page, key, seen });
 			} else {
-				// A page note deleted by hand is made again, as a transcript note is (spec §4.1, 2026-10-02):
+				// An insight note deleted by hand is made again, as a transcript note is (spec §4.1, 2026-10-02):
 				// from the transcript its base kept, so a resting page is not read a second time.
 				const row = state.rows[key];
 				if (row?.status === "active" && !(await deps.noteStore.exists(row.notePath))) work.push({ unit, page, key, seen, kept: (await deps.baseStore.load(row.noteId))?.transcript });
@@ -263,7 +263,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	}
 	if (leftAlone > 0) {
 		report.notices.push(
-			`"${doc.name}": ${leftAlone} page${leftAlone === 1 ? " was" : "s were"} written before page notes were switched on, so ${leftAlone === 1 ? "it gets" : "they get"} none. ` +
+			`"${doc.name}": ${leftAlone} page${leftAlone === 1 ? " was" : "s were"} written before insight notes were switched on, so ${leftAlone === 1 ? "it gets" : "they get"} none. ` +
 				`Write on a page to bring it in, or run "${EARLIER_PAGES_COMMAND}" on its transcript note.`,
 		);
 	}
@@ -454,7 +454,7 @@ function followTagRenames(deps: IntelligencePassDeps, doc: IntelligenceDocument,
 			const onPage = doc.units.filter((unit) => unit.scope === scope && unit.pageIds.includes(page.id)).map((unit) => unit.tag);
 			// Only a tag gone from the tablet was renamed: one whose Intelligence Mode is merely off is still here.
 			const removed = [...previous].filter((tag) => !onPage.includes(tag));
-			// Only tags that make page notes can be the new name: a transcript-only tag was never this unit's.
+			// Only tags that make insight notes can be the new name: a transcript-only tag was never this unit's.
 			const added = onPage.filter((tag) => !previous.has(tag) && modesFor(deps.settings, deps.tagFolderMap, tag).intelligence);
 			if (removed.length !== 1 || added.length !== 1) continue;
 			const from = intelligenceSyncKey(doc.docId, page.id, removed[0]);
@@ -474,7 +474,7 @@ function followTagRenames(deps: IntelligencePassDeps, doc: IntelligenceDocument,
 }
 
 /**
- * A mapping re-targeted to another folder in settings: page notes move with it, row by row, into
+ * A mapping re-targeted to another folder in settings: insight notes move with it, row by row, into
  * `<new folder>/<the rest of their path>` -- but only a note still inside the old folder. One the user
  * sorted elsewhere is never dragged back (#101), and a whole subfolder is never moved: two tags may
  * share it, and the user's own files may sit in it (spec §4.1). Local only; runs before each sync.

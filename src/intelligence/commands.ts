@@ -1,6 +1,6 @@
 /**
  * The engine's commands: "Review proposals", and the `obsidian://tagged-sync-review` link the
- * proposal callout in a note carries (spec §8). Both open one Modal over all page notes.
+ * proposal callout in a note carries (spec §8). Both open one Modal over all insight notes.
  */
 
 import { type App, type Command, Modal, Notice, Setting } from "obsidian";
@@ -89,13 +89,13 @@ export interface IntelligenceCommandsHost {
 	 * index it began with, so a command's change made meanwhile would be lost.
 	 */
 	exclusive<T>(work: () => Promise<T>): Promise<T | typeof BUSY>;
-	/** "Re-run extraction" on one page note, with this run's backend and settings. */
+	/** "Re-run extraction" on one insight note, with this run's backend and settings. */
 	rerun(notePath: string): Promise<RerunOutcome>;
 	/** "Change Profile for this page" (Pro). */
 	changeProfile(notePath: string, profileId: string): Promise<RerunOutcome>;
 	profiles(): readonly { id: string; name: string; description: string }[];
 	pro(): boolean;
-	/** Whether page notes are on for a tag. */
+	/** Whether insight notes are on for a tag. */
 	pageNotesOn(tag: string): boolean;
 }
 
@@ -105,7 +105,7 @@ export const BUSY = "busy";
 export const CHANGE_PROFILE_PRO = "Changing the profile of one page is part of Tagged Sync Pro.";
 
 /**
- * The Profiles to move one page note to: a row each, named and described, the one the note has now
+ * The Profiles to move one insight note to: a row each, named and described, the one the note has now
  * marked "Current". It was a row of bare buttons, which said neither which Profile the page has nor
  * what the others are for (live test, 2026-10-02). Choosing closes the Modal and hands the id on.
  */
@@ -158,7 +158,7 @@ async function say(host: IntelligenceCommandsHost, outcome: RerunOutcome): Promi
 }
 
 /**
- * "Re-transcribe" on a page note: the page is read again on the next sync (spec §9). False for any
+ * "Re-transcribe" on an insight note: the page is read again on the next sync (spec §9). False for any
  * other note, which the transcript-note command then handles as it always has.
  */
 export async function reTranscribePageNote(host: IntelligenceCommandsHost, notePath: string): Promise<boolean> {
@@ -180,7 +180,7 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 	host.addCommand({ id: "review-proposals", name: "Review proposals", callback: () => void openReview(host) });
 	host.addCommand({
 		id: "change-profile",
-		name: "Change profile for this page note",
+		name: "Change profile for this insight note",
 		checkCallback: (checking) => {
 			const file = host.app.workspace.getActiveFile();
 			if (file === null || file.extension !== "md") return false;
@@ -199,9 +199,9 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 	});
 	host.addCommand({
 		id: "rerun-extraction",
-		name: "Re-run extraction for this page note",
+		name: "Re-run extraction for this insight note",
 		// Offered on every Markdown file, like "Re-transcribe this note": an index lookup per keystroke
-		// is what the palette must not do. A note that is not a page note earns a sentence at run time.
+		// is what the palette must not do. A note that is not an insight note earns a sentence at run time.
 		checkCallback: (checking) => {
 			const file = host.app.workspace.getActiveFile();
 			if (file === null || file.extension !== "md") return false;

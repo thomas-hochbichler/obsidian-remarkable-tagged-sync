@@ -76,8 +76,8 @@ export function chooseExtractionBackend(input: { settings: IntelligenceSettings;
 	if (chosen !== null && (pro || !chosen.requiresLicence)) return { kind: "ready", entry: chosen };
 	const local = lookup("local");
 	if (local !== null) return { kind: "ready", entry: local };
-	if (chosen !== null) return { kind: "paused", reason: `Extraction with ${chosen.label} is part of Tagged Sync Pro. Pick your own server or the local model under Page notes in the settings.` };
-	return { kind: "paused", reason: "No extraction backend is set. Pick one under Page notes in the settings." };
+	if (chosen !== null) return { kind: "paused", reason: `Extraction with ${chosen.label} is part of Tagged Sync Pro. Pick your own server or the local model under Insight notes in the settings.` };
+	return { kind: "paused", reason: "No extraction backend is set. Pick one under Insight notes in the settings." };
 }
 
 /**

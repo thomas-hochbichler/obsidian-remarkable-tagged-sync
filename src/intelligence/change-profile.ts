@@ -18,10 +18,10 @@ const FRONTMATTER = /^---\r?\n(?:[\s\S]*?\r?\n)??---(?:\r?\n|$)/;
 
 export async function changeProfile(env: HostEnvironment, run: RunInputs, index: SyncIndex, notePath: string, profileId: string, renderPath: string): Promise<RerunOutcome> {
 	const row = Object.values(index.intelligenceRows ?? {}).find((candidate) => candidate.notePath === notePath && candidate.status === "active");
-	if (row === undefined) return { message: "This note is not a page note from the Intelligence Engine." };
+	if (row === undefined) return { message: "This note is not an insight note from the Intelligence Engine." };
 	const prepared = await prepareRun(env, { ...run, background: false });
 	try {
-		if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Page notes in the settings." };
+		if (prepared.deps === undefined) return { message: prepared.paused ?? "Page extraction runs on another device. Switch it to this one under Insight notes in the settings." };
 		const deps = prepared.deps;
 		const profile = deps.settings.profiles.find((candidate) => candidate.id === profileId);
 		if (profile === undefined) return { message: "That profile no longer exists." };
@@ -82,7 +82,7 @@ export async function changeProfile(env: HostEnvironment, run: RunInputs, index:
 		await stores.baseStore.save(outcome.base);
 		const nextRow = { ...row, notePath: path, noteId, profileId, baseHash: baseHash(outcome.base), syncedAt: deps.now().toISOString(), frontmatterTags: undefined, frontmatterVersion: undefined };
 		return {
-			message: unedited ? `The note is made again with "${profile.name}".` : `The note has your edits, so it stays as it is and is yours now: no sync updates it. "${profile.name}" makes a new page note beside it: ${path}.`,
+			message: unedited ? `The note is made again with "${profile.name}".` : `The note has your edits, so it stays as it is and is yours now: no sync updates it. "${profile.name}" makes a new insight note beside it: ${path}.`,
 			index: {
 				...index,
 				seenPages: { ...index.seenPages, [row.syncKey]: { scope: row.scope, pageHash, firstSeen, noteId } },

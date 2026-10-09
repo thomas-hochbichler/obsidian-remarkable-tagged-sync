@@ -16,20 +16,20 @@ const settings: IntelligenceSettings = {
 const index: SyncIndex = { rootHash: null, rows: { "d:work": transcriptRow }, intelligenceRows: { "d:p:work": pageRow } };
 
 describe("followVaultRename", () => {
-	it("follows a moved page note and leaves the rest as it was", () => {
+	it("follows a moved insight note and leaves the rest as it was", () => {
 		const out = followVaultRename({ syncIndex: index, intelligence: settings }, { kind: "file", from: pageRow.notePath, to: "Archive/p1.md" })!;
 		expect(out.syncIndex.intelligenceRows!["d:p:work"].notePath).toBe("Archive/p1.md");
 		expect(out.syncIndex.rows).toBe(index.rows);
 		expect(out.intelligence).toBe(settings);
 	});
 
-	it("follows a renamed folder for transcript notes and page notes at once", () => {
+	it("follows a renamed folder for transcript notes and insight notes at once", () => {
 		const out = followVaultRename({ syncIndex: index, intelligence: settings }, { kind: "folder", from: "Work", to: "Job" })!;
 		expect(out.syncIndex.rows["d:work"].notePath).toBe("Job/Log.md");
 		expect(out.syncIndex.intelligenceRows!["d:p:work"].notePath).toBe("Job/Log/2026-09-28 Log p1.md");
 	});
 
-	it("follows a renamed template, and keeps an index written before page notes existed as it was", () => {
+	it("follows a renamed template, and keeps an index written before insight notes existed as it was", () => {
 		const legacy: SyncIndex = { rootHash: null, rows: {} };
 		const out = followVaultRename({ syncIndex: legacy, intelligence: settings }, { kind: "file", from: "Templates/Meeting.md", to: "Templates/Meetings.md" })!;
 		expect(out.intelligence.profiles.map((p) => p.template)).toEqual(["Templates/Meetings.md", null]);

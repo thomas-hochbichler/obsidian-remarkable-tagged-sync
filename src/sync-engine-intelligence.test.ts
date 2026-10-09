@@ -170,7 +170,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(h.docs[0].shouldStop!()).toBe(false);
 	});
 
-	it("gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off", async () => {
+	it("gives the engine a page-tag note's frontmatter keys for an insight note, and none with the feature off", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }, { id: "p2" }]) }, { "doc-1": { p1: "h1", p2: "h2" } });
 		const on = hook();
 		await runSync({ ...deps(a), intelligence: on.value, frontmatter: true }, EMPTY_SYNC_INDEX);
@@ -283,7 +283,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(result.intelligence.saidOnce).toEqual(["local-classifier"]);
 	});
 
-	it("stops between a notebook's transcript note and its page notes, leaving the pages for the next run", async () => {
+	it("stops between a notebook's transcript note and its insight notes, leaving the pages for the next run", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
 		const store = noteStore();
 		let stop = false;
@@ -349,7 +349,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(h.completed).not.toHaveBeenCalled();
 	});
 
-	it("reopens a document with owed page-note work on an unchanged tablet, and keeps it owed while a page fails", async () => {
+	it("reopens a document with owed insight-note work on an unchanged tablet, and keeps it owed while a page fails", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } }, "root-1");
 		const store = noteStore();
 		store.files["Work/Work log.md"] = "note";
@@ -365,7 +365,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(quiet.documentIds).toBeNull();
 	});
 
-	it("reopens a notebook whose page note was deleted on an unchanged tablet, and only while its tag makes page notes", async () => {
+	it("reopens a notebook whose insight note was deleted on an unchanged tablet, and only while its tag makes insight notes", async () => {
 		const a = api([entry()], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } }, "root-1");
 		const store = noteStore();
 		store.files["Work/Work log.md"] = "note";
@@ -379,8 +379,8 @@ describe("runSync > Intelligence Engine seam", () => {
 		};
 
 		expect((await run({})).h.docs).toHaveLength(1);
-		// Not while the note is there, not for an orphaned row, and not with page notes off for the tag.
-		store.files["Work/Work log/p1.md"] = "page note";
+		// Not while the note is there, not for an orphaned row, and not with insight notes off for the tag.
+		store.files["Work/Work log/p1.md"] = "insight note";
 		expect((await run({})).result.documentIds).toBeNull();
 		delete store.files["Work/Work log/p1.md"];
 		expect((await run({}, { ...previous, intelligenceRows: { "doc-1:p1:work": { ...pageNote, status: "orphaned" } } })).result.documentIds).toBeNull();
@@ -398,7 +398,7 @@ describe("runSync > Intelligence Engine seam", () => {
 		expect(gone.index.intelligencePending).toEqual([]);
 	});
 
-	it("hands the engine a notebook whose last Intelligence tag left, so its page notes are orphaned", async () => {
+	it("hands the engine a notebook whose last Intelligence tag left, so its insight notes are orphaned", async () => {
 		const a = api([entry({ tags: [] })], { "doc-1": content([{ id: "p1" }]) }, { "doc-1": { p1: "h1" } });
 		const h = hook();
 		const row = { syncKey: "doc-1:p1:work", unitKey: "doc-1:p1:work", docId: "doc-1", pageId: "p1", tag: "work", scope: "notebook" as const, notePath: "Work/p1.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic" };

@@ -1159,7 +1159,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.display();
 				});
 			});
-		// Transcript note, page notes, Profile: what this mapping produces (Intelligence Engine §10).
+		// Transcript note, insight notes, Profile: what this mapping produces (Intelligence Engine §10).
 		if (mapped !== undefined) renderTagModes(containerEl, tag, this.intelligence());
 	}
 }

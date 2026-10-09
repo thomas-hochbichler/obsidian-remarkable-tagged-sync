@@ -498,7 +498,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (this.syncing) return;
 		const kind = file instanceof TFolder ? "folder" : file instanceof TFile ? "file" : null;
 		if (kind === null) return;
-		// Transcript notes, page notes and Profile templates alike: the path is all that follows.
+		// Transcript notes, insight notes and Profile templates alike: the path is all that follows.
 		const followed = followVaultRename(this.data, { kind, from: oldPath, to: file.path });
 		if (followed === null) return;
 		this.data.syncIndex = followed.syncIndex;
@@ -714,7 +714,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		pageNotesOn: (tag) => modesFor(this.data.intelligence, this.data.tagFolderMap, tag).intelligence,
 	};
 
-	/** The render a page note's row points at, for a re-run: the same attachment the sync writes. */
+	/** The render an insight note's row points at, for a re-run: the same attachment the sync writes. */
 	private pageRenderPath(notePath: string): string {
 		const row = Object.values(this.data.syncIndex.intelligenceRows ?? {}).find((candidate) => candidate.notePath === notePath);
 		return row === undefined ? "" : attachmentPath(normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)), row.docId, row.pageId);
@@ -844,7 +844,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.lastSyncError = errors.length > 0 ? errors.join("\n") : null;
 			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
 
-			// Page notes are notes too: a sync that made or updated only those is not "up to date".
+			// Insight notes are notes too: a sync that made or updated only those is not "up to date".
 			const notesWritten = result.notesWritten + result.intelligence.notesWritten + result.intelligence.notesUpdated;
 			this.applyStatus(outcomeStatus({ stopped: result.stopped, notesWritten }));
 			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten, background: auto });
@@ -1090,7 +1090,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * dialog comes last, once the page count is known and can be quoted.
 	 */
 	async reTranscribeNote(file: TFile): Promise<void> {
-		// A page note is read again by the next sync, which is the only thing that can read a page.
+		// An insight note is read again by the next sync, which is the only thing that can read a page.
 		if (await reTranscribePageNote(this.intelligenceCommands, file.path)) return;
 		// With its status, not filtered to `active`: filtering would make a notebook the user deleted
 		// from the device indistinguishable from a note that was never synced, and give it the wrong

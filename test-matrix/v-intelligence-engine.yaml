@@ -1383,7 +1383,7 @@
   scenarios:
     - id: V14.1
       scenario: "Intelligence Mode was just switched on"
-      expect: "Old and never-stamped pages go into the seen-set; the page written after the toggle becomes a page note in <folder>/<notebook>/"
+      expect: "Old and never-stamped pages go into the seen-set; the page written after the toggle becomes an insight note in <folder>/<notebook>/"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > switching Intelligence Mode on > stamps the pages written before the toggle and turns the one written after it into a note"
@@ -1592,11 +1592,11 @@
       expect: "The engine does not start; the run is stopped"
       layer: engine
       file: src/sync-engine-intelligence.test.ts
-      test: "runSync > Intelligence Engine seam > stops between a notebook's transcript note and its page notes, leaving the pages for the next run"
+      test: "runSync > Intelligence Engine seam > stops between a notebook's transcript note and its insight notes, leaving the pages for the next run"
 
     - id: V16.9
       scenario: "An EPUB is tagged"
-      expect: "Its digest note as always; no page notes"
+      expect: "Its digest note as always; no insight notes"
       layer: engine
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > Intelligence Engine seam > does not give annotated PDFs or EPUBs to the engine"
@@ -1617,7 +1617,7 @@
 
     - id: V16.12
       scenario: "A document is deleted"
-      expect: "Its page-note rows orphaned, seen entries pruned"
+      expect: "Its insight-note rows orphaned, seen entries pruned"
       layer: engine
       file: src/sync-engine-intelligence.test.ts
       test: "runSync > Intelligence Engine seam > sweeps the engine's rows and seen entries of a document gone from the tablet"
@@ -1822,7 +1822,7 @@
       expect: "The note is created from the Profile's template with core dates; ids minted; the base folder made once; a deleted note's base is discarded"
       layer: unit
       file: src/intelligence/host.test.ts
-      test: "prepareRun > writes a page note through the environment: template, dates, ids, one base folder"
+      test: "prepareRun > writes an insight note through the environment: template, dates, ids, one base folder"
 
     - id: V20.6
       scenario: "The engine device with a working backend"
@@ -1851,7 +1851,7 @@
       test: "the Obsidian glue > finds Templater only when its API is there"
 
     - id: V21.3
-      scenario: "A page note is created"
+      scenario: "An insight note is created"
       expect: "Through Templater with folder and name; plain create when it throws, returns no file, or is absent"
       layer: unit
       file: src/intelligence/host.test.ts
@@ -1974,7 +1974,7 @@
   scenarios:
     - id: V23.1
       scenario: "The review opens"
-      expect: "Every pending proposal of every active page note, with the page's words, never a model explanation"
+      expect: "Every pending proposal of every active insight note, with the page's words, never a model explanation"
       layer: unit
       file: src/intelligence/review-session.test.ts
       test: "loadReview > lists every pending proposal of every active note with its words and the page's words behind it"
@@ -2031,7 +2031,7 @@
       expect: "The command and the obsidian:// link both open the review"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "registerIntelligenceCommands > registers the command and the callout's link, both opening the review over every page note"
+      test: "registerIntelligenceCommands > registers the command and the callout's link, both opening the review over every insight note"
 
 - feature: V25
   name: "The review reaches the running plugin"
@@ -2053,30 +2053,30 @@
       test: "reviewStoresFor > reads bases from the plugin folder and notes through the vault, with short item ids"
 
 - feature: V26
-  name: "A rename in the vault is followed for page notes and templates"
+  name: "A rename in the vault is followed for insight notes and templates"
   code: src/intelligence/vault-follow.ts
   tier: free
   scenarios:
     - id: V26.1
-      scenario: "The user moves a page note"
+      scenario: "The user moves an insight note"
       expect: "Its row follows; nothing else changes"
       layer: unit
       file: src/intelligence/vault-follow.test.ts
-      test: "followVaultRename > follows a moved page note and leaves the rest as it was"
+      test: "followVaultRename > follows a moved insight note and leaves the rest as it was"
 
     - id: V26.2
       scenario: "The user renames the mapped folder"
-      expect: "Transcript and page-note rows follow together"
+      expect: "Transcript and insight-note rows follow together"
       layer: unit
       file: src/intelligence/vault-follow.test.ts
-      test: "followVaultRename > follows a renamed folder for transcript notes and page notes at once"
+      test: "followVaultRename > follows a renamed folder for transcript notes and insight notes at once"
 
     - id: V26.3
       scenario: "The user renames a Profile's template"
       expect: "The Profile follows; an older index is untouched"
       layer: unit
       file: src/intelligence/vault-follow.test.ts
-      test: "followVaultRename > follows a renamed template, and keeps an index written before page notes existed as it was"
+      test: "followVaultRename > follows a renamed template, and keeps an index written before insight notes existed as it was"
 
     - id: V26.4
       scenario: "An unrelated file is renamed"
@@ -2091,7 +2091,7 @@
   tier: free
   scenarios:
     - id: V27.1
-      scenario: "A tag's page notes are switched on"
+      scenario: "A tag's insight notes are switched on"
       expect: "enabledAt and firstEnabledAt stamped; the first device claims the engine"
       layer: unit
       file: src/intelligence/settings-section.test.ts
@@ -2105,11 +2105,11 @@
       test: "renderTagModes > leaves the engine where it runs when a second tag is switched on"
 
     - id: V27.3
-      scenario: "A free vault has page notes on one tag"
+      scenario: "A free vault has insight notes on one tag"
       expect: "The toggle on every other tag is locked (Pro); the free tag stays switchable"
       layer: unit
       file: src/intelligence/settings-section.test.ts
-      test: "renderTagModes > locks page notes on a second tag without Pro, and not with it"
+      test: "renderTagModes > locks insight notes on a second tag without Pro, and not with it"
 
     - id: V27.4
       scenario: "Transcript off, a Profile picked, then Generic again"
@@ -2225,12 +2225,12 @@
       test: "renderIntelligenceSection > sets how slashed dates are written, following Obsidian's language until told otherwise"
 
 - feature: V31
-  name: "Re-run extraction and Re-transcribe on a page note"
+  name: "Re-run extraction and Re-transcribe on an insight note"
   code: src/intelligence/rerun.ts
   tier: free
   scenarios:
     - id: V31.1
-      scenario: "Re-run extraction on a page note the user edited"
+      scenario: "Re-run extraction on an insight note the user edited"
       expect: "Re-extracted from the base's transcript; a deleted task stays deleted, the user's line stays"
       layer: unit
       file: src/intelligence/rerun.test.ts
@@ -2262,17 +2262,17 @@
       expect: "A sentence each, nothing written"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "rerunExtraction > refuses on a note that is not a page note, and off the engine device"
+      test: "rerunExtraction > refuses on a note that is not an insight note, and off the engine device"
 
     - id: V31.6
-      scenario: "Re-transcribe on a page note"
+      scenario: "Re-transcribe on an insight note"
       expect: "Its seen hash is cleared, the note id kept"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "markForRereading and isPageNote > clears the seen hash of a page note, keeping its id, and owes its notebook to the next sync; says so for any other note"
+      test: "markForRereading and isPageNote > clears the seen hash of an insight note, keeping its id, and owes its notebook to the next sync; says so for any other note"
 
 - feature: V32
-  name: "The page-note commands in the palette"
+  name: "The insight-note commands in the palette"
   code: src/intelligence/commands.ts
   tier: free
   scenarios:
@@ -2281,31 +2281,31 @@
       expect: "Offered on Markdown notes; runs on the note on screen and says what happened"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > offers Re-run extraction on a Markdown note only, and runs it on the one on screen, saying what happened"
+      test: "the insight-note commands > offers Re-run extraction on a Markdown note only, and runs it on the one on screen, saying what happened"
 
     - id: V32.2
-      scenario: "Re-transcribe on a page note and on another note"
-      expect: "The page note's page is marked for the next sync; any other note goes to the transcript command"
+      scenario: "Re-transcribe on an insight note and on another note"
+      expect: "The insight note's page is marked for the next sync; any other note goes to the transcript command"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > marks a page note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command"
+      test: "the insight-note commands > marks an insight note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command"
 
     - id: V32.3
-      scenario: "Re-transcribe this note on a page note, in the running plugin"
+      scenario: "Re-transcribe this note on an insight note, in the running plugin"
       expect: "Marked for the next sync, and said"
       layer: vault
       file: src/intelligence-plugin.test.ts
-      test: "the review in the running plugin > re-transcribes a page note by marking its page for the next sync"
+      test: "the review in the running plugin > re-transcribes an insight note by marking its page for the next sync"
 
     - id: V32.4
       scenario: "Re-run extraction in the running plugin, off the engine device, on another note, on a fresh vault"
-      expect: "A sentence each: which device extracts, or that this is no page note"
+      expect: "A sentence each: which device extracts, or that this is no insight note"
       layer: vault
       file: src/intelligence-plugin.test.ts
       test: "the review in the running plugin > runs Re-run extraction on the note on screen, and says why when this device does not extract"
 
 - feature: V33
-  name: "Page notes follow a renamed tag and a re-targeted mapping"
+  name: "Insight notes follow a renamed tag and a re-targeted mapping"
   code: src/intelligence/sync-pass.ts
   tier: free
   scenarios:
@@ -2324,7 +2324,7 @@
       test: "processDocument > a mapped tag renamed on the tablet > moves a row that lost its seen entry too"
 
     - id: V33.3
-      scenario: "A page seen but never noted is renamed; later two page-note tags replace one"
+      scenario: "A page seen but never noted is renamed; later two insight-note tags replace one"
       expect: "The seen entry moves; two new tags are no rename"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
@@ -2335,7 +2335,7 @@
       expect: "Notes inside the old folder move with their notebook subfolder (suffix on collision); a note the user sorted away stays"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
-      test: "followRetargets > moves a page note still inside the old folder into the new one, keeping its notebook subfolder, and leaves a sorted-away note"
+      test: "followRetargets > moves an insight note still inside the old folder into the new one, keeping its notebook subfolder, and leaves a sorted-away note"
 
     - id: V33.5
       scenario: "The mapping points at the vault root, or is gone"
@@ -2345,16 +2345,16 @@
       test: "followRetargets > moves a note to the vault root when the mapping points there, and skips a tag that is no longer mapped"
 
 - feature: V34
-  name: "Page notes carry the plugin's frontmatter keys (Pro)"
+  name: "Insight notes carry the plugin's frontmatter keys (Pro)"
   code: src/intelligence/sync-pass.ts
   tier: pro
   scenarios:
     - id: V34.1
-      scenario: "Frontmatter properties are on; a page note is written, then the user adds a tag, then the page changes"
+      scenario: "Frontmatter properties are on; an insight note is written, then the user adds a tag, then the page changes"
       expect: "remarkable-* keys and remarkable/<tag> on every write, as on a page-tag note; the user's tag stays"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
-      test: "processDocument > frontmatter (Pro) > writes the plugin's keys into a new page note and into every later write, keeping the user's own tags"
+      test: "processDocument > frontmatter (Pro) > writes the plugin's keys into a new insight note and into every later write, keeping the user's own tags"
 
     - id: V34.2
       scenario: "Frontmatter properties are off"
@@ -2368,7 +2368,7 @@
       expect: "The same keys a page-tag note gets (page ordinal, pages 1), or none"
       layer: engine
       file: src/sync-engine-intelligence.test.ts
-      test: "runSync > Intelligence Engine seam > gives the engine a page-tag note's frontmatter keys for a page note, and none with the feature off"
+      test: "runSync > Intelligence Engine seam > gives the engine a page-tag note's frontmatter keys for an insight note, and none with the feature off"
 
 - feature: V35
   name: "The status bar says when the engine extracts"
@@ -2512,7 +2512,7 @@
       test: "mergeTagList > changes nothing when the page says what it said"
 
 - feature: V38
-  name: "Value Slots in page notes: under a heading, in frontmatter, and tags"
+  name: "Value Slots in insight notes: under a heading, in frontmatter, and tags"
   code: src/intelligence/page-engine.ts
   tier: pro
   scenarios:
@@ -2620,7 +2620,7 @@
       test: "renderIntelligenceSection > own Slots (Pro) > adds up to five fields, types them, gives a choice its options, and removes them"
 
     - id: V39.7
-      scenario: "A sync writes Slots into page notes"
+      scenario: "A sync writes Slots into insight notes"
       expect: "They are marked used, which fixes their Shape; unchanged settings stay the same object"
       layer: unit
       file: src/intelligence/settings.test.ts
@@ -2714,26 +2714,26 @@
       test: "processDocument > choosing among a tag's Profiles > skips a listed Profile that was deleted, and asks nobody when one is left"
 
 - feature: V42
-  name: "Change the Profile of one page note (Pro)"
+  name: "Change the Profile of one insight note (Pro)"
   code: src/intelligence/change-profile.ts
   tier: pro
   scenarios:
     - id: V42.1
-      scenario: "Is a page note as the engine wrote it, or touched by the user?"
+      scenario: "Is an insight note as the engine wrote it, or touched by the user?"
       expect: "Untouched only when every region reads exactly the base and no line was added; a lost heading counts as touched"
       layer: unit
       file: src/intelligence/change-profile.test.ts
       test: "uneditedSinceBase > is true for a note as the engine wrote it, and false for an added line, an edited summary, or a lost heading"
 
     - id: V42.2
-      scenario: "The user changes the Profile of an untouched page note"
+      scenario: "The user changes the Profile of an untouched insight note"
       expect: "Made again where it is with the new Profile, its frontmatter kept, a fresh note id, the old base gone"
       layer: unit
       file: src/intelligence/change-profile.test.ts
       test: "changeProfile > makes an untouched note again with the new Profile, where it is, keeping its frontmatter"
 
     - id: V42.3
-      scenario: "The user changes the Profile of an edited page note"
+      scenario: "The user changes the Profile of an edited insight note"
       expect: "The edited note stays as it is; a new note is made beside it"
       layer: unit
       file: src/intelligence/change-profile.test.ts
@@ -2765,35 +2765,35 @@
       expect: "With Pro, a row per Profile, named and described, with what a change does and that the page has the generic one; a sentence that it is Pro without"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > changes a page note's Profile through a choice of Profiles, and says it is Pro without it"
+      test: "the insight-note commands > changes an insight note's Profile through a choice of Profiles, and says it is Pro without it"
 
     - id: V42.7.1
-      scenario: "The choice is opened on a page note made with one of the Profiles"
+      scenario: "The choice is opened on an insight note made with one of the Profiles"
       expect: "That Profile is marked Current, with no button to choose it again"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > marks the Profile the page has now, and offers it no button to choose it again"
+      test: "the insight-note commands > marks the Profile the page has now, and offers it no button to choose it again"
 
     - id: V42.7.2
-      scenario: "The command is run on a note that is no longer a page note -- one kept beside a new note after a change"
-      expect: "No choice opens; a sentence says it is not a page note"
+      scenario: "The command is run on a note that is no longer an insight note -- one kept beside a new note after a change"
+      expect: "No choice opens; a sentence says it is not an insight note"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > offers no choice on a note that is no longer a page note, such as one kept beside a new one"
+      test: "the insight-note commands > offers no choice on a note that is no longer an insight note, such as one kept beside a new one"
 
     - id: V42.7.3
       scenario: "The page was made with a profile that has since been removed"
       expect: "Said above the rows, and not called generic"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > says when the profile the page was made with no longer exists"
+      test: "the insight-note commands > says when the profile the page was made with no longer exists"
 
     - id: V42.8
       scenario: "There is no Profile to choose"
       expect: "The chooser says where to add one"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > says there is no Profile yet when there is none to choose"
+      test: "the insight-note commands > says there is no Profile yet when there is none to choose"
 
     - id: V42.9
       scenario: "The command in the running plugin, with a trial and without a licence"
@@ -2909,21 +2909,21 @@
       test: "processDocument > failures > keeps going when one page throws, saving after each page, and survives a transcription that throws"
 
     - id: V45.2
-      scenario: "A page-note tag is removed while a transcript-only tag stays on the notebook"
-      expect: "The page note's row is orphaned, not renamed to the transcript-only tag"
+      scenario: "An insight-note tag is removed while a transcript-only tag stays on the notebook"
+      expect: "The insight note's row is orphaned, not renamed to the transcript-only tag"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
-      test: "processDocument > a mapped tag renamed on the tablet > orphans a removed page-note tag instead of renaming it to a transcript-only tag on the notebook"
+      test: "processDocument > a mapped tag renamed on the tablet > orphans a removed insight-note tag instead of renaming it to a transcript-only tag on the notebook"
 
     - id: V45.3
-      scenario: "Pro lapsed with page notes on two tags"
+      scenario: "Pro lapsed with insight notes on two tags"
       expect: "Only the free tag's pages are processed; the settings keep the other switched on"
       layer: unit
       file: src/intelligence/host.test.ts
       test: "prepareRun > runs only the free tag's pages without Pro, though the others stay switched on in the settings"
 
 - feature: V46
-  name: "Owed page-note work reopens its notebook"
+  name: "Owed insight-note work reopens its notebook"
   code: src/sync-engine.ts
   tier: free
   scenarios:
@@ -2932,7 +2932,7 @@
       expect: "The notebook is opened again; it stays owed while a page fails and leaves the list once all pages pass"
       layer: unit
       file: src/sync-engine-intelligence.test.ts
-      test: "runSync > Intelligence Engine seam > reopens a document with owed page-note work on an unchanged tablet, and keeps it owed while a page fails"
+      test: "runSync > Intelligence Engine seam > reopens a document with owed insight-note work on an unchanged tablet, and keeps it owed while a page fails"
 
     - id: V46.2
       scenario: "The engine cannot run here (another device, no consent)"
@@ -2942,11 +2942,11 @@
       test: "runSync > Intelligence Engine seam > owes an extracting notebook to the next run the engine can do, and drops a document gone from the tablet"
 
     - id: V46.3
-      scenario: "The last Intelligence tag is removed from a notebook with page notes"
-      expect: "The engine still gets the notebook, with no units, so it can orphan the page notes"
+      scenario: "The last Intelligence tag is removed from a notebook with insight notes"
+      expect: "The engine still gets the notebook, with no units, so it can orphan the insight notes"
       layer: unit
       file: src/sync-engine-intelligence.test.ts
-      test: "runSync > Intelligence Engine seam > hands the engine a notebook whose last Intelligence tag left, so its page notes are orphaned"
+      test: "runSync > Intelligence Engine seam > hands the engine a notebook whose last Intelligence tag left, so its insight notes are orphaned"
 
     - id: V46.4
       scenario: "A switch-on scan runs and one document cannot be read"
@@ -3028,7 +3028,7 @@
       test: "prepareRun > lets the extraction backend rest after each document only when the local model also transcribes"
 
 - feature: V53
-  name: "Page-note commands wait for a running sync"
+  name: "Insight-note commands wait for a running sync"
   code: src/intelligence/commands.ts
   tier: free
   scenarios:
@@ -3037,7 +3037,7 @@
       expect: "Nothing runs and the index stays as it is; the user is told to try again after the sync"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > does nothing to the index or the note while a sync runs"
+      test: "the insight-note commands > does nothing to the index or the note while a sync runs"
 
     - id: V53.2
       scenario: "A proposal is accepted while a sync runs"
@@ -3047,16 +3047,16 @@
       test: "ReviewModal > keeps a row to decide again when a sync was running"
 
 - feature: V54
-  name: "The running plugin holds the sync lock for page-note commands"
+  name: "The running plugin holds the sync lock for insight-note commands"
   code: src/main.ts
   tier: free
   scenarios:
     - id: V54.1
-      scenario: "Re-transcribe on a page note during a sync; the plugin unloads mid-sync"
+      scenario: "Re-transcribe on an insight note during a sync; the plugin unloads mid-sync"
       expect: "The index is untouched and the user is told to wait; the sync's local server is stopped on unload"
       layer: integration
       file: src/intelligence-plugin.test.ts
-      test: "the review in the running plugin > leaves a page note alone while a sync runs, and stops a running sync's local server on unload"
+      test: "the review in the running plugin > leaves an insight note alone while a sync runs, and stops a running sync's local server on unload"
 
 - feature: V55
   name: "The measured local prompt (research 22)"
@@ -3145,14 +3145,14 @@
       test: "runSync > Intelligence Engine seam > owes a notebook's remaining pages to the next run when Stop is pressed while they are extracted"
 
     - id: V60.2
-      scenario: "A notebook carries two mapped tags; page notes are switched off for one and on for the other"
+      scenario: "A notebook carries two mapped tags; insight notes are switched off for one and on for the other"
       expect: "Not a rename: the first tag's rows and notes stay its own, the second makes its own notes"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > a mapped tag renamed on the tablet > does not read a tag whose Intelligence Mode is merely off as renamed to the tag switched on beside it"
 
     - id: V60.3
-      scenario: "A page note was deleted and the page's extraction then keeps failing"
+      scenario: "An insight note was deleted and the page's extraction then keeps failing"
       expect: "The retries share one note id and one base, so the third failure is said and no base files pile up"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
@@ -3171,12 +3171,12 @@
       test: "renderIntelligenceSection > keeps what was just typed when a toggle, a preset or a button of the same dialog follows"
 
     - id: V61.2
-      scenario: "Frontmatter properties are switched off while page notes carry the plugin's keys"
+      scenario: "Frontmatter properties are switched off while insight notes carry the plugin's keys"
       tier: pro
-      expect: "Page notes lose the plugin's keys and tags too; the user's and the Slots' properties stay"
+      expect: "Insight notes lose the plugin's keys and tags too; the user's and the Slots' properties stay"
       layer: unit
       file: src/frontmatter-pass.test.ts
-      test: "cleanupFrontmatter (toggle off) > cleans the Intelligence Engine's page notes too, keeping what the user and the engine's Slots put there"
+      test: "cleanupFrontmatter (toggle off) > cleans the Intelligence Engine's insight notes too, keeping what the user and the engine's Slots put there"
 
     - id: V61.3
       scenario: "The engine is paused and automatic syncs keep running"
@@ -3231,7 +3231,7 @@
   tier: free
   scenarios:
     - id: V63.1
-      scenario: "A page note's template holds an empty frontmatter block and the plugin's keys are written"
+      scenario: "An insight note's template holds an empty frontmatter block and the plugin's keys are written"
       tier: pro
       expect: "The keys fill that block; no second block is stacked on it and the body is not taken for frontmatter"
       layer: unit
@@ -3256,41 +3256,41 @@
 
     - id: V63.4
       scenario: "A tag removed on the tablet is put back on an unchanged page; then again after the user deleted the note"
-      expect: "The row is active again at once; a note deleted meanwhile is made again, like any deleted page note"
+      expect: "The row is active again at once; a note deleted meanwhile is made again, like any deleted insight note"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
       test: "processDocument > rows > takes an orphaned row back when its tag returns to the page, though the page did not change, and makes a deleted note again"
 
 - feature: V64
-  name: "A page note deleted by hand is made again, like a transcript note"
+  name: "An insight note deleted by hand is made again, like a transcript note"
   code: src/intelligence/sync-pass.ts
   tier: free
   scenarios:
     - id: V64.1
-      scenario: "The user deletes a page note; the page on the tablet does not change"
-      expect: "The next sync makes the note again at its path, from the transcript the base kept, with a fresh id; with no base the page is read again; nothing is made while page notes are off for the tag"
+      scenario: "The user deletes an insight note; the page on the tablet does not change"
+      expect: "The next sync makes the note again at its path, from the transcript the base kept, with a fresh id; with no base the page is read again; nothing is made while insight notes are off for the tag"
       layer: unit
       file: src/intelligence/sync-pass.test.ts
-      test: "processDocument > rows > makes a deleted page note again at the next sync, like a transcript note, though the page did not change"
+      test: "processDocument > rows > makes a deleted insight note again at the next sync, like a transcript note, though the page did not change"
 
     - id: V64.2
-      scenario: "A page note is missing and nothing on the tablet changed"
-      expect: "The sync opens that notebook for the engine; not while the note is there, not for an orphaned row, not with page notes off for the tag"
+      scenario: "An insight note is missing and nothing on the tablet changed"
+      expect: "The sync opens that notebook for the engine; not while the note is there, not for an orphaned row, not with insight notes off for the tag"
       layer: engine
       file: src/sync-engine-intelligence.test.ts
-      test: "runSync > Intelligence Engine seam > reopens a notebook whose page note was deleted on an unchanged tablet, and only while its tag makes page notes"
+      test: "runSync > Intelligence Engine seam > reopens a notebook whose insight note was deleted on an unchanged tablet, and only while its tag makes insight notes"
 
 - feature: V65
-  name: "A sync the user starts says what happened to the page notes"
+  name: "A sync the user starts says what happened to the insight notes"
   code: src/intelligence/host.ts
   tier: free
   scenarios:
     - id: V65.1
-      scenario: "A page note could not be made in a sync the user started; and in a background one"
+      scenario: "An insight note could not be made in a sync the user started; and in a background one"
       expect: "Said after every such sync, with the count and the first reason; a background run waits for the third failure"
       layer: unit
       file: src/intelligence/host.test.ts
-      test: "intelligenceNotices > a page note that could not be made > is said after every sync the user starts, with the reason, and not after a background one"
+      test: "intelligenceNotices > an insight note that could not be made > is said after every sync the user starts, with the reason, and not after a background one"
 
     - id: V65.2
       scenario: "A reasoning model in LM Studio answers a schema-bound request in its reasoning and leaves the answer empty"
@@ -3391,13 +3391,13 @@
 
     - id: V69.2
       scenario: "A tag is picked in the add row, given a folder, closed, then opened by its pencil"
-      expect: "Its dialog opens titled by the tag; once mapped it redraws with the transcript note and page notes; the pencil opens it on the folder set"
+      expect: "Its dialog opens titled by the tag; once mapped it redraws with the transcript note and insight notes; the pencil opens it on the folder set"
       layer: vault
       file: src/tag-routing-section.test.ts
       test: "the free version's tag cap > opens a tag's dialog from the add row and from its pencil, and keeps it current as the tag is mapped"
 
     - id: V69.3
-      scenario: "A mapped tag makes a transcript note, page notes with the generic or picked Profiles, or nothing"
+      scenario: "A mapped tag makes a transcript note, insight notes with the generic or picked Profiles, or nothing"
       expect: "Its line says so in a few words"
       layer: unit
       file: src/intelligence/settings-section.test.ts
@@ -3485,7 +3485,7 @@
       test: "runSync > Intelligence Engine seam > does not send a page the transcript note failed on to the backend a second time in the same sync"
 
 - feature: V72
-  name: "Pages written before page notes were switched on: said once, and made on request"
+  name: "Pages written before insight notes were switched on: said once, and made on request"
   code: src/intelligence/rerun.ts
   tier: free
   scenarios:
@@ -3497,36 +3497,36 @@
       test: "processDocument > switching Intelligence Mode on > says so for one page found later that was written before the switch-on, once"
 
     - id: V72.2
-      scenario: "Make page notes for this notebook's earlier pages, on a notebook note and on a page-tag note"
-      expect: "Every page under the note's tag without a page note is marked to be read, not one already waiting or of another tag or notebook; the notebook is owed to the next sync"
+      scenario: "Make insight notes for this notebook's earlier pages, on a notebook note and on a page-tag note"
+      expect: "Every page under the note's tag without an insight note is marked to be read, not one already waiting or of another tag or notebook; the notebook is owed to the next sync"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "wantEarlierPages > marks the pages of a transcript note's notebook that have no page note, and owes the notebook to the next sync"
+      test: "wantEarlierPages > marks the pages of a transcript note's notebook that have no insight note, and owes the notebook to the next sync"
 
     - id: V72.3
-      scenario: "The command on a note that is not a transcript note, with page notes off, or with nothing left"
+      scenario: "The command on a note that is not a transcript note, with insight notes off, or with nothing left"
       expect: "A sentence for each, and nothing changed"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "wantEarlierPages > says why it does nothing: not a transcript note, page notes off, or nothing left"
+      test: "wantEarlierPages > says why it does nothing: not a transcript note, insight notes off, or nothing left"
 
     - id: V72.4
       scenario: "A page left alone at switch-on is marked, and the next sync runs"
-      expect: "Its page note is made"
+      expect: "Its insight note is made"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "wantEarlierPages > gets a page left alone at switch-on its page note on the next sync"
+      test: "wantEarlierPages > gets a page left alone at switch-on its insight note on the next sync"
 
     - id: V72.5
       scenario: "The command is run from the palette"
       expect: "Offered on a Markdown note only; it runs on the note on screen and says what it did"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the page-note commands > runs Make page notes for earlier pages on the note on screen, and says what it did"
+      test: "the insight-note commands > runs Make insight notes for earlier pages on the note on screen, and says what it did"
 
     - id: V72.6
-      scenario: "The command runs in the loaded plugin on a transcript note whose tag has page notes off"
+      scenario: "The command runs in the loaded plugin on a transcript note whose tag has insight notes off"
       expect: "The plugin asks its own settings, and the command says to switch them on first"
       layer: vault
       file: src/intelligence-plugin.test.ts
-      test: "the review in the running plugin > makes page notes for a notebook's earlier pages from its transcript note, once page notes are on for its tag"
+      test: "the review in the running plugin > makes insight notes for a notebook's earlier pages from its transcript note, once insight notes are on for its tag"

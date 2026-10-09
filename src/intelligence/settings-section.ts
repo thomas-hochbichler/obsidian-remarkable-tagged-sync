@@ -1,6 +1,6 @@
 /**
  * The Intelligence Engine's settings (spec §10): per tag mapping, the two modes and the Profile; then
- * the Page notes section -- device switch, extraction backend, Profiles and Slots. Profiles and Slots
+ * the Insight notes section -- device switch, extraction backend, Profiles and Slots. Profiles and Slots
  * are lists of one line each; each is edited in a dialog (`host.dialog`). Free vaults see
  * every Pro control, disabled and marked "(Pro)": a feature nobody can see is one nobody decides to buy.
  */
@@ -53,7 +53,7 @@ const MODEL_DESC = "Leave it empty to use the model set for this provider under 
  */
 function modelWarning(note: ModelNote): string {
 	if (note.kind === "missing") return missingModelSentence(note.model, note.suggestion);
-	return `⚠ "${note.model}" reasons before answering — expect page notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`;
+	return `⚠ "${note.model}" reasons before answering — expect insight notes to take several times longer. A model that doesn't reason (often the "-instruct" build) is faster.`;
 }
 const FREE_SLOTS = new Set(["tasks", "summary"]);
 const ITEM_FORMAT_PRESETS: Record<string, string> = { Tasks: TASKS_FORMAT, Dataview: "- [ ] {{text}} [due:: {{due}}]", Plain: "- [ ] {{text}}" };
@@ -94,12 +94,12 @@ export function renderTagModes(containerEl: HTMLElement, tag: string, host: Inte
 				.onChange(async (on) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), transcript: on } } }))),
 		);
 	new Setting(containerEl)
-		.setName(locked ? `Page notes${PRO}` : "Page notes")
+		.setName(locked ? `Insight notes${PRO}` : "Insight notes")
 		.setDesc(
 			!modes.transcript && modes.intelligence
 				? "Transcript off: search the full text in the reMarkable app; Obsidian holds only what the engine extracted."
 				: locked
-					? "Page notes on more than one tag."
+					? "Insight notes on more than one tag."
 					: "One note per page, with its tasks and a summary.",
 		)
 		.addToggle((toggle) =>
@@ -112,7 +112,7 @@ export function renderTagModes(containerEl: HTMLElement, tag: string, host: Inte
 					await host.saveAndRedraw();
 				}),
 		);
-	// The Profile only matters, and is only offered, where page notes are on.
+	// The Profile only matters, and is only offered, where insight notes are on.
 	if (!modes.intelligence) return;
 	const setProfiles = (profiles: string[]) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), profiles } } }));
 	if (!host.pro) {
@@ -149,22 +149,22 @@ export function tagModesSummary(tag: string, host: IntelligenceSettingsHost): st
 	const names = modes.profiles.map((id) => settings.profiles.find((profile) => profile.id === id)?.name ?? id);
 	const parts = [
 		...(modes.transcript ? ["Transcript note"] : []),
-		...(modes.intelligence ? [`Page notes: ${names.length === 0 ? genericProfile(host.pro).name : names.join(", ")}`] : []),
+		...(modes.intelligence ? [`Insight notes: ${names.length === 0 ? genericProfile(host.pro).name : names.join(", ")}`] : []),
 	];
 	return parts.length === 0 ? "Writes nothing" : parts.join(" · ");
 }
 
 export function renderIntelligenceSection(containerEl: HTMLElement, host: IntelligenceSettingsHost): void {
 	const settings = host.settings();
-	new Setting(containerEl).setName("Page notes").setHeading();
+	new Setting(containerEl).setName("Insight notes").setHeading();
 	containerEl.createDiv({
 		cls: "tagged-sync-note",
-		text: "A tag with page notes on turns every page you write from then on into its own note, from your template, with its tasks and a summary. Pages written before are left alone.",
+		text: "A tag with insight notes on turns every page you write from then on into its own note, from your template, with its tasks and a summary. Pages written before are left alone.",
 	});
 
 	new Setting(containerEl)
 		.setName("Run page extraction on this device")
-		.setDesc("Sync and transcription run on every device; extraction runs on one, so two devices never write the same page note.")
+		.setDesc("Sync and transcription run on every device; extraction runs on one, so two devices never write the same insight note.")
 		.addToggle((toggle) => {
 			// The handler goes on only once the value is set: Obsidian's `setValue` fires `onChange`, and
 			// this handler redraws the tab, which set the value again -- the tab re-rendered without end
@@ -290,7 +290,7 @@ function renderProfiles(containerEl: HTMLElement, host: IntelligenceSettingsHost
 					.setIcon("trash")
 					.setTooltip("Delete")
 					.onClick(async () => {
-						if (!(await host.confirm("Delete profile", `Delete "${profile.name}"? Tags that use it go back to the generic profile; page notes already made stay as they are.`, "Delete"))) return;
+						if (!(await host.confirm("Delete profile", `Delete "${profile.name}"? Tags that use it go back to the generic profile; insight notes already made stay as they are.`, "Delete"))) return;
 						await withSettings(host, (s) => ({
 							...s,
 							profiles: s.profiles.filter((p) => p.id !== profile.id),
@@ -328,7 +328,7 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 		.addText((text) => text.setValue(profile.description).setPlaceholder("One line: what these pages are").onChange(async (description) => typed(host, edit({ description }))));
 	new Setting(containerEl)
 		.setName("Template")
-		.setDesc("Any note. Each slot fills its own heading; a template change reaches new page notes only.")
+		.setDesc("Any note. Each slot fills its own heading; a template change reaches new insight notes only.")
 		.addText((text) => text.setValue(profile.template ?? "").setPlaceholder("Templates/Page.md").onChange(async (path) => typed(host, edit({ template: path.trim() === "" ? null : path.trim() }))))
 		.addButton((button) =>
 			button.setButtonText("Create template").onClick(async () => {
@@ -446,7 +446,7 @@ function renderSlots(containerEl: HTMLElement, host: IntelligenceSettingsHost): 
 					.setTooltip(host.pro ? "Delete" : `Delete${PRO}`)
 					.setDisabled(!host.pro)
 					.onClick(async () => {
-						if (!(await host.confirm("Delete slot", `Delete "${slot.name}"? Every profile stops filling it; what page notes already hold stays, no longer updated.`, "Delete"))) return;
+						if (!(await host.confirm("Delete slot", `Delete "${slot.name}"? Every profile stops filling it; what insight notes already hold stays, no longer updated.`, "Delete"))) return;
 						// Notes keep the regions it filled; they are no longer updated (spec §5.3).
 						await withSettings(host, (s) => ({ ...s, slots: s.slots.filter((c) => c.id !== slot.id), profiles: s.profiles.map((p) => ({ ...p, slots: p.slots.filter((id) => id !== slot.id) })) }));
 					}),

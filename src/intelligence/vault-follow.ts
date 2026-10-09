@@ -1,6 +1,6 @@
 /**
  * What a rename or move in the vault changes in `data.json`: the path of every note the plugin owns
- * -- transcript notes and page notes alike -- and the path of every Profile's template (spec §4.1,
+ * -- transcript notes and insight notes alike -- and the path of every Profile's template (spec §4.1,
  * §5.4). Everything is keyed by identity, never by path, so the path is the only thing to follow.
  */
 

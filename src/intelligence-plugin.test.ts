@@ -51,7 +51,7 @@ describe("the review in the running plugin", () => {
 	const withPageNote = { syncIndex: { rootHash: null, rows: {}, intelligenceRows: { "d:p:work": PAGE_ROW }, seenPages: { "d:p:work": { scope: "notebook", pageHash: "h", firstSeen: null, noteId: "n1" } } } };
 	const file = (path: string) => Object.assign(Object.create(TFile.prototype) as TFile, { path, extension: "md", basename: path.replace(/\.md$/, "") });
 
-	it("re-transcribes a page note by marking its page for the next sync", async () => {
+	it("re-transcribes an insight note by marking its page for the next sync", async () => {
 		const plugin = await load(withPageNote);
 		takeNotices();
 		await plugin.reTranscribeNote(file("Work/p.md"));
@@ -59,18 +59,18 @@ describe("the review in the running plugin", () => {
 		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
 	});
 
-	it("makes page notes for a notebook's earlier pages from its transcript note, once page notes are on for its tag", async () => {
+	it("makes insight notes for a notebook's earlier pages from its transcript note, once insight notes are on for its tag", async () => {
 		const transcript = { syncKey: "d::work", docId: "d", pageId: null, tag: "work", entryHash: "e", pageHash: null, notePath: "Work/Log.md", status: "active", syncedAt: "" };
 		const plugin = await load({ ...withPageNote, syncIndex: { ...withPageNote.syncIndex, rows: { "d::work": transcript } } });
 		plugin.app.workspace.activeFile = file("Work/Log.md");
 		takeNotices();
 		plugin.commands.find((command) => command.id === "earlier-pages")!.checkCallback!(false);
 		await settle();
-		// Page notes are off for "work" in this vault, so the command says so and changes nothing.
-		expect(takeNotices()).toEqual(['Page notes are off for the tag "work". Switch them on under Tag routing first.']);
+		// Insight notes are off for "work" in this vault, so the command says so and changes nothing.
+		expect(takeNotices()).toEqual(['Insight notes are off for the tag "work". Switch them on under Tag routing first.']);
 	});
 
-	it("leaves a page note alone while a sync runs, and stops a running sync's local server on unload", async () => {
+	it("leaves an insight note alone while a sync runs, and stops a running sync's local server on unload", async () => {
 		const plugin = await load(withPageNote);
 		const internals = plugin as unknown as { syncing: boolean; runningIntelligence: { dispose(): void } | null; onunload(): void };
 		internals.syncing = true;
@@ -94,15 +94,15 @@ describe("the review in the running plugin", () => {
 			await settle();
 			await settle();
 		}
-		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Page notes in the settings.", "This note is not a page note from the Intelligence Engine."]);
+		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Insight notes in the settings.", "This note is not an insight note from the Intelligence Engine."]);
 
-		// A vault that never had a page note has no rows to look in at all.
+		// A vault that never had an insight note has no rows to look in at all.
 		const fresh = await load({});
 		fresh.app.workspace.activeFile = file("Any.md");
 		fresh.commands.find((command) => command.id === "rerun-extraction")!.checkCallback!(false);
 		await settle();
 		await settle();
-		expect(takeNotices()).toEqual(["This note is not a page note from the Intelligence Engine."]);
+		expect(takeNotices()).toEqual(["This note is not an insight note from the Intelligence Engine."]);
 	});
 
 	it("offers Change profile with Pro and says it is Pro without", async () => {
@@ -117,7 +117,7 @@ describe("the review in the running plugin", () => {
 		takeSettings().find((setting) => setting.name === "A")!.buttons[0].click();
 		await settle();
 		await settle();
-		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Page notes in the settings."]);
+		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Insight notes in the settings."]);
 
 		const free = await load(withPageNote);
 		free.app.workspace.activeFile = file("Work/p.md");
