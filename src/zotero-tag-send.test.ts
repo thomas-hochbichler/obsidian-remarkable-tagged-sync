@@ -196,7 +196,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 
 		expect(h.sent).toEqual([]);
 		expect(notices).toEqual([nothingToSend(1, "to-remarkable")]);
-		expect(notices).toEqual(["Zotero: the paper tagged to-remarkable is on your reMarkable already."]);
+		expect(notices).toEqual(["Zotero: the paper tagged to-remarkable is on your reMarkable already. Deleted it on the tablet? Run Sync now once, then send again."]);
 		expect(h.data.zoteroLinks).toEqual(linked("doc-9", "ATT1", undefined, SEEN));
 	});
 
@@ -206,7 +206,7 @@ describe("a paper tagged in Zotero, when the command runs", () => {
 			data: { zoteroLinks: { ...linked("doc-8", "ATT1", undefined, SEEN), ...linked("doc-9", "ATT2", undefined, SEEN) } },
 		});
 
-		expect(await sendTaggedPapers(h.host, h.client)).toEqual(["Zotero: all 2 papers tagged to-remarkable are on your reMarkable already."]);
+		expect(await sendTaggedPapers(h.host, h.client)).toEqual(["Zotero: all 2 papers tagged to-remarkable are on your reMarkable already. Deleted it on the tablet? Run Sync now once, then send again."]);
 		expect(h.sent).toEqual([]);
 	});
 
