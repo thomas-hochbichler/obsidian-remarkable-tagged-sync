@@ -130,7 +130,7 @@ describe("changeProfile", () => {
 		e.notes.set(path, edited);
 		const out = await changeProfile(e, run(), index, path, "decided", "a/d-p1.pdf");
 		const row = out.index!.intelligenceRows!["d:p1:work"];
-		expect(row.notePath).toBe("Work/Log/2026-09-02 Log p1 (work).md");
+		expect(row.notePath).toBe("Work/Log/Log p1 (work).md");
 		expect(e.notes.get(path)).toBe(edited);
 		expect(e.notes.get(row.notePath)).toContain("## Summary");
 		expect(out.message).toContain("stays as it is and is yours now: no sync updates it.");

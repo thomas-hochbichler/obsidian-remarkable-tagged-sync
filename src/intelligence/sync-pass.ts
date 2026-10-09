@@ -12,7 +12,6 @@ import { applyFrontmatter, formatLocalMinute, type NoteFrontmatter } from "../fr
 import { blockHashOf, type NoteStore, resolveFreePath, sanitizeFilenamePart } from "../note-builder";
 import type { BaseStore, PageBase } from "./base-store";
 import { rebuildBase } from "./base-store";
-import { isoDay } from "./dates";
 import type { ExtractionBackend } from "./extraction-backend";
 import { compileItemFormat } from "./item-format";
 import { processPage } from "./page-engine";
@@ -336,6 +335,7 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 		});
 	}
 
+	const title = `${doc.name} p${page.ordinal}`;
 	const folder = `${deps.tagFolderMap[unit.tag].replace(/\/+$/, "")}/${sanitizeFilenamePart(doc.name)}`;
 	const renderPath = await doc.writeRender(page.id);
 	const outcome = await processPage({
@@ -348,7 +348,7 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 		template,
 		backend: deps.backend,
 		syncedAt: deps.now(),
-		title: (pageDate) => `${isoDay(pageDate)} ${doc.name} p${page.ordinal}`,
+		title,
 		pageLink: `[[${renderPath}|Page ${page.ordinal}]]`,
 		pageEmbed: `![[${renderPath}]]`,
 		reviewLink: deps.reviewLink,
@@ -376,7 +376,7 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 
 	let notePath = alive ? row.notePath : "";
 	if (outcome.created) {
-		const name = sanitizeFilenamePart(`${isoDay(outcome.pageDate)} ${doc.name} p${page.ordinal}`);
+		const name = sanitizeFilenamePart(title);
 		await deps.noteStore.ensureFolder(folder);
 		notePath = await resolveFreePath(deps.noteStore, folder, name, unit.tag, doc.docId);
 		await deps.createNote(notePath, content!);

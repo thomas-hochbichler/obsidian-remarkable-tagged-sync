@@ -41,8 +41,8 @@ export interface PageRun {
 	template: string;
 	backend: ExtractionBackend;
 	syncedAt: Date;
-	/** The new note's name, from the page's date; asked only on creation. */
-	title: (pageDate: Date) => string;
+	/** The note's name, `{{title}}` in the template: the notebook and the page number, never a date read off the page (live test, 2026-10-09). */
+	title: string;
 	/** `{{ts.page.link}}`: a link to the page render. */
 	pageLink: string;
 	/** `{{ts.page.png}}`: the page render embedded. */
@@ -305,7 +305,7 @@ function create(run: PageRun, runSlots: readonly SlotDef[], result: ExtractionRe
 		if (placement.kind === "region") slots[slot.id] = fresh.base;
 		else settled.push(slot.id);
 	}
-	let lines = renderTemplate(template, { ts, title: run.title(pageDate), formatDate: run.formatDate, formatTime: run.formatTime }).split("\n");
+	let lines = renderTemplate(template, { ts, title: run.title, formatDate: run.formatDate, formatTime: run.formatTime }).split("\n");
 	// Only a first pick held back for review is pending on a new note; its region says so from the start.
 	for (const slot of Object.values(slots)) {
 		if (pendingCount(slot) === 0) continue;

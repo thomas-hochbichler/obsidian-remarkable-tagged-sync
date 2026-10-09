@@ -53,7 +53,7 @@ export async function changeProfile(env: HostEnvironment, run: RunInputs, index:
 			template: await templateFor(deps, profile, slots),
 			backend: deps.backend,
 			syncedAt: deps.now(),
-			title: () => title,
+			title,
 			pageLink: `[[${renderPath}|${title}]]`,
 			pageEmbed: `![[${renderPath}]]`,
 			reviewLink: REVIEW_LINK,

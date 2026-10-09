@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { isoDay } from "./dates";
 import type { ExtractionBackend, ExtractionInput } from "./extraction-backend";
 import { processPage, type PageRun } from "./page-engine";
 import { decide, pendingProposals, uneditedSinceBase } from "./review";
@@ -38,7 +37,7 @@ function run(overrides: Partial<PageRun> = {}): PageRun {
 		template: TEMPLATE,
 		backend: backend({ page_date_text: "Mo 28.9.", tasks: [task("Call Bob", "call Bob by Friday", { due: { words: "by Friday", rel: "none" } })], summary: "Met Bob." }),
 		syncedAt: new Date(2026, 8, 29, 12),
-		title: (date) => `${isoDay(date)} Work p1`,
+		title: "Work p1",
 		pageLink: "[[p1.png|Page 1]]",
 		pageEmbed: "![[p1.png]]",
 		reviewLink: "obsidian://review",
@@ -56,12 +55,12 @@ describe("processPage > a new note", () => {
 		if (out.kind !== "written") return;
 		expect(out.created).toBe(true);
 		expect(out.content).toBe(
-			"# 2026-09-28 Work p1\nWritten: 2026-09-28 · seen 2026-09-28 · synced 2026-09-29\n\n## Tasks\n- [ ] Call Bob 📅 2026-10-02\n\n## Summary\nMet Bob.\n\n## Page\n[[p1.png|Page 1]]\n",
+			"# Work p1\nWritten: 2026-09-28 · seen 2026-09-28 · synced 2026-09-29\n\n## Tasks\n- [ ] Call Bob 📅 2026-10-02\n\n## Summary\nMet Bob.\n\n## Page\n[[p1.png|Page 1]]\n",
 		);
 		expect(Object.keys(out.base.slots)).toEqual(["tasks", "summary"]);
 		expect(out.base).toMatchObject({ noteId: "note-1", syncKey: "doc:p1:work", unitKey: "doc:p1:work", transcript: PAGE, settled: [] });
 		// The fingerprint is the template's own lines, and the note as written reads as untouched, date field included.
-		expect(out.base.outside).toBe("# 2026-09-28 Work p1\nWritten: 2026-09-28 · seen 2026-09-28 · synced 2026-09-29\n## Page\n[[p1.png|Page 1]]");
+		expect(out.base.outside).toBe("# Work p1\nWritten: 2026-09-28 · seen 2026-09-28 · synced 2026-09-29\n## Page\n[[p1.png|Page 1]]");
 		expect(uneditedSinceBase(out.base, out.content!.split("\n"))).toBe(true);
 	});
 
@@ -73,10 +72,10 @@ describe("processPage > a new note", () => {
 		expect(Object.keys(out.base.slots)).toEqual(["tasks"]);
 	});
 
-	it("names the note after the sync day when the page has neither a written date nor a first-seen stamp", async () => {
+	it("leaves the date fields empty when the page has neither a written date nor a first-seen stamp", async () => {
 		const out = await processPage(run({ unit: { key: "k", pageHash: "h", transcript: PAGE, firstSeen: null }, backend: backend({ tasks: [], summary: "" }), template: "{{title}}|{{ts.date.firstSeen}}|{{ts.date.written}}|{{ts.page.png}}" }));
 		if (out.kind !== "written") throw new Error(out.kind);
-		expect(out.content).toBe("2026-09-29 Work p1|||![[p1.png]]\n\n## Tasks\n\n\n## Summary\n\n");
+		expect(out.content).toBe("Work p1|||![[p1.png]]\n\n## Tasks\n\n\n## Summary\n\n");
 	});
 
 	it("writes a task already ticked on the page as ticked", async () => {

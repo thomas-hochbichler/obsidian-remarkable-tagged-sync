@@ -105,7 +105,7 @@ describe("prepareRun", () => {
 		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: "2026-09-01T00:00:00.000Z" } };
 		const page = { id: "p1", ordinal: 1, hash: "h", modified: Date.parse("2026-09-02T00:00:00.000Z") };
 		await run.hook!.process({ docId: "d", name: "N", legacy: false, pages: [page], units: [{ tag: "work", scope: "notebook", pageIds: ["p1"] }], transcribe: async () => new Map([["p1", "call Bob"]]), writeRender: async () => "a.pdf" }, state);
-		expect(created).toEqual({ "Work/N/2026-09-02 N p1.md": "<DD.MM.YYYY> <HH:mm> <ss>\n## Tasks\n- [ ] Call Bob\n" });
+		expect(created).toEqual({ "Work/N/N p1.md": "<DD.MM.YYYY> <HH:mm> <ss>\n## Tasks\n- [ ] Call Bob\n" });
 		expect(state.rows["d:p1:work"]).toMatchObject({ noteId: "rand-1-0123456789", syncedAt: "2026-09-28T10:00:00.000Z" });
 		expect(e.files.dirs).toEqual(["plugin/base"]);
 		expect(Object.keys(e.files.data)).toContain("plugin/base/rand-1-0123456789.json");
