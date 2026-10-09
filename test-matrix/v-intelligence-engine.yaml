@@ -1051,6 +1051,13 @@
       file: src/intelligence/extraction.test.ts
       test: "parseExtraction > resolves due dates against the date written on the page when there is one"
 
+    - id: V11.6a
+      scenario: "The page's first line carries a date the model did not give (Elternabend 3b - 10.10., then bis Mo)"
+      expect: "That date is the page's date, read in code before the model's; bis Mo is Monday 12.10., not the Monday after the first-seen day"
+      layer: unit
+      file: src/intelligence/extraction.test.ts
+      test: "parseExtraction > takes a date in the page's first line as the page's date, before what the model read"
+
     - id: V11.7
       scenario: "NONE items, junk and a missing Slot"
       expect: "Dropped; the missing Slot is empty"

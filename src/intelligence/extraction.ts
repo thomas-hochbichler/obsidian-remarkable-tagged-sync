@@ -136,10 +136,14 @@ export function defuseTemplater(value: unknown, key = ""): unknown {
 	return value;
 }
 
-export function parseExtraction(raw: unknown, slots: readonly SlotDef[], fallbackDate: Date): ExtractionResult | null {
+export function parseExtraction(raw: unknown, slots: readonly SlotDef[], fallbackDate: Date, transcript = ""): ExtractionResult | null {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
 	const answer = defuseTemplater(raw) as Record<string, unknown>;
-	const writtenDate = resolveWrittenDate(typeof answer[PAGE_DATE_KEY] === "string" ? answer[PAGE_DATE_KEY] : null, fallbackDate);
+	// A date in the page's first line is its date, read in code before the model is asked: the model
+	// took "Elternabend 3b - 10.10." for an event and gave none, so "bis Mo" below it counted from the
+	// day the page was first seen (live test, 2026-10-09).
+	const firstLine = transcript.split("\n").find((line) => line.trim() !== "") ?? null;
+	const writtenDate = resolveWrittenDate(firstLine, fallbackDate) ?? resolveWrittenDate(typeof answer[PAGE_DATE_KEY] === "string" ? answer[PAGE_DATE_KEY] : null, fallbackDate);
 	const pageDate = writtenDate ?? calendarDay(fallbackDate.getUTCFullYear(), fallbackDate.getUTCMonth(), fallbackDate.getUTCDate());
 	const result: Record<string, SlotResult> = {};
 	for (const slot of slots) {

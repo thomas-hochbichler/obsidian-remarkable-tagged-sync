@@ -123,7 +123,7 @@ export function oneCallBackend(id: string, metered: boolean, complete: Complete)
 			const outcome = await complete({ system, user, schema: buildSchema(asked.slots), maxTokens: EXTRACTION_MAX_TOKENS });
 			if (outcome.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (outcome.kind === "failed") return outcome;
-			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate);
+			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate, input.transcript);
 			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
 		},
 	};
@@ -231,13 +231,13 @@ export function twoCallBackend(id: string, metered: boolean, complete: Complete)
 			if (notes.kind === "truncated") return { kind: "failed", reason: "The notes pass was cut off at the token limit." };
 			if (notes.kind === "failed") return notes;
 			if (notesAreEmpty(notes.text, asked.slots.map((slot) => slot.id))) {
-				return { kind: "ok", result: parseExtraction({}, input.slots, input.referenceDate)! };
+				return { kind: "ok", result: parseExtraction({}, input.slots, input.referenceDate, input.transcript)! };
 			}
 			const format = localFormatPrompt(asked, notes.text);
 			const formatted = await complete({ ...format, schema: buildSchema(asked.slots), maxTokens: EXTRACTION_MAX_TOKENS });
 			if (formatted.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (formatted.kind === "failed") return formatted;
-			const result = parseExtraction(readJson(formatted.text), input.slots, input.referenceDate);
+			const result = parseExtraction(readJson(formatted.text), input.slots, input.referenceDate, input.transcript);
 			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
 		},
 	};
@@ -381,7 +381,7 @@ export function ownServerBackend(id: string, complete: Complete, reasons: () => 
 			}
 			if (outcome.kind === "truncated") return { kind: "failed", reason: "The answer was cut off at the token limit." };
 			if (outcome.kind === "failed") return outcome;
-			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate);
+			const result = parseExtraction(readJson(outcome.text), input.slots, input.referenceDate, input.transcript);
 			return result ? { kind: "ok", result } : { kind: "failed", reason: "The answer was not the JSON object that was asked for." };
 		},
 	};

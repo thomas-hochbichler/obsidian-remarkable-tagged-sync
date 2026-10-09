@@ -82,6 +82,17 @@ describe("parseExtraction", () => {
 		expect(result.slots.tasks).toMatchObject({ items: [{ fields: { due: "2026-09-23" } }] });
 	});
 
+	// Live test, 2026-10-09: the model took the heading's date for an event's and gave none, so "bis Mo"
+	// counted from the day the page was first seen, Friday 2 October, and landed on the 5th.
+	it("takes a date in the page's first line as the page's date, before what the model read", () => {
+		const page = "\nElternabend 3b - 10.10.\n\nFormular Ausflug unterschreiben bis Mo";
+		const task = { source: "Formular Ausflug unterschreiben bis Mo", reason: "", id: "new", text: "Formular Ausflug unterschreiben", due: { words: "bis Mo", rel: "this-week" }, done: false };
+		const result = parseExtraction({ [PAGE_DATE_KEY]: null, tasks: [task] }, [TASKS], calendarDay(2026, 9, 2), page)!;
+		expect(isoDay(result.writtenDate!)).toBe("2026-10-10");
+		expect(result.slots.tasks).toMatchObject({ items: [{ fields: { due: "2026-10-12" } }] });
+		expect(isoDay(parseExtraction({ [PAGE_DATE_KEY]: "Di 22.9." }, [TASKS], MON, "Einkauf\nDi 22.9.")!.writtenDate!)).toBe("2026-09-22");
+	});
+
 	it("drops 'none' items and junk, and reads a missing Slot as empty", () => {
 		const result = parseExtraction({ tasks: [{ text: "NONE" }, { text: "" }, { source: "no text" }, "junk", null], decisions: "not a list" }, [TASKS, DECISIONS, SUMMARY], MON)!;
 		expect(result.slots).toEqual({ tasks: { kind: "items", items: [] }, decisions: { kind: "items", items: [] }, summary: { kind: "text", text: "" } });
