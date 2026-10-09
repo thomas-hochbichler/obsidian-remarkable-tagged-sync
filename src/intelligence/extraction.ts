@@ -82,6 +82,7 @@ export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDe
 		"The page text below came from handwriting recognition and may contain recognition errors.",
 		"Only extract what is written on the page. Never invent items. Copy `source` exactly from the page text.",
 		"For dates, copy the words as written and pick the closest `rel` class; do not compute dates.",
+		"Write everything you phrase yourself, such as a summary, in the language the page is written in.",
 	].join("\n");
 	const user = [
 		`Page type: ${input.profile.description}`,

@@ -41,6 +41,8 @@ describe("buildPrompt", () => {
 			known: { tasks: [{ id: "a1", text: "Call Bob" }] },
 		});
 		expect(system).toMatch(/recognition errors/);
+		// The summary came back in English for a German page (live test, 2026-10-09).
+		expect(system).toMatch(/in the language the page is written in/);
 		expect(user).toContain("Page type: Work meeting notes");
 		expect(user).toContain("Monday, 2026-09-28");
 		expect(user).toContain('Example: "call Bob" → Call Bob');
