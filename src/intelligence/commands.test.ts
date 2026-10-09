@@ -111,6 +111,7 @@ describe("registerIntelligenceCommands", () => {
 			changeProfile: async () => ({ message: "" }),
 			profiles: () => [],
 			pageNotesOn: () => false,
+			syncNow: async () => {},
 			pro: () => true,
 			addCommand: (command) => commands.push(command as { id: string; callback?: () => unknown }),
 			registerObsidianProtocolHandler: (action, handler) => void (handlers[action] = handler),
@@ -122,7 +123,7 @@ describe("registerIntelligenceCommands", () => {
 			}),
 		};
 		registerIntelligenceCommands(host);
-		expect(commands.map((c) => c.id)).toEqual(["review-proposals", "change-profile", "rerun-extraction", "earlier-pages"]);
+		expect(commands.map((c) => c.id)).toEqual(["review-proposals", "change-profile", "re-extract-note", "re-extract-all"]);
 		expect(Object.keys(handlers)).toEqual(["tagged-sync-review"]);
 
 		const modalOpened = await openReview(host);
@@ -145,9 +146,18 @@ describe("the insight-note commands", () => {
 	const row = { syncKey: "d:p:work", unitKey: "d:p:work", docId: "d", pageId: "p", tag: "work", scope: "notebook" as const, notePath: "Work/p.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "", syncedAt: "" };
 
 	function commandHost(active: TFile | null, pro = true, syncing = false) {
-		let index: SyncIndex = { rootHash: null, rows: {}, intelligenceRows: { [row.syncKey]: row }, seenPages: { [row.syncKey]: { scope: "notebook", pageHash: "h", firstSeen: null, noteId: "n1" } } };
-		const commands: { id: string; checkCallback?: (checking: boolean) => boolean }[] = [];
+		// The notebook "d" under #work: its transcript note, and two pages the engine has seen -- p with an
+		// insight note, q written before insight notes were switched on and so without one.
+		const transcript = { syncKey: "d:work", docId: "d", pageId: null, tag: "work", entryHash: "e", pageHash: null, notePath: "Work/T.md", status: "active" as const, syncedAt: "", transcribedPages: [{ id: "p", hash: "h", label: 1, quotes: 0 }, { id: "q", hash: "hq", label: 2, quotes: 0 }] };
+		let index: SyncIndex = {
+			rootHash: null,
+			rows: { [transcript.syncKey]: transcript },
+			intelligenceRows: { [row.syncKey]: row },
+			seenPages: { [row.syncKey]: { scope: "notebook", pageHash: "h", firstSeen: null, noteId: "n1" }, "d:q:work": { scope: "notebook", pageHash: "hq", firstSeen: null } },
+		};
+		const commands: { id: string; callback?: () => unknown; checkCallback?: (checking: boolean) => boolean }[] = [];
 		const reran: string[] = [];
+		let syncs = 0;
 		const app = new App() as unknown as { workspace: { getActiveFile: () => TFile | null } };
 		app.workspace.getActiveFile = () => active;
 		const host: IntelligenceCommandsHost = {
@@ -166,33 +176,77 @@ describe("the insight-note commands", () => {
 			],
 			pro: () => pro,
 			pageNotesOn: (tag) => tag === "work",
+			syncNow: async () => void syncs++,
 		};
 		registerIntelligenceCommands(host);
-		return { host, earlierCommand: commands.find((c) => c.id === "earlier-pages")!, rerunCommand: commands.find((c) => c.id === "rerun-extraction")!, changeCommand: commands.find((c) => c.id === "change-profile")!, reran, index: () => index };
+		return { host, reExtract: commands.find((c) => c.id === "re-extract-note")!, reExtractAll: commands.find((c) => c.id === "re-extract-all")!, changeCommand: commands.find((c) => c.id === "change-profile")!, reran, index: () => index, syncs: () => syncs };
 	}
 	const file = (path: string, extension = "md") => Object.assign(Object.create(TFile.prototype) as TFile, { path, extension });
 
-	it("offers Re-run extraction on a Markdown note only, and runs it on the one on screen, saying what happened", async () => {
-		expect(commandHost(null).rerunCommand.checkCallback!(true)).toBe(false);
-		expect(commandHost(file("a.pdf", "pdf")).rerunCommand.checkCallback!(true)).toBe(false);
-		const { rerunCommand, reran, index } = commandHost(file("Work/p.md"));
+	it("offers Re-extract this note on a Markdown note only, and extracts an insight note again here and now, with no sync", async () => {
+		expect(commandHost(null).reExtract.checkCallback!(true)).toBe(false);
+		expect(commandHost(file("a.pdf", "pdf")).reExtract.checkCallback!(true)).toBe(false);
+		const { reExtract, reran, index, syncs } = commandHost(file("Work/p.md"));
 		takeNotices();
-		expect(rerunCommand.checkCallback!(true)).toBe(true);
+		expect(reExtract.checkCallback!(true)).toBe(true);
 		expect(reran).toEqual([]);
-		rerunCommand.checkCallback!(false);
-		await new Promise((resolve) => setTimeout(resolve, 0));
+		reExtract.checkCallback!(false);
+		await flush();
 		expect(reran).toEqual(["Work/p.md"]);
 		expect(index().rootHash).toBe("rerun");
 		expect(takeNotices()).toEqual(["Extracted again; the note is updated."]);
+		expect(syncs()).toBe(0);
 	});
 
-	it("marks an insight note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command", async () => {
-		const { host, index } = commandHost(null);
+	// The user's command concept (2026-10-09): what "Make insight notes for this notebook's earlier pages" did.
+	it("re-extracts every page of a transcript note's notebook, those without an insight note too, by the sync it starts", async () => {
+		const { reExtract, index, syncs } = commandHost(file("Work/T.md"));
+		takeNotices();
+		reExtract.checkCallback!(false);
+		await flush();
+		expect([index().seenPages!["d:p:work"].reextract, index().seenPages!["d:q:work"].reextract]).toEqual([true, true]);
+		expect(index().intelligencePending).toEqual(["d"]);
+		expect(takeNotices()).toEqual(["2 pages of this notebook are extracted again now."]);
+		expect(syncs()).toBe(1);
+		// A note the plugin did not make: said, nothing marked, no sync.
+		const other = commandHost(file("Other.md"));
+		other.reExtract.checkCallback!(false);
+		await flush();
+		expect(takeNotices()).toEqual(["This note is not a note from Tagged Sync."]);
+		expect(other.syncs()).toBe(0);
+	});
+
+	it("reads an insight note's page off the tablet again when it is re-transcribed, now, and leaves any other note to the transcript command", async () => {
+		const { host, index, syncs } = commandHost(null);
 		takeNotices();
 		expect(await reTranscribePageNote(host, "Other.md")).toBe(false);
 		expect(await reTranscribePageNote(host, "Work/p.md")).toBe(true);
 		expect(index().seenPages!["d:p:work"].pageHash).toBeNull();
-		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
+		// Out of the transcript note's store too, or the sync would hand the engine the old text again.
+		expect(index().rows["d:work"].transcribedPages!.map((page) => page.id)).toEqual(["q"]);
+		expect(takeNotices()).toEqual(["The page is read again now, and its insight note updated from it."]);
+		expect(syncs()).toBe(1);
+	});
+
+	it("re-extracts every page under a tag with insight notes on once asked, and nothing when not", async () => {
+		const { reExtractAll, index, syncs } = commandHost(null);
+		takeNotices();
+		takeSettings();
+		reExtractAll.callback!();
+		await flush();
+		const asked = takeSettings().at(-1)!;
+		expect(asked.buttons.map((b) => b.text)).toEqual(["Cancel", "Re-extract"]);
+		asked.buttons[0].click();
+		await flush();
+		expect(index().seenPages!["d:q:work"].reextract).toBeUndefined();
+		expect(syncs()).toBe(0);
+		reExtractAll.callback!();
+		await flush();
+		takeSettings().at(-1)!.buttons[1].click();
+		await flush();
+		expect(index().seenPages!["d:q:work"].reextract).toBe(true);
+		expect(takeNotices()).toEqual(["2 pages are extracted again now."]);
+		expect(syncs()).toBe(1);
 	});
 
 	it("changes an insight note's Profile through a choice of Profiles, and says it is Pro without it", async () => {
@@ -220,27 +274,18 @@ describe("the insight-note commands", () => {
 		expect(takeNotices()).toEqual(["Changing the profile of one page is part of Tagged Sync Pro."]);
 	});
 
-	it("runs Make insight notes for earlier pages on the note on screen, and says what it did", async () => {
-		const { earlierCommand } = commandHost(file("Work/p.md"));
-		expect(earlierCommand.checkCallback!(true)).toBe(true);
-		takeNotices();
-		earlierCommand.checkCallback!(false);
-		await flush();
-		// An insight note is not a transcript note; the rules themselves are `wantEarlierPages`'.
-		expect(takeNotices()).toEqual(["This note is not a transcript note from Tagged Sync."]);
-		expect(commandHost(null).earlierCommand.checkCallback!(true)).toBe(false);
-	});
-
 	it("does nothing to the index or the note while a sync runs", async () => {
-		const { rerunCommand, changeCommand, reran, index, host } = commandHost(file("Work/p.md"), true, true);
+		const { reExtract, changeCommand, reran, index, host, syncs } = commandHost(file("Work/p.md"), true, true);
 		const before = index();
-		rerunCommand.checkCallback!(false);
+		reExtract.checkCallback!(false);
 		changeCommand.checkCallback!(false);
 		takeSettings().at(-1)!.buttons[0].click();
 		expect(await reTranscribePageNote(host, "Work/p.md")).toBe(true);
 		await flush();
 		expect(reran).toEqual([]);
 		expect(index()).toBe(before);
+		// The running sync is the one there is; the command starts none of its own.
+		expect(syncs()).toBe(0);
 	});
 
 	it("offers no choice on a note that is no longer an insight note, such as one kept beside a new one", () => {

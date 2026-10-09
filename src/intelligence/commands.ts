@@ -1,11 +1,15 @@
 /**
- * The engine's commands: "Review proposals", and the `obsidian://tagged-sync-review` link the
- * proposal callout in a note carries (spec §8). Both open one Modal over all insight notes.
+ * The engine's commands. "Re-extract this note" and "Re-extract all synced notes" mirror the two
+ * "Re-transcribe" commands (user, 2026-10-09): the same reaches, one verb for reading the page again
+ * and one for extracting it again. Then what only insight notes have: "Review proposals" -- with the
+ * `obsidian://tagged-sync-review` link the proposal callout in a note carries (spec §8), both opening
+ * one Modal over all insight notes -- and "Change profile for this note".
  */
 
 import { type App, type Command, Modal, Notice, Setting } from "obsidian";
+import { confirmDialog } from "../confirm-modal";
 import type { SyncIndex } from "../sync-engine";
-import { EARLIER_PAGES_COMMAND, isPageNote, markForRereading, NOT_A_PAGE_NOTE, pageProfile, type RerunOutcome, wantEarlierPages } from "./rerun";
+import { isPageNote, markAllForReextract, markForRereading, markNoteForReextract, NOT_A_PAGE_NOTE, pageProfile, reextractableKeys, type RerunOutcome } from "./rerun";
 import type { NoteStore } from "../note-builder";
 import type { BaseStore } from "./base-store";
 import { REVIEW_ACTION, REVIEW_LINK } from "./host";
@@ -89,7 +93,7 @@ export interface IntelligenceCommandsHost {
 	 * index it began with, so a command's change made meanwhile would be lost.
 	 */
 	exclusive<T>(work: () => Promise<T>): Promise<T | typeof BUSY>;
-	/** "Re-run extraction" on one insight note, with this run's backend and settings. */
+	/** "Re-extract this note" on one insight note, with this run's backend and settings. */
 	rerun(notePath: string): Promise<RerunOutcome>;
 	/** "Change Profile for this page" (Pro). */
 	changeProfile(notePath: string, profileId: string): Promise<RerunOutcome>;
@@ -97,6 +101,8 @@ export interface IntelligenceCommandsHost {
 	pro(): boolean;
 	/** Whether insight notes are on for a tag. */
 	pageNotesOn(tag: string): boolean;
+	/** "Sync now", as the command: what a command that marked pages starts once the lock is free. */
+	syncNow(): Promise<void>;
 }
 
 /** What {@link IntelligenceCommandsHost.exclusive} answers while a sync runs. */
@@ -158,13 +164,53 @@ async function say(host: IntelligenceCommandsHost, outcome: RerunOutcome): Promi
 }
 
 /**
- * "Re-transcribe" on an insight note: the page is read again on the next sync (spec §9). False for any
- * other note, which the transcript-note command then handles as it always has.
+ * Runs `work` under the lock and says what it did; when it marked pages for reading, starts the sync
+ * once the lock is free. A command acts now, as "Re-transcribe" always has -- marking alone and leaving
+ * the rest to whenever the next sync came read as if nothing had happened (user, 2026-10-09).
+ */
+async function act(host: IntelligenceCommandsHost, work: () => RerunOutcome | Promise<RerunOutcome>): Promise<void> {
+	const outcome = await host.exclusive(async () => {
+		const done = await work();
+		await say(host, done);
+		return done;
+	});
+	if (outcome !== BUSY && outcome.sync) await host.syncNow();
+}
+
+/**
+ * "Re-transcribe this note" on an insight note: its page is read off the tablet again, now (spec §9).
+ * False for any other note, which the transcript-note command then handles as it always has.
  */
 export async function reTranscribePageNote(host: IntelligenceCommandsHost, notePath: string): Promise<boolean> {
 	if (!isPageNote(host.index(), notePath)) return false;
-	await host.exclusive(() => say(host, markForRereading(host.index(), notePath)));
+	await act(host, () => markForRereading(host.index(), notePath));
 	return true;
+}
+
+/**
+ * "Re-extract this note": an insight note is extracted again from its base's transcript, here and now;
+ * a transcript note has every page of its notebook extracted again, those without an insight note
+ * included, by the sync it starts.
+ */
+export async function reExtractNote(host: IntelligenceCommandsHost, notePath: string): Promise<void> {
+	await act(host, () => (isPageNote(host.index(), notePath) ? host.rerun(notePath) : markNoteForReextract(host.index(), notePath, (tag) => host.pageNotesOn(tag))));
+}
+
+/** "Re-extract all synced notes": every page under a tag with insight notes on, once asked -- it costs a request a page. */
+export async function reExtractAll(host: IntelligenceCommandsHost): Promise<void> {
+	const count = reextractableKeys(host.index(), (tag) => host.pageNotesOn(tag)).length;
+	if (count === 0) {
+		new Notice("No page is under a tag with insight notes on yet.");
+		return;
+	}
+	const pages = `${count} page${count === 1 ? "" : "s"}`;
+	const asked = await confirmDialog(
+		host.app,
+		"Re-extract all synced notes",
+		`Extract ${pages} again from the transcripts already held? Pages without an insight note get their first, pages written before insight notes were switched on included. Each page is one request to the extraction backend.`,
+		"Re-extract",
+	);
+	if (asked) await act(host, () => markAllForReextract(host.index(), (tag) => host.pageNotesOn(tag)));
 }
 
 /** Opens the review over every pending proposal. */
@@ -180,7 +226,7 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 	host.addCommand({ id: "review-proposals", name: "Review proposals", callback: () => void openReview(host) });
 	host.addCommand({
 		id: "change-profile",
-		name: "Change profile for this insight note",
+		name: "Change profile for this note",
 		checkCallback: (checking) => {
 			const file = host.app.workspace.getActiveFile();
 			if (file === null || file.extension !== "md") return false;
@@ -198,27 +244,17 @@ export function registerIntelligenceCommands(host: IntelligenceCommandsHost): vo
 		},
 	});
 	host.addCommand({
-		id: "rerun-extraction",
-		name: "Re-run extraction for this insight note",
+		id: "re-extract-note",
+		name: "Re-extract this note",
 		// Offered on every Markdown file, like "Re-transcribe this note": an index lookup per keystroke
-		// is what the palette must not do. A note that is not an insight note earns a sentence at run time.
+		// is what the palette must not do. A note the plugin did not make earns a sentence at run time.
 		checkCallback: (checking) => {
 			const file = host.app.workspace.getActiveFile();
 			if (file === null || file.extension !== "md") return false;
-			if (!checking) void host.exclusive(async () => say(host, await host.rerun(file.path)));
+			if (!checking) void reExtractNote(host, file.path);
 			return true;
 		},
 	});
-	host.addCommand({
-		id: "earlier-pages",
-		name: EARLIER_PAGES_COMMAND,
-		// On every Markdown file, as above; a note that is not a transcript note earns a sentence.
-		checkCallback: (checking) => {
-			const file = host.app.workspace.getActiveFile();
-			if (file === null || file.extension !== "md") return false;
-			if (!checking) void host.exclusive(async () => say(host, wantEarlierPages(host.index(), file.path, (tag) => host.pageNotesOn(tag))));
-			return true;
-		},
-	});
+	host.addCommand({ id: "re-extract-all", name: "Re-extract all synced notes", callback: () => void reExtractAll(host) });
 	host.registerObsidianProtocolHandler(REVIEW_ACTION, () => void openReview(host));
 }

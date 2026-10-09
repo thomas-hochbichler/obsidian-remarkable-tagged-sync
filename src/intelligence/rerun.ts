@@ -1,21 +1,22 @@
 /**
- * The two note commands on an insight note (spec §9). "Re-run extraction" re-extracts the page from the
- * transcript its base holds -- no tablet needed -- and goes through merge and review like any sync.
- * "Re-transcribe" wants the page read again, which only a sync can do: it clears the page's seen
- * hash, so the next sync counts it as changed. A page whose base went missing takes that road too:
- * its transcript went with the base.
+ * The note commands of the Intelligence Engine (spec §9), the same two verbs and reaches as the
+ * transcript's: "Re-transcribe" reads pages off the tablet again, "Re-extract" extracts them again from
+ * the transcript already held; "this note" means the pages behind the note on screen, "all" every page.
+ * Re-extracting one insight note runs here and now, from its base's transcript. Everything else marks
+ * pages and leaves the reading to a sync, which the command starts at once -- only a sync can read a
+ * page, and it brings the progress bar, Stop, and the extraction backend's consent.
  */
 
 import type { SyncIndex } from "../sync-engine";
 import { type HostEnvironment, intelligenceNotices, prepareRun, reviewStoresFor, type RunInputs } from "./host";
-import { EARLIER_PAGES_COMMAND, processDocument, type IntelligenceRow, type IntelligenceState } from "./sync-pass";
-
-export { EARLIER_PAGES_COMMAND };
+import { processDocument, type IntelligenceRow, type IntelligenceState } from "./sync-pass";
 
 export interface RerunOutcome {
 	message: string;
 	/** The index to save; absent when nothing changed. */
 	index?: SyncIndex;
+	/** Pages were marked for a sync to read: the command starts one. */
+	sync?: true;
 }
 
 export const NOT_A_PAGE_NOTE = "This note is not an insight note from the Intelligence Engine.";
@@ -34,46 +35,71 @@ export function pageProfile(index: SyncIndex, notePath: string): string | null {
 	return pageRow(index, notePath)?.profileId ?? null;
 }
 
-/** Marks the page to be read again on the next sync. */
+/**
+ * "Re-transcribe" on an insight note: its page is read off the tablet again. The page leaves the
+ * transcript store of every transcript note of its document too, or the sync would hand the engine the
+ * old text again; so the transcript note gets the new reading as well.
+ */
 export function markForRereading(index: SyncIndex, notePath: string): RerunOutcome {
 	const row = pageRow(index, notePath);
 	if (row === undefined) return { message: NOT_A_PAGE_NOTE };
 	const seen = index.seenPages?.[row.syncKey];
+	const rows = Object.fromEntries(
+		Object.entries(index.rows).map(([key, r]) => [key, r.docId === row.docId && r.transcribedPages !== undefined ? { ...r, transcribedPages: r.transcribedPages.filter((page) => page.id !== row.pageId) } : r]),
+	);
 	return {
-		message: "The page is read again on the next sync, and its note updated from it.",
+		message: "The page is read again now, and its insight note updated from it.",
+		sync: true,
 		index: {
 			...index,
+			rows,
 			seenPages: { ...index.seenPages, [row.syncKey]: { scope: row.scope, firstSeen: seen?.firstSeen ?? null, noteId: row.noteId, pageHash: null } },
-			// Nothing changes on the tablet, so the document has to be named for the next sync to open it.
+			// Nothing changes on the tablet, so the document has to be named for the sync to open it.
 			intelligencePending: [...new Set([...(index.intelligencePending ?? []), row.docId])],
 		},
 	};
 }
 
-/**
- * On a transcript note: marks the pages of its notebook that have no insight note -- left alone as
- * written before insight notes were switched on (spec §3.1) -- so the next sync makes theirs. The way
- * "Re-transcribe" marks one page: a cleared seen hash counts as changed. Switching insight notes off and
- * on again moves that point to now, and the pages written before it were lost to the engine with
- * nothing said (live test, 2026-10-02).
- */
-export function wantEarlierPages(index: SyncIndex, notePath: string, pageNotesOn: (tag: string) => boolean): RerunOutcome {
-	const row = Object.values(index.rows).find((candidate) => candidate.notePath === notePath && candidate.status === "active");
-	if (row === undefined) return { message: "This note is not a transcript note from Tagged Sync." };
-	if (!pageNotesOn(row.tag)) return { message: `Insight notes are off for the tag "${row.tag}". Switch them on under Tag routing first.` };
-	const made = new Set(Object.values(index.intelligenceRows ?? {}).flatMap((page) => (page.status === "active" ? [page.syncKey] : [])));
-	// A page-tag note covers its one page; a notebook note every page the engine has seen under its tag.
-	const covers = (key: string) => (row.pageId === null ? key.startsWith(`${row.docId}:`) && key.endsWith(`:${row.tag}`) : key === `${row.docId}:${row.pageId}:${row.tag}`);
-	const wanted = Object.entries(index.seenPages ?? {}).filter(([key, seen]) => covers(key) && !made.has(key) && seen.pageHash !== null);
-	if (wanted.length === 0) return { message: "Every page of this notebook has its insight note, or waits for the next sync to make it." };
+const tagOf = (key: string) => key.slice(key.lastIndexOf(":") + 1);
+const docOf = (key: string) => key.slice(0, key.indexOf(":"));
+
+/** Marks the given pages to be extracted again, and names their documents for the sync to open. */
+function withReextract(index: SyncIndex, keys: readonly string[]): SyncIndex {
 	return {
-		message: `${wanted.length} earlier page${wanted.length === 1 ? "" : "s"} of this notebook get${wanted.length === 1 ? "s its" : " their"} insight note${wanted.length === 1 ? "" : "s"} on the next sync.`,
-		index: {
-			...index,
-			seenPages: { ...index.seenPages, ...Object.fromEntries(wanted.map(([key, seen]) => [key, { ...seen, pageHash: null }])) },
-			intelligencePending: [...new Set([...(index.intelligencePending ?? []), row.docId])],
-		},
+		...index,
+		seenPages: { ...index.seenPages, ...Object.fromEntries(keys.map((key) => [key, { ...index.seenPages![key], reextract: true as const }])) },
+		intelligencePending: [...new Set([...(index.intelligencePending ?? []), ...keys.map(docOf)])],
 	};
+}
+
+const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
+
+/**
+ * "Re-extract" on a transcript note: every page of its notebook under its tag, those without an insight
+ * note included -- a page written before insight notes were switched on gets its first. A page-tag
+ * note covers its one page.
+ */
+export function markNoteForReextract(index: SyncIndex, notePath: string, extracts: (tag: string) => boolean): RerunOutcome {
+	const row = Object.values(index.rows).find((candidate) => candidate.notePath === notePath && candidate.status === "active");
+	if (row === undefined) return { message: "This note is not a note from Tagged Sync." };
+	if (!extracts(row.tag)) return { message: `Insight notes are off for the tag "${row.tag}". Switch them on under Tag routing first.` };
+	const covers = (key: string) => (row.pageId === null ? docOf(key) === row.docId && tagOf(key) === row.tag : key === `${row.docId}:${row.pageId}:${row.tag}`);
+	const keys = Object.entries(index.seenPages ?? {}).filter(([key, seen]) => covers(key) && seen.pageHash !== null).map(([key]) => key);
+	if (keys.length === 0) return { message: "The engine has not seen this notebook's pages yet. Sync now reads them." };
+	return { message: `${pages(keys.length)} of this notebook ${keys.length === 1 ? "is" : "are"} extracted again now.`, index: withReextract(index, keys), sync: true };
+}
+
+/** The pages "Re-extract all synced notes" reaches: every page seen under a tag that has insight notes on. */
+export function reextractableKeys(index: SyncIndex, extracts: (tag: string) => boolean): string[] {
+	return Object.entries(index.seenPages ?? {})
+		.filter(([key, seen]) => seen.pageHash !== null && extracts(tagOf(key)))
+		.map(([key]) => key);
+}
+
+export function markAllForReextract(index: SyncIndex, extracts: (tag: string) => boolean): RerunOutcome {
+	const keys = reextractableKeys(index, extracts);
+	if (keys.length === 0) return { message: "No page is under a tag with insight notes on yet." };
+	return { message: `${pages(keys.length)} ${keys.length === 1 ? "is" : "are"} extracted again now.`, index: withReextract(index, keys), sync: true };
 }
 
 export async function rerunExtraction(env: HostEnvironment, run: RunInputs, index: SyncIndex, notePath: string, renderPath: string): Promise<RerunOutcome> {

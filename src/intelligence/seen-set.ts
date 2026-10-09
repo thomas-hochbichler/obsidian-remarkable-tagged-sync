@@ -19,6 +19,8 @@ export interface SeenEntry {
 	 * it, which bounds when a due date without an anchor was written. Absent on entries older than it.
 	 */
 	modified?: number | null;
+	/** "Re-extract" asked for this page: the next run extracts it again from the transcript already held. */
+	reextract?: true;
 }
 
 export type UnitClass = "new" | "changed" | "unchanged" | "old";

@@ -94,7 +94,7 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		expect(report).toMatchObject({
 			notesWritten: 1,
 			failures: [],
-			notices: ['"Work log": 2 pages were written before insight notes were switched on, so they get none. Write on a page to bring it in, or run "Make insight notes for this notebook\'s earlier pages" on its transcript note.'],
+			notices: ['"Work log": 2 pages were written before insight notes were switched on, so they get none. Write on a page to bring it in, or run "Re-extract this note" on its transcript note.'],
 		});
 		expect((await processDocument(deps(mem), doc(pages, { p3: "todo Call" }), state)).notices).toEqual([]);
 		expect(Object.keys(state.seenPages)).toEqual(["d1:p1:work", "d1:p2:work", "d1:p3:work"]);
@@ -113,7 +113,7 @@ describe("processDocument > switching Intelligence Mode on", () => {
 		// The switch-on scan has run; the page turns up afterwards, written before it.
 		const state: IntelligenceState = { seenPages: {}, rows: {}, scans: { work: ENABLED.toISOString() } };
 		const report = await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE)], {}), state);
-		expect(report.notices).toEqual(['"Work log": 1 page was written before insight notes were switched on, so it gets none. Write on a page to bring it in, or run "Make insight notes for this notebook\'s earlier pages" on its transcript note.']);
+		expect(report.notices).toEqual(['"Work log": 1 page was written before insight notes were switched on, so it gets none. Write on a page to bring it in, or run "Re-extract this note" on its transcript note.']);
 		expect((await processDocument(deps(mem), doc([page("p1", 1, "h1", BEFORE)], {}), state)).notices).toEqual([]);
 	});
 

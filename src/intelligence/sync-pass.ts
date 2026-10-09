@@ -138,8 +138,6 @@ export function emptyReport(): PassReport {
 	return { notesWritten: 0, notesUpdated: 0, proposals: 0, proposalNotes: 0, failures: [], notices: [], usedSlots: [], saidOnce: [] };
 }
 
-/** The command that makes insight notes for pages left alone; the sync's notice names it. */
-export const EARLIER_PAGES_COMMAND = "Make insight notes for this notebook's earlier pages";
 
 export function intelligenceSyncKey(docId: string, pageId: string, tag: string): string {
 	return `${docId}:${pageId}:${tag}`;
@@ -191,7 +189,7 @@ export function baseHash(base: PageBase): string {
  * unit of this document through the engine. Mutates `state`; the caller checkpoints it.
  */
 export interface ProcessOptions {
-	/** Keys processed whatever the seen-set says: "Re-run extraction" on one insight note (spec §9). */
+	/** Keys processed whatever the seen-set says: "Re-extract this note" on one insight note (spec §9). */
 	force?: ReadonlySet<string>;
 	/** Only some of the document's units are given, so a missing one says nothing about its tag. */
 	partial?: boolean;
@@ -246,6 +244,16 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 				continue;
 			}
 
+			// "Re-extract" asked for this page: extracted again from the transcript already held -- its base's,
+			// else the transcript note's -- so nothing is read off the tablet a second time. A page that also
+			// changed on the device is read as any changed page is.
+			if (seen?.reextract) {
+				const row = state.rows[key];
+				const kept = seen.pageHash === page.hash && row?.status === "active" ? ((await deps.baseStore.load(row.noteId))?.transcript ?? undefined) : undefined;
+				work.push({ unit, page, key, seen, kept });
+				continue;
+			}
+
 			const kind = options.force?.has(key) ? "changed" : classifyUnit({ seen, pageHash: page.hash, modified: page.modified, enabledAt, legacy: doc.legacy });
 			if (kind === "old") {
 				if (doc.legacy) legacyRecorded = true;
@@ -264,7 +272,7 @@ export async function processDocument(deps: IntelligencePassDeps, doc: Intellige
 	if (leftAlone > 0) {
 		report.notices.push(
 			`"${doc.name}": ${leftAlone} page${leftAlone === 1 ? " was" : "s were"} written before insight notes were switched on, so ${leftAlone === 1 ? "it gets" : "they get"} none. ` +
-				`Write on a page to bring it in, or run "${EARLIER_PAGES_COMMAND}" on its transcript note.`,
+				`Write on a page to bring it in, or run "Re-extract this note" on its transcript note.`,
 		);
 	}
 	if (legacyRecorded) report.notices.push(`"${doc.name}" was written before the tablet stamped page dates, so none of its pages counts as new. Write on a page to bring it in.`);
@@ -325,7 +333,8 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 	const firstTry = row !== undefined && seen?.noteId === row.noteId;
 	const noteId = alive ? row.noteId : firstTry ? deps.newNoteId() : (seen?.noteId ?? deps.newNoteId());
 	if (row !== undefined && !alive) await deps.baseStore.discard(row.noteId);
-	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId, ...(seen?.modified === undefined ? {} : { modified: seen.modified }) };
+	// The re-extract wish stays until the page is done: a failed page tries again on the next sync.
+	state.seenPages[key] = { scope: unit.scope, pageHash: seen?.pageHash ?? null, firstSeen: seen?.firstSeen ?? page.modified, noteId, ...(seen?.modified === undefined ? {} : { modified: seen.modified }), ...(seen?.reextract ? { reextract: true as const } : {}) };
 
 	const transcript = kept ?? texts.get(page.id);
 	if (transcript === undefined) {

@@ -51,20 +51,29 @@ describe("the review in the running plugin", () => {
 	const withPageNote = { syncIndex: { rootHash: null, rows: {}, intelligenceRows: { "d:p:work": PAGE_ROW }, seenPages: { "d:p:work": { scope: "notebook", pageHash: "h", firstSeen: null, noteId: "n1" } } } };
 	const file = (path: string) => Object.assign(Object.create(TFile.prototype) as TFile, { path, extension: "md", basename: path.replace(/\.md$/, "") });
 
-	it("re-transcribes an insight note by marking its page for the next sync", async () => {
+	/** Counts the syncs a command starts, instead of running one against a tablet these tests do not have. */
+	const counting = (plugin: LoadedPlugin) => {
+		let syncs = 0;
+		(plugin as unknown as { syncNow(): Promise<void> }).syncNow = async () => void syncs++;
+		return () => syncs;
+	};
+
+	it("re-transcribes an insight note by marking its page and starting the sync that reads it", async () => {
 		const plugin = await load(withPageNote);
+		const syncs = counting(plugin);
 		takeNotices();
 		await plugin.reTranscribeNote(file("Work/p.md"));
 		expect(plugin.data.syncIndex.seenPages!["d:p:work"].pageHash).toBeNull();
-		expect(takeNotices()).toEqual(["The page is read again on the next sync, and its note updated from it."]);
+		expect(takeNotices()).toEqual(["The page is read again now, and its insight note updated from it."]);
+		expect(syncs()).toBe(1);
 	});
 
-	it("makes insight notes for a notebook's earlier pages from its transcript note, once insight notes are on for its tag", async () => {
+	it("re-extracts a transcript note's notebook only once insight notes are on for its tag", async () => {
 		const transcript = { syncKey: "d::work", docId: "d", pageId: null, tag: "work", entryHash: "e", pageHash: null, notePath: "Work/Log.md", status: "active", syncedAt: "" };
 		const plugin = await load({ ...withPageNote, syncIndex: { ...withPageNote.syncIndex, rows: { "d::work": transcript } } });
 		plugin.app.workspace.activeFile = file("Work/Log.md");
 		takeNotices();
-		plugin.commands.find((command) => command.id === "earlier-pages")!.checkCallback!(false);
+		plugin.commands.find((command) => command.id === "re-extract-note")!.checkCallback!(false);
 		await settle();
 		// Insight notes are off for "work" in this vault, so the command says so and changes nothing.
 		expect(takeNotices()).toEqual(['Insight notes are off for the tag "work". Switch them on under Tag routing first.']);
@@ -84,9 +93,9 @@ describe("the review in the running plugin", () => {
 		expect(disposed).toBe(1);
 	});
 
-	it("runs Re-run extraction on the note on screen, and says why when this device does not extract", async () => {
+	it("runs Re-extract this note on the note on screen, and says why when this device does not extract", async () => {
 		const plugin = await load(withPageNote);
-		const rerun = plugin.commands.find((command) => command.id === "rerun-extraction")!;
+		const rerun = plugin.commands.find((command) => command.id === "re-extract-note")!;
 		takeNotices();
 		for (const path of ["Work/p.md", "Other.md"]) {
 			plugin.app.workspace.activeFile = file(path);
@@ -94,15 +103,15 @@ describe("the review in the running plugin", () => {
 			await settle();
 			await settle();
 		}
-		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Insight notes in the settings.", "This note is not an insight note from the Intelligence Engine."]);
+		expect(takeNotices()).toEqual(["Page extraction runs on another device. Switch it to this one under Insight notes in the settings.", "This note is not a note from Tagged Sync."]);
 
 		// A vault that never had an insight note has no rows to look in at all.
 		const fresh = await load({});
 		fresh.app.workspace.activeFile = file("Any.md");
-		fresh.commands.find((command) => command.id === "rerun-extraction")!.checkCallback!(false);
+		fresh.commands.find((command) => command.id === "re-extract-note")!.checkCallback!(false);
 		await settle();
 		await settle();
-		expect(takeNotices()).toEqual(["This note is not an insight note from the Intelligence Engine."]);
+		expect(takeNotices()).toEqual(["This note is not a note from Tagged Sync."]);
 	});
 
 	it("offers Change profile with Pro and says it is Pro without", async () => {

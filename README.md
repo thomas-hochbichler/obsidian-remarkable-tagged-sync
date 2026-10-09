@@ -210,6 +210,23 @@ text, and nothing refills it on its own. Re-transcribing does. With the local mo
 whole-vault confirmation tells you how long the run will take on your machine, measured from your
 own pages.
 
+### Re-extracting
+
+Insight notes from Intelligence Mode have the same two commands, for working a page out again rather
+than reading it again. Neither reads your tablet a second time: they use the transcript already held.
+
+**Tagged Sync for reMarkable: Re-extract this note** — on an insight note, extracts its page again, at
+once. On a transcript note, every page of that notebook, pages written before insight notes were
+switched on included: those get their first insight note.
+
+**Tagged Sync for reMarkable: Re-extract all synced notes** does the same for every page under a tag
+with insight notes on. It says how many pages that is and asks first: each page is one request to the
+extraction backend.
+
+**Re-transcribe this note** on an insight note reads its page off the tablet again, and then extracts
+it. Apart from re-extracting a single insight note, which happens on the spot, each of these starts a
+sync at once; **Sync now** remains the one command that brings both kinds of note up to date.
+
 ## Handwriting transcription
 
 ![A synced note in Obsidian: the two handwritten pages rendered on top, the searchable transcript below them](docs/screenshot-synced-note.png)

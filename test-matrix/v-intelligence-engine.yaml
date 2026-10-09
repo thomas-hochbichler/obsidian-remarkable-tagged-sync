@@ -2252,10 +2252,10 @@
 
     - id: V31.4
       scenario: "The base is gone"
-      expect: "The page is marked for the next sync, which reads it again"
+      expect: "The page is marked to be read again, and the command starts the sync that reads it"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "rerunExtraction > marks the page for reading on the next sync when its base is gone"
+      test: "rerunExtraction > has the page read again, by the sync the command starts, when its base is gone"
 
     - id: V31.5
       scenario: "Another note, another device, no backend"
@@ -2277,32 +2277,46 @@
   tier: free
   scenarios:
     - id: V32.1
-      scenario: "Re-run extraction is asked for with or without a Markdown note on screen"
-      expect: "Offered on Markdown notes; runs on the note on screen and says what happened"
+      scenario: "Re-extract this note with or without a Markdown note on screen, on an insight note"
+      expect: "Offered on Markdown notes; the insight note is extracted again here and now, said, and no sync starts"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the insight-note commands > offers Re-run extraction on a Markdown note only, and runs it on the one on screen, saying what happened"
+      test: "the insight-note commands > offers Re-extract this note on a Markdown note only, and extracts an insight note again here and now, with no sync"
+
+    - id: V32.1a
+      scenario: "Re-extract this note on a transcript note, and on a note the plugin did not make"
+      expect: "Every page of its notebook is marked, those without an insight note too, and a sync starts; another note gets a sentence and no sync"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the insight-note commands > re-extracts every page of a transcript note's notebook, those without an insight note too, by the sync it starts"
 
     - id: V32.2
       scenario: "Re-transcribe on an insight note and on another note"
-      expect: "The insight note's page is marked for the next sync; any other note goes to the transcript command"
+      expect: "The page is marked to be read and leaves the transcript store, and a sync starts; any other note goes to the transcript command"
       layer: unit
       file: src/intelligence/commands.test.ts
-      test: "the insight-note commands > marks an insight note for reading on the next sync when it is re-transcribed, and leaves any other note to the transcript command"
+      test: "the insight-note commands > reads an insight note's page off the tablet again when it is re-transcribed, now, and leaves any other note to the transcript command"
+
+    - id: V32.2a
+      scenario: "Re-extract all synced notes, cancelled and confirmed"
+      expect: "Asked first with the page count; cancelled changes nothing, confirmed marks every page and starts a sync"
+      layer: unit
+      file: src/intelligence/commands.test.ts
+      test: "the insight-note commands > re-extracts every page under a tag with insight notes on once asked, and nothing when not"
 
     - id: V32.3
       scenario: "Re-transcribe this note on an insight note, in the running plugin"
-      expect: "Marked for the next sync, and said"
+      expect: "Marked, said, and the plugin's own sync started"
       layer: vault
       file: src/intelligence-plugin.test.ts
-      test: "the review in the running plugin > re-transcribes an insight note by marking its page for the next sync"
+      test: "the review in the running plugin > re-transcribes an insight note by marking its page and starting the sync that reads it"
 
     - id: V32.4
-      scenario: "Re-run extraction in the running plugin, off the engine device, on another note, on a fresh vault"
-      expect: "A sentence each: which device extracts, or that this is no insight note"
+      scenario: "Re-extract this note in the running plugin, off the engine device, on another note, on a fresh vault"
+      expect: "A sentence each: which device extracts, or that this is no note of the plugin's"
       layer: vault
       file: src/intelligence-plugin.test.ts
-      test: "the review in the running plugin > runs Re-run extraction on the note on screen, and says why when this device does not extract"
+      test: "the review in the running plugin > runs Re-extract this note on the note on screen, and says why when this device does not extract"
 
 - feature: V33
   name: "Insight notes follow a renamed tag and a re-targeted mapping"
@@ -3485,7 +3499,7 @@
       test: "runSync > Intelligence Engine seam > does not send a page the transcript note failed on to the backend a second time in the same sync"
 
 - feature: V72
-  name: "Pages written before insight notes were switched on: said once, and made on request"
+  name: "Pages written before insight notes were switched on: said once, and made by Re-extract"
   code: src/intelligence/rerun.ts
   tier: free
   scenarios:
@@ -3497,36 +3511,36 @@
       test: "processDocument > switching Intelligence Mode on > says so for one page found later that was written before the switch-on, once"
 
     - id: V72.2
-      scenario: "Make insight notes for this notebook's earlier pages, on a notebook note and on a page-tag note"
-      expect: "Every page under the note's tag without an insight note is marked to be read, not one already waiting or of another tag or notebook; the notebook is owed to the next sync"
+      scenario: "Re-extract on a notebook note and on a page-tag note"
+      expect: "Every drawn page under the note's tag is marked to be extracted again, with an insight note or not, not one of another tag or notebook; the hash stays; the notebook is owed and a sync asked for"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "wantEarlierPages > marks the pages of a transcript note's notebook that have no insight note, and owes the notebook to the next sync"
+      test: "markNoteForReextract and markAllForReextract > marks every drawn page of a transcript note's notebook under its tag, with an insight note or not, and starts a sync"
 
     - id: V72.3
-      scenario: "The command on a note that is not a transcript note, with insight notes off, or with nothing left"
+      scenario: "Re-extract on a note the plugin did not make, with insight notes off, or before the engine saw a page"
       expect: "A sentence for each, and nothing changed"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "wantEarlierPages > says why it does nothing: not a transcript note, insight notes off, or nothing left"
+      test: "markNoteForReextract and markAllForReextract > says why it does nothing: not the plugin's note, insight notes off, or no page seen yet"
 
-    - id: V72.4
-      scenario: "A page left alone at switch-on is marked, and the next sync runs"
-      expect: "Its insight note is made"
+    - id: V72.3a
+      scenario: "Re-extract all synced notes"
+      expect: "Every drawn page under a tag with insight notes on is marked, every notebook owed; none when no tag has them on"
       layer: unit
       file: src/intelligence/rerun.test.ts
-      test: "wantEarlierPages > gets a page left alone at switch-on its insight note on the next sync"
+      test: "markNoteForReextract and markAllForReextract > marks every drawn page under every tag with insight notes on, for Re-extract all"
 
-    - id: V72.5
-      scenario: "The command is run from the palette"
-      expect: "Offered on a Markdown note only; it runs on the note on screen and says what it did"
+    - id: V72.4
+      scenario: "A page left alone at switch-on is marked, the pass runs; then a made page is marked again"
+      expect: "The first gets its insight note; the second is extracted from its base's transcript with no page read; the mark is gone after each"
       layer: unit
-      file: src/intelligence/commands.test.ts
-      test: "the insight-note commands > runs Make insight notes for earlier pages on the note on screen, and says what it did"
+      file: src/intelligence/rerun.test.ts
+      test: "markNoteForReextract and markAllForReextract > gets a page left alone at switch-on its first insight note, and extracts a made one again from its base, reading nothing"
 
     - id: V72.6
-      scenario: "The command runs in the loaded plugin on a transcript note whose tag has insight notes off"
+      scenario: "Re-extract this note in the loaded plugin on a transcript note whose tag has insight notes off"
       expect: "The plugin asks its own settings, and the command says to switch them on first"
       layer: vault
       file: src/intelligence-plugin.test.ts
-      test: "the review in the running plugin > makes insight notes for a notebook's earlier pages from its transcript note, once insight notes are on for its tag"
+      test: "the review in the running plugin > re-extracts a transcript note's notebook only once insight notes are on for its tag"

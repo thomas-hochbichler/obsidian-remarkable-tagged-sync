@@ -673,7 +673,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		return hostEnvironmentFor(this.app, this.manifest, createNoteStore(this.app), moment);
 	}
 
-	/** What the engine runs on, decided per run: the sync's and "Re-run extraction"'s alike. */
+	/** What the engine runs on, decided per run: the sync's and "Re-extract this note"'s alike. */
 	private intelligenceInputs(tagFolderMap: Record<string, string>, transcriptionBackend: string, background: boolean): RunInputs {
 		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background, previousSyncAt: this.data.lastSyncAt };
 	}
@@ -712,6 +712,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		profiles: () => this.data.intelligence.profiles,
 		pro: () => intelligenceProAllowed(this.entitlement()),
 		pageNotesOn: (tag) => modesFor(this.data.intelligence, this.data.tagFolderMap, tag).intelligence,
+		syncNow: () => this.syncNow(),
 	};
 
 	/** The render an insight note's row points at, for a re-run: the same attachment the sync writes. */
