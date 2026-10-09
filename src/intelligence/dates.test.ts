@@ -47,6 +47,9 @@ describe("resolveDue > relative words", () => {
 		expect(due("Montag")).toBe("2026-10-05");
 		expect(due("Fr.")).toBe("2026-10-02");
 		expect(due("do")).toBe("2026-10-01");
+		expect(due("bis Mo")).toBe("2026-10-05");
+		expect(due("am Do", "today")).toBe("2026-10-01");
+		expect(due("by fri")).toBe("2026-10-02");
 	});
 
 	it("does not read an English word as a German weekday abbreviation", () => {
@@ -75,20 +78,24 @@ describe("resolveDue > relative words", () => {
 });
 
 describe("resolveDue > fallback to the model's class", () => {
-	it("uses the class only for words no language table reads", () => {
-		expect(due("la semaine prochaine", "next-week")).toBe("2026-10-09");
-		expect(due("demain", "tomorrow")).toBe("2026-09-29");
-		expect(due("aujourd'hui", "today")).toBe("2026-09-28");
-		expect(due("cette semaine", "this-week")).toBe("2026-10-02");
-		expect(due("fin du mois", "end-of-month")).toBe("2026-09-30");
-		expect(due("le mois prochain", "next-month")).toBe("2026-10-31");
+	it("uses the class only when the model copied no words", () => {
+		expect(due(null, "next-week")).toBe("2026-10-09");
+		expect(due("", "tomorrow")).toBe("2026-09-29");
+		expect(due(null, "this-week")).toBe("2026-10-02");
+		expect(due(null, "end-of-month")).toBe("2026-09-30");
+		expect(due(null, "next-month")).toBe("2026-10-31");
 		expect(due("bis Freitag", "tomorrow")).toBe("2026-10-02");
+	});
+
+	it("gives no date for words no language table reads, whatever the class says (live test, 2026-10-09)", () => {
+		expect(due("bis 11:00", "today")).toBeNull();
+		expect(due("demain", "tomorrow")).toBeNull();
 	});
 
 	it("gives no date when neither the words nor the class name one", () => {
 		expect(due("un jour", "none")).toBeNull();
 		expect(due(null, null)).toBeNull();
-		expect(due("", "tomorrow")).toBe("2026-09-29");
+		expect(due(null, "none")).toBeNull();
 	});
 });
 

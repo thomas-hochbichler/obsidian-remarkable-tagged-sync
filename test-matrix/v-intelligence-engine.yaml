@@ -691,7 +691,7 @@
       test: "resolveDue > relative words > reads today, tomorrow and the day after in German and English"
 
     - id: V6.5
-      scenario: "bis Freitag, Fr., do"
+      scenario: "bis Freitag, Fr., do, bis Mo, am Do, by fri"
       expect: "The next such day after the page's date"
       layer: unit
       file: src/intelligence/dates.test.ts
@@ -726,11 +726,11 @@
       test: "resolveDue > relative words > reads someday as no date"
 
     - id: V6.10
-      scenario: "A French due phrase with the model's class"
-      expect: "The class decides; for German/English the words win"
+      scenario: "The model copied no words, only a class"
+      expect: "The class decides; when there are words, they win"
       layer: unit
       file: src/intelligence/dates.test.ts
-      test: "resolveDue > fallback to the model's class > uses the class only for words no language table reads"
+      test: "resolveDue > fallback to the model's class > uses the class only when the model copied no words"
 
     - id: V6.11
       scenario: "No words, no class"
@@ -752,6 +752,13 @@
       layer: unit
       file: src/intelligence/dates.test.ts
       test: "resolveWrittenDate > reads nothing relative or missing"
+
+    - id: V6.14
+      scenario: "Words no language table reads (bis 11:00, demain) with a class of today or tomorrow"
+      expect: "No date -- the class guessed today for bis Mo in the live test"
+      layer: unit
+      file: src/intelligence/dates.test.ts
+      test: "resolveDue > fallback to the model's class > gives no date for words no language table reads, whatever the class says (live test, 2026-10-09)"
 
 - feature: V7
   name: The intelligence settings block reads totally and never costs a scan by itself

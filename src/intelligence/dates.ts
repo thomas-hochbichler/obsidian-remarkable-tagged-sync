@@ -4,8 +4,10 @@
  * model's own class got 4 of 6 (research 10). The model copies the words ("bis Freitag") and a coarse
  * `rel` class; this module turns them into an ISO date, relative to the page's date.
  *
- * Languages are a table. A language without an entry falls back to the model's `rel` class, which is
- * less reliable -- documented, not hidden.
+ * Languages are a table. Words no table reads give no date: the model's `rel` class guessed "today" for
+ * "bis Mo" and for "bis 11:00" (live test, 2026-10-09), and a missing date shows where a wrong one
+ * passes for right. So a language without an entry gets no due dates -- documented, not hidden. The
+ * class counts only when the model copied no words at all.
  */
 
 export type DateRel = "today" | "tomorrow" | "this-week" | "next-week" | "end-of-month" | "next-month" | "none";
@@ -126,13 +128,15 @@ const phrases = (key: "today" | "tomorrow" | "dayAfterTomorrow" | "thisWeek" | "
 
 /**
  * Which weekday the words name. Full names first, in every language; a short form ("Fr", "do") only
- * with a dot or as the whole text -- "do" and "so" are English words too.
+ * with a dot, as the whole text, or after "bis"/"by" and kin -- "do" and "so" are English words too.
  */
+const BEFORE_DAY = ["bis", "ab", "am", "by", "on", "until", "till"].join("|");
+
 function weekdayIn(text: string): number | null {
 	for (let day = 0; day < 7; day++) if (any(text, locales.map((locale) => locale.weekdays[day][0]))) return day;
 	for (let day = 0; day < 7; day++) {
 		for (const short of locales.flatMap((locale) => locale.weekdays[day].slice(1))) {
-			if (text === short || word(text, `${short}.`)) return day;
+			if (text === short || word(text, `${short}.`) || new RegExp(`(^|\\s)(${BEFORE_DAY})\\s+${short}($|[^\\p{L}])`, "u").test(text)) return day;
 		}
 	}
 	return null;
@@ -162,7 +166,7 @@ function relative(text: string, ref: Date): Date | null | undefined {
 	return addDays(ref, (weekday - ref.getUTCDay() + 7) % 7 || 7);
 }
 
-/** The fallback for words no locale table reads: the model's coarse class. */
+/** The fallback when the model copied no words: its coarse class. */
 function fromRel(rel: DateRel, ref: Date): Date | null {
 	switch (rel) {
 		case "today":
@@ -184,7 +188,7 @@ function fromRel(rel: DateRel, ref: Date): Date | null {
 
 /**
  * A due date from the words the model copied off the page, relative to the page's date. Null when
- * the words name no date ("irgendwann") or none can be read and the class says nothing either.
+ * the words name no date ("irgendwann") or none can be read; the class only when there are no words.
  */
 export function resolveDue(words: string | null, rel: DateRel | null, pageDate: Date): string | null {
 	const text = (words ?? "").toLowerCase().trim();
@@ -192,7 +196,7 @@ export function resolveDue(words: string | null, rel: DateRel | null, pageDate: 
 		const date = absolute(text, pageDate, 1);
 		if (date) return isoDay(date);
 		const rel2 = relative(text, pageDate);
-		if (rel2 !== undefined) return rel2 === null ? null : isoDay(rel2);
+		return rel2 ? isoDay(rel2) : null;
 	}
 	const fallback = rel ? fromRel(rel, pageDate) : null;
 	return fallback ? isoDay(fallback) : null;
