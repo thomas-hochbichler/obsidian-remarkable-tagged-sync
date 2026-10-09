@@ -200,6 +200,14 @@ export interface SyncIndexRow {
 	 */
 	ocrRetry?: { with: string; retryable: boolean; at: string };
 	/**
+	 * How many syncs in a row left pages of this note unread; absent when the last one read them all.
+	 * While it is at most `MAX_READ_RETRIES` the next sync opens the document even though nothing on the
+	 * device changed, and the transcript store hands back every page already read, so only the unread
+	 * ones go to the backend again. A server that was down for one sync used to leave its pages as
+	 * "Could not read this page" until the notebook changed on the device (live test, 2026-10-09).
+	 */
+	failedReads?: number;
+	/**
 	 * This note's own identity, written out as `remarkable-note-id` -- see `NoteFrontmatter.noteId`
 	 * for why it is minted rather than derived. Minted on the first write of the row and carried
 	 * forward by every later write, including the one that moves the row to a new `syncKey` because
@@ -1208,6 +1216,19 @@ async function emptyBlockReport(
  * throw away every page already read whenever the server was down for one sync, so the next edit
  * re-read the whole notebook.
  */
+/** How often a page left unread is tried again on its own, before only the device or a re-transcribe brings it back. */
+export const MAX_READ_RETRIES = 3;
+
+function isReadRetryDue(row: SyncIndexRow): boolean {
+	return row.status === "active" && row.failedReads !== undefined && row.failedReads <= MAX_READ_RETRIES;
+}
+
+/** `failedReads` after an OCR round: one more when a page went unread, gone when none did. */
+function failedReadsAfter(ocr: UnitOcr, previous: number | undefined): Pick<SyncIndexRow, "failedReads"> {
+	const unread = ocr.pages === null ? ocr.status === "failed" : ocr.pages.some((page) => page.status === "failed");
+	return unread ? { failedReads: (previous ?? 0) + 1 } : {};
+}
+
 function transcriptStoreFor(params: UnitParams, ocr: UnitOcr, transcriptHighlights: HighlightGroup[]): Pick<SyncIndexRow, "transcribedPages" | "transcribedWith"> {
 	if (params.transcriptFingerprint === undefined || params.pageContentHash === undefined || params.unitPages <= 1) return {};
 	if (params.keepTranscript !== undefined) {
@@ -1350,6 +1371,8 @@ async function writeUnit(
 				highlightCount,
 				frontmatterTags,
 				...store,
+				// No OCR ran when the transcript was kept, so the pages it left unread are as unread as before.
+				...(params.keepTranscript !== undefined ? (params.previous?.failedReads === undefined ? {} : { failedReads: params.previous.failedReads }) : failedReadsAfter(ocr, params.previous?.failedReads)),
 				noteId,
 				frontmatterVersion,
 			},
@@ -1718,6 +1741,7 @@ async function needsDocumentOpen(
 	if (forceOpen) return true;
 	if (findEntryHash(rows, entry.id) !== entry.hash) return true;
 	return (
+		Object.values(rows).some((row) => row.docId === entry.id && isReadRetryDue(row)) ||
 		hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) ||
 		hasRetargetedRow(rows, tagRouter, entry.id) ||
 		Object.values(rows).some((row) => row.docId === entry.id && rerenderDue(row)) ||
@@ -1849,6 +1873,7 @@ async function planUnits(
 			!isRetargeted(existingRow, tagRouter) &&
 			existingRow.pageHash === pageContentHash(pageTag.pageId) &&
 			!rerenderDue(existingRow) &&
+			!isReadRetryDue(existingRow) &&
 			(await noteStore.read(existingRow.notePath)) !== null
 		) {
 			continue;
@@ -2130,6 +2155,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		!scanDue &&
 		!(intelligence !== undefined && pending.size > 0) &&
 		!staleRenders &&
+		!Object.values(previousIndex.rows).some(isReadRetryDue) &&
 		!(await hasMissingActiveNote(deps.noteStore, tagRouter, previousIndex.rows))
 	) {
 		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [], intelligence: emptyReport() };
@@ -3017,7 +3043,9 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 			: {};
 
 	const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
-	return { kind: "written", empty: transcript === "", unreadPages, row: block === null ? null : { ...row, blockHash: blockHashOf(block), ...store } };
+	// Asked for by hand, so it starts the count afresh: the pages it could not read get their retries again.
+	const { failedReads: _, ...rest } = row;
+	return { kind: "written", empty: transcript === "", unreadPages, row: block === null ? null : { ...rest, blockHash: blockHashOf(block), ...store, ...failedReadsAfter(ocr, undefined) } };
 }
 
 /** The pages this run sent and got nothing back for. Without per-page results, every page sent. */

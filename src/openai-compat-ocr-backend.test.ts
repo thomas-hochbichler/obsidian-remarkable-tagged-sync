@@ -652,7 +652,7 @@ describe("reporting pages dropped for truncation", () => {
 		expect(result.status).toBe("ok");
 		expect(result.warnings).toEqual([
 			"2 pages were left out because the model's answer ran past what it may return — this happens with models that reason " +
-				'before answering. A later sync will not pick them up on its own: switch to a model that doesn\'t reason, then run "Re-transcribe all synced notes".',
+				'before answering. The next three syncs try them again; if that does not help, switch to a model that doesn\'t reason, then run "Re-transcribe all synced notes".',
 		]);
 	});
 
@@ -698,8 +698,8 @@ describe("reporting pages dropped for truncation", () => {
 		const result = await backend.recognize([page()]);
 
 		expect(result.warnings).toEqual([
-			"1 page was left out because the model's answer was cut off before it was complete. A later sync will not pick it up on " +
-				'its own: "Copy diagnostics" shows what cut it off, and once that is fixed, run "Re-transcribe all synced notes".',
+			"1 page was left out because the model's answer was cut off before it was complete. The next three syncs try it again; " +
+				'if that does not help, "Copy diagnostics" shows what cut it off, and once that is fixed, run "Re-transcribe all synced notes".',
 		]);
 	});
 

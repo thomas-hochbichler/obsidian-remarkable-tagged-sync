@@ -18,6 +18,7 @@ import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
+	MAX_READ_RETRIES,
 	invalidateRenders,
 	LEGACY_OCR_RETRY,
 	markLegacyOcrLosses,
@@ -5182,6 +5183,57 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 
 		expect(synced.index.rows[KEY].transcribedPages).toHaveLength(2);
 		expect(synced.backendWarnings).toEqual(["a page's answer was cut off"]);
+	});
+
+	/** A backend that cannot read the second page it is handed -- a server that died halfway, say. */
+	function failingSecondPage(): OcrBackend {
+		return {
+			id: "vision",
+			metered: false,
+			fingerprint: "test-backend",
+			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => ({
+				status: "ok",
+				pages: pages.map((_, index) => (index === 1 || pages.length === 1 ? { status: "failed" as const, text: "" } : { status: "ok" as const, text: "read" })),
+				text: "read",
+				confidence: null,
+			})),
+		};
+	}
+
+	// Live test, 2026-10-09: three pages stayed "Could not read this page" for a week, though the same
+	// model read each of them in two seconds. Nothing on the device changed, so no sync looked again.
+	it("reads a page left unread again on the next sync, though nothing on the device changed", async () => {
+		const deps = { ...baseDeps(notebook("root-retry-a", "hash-1", THREE), { sync: "Target" }), ocrBackend: failingSecondPage() };
+		const first = await runSync(deps, EMPTY_SYNC_INDEX);
+		expect(first.index.rows[KEY].failedReads).toBe(1);
+
+		const retry = countingOcrBackend();
+		const second = await runSync({ ...deps, ocrBackend: retry }, first.index);
+		expect(pagesSent(retry)).toBe(1);
+		expect(second.index.rows[KEY].failedReads).toBeUndefined();
+		expect((await deps.noteStore.read(NOTE))!).not.toContain("Could not read this page");
+
+		const quiet = countingOcrBackend();
+		await runSync({ ...deps, ocrBackend: quiet }, second.index);
+		expect(quiet.recognize).not.toHaveBeenCalled();
+	});
+
+	it("tries a page that keeps failing three more times, then leaves it until Re-transcribe", async () => {
+		const deps = { ...baseDeps(notebook("root-retry-b", "hash-1", THREE), { sync: "Target" }), ocrBackend: failingSecondPage() };
+		let index = (await runSync(deps, EMPTY_SYNC_INDEX)).index;
+		for (let retry = 1; retry <= MAX_READ_RETRIES; retry++) {
+			const backend = failingSecondPage();
+			index = (await runSync({ ...deps, ocrBackend: backend }, index)).index;
+			expect(pagesSent(backend)).toBe(1);
+		}
+		expect(index.rows[KEY].failedReads).toBe(MAX_READ_RETRIES + 1);
+
+		const done = countingOcrBackend();
+		await runSync({ ...deps, ocrBackend: done }, index);
+		expect(done.recognize).not.toHaveBeenCalled();
+
+		const retranscribed = await reTranscribeAll({ api: notebook("root-retry-b", "hash-1", THREE), noteStore: deps.noteStore, ocrBackend: failingSecondPage() }, index);
+		expect(retranscribed.index.rows[KEY].failedReads).toBe(1);
 	});
 
 	// Ticket 04's easy-to-miss half. Without it the user pays twice -- once for the command, and again

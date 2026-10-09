@@ -272,9 +272,10 @@ carries a user's own measurements of the smaller ones, with the caveats they put
 Two things settings will tell you about the model you name, where the server can be asked. A
 **text-only model** cannot read a page image at all. And a model that **reasons before answering**
 transcribes far more slowly and can lose a page: the answer runs past what the model may return, and
-that page is left out rather than saved half-read. If that happens, the sync says so at the end —
-switch to a model that does not reason (often the `-instruct` build of the same family) and run
-**Re-transcribe all synced notes**, because a later sync will not pick those pages up on its own.
+that page is left out rather than saved half-read. If that happens, the sync says so at the end.
+The next three syncs try such a page again on their own, as they do any page that could not be
+read. If it keeps failing, switch to a model that does not reason (often the `-instruct` build
+of the same family) and run **Re-transcribe this note**.
 
 The reasoning hint needs **Ollama**, **LM Studio 0.4.0 or newer**, or — with Pro — **OpenRouter**;
 other servers expose nothing to read it from, and then settings says nothing rather than guessing.

@@ -346,6 +346,15 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 export const OWN_SERVER_MAX_TOKENS = 16_384;
 
 /**
+ * What becomes of the pages a warning names, then what the user does if that is not enough. A
+ * notebook page is read again by the next three syncs (`failedReads` in `sync-engine.ts`); a margin
+ * note or a page added to a PDF is not, for a failure that repeats with the same settings.
+ */
+function nextStep(pages: number, framing: OcrFraming, fix: string): string {
+	return framing === "page" ? `The next three syncs try ${them(pages, framing)} again; if that does not help, ${fix}.` : `A later sync will not pick ${them(pages, framing)} up on its own: ${fix}.`;
+}
+
+/**
  * The sentence a run that waited out {@link OCR_REQUEST_TIMEOUT_MS} puts in the report.
  *
  * It names the tall-page shape because that is the one that has produced it: a page scrolled far
@@ -365,8 +374,7 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
 			: "";
 	return (
 		`${upperFirst(pageCount(pages, framing))} left out because the server at ${baseURL} did not answer in ` +
-		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ${tallPage}A later sync will not pick ${them(pages, framing)} up on ` +
-		`its own: try a different model, then ${readAgain(framing)}.`
+		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ${tallPage}${nextStep(pages, framing, `try a different model, then ${readAgain(framing)}`)}`
 	);
 }
 
@@ -376,9 +384,10 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
  * Four things it must carry, and each is there for a reason a shorter sentence loses: the cause in
  * the user's terms rather than `finish_reason`; that the page was **left out** on purpose, so it does
  * not read as a plugin bug; the lever, which has to stand alone for someone who never opened
- * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
- * hash is unchanged. For a page the repair is "Re-transcribe all synced notes"; a margin note or a
- * page added to a PDF has none to run, and `readAgain` says what does bring it back.
+ * settings; and how far the loss heals itself (`nextStep`) -- a notebook page gets three more syncs,
+ * a margin note or a page added to a PDF none, because a document whose device hash is unchanged is
+ * skipped. For a page the repair is "Re-transcribe all synced notes"; a margin note or a page added
+ * to a PDF has none to run, and `readAgain` says what does bring it back.
  *
  * `pro/anthropic-ocr-backend.ts` carries the same four things and says so in its own docstring. The
  * one thing it cannot borrow is the lever: here the fix is a model that does not reason, or the
@@ -396,7 +405,7 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 	if (reasoning) {
 		return (
 			`${head} the model's answer ran past what it may return — this happens with models that reason before answering. ` +
-			`A later sync will not pick ${them(pages, framing)} up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
+			nextStep(pages, framing, `switch to a model that doesn't reason, then ${readAgain(framing)}`)
 		);
 	}
 	// Not `readAgain`: for a margin note that promises the next sync, which reads it again only under a
@@ -408,7 +417,7 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 			? readAgain(framing)
 			: `switch "Handwritten notes" off and on in the settings to read them again — that reads every PDF's margin notes again`;
 	return (
-		`${head} the model's answer was cut off before it was complete. A later sync will not pick ${them(pages, framing)} up on its own: ` +
-		`"Copy diagnostics" shows what cut it off, and once that is fixed, ${repair}.`
+		`${head} the model's answer was cut off before it was complete. ` +
+		nextStep(pages, framing, `"Copy diagnostics" shows what cut it off, and once that is fixed, ${repair}`)
 	);
 }

@@ -198,6 +198,20 @@
       file: src/sync-engine.test.ts
       test: "transcribing only the pages that changed (issue #117) > keeps the pages that came back ok when the backend warned about the ones it failed"
 
+    - id: D22.6a
+      scenario: A page could not be read, and nothing on the device changes before the next sync
+      expect: The next sync opens the notebook anyway and sends only the unread page; once it is read, a later sync calls the backend not at all. Before this, the page stayed "Could not read this page" until the notebook changed on the device (live test, 2026-10-09)
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > reads a page left unread again on the next sync, though nothing on the device changed"
+
+    - id: D22.6b
+      scenario: A page fails on every try
+      expect: Three more syncs send it, then none does; Re-transcribe starts the count afresh
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "transcribing only the pages that changed (issue #117) > tries a page that keeps failing three more times, then leaves it until Re-transcribe"
+
     - id: D22.7
       scenario: The Re-transcribe all notes command is run, then the notebook changes
       expect: The command reads every page regardless of the store, and leaves a store behind it, so the next sync reads one page. Without the second half the user pays twice and the command is dearer than before the store existed
