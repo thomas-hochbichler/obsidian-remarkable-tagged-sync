@@ -88,9 +88,14 @@ export class AnthropicOcrBackend implements OcrBackend {
 	 * Set when the API answered with its own failure, a 5xx -- 529 "overloaded" among them -- or a 429
 	 * still there after `fetchWithRetry`. The OpenAI-compatible adapter's flag, for its reason: the
 	 * endpoint answered, so "Is this machine online?" would be wrong, and yet the same request may get
-	 * through later (`OcrResult.unreachable`).
+	 * through later (`OcrResult.retryable`).
 	 */
 	private serverError = false;
+	/**
+	 * Set when the API refused the request itself, a 4xx other than a 429 -- the OpenAI-compatible
+	 * adapter's flag again. It makes the result `refused` -- see `OcrResult.refused`.
+	 */
+	private refused = false;
 	/** The first refusal the API explained, as `<status>: <message>` -- see `recognize`. */
 	private refusal: string | null = null;
 	/** How many pages were dropped because the answer ran past `max_tokens` -- see `recognize`. */
@@ -110,6 +115,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
 		this.serverError = false;
+		this.refused = false;
 		this.refusal = null;
 		this.truncated = 0;
 		this.timedOut = 0;
@@ -134,7 +140,9 @@ export class AnthropicOcrBackend implements OcrBackend {
 			// key. A unit where every page failed still raised the generic notice; a unit where only some
 			// did was completely silent, because `unitStatus` calls a unit `ok` as soon as one page reads.
 			// The chain and its order are the OpenAI-compatible adapter's, deliberately: the two must not
-			// drift, and the systemic causes displace the per-page one.
+			// drift, and the systemic causes displace the per-page one. So is its reason for promising no
+			// retry after a refusal: this sentence knows one note, and a sync tries a refused one again only
+			// when every note of its PDF was refused (`OcrResult.refused`).
 			(failedPages) => {
 				if (this.unreachable) return `Could not reach Anthropic — ${pageCount(failedPages, framing)} not transcribed. Is this machine online?${triedAgain(framing)}`;
 				if (this.refusal) return `Anthropic answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.${this.serverError ? triedAgain(framing) : ""}`;
@@ -144,7 +152,9 @@ export class AnthropicOcrBackend implements OcrBackend {
 			},
 			onPage,
 		);
-		return this.unreachable || this.serverError ? { ...result, unreachable: true } : result;
+		if (this.unreachable || this.serverError) result.retryable = true;
+		if (this.refused) result.refused = true;
+		return result;
 	}
 
 	/** One page, one request. Every outcome that isn't usable text is `failed` for that page alone. */
@@ -181,7 +191,9 @@ export class AnthropicOcrBackend implements OcrBackend {
 				// First refusal wins: with four pages in flight they carry the same refusal anyway.
 				this.refusal ??= `${response.status}${await refusalDetail(response)}`;
 				// Failing rather than refusing, as in the OpenAI-compatible adapter: a 529 passes with the load.
+				// A refusal may pass too, once fixed outside the plugin: "credit balance too low" after a top-up.
 				if (response.status >= 500 || response.status === 429) this.serverError = true;
+				else this.refused = true;
 				console.warn(`Tagged Sync: anthropic OCR request failed with status ${response.status}`);
 				return { kind: "failed" };
 			}

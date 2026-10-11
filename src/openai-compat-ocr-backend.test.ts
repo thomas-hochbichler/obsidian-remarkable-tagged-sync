@@ -390,7 +390,7 @@ describe("the not-running warning", () => {
 		expect(result.warnings).toEqual([
 			"Could not reach the server at http://localhost:11434/v1 — margin notes were not transcribed. Is it running? A later sync tries them again.",
 		]);
-		expect(result.unreachable).toBe(true);
+		expect(result.retryable).toBe(true);
 	});
 
 	// A page added to a PDF goes alone, as a margin note does, and is recovered as one is: by the sync.
@@ -425,7 +425,8 @@ describe("the not-running warning", () => {
 		expect(result.status).toBe("failed");
 		expect(result.warnings?.[0]).not.toContain("Is it running?");
 		// Nor is it retried for free: the same request would be refused again.
-		expect(result.unreachable).toBeUndefined();
+		expect(result.retryable).toBeUndefined();
+		expect(result.refused).toBe(true);
 	});
 
 	it("does not retry a bad request for free either", async () => {
@@ -435,7 +436,21 @@ describe("the not-running warning", () => {
 		const result = await backend.recognize([page()], undefined, "note");
 
 		expect(result.warnings).toEqual(["The server at http://localhost:11434/v1 answered 400: invalid image — margin notes were not transcribed."]);
-		expect(result.unreachable).toBeUndefined();
+		expect(result.retryable).toBeUndefined();
+		expect(result.refused).toBe(true);
+	});
+
+	// `ollama pull` fixes it under the same settings -- what lets a sync try a PDF whose every note was
+	// refused again (`DigestBuild.ocrRetryable`). The sentence promises nothing: it knows one note.
+	it("says a model that is not there was refused", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(404, { error: "model 'qwen3-vl:4b' not found" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["The server at http://localhost:11434/v1 answered 404: model 'qwen3-vl:4b' not found — margin notes were not transcribed."]);
+		expect(result.refused).toBe(true);
+		expect(result.retryable).toBeUndefined();
 	});
 
 	// Ollama answered "500 unknown model architecture" for a model it was too old for, and an Ollama
@@ -451,7 +466,8 @@ describe("the not-running warning", () => {
 		expect(result.warnings).toEqual([
 			"The server at http://localhost:11434/v1 answered 500: unknown model architecture: 'qwen3vl' — margin notes were not transcribed. A later sync tries them again.",
 		]);
-		expect(result.unreachable).toBe(true);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
 	});
 
 	it("tries a margin note again once the rate limit outlasted the retries", async () => {
@@ -462,7 +478,8 @@ describe("the not-running warning", () => {
 		const result = await backend.recognize([page()], undefined, "note");
 
 		expect(fetchMock).toHaveBeenCalledTimes(3);
-		expect(result.unreachable).toBe(true);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
 	});
 
 	// A page is not revisited by the sync, so promising it would be false.
@@ -550,6 +567,8 @@ describe("a missing model", () => {
 		expect(result.status).toBe("failed");
 		expect(result.warnings?.[0]).toContain("No model is set");
 		expect(result.warnings?.[0]).toContain("2 pages were not transcribed");
+		// Fixed in the settings, so nothing for a sync to try again under them.
+		expect(result.refused).toBeUndefined();
 	});
 
 	it("treats a whitespace-only model as missing", async () => {

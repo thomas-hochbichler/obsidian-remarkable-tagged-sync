@@ -97,9 +97,14 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	/**
 	 * Set when the server answered with its own failure, a 5xx or a 429 still there after
 	 * `fetchWithRetry`. Apart from `unreachable`, which picks the sentence: the server is running, so
-	 * "Is it running?" would be wrong. Both make the result `unreachable` -- see `OcrResult.unreachable`.
+	 * "Is it running?" would be wrong. Both make the result `retryable` -- see `OcrResult.retryable`.
 	 */
 	private serverError = false;
+	/**
+	 * Set when the server refused the request itself, a 4xx other than a 429 -- the other side of
+	 * `serverError`. It makes the result `refused` -- see `OcrResult.refused`.
+	 */
+	private refused = false;
 	/** The first refusal the server explained, as `<status>: <message>` -- see `recognize`. */
 	private refusal: string | null = null;
 	/**
@@ -134,6 +139,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
 		this.serverError = false;
+		this.refused = false;
 		this.refusal = null;
 		this.truncated = 0;
 		this.timedOut = 0;
@@ -164,6 +170,9 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			// a model recommendation. Both causes above are systemic -- the whole unit is lost for one
 			// reason -- while truncation is a property of particular pages, so it is the right thing to be
 			// displaced by a bigger failure that is also true.
+			// A refusal promises no retry, though a sync may make one: that happens only when every margin
+			// note of the PDF was refused (`OcrResult.refused`), and this sentence knows one note, not the
+			// PDF. Promised here, it would be false for the note refused among thirty that were read.
 			(failedPages) => {
 				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages, framing)} not transcribed. Is it running?${triedAgain(framing)}`;
 				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.${this.serverError ? triedAgain(framing) : ""}`;
@@ -173,7 +182,9 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			},
 			onPage,
 		);
-		return this.unreachable || this.serverError ? { ...result, unreachable: true } : result;
+		if (this.unreachable || this.serverError) result.retryable = true;
+		if (this.refused) result.refused = true;
+		return result;
 	}
 
 	/** One page, one request. Every outcome that isn't usable text is `failed` for that page alone. */
@@ -213,8 +224,10 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				this.refusal ??= `${response.status}${await refusalDetail(response)}`;
 				// A server failing rather than refusing: Ollama's "500 unknown model architecture" goes away
 				// with an Ollama update and the same model, and a 503 or a 429 with the load. A 400 or a 401
-				// would be refused again however long the sync waits.
+				// would be refused again however long the sync waits -- unless what it refused is fixed
+				// outside the plugin, as a 404 for a model not pulled yet is (`OcrResult.refused`).
 				if (response.status >= 500 || response.status === 429) this.serverError = true;
+				else this.refused = true;
 				console.warn(`Tagged Sync: ${this.id} OCR request failed with status ${response.status}`);
 				return { kind: "failed" };
 			}

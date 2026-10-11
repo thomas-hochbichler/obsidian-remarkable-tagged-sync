@@ -192,6 +192,7 @@ describe("AnthropicOcrBackend", () => {
 			text: "",
 			confidence: null,
 			warnings: ["Anthropic answered 401: unauthorized — 1 page was not transcribed."],
+			refused: true,
 		});
 	});
 
@@ -217,7 +218,7 @@ describe("AnthropicOcrBackend", () => {
 			confidence: null,
 			warnings: ["Could not reach Anthropic — 1 page was not transcribed. Is this machine online?"],
 			// What lets the sync try a margin note again on its own: nothing answered, so the same request may.
-			unreachable: true,
+			retryable: true,
 		});
 	});
 
@@ -236,7 +237,23 @@ describe("AnthropicOcrBackend", () => {
 		fetchMock.mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
 		const backend = new AnthropicOcrBackend({ apiKey: "bad-key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
-		expect((await backend.recognize([page()], undefined, "note")).unreachable).toBeUndefined();
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.retryable).toBeUndefined();
+		expect(result.refused).toBe(true);
+	});
+
+	// A top-up fixes it under the same settings -- what lets a sync try a PDF whose every note was
+	// refused again (`DigestBuild.ocrRetryable`). The sentence promises nothing: it knows one note.
+	it("says a balance run out was refused", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(400, { error: { message: "Your credit balance is too low to access the Anthropic API." } }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["Anthropic answered 400: Your credit balance is too low to access the Anthropic API. — margin notes were not transcribed."]);
+		expect(result.refused).toBe(true);
+		expect(result.retryable).toBeUndefined();
 	});
 
 	// Anthropic was running and said so -- "Is this machine online?" would be wrong -- but an overloaded
@@ -248,7 +265,8 @@ describe("AnthropicOcrBackend", () => {
 		const result = await backend.recognize([page()], undefined, "note");
 
 		expect(result.warnings).toEqual(["Anthropic answered 500: internal error — margin notes were not transcribed. A later sync tries them again."]);
-		expect(result.unreachable).toBe(true);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
 	});
 
 	it("tries a margin note again once the rate limit outlasted the retries", async () => {
@@ -259,7 +277,8 @@ describe("AnthropicOcrBackend", () => {
 		const result = await backend.recognize([page()], undefined, "note");
 
 		expect(fetchMock).toHaveBeenCalledTimes(3);
-		expect(result.unreachable).toBe(true);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
 	});
 
 	// A page is not revisited by the sync, so promising it would be false.
@@ -392,6 +411,8 @@ describe("AnthropicOcrBackend", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 		expect(result.status).toBe("failed");
 		expect(result.warnings?.[0]).toBe("No model is set for this OCR backend — open the plugin settings and enter one. 2 pages were not transcribed.");
+		// Fixed in the settings, so nothing for a sync to try again under them.
+		expect(result.refused).toBeUndefined();
 	});
 
 	it("treats a whitespace-only model as unset", async () => {

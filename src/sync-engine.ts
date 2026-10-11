@@ -178,9 +178,10 @@ export interface SyncIndexRow {
 	 * Set when this note's digest lost transcriptions -- margin notes, or pages added to a PDF -- so a
 	 * later sync reads the document again (`ocrRetryDue`). `with` is the `transcriptFingerprint` it
 	 * failed under -- "unavailable" too, so a PDF synced before the downloaded model was ready is read
-	 * once it is -- `unreachable` whether the same settings may get past it later, because nothing
-	 * answered or the server failed with a 5xx or a 429 (`OcrResult.unreachable`), `at` the start of
-	 * the sync it failed in (ISO), which a failure that repeats moves forward.
+	 * once it is -- `retryable` whether the same settings may get past it later, because nothing
+	 * answered, the server failed with a 5xx or a 429 (`OcrResult.retryable`), or it refused every
+	 * note of a PDF that had none read (`DigestBuild.ocrRetryable`), `at` when the digest failed (ISO),
+	 * which a failure that repeats moves forward.
 	 *
 	 * Without it nothing ever did: the device is unchanged, so every gate skips the document, and
 	 * re-transcribe refuses a digest. Not retried unconditionally, because the failures that repeat
@@ -192,7 +193,7 @@ export interface SyncIndexRow {
 	 * there is no store of read notes the way there is for a notebook's pages (`transcribedPages`), so
 	 * nothing tells the ones that were read from the ones that were not.
 	 */
-	ocrRetry?: { with: string; unreachable: boolean; at: string };
+	ocrRetry?: { with: string; retryable: boolean; at: string };
 	/**
 	 * This note's own identity, written out as `remarkable-note-id` -- see `NoteFrontmatter.noteId`
 	 * for why it is minted rather than derived. Minted on the first write of the row and carried
@@ -1435,7 +1436,7 @@ const OCR_RETRY_INTERVAL_MS = 60 * 60 * 1000;
 function ocrRetryDue(row: SyncIndexRow, retryKey: string | null, now: string, manual: boolean): boolean {
 	if (retryKey === null || row.status !== "active" || row.ocrRetry === undefined) return false;
 	if (row.ocrRetry.with !== retryKey) return true;
-	return row.ocrRetry.unreachable && (manual || Date.parse(now) - Date.parse(row.ocrRetry.at) >= OCR_RETRY_INTERVAL_MS);
+	return row.ocrRetry.retryable && (manual || Date.parse(now) - Date.parse(row.ocrRetry.at) >= OCR_RETRY_INTERVAL_MS);
 }
 
 /**
@@ -2137,16 +2138,20 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				// wrote none where there was none: a PDF synced before the downloaded model was ready, or one
 				// whose notes partly failed before the local engine stopped -- `worstOcrStatus` reports that
 				// as "unavailable" -- was never read again. Written with the real fingerprint, not `retryKey`,
-				// which is null for the model that is not ready: the ready one differs from it. `unreachable`
-				// comes from the backend alone, which sets it for an engine that stopped; Apple Vision on a
-				// machine it cannot run on does not, or every PDF it saw would be rendered again each hour.
+				// which is null for the model that is not ready: the ready one differs from it. `retryable`
+				// comes from the build, which says so for an engine that stopped or a PDF refused whole;
+				// Apple Vision on a machine it cannot run on is neither, or every PDF it saw would be rendered
+				// again each hour. `at` is when the build failed, not when the sync started: the first sync
+				// of a large library can take seventy minutes, and stamped with its start, a PDF it failed
+				// near the end would be due again on the very next auto-sync. Whether one is due is still
+				// read against `startedAt` (`rerenderDue`).
 				// With nothing lost, Off keeps the old retry: it says nothing about the notes a real backend
 				// lost, and a note rewritten under it for some other reason -- a renamed tag -- must not lose
 				// them for good.
 				const ocrRetry =
 					build.ocr === "failed" || build.ocr === "unavailable"
-						? { with: transcriptKey, unreachable: build.ocrUnreachable, at: startedAt }
-						: readsNothing(ocrBackend)
+						? { with: transcriptKey, retryable: build.ocrRetryable, at: now() }
+						: retryKey === null
 							? previous
 							: undefined;
 				return { markdown: build.markdown, ocr: build.ocr, covered: build.covered, pages: build.pages, ocrRetry };

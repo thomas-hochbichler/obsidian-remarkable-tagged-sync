@@ -78,7 +78,7 @@ export function readAgain(framing: OcrFraming): string {
 
 /**
  * The sentence an unreachable or failing server's warning ends with: for a margin note or a page added
- * to a PDF, that nothing is lost -- a sync tries it again with the same settings (`OcrResult.unreachable`).
+ * to a PDF, that nothing is lost -- a sync tries it again with the same settings (`OcrResult.retryable`).
  * "Later", not "next": that retry waits an hour (`OCR_RETRY_INTERVAL_MS`), so the very next auto-sync
  * may well pass it by. Empty for a page, which a sync does not revisit on its own.
  */
@@ -445,7 +445,7 @@ function retryDelay(response: Response, attempt: number, now: number): number {
  * Deliberately narrow: OpenRouter's 502 `provider_unavailable` and 503 `provider_overloaded` are
  * transient too, and are still **not** retried. Each added code is another failure mode to reason
  * about, and a failed page is already a graceful, visible outcome rather than a lost note. Not retried
- * *here*, that is: a margin note lost to one is tried again by a later sync (`OcrResult.unreachable`).
+ * *here*, that is: a margin note lost to one is tried again by a later sync (`OcrResult.retryable`).
  */
 export async function fetchWithRetry(fetchFn: typeof fetch, url: string, init: RequestInit, sleep: Sleep = realSleep): Promise<Response> {
 	let response = await withTimeout(fetchFn(url, init));

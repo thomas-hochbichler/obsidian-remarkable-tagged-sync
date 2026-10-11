@@ -139,8 +139,8 @@ describe("failure mapping (§8.2)", () => {
 	it("says nothing answered when the runtime is broken, and when it is remembered", async () => {
 		const { backend } = backendOver([{ kind: "runtime-broken", message: "spawn ENOENT" }]);
 
-		expect((await backend.recognize([page()])).unreachable).toBe(true);
-		expect((await backend.recognize([page()])).unreachable).toBe(true);
+		expect((await backend.recognize([page()])).retryable).toBe(true);
+		expect((await backend.recognize([page()])).retryable).toBe(true);
 	});
 
 	// A broken runtime must never write a partial transcript: the sync skips an unchanged document

@@ -129,9 +129,9 @@ export class LocalOcrBackend implements OcrBackend {
 	async recognize(pages: RmPage[], onPage?: () => void, framing: OcrFraming = "page"): Promise<OcrResult> {
 		if (pages.length === 0) return SKIPPED;
 		// Case 1, remembered: without this it is 39 more pages of fans for 39 identical failures.
-		// `unreachable` here too: every digest after the first one in the run gets this answer, and
+		// `retryable` here too: every digest after the first one in the run gets this answer, and
 		// without it their margin notes would wait for a new model rather than for a repaired engine.
-		if (this.runtimeBroken) return { status: "unavailable", pages: null, text: "", confidence: null, unreachable: true };
+		if (this.runtimeBroken) return { status: "unavailable", pages: null, text: "", confidence: null, retryable: true };
 
 		// One entry per input page, in input order -- this backend already reads one page at a time, so
 		// the boundary is a fact about the loop rather than something to reconstruct.
@@ -157,10 +157,10 @@ export class LocalOcrBackend implements OcrBackend {
 					this.onRuntimeFailure(outcome.message);
 					// Nothing already read is kept, and `pages` stays null rather than reporting the prefix:
 					// the sync skips a document whose device-side hash is unchanged, so half a transcript
-					// written now is half a transcript forever (§8.1). `unreachable`: a repaired engine keeps
+					// written now is half a transcript forever (§8.1). `retryable`: a repaired engine keeps
 					// its fingerprint, so a digest's margin notes are tried again on the hour, as for a
 					// server that was off (`SyncIndexRow.ocrRetry`).
-					return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`], unreachable: true };
+					return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`], retryable: true };
 				}
 				if (outcome.kind === "page-failed") {
 					// Vision keeps the other pages and says nothing; this backend keeps them and says so,

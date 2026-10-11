@@ -91,10 +91,11 @@ export interface DigestBuild {
 	ocrWarnings: string[];
 	/**
 	 * Whether some transcription failed in a way the same settings may get past later -- nothing
-	 * answered at the backend's endpoint, or the server failed; see `OcrResult.unreachable`. What lets
-	 * the sync try a failed digest again without new settings.
+	 * answered at the backend's endpoint, or the server failed; see `OcrResult.retryable` -- or the
+	 * server refused every one and nothing was read (the function `ocrRetryable`). What lets the sync try a
+	 * failed digest again without new settings.
 	 */
-	ocrUnreachable: boolean;
+	ocrRetryable: boolean;
 	/**
 	 * The same entries the markdown was rendered from, with their places on the source document.
 	 *
@@ -219,8 +220,12 @@ interface BuildState {
 	/** One entry per transcribed cluster, collapsed into `DigestBuild.ocr` at the end. */
 	ocrStatuses: OcrStatus[];
 	ocrWarnings: string[];
-	/** Boxed, because each page's context is a spread of this state: the arrays are shared, a bare boolean would be copied and lost. */
-	ocrUnreachable: { seen: boolean };
+	/**
+	 * Whether a transcription came back `retryable`, and how many failed at a refusal (`OcrResult.refused`),
+	 * for `DigestBuild.ocrRetryable`. Boxed, because each page's context is a spread of this state: the
+	 * arrays are shared, a bare boolean or count would be copied and lost.
+	 */
+	ocrRetry: { retryable: boolean; refused: number };
 }
 
 /**
@@ -542,8 +547,25 @@ async function transcribe(state: BuildState, scene: RmPage, framing: OcrFraming)
 	const result = await state.deps.ocrBackend.recognize([scene], undefined, framing);
 	state.ocrStatuses.push(result.status);
 	pushUnique(state.ocrWarnings, result.warnings ?? []);
-	if (result.unreachable) state.ocrUnreachable.seen = true;
+	if (result.retryable) state.ocrRetry.retryable = true;
+	if (result.refused && result.status === "failed") state.ocrRetry.refused++;
 	return result;
+}
+
+/**
+ * Whether a later sync may try this digest's lost transcriptions again with the same settings: when
+ * one failed in a way that passes on its own (`OcrResult.retryable`), and when nothing was read at all
+ * and every failure was a refusal (`OcrResult.refused`).
+ *
+ * A whole PDF refused is almost always fixed outside the plugin -- a model not pulled yet, a credit
+ * balance run out -- and with nothing read, a retry pays for no note twice. One refused note among
+ * notes that were read is not that: a content policy refuses it again, and every hour the whole PDF
+ * would be paid for anew. Nor is a refusal beside a truncation, which the same model repeats.
+ */
+function ocrRetryable({ ocrStatuses, ocrRetry }: BuildState): boolean {
+	if (ocrRetry.retryable) return true;
+	const failed = ocrStatuses.filter((status) => status === "failed").length;
+	return !ocrStatuses.includes("ok") && failed > 0 && failed === ocrRetry.refused;
 }
 
 /** Transcribes one cluster and turns it into a note. Called strictly one cluster at a time -- see `buildNotes`. */
@@ -955,7 +977,7 @@ export async function buildDigest(
 	params: { source: DigestSource; embedPath: string; pages: DigestPageInput[] },
 ): Promise<DigestBuild> {
 	const { source, embedPath, pages } = params;
-	const state: BuildState = { deps, warnings: [], ocrStatuses: [], ocrWarnings: [], ocrUnreachable: { seen: false } };
+	const state: BuildState = { deps, warnings: [], ocrStatuses: [], ocrWarnings: [], ocrRetry: { retryable: false, refused: 0 } };
 
 	// One device for the whole document: a book is annotated on one reMarkable, and resolving this per
 	// page would let a page whose scene declares no screen disagree with its neighbours.
@@ -1005,7 +1027,7 @@ export async function buildDigest(
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
 		ocrWarnings: state.ocrWarnings,
-		ocrUnreachable: state.ocrUnreachable.seen,
+		ocrRetryable: ocrRetryable(state),
 		covered: digestPages.map((page) => page.embedPage),
 	};
 }

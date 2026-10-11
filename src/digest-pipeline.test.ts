@@ -224,15 +224,48 @@ describe("buildDigest without a text layer", () => {
 
 	// What the sync decides a free retry on: nothing answered, so the very same request may later.
 	it("says whether nothing answered at all", async () => {
-		const answering = (unreachable: boolean): OcrBackend => ({
+		const answering = (retryable: boolean): OcrBackend => ({
 			id: "ollama",
 			metered: false,
 			fingerprint: "test-backend",
-			recognize: async () => ({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null, ...(unreachable ? { unreachable: true as const } : {}) }),
+			recognize: async () => ({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null, ...(retryable ? { retryable: true as const } : {}) }),
 		});
 
-		expect((await build([fixturePage()], { ocrBackend: answering(true) })).ocrUnreachable).toBe(true);
-		expect((await build([fixturePage()], { ocrBackend: answering(false) })).ocrUnreachable).toBe(false);
+		expect((await build([fixturePage()], { ocrBackend: answering(true) })).ocrRetryable).toBe(true);
+		expect((await build([fixturePage()], { ocrBackend: answering(false) })).ocrRetryable).toBe(false);
+	});
+
+	/**
+	 * Ollama's "404 model not found" goes away with `ollama pull`, Anthropic's "credit balance too low"
+	 * with a top-up -- both under the same settings. With every note refused and none read, a retry
+	 * pays for nothing twice.
+	 */
+	describe("a refusal", () => {
+		const refused: OcrResult = { status: "failed", pages: null, text: "", confidence: null, refused: true };
+		const cutOff: OcrResult = { status: "failed", pages: null, text: "", confidence: null };
+		const read: OcrResult = { status: "ok", pages: null, text: "read", confidence: null };
+		/** The first note gets `first`, every other one a refusal -- however many clusters the page has. */
+		const refusingAfter = (first: OcrResult): OcrBackend => {
+			let call = 0;
+			return { id: "ollama", metered: false, fingerprint: "test-backend", recognize: async () => (call++ === 0 ? first : refused) };
+		};
+
+		it("is tried again when the server refused every note and read none", async () => {
+			const result = await build([fixturePage()], { ocrBackend: refusingAfter(refused) });
+
+			expect(result.ocr).toBe("failed");
+			expect(result.ocrRetryable).toBe(true);
+		});
+
+		// A content policy refuses that one note again, and every hour the whole PDF would be paid for anew.
+		it("is not tried again when another note was read", async () => {
+			expect((await build([fixturePage()], { ocrBackend: refusingAfter(read) })).ocrRetryable).toBe(false);
+		});
+
+		// The same model cuts the same note off again.
+		it("is not tried again beside a failure that was no refusal", async () => {
+			expect((await build([fixturePage()], { ocrBackend: refusingAfter(cutOff) })).ocrRetryable).toBe(false);
+		});
 	});
 
 	/**

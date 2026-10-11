@@ -48,10 +48,18 @@ export interface OcrResult {
 	 * model architecture" is that kind: an Ollama update makes it go away under the same model. So the
 	 * sync tries a failed margin note again on this alone (`SyncIndexRow.ocrRetry`), where a refusal
 	 * of the request itself -- a 400, a 401, a 404 -- or a truncation waits for different settings.
-	 *
-	 * Named for the first of those causes; it means "worth another try with the same settings".
 	 */
-	unreachable?: true;
+	retryable?: true;
+	/**
+	 * Set when a page failed because the server refused the request itself: it answered with a 4xx
+	 * other than a 429. On its own that waits for different settings, as said above. A digest whose
+	 * every failure was one, and that read nothing at all, is tried again all the same
+	 * (`DigestBuild.ocrRetryable`): Ollama's "404 model not found" goes away with `ollama pull`, and
+	 * Anthropic's "credit balance too low" with a top-up, both under the same settings.
+	 *
+	 * Not set for a model field left empty: nothing was sent, and that one is fixed in the settings.
+	 */
+	refused?: true;
 }
 
 /**
