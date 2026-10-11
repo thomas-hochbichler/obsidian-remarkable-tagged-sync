@@ -1,6 +1,7 @@
 import type { DocumentContent, Entry, LegacyDocumentContent, RawRemarkableApi, RemarkableApi } from "rmapi-js";
 import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, writeAttachment } from "./attachment-writer";
 import { md5Hex } from "./file-md5";
+import { pushUnique } from "./push-unique";
 import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipeline";
 import { type DigestPage, renderDigest } from "./digest-builder";
 import type { ZoteroNoteParts, ZoteroPass } from "./zotero-sync";
@@ -35,6 +36,7 @@ import { isDocumentText } from "./scene-text";
 import { type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint } from "./transcript-store";
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
+import { readsNothing } from "./vision-ocr-backend";
 
 export type SyncRowStatus = "active" | "orphaned";
 
@@ -172,6 +174,24 @@ export interface SyncIndexRow {
 	transcribedPages?: StoredPage[];
 	/** `transcriptFingerprint` when `transcribedPages` was written; a mismatch discards all of them. */
 	transcribedWith?: string;
+	/**
+	 * Set when this note's digest lost transcriptions -- margin notes, or pages added to a PDF -- so a
+	 * later sync reads the document again (`ocrRetryDue`). `with` is the `transcriptFingerprint` it
+	 * failed under -- "unavailable" too, so a PDF synced before the downloaded model was ready is read
+	 * once it is -- `unreachable` whether nothing answered (`OcrResult.unreachable`), `at` the start
+	 * of the sync it failed in (ISO), which a failure that repeats moves forward.
+	 *
+	 * Without it nothing ever did: the device is unchanged, so every gate skips the document, and
+	 * re-transcribe refuses a digest. Not retried unconditionally, because the failures that repeat
+	 * with the same model -- a truncation, a refusal -- would bill a metered backend for every note of
+	 * the PDF on every sync. Cleared by the next write that read everything; kept by one that read
+	 * nothing -- under Off, or a digest build that threw (`buildUnitDigest`).
+	 *
+	 * A retry reads the whole document again, every margin note of it and not only the lost ones:
+	 * there is no store of read notes the way there is for a notebook's pages (`transcribedPages`), so
+	 * nothing tells the ones that were read from the ones that were not.
+	 */
+	ocrRetry?: { with: string; unreachable: boolean; at: string };
 	/**
 	 * This note's own identity, written out as `remarkable-note-id` -- see `NoteFrontmatter.noteId`
 	 * for why it is minted rather than derived. Minted on the first write of the row and carried
@@ -1382,8 +1402,43 @@ function isStaleRender(row: SyncIndexRow): boolean {
 	return row.status === "active" && (row.renderVersion ?? 0) < RENDER_VERSION;
 }
 
-function hasStaleRender(rows: Record<string, SyncIndexRow>, docId: string): boolean {
-	return Object.values(rows).some((row) => row.docId === docId && isStaleRender(row));
+/** `row` carrying `ocrRetry`, or without one when there is nothing to retry. */
+function withOcrRetry(row: SyncIndexRow, ocrRetry: SyncIndexRow["ocrRetry"]): SyncIndexRow {
+	const { ocrRetry: _previous, ...rest } = row;
+	return ocrRetry === undefined ? rest : { ...rest, ocrRetry };
+}
+
+/**
+ * How long a digest whose server did not answer waits before a sync tries it again. Without a wait, a
+ * server that stays off for days had every auto-sync download and render the PDF, ask the dead server
+ * once per margin note, and rewrite the note -- only to fail the same way. A different backend or
+ * model does not wait: that is the user doing something about it.
+ */
+const OCR_RETRY_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Whether this run may try a retry at all: the key `ocrRetry.with` is judged against, or null for a
+ * backend that reads nothing (`readsNothing`). Both differ from the backend a note failed under, so
+ * without the null switching to Off reopened and rewrote every PDF with a pending retry, for a build
+ * that reads nothing -- and spent the retry the real backend still needs.
+ *
+ * Not what a retry is written with: that is always the run's real fingerprint, "unavailable"
+ * included, so the downloaded model differs from it the moment it is ready.
+ */
+function ocrRetryKey(backend: OcrBackend): string | null {
+	return readsNothing(backend) ? null : transcriptFingerprint(backend.fingerprint);
+}
+
+/**
+ * True if this note's digest lost transcriptions that this run has a new chance at: a different
+ * backend or model is set now -- the downloaded model, after a sync that ran before it was ready --
+ * or nothing answered and the hour since has passed (`OCR_RETRY_INTERVAL_MS`). Never under a backend
+ * that reads nothing (`ocrRetryKey`). See `SyncIndexRow.ocrRetry`.
+ */
+function ocrRetryDue(row: SyncIndexRow, retryKey: string | null, now: string): boolean {
+	if (retryKey === null || row.status !== "active" || row.ocrRetry === undefined) return false;
+	if (row.ocrRetry.with !== retryKey) return true;
+	return row.ocrRetry.unreachable && Date.parse(now) - Date.parse(row.ocrRetry.at) >= OCR_RETRY_INTERVAL_MS;
 }
 
 /**
@@ -1500,12 +1555,13 @@ async function needsDocumentOpen(
 	tagRouter: TagRouter,
 	entry: Entry,
 	entryAndInheritedTags: string[],
+	rerenderDue: (row: SyncIndexRow) => boolean,
 ): Promise<boolean> {
 	if (findEntryHash(rows, entry.id) !== entry.hash) return true;
 	return (
 		hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) ||
 		hasRetargetedRow(rows, tagRouter, entry.id) ||
-		hasStaleRender(rows, entry.id) ||
+		Object.values(rows).some((row) => row.docId === entry.id && rerenderDue(row)) ||
 		(await hasMissingActiveNote(noteStore, rows, entry.id))
 	);
 }
@@ -1566,6 +1622,7 @@ async function planUnits(
 	mapped: MappedTags,
 	docPages: DocPageRef[],
 	pageContentHash: (pageId: string) => string,
+	rerenderDue: (row: SyncIndexRow) => boolean,
 ): Promise<DocumentPlan> {
 	const livePageIds = new Set(docPages.map((page) => page.id));
 	const plan: DocumentPlan = { notebook: [], pages: [], orphan: [] };
@@ -1620,16 +1677,17 @@ async function planUnits(
 		const existingRow = rows[pageSyncKey(entry.id, pageTag.pageId, pageTag.name)];
 		// level 3: page unchanged, don't re-render it -- unless it's currently orphaned (revive), a
 		// rename target, its tag was re-targeted to another folder, its note went missing from the
-		// vault (deleted by hand), or it was rendered by an older renderer. The last two have to be
-		// here as well as at the document gate: nothing on the device changes when the renderer or a
-		// mapping does, so a page-tag note whose page never changes again would keep an outdated
-		// render -- or the old folder -- forever.
+		// vault (deleted by hand), it was rendered by an older renderer, or its digest lost
+		// transcriptions this run has a new chance at. The last three have to be here as well as at the
+		// document gate: nothing on the device changes when the renderer, a mapping or the backend
+		// does, so a page-tag note whose page never changes again would keep an outdated render -- or
+		// the old folder, or its unread margin notes -- forever.
 		if (
 			!rename &&
 			existingRow?.status === "active" &&
 			!isRetargeted(existingRow, tagRouter) &&
 			existingRow.pageHash === pageContentHash(pageTag.pageId) &&
-			!isStaleRender(existingRow) &&
+			!rerenderDue(existingRow) &&
 			(await noteStore.read(existingRow.notePath)) !== null
 		) {
 			continue;
@@ -1738,6 +1796,7 @@ async function scanWorkload(
 	entriesById: ReadonlyMap<string, Entry>,
 	report: (progress: SyncProgress) => void,
 	shouldStop: () => boolean,
+	rerenderDue: (row: SyncIndexRow) => boolean,
 ): Promise<Workload> {
 	const { api, tagRouter } = deps;
 	const unreadable = new Map<string, string>();
@@ -1748,7 +1807,7 @@ async function scanWorkload(
 	for (const entry of documents) {
 		if (shouldStop()) return { total: 0, unreadable, stopped: true };
 		const tags = entryAndInheritedTagNames(entry, entriesById);
-		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags)) candidates.push({ entry, tags });
+		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags, rerenderDue)) candidates.push({ entry, tags });
 	}
 
 	let checked = 0;
@@ -1783,8 +1842,15 @@ async function scanWorkload(
 			const pdfBacked = isPdfBacked(content);
 			const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
 			const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
-			const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, (pageId) =>
-				pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash),
+			const plan = await planUnits(
+				deps.noteStore,
+				rows,
+				tagRouter,
+				entry,
+				mapped,
+				docPages,
+				(pageId) => (pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash)),
+				rerenderDue,
 			);
 			return [...plan.notebook, ...plan.pages].reduce((sum, unit) => sum + unit.steps, 0);
 		} catch (error) {
@@ -1821,7 +1887,15 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// even looked at, and notes rendered by an older version would never be corrected. The mappings
 	// fingerprint is here for the same reason from the other side: a settings change moves nothing
 	// on the device.
-	const staleRenders = Object.values(previousIndex.rows).some(isStaleRender);
+	// A digest's lost transcriptions likewise, since a backend or a server coming back moves nothing.
+	const transcriptKey = transcriptFingerprint(ocrBackend.fingerprint);
+	const retryKey = ocrRetryKey(ocrBackend);
+	// One clock reading for the whole run, handed to the pre-scan too: the gate, the scan and the plan
+	// must agree on whether a retry is due, or a sync that crosses the hour would count a unit its own
+	// plan then skips.
+	const startedAt = now();
+	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt);
+	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
 		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
 	}
@@ -1849,7 +1923,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	 * second one there would lose a note.
 	 */
 	const reportZotero = (notices: readonly string[]): void => {
-		for (const notice of notices) if (!zoteroNotices.includes(notice)) zoteroNotices.push(notice);
+		pushUnique(zoteroNotices, notices);
 		skipErrors.push(...notices);
 	};
 	let shrunkNotes = 0;
@@ -1859,7 +1933,6 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// answers it without a round of questions.
 	let reusedPageTranscriptions = 0;
 	let pageTranscriptionsConsidered = 0;
-	const transcriptKey = transcriptFingerprint(ocrBackend.fingerprint);
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -1905,7 +1978,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const documents = entries.filter((entry) => entry.type === "DocumentType" && !isInTrash(entry, entriesById));
 	documentIds = documents.map((entry) => entry.id);
 
-	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop);
+	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop, rerenderDue);
 	// Nothing has been written yet, so there is nothing to checkpoint -- but the caller still has to
 	// hear that this run was stopped rather than finished.
 	if (workload.stopped) return stopHere();
@@ -1924,7 +1997,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// The scan already failed to read this one, and said so. Trying again would report it twice.
 		if (workload.unreadable.has(entry.id)) continue;
-		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags))) continue; // level 2
+		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags, rerenderDue))) continue; // level 2
 
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
@@ -2027,12 +2100,16 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		 * is no digest and the unit still needs the whole-scene pass. It exists so such a unit is not
 		 * transcribed twice: the clusters have already been through the backend, and running `writeUnit`'s
 		 * pass as well would spend a second round of Vision processes on a result that is then discarded.
+		 *
+		 * `ocrRetry` is what the row is written with, decided here and only here: `previous` is the retry
+		 * of the row this unit overwrites.
 		 */
 		const buildUnitDigest = async (
 			pageId: string | null,
 			pages: DigestPageInput[],
 			unit: string,
-		): Promise<{ markdown: string; ocr: OcrStatus | null; covered: number[]; pages: DigestPage[]; failed?: true }> => {
+			previous: SyncIndexRow["ocrRetry"],
+		): Promise<{ markdown: string; ocr: OcrStatus | null; covered: number[]; pages: DigestPage[]; failed?: true; ocrRetry?: SyncIndexRow["ocrRetry"] }> => {
 			try {
 				const build = await buildDigest(
 					// The tick comes from the pipeline's page loop rather than from the backend: it
@@ -2048,12 +2125,37 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					},
 				);
 				skipErrors.push(...build.warnings);
-				return { markdown: build.markdown, ocr: build.ocr, covered: build.covered, pages: build.pages };
+				// The backend's own sentences go where a notebook's go: the diagnostics and the notices. The
+				// diagnostics name the document, since a note's warning cannot; the notices stay one per
+				// cause, so a dead server is one notice for the sync rather than one per PDF. "Digest", not
+				// "margin notes": a page added on the device is read here too, and the sentence itself
+				// already says which of the two it lost.
+				skipErrors.push(...build.ocrWarnings.map((warning) => `Digest of ${unit}: ${warning}`));
+				pushUnique(backendWarnings, build.ocrWarnings);
+				// "unavailable" lost notes as surely as "failed" does. It used to keep the old retry, and so
+				// wrote none where there was none: a PDF synced before the downloaded model was ready, or one
+				// whose notes partly failed before the local engine stopped -- `worstOcrStatus` reports that
+				// as "unavailable" -- was never read again. Written with the real fingerprint, not `retryKey`,
+				// which is null for the model that is not ready: the ready one differs from it. `unreachable`
+				// comes from the backend alone, which sets it for an engine that stopped; Apple Vision on a
+				// machine it cannot run on does not, or every PDF it saw would be rendered again each hour.
+				// With nothing lost, Off keeps the old retry: it says nothing about the notes a real backend
+				// lost, and a note rewritten under it for some other reason -- a renamed tag -- must not lose
+				// them for good.
+				const ocrRetry =
+					build.ocr === "failed" || build.ocr === "unavailable"
+						? { with: transcriptKey, unreachable: build.ocrUnreachable, at: startedAt }
+						: readsNothing(ocrBackend)
+							? previous
+							: undefined;
+				return { markdown: build.markdown, ocr: build.ocr, covered: build.covered, pages: build.pages, ocrRetry };
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to build the digest for ${unit}, the note keeps its highlights`, error);
 				skipErrors.push(`failed to build the digest for ${unit}: ${errorText(error)}`);
 				// `failed` keeps the Zotero half from reading an empty page list as "everything erased".
-				return { markdown: "", ocr: null, covered: [], pages: [], failed: true };
+				// The retry stays: a build that threw read nothing, and the PDF download failing an hour
+				// after the server was off must not drop the margin notes the server still owes.
+				return { markdown: "", ocr: null, covered: [], pages: [], failed: true, ocrRetry: previous };
 			}
 		};
 
@@ -2068,7 +2170,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// exactly when the document does.
 		const pageContentHash = (pageId: string): string => (pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash));
 
-		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash);
+		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash, rerenderDue);
 		for (const row of plan.orphan) orphanRow(rows, row);
 
 		for (const unit of plan.notebook) {
@@ -2123,7 +2225,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `"${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName) : { markdown: "", ocr: null, covered: [], pages: [] };
+			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 			// Only for a notebook: a PDF-backed unit's pages carry no id, and its transcript is the
 			// digest's business (issue #117 is scoped to the notebook transcription path). `considered`
@@ -2183,7 +2285,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const { row, ocr, ocrWarnings, shrink } = written;
 			reportZotero(written.zoteroNotices);
 			consumeRename(rows, rename);
-			rows[row.syncKey] = { ...row, folder };
+			rows[row.syncKey] = withOcrRetry({ ...row, folder }, digest.ocrRetry);
 			notesWritten++;
 			bar.finish();
 			// Per unit, not just per document: a document is one tagged notebook *plus* one unit for every
@@ -2200,7 +2302,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// A page the backend lost while the rest of the unit read fine: the note is written and the
 			// unit counts as ok, so this line is the only trace the loss leaves anywhere.
 			skipErrors.push(...ocrWarnings);
-			for (const warning of ocrWarnings) if (!backendWarnings.includes(warning)) backendWarnings.push(warning);
+			pushUnique(backendWarnings, ocrWarnings);
 			if (shrink !== null) {
 				skipErrors.push(shrink);
 				shrunkNotes++;
@@ -2256,7 +2358,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.step("transcribing");
 
 			const unitName = `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`;
-			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName) : { markdown: "", ocr: null, covered: [], pages: [] };
+			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
 			const { written, emptyBlock } = await writeUnit(
@@ -2298,14 +2400,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const { row, ocr, ocrWarnings, shrink } = written;
 			reportZotero(written.zoteroNotices);
 			consumeRename(rows, rename);
-			rows[row.syncKey] = { ...row, folder };
+			rows[row.syncKey] = withOcrRetry({ ...row, folder }, digest.ocrRetry);
 			notesWritten++;
 			bar.finish();
 			await checkpoint(); // see the notebook-tag branch
 			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]); // see the notebook-tag branch
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
 			skipErrors.push(...ocrWarnings);
-			for (const warning of ocrWarnings) if (!backendWarnings.includes(warning)) backendWarnings.push(warning);
+			pushUnique(backendWarnings, ocrWarnings);
 			if (shrink !== null) {
 				skipErrors.push(shrink);
 				shrunkNotes++;
@@ -2540,7 +2642,7 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 
 	// The store the *sync* will read next (issue #117, ticket 04). Without it the user pays
 	// twice: once for this command, and again on the next sync of every notebook it touched --
-	// which would make "Re-transcribe all notes" dearer than it was before the store existed.
+	// which would make "Re-transcribe all synced notes" dearer than it was before the store existed.
 	// `renderVersion` is deliberately not touched: this rewrites a transcript, not an
 	// attachment, so a row whose render is stale keeps saying so and its typed and anchored
 	// pages are re-read on the next sync (ticket 02's per-page carve-out).

@@ -1,4 +1,4 @@
-import { type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
+import { type OcrFraming, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
 import { layoutText } from "./text-layout";
@@ -23,6 +23,67 @@ export const TRANSCRIPTION_PROMPT =
 	"and tables. Do not invent structure that is not visually present; when unsure, use plain " +
 	"paragraphs. Output only the transcript text -- no commentary, preamble, code fences, or page " +
 	"labels. If the page has no legible text, output nothing.";
+
+/**
+ * The prompt for a margin note: a few handwritten words cut out of a document's margin.
+ *
+ * The page prompt describes the wrong image for it: a "page" to be laid out as Markdown, with
+ * headings, lists and tables. This one says what the image is, and keeps the escape for what a margin
+ * really does hold without words: a line drawn to a paragraph, an arrow, a bracket.
+ *
+ * Measured on 2026-10-10 over the 180 line crops of the reference set, Qwen2.5-VL-7B in Ollama: tight
+ * crop and page prompt (what 1.8.2 sent) 18.0 % median CER, padded crop and page prompt 8.4 %, padded
+ * crop and this prompt 6.7 %. The padding is most of the gain; this prompt is the rest of it.
+ */
+export const NOTE_TRANSCRIPTION_PROMPT =
+	"This image is a short handwritten note from the margin of a document: a few words, sometimes a few " +
+	"lines. Transcribe it exactly as written, as plain text. Output only the note -- no commentary, " +
+	"preamble, quotation marks, code fences or Markdown. If the image holds no words at all, only a " +
+	"line, an arrow or a bracket, output nothing.";
+
+/** The prompt for what is being read; see `OcrFraming`. */
+export function transcriptionPrompt(framing: OcrFraming = "page"): string {
+	return framing === "note" ? NOTE_TRANSCRIPTION_PROMPT : TRANSCRIPTION_PROMPT;
+}
+
+/**
+ * "1 page was" / "3 pages were", so the model backends' warnings read as sentences. A margin note goes
+ * alone, so its count is always 1 and is left out: the warning is one sentence per cause for the whole
+ * sync, and "1 margin note" would say that of a document that lost twelve. Lower case; a sentence that
+ * starts with it goes through {@link upperFirst}.
+ */
+export function pageCount(pages: number, framing: OcrFraming): string {
+	if (framing === "note") return "margin notes were";
+	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
+}
+
+/** The first letter capitalised, for a sentence that starts with {@link pageCount}. */
+export function upperFirst(text: string): string {
+	return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * What gets the scenes a sync left out read again once the settings changed, as the clause that ends
+ * a warning.
+ *
+ * A page: the re-transcribe command. A margin note or a page added to a PDF: not that command -- it
+ * refuses a PDF note with a digest (`reTranscribeNote`'s `pdf-digest`), so naming it sent the user to
+ * a refusal. The sync itself tries a digest's lost scenes again once a different backend or model is
+ * set (`SyncIndexRow.ocrRetry`).
+ */
+export function readAgain(framing: OcrFraming): string {
+	return framing === "page" ? `run "Re-transcribe all synced notes"` : "the next sync reads them again";
+}
+
+/**
+ * The sentence an unreachable server's warning ends with: for a margin note or a page added to a PDF,
+ * that nothing is lost -- a sync tries it again while nothing answers (`OcrResult.unreachable`).
+ * "Later", not "next": that retry waits an hour (`OCR_RETRY_INTERVAL_MS`), so the very next auto-sync
+ * may well pass it by. Empty for a page, which a sync does not revisit on its own.
+ */
+export function triedAgain(framing: OcrFraming): string {
+	return framing === "page" ? "" : " A later sync tries them again.";
+}
 
 /** One part of a page in reading order: ink to transcribe, or typed text to place exactly as it is. */
 export type PagePart = { kind: "ink"; scene: RmPage } | { kind: "typed"; text: string };

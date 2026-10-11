@@ -1,7 +1,7 @@
 import type { OcrBackend } from "./ocr-backend";
 import type { ReTranscribeNoteOutcome } from "./sync-engine";
 import type { OcrBackendEntry } from "./ocr-registry";
-import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { readsNothing } from "./vision-ocr-backend";
 
 /**
  * What the user is asked before every synced note in the vault is rewritten, and whether they are
@@ -34,7 +34,7 @@ import { UnavailableOcrBackend } from "./vision-ocr-backend";
  * reachable through a synced `data.json` on a Mac-plus-Windows vault.
  */
 export function reTranscribeIsUseful(backend: OcrBackend, entry: OcrBackendEntry | null): boolean {
-	if (backend.id === "off" || backend instanceof UnavailableOcrBackend) return false;
+	if (readsNothing(backend)) return false;
 	return !entry?.unavailableLabel?.();
 }
 

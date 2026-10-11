@@ -622,7 +622,7 @@ export function readEmbedPath(content: string): string | null {
  * PDFs: with margin notes off, growing a transcript into such a note would put the handwriting back
  * as a flat blob, which is the leak the setting is there to prevent (see `SyncDeps.marginNotes`).
  * A notebook is the opposite case -- since #115 its note legitimately carries both sections, and
- * refusing there would leave "Re-transcribe all notes" unable to repair the very notes the bug
+ * refusing there would leave "Re-transcribe all synced notes" unable to repair the very notes the bug
  * damaged. So the caller, which knows which of the two it holds, decides (ticket 06).
  */
 export async function updateTranscript(store: NoteStore, path: string, transcript: string, options: { allowDigest?: boolean } = {}): Promise<boolean> {

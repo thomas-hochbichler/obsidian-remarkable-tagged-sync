@@ -3,13 +3,11 @@
 // Everything that decides what a unit's transcript and status become lives here and is testable
 // without a 5.5 GB model; `local-ocr-runtime.ts` is the half that spawns `llama-mtmd-cli`.
 
-import { splitAtTypedText } from "./llm-transcript";
+import { splitAtTypedText, transcriptionPrompt } from "./llm-transcript";
 import type { ModelGeneration } from "./local-model-artefacts";
 import { recordPageDuration } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
-import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
-import { rasterizePage } from "./page-rasterizer";
-import { encodeGrayscalePng } from "./png-encoder";
+import { type OcrBackend, type OcrFraming, ocrImage, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import type { RmPage } from "./rm-parser";
 
 /**
@@ -25,8 +23,8 @@ export type LocalPageOutcome =
 	/** The runtime cannot run here at all: spawn failure, immediate exit, a missing DLL, a deleted binary. */
 	| { kind: "runtime-broken"; message: string };
 
-/** Runs one page image through the model. Never throws -- every failure is one of the outcomes. */
-export type LocalPageRunner = (image: Uint8Array) => Promise<LocalPageOutcome>;
+/** Runs one page image through the model with the given prompt. Never throws -- every failure is one of the outcomes. */
+export type LocalPageRunner = (image: Uint8Array, prompt: string) => Promise<LocalPageOutcome>;
 
 /** What one finished `llama-mtmd-cli` process left behind, as {@link classifyRun} needs to read it. */
 export interface FinishedRun {
@@ -105,6 +103,8 @@ export class LocalOcrBackend implements OcrBackend {
 	 * newer model -- a constant would have gone on claiming the old model's transcripts were current.
 	 */
 	readonly fingerprint: string;
+	/** The generation's own name, as the settings card shows it. */
+	readonly model: string;
 	/** Read for one thing only: whether this model wants a very tall page cut before it sees it. */
 	private readonly generation: ModelGeneration;
 	private readonly runPage: LocalPageRunner;
@@ -120,21 +120,24 @@ export class LocalOcrBackend implements OcrBackend {
 	constructor(options: LocalOcrOptions) {
 		this.generation = options.generation;
 		this.fingerprint = `local:${options.generation.artefacts[0].sha256}`;
+		this.model = options.generation.label;
 		this.runPage = options.runPage;
 		this.settings = options.settings;
 		this.onRuntimeFailure = options.onRuntimeFailure ?? (() => undefined);
 	}
 
-	async recognize(pages: RmPage[], onPage?: () => void): Promise<OcrResult> {
+	async recognize(pages: RmPage[], onPage?: () => void, framing: OcrFraming = "page"): Promise<OcrResult> {
 		if (pages.length === 0) return SKIPPED;
 		// Case 1, remembered: without this it is 39 more pages of fans for 39 identical failures.
-		if (this.runtimeBroken) return { status: "unavailable", pages: null, text: "", confidence: null };
+		// `unreachable` here too: every digest after the first one in the run gets this answer, and
+		// without it their margin notes would wait for a new model rather than for a repaired engine.
+		if (this.runtimeBroken) return { status: "unavailable", pages: null, text: "", confidence: null, unreachable: true };
 
 		// One entry per input page, in input order -- this backend already reads one page at a time, so
 		// the boundary is a fact about the loop rather than something to reconstruct.
 		const pageResults: OcrPageResult[] = [];
 		const warnings: string[] = [];
-		for (const [index, page] of pages.entries()) {
+		for (const page of pages) {
 			// Typed text is not on the image -- the rasterizer draws ink -- and it must not go through the
 			// model either, being exact already. `splitAtTypedText` says where it belongs among the ink,
 			// and hands back the runs of ink to read as scenes of their own; a page with none is one part
@@ -147,26 +150,32 @@ export class LocalOcrBackend implements OcrBackend {
 					read.push(part.text);
 					continue;
 				}
-				const outcome = await this.runPage(encodeGrayscalePng(rasterizePage(part.scene)));
+				const outcome = await this.runPage(ocrImage(part.scene, framing), transcriptionPrompt(framing));
 
 				if (outcome.kind === "runtime-broken") {
 					this.runtimeBroken = true;
 					this.onRuntimeFailure(outcome.message);
 					// Nothing already read is kept, and `pages` stays null rather than reporting the prefix:
 					// the sync skips a document whose device-side hash is unchanged, so half a transcript
-					// written now is half a transcript forever (§8.1).
-					return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`] };
+					// written now is half a transcript forever (§8.1). `unreachable`: a repaired engine keeps
+					// its fingerprint, so a digest's margin notes are tried again on the hour, as for a
+					// server that was off (`SyncIndexRow.ocrRetry`).
+					return { status: "unavailable", pages: null, text: "", confidence: null, warnings: [`the transcription engine stopped: ${outcome.message}`], unreachable: true };
 				}
 				if (outcome.kind === "page-failed") {
 					// Vision keeps the other pages and says nothing; this backend keeps them and says so,
 					// because under §8.1 a silently lost page is a permanently lost one. The warning stays
 					// alongside the per-page status: one feeds "Copy diagnostics", the other feeds the note.
-					warnings.push(`page ${index + 1} could not be transcribed: ${outcome.message}`);
+					// Not numbered: a position here counts the pages this call was handed -- the changed ones,
+					// minus those the store already had -- so "page 2" was the second page sent, not the note's.
+					warnings.push(`${framing === "note" ? "a margin note" : "a page"} could not be transcribed: ${outcome.message}`);
 					pageFailed = true;
 					break;
 				}
 
-				recordPageDuration(this.settings, outcome.durationMs);
+				// Pages only: the window estimates what a page costs, and a margin note is a few words that
+				// take a thirtieth of that -- thirty of them made a long re-transcribe look like minutes.
+				if (framing !== "note") recordPageDuration(this.settings, outcome.durationMs);
 				if (outcome.text.trim() !== "") read.push(outcome.text.trim());
 			}
 

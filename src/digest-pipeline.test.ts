@@ -190,6 +190,51 @@ describe("buildDigest without a text layer", () => {
 		expect(onPage).toHaveBeenCalledTimes(2);
 	});
 
+	/** Sent as a page, a margin note reached a local model as a bare strip under a page prompt, and came back empty. */
+	it("asks the backend for every margin note as a note", async () => {
+		const backend = fakeOcr();
+		const recognize = vi.spyOn(backend, "recognize");
+
+		await build([fixturePage()], { ocrBackend: backend });
+
+		expect(recognize.mock.calls.length).toBeGreaterThan(0);
+		for (const call of recognize.mock.calls) expect(call[2]).toBe("note");
+	});
+
+	/**
+	 * The backends do not throw: a dead server comes back as `failed` with its reason in `warnings`, and
+	 * only the status used to be kept -- so every entry said "could not be transcribed" and nothing said
+	 * why. Once, though: every note of the document hits the same server.
+	 */
+	it("says once why the backend could not read, however many notes it cost", async () => {
+		const warning = "Could not reach the server at http://localhost:11434/v1 — 1 page not transcribed. Is it running?";
+		const backend: OcrBackend = {
+			id: "ollama",
+			metered: false,
+			fingerprint: "test-backend",
+			recognize: async () => ({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null, warnings: [warning] }),
+		};
+
+		const result = await build([fixturePage()], { ocrBackend: backend });
+
+		expect(result.ocrWarnings).toEqual([warning]);
+		expect(result.warnings).not.toContain(warning);
+		expect(result.ocr).toBe("failed");
+	});
+
+	// What the sync decides a free retry on: nothing answered, so the very same request may later.
+	it("says whether nothing answered at all", async () => {
+		const answering = (unreachable: boolean): OcrBackend => ({
+			id: "ollama",
+			metered: false,
+			fingerprint: "test-backend",
+			recognize: async () => ({ status: "failed", pages: [{ status: "failed", text: "" }], text: "", confidence: null, ...(unreachable ? { unreachable: true as const } : {}) }),
+		});
+
+		expect((await build([fixturePage()], { ocrBackend: answering(true) })).ocrUnreachable).toBe(true);
+		expect((await build([fixturePage()], { ocrBackend: answering(false) })).ocrUnreachable).toBe(false);
+	});
+
 	/**
 	 * F18's one gap, closed. With margin notes off a stroke that is not recognised as a mark reaches
 	 * the vault nowhere at all, and the reasons it missed -- drawn too low, struck through, over a
@@ -1149,8 +1194,11 @@ describe("buildDigest on a page added on the device", () => {
 
 		const result = await build([appendedPage()], { ocrBackend: { id: "vision", metered: false, fingerprint: "test-backend", recognize: ocr } });
 
-		// One OCR call for the page, where the margin-note path makes one per cluster.
+		// One OCR call for the page, where the margin-note path makes one per cluster -- and as an added
+		// page: read as the page it is, since the note framing's prompt would ask for a few words, but
+		// told apart from one, so a lost one's warning names the sync and not Re-transcribe.
 		expect(ocr).toHaveBeenCalledTimes(1);
+		expect(ocr.mock.calls[0][2]).toBe("added-page");
 		expect(result.markdown.match(/^> \[!handwritten\]/gm)).toHaveLength(1);
 		expect(result.markdown).toContain("[!handwritten] Handwritten page");
 		expect(result.markdown).toContain("> first line\n> second line");

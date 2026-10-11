@@ -100,6 +100,18 @@ describe("partialOutcomeNotices", () => {
 		expect(notices.every((notice) => notice.timeout === LONG_NOTICE_MS)).toBe(true);
 	});
 
+	// Each is a 15-second notice, background syncs included: past three, one more says where the rest are.
+	it("raises the first three backend warnings and says how many more there are", () => {
+		const notices = partialOutcomeNotices({ ...NOTHING_SKIPPED, backendWarnings: ["a", "b", "c", "d", "e"] });
+
+		expect(notices.map((notice) => notice.message)).toEqual([
+			"a",
+			"b",
+			"c",
+			"…and 2 more from the transcription backend. Press Copy diagnostics in settings to see them all.",
+		]);
+	});
+
 	// A sync whose notes all landed and whose highlights silently stopped reaching Zotero the day a
 	// key expired is exactly what §3.4 is written against. Diagnostics nobody opens is not enough.
 	it("raises what the Zotero half could not do, as the pass worded it", () => {
@@ -171,6 +183,15 @@ describe("modelNotReadyNotice", () => {
 		expect(notice).toContain("2 notes synced with the handwriting render only");
 		expect(notice).toContain("Re-transcribe all synced notes");
 		expect(notice).not.toContain("macOS");
+	});
+
+	// Re-transcribe refuses a PDF's digest: sent there, the reader would wait for margin notes the
+	// command never reads. The sync reads them again itself once the model is ready.
+	it("sends only the notebooks to re-transcribe, and says the PDFs need nothing", () => {
+		const notice = modelNotReadyNotice(2);
+
+		expect(notice).toContain("Re-transcribe all synced notes for the notebooks synced meanwhile");
+		expect(notice).toContain("annotated PDFs are read again by the next sync on their own");
 	});
 
 	// One note is the commonest case of all: the reader picks the model, syncs once to see what

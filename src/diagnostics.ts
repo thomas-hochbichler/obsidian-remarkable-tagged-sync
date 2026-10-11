@@ -1,3 +1,5 @@
+import { describeOcrTally, type OcrTally } from "./ocr-tally";
+
 export interface DiagnosticsInput {
 	pluginVersion: string;
 	obsidianVersion: string;
@@ -6,15 +8,16 @@ export interface DiagnosticsInput {
 	visionAvailability: string;
 	backend: string;
 	/**
-	 * The Vision request revision the OS chose on the last run, or null when Vision has not run here.
+	 * The Vision request revision the OS chose on the last run that transcribed anything, or null when
+	 * that run did not use Vision.
 	 * Deliberately never pinned -- a revision that is accepted and then returns nothing would hand out
 	 * empty transcripts instead of an error -- so which one ran is a fact only the machine knows.
 	 */
 	visionRevision: number | null;
 	/**
-	 * Writing that came back with no words over it at any framing, on the last sync. There is no
-	 * confidence to report -- Vision claims 1.000 over plain misreads -- so this is the one honest
-	 * signal that a note is missing something.
+	 * Writing that came back with no words over it at any framing, on the last run that transcribed
+	 * anything. There is no confidence to report -- Vision claims 1.000 over plain misreads -- so this
+	 * is the one honest signal that a note is missing something.
 	 */
 	unreadableInkRegions: number;
 	/**
@@ -27,6 +30,8 @@ export interface DiagnosticsInput {
 	 * exchange.
 	 */
 	reusedPageTranscriptions: { reused: number; total: number } | null;
+	/** What the last sync or re-transcribe sent to the backend and got back, or null before one has run. */
+	ocrTally: OcrTally | null;
 	mappedTagCount: number;
 	lastSyncAt: string | null;
 	/** Raw text of the last failure, or null. Two error messages end with "see the developer console", which most users have never opened. */
@@ -49,8 +54,11 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
 		`Platform: ${input.platform}`,
 		`Apple Vision: ${input.visionAvailability}`,
 		`OCR backend: ${input.backend}`,
-		`Vision revision: ${input.visionRevision ?? "not run here"}`,
-		`Unreadable ink regions: ${input.unreadableInkRegions}`,
+		...describeOcrTally(input.ocrTally),
+		`Vision revision: ${input.visionRevision ?? "not run in the last transcription"}`,
+		// Labelled, because only Apple Vision counts it: under any other backend it reads 0 whatever
+		// happened, and a 0 under Ollama was once taken for "nothing went unread".
+		`Unreadable ink regions (Apple Vision): ${input.unreadableInkRegions}`,
 		`Reused page transcriptions: ${input.reusedPageTranscriptions === null ? "not measured yet" : `${input.reusedPageTranscriptions.reused} of ${input.reusedPageTranscriptions.total}`}`,
 		`Mapped tags: ${input.mappedTagCount}`,
 		`Last sync: ${input.lastSyncAt ?? "never"}`,

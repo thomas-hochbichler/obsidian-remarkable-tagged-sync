@@ -1,4 +1,6 @@
 import type { OcrBackend as OcrBackendId, OcrStatus } from "./note-builder";
+import { rasterizePage } from "./page-rasterizer";
+import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage } from "./rm-parser";
 
 /**
@@ -39,6 +41,13 @@ export interface OcrResult {
 	 * document whose device-side hash is unchanged, so the missing page is never revisited.
 	 */
 	warnings?: string[];
+	/**
+	 * Set when a page failed because nothing answered at the endpoint: no server, no network, or a
+	 * local engine that stopped. The one failure the very same request can get past later, unchanged
+	 * and at no cost while it lasts -- so the sync tries a failed margin note again on this alone
+	 * (`SyncIndexRow.ocrRetry`), where a refusal or a truncation waits for different settings.
+	 */
+	unreachable?: true;
 }
 
 /**
@@ -53,6 +62,39 @@ export interface OcrResult {
 export function unitStatus(pages: OcrPageResult[]): OcrStatus {
 	if (pages.some((page) => page.status === "ok")) return "ok";
 	return pages.some((page) => page.status === "failed") ? "failed" : "skipped";
+}
+
+/**
+ * What the scenes handed to `recognize` are, which decides how a backend frames them for its reader.
+ *
+ * `page` is a page of writing, sent as it always was. `note` is a margin note: a few words cut out of
+ * an annotated PDF, one cluster of ink. Sent like a page, such a crop arrived at a model as a strip
+ * with the letters touching its edges and a prompt about a "page image", and was read at more than
+ * twice the error rate it is read at framed as a note (see `NOTE_TRANSCRIPTION_PROMPT`).
+ *
+ * `added-page` is a page the user added to an annotated PDF on the tablet. It reads exactly like a
+ * page -- page prompt, no padding -- but it belongs to the digest, so what recovers a lost one is the
+ * sync reading the document again (`SyncIndexRow.ocrRetry`), not "Re-transcribe", which refuses a
+ * digest. Framed as a page, its warnings sent the user to that refusal.
+ *
+ * Each backend decides what the framing means for its reader, from measurement: the model backends
+ * pad the crop and switch prompts, and Apple Vision reads it tight, as it reads a page.
+ */
+export type OcrFraming = "page" | "note" | "added-page";
+
+/**
+ * Quiet space around a margin note sent to a model. Qwen2.5-VL-7B read the reference set's line crops
+ * at 18.0 % median CER tight and 8.4 % with it.
+ *
+ * The model backends' number only. Apple Vision's rescue pass pads its crops by its own
+ * `RESCUE_PADDING_PX`, measured for Vision; the two are equal today and tuning one must not move the
+ * other.
+ */
+export const NOTE_PADDING_PX = 40;
+
+/** A scene as the PNG a backend sends: a page sized to its ink, a note with quiet space around it. */
+export function ocrImage(scene: RmPage, framing: OcrFraming = "page"): Uint8Array {
+	return encodeGrayscalePng(rasterizePage(scene, framing === "note" ? { paddingPx: NOTE_PADDING_PX } : undefined));
 }
 
 /**
@@ -86,11 +128,20 @@ export interface OcrBackend {
 	 */
 	readonly fingerprint: string;
 	/**
+	 * The model this adapter reads with, as the user named it in the settings, for "Copy diagnostics".
+	 * Absent where there is nothing to name: Apple Vision's model belongs to the OS.
+	 *
+	 * Not the fingerprint: that is a store key, and one of them is a hash of the weights.
+	 */
+	readonly model?: string;
+	/**
 	 * `onPage` is called once per page whose transcription is finished, in *completion* order rather
 	 * than input order: a backend that runs pages concurrently reports them as they land. Driving the
 	 * progress bar is all it is for, so it carries no page identity -- and a backend that cannot say
 	 * when a single page is done simply never calls it, leaving the caller to count the whole unit at
 	 * its end.
+	 *
+	 * `framing` says what the scenes are; see {@link OcrFraming}. Omitted, they are pages.
 	 */
-	recognize(pages: RmPage[], onPage?: () => void): Promise<OcrResult>;
+	recognize(pages: RmPage[], onPage?: () => void, framing?: OcrFraming): Promise<OcrResult>;
 }

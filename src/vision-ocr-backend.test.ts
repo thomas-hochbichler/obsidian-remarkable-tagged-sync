@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 // Its own module now -- `device-api` overlaps SFTP round trips with it, and an OCR backend was a
 // strange address for that. The test stays here so the shrink-only allowlist, which is keyed by
 // file and test name, does not have to grow a line to lose one.
@@ -11,6 +11,9 @@ import {
 	VisionOcrBackend,
 	visionRunStats,
 } from "./vision-ocr-backend";
+import type { OcrBackend } from "./ocr-backend";
+import { rasterizePage } from "./page-rasterizer";
+import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage } from "./rm-parser";
 
 function page(): RmPage {
@@ -225,6 +228,12 @@ describe("the numbers this backend ships with", () => {
 });
 
 describe("VisionOcrBackend", () => {
+	// The adapter never resets these -- the plugin does, as each run first sends (see `countedOcr`).
+	beforeEach(() => {
+		visionRunStats.revision = null;
+		visionRunStats.unreadableInkRegions = 0;
+	});
+
 	it("skips an empty page list without probing or spawning", async () => {
 		const probe = vi.fn(available);
 		const runBatch = vi.fn();
@@ -406,6 +415,16 @@ describe("VisionOcrBackend", () => {
 		await backend.recognize([twoLinePage()]);
 
 		expect(visionRunStats.unreadableInkRegions).toBe(1);
+	});
+
+	/** Measured: Vision reads a crop best tight, and its rescue pass pads what that missed. */
+	it("reads a margin note tight first, as it reads a page", async () => {
+		const runBatch = vi.fn(async (images: Uint8Array[]) => images.map(() => readAll("Nachfragen")));
+		const backend = new VisionOcrBackend({ runBatch, probe: available });
+
+		await (backend as OcrBackend).recognize([page()], undefined, "note");
+
+		expect(runBatch.mock.calls[0][0][0]).toEqual(encodeGrayscalePng(rasterizePage(page())));
 	});
 
 	it("reports failed and never throws when the runner throws (Vision cannot run)", async () => {

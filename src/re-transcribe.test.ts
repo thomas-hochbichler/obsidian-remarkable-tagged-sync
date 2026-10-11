@@ -128,7 +128,7 @@ registerOcrBackend({
 	metered: false,
 	requiresLicence: false,
 	needsBackgroundConsent: false,
-	create: () => ({ id: "test-free", metered: false, transcribe: async () => "" }) as never,
+	create: () => ({ id: "test-free", metered: false, fingerprint: "test", recognize: async () => ({ status: "skipped", pages: [], text: "", confidence: null }) }) as never,
 });
 // One that is registered but not configured enough to run: `create` returns null, which is what
 // makes `resolveOcrBackend` fall back -- and say so, unless it was asked silently.
@@ -147,7 +147,7 @@ registerOcrBackend({
 	metered: true,
 	requiresLicence: true,
 	needsBackgroundConsent: false,
-	create: () => ({ id: "test-licenced", metered: true, transcribe: async () => "" }) as never,
+	create: () => ({ id: "test-licenced", metered: true, fingerprint: "test", recognize: async () => ({ status: "skipped", pages: [], text: "", confidence: null }) }) as never,
 });
 // One that spends money per page, and says how long it takes.
 registerOcrBackend({
@@ -156,7 +156,7 @@ registerOcrBackend({
 	metered: true,
 	requiresLicence: false,
 	needsBackgroundConsent: true,
-	create: () => ({ id: "test-paid", metered: true, transcribe: async () => "" }) as never,
+	create: () => ({ id: "test-paid", metered: true, fingerprint: "test", recognize: async () => ({ status: "skipped", pages: [], text: "", confidence: null }) }) as never,
 	reTranscribeCaveat: (_settings, unitCount) => ` and takes about ${unitCount} minutes`,
 });
 

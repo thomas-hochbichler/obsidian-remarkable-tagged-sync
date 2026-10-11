@@ -9,6 +9,8 @@ import { writeLock } from "./local-model-runtime";
 import type { LocalModelPaths } from "./local-model-store";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
 import { ENOUGH_PAGES_TO_MEASURE, readLocalModelSettings } from "./local-model-settings";
+import { NOTE_TRANSCRIPTION_PROMPT, TRANSCRIPTION_PROMPT } from "./llm-transcript";
+import { ocrImage } from "./ocr-backend";
 import type { RmPage } from "./rm-parser";
 
 /** A page with one stroke, which is all the rasterizer needs to produce an image. */
@@ -47,6 +49,29 @@ function backendOver(outcomes: LocalPageOutcome[], blob: Record<string, unknown>
 }
 
 describe("LocalOcrBackend", () => {
+	it("reads a margin note as a note: with quiet space around the ink, and the note prompt", async () => {
+		const { backend, runPage } = backendOver([textOutcome("Nachfragen")]);
+		await backend.recognize([page()], undefined, "note");
+		expect(runPage).toHaveBeenCalledWith(ocrImage(page(), "note"), NOTE_TRANSCRIPTION_PROMPT);
+	});
+
+	/** A note goes alone, so the page index is always 1 -- which named the wrong page of the PDF. */
+	it("says a margin note, not page 1, when a note fails", async () => {
+		const { backend } = backendOver([{ kind: "page-failed", message: "exit 1" }]);
+		const result = await backend.recognize([page()], undefined, "note");
+		expect(result.warnings).toEqual(["a margin note could not be transcribed: exit 1"]);
+	});
+
+	it("reads a page with the page prompt, as before", async () => {
+		const { backend, runPage } = backendOver([textOutcome("text")]);
+		await backend.recognize([page()]);
+		expect(runPage).toHaveBeenCalledWith(ocrImage(page()), TRANSCRIPTION_PROMPT);
+	});
+
+	it("names the model generation it runs for the diagnostics", () => {
+		expect(backendOver([]).backend.model).toBe(MODEL_GENERATIONS[0].label);
+	});
+
 	it("skips an empty page set without spawning anything", async () => {
 		const { backend, runPage } = backendOver([]);
 
@@ -108,6 +133,16 @@ describe("failure mapping (§8.2)", () => {
 		expect(runPage).toHaveBeenCalledTimes(1);
 	});
 
+	// A repaired engine keeps its fingerprint, so this is what lets a sync read a digest's lost margin
+	// notes again on the hour -- the remembered answer included, or every PDF after the first in the
+	// run would wait for a different model instead.
+	it("says nothing answered when the runtime is broken, and when it is remembered", async () => {
+		const { backend } = backendOver([{ kind: "runtime-broken", message: "spawn ENOENT" }]);
+
+		expect((await backend.recognize([page()])).unreachable).toBe(true);
+		expect((await backend.recognize([page()])).unreachable).toBe(true);
+	});
+
 	// A broken runtime must never write a partial transcript: the sync skips an unchanged document
 	// forever after, so half a note is permanent.
 	it("keeps no text from a unit whose runtime died midway", async () => {
@@ -129,8 +164,17 @@ describe("failure mapping (§8.2)", () => {
 		const result = await backend.recognize([page(), page()]);
 		expect(result.status).toBe("ok");
 		expect(result.text).toBe("kept");
-		expect(result.warnings).toEqual([expect.stringContaining("page 2")]);
+		expect(result.warnings).toEqual(["a page could not be transcribed: exit 1"]);
 		expect(result.warnings?.[0]).toContain("exit 1");
+	});
+
+	// The pages handed over are the changed ones the store did not have, so a position among them
+	// is no page of the note: "page 2" of 40 changed pages 17 and 30 named page 2.
+	it("does not number the page it lost", async () => {
+		const { backend } = backendOver([textOutcome("kept"), { kind: "page-failed", message: "exit 1" }]);
+
+		const result = await backend.recognize([page(), page()]);
+		expect(result.warnings?.[0]).not.toMatch(/page \d/);
 	});
 
 	// The progress tick. This is the slowest backend, so it is the one whose bar would otherwise sit
@@ -220,6 +264,16 @@ describe("timing", () => {
 		expect(readLocalModelSettings(blob).recentPageMs).toEqual([16_000]);
 	});
 
+	// The window estimates what a page costs; a margin note takes a fraction of that, and thirty of
+	// them made a long re-transcribe look like a few minutes.
+	it("leaves margin notes out of the page timings", async () => {
+		const blob: Record<string, unknown> = {};
+		const { backend } = backendOver([textOutcome("note", 2_000)], blob);
+
+		await backend.recognize([page()], undefined, "note");
+		expect(readLocalModelSettings(blob).recentPageMs ?? []).toEqual([]);
+	});
+
 	it("keeps the window bounded across many pages", async () => {
 		const blob: Record<string, unknown> = {};
 		const outcomes = Array.from({ length: ENOUGH_PAGES_TO_MEASURE + 4 }, () => textOutcome("x"));
@@ -284,7 +338,7 @@ describe("pageArgs", () => {
 	const withoutContext = { ...MODEL_GENERATIONS[0], contextTokens: null };
 
 	it("pins the context when the generation names one", () => {
-		const args = pageArgs(paths, "/tmp/page.png", withContext);
+		const args = pageArgs(paths, "/tmp/page.png", withContext, TRANSCRIPTION_PROMPT);
 
 		expect(args.slice(-2)).toEqual(["-c", "8192"]);
 		expect(args).toContain("/m/mmproj.gguf");
@@ -292,11 +346,11 @@ describe("pageArgs", () => {
 
 	// Every install before 2026-09-09 ran without one, and its published figure was measured that way.
 	it("passes no context at all when the generation names none", () => {
-		expect(pageArgs(paths, "/tmp/page.png", withoutContext)).not.toContain("-c");
+		expect(pageArgs(paths, "/tmp/page.png", withoutContext, TRANSCRIPTION_PROMPT)).not.toContain("-c");
 	});
 
 	it("sends one image per process, at temperature zero and a fixed seed", () => {
-		const args = pageArgs(paths, "/tmp/page.png", withContext);
+		const args = pageArgs(paths, "/tmp/page.png", withContext, TRANSCRIPTION_PROMPT);
 
 		expect(args.filter((a) => a === "--image")).toHaveLength(1);
 		expect(args[args.indexOf("--temp") + 1]).toBe("0");

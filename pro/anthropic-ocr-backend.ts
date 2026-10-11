@@ -1,18 +1,20 @@
-import { type OcrBackend, type OcrResult } from "../src/ocr-backend";
+import { type OcrBackend, type OcrFraming, ocrImage, type OcrResult } from "../src/ocr-backend";
 import {
 	fetchWithRetry,
 	isUnreachable,
 	type LlmPageOutcome,
 	OCR_REQUEST_TIMEOUT_MS,
 	OcrTimeoutError,
+	pageCount,
+	readAgain,
 	refusalDetail,
 	sanitizeTranscript,
 	type Sleep,
-	TRANSCRIPTION_PROMPT,
 	transcribePages,
+	transcriptionPrompt,
+	triedAgain,
+	upperFirst,
 } from "./llm-transcript";
-import { rasterizePage } from "../src/page-rasterizer";
-import { encodeGrayscalePng } from "../src/png-encoder";
 import type { RmPage } from "../src/rm-parser";
 
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -76,7 +78,8 @@ export class AnthropicOcrBackend implements OcrBackend {
 	/** Provider and model. Not the API key: it identifies the user, not the reading (see `OcrBackend`). */
 	readonly fingerprint: string;
 	private readonly apiKey: string;
-	private readonly model: string;
+	/** The model the requests name, exactly as the user entered it. */
+	readonly model: string;
 	private readonly fetchFn: typeof fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at the endpoint -- see `recognize`. */
@@ -96,7 +99,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 		this.sleepFn = options.sleepFn;
 	}
 
-	async recognize(pages: RmPage[], onPage?: () => void): Promise<OcrResult> {
+	async recognize(pages: RmPage[], onPage?: () => void, framing: OcrFraming = "page"): Promise<OcrResult> {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
 		this.refusal = null;
@@ -111,41 +114,42 @@ export class AnthropicOcrBackend implements OcrBackend {
 				pages,
 				async () => ({ kind: "failed" }),
 				(failedPages) =>
-					`No model is set for this OCR backend — open the plugin settings and enter one. ${failedPages} ${failedPages === 1 ? "page was" : "pages were"} not transcribed.`,
+					`No model is set for this OCR backend — open the plugin settings and enter one. ${upperFirst(pageCount(failedPages, framing))} not transcribed.`,
 				onPage,
 			);
 		}
 
-		return transcribePages(
+		const result = await transcribePages(
 			pages,
-			(page) => this.transcribePage(page),
+			(page) => this.transcribePage(page, framing),
 			// This backend reported nothing at all until #116 -- not truncation, not a dead host, not a bad
 			// key. A unit where every page failed still raised the generic notice; a unit where only some
 			// did was completely silent, because `unitStatus` calls a unit `ok` as soon as one page reads.
 			// The chain and its order are the OpenAI-compatible adapter's, deliberately: the two must not
 			// drift, and the systemic causes displace the per-page one.
 			(failedPages) => {
-				if (this.unreachable) return `Could not reach Anthropic — ${pageCount(failedPages)} not transcribed. Is this machine online?`;
-				if (this.refusal) return `Anthropic answered ${this.refusal} — ${pageCount(failedPages)} not transcribed.`;
-				if (this.timedOut > 0) return timeoutWarning(this.timedOut);
-				if (this.truncated > 0) return truncationWarning(this.truncated);
+				if (this.unreachable) return `Could not reach Anthropic — ${pageCount(failedPages, framing)} not transcribed. Is this machine online?${triedAgain(framing)}`;
+				if (this.refusal) return `Anthropic answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.`;
+				if (this.timedOut > 0) return timeoutWarning(this.timedOut, framing);
+				if (this.truncated > 0) return truncationWarning(this.truncated, framing);
 				return null;
 			},
 			onPage,
 		);
+		return this.unreachable ? { ...result, unreachable: true } : result;
 	}
 
 	/** One page, one request. Every outcome that isn't usable text is `failed` for that page alone. */
-	private async transcribePage(page: RmPage): Promise<LlmPageOutcome> {
+	private async transcribePage(page: RmPage, framing: OcrFraming): Promise<LlmPageOutcome> {
 		try {
 			const content = [
-				{ type: "text", text: TRANSCRIPTION_PROMPT },
+				{ type: "text", text: transcriptionPrompt(framing) },
 				{
 					type: "image",
 					source: {
 						type: "base64",
 						media_type: "image/png",
-						data: Buffer.from(encodeGrayscalePng(rasterizePage(page))).toString("base64"),
+						data: Buffer.from(ocrImage(page, framing)).toString("base64"),
 					},
 				},
 			];
@@ -201,30 +205,23 @@ export class AnthropicOcrBackend implements OcrBackend {
 	}
 }
 
-
-/**
- * "1 page was" / "3 pages were", so the warnings above read as sentences.
- *
- * Identical to `src/openai-compat-ocr-backend.ts`'s, and the only thing in this pair that is.
- * Deliberately left duplicated: a shared module for one line would be an abstraction for
- * single-use code (CLAUDE.md §2), and the sentences it serves are not shared anyway.
- */
-function pageCount(pages: number): string {
-	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
-}
-
 /**
  * The sentence a page that went unanswered puts in the report -- the adapter's, wearing this
  * endpoint's name.
  *
  * `src/openai-compat-ocr-backend.ts` has one of the same name that is deliberately different: it
  * names the server's own URL and adds tall-page advice, a shape a user running their own server can
- * act on. Nothing to share here beyond `pageCount`.
+ * act on.
+ *
+ * A margin note or a page added to a PDF is told to change model rather than to wait: a timeout is no
+ * unreachable host, so the sync tries the digest again only once different settings are in place
+ * (`SyncIndexRow.ocrRetry`).
  */
-function timeoutWarning(pages: number): string {
+function timeoutWarning(pages: number, framing: OcrFraming): string {
 	return (
-		`${pageCount(pages)} left out because Anthropic did not answer in ${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ` +
-		`A later sync will not pick them up on their own: run "Re-transcribe all notes" once it answers again.`
+		`${upperFirst(pageCount(pages, framing))} left out because Anthropic did not answer in ${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ` +
+		`A later sync will not pick them up on their own: ` +
+		(framing === "page" ? `once it answers again, ${readAgain(framing)}.` : `try a different model, then ${readAgain(framing)}.`)
 	);
 }
 
@@ -234,10 +231,10 @@ function timeoutWarning(pages: number): string {
  * not heal itself -- with the one difference this backend owns: on the current Claude generation
  * thinking cannot be switched off, so the lever is a different model rather than a different setting.
  */
-function truncationWarning(pages: number): string {
+function truncationWarning(pages: number, framing: OcrFraming): string {
 	return (
-		`${pageCount(pages)} left out because the model's answer ran past what it may return — ` +
+		`${upperFirst(pageCount(pages, framing))} left out because the model's answer ran past what it may return — ` +
 		`Claude models reason before answering, and those tokens count against the same limit. ` +
-		`A later sync will not pick them up on its own: switch to a model that doesn't reason, then run "Re-transcribe all notes".`
+		`A later sync will not pick them up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
 	);
 }

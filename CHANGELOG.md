@@ -12,6 +12,50 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Handwritten margin notes on PDFs are read properly with Ollama, LM Studio, the downloaded model
+  and the cloud models.** Each margin note went to the model as a narrow strip, with the letters
+  touching the edges, and with instructions written for a whole page. Notes came back misread, or
+  as *"Handwriting that could not be transcribed"*. A note now goes with some white space around
+  it, and with instructions that say it is a short note. On our handwriting test set, Qwen2.5-VL-7B
+  in Ollama now gets 6.7 % of the characters wrong instead of 18.0 %. Apple Vision reads notes as
+  before, because it already did this and the change measured worse for it. A note that is already
+  in your vault is read again when the PDF changes on the tablet. To read every note again now,
+  turn *Handwritten notes* off and on in the settings. That rewrites every note, and every margin
+  note goes through your transcription backend again.
+
+- **When the transcription backend fails on a margin note, the plugin says why.** If the backend
+  refused or could not be reached, each entry only said *"could not be transcribed"*, and the reason
+  went nowhere. The end-of-sync report and "Copy diagnostics" now carry the backend's own message,
+  once per cause, for example *"The server at http://localhost:11434/v1 answered 500: … unknown
+  model architecture: 'mllama'"*. A sync shows at most three of these messages; "Copy diagnostics"
+  has all of them, each with the document it came from.
+
+- **Margin notes that could not be read are read again by a later sync.** Before, a PDF whose margin
+  notes failed counted as done, and nothing read them again until the PDF changed on the tablet. The
+  message even told you to run *Re-transcribe all notes*, which leaves margin notes on a PDF alone.
+  Now a sync tries again once you have chosen a different backend or model, or, if the server could
+  not be reached or the downloaded model stopped, an hour later at the earliest. This includes PDFs
+  synced while the downloaded model was not ready yet: the first sync after its download reads them.
+  A note that failed for another reason, for example because the model's answer was cut off, is not
+  sent again with the same model, so a paid backend does not charge you for it on every sync. A
+  retry reads all margin notes of that PDF again, not only the ones that failed. On a paid backend
+  it costs as much as the first reading did, but only once per outage or change of model, not on
+  every sync. Messages about pages name the command as it is really called, *Re-transcribe all
+  synced notes*. With the downloaded model, a failed page is no longer given a wrong page number.
+
+- **"Copy diagnostics" counts Apple Vision's unreadable ink regions for the last sync only.** The
+  count added up over the whole Obsidian session, so after a few syncs it was too high. The Vision
+  revision now belongs to the same run as the other figures under *Last transcription*.
+
+### Changed
+
+- **"Copy diagnostics" says what the last transcription did.** It now names the backend and the
+  model that actually ran, and counts how many pages and margin notes came back read, empty or
+  failed, plus the backend's warnings. It also marks the line *Unreadable ink regions* as counted
+  by Apple Vision only.
+
 ## [1.8.2] - 2026-09-27
 
 ### Fixed

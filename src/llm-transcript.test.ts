@@ -2,8 +2,23 @@
 // `npm test` does not run. The free build's local model backend now depends on all three, so they
 // need coverage in the suite that actually gates this repo.
 
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { isUnreachable, LLM_MAX_PARALLELISM, refusalDetail, sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT, transcribePages, splitTallInk } from "./llm-transcript";
+import {
+	isUnreachable,
+	LLM_MAX_PARALLELISM,
+	NOTE_TRANSCRIPTION_PROMPT,
+	pageCount,
+	readAgain,
+	refusalDetail,
+	sanitizeTranscript,
+	splitAtTypedText,
+	TRANSCRIPTION_PROMPT,
+	transcribePages,
+	splitTallInk,
+	upperFirst,
+} from "./llm-transcript";
+import { NOTE_PADDING_PX } from "./ocr-backend";
 import type { RmPage, RmStroke } from "./rm-parser";
 import { inkBounds } from "./page-rasterizer";
 import { layoutText } from "./text-layout";
@@ -63,6 +78,38 @@ describe("TRANSCRIPTION_PROMPT", () => {
 	// that drifts would silently regress whichever build owns it.
 	it("is one string, not a template", () => {
 		expect(TRANSCRIPTION_PROMPT).not.toContain("${");
+	});
+});
+
+describe("what a margin note is sent with", () => {
+	/**
+	 * The CHANGELOG quotes a measurement of exactly this pair: 6.7 % median CER over the reference set's
+	 * 180 line crops, against 18.0 % for what was sent before. No nightly reads a note, so nothing else
+	 * notices when either moves and the figure goes on being quoted for something no longer shipped.
+	 */
+	it("is the prompt and padding the published figure was measured with", () => {
+		const sha = createHash("sha256").update(`${NOTE_TRANSCRIPTION_PROMPT}\npadding ${NOTE_PADDING_PX}px`).digest("hex").slice(0, 16);
+
+		expect(sha, "the note prompt or padding changed: measure the reference line crops again, then update the CHANGELOG figure and this hash").toBe("51872b7293c1a5ca");
+	});
+});
+
+describe("the words a model backend's warning is made of", () => {
+	it("counts pages, and leaves a margin note's count out", () => {
+		expect(pageCount(1, "page")).toBe("1 page was");
+		expect(pageCount(3, "page")).toBe("3 pages were");
+		expect(pageCount(1, "note")).toBe("margin notes were");
+		expect(upperFirst(pageCount(1, "note"))).toBe("Margin notes were");
+	});
+
+	// Re-transcribe refuses a PDF note with a digest, so naming it for a margin note sent the user to a
+	// refusal -- and for a page added to the PDF, which the digest reads too.
+	it("names the re-transcribe command for a page and never for a margin note or an added page", () => {
+		expect(readAgain("page")).toBe('run "Re-transcribe all synced notes"');
+		expect(readAgain("note")).not.toContain("Re-transcribe");
+		expect(readAgain("note")).toBe("the next sync reads them again");
+		expect(readAgain("added-page")).toBe("the next sync reads them again");
+		expect(pageCount(1, "added-page")).toBe("1 page was");
 	});
 });
 
