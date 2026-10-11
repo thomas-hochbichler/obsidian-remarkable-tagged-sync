@@ -60,6 +60,21 @@ describe("tallyOcr", () => {
 		expect(tally().model).toBeNull();
 	});
 
+	/** A backend may answer for the whole call without a per-page list; its status then speaks for every image. */
+	it("counts an answer without a page list by its status, every image of it", async () => {
+		const { counted, tally } = tallied(
+			backendAnswering(
+				{ status: "ok", pages: null, text: "a\n\nb", confidence: null },
+				{ status: "skipped", pages: null, text: "", confidence: null },
+			),
+		);
+		await counted.recognize([SCENE, SCENE]);
+		await counted.recognize([SCENE], undefined, "note");
+
+		expect(tally().pages).toEqual({ read: 2, empty: 0, failed: 0, unavailable: 0 });
+		expect(tally().notes).toEqual({ read: 0, empty: 1, failed: 0, unavailable: 0 });
+	});
+
 	/** The unavailable notice and the re-transcribe gate ask `instanceof`; a plain wrapper would answer them wrong. */
 	it("hands back a stand-in that answers instanceof and every field as the adapter does", () => {
 		const { counted } = tallied(new UnavailableOcrBackend("vision", true));
