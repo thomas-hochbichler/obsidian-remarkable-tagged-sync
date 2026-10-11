@@ -16,7 +16,7 @@ import type { EpubBook } from "./epub-text";
 import { findInkMarks, findMarkerMarks, type InkMark, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
 import type { OcrStatus } from "./note-builder";
-import type { OcrBackend } from "./ocr-backend";
+import type { OcrBackend, OcrFraming, OcrResult } from "./ocr-backend";
 import {
 	annotatedPageFit,
 	isHighlighterOrShader,
@@ -31,6 +31,7 @@ import {
 } from "./pdf-renderer";
 import { sceneHeadings, sceneTextPage } from "./scene-text";
 import { bodyLineSpacing, loadPdfText, paragraphBounds, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
+import { pushUnique } from "./push-unique";
 import { correctQuote } from "./quote-correction";
 import type { RmHighlight, RmPage, RmRect, RmStroke } from "./rm-parser";
 
@@ -82,6 +83,19 @@ export interface DigestBuild {
 	 * that Vision could not run.
 	 */
 	ocr: OcrStatus;
+	/**
+	 * What the transcription backend said went wrong, each sentence once. Apart from `warnings` because
+	 * it travels where a notebook's backend warnings travel: into the end-of-sync notices as well as
+	 * the diagnostics, since a dead server or a refusing model is something the user can fix now.
+	 */
+	ocrWarnings: string[];
+	/**
+	 * Whether some transcription failed in a way the same settings may get past later -- nothing
+	 * answered at the backend's endpoint, or the server failed; see `OcrResult.retryable` -- or the
+	 * server refused every one and nothing was read (the function `ocrRetryable`). What lets the sync try a
+	 * failed digest again without new settings.
+	 */
+	ocrRetryable: boolean;
 	/**
 	 * The same entries the markdown was rendered from, with their places on the source document.
 	 *
@@ -205,6 +219,13 @@ interface BuildState {
 	warnings: string[];
 	/** One entry per transcribed cluster, collapsed into `DigestBuild.ocr` at the end. */
 	ocrStatuses: OcrStatus[];
+	ocrWarnings: string[];
+	/**
+	 * Whether a transcription came back `retryable`, and how many failed at a refusal (`OcrResult.refused`),
+	 * for `DigestBuild.ocrRetryable`. Boxed, because each page's context is a spread of this state: the
+	 * arrays are shared, a bare boolean or count would be copied and lost.
+	 */
+	ocrRetry: { retryable: boolean; refused: number };
 }
 
 /**
@@ -514,17 +535,48 @@ function sourceRect(rect: PdfRect, { geometry }: PageContext): PdfRect | null {
 	return geometry.pageText === null ? null : rect;
 }
 
+/**
+ * One transcription, with what the backend said about it kept.
+ *
+ * The backends do not throw: a server that is down or a model that refuses comes back as a `failed`
+ * result carrying its reason in `warnings`. Only the status used to be kept here, so the entry read
+ * "could not be transcribed" and nothing anywhere said why. The reason is now kept -- once per cause,
+ * since every note of a document hits the same dead server.
+ */
+async function transcribe(state: BuildState, scene: RmPage, framing: OcrFraming): Promise<OcrResult> {
+	const result = await state.deps.ocrBackend.recognize([scene], undefined, framing);
+	state.ocrStatuses.push(result.status);
+	pushUnique(state.ocrWarnings, result.warnings ?? []);
+	if (result.retryable) state.ocrRetry.retryable = true;
+	if (result.refused && result.status === "failed") state.ocrRetry.refused++;
+	return result;
+}
+
+/**
+ * Whether a later sync may try this digest's lost transcriptions again with the same settings: when
+ * one failed in a way that passes on its own (`OcrResult.retryable`), and when nothing was read at all
+ * and every failure was a refusal (`OcrResult.refused`).
+ *
+ * A whole PDF refused is almost always fixed outside the plugin -- a model not pulled yet, a credit
+ * balance run out -- and with nothing read, a retry pays for no note twice. One refused note among
+ * notes that were read is not that: a content policy refuses it again, and every hour the whole PDF
+ * would be paid for anew. Nor is a refusal beside a truncation, which the same model repeats.
+ */
+function ocrRetryable({ ocrStatuses, ocrRetry }: BuildState): boolean {
+	if (ocrRetry.retryable) return true;
+	const failed = ocrStatuses.filter((status) => status === "failed").length;
+	return !ocrStatuses.includes("ok") && failed > 0 && failed === ocrRetry.refused;
+}
+
 /** Transcribes one cluster and turns it into a note. Called strictly one cluster at a time -- see `buildNotes`. */
 async function buildNote(context: PageContext, cluster: StrokeCluster): Promise<PlacedNote> {
-	const { deps, page, geometry, warnings } = context;
+	const { page, geometry, warnings } = context;
 	const id = digestId("nt", page.pageId, cluster.anchorStrokeId);
 	const scene = clusterScene(cluster.strokes, page.scene?.formatVersion ?? 0);
 
 	let text = "";
 	try {
-		const result = await deps.ocrBackend.recognize([scene]);
-		text = oneLine(result.text);
-		context.ocrStatuses.push(result.status);
+		text = oneLine((await transcribe(context, scene, "note")).text);
 	} catch (error) {
 		context.ocrStatuses.push("failed");
 		warnings.push(`Page ${page.embedPage}: a margin note could not be transcribed (${describeError(error)}). Its entry says so and still shows the handwriting on request.`);
@@ -671,11 +723,10 @@ function sectionFields(heading: SectionHeading | null, geometry: PageGeometry): 
 async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink: RmStroke[]): Promise<DigestNote & { section: string | null }> {
 	let text = "";
 	try {
-		const result = await state.deps.ocrBackend.recognize([clusterScene(ink, page.scene?.formatVersion ?? 0)]);
+		const result = await transcribe(state, clusterScene(ink, page.scene?.formatVersion ?? 0), "added-page");
 		// Newlines survive here where a margin note collapses them: the page's line structure is most of
 		// what a page of notes says, and `renderNote` gives every line its own callout prefix.
 		text = result.text.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trim()).filter((line) => line !== "").join("\n");
-		state.ocrStatuses.push(result.status);
 	} catch (error) {
 		state.ocrStatuses.push("failed");
 		state.warnings.push(`Page ${page.embedPage}: this page was added on the device and could not be transcribed (${describeError(error)}).`);
@@ -926,7 +977,7 @@ export async function buildDigest(
 	params: { source: DigestSource; embedPath: string; pages: DigestPageInput[] },
 ): Promise<DigestBuild> {
 	const { source, embedPath, pages } = params;
-	const state: BuildState = { deps, warnings: [], ocrStatuses: [] };
+	const state: BuildState = { deps, warnings: [], ocrStatuses: [], ocrWarnings: [], ocrRetry: { retryable: false, refused: 0 } };
 
 	// One device for the whole document: a book is annotated on one reMarkable, and resolving this per
 	// page would let a page whose scene declares no screen disagree with its neighbours.
@@ -975,6 +1026,8 @@ export async function buildDigest(
 		pages: digestPages,
 		warnings: state.warnings,
 		ocr: worstOcrStatus(state.ocrStatuses),
+		ocrWarnings: state.ocrWarnings,
+		ocrRetryable: ocrRetryable(state),
 		covered: digestPages.map((page) => page.embedPage),
 	};
 }

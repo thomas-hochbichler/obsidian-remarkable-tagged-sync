@@ -342,3 +342,222 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "runSync > edge cases (ticket 11) > leaves a note the user moved where it is when the mapping is re-targeted, and moves the one still in the old folder"
+
+# C26 -- the one thing that reopens a document C8 would skip. A PDF whose margin notes the backend
+# lost used to be stamped as done: the device copy is unchanged, so no gate reopened it, and
+# Re-transcribe refuses a note with a digest -- the notes stayed unread for good. The index row now
+# remembers the loss in `ocrRetry`, and the rows below say when that memory reopens the PDF and when
+# it must not: a retry renders the PDF and sends every note again, so on a paid backend each wrong
+# reopening is a bill.
+
+- feature: C26
+  name: Margin notes a digest lost are read again by a later sync
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C26.1
+      scenario: A PDF's margin notes are lost because the server was not running, and auto-sync runs again half an hour later and then an hour later
+      expect: Nothing is tried at the half hour; the PDF is read again after the hour, and once that read succeeds the retry is gone. Not on the very next sync -- a server that stays off for days would otherwise have every auto-sync render the PDF, ask the dead server once per note and rewrite the note
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > tries again an hour after nothing answered, and stops once it has read"
+
+    - id: C26.2
+      scenario: The hourly retry fails as well, because the server is still down
+      expect: The hour starts again from this failure. Kept at the first failure's time, a dead server would be asked on every sync from the second hour on
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > moves the hour forward when the retry fails as well"
+
+    - id: C26.3
+      scenario: A first sync of a large library takes seventy minutes, and a PDF near its end loses its margin notes; auto-sync runs five minutes after it finished
+      expect: The PDF is not tried yet. The hour counts from the moment the digest failed, not from the start of the sync, which would have made it due again at once
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > starts the hour when the digest failed, not when the sync started"
+
+    - id: C26.4
+      scenario: The server was down, and within the hour the user picks a different backend or model
+      expect: The PDF is read again on the next sync, without waiting for the hour. The hour is for a server that is down; a different model is the user doing something about it
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > tries a different backend or model at once, within the hour"
+
+    - id: C26.5
+      scenario: The server was down, the user starts it and presses "Sync now" ten minutes later
+      expect: The PDF is read again at once. The hour applies to auto-sync only -- someone pressing Sync now has most likely just started the server, and a sync that passed the PDF by would look as if it had not noticed
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > tries again at once when the user syncs by hand"
+
+    - id: C26.6
+      scenario: The server answered and refused the notes, and the user presses "Sync now" with the same settings
+      expect: The PDF is not read again. By hand or not, a refusal comes back the same from the same model
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > does not try a refusal again by hand either"
+
+    - id: C26.7
+      scenario: The server answered but the notes failed anyway -- an answer cut off, or one note refused -- and later syncs run with the same settings, then with another model
+      expect: Nothing is sent again under the same backend and model; the first sync after the model changes reads the PDF. Retried on every sync, a metered backend would bill every note of the PDF each time for the same answer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > waits for a different backend or model when the server did answer"
+
+    - id: C26.8
+      scenario: A PDF waits for a retry, and the user edits its note inside the managed region before the hour is up
+      expect: The note is skipped as edited, and the retry is kept unchanged. The skip notice tells the user to undo the edit; had the skip dropped the retry, undoing it would bring the note back without the margin notes it was waiting to read
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > keeps the retry of a note the user has edited, so undoing the edit brings it back"
+
+    - id: C26.9
+      scenario: A PDF waits for a retry, and the user switches the backend to Off
+      expect: The PDF is not reopened and the retry is kept for the real backend. Off reads nothing, so a retry under it would rewrite the note for nothing and spend the retry the real backend still owes
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > does not retry under a backend that reads nothing (off)"
+
+    - id: C26.10
+      scenario: A PDF waits for a retry, and the selected backend cannot run on this machine (Apple Vision off a Mac)
+      expect: The same as under Off -- not reopened, and the retry kept for a backend that can read
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > does not retry under a backend that reads nothing (unavailable)"
+
+    - id: C26.11
+      scenario: A PDF waits for a retry, the backend is Off, and the PDF changes on the tablet so the note is rewritten anyway
+      expect: The note is rewritten, and the retry survives it. The rewrite under Off read none of the margin notes the real backend lost, so it must not clear their retry
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > keeps the retry when a backend that reads nothing rewrites the note"
+
+    - id: C26.12
+      scenario: The user switches to another model to retry, and that backend turns out unable to run here
+      expect: A new retry is written, naming the backend that came up empty. The old one named the previous backend, and kept would have reopened the PDF on every sync for the same answer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > writes a new retry when the retry finds the backend unavailable"
+
+    - id: C26.13
+      scenario: The hour is up, but this time the digest cannot even be built -- downloading the PDF fails
+      expect: The note is still written from the transcript, and the retry is kept. The build read nothing, so dropping the retry would lose for good the margin notes the server still owes
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > keeps the retry when the digest build throws"
+
+    - id: C26.14
+      scenario: A PDF was synced while the downloaded model was selected but not yet downloaded, and later the download finishes
+      expect: Nothing happens while the model is still missing, hour or not; the first sync once it is ready reads the PDF's margin notes. The notice used to send the reader to Re-transcribe, which refuses a digest, and nothing else ever read them
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > reads a digest again once the model that was not ready is"
+
+    - id: C26.15
+      scenario: Some margin notes failed and then the downloaded model's engine stopped, so the PDF's outcome reads "unavailable"
+      expect: Tried again an hour later. A repaired engine keeps its fingerprint, so a retry that waited for a different model would never come -- the backend says it was not reached, and that is what the hour is for
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > tries again an hour after the engine stopped"
+
+    - id: C26.16
+      scenario: Apple Vision is selected on a machine it cannot run on, and an hour passes
+      expect: Not tried on the hour. Vision answers "unavailable" with its real fingerprint on every page, so an hourly retry would download, render and rewrite every PDF it saw for the same answer; a different backend still reads them
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > does not try a backend that cannot run here again on the hour"
+
+    - id: C26.17
+      scenario: The backend failed a PDF's margin notes, once because nothing answered and once because it answered with an error
+      expect: The digest says which -- retryable for the first, not for the second. It is what the sync decides a free retry on -- nothing answered, so the very same request may get through later
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > says whether nothing answered at all"
+
+    - id: C26.18
+      scenario: The server refused every margin note of a PDF and read none -- Ollama's "model not found", Anthropic's "credit balance too low"
+      expect: The digest failed and is retryable like an unreachable server. Both go away under the same settings (`ollama pull`, a top-up), and with nothing read a retry pays for nothing twice
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > a refusal > is tried again when the server refused every note and read none"
+
+    - id: C26.19
+      scenario: One margin note of a PDF is refused and another is read
+      expect: Not retryable. A content policy refuses that one note again, and every hour the whole PDF would be paid for anew
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > a refusal > is not tried again when another note was read"
+
+    - id: C26.20
+      scenario: One margin note is refused and another fails for a reason that is no refusal, such as an answer cut off
+      expect: Not retryable. The same model cuts the same note off again
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > a refusal > is not tried again beside a failure that was no refusal"
+
+    - id: C26.21
+      scenario: Ollama answers a margin note with "500 unknown model architecture" -- a model it was too old for, fixed by an Ollama update under the same model
+      expect: The warning is the server's own sentence and promises that a later sync tries again, and the note is marked retryable, not refused. The server is running, so "Is it running?" would be wrong, but the same request may well get through later
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > tries a margin note again after a server error, in the server's own words"
+
+    - id: C26.22
+      scenario: An OpenAI-compatible server keeps answering 429 for a margin note until the backoff gives up
+      expect: Three attempts, then the note is marked retryable and not refused. A rate limit passes on its own
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > tries a margin note again once the rate limit outlasted the retries"
+
+    - id: C26.23
+      scenario: An OpenAI-compatible server answers a margin note with 400 "invalid image"
+      expect: Refused, not retryable, and the warning promises nothing. The same request would be refused again, so a free retry would only cost time
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > does not retry a bad request for free either"
+
+    - id: C26.24
+      scenario: Ollama answers a margin note with 404 "model not found"
+      expect: The server's sentence, marked refused and not retryable on its own. `ollama pull` fixes it under the same settings, which is why a PDF whose every note was refused is retried (C26.18) -- but one note's sentence cannot know that, so it promises nothing
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > says a model that is not there was refused"
+
+    - id: C26.25
+      scenario: Anthropic answers a margin note with 500
+      tier: pro
+      expect: Anthropic's own words, a promise that a later sync tries again, and the note marked retryable. Anthropic was running and said so -- "Is this machine online?" would be wrong -- but an overloaded or failing API lets the same request through later
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > tries a margin note again after a server error, in Anthropic's own words"
+
+    - id: C26.26
+      scenario: Anthropic keeps answering 429 for a margin note until the backoff gives up
+      tier: pro
+      expect: Three attempts, then retryable and not refused -- the same as the OpenAI-compatible adapter. The two must not drift
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > tries a margin note again once the rate limit outlasted the retries"
+
+    - id: C26.27
+      scenario: Anthropic rejects the API key on a margin note (401)
+      tier: pro
+      expect: Refused and not retryable. A refused key comes back refused however long the sync waits
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > does not try a refused margin note again for free"
+
+    - id: C26.28
+      scenario: Anthropic answers a margin note with 400 "Your credit balance is too low"
+      tier: pro
+      expect: The sentence quotes Anthropic and the note is marked refused, not retryable on its own. A top-up fixes it under the same settings, which the digest's every-note-refused rule covers (C26.18); one note's sentence promises nothing
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > says a balance run out was refused"
+
+    - id: C26.29
+      scenario: The downloaded model's engine cannot start, once fresh and once from the remembered answer on the next request
+      expect: Both answers are retryable. A repaired engine keeps its fingerprint, so this is what lets a sync read a digest's lost notes again on the hour -- without the remembered answer included, every PDF after the first in the run would wait for a different model instead
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "failure mapping (§8.2) > says nothing answered when the runtime is broken, and when it is remembered"

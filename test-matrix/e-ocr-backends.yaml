@@ -408,6 +408,101 @@
       file: src/llm-transcript.test.ts
       test: "isUnreachable > handles something thrown that is not an Error at all"
 
+    - id: E25.17
+      scenario: "An OpenAI-compatible server is not running when a margin note is sent"
+      expect: "\"Margin notes were not transcribed\" -- no count -- with \"Is it running?\" and the promise that a later sync tries them again; the note is retryable. A note goes alone, so \"1 page\" named the wrong thing, and a count the sync then merges across a document's notes"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > says margin notes, without a count, when the scene is a note"
+
+    - id: E25.18
+      scenario: "An OpenAI-compatible server is not running when a page added to a PDF on the tablet is sent"
+      expect: "\"Pages added on the tablet were not transcribed\", and a later sync tries them again. Such a page goes alone, as a margin note does, and is recovered as one is: by the sync"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > says a later sync tries a page added to a PDF again"
+
+    - id: E25.19
+      scenario: "An OpenAI-compatible server answers 500 for a page of a notebook"
+      expect: "The server's sentence and \"1 page was not transcribed\" -- and no promise of a retry. The sync does not revisit a page on its own, so promising it would be false"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > promises a page nothing after a server error"
+
+    - id: E25.20
+      scenario: "A margin note's answer is cut off on an OpenAI-compatible server"
+      expect: "The warning starts \"Margin notes were left out\" and says to switch to a model that does not reason, then the next sync reads them again -- never Re-transcribe, which refuses a PDF note with a digest"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > does not send a margin note to a command that refuses it"
+
+    - id: E25.21
+      scenario: "Anthropic rejects the key while reading a margin note"
+      tier: pro
+      expect: "Anthropic's own words (\"answered 401: unauthorized\") and \"margin notes were not transcribed\", with no count, as for the OpenAI-compatible servers"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > says margin notes, without a count, when a note is refused"
+
+    - id: E25.22
+      scenario: "Anthropic cannot be reached when a page added to a PDF on the tablet is sent"
+      tier: pro
+      expect: "\"Pages added on the tablet were not transcribed. Is this machine online? A later sync tries them again.\""
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > says a later sync tries a page added to a PDF again"
+
+    - id: E25.23
+      scenario: "Anthropic answers 529 Overloaded for a page of a notebook"
+      tier: pro
+      expect: "Anthropic's sentence and \"1 page was not transcribed\", with no promise of a retry the sync will not make"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > promises a page nothing after a server error"
+
+    - id: E25.24
+      scenario: "A margin note's answer is cut off on Anthropic"
+      tier: pro
+      expect: "The same advice as the OpenAI-compatible adapter gives: switch to a model that does not reason, then the next sync reads them again -- never Re-transcribe"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend reporting > does not send a truncated margin note to a command that refuses it"
+
+    - id: E25.25
+      scenario: "The downloaded model fails on a margin note"
+      expect: "\"a margin note could not be transcribed: exit 1\". A note goes alone, so its index is always 1, and \"page 1\" named the wrong page of the PDF"
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "LocalOcrBackend > says a margin note, not page 1, when a note fails"
+
+    - id: E25.26
+      scenario: "The downloaded model fails the second of two changed pages handed to it"
+      expect: "The warning names no page number. The pages handed over are the changed ones the store did not have, so a position among them is no page of the note -- \"page 2\" of changed pages 17 and 30 named page 2"
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "failure mapping (§8.2) > does not number the page it lost"
+
+    - id: E25.27
+      scenario: "A model backend's warning counts what it lost, for pages and for margin notes"
+      expect: "\"1 page was\", \"3 pages were\" -- and for notes \"margin notes were\" with no number, capitalised correctly at the start of a sentence"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the words a model backend's warning is made of > counts pages, and leaves a margin note's count out"
+
+    - id: E25.28
+      scenario: "A model backend's warning says how the lost text is read again"
+      expect: "For a page, run \"Re-transcribe all synced notes\" -- the command's real name. For a margin note or a page added to a PDF, \"the next sync reads them again\" and never Re-transcribe, which refuses a PDF note with a digest"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the words a model backend's warning is made of > names the re-transcribe command for a page and never for a margin note or an added page"
+
+    - id: E25.29
+      scenario: "A model backend's warning counts lost pages added to a PDF on the tablet"
+      expect: "\"pages added on the tablet were\", with no number. Such a page goes alone, so its count was always 1, said once for the whole sync of a PDF that may have lost five"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the words a model backend's warning is made of > leaves an added page's count out too"
+
 - feature: E27
   name: A request that is never answered ends the page, not the run
   code: src/llm-transcript.ts
@@ -427,6 +522,36 @@
       tier: pro
       file: pro/anthropic-ocr-backend.test.ts
       test: "AnthropicOcrBackend > fails a page Anthropic never answers for, instead of waiting on it forever"
+
+    - id: E27.3
+      scenario: An OpenAI-compatible server never answers for a margin note
+      expect: After ten minutes the note fails with only the advice that applies to it -- a later sync will not pick it up on its own, try a different model, then the next sync reads it again. Not Re-transcribe, which refuses a PDF note with a digest, and not the tall-page hint, since a note is never a tall page
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > gives a margin note that timed out only the advice that applies to it"
+
+    - id: E27.4
+      scenario: An OpenAI-compatible server never answers for a page added to a PDF on the tablet
+      expect: '"Pages added on the tablet were left out", with the tall-page hint -- it is a whole page and can be the tall kind -- ending in "the next sync reads them again" rather than Re-transcribe'
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > sends a page added to a PDF that timed out to the sync, not to Re-transcribe"
+
+    - id: E27.5
+      scenario: Anthropic never answers for a margin note
+      tier: pro
+      expect: '"Margin notes were left out because Anthropic did not answer in 10 minutes", then: try a different model, then the next sync reads them again. The sync does not retry a timeout with the same model, so the note''s lever is a different one'
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > tells a margin note that timed out what does read it again"
+
+    - id: E27.6
+      scenario: Anthropic never answers for a page added to a PDF on the tablet
+      tier: pro
+      expect: The same advice as for a margin note, with a page's wording -- "Pages added on the tablet were left out". It belongs to the digest, which Re-transcribe refuses
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > tells a page added to a PDF that timed out what does read it again"
 
 - feature: E28
   name: The rate-limit backoff runs where the code actually runs
@@ -497,3 +622,72 @@
       layer: unit
       file: src/llm-transcript.test.ts
       test: "sanitizeTranscript > drops an opener no closer follows, and a line of nothing but backticks"
+
+- feature: E43
+  name: A margin note is sent as a note, not as a page
+  code: src/ocr-backend.ts
+  tier: free
+  scenarios:
+    - id: E43.1
+      scenario: The digest of an annotated PDF asks the backend to read its margin notes
+      expect: Every request says it is a note. Sent as a page, a note reached a local model as a bare strip under a prompt about a whole page, and came back empty or as "could not be transcribed"
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > asks the backend for every margin note as a note"
+
+    - id: E43.2
+      scenario: A margin note goes to Ollama, LM Studio or another OpenAI-compatible server
+      expect: The image carries quiet space around the ink, the prompt is the one for a short note, and the answer comes back as the note's text
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > sends a margin note as a note: with quiet space around the ink, and the note prompt"
+
+    - id: E43.3
+      scenario: A page goes to an OpenAI-compatible server, with no framing given
+      expect: Exactly the image and the page prompt it was sent with before this change. The fix is for notes; pages were measured as they are
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > sends a page exactly as before when no framing is given"
+
+    - id: E43.4
+      scenario: A margin note goes to Anthropic
+      tier: pro
+      expect: The same padded image and the same note prompt as the OpenAI-compatible servers get
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > sends a margin note as a note: with quiet space around the ink, and the note prompt"
+
+    - id: E43.5
+      scenario: A margin note goes to the downloaded model
+      expect: The padded image and the note prompt, as for the servers
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "LocalOcrBackend > reads a margin note as a note: with quiet space around the ink, and the note prompt"
+
+    - id: E43.6
+      scenario: A page goes to the downloaded model
+      expect: The unpadded page image and the page prompt, as before
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "LocalOcrBackend > reads a page with the page prompt, as before"
+
+    - id: E43.7
+      scenario: A margin note goes to Apple Vision
+      expect: The tight crop, exactly as a page is sent -- no padding. Measured, Vision reads a crop best tight and its own rescue pass pads what that missed; the padding measured worse for it
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "VisionOcrBackend > reads a margin note tight first, as it reads a page"
+
+    - id: E43.8
+      scenario: Someone changes the note prompt or the padding
+      expect: The test fails and says to measure the reference line crops again and update the CHANGELOG. The CHANGELOG quotes 6.7 % against 18.0 % CER for exactly this pair, and no nightly reads a note, so nothing else would notice the figure being quoted for something no longer shipped
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "what a margin note is sent with > is the prompt and padding the published figure was measured with"
+
+    - id: E43.9
+      scenario: The downloaded model reads a margin note in two seconds
+      expect: The time is not recorded among the page timings. The estimate is for what a page costs; a note takes a fraction of that, and thirty of them made a long re-transcribe look like a few minutes
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "timing > leaves margin notes out of the page timings"

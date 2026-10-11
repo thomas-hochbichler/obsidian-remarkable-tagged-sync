@@ -1,19 +1,21 @@
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import { type OcrBackend, type OcrResult } from "./ocr-backend";
+import { type OcrBackend, type OcrFraming, ocrImage, type OcrResult } from "./ocr-backend";
 import {
 	fetchWithRetry,
 	isUnreachable,
 	type LlmPageOutcome,
 	OCR_REQUEST_TIMEOUT_MS,
 	OcrTimeoutError,
+	pageCount,
+	readAgain,
 	refusalDetail,
 	sanitizeTranscript,
 	type Sleep,
-	TRANSCRIPTION_PROMPT,
 	transcribePages,
+	transcriptionPrompt,
+	triedAgain,
+	upperFirst,
 } from "./llm-transcript";
-import { rasterizePage } from "./page-rasterizer";
-import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage } from "./rm-parser";
 
 export interface OpenAiCompatOcrOptions {
@@ -83,7 +85,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	 */
 	readonly fingerprint: string;
 	private readonly baseURL: string;
-	private readonly model: string;
+	/** The model the requests name, exactly as the user entered it. */
+	readonly model: string;
 	private readonly apiKey: string | null;
 	private readonly extraHeaders: Record<string, string>;
 	private readonly deterministic: boolean;
@@ -91,6 +94,17 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
 	private unreachable = false;
+	/**
+	 * Set when the server answered with its own failure, a 5xx or a 429 still there after
+	 * `fetchWithRetry`. Apart from `unreachable`, which picks the sentence: the server is running, so
+	 * "Is it running?" would be wrong. Both make the result `retryable` -- see `OcrResult.retryable`.
+	 */
+	private serverError = false;
+	/**
+	 * Set when the server refused the request itself, a 4xx other than a 429 -- the other side of
+	 * `serverError`. It makes the result `refused` -- see `OcrResult.refused`.
+	 */
+	private refused = false;
 	/** The first refusal the server explained, as `<status>: <message>` -- see `recognize`. */
 	private refusal: string | null = null;
 	/**
@@ -121,9 +135,11 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.sleepFn = options.sleepFn;
 	}
 
-	async recognize(pages: RmPage[], onPage?: () => void): Promise<OcrResult> {
+	async recognize(pages: RmPage[], onPage?: () => void, framing: OcrFraming = "page"): Promise<OcrResult> {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
+		this.serverError = false;
+		this.refused = false;
 		this.refusal = null;
 		this.truncated = 0;
 		this.timedOut = 0;
@@ -137,14 +153,14 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			return transcribePages(
 				pages,
 				async () => ({ kind: "failed" }),
-				(failedPages) => `No model is set for this OCR backend — open the plugin settings and enter one. ${pageCount(failedPages)} not transcribed.`,
+				(failedPages) => `No model is set for this OCR backend — open the plugin settings and enter one. ${upperFirst(pageCount(failedPages, framing))} not transcribed.`,
 				onPage,
 			);
 		}
 
-		return transcribePages(
+		const result = await transcribePages(
 			pages,
-			(page) => this.transcribePage(page),
+			(page) => this.transcribePage(page, framing),
 			// One warning per unit, not per page: forty identical lines in the end-of-sync report is the
 			// same silence in a different costume. A server that is not running comes first -- it is the
 			// most likely failure and the one the user fixes in seconds. Otherwise the server's own words
@@ -154,25 +170,31 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			// a model recommendation. Both causes above are systemic -- the whole unit is lost for one
 			// reason -- while truncation is a property of particular pages, so it is the right thing to be
 			// displaced by a bigger failure that is also true.
+			// A refusal promises no retry, though a sync may make one: that happens only when every margin
+			// note of the PDF was refused (`OcrResult.refused`), and this sentence knows one note, not the
+			// PDF. Promised here, it would be false for the note refused among thirty that were read.
 			(failedPages) => {
-				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages)} not transcribed. Is it running?`;
-				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages)} not transcribed.`;
-				if (this.timedOut > 0) return timeoutWarning(this.timedOut, this.baseURL);
-				if (this.truncated > 0) return truncationWarning(this.truncated);
+				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages, framing)} not transcribed. Is it running?${triedAgain(framing)}`;
+				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.${this.serverError ? triedAgain(framing) : ""}`;
+				if (this.timedOut > 0) return timeoutWarning(this.timedOut, this.baseURL, framing);
+				if (this.truncated > 0) return truncationWarning(this.truncated, framing);
 				return null;
 			},
 			onPage,
 		);
+		if (this.unreachable || this.serverError) result.retryable = true;
+		if (this.refused) result.refused = true;
+		return result;
 	}
 
 	/** One page, one request. Every outcome that isn't usable text is `failed` for that page alone. */
-	private async transcribePage(page: RmPage): Promise<LlmPageOutcome> {
+	private async transcribePage(page: RmPage, framing: OcrFraming): Promise<LlmPageOutcome> {
 		try {
 			const content = [
-				{ type: "text", text: TRANSCRIPTION_PROMPT },
+				{ type: "text", text: transcriptionPrompt(framing) },
 				{
 					type: "image_url",
-					image_url: { url: `data:image/png;base64,${Buffer.from(encodeGrayscalePng(rasterizePage(page))).toString("base64")}` },
+					image_url: { url: `data:image/png;base64,${Buffer.from(ocrImage(page, framing)).toString("base64")}` },
 				},
 			];
 
@@ -200,6 +222,12 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				// First refusal wins: with four pages in flight they are the same refusal anyway, and the
 				// first one is the one whose status the user saw the run stop on.
 				this.refusal ??= `${response.status}${await refusalDetail(response)}`;
+				// A server failing rather than refusing: Ollama's "500 unknown model architecture" goes away
+				// with an Ollama update and the same model, and a 503 or a 429 with the load. A 400 or a 401
+				// would be refused again however long the sync waits -- unless what it refused is fixed
+				// outside the plugin, as a 404 for a model not pulled yet is (`OcrResult.refused`).
+				if (response.status >= 500 || response.status === 429) this.serverError = true;
+				else this.refused = true;
 				console.warn(`Tagged Sync: ${this.id} OCR request failed with status ${response.status}`);
 				return { kind: "failed" };
 			}
@@ -238,12 +266,16 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
  * hosted model that does not answer is not slow for a reason the user can see. Two sentences about
  * two situations, not one sentence in two places.
  */
-function timeoutWarning(pages: number, baseURL: string): string {
+function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): string {
+	// The tall-page advice is about pages, an added one included: a margin note is a few words and never that shape.
+	const tallPage =
+		framing !== "note"
+			? "A page scrolled far past one screen is sent as one very tall image, which a local model can take a long time over, or never finish. "
+			: "";
 	return (
-		`${pageCount(pages)} left out because the server at ${baseURL} did not answer in ` +
-		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. A page scrolled far past one screen is sent as one very ` +
-		`tall image, which a local model can take a long time over, or never finish. A later sync will not pick it up on ` +
-		`its own: try a different model, then run "Re-transcribe all notes".`
+		`${upperFirst(pageCount(pages, framing))} left out because the server at ${baseURL} did not answer in ` +
+		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ${tallPage}A later sync will not pick them up on ` +
+		`its own: try a different model, then ${readAgain(framing)}.`
 	);
 }
 
@@ -254,28 +286,18 @@ function timeoutWarning(pages: number, baseURL: string): string {
  * the user's terms rather than `finish_reason`; that the page was **left out** on purpose, so it does
  * not read as a plugin bug; the lever, which has to stand alone for someone who never opened
  * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
- * hash is unchanged, so "Re-transcribe all notes" is the repair.
+ * hash is unchanged. For a page the repair is "Re-transcribe all synced notes"; a margin note or a
+ * page added to a PDF has none to run, and `readAgain` says what does bring it back.
  *
  * `pro/anthropic-ocr-backend.ts` carries the same four things and says so in its own docstring. The
  * one thing it cannot borrow is the lever: here the fix is a model that does not reason, or the
  * setting that stops it; there, thinking cannot be switched off at all, so the lever is the model
  * alone. Keep the four things in step; leave the lever to each.
  */
-function truncationWarning(pages: number): string {
+function truncationWarning(pages: number, framing: OcrFraming): string {
 	return (
-		`${pageCount(pages)} left out because the model's answer ran past what it may return — ` +
+		`${upperFirst(pageCount(pages, framing))} left out because the model's answer ran past what it may return — ` +
 		`this happens with models that reason before answering. A later sync will not pick them up on its own: ` +
-		`switch to a model that doesn't reason, then run "Re-transcribe all notes".`
+		`switch to a model that doesn't reason, then ${readAgain(framing)}.`
 	);
-}
-
-/**
- * "1 page was" / "3 pages were", so the warnings above read as sentences.
- *
- * Identical to `pro/anthropic-ocr-backend.ts`'s, and the only thing in this pair that is.
- * Deliberately left duplicated: a shared module for one line would be an abstraction for
- * single-use code (CLAUDE.md §2), and the sentences it serves are not shared anyway.
- */
-function pageCount(pages: number): string {
-	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
 }

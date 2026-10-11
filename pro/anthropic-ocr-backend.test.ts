@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnthropicOcrBackend } from "./anthropic-ocr-backend";
-import { OCR_REQUEST_TIMEOUT_MS } from "./llm-transcript";
+import { NOTE_TRANSCRIPTION_PROMPT, OCR_REQUEST_TIMEOUT_MS } from "../src/llm-transcript";
+import { ocrImage } from "../src/ocr-backend";
 import type { RmPage } from "../src/rm-parser";
 
 const fetchMock = vi.fn();
@@ -42,6 +43,17 @@ function requestBody(): { model: string; max_tokens: number; messages: { content
 describe("AnthropicOcrBackend", () => {
 	beforeEach(() => {
 		fetchMock.mockReset();
+	});
+
+	it("sends a margin note as a note: with quiet space around the ink, and the note prompt", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { content: [{ type: "text", text: "Nachfragen" }] }));
+		const backend = new AnthropicOcrBackend({ apiKey: "k", model: "claude-x", fetchFn: fetchMock });
+
+		await backend.recognize([page()], undefined, "note");
+
+		const content = requestBody().messages[0].content as { type: string; text?: string; source?: { data: string } }[];
+		expect(content[0].text).toBe(NOTE_TRANSCRIPTION_PROMPT);
+		expect(content[1].source?.data).toBe(Buffer.from(ocrImage(page(), "note")).toString("base64"));
 	});
 
 	it("skips OCR for an empty page list without making a request", async () => {
@@ -180,7 +192,17 @@ describe("AnthropicOcrBackend", () => {
 			text: "",
 			confidence: null,
 			warnings: ["Anthropic answered 401: unauthorized — 1 page was not transcribed."],
+			refused: true,
 		});
+	});
+
+	it("says margin notes, without a count, when a note is refused", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
+		const backend = new AnthropicOcrBackend({ apiKey: "bad-key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["Anthropic answered 401: unauthorized — margin notes were not transcribed."]);
 	});
 
 	it("reports failed and never throws when the request itself fails", async () => {
@@ -195,7 +217,78 @@ describe("AnthropicOcrBackend", () => {
 			text: "",
 			confidence: null,
 			warnings: ["Could not reach Anthropic — 1 page was not transcribed. Is this machine online?"],
+			// What lets the sync try a margin note again on its own: nothing answered, so the same request may.
+			retryable: true,
 		});
+	});
+
+	// A page added to a PDF goes alone, as a margin note does, and is recovered as one is: by the sync.
+	it("says a later sync tries a page added to a PDF again", async () => {
+		fetchMock.mockRejectedValue(new Error("network down"));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "added-page");
+
+		expect(result.warnings).toEqual(["Could not reach Anthropic — pages added on the tablet were not transcribed. Is this machine online? A later sync tries them again."]);
+	});
+
+	// A refused key comes back refused, however long the sync waits.
+	it("does not try a refused margin note again for free", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
+		const backend = new AnthropicOcrBackend({ apiKey: "bad-key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.retryable).toBeUndefined();
+		expect(result.refused).toBe(true);
+	});
+
+	// A top-up fixes it under the same settings -- what lets a sync try a PDF whose every note was
+	// refused again (`DigestBuild.ocrRetryable`). The sentence promises nothing: it knows one note.
+	it("says a balance run out was refused", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(400, { error: { message: "Your credit balance is too low to access the Anthropic API." } }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["Anthropic answered 400: Your credit balance is too low to access the Anthropic API. — margin notes were not transcribed."]);
+		expect(result.refused).toBe(true);
+		expect(result.retryable).toBeUndefined();
+	});
+
+	// Anthropic was running and said so -- "Is this machine online?" would be wrong -- but an overloaded
+	// or failing API lets the same request through later, so a margin note is tried again.
+	it("tries a margin note again after a server error, in Anthropic's own words", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(500, { error: { message: "internal error" } }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["Anthropic answered 500: internal error — margin notes were not transcribed. A later sync tries them again."]);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
+	});
+
+	it("tries a margin note again once the rate limit outlasted the retries", async () => {
+		const rateLimited = { ...jsonResponse(429, {}), headers: { get: () => null } } as unknown as Response;
+		fetchMock.mockResolvedValue(rateLimited);
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock, sleepFn: async () => {} });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
+	});
+
+	// A page is not revisited by the sync, so promising it would be false.
+	it("promises a page nothing after a server error", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(529, { error: { message: "Overloaded" } }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings).toEqual(["Anthropic answered 529: Overloaded — 1 page was not transcribed."]);
 	});
 
 	// The prompt tells the model to output nothing for a page with no legible text, so an empty
@@ -224,6 +317,49 @@ describe("AnthropicOcrBackend", () => {
 
 			expect(result.pages).toEqual([{ status: "failed", text: "" }]);
 			expect(result.warnings?.[0]).toContain("did not answer in 10 minutes");
+			expect(result.warnings?.[0]).toContain('once it answers again, run "Re-transcribe all synced notes".');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	// Re-transcribe refuses a PDF note with a digest, so the page's repair would send the user to a
+	// refusal. Nor does the sync retry a timeout with the same model: the note's lever is a different one.
+	it("tells a margin note that timed out what does read it again", async () => {
+		vi.useFakeTimers();
+		try {
+			fetchMock.mockReturnValue(new Promise<Response>(() => {}));
+			const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+			const running = backend.recognize([page()], undefined, "note");
+			await vi.advanceTimersByTimeAsync(OCR_REQUEST_TIMEOUT_MS);
+			const result = await running;
+
+			expect(result.warnings).toEqual([
+				"Margin notes were left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on their own: " +
+					"try a different model, then the next sync reads them again.",
+			]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	// A page added to a PDF belongs to the digest, which Re-transcribe refuses, and a timeout is retried
+	// only under different settings: its lever is a margin note's, its count a page's.
+	it("tells a page added to a PDF that timed out what does read it again", async () => {
+		vi.useFakeTimers();
+		try {
+			fetchMock.mockReturnValue(new Promise<Response>(() => {}));
+			const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+			const running = backend.recognize([page()], undefined, "added-page");
+			await vi.advanceTimersByTimeAsync(OCR_REQUEST_TIMEOUT_MS);
+			const result = await running;
+
+			expect(result.warnings).toEqual([
+				"Pages added on the tablet were left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on their own: " +
+					"try a different model, then the next sync reads them again.",
+			]);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -275,6 +411,8 @@ describe("AnthropicOcrBackend", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 		expect(result.status).toBe("failed");
 		expect(result.warnings?.[0]).toBe("No model is set for this OCR backend — open the plugin settings and enter one. 2 pages were not transcribed.");
+		// Fixed in the settings, so nothing for a sync to try again under them.
+		expect(result.refused).toBeUndefined();
 	});
 
 	it("treats a whitespace-only model as unset", async () => {
@@ -314,8 +452,19 @@ describe("AnthropicOcrBackend reporting", () => {
 		expect(result.warnings?.[0]).toBe(
 			"1 page was left out because the model's answer ran past what it may return — Claude models reason before answering, " +
 				'and those tokens count against the same limit. A later sync will not pick them up on its own: switch to a model that ' +
-				'doesn\'t reason, then run "Re-transcribe all notes".',
+				'doesn\'t reason, then run "Re-transcribe all synced notes".',
 		);
+	});
+
+	it("does not send a truncated margin note to a command that refuses it", async () => {
+		fetchMock.mockResolvedValueOnce(truncated());
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-opus-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings?.[0]).toMatch(/^Margin notes were left out because the model's answer ran past/);
+		expect(result.warnings?.[0]).toContain("switch to a model that doesn't reason, then the next sync reads them again.");
+		expect(result.warnings?.[0]).not.toContain("Re-transcribe");
 	});
 
 	/** Same order as the OpenAI-compatible adapter's: the systemic causes displace the per-page one. */

@@ -21,6 +21,7 @@ import type { OcrBackend as OcrBackendId } from "./note-builder";
 import { remapRows, rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
+import { type OcrTally, tallyOcr } from "./ocr-tally";
 import {
 	NOTE_NOT_SYNCED_NOTICE,
 	NOTEBOOK_GONE_NOTICE,
@@ -74,7 +75,7 @@ import {
 import { TagRouter } from "./tag-router";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
-import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { UnavailableOcrBackend, visionRunStats } from "./vision-ocr-backend";
 import { visionBackend } from "./vision-register";
 import { visionPlatformSupported } from "./vision-ocr-runtime";
 
@@ -138,6 +139,13 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * from a run three weeks ago would be read as this one's.
 	 */
 	lastPageTranscriptions: { reused: number; total: number } | null = null;
+	/**
+	 * What the last sync or re-transcribe sent to its OCR backend and got back, for "Copy diagnostics".
+	 * Session state for the same reason as the two above. Replaced when a run first sends an image, so
+	 * a run that fails halfway still reports what it had sent by then, and one that sends nothing -- a
+	 * cancelled dialog, a sync with nothing changed -- leaves the last one's figures to be copied.
+	 */
+	lastOcrTally: OcrTally | null = null;
 	private autoSyncLaunchTimer: number | null = null;
 	private autoSyncIntervalTimer: number | null = null;
 
@@ -511,6 +519,17 @@ export default class TaggedSyncPlugin extends Plugin {
 		return this.applyOcrFallback(planUnconfiguredFallback({ label, visionAvailable: visionPlatformSupported(), silent }), id);
 	}
 
+	/** The adapter a run hands its transcription to, counted for "Copy diagnostics" -- see `tallyOcr`. */
+	private countedOcr(backend: OcrBackendAdapter): OcrBackendAdapter {
+		return tallyOcr(backend, (tally) => {
+			this.lastOcrTally = tally;
+			// Vision's own figures describe the same run, so they start over with the tally. Not on the
+			// adapter: Vision's is one object for the whole session.
+			visionRunStats.revision = null;
+			visionRunStats.unreadableInkRegions = 0;
+		});
+	}
+
 	/** Wiring only: raise what the plan says to say, build what it says to use. */
 	private applyOcrFallback(plan: OcrFallback, id: OcrBackendId): OcrBackendAdapter {
 		if (plan.notice !== null) new Notice(plan.notice);
@@ -663,7 +682,7 @@ export default class TaggedSyncPlugin extends Plugin {
 						this.app.vault,
 						normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
 					),
-					ocrBackend: backend,
+					ocrBackend: this.countedOcr(backend),
 					marginNotes: this.data.marginNotes,
 					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
 					// touching what is already in the vault -- a sync that keeps working, minus the Pro part.
@@ -676,6 +695,9 @@ export default class TaggedSyncPlugin extends Plugin {
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
+					// "Sync now" tries a digest whose server did not answer at once, not an hour later: the
+					// user pressing it has likely just started that server.
+					manual: !auto,
 					// Checkpoint after each document, so an interrupted sync can't strand written notes
 					// without index rows and duplicate them on the next run.
 					saveIndex: async (index) => {
@@ -928,7 +950,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
-					ocrBackend: backend,
+					ocrBackend: this.countedOcr(backend),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
 					// Checkpoint after each note, so an interrupted re-transcribe can't leave notes whose
@@ -1011,7 +1033,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
-					ocrBackend: backend,
+					ocrBackend: this.countedOcr(backend),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
 					confirm: async ({ pageCount, handEdited }) => {

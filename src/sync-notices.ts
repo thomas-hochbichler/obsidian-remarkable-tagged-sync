@@ -12,6 +12,8 @@
 export const LONG_NOTICE_MS = 15_000;
 /** For the one that only says where to look. */
 export const SHORT_NOTICE_MS = 10_000;
+/** The most backend warnings one sync raises as notices; past this, one more says where the rest are. */
+const MAX_BACKEND_NOTICES = 3;
 
 export interface NoticeText {
 	readonly message: string;
@@ -52,7 +54,18 @@ export function partialOutcomeNotices(result: PartialOutcome): NoticeText[] {
 	// A page the backend lost while the rest of the unit read fine -- truncated, timed out, the server
 	// gone -- was written into diagnostics and nowhere else, so a notebook that lost three pages of
 	// five reported a clean sync. The backend's own sentence goes up as it was written.
-	for (const warning of result.backendWarnings ?? []) notices.push({ message: warning, timeout: LONG_NOTICE_MS });
+	// Capped: each is a 15-second notice, background syncs raise them too, and a server that words
+	// every refusal differently could stack a screenful. The rest are in "Copy diagnostics", which
+	// carries every one of them as the last error.
+	const backendWarnings = result.backendWarnings ?? [];
+	for (const warning of backendWarnings.slice(0, MAX_BACKEND_NOTICES)) notices.push({ message: warning, timeout: LONG_NOTICE_MS });
+	const unshown = backendWarnings.length - MAX_BACKEND_NOTICES;
+	if (unshown > 0) {
+		notices.push({
+			message: `…and ${unshown} more from the transcription backend. Press Copy diagnostics in settings to see them all.`,
+			timeout: LONG_NOTICE_MS,
+		});
+	}
 	// Beside the backend's warnings and for the same reason: the sync itself succeeded, and the half
 	// that did not is invisible from anywhere else. Its sentences are already one per document and
 	// already say what to do about it, so they go up as they were written (spec §3.4.2).
@@ -141,12 +154,17 @@ export interface PlatformGap {
  * deleted since. Its own sentence and not the platform one: "needs macOS 13 or later" reached a reader
  * whose Mac was fine, and it was shown once and never again, while this gap closes the moment the
  * download does. Said on every sync the user is watching until then.
+ *
+ * The way back differs by note: re-transcribe refuses an annotated PDF's digest, so sending every note
+ * there left a PDF's margin notes unread -- the sync reads those again itself once the model is ready
+ * (`SyncIndexRow.ocrRetry`).
  */
 export function modelNotReadyNotice(unavailableUnits: number): string | null {
 	if (unavailableUnits === 0) return null;
 	return (
 		`${unavailableUnits} ${unavailableUnits === 1 ? "note" : "notes"} synced with the handwriting render only: the downloaded model is not ready. ` +
-		"Download it in settings, then run Re-transcribe all synced notes for the notes synced meanwhile."
+		"Download it in settings, then run Re-transcribe all synced notes for the notebooks synced meanwhile; " +
+		"annotated PDFs are read again by the next sync on their own."
 	);
 }
 

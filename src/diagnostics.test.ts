@@ -10,6 +10,7 @@ const BASE = {
 	visionRevision: 3,
 	unreadableInkRegions: 0,
 	reusedPageTranscriptions: { reused: 0, total: 0 },
+	ocrTally: null,
 	mappedTagCount: 1,
 	lastSyncAt: "2026-07-24T09:00:00.000Z",
 	lastSyncError: null,
@@ -25,7 +26,7 @@ describe("buildDiagnostics", () => {
 		expect(text).toContain("OCR backend: vision");
 		expect(text).toContain("Mapped tags: 1");
 		expect(text).toContain("Vision revision: 3");
-		expect(text).toContain("Unreadable ink regions: 0");
+		expect(text).toContain("Unreadable ink regions (Apple Vision): 0");
 		expect(text).toContain("Reused page transcriptions: 0 of 0");
 	});
 
@@ -35,8 +36,36 @@ describe("buildDiagnostics", () => {
 	});
 
 	/** The revision is the OS's choice, never ours -- so "which one ran" is a fact only the machine has. */
-	it("says Vision has not run here rather than printing a null revision", () => {
-		expect(buildDiagnostics({ ...BASE, visionRevision: null })).toContain("Vision revision: not run here");
+	it("says Vision did not run in the last transcription rather than printing a null revision", () => {
+		expect(buildDiagnostics({ ...BASE, visionRevision: null })).toContain("Vision revision: not run in the last transcription");
+	});
+
+	/**
+	 * The report that asked for these: every margin note "could not be transcribed", under `Last error:
+	 * none`. The model and the empty count would each have named the cause on the first message.
+	 */
+	it("names the model the last run read with and what came back, by kind", () => {
+		const text = buildDiagnostics({
+			...BASE,
+			backend: "ollama",
+			ocrTally: {
+				backend: "ollama",
+				model: "qwen2.5vl:7b",
+				pages: { read: 12, empty: 1, failed: 0, unavailable: 0 },
+				notes: { read: 0, empty: 5, failed: 2, unavailable: 0 },
+				warnings: ["The server at http://localhost:11434/v1 answered 500 — 1 page not transcribed."],
+			},
+		});
+		expect(text).toContain("Last transcription: ollama, model qwen2.5vl:7b");
+		expect(text).toContain("Pages: 12 read, 1 empty, 0 failed");
+		expect(text).toContain("Margin notes: 0 read, 5 empty, 2 failed");
+		expect(text).toContain("- The server at http://localhost:11434/v1 answered 500");
+	});
+
+	it("says no transcription has run yet rather than printing zeros for one", () => {
+		const text = buildDiagnostics(BASE);
+		expect(text).toContain("Last transcription: none since Obsidian started");
+		expect(text).not.toContain("Margin notes:");
 	});
 
 	it("includes the raw last error, which is often the whole diagnosis", () => {

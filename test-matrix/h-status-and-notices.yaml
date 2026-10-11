@@ -424,6 +424,48 @@
       file: src/sync-notices.test.ts
       test: "partialOutcomeNotices > raises what the Zotero half could not do, as the pass worded it"
 
+    - id: H7.26
+      scenario: The server under a PDF's margin notes is not running, and the digest comes back failed with the backend's sentence
+      expect: The sentence is raised once, as a notebook's backend warning is, and diagnostics carry it prefixed with the document and tag ("Digest of ... for tag ..."), which the backend's sentence cannot name. A dead server under margin notes is as fixable as one under a notebook
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > raises the digest's backend warnings as a notebook's are raised, once"
+
+    - id: H7.27
+      scenario: The digest loses a page added to the PDF on the tablet, not a margin note
+      expect: Diagnostics carry the backend's sentence about pages added on the tablet, and nothing in them says "margin note". The digest reads added pages too, as whole pages, and their warning is no margin note's
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > does not call a lost added page a margin note"
+
+    - id: H7.28
+      scenario: Every margin note of a PDF fails against the same dead server
+      expect: The digest keeps the backend's reason, once however many notes it cost, apart from its own warnings, and reports the digest failed. Before, only the status was kept, so every entry said "could not be transcribed" and nothing said why
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest without a text layer > says once why the backend could not read, however many notes it cost"
+
+    - id: H7.29
+      scenario: A sync ends with five different backend warnings
+      expect: The first three are raised as notices, and a fourth says how many more there are and that Copy diagnostics in settings shows them all. Each is a 15-second notice, background syncs included, so an unbounded list would bury the screen
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > raises the first three backend warnings and says how many more there are"
+
+    - id: H7.30
+      scenario: A warning channel collects sentences, some of them repeated -- every margin note of a document hitting the same dead server
+      expect: Each distinct sentence is kept once, in the order first seen. The rule was written out six times across the warning channels before it became one helper
+      layer: unit
+      file: src/push-unique.test.ts
+      test: "pushUnique > appends in order and skips what is already there"
+
+    - id: H7.31
+      scenario: A warning channel with a limit is offered more distinct sentences than it may hold
+      expect: It stops at the limit, counting only distinct sentences. Only one of the six hand-written copies had a limit
+      layer: unit
+      file: src/push-unique.test.ts
+      test: "pushUnique > stops at the limit"
+
 - feature: E15
   name: One-time platform-gap notice
   code: src/sync-notices.ts
@@ -527,6 +569,13 @@
       file: src/sync-notices.test.ts
       test: "platformGapNotice > promises nothing about a fix"
 
+    - id: E15.15
+      scenario: Two notes were synced while the downloaded model was selected and not yet on disk
+      expect: The sentence sends only the notebooks synced meanwhile to Re-transcribe all synced notes, and says the annotated PDFs are read again by the next sync on their own. Re-transcribe refuses a PDF's digest, so a reader sent there would wait for margin notes the command never reads
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "modelNotReadyNotice > sends only the notebooks to re-transcribe, and says the PDFs need nothing"
+
 - feature: H9
   name: Local vault refusals named as local
   code: src/explain-error.ts
@@ -583,3 +632,132 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "failed transcription > says a warning the backend repeated across units only once"
+
+# H1, the diagnostics block's side. Built for a report that had none of it: every margin note read
+# "could not be transcribed", under `Last error: none` -- true, since an empty answer is no error --
+# while the block named neither the model nor how many notes came back empty. Either would have
+# pointed at the cause on the first message.
+
+- feature: H1
+  name: Copy diagnostics -- what the last transcription did
+  code: src/ocr-tally.ts
+  tier: free
+  scenarios:
+    - id: H1.2
+      scenario: A run reads three pages and two margin notes, and each comes back read, empty or failed
+      expect: Pages and margin notes are counted apart, each by what came back, and the tally names the model that ran
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > counts pages and margin notes apart, by what came back"
+
+    - id: H1.3
+      scenario: The backend cannot run here and never looks at the images
+      expect: Every image it was handed counts as not run, and no model is named
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > counts a backend that never looked as not run, every image of it"
+
+    - id: H1.4
+      scenario: A backend answers for the whole call without a per-page list
+      expect: Its status speaks for every image it was handed -- two pages read, one note empty
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > counts an answer without a page list by its status, every image of it"
+
+    - id: H1.5
+      scenario: The counting stand-in wraps the downloaded model while it is not ready
+      expect: It still answers `instanceof` and every field as the adapter does. The not-ready notice and the re-transcribe gate ask exactly that, and a plain wrapper would answer them wrong
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > hands back a stand-in that answers instanceof and every field as the adapter does"
+
+    - id: H1.6
+      scenario: Two syncs in one session count through the same backend object (Apple Vision's adapter lives for the whole session)
+      expect: The adapter itself is left untouched and each run counts only its own images. Replacing `recognize` in place wrapped it once more on every sync, and every older tally went on counting
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > leaves the adapter itself untouched, so runs never stack"
+
+    - id: H1.7
+      scenario: A run sends nothing at all -- a cancelled re-transcribe, or a sync with nothing changed -- and another run sends several images
+      expect: The first hands no tally over, so the last run's figures stay; the second hands it over once, on its first image. Diagnostics describe the last run that read something
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > hands the tally over once, on the first image sent, and not at all when nothing is"
+
+    - id: H1.8
+      scenario: The backend is Off
+      expect: Not wrapped and nothing handed over. Off answers every image "skipped", which counted as forty blank pages and replaced the last real run
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > leaves Off alone: it reads nothing, so there is nothing to report"
+
+    - id: H1.9
+      scenario: The backend throws on the first image of a run
+      expect: The tally was already handed over before it read, so a run that fails still reports
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > hands the tally over before the backend reads, so a run that fails still reports"
+
+    - id: H1.10
+      scenario: The backend throws while reading a margin note
+      expect: The note counts as failed, and the error still reaches the caller unchanged
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > counts a throw as failed and still throws it"
+
+    - id: H1.11
+      scenario: Seven margin notes fail with six different sentences, one of them twice
+      expect: All seven count as failed; the warnings keep each sentence once, and only the first five
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > keeps each warning once, and only the first few"
+
+    - id: H1.12
+      scenario: The last run used a backend whose model field is empty
+      expect: '"Last transcription: ollama, model (none set)" rather than an empty name after "model"'
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "describeOcrTally > says when no model is set rather than printing an empty name"
+
+    - id: H1.13
+      scenario: The last run used a backend that has no model to name (Apple Vision), with two notes not run and no warnings
+      expect: '"Last transcription: vision" with no model, "Margin notes: 0 read, 0 empty, 0 failed, 2 not run", and "Transcription warnings: none"'
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "describeOcrTally > leaves the model out where there is none to name"
+
+    - id: H1.14
+      scenario: Diagnostics are copied after a run that did not use Apple Vision
+      expect: '"Vision revision: not run in the last transcription" rather than a null revision. The revision belongs to the same run as the other figures under Last transcription, not to the whole session'
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > says Vision did not run in the last transcription rather than printing a null revision"
+
+    - id: H1.15
+      scenario: Diagnostics are copied after an Ollama run that read twelve pages, with five margin notes empty and two failed
+      expect: The block names the backend and model that ran, counts pages and margin notes by outcome, and lists the backend's warning
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > names the model the last run read with and what came back, by kind"
+
+    - id: H1.16
+      scenario: Diagnostics are copied before anything was transcribed since Obsidian started
+      expect: '"Last transcription: none since Obsidian started" and no count lines, rather than zeros that read like a run that found nothing'
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > says no transcription has run yet rather than printing zeros for one"
+
+    - id: H1.17
+      scenario: An OpenAI-compatible backend is asked which model it runs
+      expect: The model id from the settings, so diagnostics can name it
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > names its model for the diagnostics"
+
+    - id: H1.18
+      scenario: The downloaded model's backend is asked which model it runs
+      expect: The label of the model generation it runs, so diagnostics can name it
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "LocalOcrBackend > names the model generation it runs for the diagnostics"

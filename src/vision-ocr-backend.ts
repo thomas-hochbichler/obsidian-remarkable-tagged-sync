@@ -1,7 +1,7 @@
 import { mapWithConcurrency } from "./concurrency";
 import { clusterStrokes } from "./margin-notes";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import { type OcrBackend, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
+import { type OcrBackend, ocrImage, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import { inkBounds, type InkBounds, rasterizePage } from "./page-rasterizer";
 import { isHighlighterOrShader } from "./pdf-renderer";
 import { encodeGrayscalePng } from "./png-encoder";
@@ -55,7 +55,11 @@ export const DEFAULT_MAX_PARALLELISM = 8;
  * word, but not the default.
  */
 const RESCUE_LINE_HEIGHT_PX = 40;
-/** Quiet space around a rescued cluster's own bitmap: a few words read better away from an edge. */
+/**
+ * Quiet space around a rescued cluster's own bitmap: a few words read better away from an edge.
+ * Vision's own number, measured for Vision. The margin-note padding the model backends use
+ * (`NOTE_PADDING_PX`) happens to be the same today, and tuning either must not move the other.
+ */
 const RESCUE_PADDING_PX = 40;
 /** How much of a cluster's height an observation has to cover before the cluster counts as read. */
 const COVERAGE_FRACTION = 0.3;
@@ -77,12 +81,14 @@ export function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /**
- * What the current run of Vision left worth reporting, for "Copy diagnostics" (spec §5.2). Reset by
- * each new backend instance, which the plugin builds once per sync -- so these describe one sync.
+ * What Vision left worth reporting, for "Copy diagnostics" (spec §5.2). The plugin resets both when
+ * a run first sends an image (`countedOcr` in main.ts), so they describe the last run that
+ * transcribed anything -- including `revision`, or a run under another backend would be reported
+ * beside the revision of a Vision run before it. Not the adapter: Vision's is one object for the
+ * whole session, so a reset tied to it happened once and the count added up across every sync after.
  *
- * Module state rather than a field, because the adapter is built per run and thrown away, while the
- * diagnostics block is assembled much later and from somewhere else entirely. Nothing is sent
- * anywhere: the user presses a button and pastes the text.
+ * Module state rather than a field, because the diagnostics block is assembled much later and from
+ * somewhere else entirely. Nothing is sent anywhere: the user presses a button and pastes the text.
  */
 export const visionRunStats: {
 	/** The revision Vision actually ran, which is deliberately the OS's choice and not ours to pin. */
@@ -246,8 +252,6 @@ export class VisionOcrBackend implements OcrBackend {
 		this.probe = options.probe;
 		this.batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
 		this.maxParallelism = options.maxParallelism ?? DEFAULT_MAX_PARALLELISM;
-		visionRunStats.revision = null;
-		visionRunStats.unreadableInkRegions = 0;
 	}
 
 	private available(): Promise<boolean> {
@@ -293,12 +297,19 @@ export class VisionOcrBackend implements OcrBackend {
 		});
 	}
 
+	/**
+	 * A margin note is read exactly as a page is, whatever `framing` says -- measured, not assumed. Over
+	 * the 180 line crops of the reference set, Vision returned nothing for five real lines once they
+	 * were padded, among them "Taschenlampe, Ersatzbatterien", and recovered none: it reads a crop best
+	 * tight. What it misses tight is read again padded by the rescue pass below, so a note gets both
+	 * framings in the order that works for this reader.
+	 */
 	async recognize(pages: RmPage[]): Promise<OcrResult> {
 		if (pages.length === 0) return SKIPPED;
 		if (!(await this.available())) return UNAVAILABLE;
 
 		try {
-			const perPage = await this.read(pages.map((page) => encodeGrayscalePng(rasterizePage(page))));
+			const perPage = await this.read(pages.map((page) => ocrImage(page)));
 			const reads = perPage.map((result): ReadLines | null => ("lines" in result ? { lines: [...result.lines], boxes: [...result.boxes] } : null));
 			for (const result of perPage) if ("revision" in result && result.revision !== undefined) visionRunStats.revision = result.revision;
 
@@ -353,4 +364,13 @@ export class UnavailableOcrBackend implements OcrBackend {
 	async recognize(pages: RmPage[]): Promise<OcrResult> {
 		return pages.length === 0 ? SKIPPED : UNAVAILABLE;
 	}
+}
+
+/**
+ * True of a backend that reads nothing: Off, or one that cannot run here. Asked by the id and the
+ * class, not the fingerprint: an `UnavailableOcrBackend` keeps the id of the backend the user chose
+ * -- "anthropic" without its build -- and a fingerprint is only a key for what a backend stored.
+ */
+export function readsNothing(backend: OcrBackend): boolean {
+	return backend.id === "off" || backend instanceof UnavailableOcrBackend;
 }

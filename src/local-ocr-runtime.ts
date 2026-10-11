@@ -4,7 +4,7 @@
 // temp directory, runs one process over it, and turns whatever happened into one of three outcomes.
 
 import { Platform } from "obsidian";
-import { sanitizeTranscript, TRANSCRIPTION_PROMPT } from "./llm-transcript";
+import { sanitizeTranscript } from "./llm-transcript";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
 import type { ModelGeneration } from "./local-model-artefacts";
 import { readLocalModelSettings } from "./local-model-settings";
@@ -87,11 +87,14 @@ async function repairQuarantine(executable: string): Promise<void> {
 /**
  * The invocation of §3.3, with one image per process and per-page results.
  *
+ * `prompt` has no default: a margin note sent with the page prompt reads at more than twice the error
+ * rate (see `NOTE_TRANSCRIPTION_PROMPT`), so every caller says which one it means.
+ *
  * Exported for its own test rather than exercised through a spawn: it is the one part of this file
  * that decides anything, and what it decides -- whether a context is pinned -- is the difference
  * between 7.99 GB and 42.82 GB of peak memory.
  */
-export function pageArgs(paths: LocalModelPaths, imageFile: string, generation: ModelGeneration): string[] {
+export function pageArgs(paths: LocalModelPaths, imageFile: string, generation: ModelGeneration, prompt: string): string[] {
 	return [
 		"-m",
 		paths.modelFile,
@@ -100,7 +103,7 @@ export function pageArgs(paths: LocalModelPaths, imageFile: string, generation: 
 		"--image",
 		imageFile,
 		"-p",
-		TRANSCRIPTION_PROMPT,
+		prompt,
 		"-n",
 		String(MAX_TOKENS),
 		"--temp",
@@ -128,7 +131,7 @@ function createRunner(paths: LocalModelPaths, generation: ModelGeneration): Loca
 	const path = nodeRequire("path");
 	let quarantineRepairAttempted = false;
 
-	return async (image: Uint8Array): Promise<LocalPageOutcome> => {
+	return async (image: Uint8Array, prompt: string): Promise<LocalPageOutcome> => {
 		// The engine is the half antivirus takes (§5.7), and it can go between two pages of one sync.
 		if (!fs.existsSync(paths.runtimeExecutable)) {
 			return { kind: "runtime-broken", message: "the transcription engine is no longer on disk" };
@@ -144,12 +147,12 @@ function createRunner(paths: LocalModelPaths, generation: ModelGeneration): Loca
 		try {
 			fs.writeFileSync(imageFile, image);
 			const startedAt = Date.now();
-			let run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile, generation));
+			let run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile, generation, prompt));
 
 			if (run.code === SIGKILL_EXIT_CODE && !quarantineRepairAttempted && process.platform === "darwin") {
 				quarantineRepairAttempted = true;
 				await repairQuarantine(paths.runtimeExecutable);
-				run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile, generation));
+				run = await spawnOnce(paths.runtimeExecutable, pageArgs(paths, imageFile, generation, prompt));
 			}
 
 			const outcome = classifyRun({ ...run, executablePresent: fs.existsSync(paths.runtimeExecutable) });

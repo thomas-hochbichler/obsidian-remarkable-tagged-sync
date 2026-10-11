@@ -83,7 +83,7 @@ registerOcrBackend({
 	metered: false,
 	requiresLicence: false,
 	needsBackgroundConsent: false,
-	create: () => ({ id: "test-free", metered: false, transcribe: async () => "" }) as never,
+	create: () => ({ id: "test-free", metered: false, fingerprint: "test", recognize: async () => ({ status: "skipped", pages: [], text: "", confidence: null }) }) as never,
 });
 // A backend only a licence unlocks: what makes the pre-flight ask for a licence re-check first.
 registerOcrBackend({
@@ -92,7 +92,7 @@ registerOcrBackend({
 	metered: false,
 	requiresLicence: true,
 	needsBackgroundConsent: false,
-	create: () => ({ id: "test-gated", metered: false, transcribe: async () => "" }) as never,
+	create: () => ({ id: "test-gated", metered: false, fingerprint: "test", recognize: async () => ({ status: "skipped", pages: [], text: "", confidence: null }) }) as never,
 });
 
 interface Plugin {

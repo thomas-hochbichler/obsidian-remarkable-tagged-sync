@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { OCR_REQUEST_TIMEOUT_MS } from "./llm-transcript";
+import { NOTE_TRANSCRIPTION_PROMPT, OCR_REQUEST_TIMEOUT_MS, TRANSCRIPTION_PROMPT } from "./llm-transcript";
+import { ocrImage } from "./ocr-backend";
 import { OpenAiCompatOcrBackend } from "./openai-compat-ocr-backend";
 import type { RmPage } from "./rm-parser";
 
@@ -46,6 +47,34 @@ function requestBody(): { model: string; messages: { content: { type: string; im
 describe("OpenAiCompatOcrBackend", () => {
 	beforeEach(() => {
 		fetchMock.mockReset();
+	});
+
+	/** A margin note sent as a page reached a local model as a bare strip under a prompt about a page, and came back empty. */
+	it("sends a margin note as a note: with quiet space around the ink, and the note prompt", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("Nachfragen ob verhandelbar"));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:7b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		const content = requestBody().messages[0].content as { type: string; text?: string; image_url?: { url: string } }[];
+		expect(content[0].text).toBe(NOTE_TRANSCRIPTION_PROMPT);
+		expect(content[1].image_url?.url).toBe(`data:image/png;base64,${Buffer.from(ocrImage(page(), "note")).toString("base64")}`);
+		expect(result.text).toBe("Nachfragen ob verhandelbar");
+	});
+
+	it("sends a page exactly as before when no framing is given", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("text"));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:7b", fetchFn: fetchMock });
+
+		await backend.recognize([page()]);
+
+		const content = requestBody().messages[0].content as { type: string; text?: string; image_url?: { url: string } }[];
+		expect(content[0].text).toBe(TRANSCRIPTION_PROMPT);
+		expect(content[1].image_url?.url).toBe(`data:image/png;base64,${Buffer.from(ocrImage(page())).toString("base64")}`);
+	});
+
+	it("names its model for the diagnostics", () => {
+		expect(new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://x/v1", model: "qwen2.5vl:7b", fetchFn: fetchMock }).model).toBe("qwen2.5vl:7b");
 	});
 
 	it("carries the provider id through as its backend id", () => {
@@ -244,6 +273,50 @@ describe("OpenAiCompatOcrBackend", () => {
 			// user after the wrong thing.
 			expect(result.warnings?.[0]).toContain("did not answer in 10 minutes");
 			expect(result.warnings?.[0]).toContain("http://localhost:1234/v1");
+			expect(result.warnings?.[0]).toContain("very tall image");
+			expect(result.warnings?.[0]).toContain('run "Re-transcribe all synced notes"');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	// Re-transcribe refuses a PDF note with a digest, and a margin note is never a tall page: the
+	// page's advice was wrong for it twice.
+	it("gives a margin note that timed out only the advice that applies to it", async () => {
+		vi.useFakeTimers();
+		try {
+			fetchMock.mockReturnValue(new Promise<Response>(() => {}));
+			const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+			const running = backend.recognize([page()], undefined, "note");
+			await vi.advanceTimersByTimeAsync(OCR_REQUEST_TIMEOUT_MS);
+			const result = await running;
+
+			expect(result.warnings).toEqual([
+				"Margin notes were left out because the server at http://localhost:11434/v1 did not answer in 10 minutes. A later sync " +
+					"will not pick them up on its own: try a different model, then the next sync reads them again.",
+			]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	// A page added to a PDF belongs to the digest, which Re-transcribe refuses as it refuses a margin
+	// note -- but it is a whole page, and can be the tall kind.
+	it("sends a page added to a PDF that timed out to the sync, not to Re-transcribe", async () => {
+		vi.useFakeTimers();
+		try {
+			fetchMock.mockReturnValue(new Promise<Response>(() => {}));
+			const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+			const running = backend.recognize([page()], undefined, "added-page");
+			await vi.advanceTimersByTimeAsync(OCR_REQUEST_TIMEOUT_MS);
+			const result = await running;
+
+			expect(result.warnings?.[0]).toMatch(/^Pages added on the tablet were left out/);
+			expect(result.warnings?.[0]).toContain("very tall image");
+			expect(result.warnings?.[0]).not.toContain("Re-transcribe");
+			expect(result.warnings?.[0]).toMatch(/the next sync reads them again\.$/);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -307,6 +380,31 @@ describe("the not-running warning", () => {
 		expect(result.warnings?.[0]).toContain("2 pages were not transcribed");
 	});
 
+	/** A note goes alone, so "1 page" named the wrong thing, and a count that the sync then merges across a document's notes. */
+	it("says margin notes, without a count, when the scene is a note", async () => {
+		fetchMock.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:11434"));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual([
+			"Could not reach the server at http://localhost:11434/v1 — margin notes were not transcribed. Is it running? A later sync tries them again.",
+		]);
+		expect(result.retryable).toBe(true);
+	});
+
+	// A page added to a PDF goes alone, as a margin note does, and is recovered as one is: by the sync.
+	it("says a later sync tries a page added to a PDF again", async () => {
+		fetchMock.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:11434"));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "added-page");
+
+		expect(result.warnings).toEqual([
+			"Could not reach the server at http://localhost:11434/v1 — pages added on the tablet were not transcribed. Is it running? A later sync tries them again.",
+		]);
+	});
+
 	it("says it once per unit, not once per page", async () => {
 		fetchMock.mockRejectedValue(new Error("fetch failed"));
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
@@ -326,6 +424,72 @@ describe("the not-running warning", () => {
 
 		expect(result.status).toBe("failed");
 		expect(result.warnings?.[0]).not.toContain("Is it running?");
+		// Nor is it retried for free: the same request would be refused again.
+		expect(result.retryable).toBeUndefined();
+		expect(result.refused).toBe(true);
+	});
+
+	it("does not retry a bad request for free either", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(400, { error: "invalid image" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["The server at http://localhost:11434/v1 answered 400: invalid image — margin notes were not transcribed."]);
+		expect(result.retryable).toBeUndefined();
+		expect(result.refused).toBe(true);
+	});
+
+	// `ollama pull` fixes it under the same settings -- what lets a sync try a PDF whose every note was
+	// refused again (`DigestBuild.ocrRetryable`). The sentence promises nothing: it knows one note.
+	it("says a model that is not there was refused", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(404, { error: "model 'qwen3-vl:4b' not found" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["The server at http://localhost:11434/v1 answered 404: model 'qwen3-vl:4b' not found — margin notes were not transcribed."]);
+		expect(result.refused).toBe(true);
+		expect(result.retryable).toBeUndefined();
+	});
+
+	// Ollama answered "500 unknown model architecture" for a model it was too old for, and an Ollama
+	// update fixed it under the same model. The server is running, so the sentence is its own refusal --
+	// but the same request may well get through later, so a margin note is tried again like an
+	// unreachable one.
+	it("tries a margin note again after a server error, in the server's own words", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(500, { error: "unknown model architecture: 'qwen3vl'" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual([
+			"The server at http://localhost:11434/v1 answered 500: unknown model architecture: 'qwen3vl' — margin notes were not transcribed. A later sync tries them again.",
+		]);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
+	});
+
+	it("tries a margin note again once the rate limit outlasted the retries", async () => {
+		const rateLimited = { ...jsonResponse(429, {}), headers: { get: () => null } } as unknown as Response;
+		fetchMock.mockResolvedValue(rateLimited);
+		const backend = new OpenAiCompatOcrBackend({ id: "openrouter", baseURL: "http://x/v1", apiKey: "k", model: "m", fetchFn: fetchMock, sleepFn: async () => {} });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+		expect(result.retryable).toBe(true);
+		expect(result.refused).toBeUndefined();
+	});
+
+	// A page is not revisited by the sync, so promising it would be false.
+	it("promises a page nothing after a server error", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(500, { error: "boom" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings).toEqual(["The server at http://localhost:11434/v1 answered 500: boom — 1 page was not transcribed."]);
 	});
 
 	it("stays quiet when every page succeeded", async () => {
@@ -403,6 +567,8 @@ describe("a missing model", () => {
 		expect(result.status).toBe("failed");
 		expect(result.warnings?.[0]).toContain("No model is set");
 		expect(result.warnings?.[0]).toContain("2 pages were not transcribed");
+		// Fixed in the settings, so nothing for a sync to try again under them.
+		expect(result.refused).toBeUndefined();
 	});
 
 	it("treats a whitespace-only model as missing", async () => {
@@ -476,8 +642,19 @@ describe("reporting pages dropped for truncation", () => {
 		expect(result.status).toBe("ok");
 		expect(result.warnings).toEqual([
 			"2 pages were left out because the model's answer ran past what it may return — this happens with models that reason " +
-				'before answering. A later sync will not pick them up on its own: switch to a model that doesn\'t reason, then run "Re-transcribe all notes".',
+				'before answering. A later sync will not pick them up on its own: switch to a model that doesn\'t reason, then run "Re-transcribe all synced notes".',
 		]);
+	});
+
+	it("does not send a margin note to a command that refuses it", async () => {
+		fetchMock.mockResolvedValueOnce(truncated());
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings?.[0]).toMatch(/^Margin notes were left out because the model's answer ran past/);
+		expect(result.warnings?.[0]).toContain("switch to a model that doesn't reason, then the next sync reads them again.");
+		expect(result.warnings?.[0]).not.toContain("Re-transcribe");
 	});
 
 	/**

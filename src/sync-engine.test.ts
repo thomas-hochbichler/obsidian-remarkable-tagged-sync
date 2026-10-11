@@ -31,6 +31,8 @@ import {
 	type SyncProgress,
 } from "./sync-engine";
 import { mappingFingerprint, TagRouter } from "./tag-router";
+import { transcriptFingerprint } from "./transcript-store";
+import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 // The real pipeline runs in every test but one: every partial failure inside it is deliberately
 // caught, so a build that *throws* -- which the sync engine still has to survive -- can only be
@@ -2524,11 +2526,303 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 
 	/** What `buildDigest` came back with, in the shape the engine reads. */
 	function digestBuild(markdown: string, covered: number[], ocr: OcrStatus = "skipped") {
-		return { markdown, warnings: [], ocr, covered, pages: [] };
+		return { markdown, warnings: [], ocr, covered, pages: [], ocrWarnings: [] as string[], ocrRetryable: false };
 	}
 
 	const lastWrite = (deps: { noteStore: { write: ReturnType<typeof vi.fn> } }) => deps.noteStore.write.mock.calls.at(-1)![1] as string;
 	const scenesSent = (backend: OcrBackend) => (backend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[]);
+
+	/** A dead server under the digest's margin notes is as fixable as one under a notebook, and says so the same way. */
+	it("raises the digest's backend warnings as a notebook's are raised, once", async () => {
+		typedPages(false, true, false);
+		const warning = "Could not reach the server at http://localhost:11434/v1 — margin notes were not transcribed. Is it running?";
+		vi.mocked(buildDigest).mockResolvedValueOnce({ ...digestBuild("", [], "failed"), ocrWarnings: [warning] });
+		const deps = { ...baseDeps(threePageNotebook("root-digest-warning"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.backendWarnings).toEqual([warning]);
+		// The diagnostics name the document, which the backend's sentence cannot.
+		expect(result.skipErrors).toContainEqual(expect.stringMatching(/^Digest of ".+" for tag "sync": Could not reach the server/));
+	});
+
+	// The digest also reads pages added on the device, as whole pages: their warning is no margin note's.
+	it("does not call a lost added page a margin note", async () => {
+		typedPages(false, true, false);
+		const warning = "Could not reach the server at http://localhost:11434/v1 — pages added on the tablet were not transcribed. Is it running?";
+		vi.mocked(buildDigest).mockResolvedValueOnce({ ...digestBuild("", [], "failed"), ocrWarnings: [warning] });
+		const deps = { ...baseDeps(threePageNotebook("root-digest-page-warning"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.skipErrors).toContainEqual(`Digest of "Notebook" for tag "sync": ${warning}`);
+		expect(result.skipErrors.join("\n")).not.toMatch(/margin note/i);
+	});
+
+	/**
+	 * A digest that lost transcriptions used to be stamped as done: the device is unchanged, so no gate
+	 * reopened the document, and re-transcribe refuses a digest -- its margin notes stayed unread for good.
+	 */
+	describe("trying a digest's lost transcriptions again", () => {
+		const key = notebookSyncKey("doc-1", "sync");
+		const failedDigest = (retryable: boolean) => ({ ...digestBuild("", [], "failed"), ocrRetryable: retryable });
+		const builds = () => vi.mocked(buildDigest).mock.calls.length;
+		const minutesLater = (minutes: number) => () => new Date(Date.parse(NOW) + minutes * 60_000).toISOString();
+
+		// Not on the very next sync: a server that stays off for days would otherwise have every
+		// auto-sync render the PDF, ask the dead server once per note and rewrite the note.
+		it("tries again an hour after nothing answered, and stops once it has read", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-unreachable"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.index.rows[key].ocrRetry).toEqual({ with: expect.any(String), retryable: true, at: NOW });
+
+			const before = builds();
+			const soon = await runSync({ ...deps, now: minutesLater(30) }, first.index);
+			expect(builds() - before).toBe(0);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			const later = await runSync({ ...deps, now: minutesLater(61) }, soon.index);
+
+			expect(builds() - before).toBe(1);
+			expect(later.index.rows[key].ocrRetry).toBeUndefined();
+		});
+
+		// A failure that repeats starts the hour again, or a dead server would be asked on every sync
+		// from the second hour on.
+		it("moves the hour forward when the retry fails as well", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-again"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const second = await runSync({ ...deps, now: minutesLater(61) }, first.index);
+
+			expect(second.index.rows[key].ocrRetry?.at).toBe(minutesLater(61)());
+		});
+
+		// The hour counts from the failure, not from the start of the sync: the first sync of a large
+		// library can take seventy minutes, and a PDF it failed near the end was due again at once.
+		it("starts the hour when the digest failed, not when the sync started", async () => {
+			typedPages(false, true, false);
+			let clock = NOW;
+			vi.mocked(buildDigest).mockImplementationOnce(async () => {
+				clock = minutesLater(70)();
+				return failedDigest(true);
+			});
+			const deps = { ...baseDeps(threePageNotebook("root-retry-long-sync"), { sync: "Target" }), ocrBackend: perPageOcrBackend(), now: () => clock };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.index.rows[key].ocrRetry?.at).toBe(minutesLater(70)());
+
+			const before = builds();
+			await runSync({ ...deps, now: minutesLater(75) }, first.index);
+			expect(builds() - before).toBe(0);
+		});
+
+		// The hour is for a server that is down. A different model is the user doing something about it.
+		it("tries a different backend or model at once, within the hour", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-switched"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			const before = builds();
+			await runSync({ ...deps, ocrBackend: { ...perPageOcrBackend(), fingerprint: "another-model" } }, first.index);
+
+			expect(builds() - before).toBe(1);
+		});
+
+		// The hour is for auto-sync. Someone pressing "Sync now" has likely just started the server, and
+		// a sync that passed the PDF by would look as if it had not noticed.
+		it("tries again at once when the user syncs by hand", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-manual"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			const before = builds();
+			await runSync({ ...deps, now: minutesLater(30), manual: true }, first.index);
+
+			expect(builds() - before).toBe(1);
+		});
+
+		// By hand or not, a refusal comes back the same with the same model.
+		it("does not try a refusal again by hand either", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(false));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-manual-answered"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const before = builds();
+			await runSync({ ...deps, manual: true }, first.index);
+
+			expect(builds() - before).toBe(0);
+		});
+
+		// A truncation or a refusal comes back the same with the same model: retried on every sync, it
+		// would bill a metered backend for every note of the PDF each time.
+		it("waits for a different backend or model when the server did answer", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(false));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-answered"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const before = builds();
+			const same = await runSync(deps, first.index);
+			expect(builds() - before).toBe(0);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			await runSync({ ...deps, ocrBackend: { ...perPageOcrBackend(), fingerprint: "another-model" } }, same.index);
+			expect(builds() - before).toBe(1);
+		});
+
+		// The skip notice tells the user to undo the edit. Had the skip dropped the retry, undoing it
+		// would bring back the note -- without the margin notes it was waiting to read.
+		it("keeps the retry of a note the user has edited, so undoing the edit brings it back", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-edited"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			const path = first.index.rows[key].notePath;
+			await deps.noteStore.write(path, (await deps.noteStore.read(path))!.replace("## Transcript", "## Transcript\nmine"));
+
+			const second = await runSync({ ...deps, now: minutesLater(61) }, first.index);
+
+			expect(second.editedNotesSkipped).toBe(1);
+			expect(second.index.rows[key].ocrRetry).toEqual(first.index.rows[key].ocrRetry);
+		});
+
+		// Off reads nothing, and neither does a backend that cannot run here. Retrying under either
+		// would rewrite the note for nothing and spend the retry the real backend still needs.
+		it.each([
+			["off", (): OcrBackend => ({ ...perPageOcrBackend(), id: "off", fingerprint: "off" })],
+			["unavailable", (): OcrBackend => new UnavailableOcrBackend("vision")],
+		])("does not retry under a backend that reads nothing (%s)", async (name, readsNothing) => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook(`root-retry-${name}`), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const before = builds();
+			const second = await runSync({ ...deps, ocrBackend: readsNothing(), now: minutesLater(61) }, first.index);
+
+			expect(builds() - before).toBe(0);
+			expect(second.index.rows[key].ocrRetry).toEqual(first.index.rows[key].ocrRetry);
+		});
+
+		// A note rewritten under Off for another reason -- here the notebook changed -- read none of the
+		// margin notes the real backend lost, so it must not clear their retry.
+		it("keeps the retry when a backend that reads nothing rewrites the note", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-off-edit"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", []));
+			const before = builds();
+			const second = await runSync({ ...deps, api: threePageNotebook("root-retry-off-edit-2", "hash-2"), ocrBackend: { ...perPageOcrBackend(), id: "off", fingerprint: "off" } }, first.index);
+
+			expect(builds() - before).toBe(1);
+			expect(second.index.rows[key].ocrRetry).toEqual(first.index.rows[key].ocrRetry);
+		});
+
+		// "unavailable" lost the notes as surely as "failed" did, so the retry now names the backend that
+		// came up empty. The one kept from before named another backend, and so reopened the PDF on
+		// every sync for the same answer.
+		it("writes a new retry when the retry finds the backend unavailable", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-unavailable-build"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "unavailable"));
+			const before = builds();
+			const second = await runSync({ ...deps, ocrBackend: { ...perPageOcrBackend(), fingerprint: "another-model" } }, first.index);
+
+			expect(builds() - before).toBe(1);
+			expect(second.index.rows[key].ocrRetry).toEqual({ with: transcriptFingerprint("another-model"), retryable: false, at: NOW });
+		});
+
+		// The server was off, and an hour later downloading the PDF failed. The build read nothing, so
+		// dropping the retry here lost the margin notes the server still owed for good.
+		it("keeps the retry when the digest build throws", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-build-throws"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockRejectedValueOnce(new Error("download failed"));
+			const before = builds();
+			const second = await runSync({ ...deps, now: minutesLater(61) }, first.index);
+
+			expect(builds() - before).toBe(1);
+			expect(second.notesWritten).toBe(1);
+			expect(second.index.rows[key].ocrRetry).toEqual(first.index.rows[key].ocrRetry);
+		});
+
+		// Synced before the downloaded model was ready: the notice used to send the reader to
+		// re-transcribe, which refuses a digest, and nothing else ever read the margin notes.
+		it("reads a digest again once the model that was not ready is", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "unavailable"));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-not-ready"), { sync: "Target" }), ocrBackend: new UnavailableOcrBackend("vision", true) };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.index.rows[key].ocrRetry?.with).toBe(transcriptFingerprint("unavailable"));
+
+			const before = builds();
+			const waiting = await runSync({ ...deps, now: minutesLater(61) }, first.index);
+			expect(builds() - before).toBe(0);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			await runSync({ ...deps, ocrBackend: perPageOcrBackend() }, waiting.index);
+			expect(builds() - before).toBe(1);
+		});
+
+		// Some notes failed, then the local engine stopped: `worstOcrStatus` calls that "unavailable",
+		// which used to keep a retry there was none of. A repaired engine keeps its fingerprint, so only
+		// the hour brings it back -- the backend says it was not reached.
+		it("tries again an hour after the engine stopped", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce({ ...digestBuild("", [], "unavailable"), ocrRetryable: true });
+			const deps = { ...baseDeps(threePageNotebook("root-retry-engine-stopped"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.index.rows[key].ocrRetry).toEqual({ with: expect.any(String), retryable: true, at: NOW });
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			const before = builds();
+			await runSync({ ...deps, now: minutesLater(61) }, first.index);
+			expect(builds() - before).toBe(1);
+		});
+
+		// Apple Vision on a machine it cannot run on answers "unavailable" with its real fingerprint, on
+		// every page. Tried on the hour, every PDF it saw would be downloaded, rendered and rewritten for
+		// the same answer; a different backend still reads it.
+		it("does not try a backend that cannot run here again on the hour", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "unavailable"));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-cannot-run"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.index.rows[key].ocrRetry).toEqual({ with: transcriptFingerprint("test-backend"), retryable: false, at: NOW });
+
+			const before = builds();
+			await runSync({ ...deps, now: minutesLater(61) }, first.index);
+			expect(builds() - before).toBe(0);
+		});
+	});
 
 	// The reported case, end to end: one typed page with nothing marked on it. The digest builds and
 	// renders nothing, and before this the note ended there -- with the two handwritten pages lost.
@@ -2950,7 +3244,7 @@ describe("reTranscribeAll", () => {
 		/** A mixed notebook, synced: page 1 typed and in the digest, page 2 handwritten and transcribed. */
 		async function syncedMixedNotebook(rootHash: string, pageBBytes = PAGE_BYTES) {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [], ocrWarnings: [], ocrRetryable: false });
 			const api = twoPageNotebook(rootHash);
 			api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-b") ? pageBBytes : PAGE_BYTES));
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
@@ -3005,7 +3299,7 @@ describe("reTranscribeAll", () => {
 		// Nothing else in the note accounts for that page, and the naming line is the whole point.
 		it("names a typed page when the note has no digest to carry it", async () => {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [], pages: [] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "", warnings: [], ocr: "skipped", covered: [], pages: [], ocrWarnings: [], ocrRetryable: false });
 			const api = twoPageNotebook("root-06-nodigest");
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
 			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -3024,7 +3318,7 @@ describe("reTranscribeAll", () => {
 		// dropped it instead, and the two paths then disagreed about the same notebook (ticket 06).
 		it("names a typed page the note's digest saw and found nothing on", async () => {
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
-			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [] });
+			vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: digestBody(1), warnings: [], ocr: "ok", covered: [1], pages: [], ocrWarnings: [], ocrRetryable: false });
 			const api = twoPageNotebook("root-06-uncovered");
 			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: perPageOcrBackend("before") };
 			const synced = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -4725,7 +5019,7 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		// Page 1 reads as a document, so the unit gets a digest -- which is what makes page 3's quotes
 		// fold into the transcript instead of standing in their own `## Highlights` section.
 		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
-		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [] });
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [], ocrWarnings: [], ocrRetryable: false });
 
 		const backend = countingOcrBackend();
 		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: backend };
@@ -4740,7 +5034,7 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		const secondApi = notebook("root-117-m2", "hash-2", { ...THREE, "page-b": "h-b-edited" });
 		secondApi.raw.getHash.mockImplementation(async (path: string) => (path.includes("page-c") ? HIGHLIGHTED_PAGE_BYTES : PAGE_BYTES));
 		for (const answer of [true, false, false]) vi.mocked(isDocumentText).mockReturnValueOnce(answer);
-		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [] });
+		vi.mocked(buildDigest).mockResolvedValueOnce({ markdown: "a digest", warnings: [], ocr: "ok", covered: [1], pages: [], ocrWarnings: [], ocrRetryable: false });
 		await runSync({ ...baseDeps(secondApi, { sync: "Target" }), noteStore: deps.noteStore, ocrBackend: countingOcrBackend("test-backend", "fresh") }, synced.index);
 
 		const after = (await deps.noteStore.read(NOTE))!;

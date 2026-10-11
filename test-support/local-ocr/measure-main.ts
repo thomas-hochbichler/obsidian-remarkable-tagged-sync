@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { MODEL_GENERATIONS, RUNTIME_RELEASE } from "../../src/local-model-artefacts";
 import { localModelPaths } from "../../src/local-model-store";
 import { pageArgs } from "../../src/local-ocr-runtime";
-import { sanitizeTranscript, splitAtTypedText } from "../../src/llm-transcript";
+import { sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
 import { rasterizePage } from "../../src/page-rasterizer";
 import { encodeGrayscalePng } from "../../src/png-encoder";
 import { parseRmV6 } from "../../src/rm-parser";
@@ -94,7 +94,7 @@ async function main() {
 			}
 			const imageFile = join(tmp, `${page.id}-${at}.png`);
 			writeFileSync(imageFile, encodeGrayscalePng(rasterizePage(part.scene)));
-			const run = await runPage(paths.runtimeExecutable, pageArgs(paths, imageFile, generation));
+			const run = await runPage(paths.runtimeExecutable, pageArgs(paths, imageFile, generation, TRANSCRIPTION_PROMPT));
 			ms += run.ms;
 			peak = Math.max(peak, peakRssBytes(run.stderr) ?? 0);
 			if (run.code !== 0) { failed = true; break; }
