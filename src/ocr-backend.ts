@@ -42,10 +42,14 @@ export interface OcrResult {
 	 */
 	warnings?: string[];
 	/**
-	 * Set when a page failed because nothing answered at the endpoint: no server, no network, or a
-	 * local engine that stopped. The one failure the very same request can get past later, unchanged
-	 * and at no cost while it lasts -- so the sync tries a failed margin note again on this alone
-	 * (`SyncIndexRow.ocrRetry`), where a refusal or a truncation waits for different settings.
+	 * Set when a page failed in a way the very same request can get past later, unchanged and at no
+	 * cost while it lasts: nothing answered at the endpoint -- no server, no network, a local engine
+	 * that stopped -- or the server answered with its own failure, a 5xx or a 429. Ollama's "500 unknown
+	 * model architecture" is that kind: an Ollama update makes it go away under the same model. So the
+	 * sync tries a failed margin note again on this alone (`SyncIndexRow.ocrRetry`), where a refusal
+	 * of the request itself -- a 400, a 401, a 404 -- or a truncation waits for different settings.
+	 *
+	 * Named for the first of those causes; it means "worth another try with the same settings".
 	 */
 	unreachable?: true;
 }

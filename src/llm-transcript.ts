@@ -47,13 +47,14 @@ export function transcriptionPrompt(framing: OcrFraming = "page"): string {
 }
 
 /**
- * "1 page was" / "3 pages were", so the model backends' warnings read as sentences. A margin note goes
- * alone, so its count is always 1 and is left out: the warning is one sentence per cause for the whole
- * sync, and "1 margin note" would say that of a document that lost twelve. Lower case; a sentence that
- * starts with it goes through {@link upperFirst}.
+ * "1 page was" / "3 pages were", so the model backends' warnings read as sentences. A margin note and
+ * a page added to a PDF each go alone, so their count is always 1 and is left out: the warning is one
+ * sentence per cause for the whole sync, and "1 page was" would say that of a PDF that lost five added
+ * pages. Lower case; a sentence that starts with it goes through {@link upperFirst}.
  */
 export function pageCount(pages: number, framing: OcrFraming): string {
 	if (framing === "note") return "margin notes were";
+	if (framing === "added-page") return "pages added on the tablet were";
 	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
 }
 
@@ -76,8 +77,8 @@ export function readAgain(framing: OcrFraming): string {
 }
 
 /**
- * The sentence an unreachable server's warning ends with: for a margin note or a page added to a PDF,
- * that nothing is lost -- a sync tries it again while nothing answers (`OcrResult.unreachable`).
+ * The sentence an unreachable or failing server's warning ends with: for a margin note or a page added
+ * to a PDF, that nothing is lost -- a sync tries it again with the same settings (`OcrResult.unreachable`).
  * "Later", not "next": that retry waits an hour (`OCR_RETRY_INTERVAL_MS`), so the very next auto-sync
  * may well pass it by. Empty for a page, which a sync does not revisit on its own.
  */
@@ -443,7 +444,8 @@ function retryDelay(response: Response, attempt: number, now: number): number {
  *
  * Deliberately narrow: OpenRouter's 502 `provider_unavailable` and 503 `provider_overloaded` are
  * transient too, and are still **not** retried. Each added code is another failure mode to reason
- * about, and a failed page is already a graceful, visible outcome rather than a lost note.
+ * about, and a failed page is already a graceful, visible outcome rather than a lost note. Not retried
+ * *here*, that is: a margin note lost to one is tried again by a later sync (`OcrResult.unreachable`).
  */
 export async function fetchWithRetry(fetchFn: typeof fetch, url: string, init: RequestInit, sleep: Sleep = realSleep): Promise<Response> {
 	let response = await withTimeout(fetchFn(url, init));

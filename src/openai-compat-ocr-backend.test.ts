@@ -313,7 +313,7 @@ describe("OpenAiCompatOcrBackend", () => {
 			await vi.advanceTimersByTimeAsync(OCR_REQUEST_TIMEOUT_MS);
 			const result = await running;
 
-			expect(result.warnings?.[0]).toMatch(/^1 page was left out/);
+			expect(result.warnings?.[0]).toMatch(/^Pages added on the tablet were left out/);
 			expect(result.warnings?.[0]).toContain("very tall image");
 			expect(result.warnings?.[0]).not.toContain("Re-transcribe");
 			expect(result.warnings?.[0]).toMatch(/the next sync reads them again\.$/);
@@ -393,7 +393,7 @@ describe("the not-running warning", () => {
 		expect(result.unreachable).toBe(true);
 	});
 
-	// A page added to a PDF is counted as a page, and recovered as a margin note is: by the sync.
+	// A page added to a PDF goes alone, as a margin note does, and is recovered as one is: by the sync.
 	it("says a later sync tries a page added to a PDF again", async () => {
 		fetchMock.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:11434"));
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
@@ -401,7 +401,7 @@ describe("the not-running warning", () => {
 		const result = await backend.recognize([page()], undefined, "added-page");
 
 		expect(result.warnings).toEqual([
-			"Could not reach the server at http://localhost:11434/v1 — 1 page was not transcribed. Is it running? A later sync tries them again.",
+			"Could not reach the server at http://localhost:11434/v1 — pages added on the tablet were not transcribed. Is it running? A later sync tries them again.",
 		]);
 	});
 
@@ -426,6 +426,53 @@ describe("the not-running warning", () => {
 		expect(result.warnings?.[0]).not.toContain("Is it running?");
 		// Nor is it retried for free: the same request would be refused again.
 		expect(result.unreachable).toBeUndefined();
+	});
+
+	it("does not retry a bad request for free either", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(400, { error: "invalid image" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["The server at http://localhost:11434/v1 answered 400: invalid image — margin notes were not transcribed."]);
+		expect(result.unreachable).toBeUndefined();
+	});
+
+	// Ollama answered "500 unknown model architecture" for a model it was too old for, and an Ollama
+	// update fixed it under the same model. The server is running, so the sentence is its own refusal --
+	// but the same request may well get through later, so a margin note is tried again like an
+	// unreachable one.
+	it("tries a margin note again after a server error, in the server's own words", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(500, { error: "unknown model architecture: 'qwen3vl'" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual([
+			"The server at http://localhost:11434/v1 answered 500: unknown model architecture: 'qwen3vl' — margin notes were not transcribed. A later sync tries them again.",
+		]);
+		expect(result.unreachable).toBe(true);
+	});
+
+	it("tries a margin note again once the rate limit outlasted the retries", async () => {
+		const rateLimited = { ...jsonResponse(429, {}), headers: { get: () => null } } as unknown as Response;
+		fetchMock.mockResolvedValue(rateLimited);
+		const backend = new OpenAiCompatOcrBackend({ id: "openrouter", baseURL: "http://x/v1", apiKey: "k", model: "m", fetchFn: fetchMock, sleepFn: async () => {} });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+		expect(result.unreachable).toBe(true);
+	});
+
+	// A page is not revisited by the sync, so promising it would be false.
+	it("promises a page nothing after a server error", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(500, { error: "boom" }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings).toEqual(["The server at http://localhost:11434/v1 answered 500: boom — 1 page was not transcribed."]);
 	});
 
 	it("stays quiet when every page succeeded", async () => {

@@ -221,14 +221,55 @@ describe("AnthropicOcrBackend", () => {
 		});
 	});
 
-	// A page added to a PDF is counted as a page, and recovered as a margin note is: by the sync.
+	// A page added to a PDF goes alone, as a margin note does, and is recovered as one is: by the sync.
 	it("says a later sync tries a page added to a PDF again", async () => {
 		fetchMock.mockRejectedValue(new Error("network down"));
 		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()], undefined, "added-page");
 
-		expect(result.warnings).toEqual(["Could not reach Anthropic — 1 page was not transcribed. Is this machine online? A later sync tries them again."]);
+		expect(result.warnings).toEqual(["Could not reach Anthropic — pages added on the tablet were not transcribed. Is this machine online? A later sync tries them again."]);
+	});
+
+	// A refused key comes back refused, however long the sync waits.
+	it("does not try a refused margin note again for free", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(401, { error: "unauthorized" }));
+		const backend = new AnthropicOcrBackend({ apiKey: "bad-key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()], undefined, "note")).unreachable).toBeUndefined();
+	});
+
+	// Anthropic was running and said so -- "Is this machine online?" would be wrong -- but an overloaded
+	// or failing API lets the same request through later, so a margin note is tried again.
+	it("tries a margin note again after a server error, in Anthropic's own words", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(500, { error: { message: "internal error" } }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings).toEqual(["Anthropic answered 500: internal error — margin notes were not transcribed. A later sync tries them again."]);
+		expect(result.unreachable).toBe(true);
+	});
+
+	it("tries a margin note again once the rate limit outlasted the retries", async () => {
+		const rateLimited = { ...jsonResponse(429, {}), headers: { get: () => null } } as unknown as Response;
+		fetchMock.mockResolvedValue(rateLimited);
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock, sleepFn: async () => {} });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+		expect(result.unreachable).toBe(true);
+	});
+
+	// A page is not revisited by the sync, so promising it would be false.
+	it("promises a page nothing after a server error", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(529, { error: { message: "Overloaded" } }));
+		const backend = new AnthropicOcrBackend({ apiKey: "key", model: "claude-sonnet-5", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings).toEqual(["Anthropic answered 529: Overloaded — 1 page was not transcribed."]);
 	});
 
 	// The prompt tells the model to output nothing for a page with no legible text, so an empty
@@ -297,7 +338,7 @@ describe("AnthropicOcrBackend", () => {
 			const result = await running;
 
 			expect(result.warnings).toEqual([
-				"1 page was left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on their own: " +
+				"Pages added on the tablet were left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on their own: " +
 					"try a different model, then the next sync reads them again.",
 			]);
 		} finally {

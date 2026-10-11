@@ -2549,7 +2549,7 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 	// The digest also reads pages added on the device, as whole pages: their warning is no margin note's.
 	it("does not call a lost added page a margin note", async () => {
 		typedPages(false, true, false);
-		const warning = "Could not reach the server at http://localhost:11434/v1 — 1 page was not transcribed. Is it running?";
+		const warning = "Could not reach the server at http://localhost:11434/v1 — pages added on the tablet were not transcribed. Is it running?";
 		vi.mocked(buildDigest).mockResolvedValueOnce({ ...digestBuild("", [], "failed"), ocrWarnings: [warning] });
 		const deps = { ...baseDeps(threePageNotebook("root-digest-page-warning"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
 
@@ -2618,6 +2618,35 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 			await runSync({ ...deps, ocrBackend: { ...perPageOcrBackend(), fingerprint: "another-model" } }, first.index);
 
 			expect(builds() - before).toBe(1);
+		});
+
+		// The hour is for auto-sync. Someone pressing "Sync now" has likely just started the server, and
+		// a sync that passed the PDF by would look as if it had not noticed.
+		it("tries again at once when the user syncs by hand", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-manual"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			const before = builds();
+			await runSync({ ...deps, now: minutesLater(30), manual: true }, first.index);
+
+			expect(builds() - before).toBe(1);
+		});
+
+		// By hand or not, a refusal comes back the same with the same model.
+		it("does not try a refusal again by hand either", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(false));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-manual-answered"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const before = builds();
+			await runSync({ ...deps, manual: true }, first.index);
+
+			expect(builds() - before).toBe(0);
 		});
 
 		// A truncation or a refusal comes back the same with the same model: retried on every sync, it

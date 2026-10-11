@@ -90,8 +90,9 @@ export interface DigestBuild {
 	 */
 	ocrWarnings: string[];
 	/**
-	 * Whether some transcription failed because nothing answered at the backend's endpoint -- see
-	 * `OcrResult.unreachable`. What lets the sync try a failed digest again without new settings.
+	 * Whether some transcription failed in a way the same settings may get past later -- nothing
+	 * answered at the backend's endpoint, or the server failed; see `OcrResult.unreachable`. What lets
+	 * the sync try a failed digest again without new settings.
 	 */
 	ocrUnreachable: boolean;
 	/**

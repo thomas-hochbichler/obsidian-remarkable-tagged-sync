@@ -94,6 +94,12 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
 	private unreachable = false;
+	/**
+	 * Set when the server answered with its own failure, a 5xx or a 429 still there after
+	 * `fetchWithRetry`. Apart from `unreachable`, which picks the sentence: the server is running, so
+	 * "Is it running?" would be wrong. Both make the result `unreachable` -- see `OcrResult.unreachable`.
+	 */
+	private serverError = false;
 	/** The first refusal the server explained, as `<status>: <message>` -- see `recognize`. */
 	private refusal: string | null = null;
 	/**
@@ -127,6 +133,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	async recognize(pages: RmPage[], onPage?: () => void, framing: OcrFraming = "page"): Promise<OcrResult> {
 		if (pages.length === 0) return { status: "skipped", pages: [], text: "", confidence: null };
 		this.unreachable = false;
+		this.serverError = false;
 		this.refusal = null;
 		this.truncated = 0;
 		this.timedOut = 0;
@@ -159,14 +166,14 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			// displaced by a bigger failure that is also true.
 			(failedPages) => {
 				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages, framing)} not transcribed. Is it running?${triedAgain(framing)}`;
-				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.`;
+				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.${this.serverError ? triedAgain(framing) : ""}`;
 				if (this.timedOut > 0) return timeoutWarning(this.timedOut, this.baseURL, framing);
 				if (this.truncated > 0) return truncationWarning(this.truncated, framing);
 				return null;
 			},
 			onPage,
 		);
-		return this.unreachable ? { ...result, unreachable: true } : result;
+		return this.unreachable || this.serverError ? { ...result, unreachable: true } : result;
 	}
 
 	/** One page, one request. Every outcome that isn't usable text is `failed` for that page alone. */
@@ -204,6 +211,10 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				// First refusal wins: with four pages in flight they are the same refusal anyway, and the
 				// first one is the one whose status the user saw the run stop on.
 				this.refusal ??= `${response.status}${await refusalDetail(response)}`;
+				// A server failing rather than refusing: Ollama's "500 unknown model architecture" goes away
+				// with an Ollama update and the same model, and a 503 or a 429 with the load. A 400 or a 401
+				// would be refused again however long the sync waits.
+				if (response.status >= 500 || response.status === 429) this.serverError = true;
 				console.warn(`Tagged Sync: ${this.id} OCR request failed with status ${response.status}`);
 				return { kind: "failed" };
 			}

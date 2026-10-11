@@ -109,7 +109,13 @@ describe("the words a model backend's warning is made of", () => {
 		expect(readAgain("note")).not.toContain("Re-transcribe");
 		expect(readAgain("note")).toBe("the next sync reads them again");
 		expect(readAgain("added-page")).toBe("the next sync reads them again");
-		expect(pageCount(1, "added-page")).toBe("1 page was");
+	});
+
+	// An added page goes to the backend alone, as a margin note does, so its count was always 1 -- and
+	// the warning is said once for the whole sync, of a PDF that may have lost five.
+	it("leaves an added page's count out too", () => {
+		expect(pageCount(1, "added-page")).toBe("pages added on the tablet were");
+		expect(upperFirst(pageCount(1, "added-page"))).toBe("Pages added on the tablet were");
 	});
 });
 

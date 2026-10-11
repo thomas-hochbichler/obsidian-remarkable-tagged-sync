@@ -695,6 +695,9 @@ export default class TaggedSyncPlugin extends Plugin {
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
+					// "Sync now" tries a digest whose server did not answer at once, not an hour later: the
+					// user pressing it has likely just started that server.
+					manual: !auto,
 					// Checkpoint after each document, so an interrupted sync can't strand written notes
 					// without index rows and duplicate them on the next run.
 					saveIndex: async (index) => {

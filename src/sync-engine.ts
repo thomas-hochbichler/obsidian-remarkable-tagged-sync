@@ -178,8 +178,9 @@ export interface SyncIndexRow {
 	 * Set when this note's digest lost transcriptions -- margin notes, or pages added to a PDF -- so a
 	 * later sync reads the document again (`ocrRetryDue`). `with` is the `transcriptFingerprint` it
 	 * failed under -- "unavailable" too, so a PDF synced before the downloaded model was ready is read
-	 * once it is -- `unreachable` whether nothing answered (`OcrResult.unreachable`), `at` the start
-	 * of the sync it failed in (ISO), which a failure that repeats moves forward.
+	 * once it is -- `unreachable` whether the same settings may get past it later, because nothing
+	 * answered or the server failed with a 5xx or a 429 (`OcrResult.unreachable`), `at` the start of
+	 * the sync it failed in (ISO), which a failure that repeats moves forward.
 	 *
 	 * Without it nothing ever did: the device is unchanged, so every gate skips the document, and
 	 * re-transcribe refuses a digest. Not retried unconditionally, because the failures that repeat
@@ -347,6 +348,13 @@ export interface SyncDeps {
 	 * an interruption of the current one. A unit already under way always finishes.
 	 */
 	shouldStop?: () => boolean;
+	/**
+	 * The user started this run by hand ("Sync now"), default **off**, which is what auto-sync is. A
+	 * manual run does not wait out `OCR_RETRY_INTERVAL_MS` before trying a digest whose server did not
+	 * answer: the user has likely just done something about it -- started Ollama, say -- and a sync
+	 * that skipped the retry for another forty minutes would look like it had not noticed.
+	 */
+	manual?: boolean;
 }
 
 export interface SyncResult {
@@ -1409,36 +1417,25 @@ function withOcrRetry(row: SyncIndexRow, ocrRetry: SyncIndexRow["ocrRetry"]): Sy
 }
 
 /**
- * How long a digest whose server did not answer waits before a sync tries it again. Without a wait, a
- * server that stays off for days had every auto-sync download and render the PDF, ask the dead server
- * once per margin note, and rewrite the note -- only to fail the same way. A different backend or
- * model does not wait: that is the user doing something about it.
+ * How long a digest whose server did not answer, or failed, waits before an auto-sync tries it again.
+ * Without a wait, a server that stays off for days had every auto-sync download and render the PDF, ask
+ * the dead server once per margin note, and rewrite the note -- only to fail the same way. A different
+ * backend or model does not wait, and neither does "Sync now" (`SyncDeps.manual`): both are the user
+ * doing something about it.
  */
 const OCR_RETRY_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
- * Whether this run may try a retry at all: the key `ocrRetry.with` is judged against, or null for a
- * backend that reads nothing (`readsNothing`). Both differ from the backend a note failed under, so
- * without the null switching to Off reopened and rewrote every PDF with a pending retry, for a build
- * that reads nothing -- and spent the retry the real backend still needs.
- *
- * Not what a retry is written with: that is always the run's real fingerprint, "unavailable"
- * included, so the downloaded model differs from it the moment it is ready.
- */
-function ocrRetryKey(backend: OcrBackend): string | null {
-	return readsNothing(backend) ? null : transcriptFingerprint(backend.fingerprint);
-}
-
-/**
  * True if this note's digest lost transcriptions that this run has a new chance at: a different
  * backend or model is set now -- the downloaded model, after a sync that ran before it was ready --
- * or nothing answered and the hour since has passed (`OCR_RETRY_INTERVAL_MS`). Never under a backend
- * that reads nothing (`ocrRetryKey`). See `SyncIndexRow.ocrRetry`.
+ * or the same settings may get past it now, because the user started this run by hand or the hour
+ * since has passed (`OCR_RETRY_INTERVAL_MS`). Never under a backend that reads nothing (`retryKey`
+ * null, see `runSync`). See `SyncIndexRow.ocrRetry`.
  */
-function ocrRetryDue(row: SyncIndexRow, retryKey: string | null, now: string): boolean {
+function ocrRetryDue(row: SyncIndexRow, retryKey: string | null, now: string, manual: boolean): boolean {
 	if (retryKey === null || row.status !== "active" || row.ocrRetry === undefined) return false;
 	if (row.ocrRetry.with !== retryKey) return true;
-	return row.ocrRetry.unreachable && Date.parse(now) - Date.parse(row.ocrRetry.at) >= OCR_RETRY_INTERVAL_MS;
+	return row.ocrRetry.unreachable && (manual || Date.parse(now) - Date.parse(row.ocrRetry.at) >= OCR_RETRY_INTERVAL_MS);
 }
 
 /**
@@ -1889,12 +1886,16 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// on the device.
 	// A digest's lost transcriptions likewise, since a backend or a server coming back moves nothing.
 	const transcriptKey = transcriptFingerprint(ocrBackend.fingerprint);
-	const retryKey = ocrRetryKey(ocrBackend);
+	// Null under a backend that reads nothing: Off differs from the backend a note failed under, so
+	// without it switching to Off reopened and rewrote every PDF with a pending retry, for a build that
+	// reads nothing -- and spent the retry the real backend still needs. A retry is still written with
+	// `transcriptKey`, "unavailable" included, so the downloaded model differs from it once it is ready.
+	const retryKey = readsNothing(ocrBackend) ? null : transcriptKey;
 	// One clock reading for the whole run, handed to the pre-scan too: the gate, the scan and the plan
 	// must agree on whether a retry is due, or a sync that crosses the hour would count a unit its own
 	// plan then skips.
 	const startedAt = now();
-	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt);
+	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt, deps.manual ?? false);
 	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
 		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };

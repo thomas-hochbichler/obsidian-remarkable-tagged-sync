@@ -36,14 +36,16 @@ workflow publishes the section as the GitHub release body. See
   notes failed counted as done, and nothing read them again until the PDF changed on the tablet. The
   message even told you to run *Re-transcribe all notes*, which leaves margin notes on a PDF alone.
   Now a sync tries again once you have chosen a different backend or model, or, if the server could
-  not be reached or the downloaded model stopped, an hour later at the earliest. This includes PDFs
-  synced while the downloaded model was not ready yet: the first sync after its download reads them.
-  A note that failed for another reason, for example because the model's answer was cut off, is not
-  sent again with the same model, so a paid backend does not charge you for it on every sync. A
-  retry reads all margin notes of that PDF again, not only the ones that failed. On a paid backend
-  it costs as much as the first reading did, but only once per outage or change of model, not on
-  every sync. Messages about pages name the command as it is really called, *Re-transcribe all
-  synced notes*. With the downloaded model, a failed page is no longer given a wrong page number.
+  not be reached, failed with an error of its own such as 500 or "overloaded", or the downloaded
+  model stopped, an hour later at the earliest. This includes PDFs synced while the downloaded model
+  was not ready yet: the first sync after its download reads them. *Sync now* tries again right
+  away, without waiting for the hour. A note that failed for another reason, for example because
+  the model's answer was cut off, is not sent again with the same model, so a paid backend does not
+  charge you for it on every sync. A retry reads all margin notes of that PDF again, not only the
+  ones that failed. On a paid backend it costs as much as the first reading did, but only once per
+  outage or change of model, not on every sync. Messages about pages name the command as it is
+  really called, *Re-transcribe all synced notes*. With the downloaded model, a failed page is no
+  longer given a wrong page number.
 
 - **"Copy diagnostics" counts Apple Vision's unreadable ink regions for the last sync only.** The
   count added up over the whole Obsidian session, so after a few syncs it was too high. The Vision
