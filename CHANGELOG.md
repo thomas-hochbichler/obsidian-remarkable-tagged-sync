@@ -12,6 +12,13 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Changed
+
+- **"Already on your reMarkable" now says what to do after deleting a paper on the tablet.**
+  Sending tagged Zotero papers judges what is on the tablet by what the last sync saw, so a paper
+  deleted on the tablet since then still counted as there and was not sent again. The notice now
+  adds *"Deleted it on the tablet? Run Sync now once, then send again."*
+
 ## [1.8.2] - 2026-09-27
 
 ### Fixed
