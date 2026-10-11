@@ -72,7 +72,6 @@ src/auto-sync.test.ts :: isMeteredProvider > is false for Apple Vision
 src/auto-sync.test.ts :: isMeteredProvider > is false for a backend this build does not have
 src/diagnostics.test.ts :: buildDiagnostics > carries every fact a bug report otherwise has to be asked for
 src/diagnostics.test.ts :: buildDiagnostics > includes the raw last error, which is often the whole diagnosis
-src/diagnostics.test.ts :: buildDiagnostics > says Vision has not run here rather than printing a null revision
 src/diagnostics.test.ts :: buildDiagnostics > says so plainly when there is nothing to report, rather than printing null
 src/digest-anchoring.test.ts :: resolveAnchor cascade > drops a highlight just past the distance threshold
 src/digest-anchoring.test.ts :: resolveAnchor cascade > falls back to the page when there is nothing to anchor to
