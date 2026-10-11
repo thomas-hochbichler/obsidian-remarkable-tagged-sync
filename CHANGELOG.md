@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-10-11
+
 ### Fixed
 
 - **Handwritten margin notes on PDFs are read properly with Ollama, LM Studio, the downloaded model
