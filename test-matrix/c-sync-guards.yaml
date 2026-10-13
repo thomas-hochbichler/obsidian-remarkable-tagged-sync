@@ -561,3 +561,24 @@
       layer: unit
       file: src/local-ocr-backend.test.ts
       test: "failure mapping (§8.2) > says nothing answered when the runtime is broken, and when it is remembered"
+
+    - id: C26.30
+      scenario: A PDF whose note 1.8.2 or earlier wrote with "Handwriting that could not be transcribed", synced again under this version with the device unchanged
+      expect: The one-time pass marks its row with a retry no backend's fingerprint matches, and the next sync reads the PDF once and clears the retry. Without it the row has no ocrRetry -- older versions never wrote one -- and nothing ever read the PDF again, which is what a reporter on 1.8.3 saw
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > reads a PDF again once whose note an older version wrote with notes it could not read"
+
+    - id: C26.31
+      scenario: The one-time pass meets a note that reads everything, and a note that still says it could not be read but already waits for a retry
+      expect: Both rows come back unchanged. The second keeps the retry it has, so the pass never resets an hour or a fingerprint the 1.8.3 retry already decided
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > leaves a note alone that reads everything, or that already waits for a retry"
+
+    - id: C26.32
+      scenario: One PDF lost its margin notes, and its row is later orphaned
+      expect: The diagnostics count is 1 while the row is active and 0 once it is orphaned -- an orphaned row is never synced, so it waits for nothing
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > counts the active rows that wait for a retry, for the diagnostics"

@@ -503,6 +503,48 @@
       file: src/llm-transcript.test.ts
       test: "the words a model backend's warning is made of > leaves an added page's count out too"
 
+    - id: E25.30
+      scenario: "A model that does not reason runs out of room, as qwen2.5vl:3b did repeating a line"
+      expect: "The warning says the model kept writing and suggests a larger model. It used to blame reasoning and say to switch to a model that does not reason -- the very model the reporter had"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > blames a model that kept writing when it did not reason"
+
+    - id: E25.31
+      scenario: "A truncated answer from llama-server or LM Studio carries reasoning_content"
+      expect: "Blamed on reasoning, with the old lever"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > blames reasoning when the answer carries reasoning_content, as llama-server and LM Studio send it"
+
+    - id: E25.32
+      scenario: "A truncated answer from OpenAI or OpenRouter counts reasoning tokens"
+      expect: "Blamed on reasoning, with the old lever"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > blames reasoning when the answer carries reasoning tokens, as OpenAI and OpenRouter count them"
+
+    - id: E25.33
+      scenario: "A truncated answer carries reasoning nobody separated, as an inline <think>"
+      expect: "Blamed on reasoning, with the old lever"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > blames reasoning when the answer carries an inline <think> block"
+
+    - id: E25.34
+      scenario: "A truncated answer is empty and has no reasoning field"
+      expect: "Blamed on reasoning: #116's case, reasoning that used up the room before the answer began"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > blames reasoning when the answer carries nothing written at all"
+
+    - id: E25.35
+      scenario: "A truncated answer has content null"
+      expect: "Read as empty, so blamed on reasoning"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > blames reasoning when the answer carries no content at all"
+
 - feature: E27
   name: A request that is never answered ends the page, not the run
   code: src/llm-transcript.ts

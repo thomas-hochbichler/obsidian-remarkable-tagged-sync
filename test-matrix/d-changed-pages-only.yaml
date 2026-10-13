@@ -258,3 +258,10 @@
       layer: unit
       file: src/diagnostics.test.ts
       test: "buildDiagnostics > reports how much of the transcription the per-page store answered"
+
+    - id: D23.2
+      scenario: A bug report is copied while two documents wait for their lost transcriptions to be read again
+      expect: The block says "Documents waiting to be read again" with the count, and "none" when there are none. A reporter's notes stayed unread after an update, and nothing they could paste said whether any document was waiting at all
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > counts the documents waiting to be read again"
