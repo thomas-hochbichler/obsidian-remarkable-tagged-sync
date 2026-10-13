@@ -20,7 +20,8 @@ workflow publishes the section as the GitHub release body. See
   on the tablet, or until you switched *Handwritten notes* off and on. The first sync after this
   update now finds those notes in your vault and reads their PDFs again with your transcription
   backend. With a paid cloud backend and automatic transcription off, that happens on the next
-  *Sync now*.
+  *Sync now*. Not under *Off*, which writes that sentence for every margin note because it never
+  looked, and not for a note you edited.
 
 - **A page left out because the model's answer ran too long no longer gets the wrong advice.** The
   warning always blamed a model that reasons before answering and said to switch to one that

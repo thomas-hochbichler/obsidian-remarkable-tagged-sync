@@ -706,7 +706,9 @@ describe("reporting pages dropped for truncation", () => {
 		const result = await backend.recognize([page()], undefined, "note");
 
 		expect(result.warnings?.[0]).toMatch(/^Margin notes were left out because the model's answer was cut off before it was complete\./);
-		expect(result.warnings?.[0]).toContain('once that is fixed, switch "Handwritten notes" off and on in the settings to read them again.');
+		expect(result.warnings?.[0]).toContain(
+			'once that is fixed, switch "Handwritten notes" off and on in the settings to read them again — that reads every PDF\'s margin notes again.',
+		);
 		expect(result.warnings?.[0]).not.toContain("the next sync reads them again");
 	});
 

@@ -383,8 +383,12 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 	}
 	// Not `readAgain`: for a margin note that promises the next sync, which reads it again only under a
 	// different backend or model -- and a full context is fixed in the server's settings, under the same
-	// fingerprint. Switching "Handwritten notes" off and on reads every note again whatever the fix was.
-	const repair = framing === "page" ? readAgain(framing) : `switch "Handwritten notes" off and on in the settings to read them again`;
+	// fingerprint. Switching "Handwritten notes" off and on reads every note again whatever the fix was --
+	// of every PDF, which on a paid backend is the whole library billed again, so the sentence says so.
+	const repair =
+		framing === "page"
+			? readAgain(framing)
+			: `switch "Handwritten notes" off and on in the settings to read them again — that reads every PDF's margin notes again`;
 	return (
 		`${head} the model's answer was cut off before it was complete. A later sync will not pick them up on its own: ` +
 		`"Copy diagnostics" shows what cut it off, and once that is fixed, ${repair}.`

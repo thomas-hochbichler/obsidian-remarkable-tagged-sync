@@ -36,6 +36,7 @@ import {
 } from "./sync-engine";
 import { mappingFingerprint, TagRouter } from "./tag-router";
 import { transcriptFingerprint } from "./transcript-store";
+import { OffOcrBackend } from "./off-ocr-backend";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 // The real pipeline runs in every test but one: every partial failure inside it is deliberately
@@ -2836,7 +2837,7 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 			const first = await runSync(deps, EMPTY_SYNC_INDEX);
 			expect(first.index.rows[key].ocrRetry).toBeUndefined();
 
-			const marked = await markLegacyOcrLosses(first.index, deps.noteStore, NOW);
+			const marked = await markLegacyOcrLosses(first.index, deps.noteStore, NOW, deps.ocrBackend);
 			expect(marked.rows[key].ocrRetry).toEqual({ with: LEGACY_OCR_RETRY, retryable: false, at: NOW });
 
 			typedPages(false, true, false);
@@ -2852,11 +2853,11 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("> every note read", [], "ok"));
 			const deps = { ...baseDeps(threePageNotebook("root-retry-legacy-clean"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
 			const first = await runSync(deps, EMPTY_SYNC_INDEX);
-			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW)).toEqual(first.index);
+			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW, deps.ocrBackend)).toEqual(first.index);
 
 			const waiting: SyncIndex = { ...first.index, rows: { [key]: { ...first.index.rows[key], ocrRetry: { with: "x", retryable: true, at: NOW } } } };
 			await deps.noteStore.write(waiting.rows[key].notePath, `> ${NOT_TRANSCRIBED}`);
-			expect(await markLegacyOcrLosses(waiting, deps.noteStore, minutesLater(5)())).toEqual(waiting);
+			expect(await markLegacyOcrLosses(waiting, deps.noteStore, minutesLater(5)(), deps.ocrBackend)).toEqual(waiting);
 		});
 
 		// A sync would skip the note anyway -- it never overwrites the user's own words -- so marked, the row
@@ -2870,15 +2871,44 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 			const written = (await deps.noteStore.read(notePath)) ?? "";
 			await deps.noteStore.write(notePath, written.replace(NOT_TRANSCRIBED, `${NOT_TRANSCRIBED} Read it myself: build on rock.`));
 
-			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW)).toEqual(first.index);
+			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW, deps.ocrBackend)).toEqual(first.index);
 		});
 
-		it("counts the active rows that wait for a retry, for the diagnostics", async () => {
+		// Off writes the same sentence for every margin note -- it never looked -- and 1.8.3 gives such a note
+		// no retry on purpose. Marked, a vault on Off would count every PDF as waiting, and the first Sync
+		// now after switching to a paid backend would read, and bill, every margin note in the library.
+		it("marks nothing under a backend that reads nothing", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild(`> ${NOT_TRANSCRIBED}`, [], "skipped"));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-legacy-off"), { sync: "Target" }), ocrBackend: new OffOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW, deps.ocrBackend)).toEqual(first.index);
+			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW, new UnavailableOcrBackend("vision"))).toEqual(first.index);
+		});
+
+		// The pass is a courtesy: a note the vault cannot hand over is skipped, never the sync. Thrown, it
+		// would stop every sync before it opened the tablet, and the flag would never be set.
+		it("skips a note it cannot read", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild(`> ${NOT_TRANSCRIBED}`, [], "ok"));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-legacy-unreadable"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			deps.noteStore.read = vi.fn().mockRejectedValue(new Error("ENOENT: no such file"));
+
+			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW, deps.ocrBackend)).toEqual(first.index);
+		});
+
+		it("counts the documents whose rows wait for a retry, for the diagnostics", async () => {
 			typedPages(false, true, false);
 			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
 			const deps = { ...baseDeps(threePageNotebook("root-retry-count"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
 			const first = await runSync(deps, EMPTY_SYNC_INDEX);
 			expect(pendingOcrRetries(first.index)).toBe(1);
+
+			// A PDF tagged page by page has a row per tag, each with its own digest: still one document.
+			const second = { ...first.index.rows[key], syncKey: "doc-1|another", tag: "another" };
+			expect(pendingOcrRetries({ ...first.index, rows: { ...first.index.rows, [second.syncKey]: second } })).toBe(1);
 
 			const orphaned: SyncIndex = { ...first.index, rows: { [key]: { ...first.index.rows[key], status: "orphaned" } } };
 			expect(pendingOcrRetries(orphaned)).toBe(0);

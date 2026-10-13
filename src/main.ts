@@ -670,7 +670,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Before opening the source, so a tablet that cannot be reached does not put it off: it reads
 			// the vault only. Saved at once, so a failed run does not read every note again next time.
 			if (!this.data.legacyOcrLossesMarked) {
-				this.data.syncIndex = await markLegacyOcrLosses(this.data.syncIndex, createNoteStore(this.app), this.nowIso());
+				this.data.syncIndex = await markLegacyOcrLosses(this.data.syncIndex, createNoteStore(this.app), this.nowIso(), backend);
 				this.data.legacyOcrLossesMarked = true;
 				await this.saveData(this.data);
 			}

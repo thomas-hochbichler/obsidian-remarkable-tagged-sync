@@ -1476,12 +1476,25 @@ export const LEGACY_OCR_RETRY = "legacy";
  * again it would be read again on every sync. The note itself is the only record of the loss, so this
  * reads every active note once; a note whose model honestly found nothing is read once more for it.
  */
-export async function markLegacyOcrLosses(index: SyncIndex, noteStore: NoteStore, now: string): Promise<SyncIndex> {
+export async function markLegacyOcrLosses(index: SyncIndex, noteStore: NoteStore, now: string, ocrBackend: OcrBackend): Promise<SyncIndex> {
+	// Off writes the sentence for every margin note, because it never looked, and 1.8.3 gives such a
+	// note no retry on purpose (`buildUnitDigest`). A vault on Off most likely wrote its notes under Off,
+	// and marked, the first Sync now after switching to a paid backend would read -- and bill -- every
+	// margin note in the library. So under a backend that reads nothing the pass marks nothing; the
+	// caller still sets the flag.
+	if (readsNothing(ocrBackend)) return index;
 	const rows: Record<string, SyncIndexRow> = { ...index.rows };
 	let marked = false;
 	for (const [key, row] of Object.entries(index.rows)) {
 		if (row.status !== "active" || row.ocrRetry !== undefined) continue;
-		const content = await noteStore.read(row.notePath);
+		// A courtesy, not part of the sync: a note the vault cannot hand over is skipped. Thrown, it stopped
+		// every sync before the tablet was opened, worded as a tablet failure, and the flag was never set.
+		let content: string | null;
+		try {
+			content = await noteStore.read(row.notePath);
+		} catch {
+			continue;
+		}
 		// Not a note the user edited: a sync never overwrites their own words (`isBlockEdited`), so its
 		// retry would never be spent, and the row would count as waiting for good.
 		if (!content?.includes(NOT_TRANSCRIBED) || blockEditedIn(content, row)) continue;
@@ -1491,9 +1504,12 @@ export async function markLegacyOcrLosses(index: SyncIndex, noteStore: NoteStore
 	return marked ? { ...index, rows } : index;
 }
 
-/** How many documents a later sync is to read again for lost transcriptions, for "Copy diagnostics". */
+/**
+ * How many documents a later sync is to read again for lost transcriptions, for "Copy diagnostics".
+ * Documents, not rows: a PDF tagged page by page has a row, and a digest, per tag.
+ */
 export function pendingOcrRetries(index: SyncIndex): number {
-	return Object.values(index.rows).filter((row) => row.status === "active" && row.ocrRetry !== undefined).length;
+	return new Set(Object.values(index.rows).filter((row) => row.status === "active" && row.ocrRetry !== undefined).map((row) => row.docId)).size;
 }
 
 /**

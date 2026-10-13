@@ -589,7 +589,7 @@
 
     - id: E25.43
       scenario: "A margin note's answer is cut off by a model that did not reason"
-      expect: "The warning sends the user to switching Handwritten notes off and on, not to the next sync: a full context is fixed in the server settings under the same fingerprint, so no sync would read the note again on its own"
+      expect: "The warning sends the user to switching Handwritten notes off and on, and says that reads every PDF's margin notes again -- on a paid backend the whole library billed -- not to the next sync: a full context is fixed in the server settings under the same fingerprint, so no sync would read the note again on its own"
       layer: unit
       file: src/openai-compat-ocr-backend.test.ts
       test: "reporting pages dropped for truncation > sends a margin note to the switch that reads it again, not to the next sync"

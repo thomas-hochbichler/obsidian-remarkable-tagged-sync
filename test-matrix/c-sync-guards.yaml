@@ -583,9 +583,23 @@
       file: src/sync-engine.test.ts
       test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > leaves a note alone that the user edited"
 
-    - id: C26.32
-      scenario: One PDF lost its margin notes, and its row is later orphaned
-      expect: The diagnostics count is 1 while the row is active and 0 once it is orphaned -- an orphaned row is never synced, so it waits for nothing
+    - id: C26.34
+      scenario: The one-time pass runs under Off, or under a backend that cannot run here, over notes Off wrote with "could not be transcribed" for every margin note
+      expect: Nothing is marked. Off never looked, and 1.8.3 gives such notes no retry on purpose; marked, the diagnostics would count every PDF as waiting, and the first Sync now after switching to a paid backend would read and bill every margin note in the library
       layer: engine
       file: src/sync-engine.test.ts
-      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > counts the active rows that wait for a retry, for the diagnostics"
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > marks nothing under a backend that reads nothing"
+
+    - id: C26.35
+      scenario: The one-time pass cannot read a note from the vault
+      expect: That row is skipped and the pass returns. Thrown, it stopped every sync before the tablet was opened, worded as a tablet failure, and the flag was never set
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > skips a note it cannot read"
+
+    - id: C26.32
+      scenario: One PDF lost its margin notes, is tagged on a second page too, and its row is later orphaned
+      expect: The diagnostics count is 1 while the row is active -- a second row of the same document is still one document -- and 0 once it is orphaned, since an orphaned row is never synced and waits for nothing
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > counts the documents whose rows wait for a retry, for the diagnostics"
