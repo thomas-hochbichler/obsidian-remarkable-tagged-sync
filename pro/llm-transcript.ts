@@ -27,6 +27,7 @@ export {
 	LLM_MAX_PARALLELISM,
 	sanitizeTranscript,
 	transcribePages,
+	them,
 	TRANSCRIPTION_PROMPT,
 	transcriptionPrompt,
 	triedAgain,

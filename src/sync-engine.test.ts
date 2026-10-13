@@ -316,6 +316,32 @@ function throwingOcrBackend(): OcrBackend {
 	return { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn().mockRejectedValue(new Error("vision blew up")) };
 }
 
+/**
+ * A backend that answers the pages it is handed in order: a string is that page read, `null` a page
+ * that failed -- the shape a cut-off or refused answer leaves behind.
+ */
+function scriptedPageBackend(answers: (string | null)[]): OcrBackend {
+	return {
+		id: "vision",
+		metered: false,
+		fingerprint: "test-backend",
+		recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => {
+			const results = pages.map((_, index) => {
+				const answer = answers[index] ?? null;
+				return answer === null ? { status: "failed" as const, text: "" } : { status: "ok" as const, text: answer };
+			});
+			const failed = results.some((result) => result.status === "failed");
+			return {
+				status: results.some((result) => result.status === "ok") ? "ok" : "failed",
+				pages: results,
+				text: results.map((result) => result.text).filter((text) => text !== "").join("\n\n"),
+				confidence: null,
+				warnings: failed ? ["a page was cut off"] : [],
+			};
+		}),
+	};
+}
+
 function baseDeps(api: SyncApi, tagFolderMap: Record<string, string>) {
 	return {
 		api,
@@ -3224,6 +3250,18 @@ describe("reTranscribeAll", () => {
 	// Worse than the sync's duplicate: a note whose block was rewritten while its stored blockHash was
 	// lost reads as a hand edit forever after, and nothing signals it. Without the per-note checkpoint
 	// an interrupted re-transcribe froze every note it had already touched.
+	it("counts the pages it could not read, across every note, and leaves those notes as they were", async () => {
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(notebookApi(), { sync: "Target" }), noteStore, ocrBackend: perPageOcrBackend("good text") }, EMPTY_SYNC_INDEX);
+		const notePath = Object.values(first.index.rows)[0].notePath;
+		const before = await noteStore.read(notePath);
+
+		const result = await reTranscribeAll({ api: notebookApi(), noteStore, ocrBackend: scriptedPageBackend([null]) }, first.index);
+
+		expect(result).toMatchObject({ updated: 0, unreadPages: 1, stopped: false });
+		expect(await noteStore.read(notePath)).toBe(before);
+	});
+
 	it("checkpoints each refreshed block hash, so an interruption cannot freeze the notes it already rewrote", async () => {
 		function twoDocs(rootHash: string, hashSuffix: string) {
 			return fakeApi({
@@ -3554,6 +3592,82 @@ describe("reTranscribeNote", () => {
 	// The number in the dialog is the number of pages the run is about to send, taken from the
 	// document itself. A warning users can check against the notebook in front of them is one they
 	// read; a hard-coded or guessed figure is one they learn to click through.
+	// A re-transcribe is asked to make a note better. In the 1.8.4 E2E a cut-off answer replaced a page's
+	// good transcript with "Could not read this page", and no sync brought it back: nothing on the
+	// device had changed.
+	it("leaves a one-page note as it was when its page could not be read again", async () => {
+		const api = fakeApi({
+			rootHash: "root-unread-one",
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: perPageOcrBackend("good text") }, EMPTY_SYNC_INDEX);
+		const notePath = first.index.rows[KEY].notePath;
+		const before = await noteStore.read(notePath);
+
+		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend([null]) }, first.index.rows[KEY], first.index);
+
+		expect(result).toMatchObject({ outcome: "unread", unreadPages: 1, index: first.index });
+		expect(await noteStore.read(notePath)).toBe(before);
+	});
+
+	it("leaves the note as it was when the backend throws", async () => {
+		const api = twoPageNotebook("root-unread-throw");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: perPageOcrBackend("good text") }, EMPTY_SYNC_INDEX);
+		const notePath = first.index.rows[KEY].notePath;
+		const before = await noteStore.read(notePath);
+
+		const result = await reTranscribeNote({ api, noteStore, ocrBackend: throwingOcrBackend() }, first.index.rows[KEY], first.index);
+
+		expect(result).toMatchObject({ outcome: "unread", unreadPages: 2 });
+		expect(await noteStore.read(notePath)).toBe(before);
+	});
+
+	it("writes the pages it read and keeps the earlier text of the page it could not read", async () => {
+		const api = twoPageNotebook("root-unread-keep");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: scriptedPageBackend(["old first", "old second"]) }, EMPTY_SYNC_INDEX);
+
+		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
+
+		expect(result).toMatchObject({ outcome: "written", unreadPages: 1 });
+		const note = (await noteStore.read(first.index.rows[KEY].notePath))!;
+		expect(note).toContain("new first");
+		expect(note).toContain("old second");
+		expect(note).not.toContain("old first");
+		expect(note).not.toContain("Could not read this page");
+	});
+
+	// Nothing to keep, so nothing is lost either: the page says what it said before.
+	it("still says a page could not be read when it had no text before either", async () => {
+		const api = twoPageNotebook("root-unread-none");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: scriptedPageBackend(["old first", null]) }, EMPTY_SYNC_INDEX);
+
+		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
+
+		expect(result).toMatchObject({ outcome: "written", unreadPages: 1 });
+		const note = (await noteStore.read(first.index.rows[KEY].notePath))!;
+		expect(note).toContain("new first");
+		expect(note).toContain("Could not read this page");
+	});
+
+	it("says a page could not be read when the note had no transcript to keep it from", async () => {
+		const api = twoPageNotebook("root-unread-blank");
+		const noteStore = fakeNoteStore();
+		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: unavailableOcrBackend() }, EMPTY_SYNC_INDEX);
+
+		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
+
+		expect(result).toMatchObject({ outcome: "written", unreadPages: 1 });
+		const note = (await noteStore.read(first.index.rows[KEY].notePath))!;
+		expect(note).toContain("new first");
+		expect(note).toContain("Could not read this page");
+	});
+
 	it("quotes the document's own live pages to the dialog, not a number of its own", async () => {
 		const api = twoPageNotebook("root-c21-count");
 		const noteStore = fakeNoteStore();

@@ -48,12 +48,14 @@ const noteEngine = vi.hoisted(() => ({
 	answer: null as boolean | null,
 	/** The index the engine hands back, where a test needs to tell it from the one it was given. */
 	returned: null as unknown,
+	unreadPages: 0,
 	/** A device that stops answering mid-run. The engine lets that reach the caller (spec §13). */
 	fails: null as unknown,
 }));
 
 const engine = vi.hoisted(() => ({
 	updated: 0,
+	unreadPages: 0,
 	stopped: false,
 	calls: 0,
 	/** Held open so a test can click the status bar while a run really is in flight. */
@@ -80,7 +82,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 		},
 		reTranscribeAll: async (_deps: unknown, index: unknown) => {
 			engine.calls++;
-			return { updated: engine.updated, index, stopped: engine.stopped };
+			return { updated: engine.updated, unreadPages: engine.unreadPages, index, stopped: engine.stopped };
 		},
 		reTranscribeNote: async (
 			deps: {
@@ -101,7 +103,7 @@ vi.mock("./sync-engine", async (importOriginal) => {
 			// The engine asks; `main.ts` decides whether there is anything worth asking about and words
 			// it. Answering here is how a test sees which of the two it did.
 			noteEngine.answer = deps.confirm === undefined ? null : await deps.confirm(noteEngine.question);
-			return { outcome: noteEngine.answer === false ? "cancelled" : noteEngine.outcome, index: noteEngine.returned ?? index };
+			return { outcome: noteEngine.answer === false ? "cancelled" : noteEngine.outcome, index: noteEngine.returned ?? index, unreadPages: noteEngine.unreadPages };
 		},
 	};
 });
@@ -238,6 +240,7 @@ const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve,
 beforeEach(() => {
 	machine.visionAvailable = false;
 	engine.updated = 0;
+	engine.unreadPages = 0;
 	engine.stopped = false;
 	engine.calls = 0;
 	engine.release = null;
@@ -247,6 +250,7 @@ beforeEach(() => {
 	noteEngine.outcome = "written";
 	noteEngine.answer = null;
 	noteEngine.returned = null;
+	noteEngine.unreadPages = 0;
 	noteEngine.fails = null;
 	Platform.isDesktop = false;
 	modalLog.length = 0;
@@ -454,6 +458,20 @@ describe("the three ways of saying no", () => {
 
 		expect(engine.calls).toBe(1);
 		expect(takeNotices()).toEqual(["Re-transcribed 3 note(s)."]);
+	});
+
+	it("says how many pages it could not read, which kept what they had before", async () => {
+		engine.updated = 3;
+		engine.unreadPages = 1;
+		const plugin = await pluginWith();
+		const done = (plugin as unknown as { reTranscribeAll(): Promise<void> }).reTranscribeAll();
+		await settle();
+
+		dialog().confirm.click();
+		await done;
+
+		expect(engine.calls).toBe(1);
+		expect(takeNotices()).toEqual(['Re-transcribed 3 note(s). 1 page could not be read and keeps what it had before. "Copy diagnostics" shows why.']);
 	});
 
 	it("says a stopped run kept what it did, rather than reporting plain success", async () => {
@@ -687,6 +705,29 @@ describe("what a finished one-note run leaves behind", () => {
 
 		expect(saveData).not.toHaveBeenCalled();
 		expect(takeNotices()).toEqual(["Margin notes on a PDF are kept as a digest, not as a transcript. Nothing was changed."]);
+	});
+
+	it("says a note it could not read again was left as it was, and saves nothing", async () => {
+		noteEngine.outcome = "unread";
+		noteEngine.unreadPages = 1;
+		const plugin = await pluginWith({ ocrBackend: "test-free" });
+		const saveData = vi.spyOn(plugin as unknown as { saveData(data: unknown): Promise<void> }, "saveData");
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(saveData).not.toHaveBeenCalled();
+		expect(takeNotices()).toEqual(['Could not read "n0" again, so it was left as it was. "Copy diagnostics" shows why.']);
+	});
+
+	it("names the pages that kept what they had before", async () => {
+		noteEngine.unreadPages = 2;
+		const plugin = await pluginWith({ ocrBackend: "test-free" });
+		const file = await openNote(plugin, "n0.md");
+
+		await reTranscribeNote(plugin, file);
+
+		expect(takeNotices()).toEqual(['Re-transcribed "n0". 2 pages could not be read and keep what they had before. "Copy diagnostics" shows why.']);
 	});
 });
 

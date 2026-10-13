@@ -58,6 +58,11 @@ export function pageCount(pages: number, framing: OcrFraming): string {
 	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
 }
 
+/** The pronoun for {@link pageCount}'s pages: "it" only for a single counted page. */
+export function them(pages: number, framing: OcrFraming): string {
+	return framing === "page" && pages === 1 ? "it" : "them";
+}
+
 /** The first letter capitalised, for a sentence that starts with {@link pageCount}. */
 export function upperFirst(text: string): string {
 	return text.charAt(0).toUpperCase() + text.slice(1);

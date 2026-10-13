@@ -336,7 +336,7 @@ describe("AnthropicOcrBackend", () => {
 			const result = await running;
 
 			expect(result.warnings).toEqual([
-				"Margin notes were left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on their own: " +
+				"Margin notes were left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on its own: " +
 					"try a different model, then the next sync reads them again.",
 			]);
 		} finally {
@@ -357,7 +357,7 @@ describe("AnthropicOcrBackend", () => {
 			const result = await running;
 
 			expect(result.warnings).toEqual([
-				"Pages added on the tablet were left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on their own: " +
+				"Pages added on the tablet were left out because Anthropic did not answer in 10 minutes. A later sync will not pick them up on its own: " +
 					"try a different model, then the next sync reads them again.",
 			]);
 		} finally {
@@ -451,7 +451,7 @@ describe("AnthropicOcrBackend reporting", () => {
 		// never a different setting, which is why the sentence differs from the other adapter's.
 		expect(result.warnings?.[0]).toBe(
 			"1 page was left out because the model's answer ran past what it may return — Claude models reason before answering, " +
-				'and those tokens count against the same limit. A later sync will not pick them up on its own: switch to a model that ' +
+				'and those tokens count against the same limit. A later sync will not pick it up on its own: switch to a model that ' +
 				'doesn\'t reason, then run "Re-transcribe all synced notes".',
 		);
 	});

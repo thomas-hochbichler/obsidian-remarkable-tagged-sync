@@ -13,6 +13,7 @@ import {
 	sanitizeTranscript,
 	type Sleep,
 	transcribePages,
+	them,
 	transcriptionPrompt,
 	triedAgain,
 	upperFirst,
@@ -347,7 +348,7 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
 			: "";
 	return (
 		`${upperFirst(pageCount(pages, framing))} left out because the server at ${baseURL} did not answer in ` +
-		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ${tallPage}A later sync will not pick them up on ` +
+		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ${tallPage}A later sync will not pick ${them(pages, framing)} up on ` +
 		`its own: try a different model, then ${readAgain(framing)}.`
 	);
 }
@@ -378,7 +379,7 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 	if (reasoning) {
 		return (
 			`${head} the model's answer ran past what it may return — this happens with models that reason before answering. ` +
-			`A later sync will not pick them up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
+			`A later sync will not pick ${them(pages, framing)} up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
 		);
 	}
 	// Not `readAgain`: for a margin note that promises the next sync, which reads it again only under a
@@ -390,7 +391,7 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 			? readAgain(framing)
 			: `switch "Handwritten notes" off and on in the settings to read them again — that reads every PDF's margin notes again`;
 	return (
-		`${head} the model's answer was cut off before it was complete. A later sync will not pick them up on its own: ` +
+		`${head} the model's answer was cut off before it was complete. A later sync will not pick ${them(pages, framing)} up on its own: ` +
 		`"Copy diagnostics" shows what cut it off, and once that is fixed, ${repair}.`
 	);
 }

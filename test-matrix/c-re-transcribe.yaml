@@ -405,6 +405,76 @@
       file: src/re-transcribe.test.ts
       test: "the one-note run's own refusals and failures > is what the palette actually runs, and not only what it shows"
 
+    - id: C21.33
+      scenario: A one-page note whose page fails again
+      expect: The note is left byte for byte as it was and the outcome is `unread`. In the 1.8.4 E2E a cut-off answer replaced a good transcript with "Could not read this page", and no sync brought it back, because nothing on the device had changed
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > leaves a one-page note as it was when its page could not be read again"
+
+    - id: C21.34
+      scenario: The backend throws
+      expect: Every page sent counts as unread and the note is left as it was -- a throw has no per-page results, so without this guard the transcript would be rewritten empty
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > leaves the note as it was when the backend throws"
+
+    - id: C21.35
+      scenario: Some pages read, one fails
+      expect: The pages read get their new text and the failed page keeps its earlier text, read back through the per-page store's parser (#117), not "Could not read this page"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > writes the pages it read and keeps the earlier text of the page it could not read"
+
+    - id: C21.36
+      scenario: A failed page that had no text before either
+      expect: It still says "Could not read this page" -- there is nothing to keep, so nothing is lost
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > still says a page could not be read when it had no text before either"
+
+    - id: C21.37
+      scenario: Re-transcribe all, a note whose only page fails
+      expect: That note is left as it was, is not counted as updated, and its page is counted as unread for the notice
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeAll > counts the pages it could not read, across every note, and leaves those notes as they were"
+
+    - id: C21.38
+      scenario: The one-note run read nothing
+      expect: Nothing is saved and the notice says the note was left as it was and where to find out why
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what a finished one-note run leaves behind > says a note it could not read again was left as it was, and saves nothing"
+
+    - id: C21.39
+      scenario: The one-note run read some pages and not others
+      expect: The success notice names how many pages kept what they had before
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "what a finished one-note run leaves behind > names the pages that kept what they had before"
+
+    - id: C21.40
+      scenario: Re-transcribe all with unread pages
+      expect: The finished notice adds how many pages kept what they had before
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the three ways of saying no > says how many pages it could not read, which kept what they had before"
+
+    - id: C21.41
+      scenario: The unread-pages sentence
+      expect: Singular and plural agree with the count ("1 page … keeps … it", "3 pages … keep … they")
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteNotice > counts the pages that kept what they had before in the grammar of the count"
+
+    - id: C21.42
+      scenario: Some pages read, one fails, and the note had no transcript before
+      expect: The failed page says "Could not read this page" -- with no earlier section to read back, there is nothing to keep
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "reTranscribeNote > says a page could not be read when the note had no transcript to keep it from"
+
 - feature: E18
   name: Re-transcribe cost caveat
   code: src/re-transcribe-prompt.ts

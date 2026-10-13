@@ -32,11 +32,17 @@ workflow publishes the section as the GitHub release body. See
   "Copy diagnostics" also names the notebook a lost page belongs to, as it already did for margin
   notes.
 
+- **Re-transcribing no longer replaces a good transcript with "Could not read this page".** When a
+  page could not be read again -- its answer was cut off, or the server refused it -- *Re-transcribe
+  this note* and *Re-transcribe all synced notes* wrote that sentence over the text the page already
+  had, and no sync brought the text back. Such a page now keeps what it had before, a note in which
+  nothing could be read is left exactly as it was, and the notice says how many pages that was.
+
 ### Added
 
 - **"Copy diagnostics" shows what cut an answer off**: the tokens the page and the answer took, the
-  context the model had (Ollama and LM Studio report it), whether the model reasoned, and how many lines of the
-  answer repeat. Numbers only, never the text.
+  context the model had (Ollama and LM Studio report it), whether the model reasoned, and how many
+  lines of the answer repeat. Numbers only, never the text.
 
 - **"Copy diagnostics" says how many documents are waiting to be read again**, for example after a
   transcription server was not running. Before, notes still waiting for another try could not be

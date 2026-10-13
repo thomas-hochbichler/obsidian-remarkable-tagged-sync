@@ -29,6 +29,7 @@ import {
 	reTranscribeIsUseful,
 	reTranscribeNoteConfirmation,
 	reTranscribeNoteNotice,
+	unreadPagesSentence,
 } from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
@@ -953,7 +954,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			const opened = await this.openSource();
 			transport = opened.transport;
 			session = opened.session;
-			const { updated, index, stopped } = await reTranscribeAll(
+			const { updated, unreadPages, index, stopped } = await reTranscribeAll(
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
@@ -981,7 +982,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				new Notice(`Re-transcribe stopped. ${updated} note(s) refreshed; the rest are unchanged.`);
 			} else {
 				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
-				new Notice(`Re-transcribed ${updated} note(s).`);
+				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages)}`);
 			}
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -1036,7 +1037,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			const opened = await this.openSource();
 			transport = opened.transport;
 			session = opened.session;
-			const { outcome, index } = await reTranscribeNote(
+			const { outcome, index, unreadPages } = await reTranscribeNote(
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
@@ -1069,7 +1070,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.data.syncIndex = index;
 				await this.saveData(this.data);
 			}
-			const notice = reTranscribeNoteNotice(outcome, file.basename);
+			const notice = reTranscribeNoteNotice(outcome, file.basename, unreadPages);
 			if (notice !== null) new Notice(notice);
 			// Every outcome leaves a final status: the bar was set to busy above, and a refusal that
 			// left it there would spin over a run that is long over.

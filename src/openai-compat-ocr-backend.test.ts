@@ -689,7 +689,7 @@ describe("reporting pages dropped for truncation", () => {
 		const result = await backend.recognize([page()]);
 
 		expect(result.warnings).toEqual([
-			"1 page was left out because the model's answer was cut off before it was complete. A later sync will not pick them up on " +
+			"1 page was left out because the model's answer was cut off before it was complete. A later sync will not pick it up on " +
 				'its own: "Copy diagnostics" shows what cut it off, and once that is fixed, run "Re-transcribe all synced notes".',
 		]);
 	});
