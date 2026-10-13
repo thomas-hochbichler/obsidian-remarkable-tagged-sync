@@ -283,6 +283,8 @@ describe("hostEnvironmentFor", () => {
 		expect(e.localeDateOrder?.()).toBe("mdy");
 		expect(hostEnvironmentFor(app, { id: "x", dir: "custom/dir" }, store, Object.assign(() => ({ format: () => "" }), { localeData: () => ({ longDateFormat: () => "DD.MM.YYYY" }) })).pluginDir).toBe("custom/dir");
 		expect([await e.readVaultNote("T.md"), await e.readVaultNote("Folder"), await e.readVaultNote("gone.md")]).toEqual(["template text", null, null]);
+		// A note path is written without ".md" everywhere else in Obsidian, so it is found either way.
+		expect(await e.readVaultNote("T")).toBe("template text");
 		await e.createNote("Work/p1.md", "body");
 		expect(created).toEqual(["Work/p1.md=body"]);
 		expect(e.formatNow("YYYY")).toBe("now(YYYY)");

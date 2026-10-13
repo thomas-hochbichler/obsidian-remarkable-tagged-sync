@@ -327,10 +327,19 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 		.setName("Description")
 		.setDesc("With several profiles on a tag, a new page goes to the one this fits.")
 		.addText((text) => text.setValue(profile.description).setPlaceholder("One line: what these pages are").onChange(async (description) => typed(host, edit({ description }))));
-	new Setting(containerEl)
+	const templateRow = new Setting(containerEl)
 		.setName("Template")
-		.setDesc("Any note. Each slot fills its own heading; a template change reaches new insight notes only.")
-		.addText((text) => text.setValue(profile.template ?? "").setPlaceholder("Templates/Page.md").onChange(async (path) => typed(host, edit({ template: path.trim() === "" ? null : path.trim() }))))
+		.setDesc(TEMPLATE_DESC)
+		.addText((text) =>
+			text
+				.setValue(profile.template ?? "")
+				.setPlaceholder("Templates/Page.md")
+				.onChange(async (path) => {
+					const template = path.trim() === "" ? null : path.trim();
+					await typed(host, edit({ template }));
+					checkTemplate(template);
+				}),
+		)
 		.addButton((button) =>
 			button.setButtonText("Create template").onClick(async () => {
 				const now = host.settings().profiles.find((p) => p.id === id)!;
@@ -340,6 +349,10 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 				await withSettings(host, edit({ template: path }));
 			}),
 		);
+	// A path that finds no note falls back to the built-in template (ticket 41), so the field says so.
+	const checkTemplate = (path: string | null) =>
+		void (path === null ? Promise.resolve("") : host.readTemplate(path)).then((found) => void templateRow.setDesc(found === null ? `No note at "${path}": the built-in template is used.` : TEMPLATE_DESC));
+	checkTemplate(profile.template);
 	// Research 33: big models find what a due date counts from on their own; this helps the rest.
 	new Setting(containerEl)
 		.setName("Dates on these pages")
@@ -392,6 +405,7 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 	}
 }
 
+const TEMPLATE_DESC = "Any note. Each slot fills its own heading; a template change reaches new insight notes only.";
 const LOCAL_SLOT_WARNING = 7;
 
 async function placementHint(host: IntelligenceSettingsHost, profile: ProfileDef, slot: SlotDef): Promise<string> {

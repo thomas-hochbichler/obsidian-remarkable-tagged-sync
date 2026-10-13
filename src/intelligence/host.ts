@@ -281,7 +281,8 @@ export function hostEnvironmentFor(app: AppLike, manifest: { dir?: string; id: s
 		files: adapterFiles(vault.adapter),
 		noteStore,
 		readVaultNote: async (path) => {
-			const file = vault.getAbstractFileByPath(normalizePath(path));
+			// A note path is written without ".md" everywhere else in Obsidian, so it is found either way.
+			const file = [path, `${path}.md`].map((p) => vault.getAbstractFileByPath(normalizePath(p))).find((f) => f instanceof TFile);
 			return file instanceof TFile ? vault.read(file) : null;
 		},
 		createNote: noteCreator(templaterOf(app), (path, content) => vault.create(normalizePath(path), content)),

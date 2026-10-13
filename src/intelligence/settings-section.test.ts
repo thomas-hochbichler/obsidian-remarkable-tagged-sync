@@ -639,6 +639,19 @@ describe("renderProfileEditor > what a Profile's Slots will do", () => {
 		expect(named(builtIn, "Tasks").desc).toBe("Its own heading in the built-in template.");
 	});
 
+	it("says under the Template field when its path finds no note, and checks again as it is typed", async () => {
+		const h = host({ ...emptyIntelligence(), profiles: [profile("T/Daily", ["tasks"])] }, true, { templates: { "T/Daily.md": "## To do\n{{ts.tasks}}\n" } });
+		const editor = profileEditor(h, "p");
+		await flush();
+		expect(named(editor, "Template").desc).toBe('No note at "T/Daily": the built-in template is used.');
+		named(editor, "Template").texts[0].type("T/Daily.md");
+		await flush();
+		expect(named(editor, "Template").desc).toBe("Any note. Each slot fills its own heading; a template change reaches new insight notes only.");
+		named(editor, "Template").texts[0].type("");
+		await flush();
+		expect(named(editor, "Template").desc).toBe("Any note. Each slot fills its own heading; a template change reaches new insight notes only.");
+	});
+
 	it("warns about many Slots on a local model, and not on a cloud one", () => {
 		const many = { ...emptyIntelligence(), profiles: [profile(null, ["a", "b", "c", "d", "e", "f", "g", "h"])] };
 		const notes = (settings: IntelligenceSettings) => {
