@@ -699,6 +699,7 @@ describe("reporting pages dropped for truncation", () => {
 		["reasoning tokens, as OpenAI and OpenRouter count them", { message: { content: "half" } }, { completion_tokens_details: { reasoning_tokens: 900 } }],
 		["an inline <think> block", { message: { content: "<think>\nThe page shows" } }],
 		["nothing written at all", { message: { content: "" } }],
+		["no content at all", { message: { content: null } }],
 	])("blames reasoning when the answer carries %s", async (_label, choice, usage?: object) => {
 		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ ...choice, finish_reason: "length" }], ...(usage ? { usage } : {}) }));
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "some-model", fetchFn: fetchMock });

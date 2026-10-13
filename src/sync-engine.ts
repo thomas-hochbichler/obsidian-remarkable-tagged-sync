@@ -1484,6 +1484,11 @@ export async function markLegacyOcrLosses(index: SyncIndex, noteStore: NoteStore
 	return marked ? { ...index, rows } : index;
 }
 
+/** How many documents a later sync is to read again for lost transcriptions, for "Copy diagnostics". */
+export function pendingOcrRetries(index: SyncIndex): number {
+	return Object.values(index.rows).filter((row) => row.status === "active" && row.ocrRetry !== undefined).length;
+}
+
 /**
  * True if any active row (optionally narrowed to one doc) points at a note that's gone missing
  * from the vault -- e.g. the user deleted it by hand. A hash-unchanged sync would otherwise never

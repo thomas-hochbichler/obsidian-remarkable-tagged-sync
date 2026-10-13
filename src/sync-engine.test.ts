@@ -21,6 +21,7 @@ import {
 	invalidateRenders,
 	LEGACY_OCR_RETRY,
 	markLegacyOcrLosses,
+	pendingOcrRetries,
 	notebookSyncKey,
 	pageSyncKey,
 	RENDER_VERSION,
@@ -2856,6 +2857,17 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 			const waiting: SyncIndex = { ...first.index, rows: { [key]: { ...first.index.rows[key], ocrRetry: { with: "x", retryable: true, at: NOW } } } };
 			await deps.noteStore.write(waiting.rows[key].notePath, `> ${NOT_TRANSCRIBED}`);
 			expect(await markLegacyOcrLosses(waiting, deps.noteStore, minutesLater(5)())).toEqual(waiting);
+		});
+
+		it("counts the active rows that wait for a retry, for the diagnostics", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-count"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(pendingOcrRetries(first.index)).toBe(1);
+
+			const orphaned: SyncIndex = { ...first.index, rows: { [key]: { ...first.index.rows[key], status: "orphaned" } } };
+			expect(pendingOcrRetries(orphaned)).toBe(0);
 		});
 	});
 

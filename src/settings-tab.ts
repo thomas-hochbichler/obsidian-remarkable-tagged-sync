@@ -28,7 +28,7 @@ import { DEFAULT_SEND_TAG } from "./zotero-send";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
-import { invalidateRenders } from "./sync-engine";
+import { invalidateRenders, pendingOcrRetries } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
@@ -824,7 +824,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							unreadableInkRegions: visionRunStats.unreadableInkRegions,
 							reusedPageTranscriptions: this.plugin.lastPageTranscriptions,
 							ocrTally: this.plugin.lastOcrTally,
-							pendingOcrRetries: Object.values(this.plugin.data.syncIndex.rows).filter((row) => row.status === "active" && row.ocrRetry !== undefined).length,
+							pendingOcrRetries: pendingOcrRetries(this.plugin.data.syncIndex),
 							mappedTagCount: Object.keys(this.plugin.data.tagFolderMap).length,
 							lastSyncAt: this.plugin.data.lastSyncAt,
 							lastSyncError: this.plugin.lastSyncError,
