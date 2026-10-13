@@ -761,3 +761,17 @@
       layer: unit
       file: src/local-ocr-backend.test.ts
       test: "LocalOcrBackend > names the model generation it runs for the diagnostics"
+
+    - id: H1.19
+      scenario: Two runs each cut off three answers
+      expect: The tally keeps the first five cut-offs, as it keeps the first five warnings
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "tallyOcr > keeps what cut answers off, and only the first few"
+
+    - id: H1.20
+      scenario: Diagnostics are copied after a run with one answer cut off at a full context and one cut off while reasoning on a server that reports nothing
+      expect: '"Cut-off answers:" with one line each -- "prompt 4076 + answer 20 = 4096 tokens, context 4096, reasoning: no, repeated lines: 0 of 4", and "tokens unknown, context unknown" where the server did not say -- and "Cut-off answers: none" after a run without one'
+      layer: unit
+      file: src/ocr-tally.test.ts
+      test: "describeOcrTally > lists what cut each answer off"

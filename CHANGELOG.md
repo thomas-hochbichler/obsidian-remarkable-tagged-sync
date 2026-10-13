@@ -22,13 +22,20 @@ workflow publishes the section as the GitHub release body. See
   backend. With a paid cloud backend and automatic transcription off, that happens on the next
   *Sync now*.
 
-- **A page left out because the model's answer ran too long now gets the right advice.** The warning
-  always blamed a model that reasons before answering and said to switch to one that doesn't, even
-  for a small model like qwen2.5vl:3b that does not reason and had only kept repeating a line. It
-  now tells the two apart and suggests a larger model for the second case. "Copy diagnostics" also
-  names the notebook a lost page belongs to, as it already did for margin notes.
+- **A page left out because the model's answer ran too long no longer gets the wrong advice.** The
+  warning always blamed a model that reasons before answering and said to switch to one that
+  doesn't, even for qwen2.5vl:3b, which does not reason. The answer can also be cut off because the
+  page and its transcript do not fit into the model's context: Ollama gives a model as little as
+  4096 tokens by default, and a tall page's image alone can take nearly all of them. The warning now
+  blames reasoning only when the answer shows it, and otherwise points to "Copy diagnostics".
+  "Copy diagnostics" also names the notebook a lost page belongs to, as it already did for margin
+  notes.
 
 ### Added
+
+- **"Copy diagnostics" shows what cut an answer off**: the tokens the page and the answer took, the
+  context the model had (Ollama reports it), whether the model reasoned, and how many lines of the
+  answer repeat. Numbers only, never the text.
 
 - **"Copy diagnostics" says how many documents are waiting to be read again**, for example after a
   transcription server was not running. Before, notes still waiting for another try could not be

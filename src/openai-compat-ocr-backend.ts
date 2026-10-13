@@ -1,5 +1,5 @@
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import { type OcrBackend, type OcrFraming, ocrImage, type OcrResult } from "./ocr-backend";
+import { type CutOff, type OcrBackend, type OcrFraming, ocrImage, type OcrResult } from "./ocr-backend";
 import {
 	fetchWithRetry,
 	isUnreachable,
@@ -41,7 +41,7 @@ export interface OpenAiCompatOcrOptions {
 
 interface OpenAiChatResponse {
 	choices?: Array<{ message?: { content?: string | null; reasoning?: string; reasoning_content?: string }; finish_reason?: string }>;
-	usage?: { completion_tokens_details?: { reasoning_tokens?: number } };
+	usage?: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } };
 }
 
 /**
@@ -55,6 +55,34 @@ function ranOutReasoning(body: OpenAiChatResponse): boolean {
 	const message = body.choices?.[0]?.message;
 	const content = message?.content ?? "";
 	return !!message?.reasoning || !!message?.reasoning_content || (body.usage?.completion_tokens_details?.reasoning_tokens ?? 0) > 0 || content.trim() === "" || content.includes("<think>");
+}
+
+/** A truncated answer as figures for the diagnostics -- see `CutOff`. The context is filled in later, once per run. */
+function cutOff(body: OpenAiChatResponse): CutOff {
+	const lines = (body.choices?.[0]?.message?.content ?? "").split("\n").map((line) => line.trim()).filter((line) => line !== "");
+	return {
+		promptTokens: body.usage?.prompt_tokens ?? null,
+		answerTokens: body.usage?.completion_tokens ?? null,
+		context: null,
+		reasoning: ranOutReasoning(body),
+		repeatedLines: lines.length - new Set(lines).size,
+		lines: lines.length,
+	};
+}
+
+/**
+ * The context Ollama gave `model`, from `/api/ps`, or null. Asked only after a page was cut off, so a
+ * run that read everything sends nothing extra; and anything that goes wrong here costs only this
+ * one figure, never the page results it describes.
+ */
+async function ollamaContext(fetchFn: typeof fetch, baseURL: string, model: string): Promise<number | null> {
+	try {
+		const response = await fetchFn(`${baseURL.replace(/\/v1\/?$/, "")}/api/ps`);
+		const body = (await response.json()) as { models?: Array<{ name?: string; context_length?: number }> };
+		return body.models?.find((loaded) => loaded.name === model)?.context_length ?? null;
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -122,14 +150,12 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	/** The first refusal the server explained, as `<status>: <message>` -- see `recognize`. */
 	private refusal: string | null = null;
 	/**
-	 * How many pages were dropped because the answer ran past what the model may return -- see
-	 * `recognize`. Counted rather than flagged, and counted separately from `failedPages`: that number
-	 * is every failed page whatever the cause, including a thrown parse error that sets no flag at all,
-	 * so reporting it as truncations would over-claim.
+	 * The pages dropped because the answer ran past what the model may return, one entry each -- see
+	 * `recognize`. Kept apart from `failedPages`: that number is every failed page whatever the cause,
+	 * including a thrown parse error that sets no flag at all, so reporting it as truncations would
+	 * over-claim.
 	 */
-	private truncated = 0;
-	/** Whether any of `truncated` ran out while reasoning -- see `ranOutReasoning`. */
-	private truncatedReasoning = false;
+	private cutOffs: CutOff[] = [];
 	/** How many pages were dropped because the server never answered -- see `recognize`. */
 	private timedOut = 0;
 
@@ -157,8 +183,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.serverError = false;
 		this.refused = false;
 		this.refusal = null;
-		this.truncated = 0;
-		this.truncatedReasoning = false;
+		this.cutOffs = [];
 		this.timedOut = 0;
 
 		// An empty model field is a misconfiguration, and sending it anyway is worse than refusing:
@@ -194,13 +219,17 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages, framing)} not transcribed. Is it running?${triedAgain(framing)}`;
 				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.${this.serverError ? triedAgain(framing) : ""}`;
 				if (this.timedOut > 0) return timeoutWarning(this.timedOut, this.baseURL, framing);
-				if (this.truncated > 0) return truncationWarning(this.truncated, framing, this.truncatedReasoning);
+				if (this.cutOffs.length > 0) return truncationWarning(this.cutOffs.length, framing, this.cutOffs.some((cut) => cut.reasoning));
 				return null;
 			},
 			onPage,
 		);
 		if (this.unreachable || this.serverError) result.retryable = true;
 		if (this.refused) result.refused = true;
+		if (this.cutOffs.length > 0) {
+			const context = this.id === "ollama" ? await ollamaContext(this.fetchFn, this.baseURL, this.model) : null;
+			result.cutOffs = this.cutOffs.map((cut) => ({ ...cut, context }));
+		}
 		return result;
 	}
 
@@ -253,8 +282,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			// A truncated page is `failed`, not `ok`: half a page read as a whole one is a silent,
 			// permanent loss, because the next sync skips a document whose device hash is unchanged.
 			if (body.choices?.[0]?.finish_reason === "length") {
-				this.truncated++;
-				if (ranOutReasoning(body)) this.truncatedReasoning = true;
+				this.cutOffs.push(cutOff(body));
 				console.warn(`Tagged Sync: ${this.id} OCR response was truncated, marking the page failed`);
 				return { kind: "failed" };
 			}
@@ -312,14 +340,22 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
  * setting that stops it; there, thinking cannot be switched off at all, so the lever is the model
  * alone. Keep the four things in step; leave the lever to each.
  *
- * Here the cause has two forms (`ranOutReasoning`). A model that did not reason ran out of room
- * writing the answer itself, and told to switch to a model that does not reason, a reporter on
- * qwen2.5vl:3b was sent to the model they already had. Its lever is a larger model.
+ * Only a model that reasoned is named as the cause (`ranOutReasoning`); its answer says so. Any other
+ * truncated answer has more than one cause and does not say which: told to switch to a model that
+ * does not reason, a reporter on qwen2.5vl:3b was sent to the model they already had, and a full
+ * context window -- which no other model fixes -- cuts an ordinary transcript off just the same. So
+ * that sentence names no cause, and its lever is the figures that do (`CutOff`, in "Copy diagnostics").
  */
 function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolean): string {
-	const cause = reasoning
-		? "the model's answer ran past what it may return — this happens with models that reason before answering"
-		: "the model kept writing and did not stop — smaller models sometimes repeat a line until they run out of room";
-	const lever = reasoning ? "a model that doesn't reason" : "a larger model";
-	return `${upperFirst(pageCount(pages, framing))} left out because ${cause}. A later sync will not pick them up on its own: switch to ${lever}, then ${readAgain(framing)}.`;
+	const head = `${upperFirst(pageCount(pages, framing))} left out because`;
+	if (reasoning) {
+		return (
+			`${head} the model's answer ran past what it may return — this happens with models that reason before answering. ` +
+			`A later sync will not pick them up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
+		);
+	}
+	return (
+		`${head} the model's answer was cut off before it was complete. A later sync will not pick them up on its own: ` +
+		`"Copy diagnostics" shows what cut it off, and once that is fixed, ${readAgain(framing)}.`
+	);
 }

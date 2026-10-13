@@ -504,11 +504,11 @@
       test: "the words a model backend's warning is made of > leaves an added page's count out too"
 
     - id: E25.30
-      scenario: "A model that does not reason runs out of room, as qwen2.5vl:3b did repeating a line"
-      expect: "The warning says the model kept writing and suggests a larger model. It used to blame reasoning and say to switch to a model that does not reason -- the very model the reporter had"
+      scenario: "A model that does not reason has its answer cut off, as qwen2.5vl:3b did on a reporter's page"
+      expect: "The warning names no cause and points to Copy diagnostics. Both earlier guesses were wrong or unfounded: switching to a model that does not reason sent the reporter to the model they had, and a larger model does not help when the context is full -- measured at Ollama's 4096-token default, the tall reference page was cut off after 20 tokens of an ordinary transcript"
       layer: unit
       file: src/openai-compat-ocr-backend.test.ts
-      test: "reporting pages dropped for truncation > blames a model that kept writing when it did not reason"
+      test: "reporting pages dropped for truncation > guesses no cause when the model did not reason"
 
     - id: E25.31
       scenario: "A truncated answer from llama-server or LM Studio carries reasoning_content"
@@ -544,6 +544,41 @@
       layer: unit
       file: src/openai-compat-ocr-backend.test.ts
       test: "reporting pages dropped for truncation > blames reasoning when the answer carries no content at all"
+
+    - id: E25.36
+      scenario: "A page is cut off by Ollama, whose answer carries token counts and a repeated line"
+      expect: "The result carries prompt and answer tokens, the context Ollama reports for the model in /api/ps, whether it reasoned, and how many lines repeat -- numbers only, never the transcript"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > keeps what cut a page off, with the context Ollama gave the model"
+
+    - id: E25.37
+      scenario: "A page is cut off by LM Studio, which reports no context"
+      expect: "The figures are kept with the context unknown, and nothing is asked of the server"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > leaves the context unknown for a server that does not report it"
+
+    - id: E25.38
+      scenario: "A page is cut off by Ollama, and the /api/ps lookup fails"
+      expect: "The figures are kept with the context unknown; the lookup costs the page results nothing"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > leaves the context unknown for an Ollama that does not answer the lookup"
+
+    - id: E25.40
+      scenario: "A page is cut off by Ollama, which has unloaded the model by the time it is asked"
+      expect: "The figures are kept with the context unknown"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > leaves the context unknown for an Ollama that no longer holds the model"
+
+    - id: E25.39
+      scenario: "Every page reads"
+      expect: "No cut-off is reported, and no lookup is sent"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > reports no cut-off when every page read"
 
 - feature: E27
   name: A request that is never answered ends the page, not the run

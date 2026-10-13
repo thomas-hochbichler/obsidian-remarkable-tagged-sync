@@ -675,21 +675,60 @@ describe("reporting pages dropped for truncation", () => {
 	});
 
 	/**
-	 * A model that does not reason can run out of room too: a small one that repeats a line until the
-	 * server stops it. qwen2.5vl:3b did that on a reporter's page, and the warning told them to switch
-	 * to a model that does not reason -- the one they were using. Measured against Ollama 0.40.2 and
-	 * qwen2.5vl:7b: no `reasoning` field, and the text it had written so far in `content`.
+	 * A model that does not reason runs out of room too, and the answer alone does not say why. A
+	 * reporter on qwen2.5vl:3b was told to switch to a model that does not reason -- the one they had --
+	 * and the next guess, a small model repeating a line, was no better founded: measured on 2026-10-13
+	 * with Ollama 0.40.2 at its smallest default context, 4096 tokens, the tall reference page was cut
+	 * off after 20 tokens of an ordinary transcript (prompt 4076 + answer 20 = 4096). So the sentence
+	 * names no cause, and the figures that tell the causes apart go to the diagnostics (`cutOffs`).
 	 */
-	it("blames a model that kept writing when it did not reason", async () => {
-		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { role: "assistant", content: "Notes\nNotes\nNotes" }, finish_reason: "length" }] }));
+	it("guesses no cause when the model did not reason", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { role: "assistant", content: "May\nThree days" }, finish_reason: "length" }] }));
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:3b", fetchFn: fetchMock });
 
 		const result = await backend.recognize([page()]);
 
 		expect(result.warnings).toEqual([
-			"1 page was left out because the model kept writing and did not stop — smaller models sometimes repeat a line until they " +
-				'run out of room. A later sync will not pick them up on its own: switch to a larger model, then run "Re-transcribe all synced notes".',
+			"1 page was left out because the model's answer was cut off before it was complete. A later sync will not pick them up on " +
+				'its own: "Copy diagnostics" shows what cut it off, and once that is fixed, run "Re-transcribe all synced notes".',
 		]);
+	});
+
+	/** The figures that tell a full context, a repeating model and a reasoning one apart, as numbers only. */
+	it("keeps what cut a page off, with the context Ollama gave the model", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "May\nLeg 1\nLeg 1\nLeg 1" }, finish_reason: "length" }], usage: { prompt_tokens: 4076, completion_tokens: 20 } }))
+			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "other:1b", context_length: 8192 }, { name: "qwen2.5vl:7b", context_length: 4096 }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:7b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs).toEqual([{ promptTokens: 4076, answerTokens: 20, context: 4096, reasoning: false, repeatedLines: 2, lines: 4 }]);
+		expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:11434/api/ps");
+	});
+
+	// Only Ollama says how large a context it gave the model; any other server leaves it unknown, and a
+	// lookup that fails costs the figures nothing.
+	it.each([
+		["a server that does not report it", "lmstudio", "http://localhost:1234/v1"],
+		["an Ollama that does not answer the lookup", "ollama", "http://localhost:11434/v1"],
+		["an Ollama that no longer holds the model", "ollama", "http://localhost:11434/v1", { models: [] }],
+	])("leaves the context unknown for %s", async (_label, id, baseURL, ps?: object) => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] }));
+		if (ps) fetchMock.mockResolvedValueOnce(jsonResponse(200, ps));
+		const backend = new OpenAiCompatOcrBackend({ id, baseURL, model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs).toEqual([{ promptTokens: null, answerTokens: null, context: null, reasoning: false, repeatedLines: 0, lines: 1 }]);
+	});
+
+	it("reports no cut-off when every page read", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("read fine"));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()])).cutOffs).toBeUndefined();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
 	// Each server says it its own way. Empty `content` with no field at all is #116's case: reasoning the

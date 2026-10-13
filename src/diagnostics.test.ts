@@ -65,12 +65,14 @@ describe("buildDiagnostics", () => {
 				pages: { read: 12, empty: 1, failed: 0, unavailable: 0 },
 				notes: { read: 0, empty: 5, failed: 2, unavailable: 0 },
 				warnings: ["The server at http://localhost:11434/v1 answered 500 — 1 page not transcribed."],
+				cutOffs: [{ promptTokens: 4076, answerTokens: 20, context: 4096, reasoning: false, repeatedLines: 0, lines: 4 }],
 			},
 		});
 		expect(text).toContain("Last transcription: ollama, model qwen2.5vl:7b");
 		expect(text).toContain("Pages: 12 read, 1 empty, 0 failed");
 		expect(text).toContain("Margin notes: 0 read, 5 empty, 2 failed");
 		expect(text).toContain("- The server at http://localhost:11434/v1 answered 500");
+		expect(text).toContain("- prompt 4076 + answer 20 = 4096 tokens, context 4096, reasoning: no, repeated lines: 0 of 4");
 	});
 
 	it("says no transcription has run yet rather than printing zeros for one", () => {

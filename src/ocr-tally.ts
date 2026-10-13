@@ -1,4 +1,4 @@
-import type { OcrBackend, OcrFraming, OcrResult } from "./ocr-backend";
+import type { CutOff, OcrBackend, OcrFraming, OcrResult } from "./ocr-backend";
 import { pushUnique } from "./push-unique";
 
 /** What became of the images one run sent, by outcome. */
@@ -29,6 +29,8 @@ export interface OcrTally {
 	notes: OcrCounts;
 	/** What the backend said went wrong, each distinct sentence once and the first few only. */
 	warnings: string[];
+	/** What cut answers off, the first few only -- see `CutOff`. */
+	cutOffs: CutOff[];
 }
 
 /** The most warnings a tally keeps: past this they are the same failure again, and the block is pasted into an issue. */
@@ -49,6 +51,7 @@ function count(tally: OcrTally, framing: OcrFraming, images: number, result: Ocr
 	else if (result.status === "ok") counts.read += images;
 	else counts.empty += images;
 	pushUnique(tally.warnings, result.warnings ?? [], MAX_WARNINGS);
+	tally.cutOffs.push(...(result.cutOffs ?? []).slice(0, MAX_WARNINGS - tally.cutOffs.length));
 }
 
 /**
@@ -73,7 +76,7 @@ function count(tally: OcrTally, framing: OcrFraming, images: number, result: Ocr
  */
 export function tallyOcr<T extends OcrBackend>(backend: T, onFirstSend: (tally: OcrTally) => void): T {
 	if (backend.id === "off") return backend;
-	const tally: OcrTally = { backend: backend.id, model: backend.model ?? null, pages: zero(), notes: zero(), warnings: [] };
+	const tally: OcrTally = { backend: backend.id, model: backend.model ?? null, pages: zero(), notes: zero(), warnings: [], cutOffs: [] };
 	let sent = false;
 	const counted = Object.create(backend) as T;
 	counted.recognize = async (pages, onPage, framing) => {
@@ -99,6 +102,11 @@ function countsLine(label: string, counts: OcrCounts): string {
 	return `${label}: ${parts.join(", ")}`;
 }
 
+function cutOffLine(cut: CutOff): string {
+	const tokens = cut.promptTokens === null || cut.answerTokens === null ? "tokens unknown" : `prompt ${cut.promptTokens} + answer ${cut.answerTokens} = ${cut.promptTokens + cut.answerTokens} tokens`;
+	return `- ${tokens}, context ${cut.context ?? "unknown"}, reasoning: ${cut.reasoning ? "yes" : "no"}, repeated lines: ${cut.repeatedLines} of ${cut.lines}`;
+}
+
 /** The tally as the lines of the diagnostics block. */
 export function describeOcrTally(tally: OcrTally | null): string[] {
 	if (tally === null) return ["Last transcription: none since Obsidian started"];
@@ -107,5 +115,6 @@ export function describeOcrTally(tally: OcrTally | null): string[] {
 		countsLine("Pages", tally.pages),
 		countsLine("Margin notes", tally.notes),
 		...(tally.warnings.length === 0 ? ["Transcription warnings: none"] : ["Transcription warnings:", ...tally.warnings.map((warning) => `- ${warning}`)]),
+		...(tally.cutOffs.length === 0 ? ["Cut-off answers: none"] : ["Cut-off answers:", ...tally.cutOffs.map(cutOffLine)]),
 	];
 }
