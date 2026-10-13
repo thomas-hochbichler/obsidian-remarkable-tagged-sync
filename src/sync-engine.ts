@@ -2335,8 +2335,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// transcription as the digest's "skipped" and under-count a real failure (ticket 02).
 			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]);
 			// A page the backend lost while the rest of the unit read fine: the note is written and the
-			// unit counts as ok, so this line is the only trace the loss leaves anywhere.
-			skipErrors.push(...ocrWarnings);
+			// unit counts as ok, so this line is the only trace the loss leaves anywhere. Named, as a
+			// digest's are: the backend's sentence cannot say which notebook lost the page.
+			skipErrors.push(...ocrWarnings.map((warning) => `${unitName}: ${warning}`));
 			pushUnique(backendWarnings, ocrWarnings);
 			if (shrink !== null) {
 				skipErrors.push(shrink);
@@ -2441,7 +2442,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			await checkpoint(); // see the notebook-tag branch
 			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]); // see the notebook-tag branch
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
-			skipErrors.push(...ocrWarnings);
+			skipErrors.push(...ocrWarnings.map((warning) => `${unitName}: ${warning}`));
 			pushUnique(backendWarnings, ocrWarnings);
 			if (shrink !== null) {
 				skipErrors.push(shrink);

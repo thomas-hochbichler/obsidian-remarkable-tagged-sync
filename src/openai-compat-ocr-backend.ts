@@ -40,7 +40,21 @@ export interface OpenAiCompatOcrOptions {
 }
 
 interface OpenAiChatResponse {
-	choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>;
+	choices?: Array<{ message?: { content?: string | null; reasoning?: string; reasoning_content?: string }; finish_reason?: string }>;
+	usage?: { completion_tokens_details?: { reasoning_tokens?: number } };
+}
+
+/**
+ * Whether a truncated answer ran out of room while the model was still reasoning, as each server says
+ * it: Ollama in `reasoning`, llama-server and LM Studio in `reasoning_content`, OpenAI and OpenRouter
+ * as `reasoning_tokens`, and a model whose reasoning nobody separated as an inline `<think>`. An empty
+ * answer counts too: that is #116's case, reasoning that used up the room before the answer began.
+ * Anything else is a model that kept writing the answer itself -- a small one repeating a line.
+ */
+function ranOutReasoning(body: OpenAiChatResponse): boolean {
+	const message = body.choices?.[0]?.message;
+	const content = message?.content ?? "";
+	return !!message?.reasoning || !!message?.reasoning_content || (body.usage?.completion_tokens_details?.reasoning_tokens ?? 0) > 0 || content.trim() === "" || content.includes("<think>");
 }
 
 /**
@@ -114,6 +128,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	 * so reporting it as truncations would over-claim.
 	 */
 	private truncated = 0;
+	/** Whether any of `truncated` ran out while reasoning -- see `ranOutReasoning`. */
+	private truncatedReasoning = false;
 	/** How many pages were dropped because the server never answered -- see `recognize`. */
 	private timedOut = 0;
 
@@ -142,6 +158,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.refused = false;
 		this.refusal = null;
 		this.truncated = 0;
+		this.truncatedReasoning = false;
 		this.timedOut = 0;
 
 		// An empty model field is a misconfiguration, and sending it anyway is worse than refusing:
@@ -177,7 +194,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages, framing)} not transcribed. Is it running?${triedAgain(framing)}`;
 				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.${this.serverError ? triedAgain(framing) : ""}`;
 				if (this.timedOut > 0) return timeoutWarning(this.timedOut, this.baseURL, framing);
-				if (this.truncated > 0) return truncationWarning(this.truncated, framing);
+				if (this.truncated > 0) return truncationWarning(this.truncated, framing, this.truncatedReasoning);
 				return null;
 			},
 			onPage,
@@ -237,6 +254,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			// permanent loss, because the next sync skips a document whose device hash is unchanged.
 			if (body.choices?.[0]?.finish_reason === "length") {
 				this.truncated++;
+				if (ranOutReasoning(body)) this.truncatedReasoning = true;
 				console.warn(`Tagged Sync: ${this.id} OCR response was truncated, marking the page failed`);
 				return { kind: "failed" };
 			}
@@ -293,11 +311,15 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
  * one thing it cannot borrow is the lever: here the fix is a model that does not reason, or the
  * setting that stops it; there, thinking cannot be switched off at all, so the lever is the model
  * alone. Keep the four things in step; leave the lever to each.
+ *
+ * Here the cause has two forms (`ranOutReasoning`). A model that did not reason ran out of room
+ * writing the answer itself, and told to switch to a model that does not reason, a reporter on
+ * qwen2.5vl:3b was sent to the model they already had. Its lever is a larger model.
  */
-function truncationWarning(pages: number, framing: OcrFraming): string {
-	return (
-		`${upperFirst(pageCount(pages, framing))} left out because the model's answer ran past what it may return — ` +
-		`this happens with models that reason before answering. A later sync will not pick them up on its own: ` +
-		`switch to a model that doesn't reason, then ${readAgain(framing)}.`
-	);
+function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolean): string {
+	const cause = reasoning
+		? "the model's answer ran past what it may return — this happens with models that reason before answering"
+		: "the model kept writing and did not stop — smaller models sometimes repeat a line until they run out of room";
+	const lever = reasoning ? "a model that doesn't reason" : "a larger model";
+	return `${upperFirst(pageCount(pages, framing))} left out because ${cause}. A later sync will not pick them up on its own: switch to ${lever}, then ${readAgain(framing)}.`;
 }

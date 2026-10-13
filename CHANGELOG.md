@@ -22,6 +22,12 @@ workflow publishes the section as the GitHub release body. See
   backend. With a paid cloud backend and automatic transcription off, that happens on the next
   *Sync now*.
 
+- **A page left out because the model's answer ran too long now gets the right advice.** The warning
+  always blamed a model that reasons before answering and said to switch to one that doesn't, even
+  for a small model like qwen2.5vl:3b that does not reason and had only kept repeating a line. It
+  now tells the two apart and suggests a larger model for the second case. "Copy diagnostics" also
+  names the notebook a lost page belongs to, as it already did for margin notes.
+
 ## [1.8.3] - 2026-10-11
 
 ### Fixed

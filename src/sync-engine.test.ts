@@ -4304,6 +4304,7 @@ describe("failed transcription", () => {
 
 		expect(result.notesWritten).toBe(1);
 		expect(result.backendWarnings).toEqual(["a page's answer was cut off"]);
+		expect(result.skipErrors).toContainEqual(expect.stringMatching(/^page 1 of ".+" for tag "todo": a page's answer was cut off$/));
 	});
 
 	/**
@@ -4342,8 +4343,9 @@ describe("failed transcription", () => {
 
 		expect(result.notesWritten).toBe(2);
 		expect(result.backendWarnings).toEqual(["a page's answer was cut off"]);
-		// Diagnostics keeps every occurrence: there the question is which unit lost what.
-		expect(result.skipErrors.filter((error) => error === "a page's answer was cut off")).toHaveLength(2);
+		// Diagnostics keeps every occurrence, each with its unit: there the question is which unit lost
+		// what, and a reporter whose page went missing could not tell which notebook to look in.
+		expect(result.skipErrors).toEqual(expect.arrayContaining([`"Notebook" for tag "sync": a page's answer was cut off`, `"Second" for tag "sync": a page's answer was cut off`]));
 	});
 });
 

@@ -628,8 +628,9 @@ describe("deterministic sampling", () => {
 describe("reporting pages dropped for truncation", () => {
 	beforeEach(() => fetchMock.mockReset());
 
+	/** As Ollama answers for a model that reasons: the reasoning in its own field, `message.reasoning`. */
 	function truncated(): Response {
-		return jsonResponse(200, { choices: [{ message: { role: "assistant", content: "half a page" }, finish_reason: "length" }] });
+		return jsonResponse(200, { choices: [{ message: { role: "assistant", content: "", reasoning: "Let me look at the page" }, finish_reason: "length" }] });
 	}
 
 	it("names the count, the cause, the lever and the repair", async () => {
@@ -671,6 +672,40 @@ describe("reporting pages dropped for truncation", () => {
 		const result = await backend.recognize([page(), page()]);
 
 		expect(result.warnings?.[0]).toContain("1 page was left out");
+	});
+
+	/**
+	 * A model that does not reason can run out of room too: a small one that repeats a line until the
+	 * server stops it. qwen2.5vl:3b did that on a reporter's page, and the warning told them to switch
+	 * to a model that does not reason -- the one they were using. Measured against Ollama 0.40.2 and
+	 * qwen2.5vl:7b: no `reasoning` field, and the text it had written so far in `content`.
+	 */
+	it("blames a model that kept writing when it did not reason", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { role: "assistant", content: "Notes\nNotes\nNotes" }, finish_reason: "length" }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:3b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings).toEqual([
+			"1 page was left out because the model kept writing and did not stop — smaller models sometimes repeat a line until they " +
+				'run out of room. A later sync will not pick them up on its own: switch to a larger model, then run "Re-transcribe all synced notes".',
+		]);
+	});
+
+	// Each server says it its own way. Empty `content` with no field at all is #116's case: reasoning the
+	// server did not separate, which used up the room before any answer began.
+	it.each([
+		["reasoning_content, as llama-server and LM Studio send it", { message: { content: "", reasoning_content: "hmm" } }],
+		["reasoning tokens, as OpenAI and OpenRouter count them", { message: { content: "half" } }, { completion_tokens_details: { reasoning_tokens: 900 } }],
+		["an inline <think> block", { message: { content: "<think>\nThe page shows" } }],
+		["nothing written at all", { message: { content: "" } }],
+	])("blames reasoning when the answer carries %s", async (_label, choice, usage?: object) => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ ...choice, finish_reason: "length" }], ...(usage ? { usage } : {}) }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "some-model", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings?.[0]).toContain("this happens with models that reason before answering");
 	});
 
 	/** A systemic failure displaces it: someone whose server died should read that, not a model tip. */
