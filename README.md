@@ -127,8 +127,9 @@ Two limits, so you know them up front:
 
 - **The plugin syncs one tag.** You map one reMarkable tag to one vault folder. You can
   change or remove that mapping at any time. Syncing more than one tag is what
-  [Tagged Sync Pro](#tagged-sync-pro) is for — €24 once, with a 14-day trial. Everything else in
-  this README works without payment, [cloud transcription](#tagged-sync-pro) aside.
+  [Tagged Sync Pro](#tagged-sync-pro) is for — €24 once, with a 14-day trial. Everything listed
+  under [Tagged Sync Pro](#tagged-sync-pro) needs a licence; the rest of this README works without
+  one.
 - **Text transcription is built in on macOS 13 or later.** Everywhere else — Windows, Linux, older
   Macs — you can transcribe by pointing the plugin at a local AI server you run yourself
   ([Ollama, LM Studio, or any OpenAI-compatible server](#a-local-server-you-run-yourself)), or by
@@ -159,15 +160,15 @@ is unsupported), and a reMarkable account with cloud sync switched on — unless
 2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
    `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
    **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
-3. Click **Discover tags** to scan your reMarkable notebooks, pages and folders for tags, then map
-   the tag you want to sync to a vault folder. Only a mapped tag is synced — an unmapped tag is
-   simply not selected, not lost.
+3. Under **Tag routing**, click **Scan** next to *Discover tags* to find the tags on your reMarkable
+   notebooks, pages and folders, then choose a vault folder for the tag you want to sync. Only a
+   mapped tag is synced — an unmapped tag is simply not selected, not lost.
 4. Click **Sync now**.
 
 Sync is also available from Obsidian's command palette (`Ctrl`/`Cmd` + `P`) as **Tagged Sync for
 reMarkable: Sync now**.
 
-![The plugin settings: reMarkable connection, OCR backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
+![The plugin settings: reMarkable connection, transcription backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
 
 ### Stopping a sync
 
@@ -192,9 +193,10 @@ Two commands, depending on how much you want re-read.
 **Tagged Sync for reMarkable: Re-transcribe this note** re-reads just the note you have open. Use it
 to repair a single garbled transcript: on a paid backend it tells you how many pages that notebook
 is before it sends any of them, and if you have corrected that note by hand it asks first, because
-re-transcribing replaces what you wrote there. It says no in three cases — the open note was never
-synced from reMarkable, its notebook is no longer on your tablet, or it is a PDF whose margin notes
-are [kept as a digest](#annotated-pdfs) rather than as a transcript.
+re-transcribing replaces what you wrote there. It says no in four cases — the open note was never
+synced from reMarkable, its notebook is no longer on your tablet, it is a PDF whose margin notes
+are [kept as a digest](#annotated-pdfs) rather than as a transcript, or the note has no transcript
+section to write into.
 
 **Tagged Sync for reMarkable: Re-transcribe all synced notes** does the same for every synced note in
 the vault. That is the one to run after switching backends. It asks for confirmation first.
@@ -253,7 +255,7 @@ egress**.
 
 If you already run — or are willing to install — a local AI server, the plugin can send each page
 to it and get the text back. Nothing leaves your machine, and there is no account or key. **This is
-the one route that works everywhere**, including Windows on x64 and Linux.
+the one free route that works everywhere**, including Windows on x64 and Linux.
 
 1. Install and start **Ollama**, **LM Studio**, or any other server that speaks the OpenAI
    `/chat/completions` API, and load a **vision** model into it.
@@ -274,8 +276,8 @@ that page is left out rather than saved half-read. If that happens, the sync say
 switch to a model that does not reason (often the `-instruct` build of the same family) and run
 **Re-transcribe all synced notes**, because a later sync will not pick those pages up on its own.
 
-The reasoning hint needs **Ollama**, **OpenRouter**, or **LM Studio 0.4.0 or newer**; other servers
-expose nothing to read it from, and then settings says nothing rather than guessing.
+The reasoning hint needs **Ollama**, **LM Studio 0.4.0 or newer**, or — with Pro — **OpenRouter**;
+other servers expose nothing to read it from, and then settings says nothing rather than guessing.
 
 If the server is not running, settings says so, and a sync that hits it leaves the notes with their
 render and reports it at the end rather than failing quietly.
@@ -283,23 +285,23 @@ render and reports it at the end rather than failing quietly.
 ### Local model (optional, opt-in)
 
 On some machines you can switch the backend to a **local AI model** instead. It reads handwriting
-about three times more accurately than Apple Vision and keeps headings and lists, and like Vision
-it runs entirely on your machine. It is **never a default**: a fresh install downloads nothing,
-and Apple Vision stays the default on macOS.
+two to eight times more accurately than Apple Vision, depending on the model, and keeps headings and
+lists, and like Vision it runs entirely on your machine. It is **never a default**: a fresh install
+downloads nothing, and Apple Vision stays the default on macOS.
 
 Choosing it downloads **1.6 to 6.2 GB of model files plus a 12 MB program**, after an explicit opt-in
 in settings — three models ship, and settings offers the ones your machine can run, with the most
-accurate marked as the default. Both files are checked against a SHA-256 published in the plugin
+accurate marked as the default. Every file is checked against a SHA-256 published in the plugin
 before anything runs. It is slow compared with Vision — roughly 15 seconds a page on a fast Mac
-against Vision's 0.4 — and it holds between 3 and 9 GB of memory while it runs, depending on the
-model.
+against Vision's 0.4 — and it holds between 3 and 16 GB of memory while it runs, depending on the
+model (Qwen2.5-VL-7B is the heavy one).
 
 **Offered only on:**
 
 | | Requirement |
 |---|---|
-| macOS | Apple Silicon, 8 GB of memory or more; 16 GB for the most accurate model |
-| Windows | ARM (Snapdragon X and similar), 16 GB of memory or more; 24 GB for the most accurate model |
+| macOS | Apple Silicon, 8 GB of memory or more; 16 GB for Qwen3-VL-8B (the most accurate), 18 GB for Qwen2.5-VL-7B |
+| Windows | ARM (Snapdragon X and similar), 16 GB of memory or more; 24 GB for Qwen3-VL-8B (the most accurate) and Qwen2.5-VL-7B |
 
 Intel Macs, Windows on x64 and Linux do not get the option, and settings says why on the machine
 itself. **Windows x64 is excluded because Windows Defender quarantines the engine** — the
@@ -340,7 +342,7 @@ strokes. The plugin treats it accordingly:
 
 ## Tagged Sync Pro
 
-Everything described above is free and stays free. Two things are paid:
+Everything not listed here is free and stays free. These are paid:
 
 - **Cloud transcription** — Anthropic, OpenAI, Google and OpenRouter as transcription backends, with
   your own API key and [a model you name yourself](#handwriting-transcription).
@@ -349,9 +351,12 @@ Everything described above is free and stays free. Two things are paid:
   tablet directly over USB or Wi-Fi.
 - **[Frontmatter properties](#frontmatter-properties-pro)** — each synced note carries its
   reMarkable tags and metadata as Obsidian properties, for Dataview and Bases queries.
-- **[Zotero write-back and the desktop app](#zotero)** — what you marked on the tablet lands in
-  Zotero as native annotations, and the plugin can talk to the Zotero desktop app instead of only
-  to zotero.org. Sending a paper to the tablet and the note's link to its Zotero item are free.
+- **[Zotero write-back, the desktop app and group libraries](#zotero)** — what you marked on the
+  tablet lands in Zotero as native annotations, the plugin can talk to the Zotero desktop app
+  instead of only to zotero.org, and it can use your [group libraries](#connecting). Sending a paper
+  to the tablet over SSH is Pro too, as part of [syncing without the
+  cloud](#syncing-without-the-cloud). Sending a paper over the reMarkable cloud and the note's link
+  to its Zotero item are free.
 
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
@@ -417,14 +422,15 @@ The loop is three steps:
    search and cite. A margin note anchored to a passage becomes that annotation's comment. Without
    Pro the note says so in its top line: *highlights stay in the vault*.
 
-**Or start in Zotero.** Tag the paper `to-remarkable` (the tag under Settings → Zotero, change it if
-you like), then run **Send tagged Zotero papers to reMarkable**. Every paper carrying the tag lands
-on your tablet, in the same `Zotero` folder as *Send* and without a sync tag — you tag it on the
-tablet when you want it back. Tag the paper in Zotero, not the PDF. Nothing is ever taken off the
-tablet, and the Zotero tag is left where you put it; a paper that is already there is simply
-skipped, and the notice says so. A paper with two PDFs, or one Zotero has no copy of, is named in
-the notice and waits for **Send Zotero PDF to reMarkable…**, which is where questions get asked.
-No sync sends: only that command does, so the scheduler never puts anything on your tablet.
+**Or start in Zotero.** Tag the paper `to-remarkable` (the *Send tag in Zotero* setting under
+Settings → *Zotero on the tablet*; change it if you like), then run **Send tagged Zotero papers to
+reMarkable**. Every paper carrying the tag lands on your tablet, in the same `Zotero` folder as
+*Send* and without a sync tag — you tag it on the tablet when you want it back. Tag the paper in
+Zotero, not the PDF. Nothing is ever taken off the tablet, and the Zotero tag is left where you put
+it; a paper that is already there is simply skipped, and if every tagged paper is there already, the
+notice says so. A paper with two PDFs, or one Zotero has no copy of, is named in the notice and
+waits for **Send Zotero PDF to reMarkable…**, which is where questions get asked. No sync sends:
+only that command does, so the scheduler never puts anything on your tablet.
 
 Each half stands on its own. A PDF that reached the tablet some other way is recognised at sync
 time — by the file's own hash, or by asking you once — and a note gets its Zotero link whether or
@@ -448,26 +454,26 @@ Either connection is enough on its own, and you can have both:
 | Works with Zotero closed | ✓ | — |
 | Finds your PDFs | the copies synced to zotero.org | any file on your disk |
 
-Each connection has its own switch under Settings → Zotero, so whether anything goes over the
-internet is one thing to look at: with *Use zotero.org* off, nothing Zotero-related leaves your
-machine, whatever key is stored. With both set up the desktop app is asked first and zotero.org is
-the fallback, so a paper Zotero never uploaded still gets sent. If neither is set up, nothing
-Zotero-related runs and your sync is exactly what it was.
+Each connection has its own switch, under Settings → *Zotero cloud* and *Zotero local*, so whether
+anything goes over the internet is one thing to look at: with *Use zotero.org* off, nothing
+Zotero-related leaves your machine, whatever key is stored. With both set up the desktop app is
+asked first and zotero.org is the fallback, so a paper Zotero never uploaded still gets sent. If
+neither is set up, nothing Zotero-related runs and your sync is exactly what it was.
 
 **Group libraries** ([Pro](#tagged-sync-pro)). Your own library is always on. Under Settings →
-Zotero → *Zotero libraries*, every group your account is in is a switch of its own, off until you
-name it — a group is other people's work, and **highlights written into a group library are
-visible to everyone in that group.** A group you switch on is searched by *Send*, sent from by the
-tag command, matched against at sync time and, with write-back, written into like your own library;
-the note then links into the group. Where the same PDF is in your library and in a group, you are
-asked which, once, with the library named. A group you may only read is named in the note — *no
-write access to …* — and nothing is written into your own library instead. Both connections
+*Zotero libraries* → *Group libraries*, every group your account is in is a switch of its own, off
+until you name it — a group is other people's work, and **highlights written into a group library
+are visible to everyone in that group.** A group you switch on is searched by *Send*, sent from by
+the tag command, matched against at sync time and, with write-back, written into like your own
+library; the note then links into the group. Where the same PDF is in your library and in a group,
+you are asked which, once, with the library named. A group you may only read is named in the note —
+*no write access to …* — and nothing is written into your own library instead. Both connections
 handle groups; the desktop app knows the groups it syncs, zotero.org the ones your key can read.
 
 Sending needs a way onto the tablet: the reMarkable cloud, or [a paired
-tablet](#syncing-without-the-cloud) with **Send over SSH** switched on. Sending over SSH restarts
-the tablet's reading app, which closes whatever you have open — that is the only way it notices a
-new file. The home screen is back in about six seconds.
+tablet](#syncing-without-the-cloud) with **Send over SSH when the cloud is not connected** switched
+on. Sending over SSH restarts the tablet's reading app, which closes whatever you have open — that
+is the only way it notices a new file. The home screen is back in about six seconds.
 
 **What leaves your machine.** Your handwriting never does — the ink itself is never uploaded
 anywhere, by any part of this plugin. What write-back sends is the *transcribed text* of your
@@ -649,9 +655,9 @@ Three things worth knowing before you rely on it:
   and a PDF you only wrote on syncs with the render and no text at all.
 - **It reads the PDF's own text layer.** A scanned page without one gives less: highlights arrive as
   the words your tablet recorded, and pen marks are not recognised as marks at all.
-
-Section headings come from the PDF's own outline where it has one, and from a font-size guess where
-it does not — so a document without bookmarks can file a quote under the wrong heading.
+- **Section headings are partly guessed.** They come from the PDF's own outline where it has one,
+  and from a font-size guess where it does not — so a document without bookmarks can file a quote
+  under the wrong heading.
 
 ## What gets synced
 
@@ -791,14 +797,16 @@ stays where it is and is still preserved on every sync — new notes just no lon
   deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
 - [Zotero](#zotero) works with **PDF attachments only** — an EPUB in your library cannot be sent,
   and a book you read on the tablet is not matched to one.
-- One tag → folder mapping.
+- One tag → folder mapping without Pro; [Tagged Sync Pro](#tagged-sync-pro) maps as many as you
+  like.
 - Transcription with Apple Vision requires **macOS 13 or later**, and its transcripts are flat
   text — no headings, lists, task lists, or tables.
 - The optional [local model](#local-model-optional-opt-in) keeps headings and lists, but needs
   Apple Silicon with 8 GB of memory or Windows on ARM with 16 GB, and a download of 1.6 to 6.2 GB
   depending on the model. Tables come out as plain lines.
 - **Windows on x64 and Linux get the render and no handwriting transcript out of the box** —
-  [a local server you run yourself](#a-local-server-you-run-yourself) is the only route there. The
+  [a local server you run yourself](#a-local-server-you-run-yourself) is the only free route there;
+  the [cloud backends](#tagged-sync-pro) of Pro work on every platform. The
   [digest of a marked-up PDF](#annotated-pdfs) and of a [typed
   document](#typed-text-and-the-type-folio) are unaffected and work everywhere: both are read from
   the file, not transcribed. Typed text on a handwritten page needs a backend like any other
@@ -830,7 +838,8 @@ stays where it is and is still preserved on every sync — new notes just no lon
 
 This plugin makes network requests to exactly one place by default:
 
-- **reMarkable cloud** (required) — the plugin authenticates to `my.remarkable.com` via a
+- **reMarkable cloud** (the default source; not needed if you [sync straight from the
+  tablet](#syncing-without-the-cloud)) — the plugin authenticates to `my.remarkable.com` via a
   one-time device code, then reads your notebook/page list, tags, and content over the
   reMarkable cloud API to sync it into your vault. It reads only; the one thing it ever writes is
   a PDF you sent yourself with [Send a Zotero PDF](#zotero). Nothing already in your reMarkable
@@ -859,8 +868,8 @@ This plugin makes network requests to exactly one place by default:
   searches it, reads your PDF attachments, and — with [Tagged Sync Pro](#tagged-sync-pro) — writes
   the annotations it made from your tablet marks. Nothing you did not mark on the tablet is sent,
   and no annotation of yours is read. Without Pro the plugin only reads.
-- **The Zotero desktop app on `127.0.0.1:23119`** ([Pro](#tagged-sync-pro)) — the same thing over
-  your own machine's loopback interface. This leaves nothing on your machine at all.
+- **The Zotero desktop app on `localhost:23119`** ([Pro](#tagged-sync-pro)) — the same thing over
+  your own machine's loopback interface. Nothing leaves your machine.
 
   Both are off unless you configure them; a vault with no Zotero API key and no desktop app
   switched on never causes either call.
@@ -887,10 +896,12 @@ again once the files are on disk:
 Nothing is uploaded to either.
 
 **The licence check** — `polar.sh`, and only if you own or are trialling
-[Tagged Sync Pro](#tagged-sync-pro). It is called **only** when you use a paid feature, and **at
-most once every 7 days**; a valid answer is remembered in between. It carries your licence key, the
-activation id of this vault and the plugin's public organization id — no email address, no vault
-name, no note content. **A free user never causes this call.** Details in [PRIVACY.md](./PRIVACY.md).
+[Tagged Sync Pro](#tagged-sync-pro). It is called **only** when you enter your key or use a paid
+feature, and **at most once every 7 days**; a valid answer is remembered in between. It carries your
+licence key, the activation id of this vault and the plugin's public organization id — no email
+address, no note content. Whenever this vault activates the key — when you enter it, and again if
+its activation is lost — the call also sends this vault's name, so you can tell your devices apart
+in Polar. **A free user never causes this call.** Details in [PRIVACY.md](./PRIVACY.md).
 
 **The trial ticket** — `taggedsync.com`, once, when you press *Start free trial*. It sends a
 12-character hash of this vault's Obsidian id and nothing else, and answers with the trial's start
@@ -926,8 +937,10 @@ Two things, both only on the paths your OS reserves for exactly this:
 Two behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
 
 - **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
-  version, Obsidian version, platform, selected OCR backend, number of mapped tags, and last sync
-  time to the clipboard, so you can paste them into a bug report. The plugin **never reads** your
+  version, Obsidian version, platform, whether Apple Vision is available, the selected transcription
+  backend, a few transcription counters, the number of mapped tags, the last sync time and the last
+  error to the clipboard, so you can paste them into a bug report. The last error can name a
+  notebook or document — look before you paste it anywhere public. The plugin **never reads** your
   clipboard, and nothing is sent anywhere — you choose where to paste it.
 - **Vault folder list.** The tag-routing settings read the list of folders in your vault to fill
   the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
@@ -951,8 +964,8 @@ Open an issue at
 [github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues).
 
 Before you write it, press **Copy diagnostics** in the plugin settings and paste the result into
-the issue. It contains your plugin and Obsidian versions, your OS, whether Apple Vision is
-available, and the last error — nothing is sent anywhere by pressing it.
+the issue. What it contains is listed under [Other permissions](#other-permissions-this-plugin-uses);
+nothing is sent anywhere by pressing it.
 
 ## Requesting a feature
 

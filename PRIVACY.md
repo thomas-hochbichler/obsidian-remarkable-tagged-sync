@@ -23,10 +23,10 @@ licence key is valid.
 
 | | |
 |---|---|
-| **When** | only on the path of a paid feature — a cloud transcription run, or adding a second tag mapping |
+| **When** | when you enter your key, and otherwise only on the path of a paid feature — a cloud transcription run, or adding a second tag mapping |
 | **How often** | at most **once every 7 days**. A valid answer is remembered; between checks nothing is sent |
 | **Never** | if you have not bought and are not in the trial. A free user causes **no** call to `polar.sh`, ever |
-| **What is sent** | your licence key, the activation id of this vault, and the public organization id of the plugin. **No email address, no vault name, no note content, no usage statistics** |
+| **What is sent** | your licence key, the activation id of this vault, and the public organization id of the plugin. **No email address, no note content, no usage statistics.** Whenever this vault activates the key — when you enter it, and again if its activation is lost — the call also sends this vault's name, so you can tell your devices apart in Polar |
 | **What Polar sees** | the above, plus — unavoidably, as with any web request — your IP address and the time of the request |
 
 If `polar.sh` cannot be reached, nothing happens: the last valid answer carries for 30 days, and
