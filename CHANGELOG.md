@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.8.4] - 2026-10-13
+
 ### Fixed
 
 - **Margin notes that an earlier version could not read are read again, once, without you doing
