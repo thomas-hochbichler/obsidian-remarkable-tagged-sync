@@ -77,7 +77,7 @@ export interface OcrResult {
 export interface CutOff {
 	promptTokens: number | null;
 	answerTokens: number | null;
-	/** The context the server gave the model, in tokens; only Ollama reports it (`/api/ps`). */
+	/** The context the server gave the model, in tokens; only Ollama and LM Studio report it (`serverContext`). */
 	context: number | null;
 	reasoning: boolean;
 	/** Non-empty lines of the answer that repeat an earlier one, and how many non-empty lines it had. */

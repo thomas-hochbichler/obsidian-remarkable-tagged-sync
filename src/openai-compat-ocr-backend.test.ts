@@ -707,10 +707,31 @@ describe("reporting pages dropped for truncation", () => {
 		expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:11434/api/ps");
 	});
 
-	// Only Ollama says how large a context it gave the model; any other server leaves it unknown, and a
-	// lookup that fails costs the figures nothing.
+	/** Read against LM Studio 0.4.26: `/api/v0/models` names the loaded context of a loaded model only. */
+	it("keeps the context LM Studio loaded the model with", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }], usage: { prompt_tokens: 3900, completion_tokens: 196 } }))
+			.mockResolvedValueOnce(
+				jsonResponse(200, {
+					data: [
+						{ id: "qwen3-vl-8b-instruct-mlx", state: "not-loaded", max_context_length: 262144 },
+						{ id: "qwen3-vl-8b-instruct", state: "loaded", max_context_length: 262144, loaded_context_length: 4096 },
+					],
+				}),
+			);
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "qwen3-vl-8b-instruct", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs?.[0].context).toBe(4096);
+		expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:1234/api/v0/models");
+	});
+
+	// Only Ollama and LM Studio say how large a context they gave the model; any other server leaves it
+	// unknown, and a lookup that fails costs the figures nothing.
 	it.each([
-		["a server that does not report it", "lmstudio", "http://localhost:1234/v1"],
+		["a server that does not report it", "openrouter", "https://openrouter.ai/api/v1"],
+		["an LM Studio that has not loaded the model", "lmstudio", "http://localhost:1234/v1", { data: [{ id: "m", state: "not-loaded", max_context_length: 262144 }] }],
 		["an Ollama that does not answer the lookup", "ollama", "http://localhost:11434/v1"],
 		["an Ollama that no longer holds the model", "ollama", "http://localhost:11434/v1", { models: [] }],
 	])("leaves the context unknown for %s", async (_label, id, baseURL, ps?: object) => {

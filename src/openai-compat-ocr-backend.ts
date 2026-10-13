@@ -71,15 +71,23 @@ function cutOff(body: OpenAiChatResponse): CutOff {
 }
 
 /**
- * The context Ollama gave `model`, from `/api/ps`, or null. Asked only after a page was cut off, so a
- * run that read everything sends nothing extra; and anything that goes wrong here costs only this
- * one figure, never the page results it describes.
+ * The context a local server gave `model`, or null: Ollama lists it in `/api/ps`, LM Studio in
+ * `/api/v0/models` for a loaded model (read against 0.4.26), and no other server says. Asked only after
+ * a page was cut off, so a run that read everything sends nothing extra; and anything that goes wrong
+ * here costs only this one figure, never the page results it describes.
  */
-async function ollamaContext(fetchFn: typeof fetch, baseURL: string, model: string): Promise<number | null> {
+async function serverContext(fetchFn: typeof fetch, id: string, baseURL: string, model: string): Promise<number | null> {
+	const root = baseURL.replace(/\/v1\/?$/, "");
 	try {
-		const response = await fetchFn(`${baseURL.replace(/\/v1\/?$/, "")}/api/ps`);
-		const body = (await response.json()) as { models?: Array<{ name?: string; context_length?: number }> };
-		return body.models?.find((loaded) => loaded.name === model)?.context_length ?? null;
+		if (id === "ollama") {
+			const body = (await (await fetchFn(`${root}/api/ps`)).json()) as { models?: Array<{ name?: string; context_length?: number }> };
+			return body.models?.find((loaded) => loaded.name === model)?.context_length ?? null;
+		}
+		if (id === "lmstudio") {
+			const body = (await (await fetchFn(`${root}/api/v0/models`)).json()) as { data?: Array<{ id?: string; state?: string; loaded_context_length?: number }> };
+			return body.data?.find((listed) => listed.id === model && listed.state === "loaded")?.loaded_context_length ?? null;
+		}
+		return null;
 	} catch {
 		return null;
 	}
@@ -227,7 +235,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		if (this.unreachable || this.serverError) result.retryable = true;
 		if (this.refused) result.refused = true;
 		if (this.cutOffs.length > 0) {
-			const context = this.id === "ollama" ? await ollamaContext(this.fetchFn, this.baseURL, this.model) : null;
+			const context = await serverContext(this.fetchFn, this.id, this.baseURL, this.model);
 			result.cutOffs = this.cutOffs.map((cut) => ({ ...cut, context }));
 		}
 		return result;

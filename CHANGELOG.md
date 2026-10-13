@@ -34,7 +34,7 @@ workflow publishes the section as the GitHub release body. See
 ### Added
 
 - **"Copy diagnostics" shows what cut an answer off**: the tokens the page and the answer took, the
-  context the model had (Ollama reports it), whether the model reasoned, and how many lines of the
+  context the model had (Ollama and LM Studio report it), whether the model reasoned, and how many lines of the
   answer repeat. Numbers only, never the text.
 
 - **"Copy diagnostics" says how many documents are waiting to be read again**, for example after a

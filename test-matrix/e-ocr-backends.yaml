@@ -553,7 +553,7 @@
       test: "reporting pages dropped for truncation > keeps what cut a page off, with the context Ollama gave the model"
 
     - id: E25.37
-      scenario: "A page is cut off by LM Studio, which reports no context"
+      scenario: "A page is cut off by a cloud provider, which reports no context"
       expect: "The figures are kept with the context unknown, and nothing is asked of the server"
       layer: unit
       file: src/openai-compat-ocr-backend.test.ts
@@ -572,6 +572,20 @@
       layer: unit
       file: src/openai-compat-ocr-backend.test.ts
       test: "reporting pages dropped for truncation > leaves the context unknown for an Ollama that no longer holds the model"
+
+    - id: E25.41
+      scenario: "A page is cut off by LM Studio, which loaded the model with a 4096-token context"
+      expect: "The figures carry context 4096, read from /api/v0/models -- the loaded context of the loaded model, not the model's maximum. Field names read against LM Studio 0.4.26"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > keeps the context LM Studio loaded the model with"
+
+    - id: E25.42
+      scenario: "A page is cut off by LM Studio, whose list shows the model as not loaded"
+      expect: "The context stays unknown: the model's maximum is not the context it ran with"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > leaves the context unknown for an LM Studio that has not loaded the model"
 
     - id: E25.39
       scenario: "Every page reads"
