@@ -1318,8 +1318,12 @@ async function writeUnit(
  */
 async function isBlockEdited(noteStore: NoteStore, row: SyncIndexRow | undefined): Promise<boolean> {
 	if (row === undefined || row.blockHash === undefined) return false;
-	const content = await noteStore.read(row.notePath);
-	if (content === null) return false;
+	return blockEditedIn(await noteStore.read(row.notePath), row);
+}
+
+/** `isBlockEdited` for a note already read: the same answer, without reading it twice. */
+function blockEditedIn(content: string | null, row: SyncIndexRow): boolean {
+	if (content === null || row.blockHash === undefined) return false;
 	const block = extractManagedBlock(content);
 	if (block === null) return false;
 	return blockHashOf(block) !== row.blockHash;
@@ -1477,7 +1481,10 @@ export async function markLegacyOcrLosses(index: SyncIndex, noteStore: NoteStore
 	let marked = false;
 	for (const [key, row] of Object.entries(index.rows)) {
 		if (row.status !== "active" || row.ocrRetry !== undefined) continue;
-		if (!(await noteStore.read(row.notePath))?.includes(NOT_TRANSCRIBED)) continue;
+		const content = await noteStore.read(row.notePath);
+		// Not a note the user edited: a sync never overwrites their own words (`isBlockEdited`), so its
+		// retry would never be spent, and the row would count as waiting for good.
+		if (!content?.includes(NOT_TRANSCRIBED) || blockEditedIn(content, row)) continue;
 		rows[key] = withOcrRetry(row, { with: LEGACY_OCR_RETRY, retryable: false, at: now });
 		marked = true;
 	}

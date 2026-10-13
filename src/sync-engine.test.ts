@@ -2859,6 +2859,20 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 			expect(await markLegacyOcrLosses(waiting, deps.noteStore, minutesLater(5)())).toEqual(waiting);
 		});
 
+		// A sync would skip the note anyway -- it never overwrites the user's own words -- so marked, the row
+		// would keep its retry for good and the diagnostics would count it as waiting forever.
+		it("leaves a note alone that the user edited", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild(`> ${NOT_TRANSCRIBED}`, [], "ok"));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-legacy-edited"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			const notePath = first.index.rows[key].notePath;
+			const written = (await deps.noteStore.read(notePath)) ?? "";
+			await deps.noteStore.write(notePath, written.replace(NOT_TRANSCRIBED, `${NOT_TRANSCRIBED} Read it myself: build on rock.`));
+
+			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW)).toEqual(first.index);
+		});
+
 		it("counts the active rows that wait for a retry, for the diagnostics", async () => {
 			typedPages(false, true, false);
 			vi.mocked(buildDigest).mockResolvedValueOnce(failedDigest(true));

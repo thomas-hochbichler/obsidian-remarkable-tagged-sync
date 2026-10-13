@@ -8,6 +8,7 @@ import {
 	OcrTimeoutError,
 	pageCount,
 	readAgain,
+	realSleep,
 	refusalDetail,
 	sanitizeTranscript,
 	type Sleep,
@@ -57,7 +58,7 @@ function ranOutReasoning(body: OpenAiChatResponse): boolean {
 	return !!message?.reasoning || !!message?.reasoning_content || (body.usage?.completion_tokens_details?.reasoning_tokens ?? 0) > 0 || content.trim() === "" || content.includes("<think>");
 }
 
-/** A truncated answer as figures for the diagnostics -- see `CutOff`. The context is filled in later, once per run. */
+/** A truncated answer as figures for the diagnostics -- see `CutOff`. The context is filled in after the pages, see `serverContext`. */
 function cutOff(body: OpenAiChatResponse): CutOff {
 	const lines = (body.choices?.[0]?.message?.content ?? "").split("\n").map((line) => line.trim()).filter((line) => line !== "");
 	return {
@@ -73,10 +74,21 @@ function cutOff(body: OpenAiChatResponse): CutOff {
 /**
  * The context a local server gave `model`, or null: Ollama lists it in `/api/ps`, LM Studio in
  * `/api/v0/models` for a loaded model (read against 0.4.26), and no other server says. Asked only after
- * a page was cut off, so a run that read everything sends nothing extra; and anything that goes wrong
- * here costs only this one figure, never the page results it describes.
+ * a page was cut off, and once per adapter -- which is once per run, since each run builds its own --
+ * so a run that read everything sends nothing extra; and anything that goes wrong here, a server that
+ * never answers included, costs only this one figure, never the page results it describes.
  */
-async function serverContext(fetchFn: typeof fetch, id: string, baseURL: string, model: string): Promise<number | null> {
+async function serverContext(fetchFn: typeof fetch, sleep: Sleep, id: OcrBackendId, baseURL: string, model: string): Promise<number | null> {
+	// Raced rather than aborted: `fetch` in Obsidian is `requestUrl`, which accepts a signal and ignores
+	// it (see `withTimeout` in licence-client.ts). The lookup is for the diagnostics only, and a server
+	// that never answers it may not hold up the run whose pages it describes.
+	return Promise.race([askContext(fetchFn, id, baseURL, model), sleep(CONTEXT_LOOKUP_TIMEOUT_MS).then(() => null)]);
+}
+
+/** How long a context lookup may take: it is a local server listing what it has loaded. */
+const CONTEXT_LOOKUP_TIMEOUT_MS = 5_000;
+
+async function askContext(fetchFn: typeof fetch, id: OcrBackendId, baseURL: string, model: string): Promise<number | null> {
 	const root = baseURL.replace(/\/v1\/?$/, "");
 	try {
 		if (id === "ollama") {
@@ -164,6 +176,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	 * over-claim.
 	 */
 	private cutOffs: CutOff[] = [];
+	/** The context lookup, asked at most once per adapter -- see `serverContext`. */
+	private context: Promise<number | null> | null = null;
 	/** How many pages were dropped because the server never answered -- see `recognize`. */
 	private timedOut = 0;
 
@@ -235,7 +249,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		if (this.unreachable || this.serverError) result.retryable = true;
 		if (this.refused) result.refused = true;
 		if (this.cutOffs.length > 0) {
-			const context = await serverContext(this.fetchFn, this.id, this.baseURL, this.model);
+			this.context ??= serverContext(this.fetchFn, this.sleepFn ?? realSleep, this.id, this.baseURL, this.model);
+			const context = await this.context;
 			result.cutOffs = this.cutOffs.map((cut) => ({ ...cut, context }));
 		}
 		return result;
@@ -362,8 +377,12 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 			`A later sync will not pick them up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
 		);
 	}
+	// Not `readAgain`: for a margin note that promises the next sync, which reads it again only under a
+	// different backend or model -- and a full context is fixed in the server's settings, under the same
+	// fingerprint. Switching "Handwritten notes" off and on reads every note again whatever the fix was.
+	const repair = framing === "page" ? readAgain(framing) : `switch "Handwritten notes" off and on in the settings to read them again`;
 	return (
 		`${head} the model's answer was cut off before it was complete. A later sync will not pick them up on its own: ` +
-		`"Copy diagnostics" shows what cut it off, and once that is fixed, ${readAgain(framing)}.`
+		`"Copy diagnostics" shows what cut it off, and once that is fixed, ${repair}.`
 	);
 }

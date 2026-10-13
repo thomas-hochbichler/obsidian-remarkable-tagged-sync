@@ -587,6 +587,27 @@
       file: src/openai-compat-ocr-backend.test.ts
       test: "reporting pages dropped for truncation > leaves the context unknown for an LM Studio that has not loaded the model"
 
+    - id: E25.43
+      scenario: "A margin note's answer is cut off by a model that did not reason"
+      expect: "The warning sends the user to switching Handwritten notes off and on, not to the next sync: a full context is fixed in the server settings under the same fingerprint, so no sync would read the note again on its own"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > sends a margin note to the switch that reads it again, not to the next sync"
+
+    - id: E25.44
+      scenario: "A page is cut off, and the server never answers the context lookup"
+      expect: "The run returns once the wait is over, with the context unknown -- the lookup is for the diagnostics and may not hold up the pages it describes"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > stops waiting for a context lookup that never answers"
+
+    - id: E25.45
+      scenario: "Two margin notes of one run are cut off, each recognized on its own"
+      expect: "The context is asked for once per adapter, which is once per run -- not once per note, which for a PDF with eighty cut-off notes sent eighty lookups"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > asks for the context once for the whole run"
+
     - id: E25.39
       scenario: "Every page reads"
       expect: "No cut-off is reported, and no lookup is sent"

@@ -576,6 +576,13 @@
       file: src/sync-engine.test.ts
       test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > leaves a note alone that reads everything, or that already waits for a retry"
 
+    - id: C26.33
+      scenario: The one-time pass meets a note that still says it could not be read, but whose managed block the user edited
+      expect: The row comes back unchanged. A sync never overwrites the user's own words, so marked, the retry would never be spent and the diagnostics would count the document as waiting for good
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > leaves a note alone that the user edited"
+
     - id: C26.32
       scenario: One PDF lost its margin notes, and its row is later orphaned
       expect: The diagnostics count is 1 while the row is active and 0 once it is orphaned -- an orphaned row is never synced, so it waits for nothing

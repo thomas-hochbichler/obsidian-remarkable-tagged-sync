@@ -694,6 +694,22 @@ describe("reporting pages dropped for truncation", () => {
 		]);
 	});
 
+	/**
+	 * A margin note has no re-transcribe, and the lever here need not change the model: a full context
+	 * is fixed in the server's settings, under the same fingerprint, so no sync retries the note on its
+	 * own. Switching "Handwritten notes" off and on does read every note again.
+	 */
+	it("sends a margin note to the switch that reads it again, not to the next sync", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "Check the" }, finish_reason: "length" }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:3b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings?.[0]).toMatch(/^Margin notes were left out because the model's answer was cut off before it was complete\./);
+		expect(result.warnings?.[0]).toContain('once that is fixed, switch "Handwritten notes" off and on in the settings to read them again.');
+		expect(result.warnings?.[0]).not.toContain("the next sync reads them again");
+	});
+
 	/** The figures that tell a full context, a repeating model and a reasoning one apart, as numbers only. */
 	it("keeps what cut a page off, with the context Ollama gave the model", async () => {
 		fetchMock
@@ -742,6 +758,36 @@ describe("reporting pages dropped for truncation", () => {
 		const result = await backend.recognize([page()]);
 
 		expect(result.cutOffs).toEqual([{ promptTokens: null, answerTokens: null, context: null, reasoning: false, repeatedLines: 0, lines: 1 }]);
+	});
+
+	// The lookup is asked only for the diagnostics, so it may not hold up the run it describes: a server
+	// that never answers it leaves the context unknown once the wait is over.
+	it("stops waiting for a context lookup that never answers", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] }))
+			.mockReturnValueOnce(new Promise(() => {}));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock, sleepFn: async () => {} });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs?.[0].context).toBeNull();
+	});
+
+	// Margin notes go to the backend one at a time, so asked per call, a PDF with eighty cut-off notes
+	// sent eighty lookups. The adapter is built afresh for each run, so once per adapter is once per run.
+	it("asks for the context once for the whole run", async () => {
+		const cut = () => jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] });
+		fetchMock
+			.mockResolvedValueOnce(cut())
+			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "m", context_length: 4096 }] }))
+			.mockResolvedValueOnce(cut());
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		await backend.recognize([page()], undefined, "note");
+		const second = await backend.recognize([page()], undefined, "note");
+
+		expect(second.cutOffs?.[0].context).toBe(4096);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
 	it("reports no cut-off when every page read", async () => {
