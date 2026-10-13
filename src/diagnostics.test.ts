@@ -11,6 +11,7 @@ const BASE = {
 	unreadableInkRegions: 0,
 	reusedPageTranscriptions: { reused: 0, total: 0 },
 	ocrTally: null,
+	pendingOcrRetries: 0,
 	mappedTagCount: 1,
 	lastSyncAt: "2026-07-24T09:00:00.000Z",
 	lastSyncError: null,
@@ -28,6 +29,16 @@ describe("buildDiagnostics", () => {
 		expect(text).toContain("Vision revision: 3");
 		expect(text).toContain("Unreadable ink regions (Apple Vision): 0");
 		expect(text).toContain("Reused page transcriptions: 0 of 0");
+	});
+
+	/**
+	 * A reporter's margin notes stayed unread after an update that was meant to read them, and the
+	 * block said only "Last transcription: none since Obsidian started". Whether any document was
+	 * waiting for another try at all was in nothing they could paste.
+	 */
+	it("counts the documents waiting to be read again", () => {
+		expect(buildDiagnostics(BASE)).toContain("Documents waiting to be read again: none");
+		expect(buildDiagnostics({ ...BASE, pendingOcrRetries: 2 })).toContain("Documents waiting to be read again: 2");
 	});
 
 	/** The first question behind "I edited a page and the transcript did not update" (issue #117). */

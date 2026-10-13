@@ -824,6 +824,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							unreadableInkRegions: visionRunStats.unreadableInkRegions,
 							reusedPageTranscriptions: this.plugin.lastPageTranscriptions,
 							ocrTally: this.plugin.lastOcrTally,
+							pendingOcrRetries: Object.values(this.plugin.data.syncIndex.rows).filter((row) => row.status === "active" && row.ocrRetry !== undefined).length,
 							mappedTagCount: Object.keys(this.plugin.data.tagFolderMap).length,
 							lastSyncAt: this.plugin.data.lastSyncAt,
 							lastSyncError: this.plugin.lastSyncError,

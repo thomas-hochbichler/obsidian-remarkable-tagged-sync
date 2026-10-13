@@ -28,6 +28,12 @@ workflow publishes the section as the GitHub release body. See
   now tells the two apart and suggests a larger model for the second case. "Copy diagnostics" also
   names the notebook a lost page belongs to, as it already did for margin notes.
 
+### Added
+
+- **"Copy diagnostics" says how many documents are waiting to be read again**, for example after a
+  transcription server was not running. Before, notes still waiting for another try could not be
+  told apart from notes nobody had tried to read.
+
 ## [1.8.3] - 2026-10-11
 
 ### Fixed
