@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OcrBackend } from "./ocr-backend";
 import type { OcrBackendEntry } from "./ocr-registry";
-import { reTranscribeConfirmation, reTranscribeIsUseful, reTranscribeNoteConfirmation, reTranscribeNoteNotice } from "./re-transcribe-prompt";
+import { reTranscribeConfirmation, reTranscribeIsUseful, reTranscribeNoteConfirmation, reTranscribeNoteNotice, unreadPagesSentence } from "./re-transcribe-prompt";
 import type { ReTranscribeNoteOutcome } from "./sync-engine";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
@@ -160,10 +160,10 @@ describe("reTranscribeNoteConfirmation", () => {
 });
 
 describe("reTranscribeNoteNotice", () => {
-	const outcomes: ReTranscribeNoteOutcome[] = ["written", "emptied", "not-on-device", "pdf-digest", "no-transcript-section", "stopped"];
+	const outcomes: ReTranscribeNoteOutcome[] = ["written", "emptied", "not-on-device", "pdf-digest", "no-transcript-section", "stopped", "unread"];
 
 	it("gives every outcome that says anything its own sentence", () => {
-		// Six outcomes, six distinct sentences. Two outcomes sharing one would tell a user whose PDF
+		// Seven outcomes, seven distinct sentences. Two outcomes sharing one would tell a user whose PDF
 		// was refused the same thing as one whose notebook is gone.
 		const said = outcomes.map((outcome) => reTranscribeNoteNotice(outcome, "Meeting 12.3"));
 
@@ -176,5 +176,10 @@ describe("reTranscribeNoteNotice", () => {
 
 	it("says nothing back to a user who has just said no", () => {
 		expect(reTranscribeNoteNotice("cancelled", "Meeting 12.3")).toBeNull();
+	});
+
+	it("counts the pages that kept what they had before in the grammar of the count", () => {
+		expect(unreadPagesSentence(1)).toBe('1 page could not be read and keeps what it had before. "Copy diagnostics" shows why.');
+		expect(unreadPagesSentence(3)).toBe('3 pages could not be read and keep what they had before. "Copy diagnostics" shows why.');
 	});
 });

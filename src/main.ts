@@ -29,6 +29,7 @@ import {
 	reTranscribeIsUseful,
 	reTranscribeNoteConfirmation,
 	reTranscribeNoteNotice,
+	unreadPagesSentence,
 } from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
@@ -51,7 +52,7 @@ import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
-import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
+import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
@@ -667,6 +668,13 @@ export default class TaggedSyncPlugin extends Plugin {
 		// whether the feature is on, and re-asking a licence gate mid-run could answer differently.
 		const frontmatterOn = this.data.frontmatter && frontmatterAllowed(this.entitlement());
 		try {
+			// Before opening the source, so a tablet that cannot be reached does not put it off: it reads
+			// the vault only. Saved at once, so a failed run does not read every note again next time.
+			if (!this.data.legacyOcrLossesMarked) {
+				this.data.syncIndex = await markLegacyOcrLosses(this.data.syncIndex, createNoteStore(this.app), this.nowIso(), backend);
+				this.data.legacyOcrLossesMarked = true;
+				await this.saveData(this.data);
+			}
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;
@@ -946,7 +954,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			const opened = await this.openSource();
 			transport = opened.transport;
 			session = opened.session;
-			const { updated, index, stopped } = await reTranscribeAll(
+			const { updated, unreadPages, index, stopped } = await reTranscribeAll(
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
@@ -974,7 +982,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				new Notice(`Re-transcribe stopped. ${updated} note(s) refreshed; the rest are unchanged.`);
 			} else {
 				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
-				new Notice(`Re-transcribed ${updated} note(s).`);
+				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages)}`);
 			}
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -1029,7 +1037,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			const opened = await this.openSource();
 			transport = opened.transport;
 			session = opened.session;
-			const { outcome, index } = await reTranscribeNote(
+			const { outcome, index, unreadPages } = await reTranscribeNote(
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
@@ -1062,7 +1070,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.data.syncIndex = index;
 				await this.saveData(this.data);
 			}
-			const notice = reTranscribeNoteNotice(outcome, file.basename);
+			const notice = reTranscribeNoteNotice(outcome, file.basename, unreadPages);
 			if (notice !== null) new Notice(notice);
 			// Every outcome leaves a final status: the bar was set to busy above, and a refusal that
 			// left it there would spin over a run that is long over.

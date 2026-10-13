@@ -58,6 +58,11 @@ export function pageCount(pages: number, framing: OcrFraming): string {
 	return `${pages} ${pages === 1 ? "page was" : "pages were"}`;
 }
 
+/** The pronoun for {@link pageCount}'s pages: "it" only for a single counted page. */
+export function them(pages: number, framing: OcrFraming): string {
+	return framing === "page" && pages === 1 ? "it" : "them";
+}
+
 /** The first letter capitalised, for a sentence that starts with {@link pageCount}. */
 export function upperFirst(text: string): string {
 	return text.charAt(0).toUpperCase() + text.slice(1);
@@ -417,7 +422,7 @@ export type Sleep = (ms: number) => Promise<void>;
  * 2026-09-09 while measuring precision through this adapter: eleven of fifteen rate-limited pages
  * were lost rather than retried, and reported as "the provider could not answer" instead.
  */
-const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const realSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * `Retry-After` in ms, in both forms the HTTP spec allows (delta-seconds and a date), or the

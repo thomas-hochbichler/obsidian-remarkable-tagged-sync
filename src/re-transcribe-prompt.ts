@@ -124,14 +124,19 @@ export function reTranscribeNoteConfirmation(question: ReTranscribeNoteQuestion)
  * user-facing string of this feature lives in this file (spec §5.5).
  *
  * `cancelled` has none: the user has just said no themselves, and reading it back to them is noise.
+ * `unread` and a `written` with unread pages say what a failed page became: nothing was lost, so the
+ * user needs to know only that the run fell short, and where to find out why.
+ *
  * `emptied` is not an error -- the write succeeded and removed the section, which is what an empty
  * OCR result has always done. It is simply said out loud now, instead of being reported as success
  * over a note that just lost its text (spec §6.3).
  */
-export function reTranscribeNoteNotice(outcome: ReTranscribeNoteOutcome, noteName: string): string | null {
+export function reTranscribeNoteNotice(outcome: ReTranscribeNoteOutcome, noteName: string, unreadPages = 0): string | null {
 	switch (outcome) {
 		case "written":
-			return `Re-transcribed "${noteName}".`;
+			return unreadPages === 0 ? `Re-transcribed "${noteName}".` : `Re-transcribed "${noteName}". ${unreadPagesSentence(unreadPages)}`;
+		case "unread":
+			return `Could not read "${noteName}" again, so it was left as it was. "Copy diagnostics" shows why.`;
 		case "emptied":
 			return "No text was found. The transcript has been removed.";
 		case "not-on-device":
@@ -145,4 +150,13 @@ export function reTranscribeNoteNotice(outcome: ReTranscribeNoteOutcome, noteNam
 		case "cancelled":
 			return null;
 	}
+}
+
+/**
+ * The pages a re-transcribe could not read, which kept what their note had for them -- shared by both
+ * commands so they say it the same way.
+ */
+export function unreadPagesSentence(pages: number): string {
+	const kept = pages === 1 ? "1 page could not be read and keeps what it had before." : `${pages} pages could not be read and keep what they had before.`;
+	return `${kept} "Copy diagnostics" shows why.`;
 }

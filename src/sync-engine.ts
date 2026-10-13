@@ -3,7 +3,7 @@ import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, write
 import { md5Hex } from "./file-md5";
 import { pushUnique } from "./push-unique";
 import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipeline";
-import { type DigestPage, renderDigest } from "./digest-builder";
+import { type DigestPage, NOT_TRANSCRIBED, renderDigest } from "./digest-builder";
 import type { ZoteroNoteParts, ZoteroPass } from "./zotero-sync";
 import {
 	blockHashOf,
@@ -33,7 +33,7 @@ import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, ty
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
-import { type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint } from "./transcript-store";
+import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint, transcriptSections } from "./transcript-store";
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 import { readsNothing } from "./vision-ocr-backend";
@@ -1318,8 +1318,12 @@ async function writeUnit(
  */
 async function isBlockEdited(noteStore: NoteStore, row: SyncIndexRow | undefined): Promise<boolean> {
 	if (row === undefined || row.blockHash === undefined) return false;
-	const content = await noteStore.read(row.notePath);
-	if (content === null) return false;
+	return blockEditedIn(await noteStore.read(row.notePath), row);
+}
+
+/** `isBlockEdited` for a note already read: the same answer, without reading it twice. */
+function blockEditedIn(content: string | null, row: SyncIndexRow): boolean {
+	if (content === null || row.blockHash === undefined) return false;
 	const block = extractManagedBlock(content);
 	if (block === null) return false;
 	return blockHashOf(block) !== row.blockHash;
@@ -1453,6 +1457,59 @@ export function invalidateRenders(index: SyncIndex): SyncIndex {
 		rows[key] = row.status === "active" ? withoutVersion : row;
 	}
 	return { ...index, rows };
+}
+
+/**
+ * The `ocrRetry.with` of a row marked by `markLegacyOcrLosses`. No backend's fingerprint is ever this,
+ * so the first sync under a backend that reads anything finds the retry due at once (`ocrRetryDue`).
+ */
+export const LEGACY_OCR_RETRY = "legacy";
+
+/**
+ * Marks for one retry every note that a version before `ocrRetry` existed wrote with handwriting it
+ * could not read. Such a row carries no `ocrRetry`, so nothing ever read its PDF again: the device is
+ * unchanged, and re-transcribe refuses a digest. A user on 1.8.3 still saw the notes 1.8.2 had lost,
+ * and only switching "Handwritten notes" off and on read them -- a step nobody finds on their own.
+ *
+ * Run once per vault (`TaggedSyncData.legacyOcrLossesMarked`), not on every sync: a note can keep the
+ * sentence after a retry that read everything -- the model answered and found no words -- and marked
+ * again it would be read again on every sync. The note itself is the only record of the loss, so this
+ * reads every active note once; a note whose model honestly found nothing is read once more for it.
+ */
+export async function markLegacyOcrLosses(index: SyncIndex, noteStore: NoteStore, now: string, ocrBackend: OcrBackend): Promise<SyncIndex> {
+	// Off writes the sentence for every margin note, because it never looked, and 1.8.3 gives such a
+	// note no retry on purpose (`buildUnitDigest`). A vault on Off most likely wrote its notes under Off,
+	// and marked, the first Sync now after switching to a paid backend would read -- and bill -- every
+	// margin note in the library. So under a backend that reads nothing the pass marks nothing; the
+	// caller still sets the flag.
+	if (readsNothing(ocrBackend)) return index;
+	const rows: Record<string, SyncIndexRow> = { ...index.rows };
+	let marked = false;
+	for (const [key, row] of Object.entries(index.rows)) {
+		if (row.status !== "active" || row.ocrRetry !== undefined) continue;
+		// A courtesy, not part of the sync: a note the vault cannot hand over is skipped. Thrown, it stopped
+		// every sync before the tablet was opened, worded as a tablet failure, and the flag was never set.
+		let content: string | null;
+		try {
+			content = await noteStore.read(row.notePath);
+		} catch {
+			continue;
+		}
+		// Not a note the user edited: a sync never overwrites their own words (`isBlockEdited`), so its
+		// retry would never be spent, and the row would count as waiting for good.
+		if (!content?.includes(NOT_TRANSCRIBED) || blockEditedIn(content, row)) continue;
+		rows[key] = withOcrRetry(row, { with: LEGACY_OCR_RETRY, retryable: false, at: now });
+		marked = true;
+	}
+	return marked ? { ...index, rows } : index;
+}
+
+/**
+ * How many documents a later sync is to read again for lost transcriptions, for "Copy diagnostics".
+ * Documents, not rows: a PDF tagged page by page has a row, and a digest, per tag.
+ */
+export function pendingOcrRetries(index: SyncIndex): number {
+	return new Set(Object.values(index.rows).filter((row) => row.status === "active" && row.ocrRetry !== undefined).map((row) => row.docId)).size;
 }
 
 /**
@@ -2306,8 +2363,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			// transcription as the digest's "skipped" and under-count a real failure (ticket 02).
 			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]);
 			// A page the backend lost while the rest of the unit read fine: the note is written and the
-			// unit counts as ok, so this line is the only trace the loss leaves anywhere.
-			skipErrors.push(...ocrWarnings);
+			// unit counts as ok, so this line is the only trace the loss leaves anywhere. Named, as a
+			// digest's are: the backend's sentence cannot say which notebook lost the page.
+			skipErrors.push(...ocrWarnings.map((warning) => `${unitName}: ${warning}`));
 			pushUnique(backendWarnings, ocrWarnings);
 			if (shrink !== null) {
 				skipErrors.push(shrink);
@@ -2412,7 +2470,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			await checkpoint(); // see the notebook-tag branch
 			const unitOcr = digest.ocr === null ? ocr : worstOcrStatus([digest.ocr, ocr]); // see the notebook-tag branch
 			// See the notebook-tag branch: without this the lost page leaves no trace at all.
-			skipErrors.push(...ocrWarnings);
+			skipErrors.push(...ocrWarnings.map((warning) => `${unitName}: ${warning}`));
 			pushUnique(backendWarnings, ocrWarnings);
 			if (shrink !== null) {
 				skipErrors.push(shrink);
@@ -2574,7 +2632,9 @@ interface ReTranscribeDoc {
  * because at N=1 the user is told about it (spec §6.3).
  */
 type ReTranscribeRowOutcome =
-	| { kind: "written"; row: SyncIndexRow | null; empty: boolean }
+	| { kind: "written"; row: SyncIndexRow | null; empty: boolean; unreadPages: number }
+	/** Every page sent failed, so the note was left exactly as it was. */
+	| { kind: "unread"; unreadPages: number }
 	/** The tagged page is gone from the device, so there is nothing left to transcribe. */
 	| { kind: "no-pages" }
 	/** Fetching or rendering the pages failed. The error is carried, for a caller that cannot skip it. */
@@ -2622,6 +2682,15 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 	const covered = new Set(readDigestPages(noteContent));
 	const transcribePages = ocrPages.filter((page) => page.typed !== true || !covered.has(page.embedPage));
 	const ocr = await runOcr(ocrBackend, transcribePages, bar.page);
+	// The command is asked to make a note better, and a page it could not read is no reason to make it
+	// worse: a cut-off answer replaced a page's good transcript with "Could not read this page", and no
+	// sync brings that back, because nothing on the device changed. So a run that read nothing at all
+	// leaves the note as it was, and below, a failed page keeps what the note had for it.
+	const unreadPages = unreadPageCount(ocr, transcribePages);
+	if (unreadPages > 0 && !readAnything(ocr)) {
+		bar.finish();
+		return { kind: "unread", unreadPages };
+	}
 	// The per-page headings link into the note's own embed, which this path knows only from the
 	// note: it holds a row, not the sync's attachment folder. A note without one (hand-broken, or
 	// written by a much older version) falls back to the unlabelled transcript rather than
@@ -2635,7 +2704,8 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 		noteHasDigest && !pdfBacked
 			? collectHighlights(ocrPages.map((page) => ({ pageLabel: page.pageLabel, embedPage: page.embedPage, highlights: page.typed === true ? [] : (page.scene?.highlights ?? []) })))
 			: [];
-	const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, ocr.pages, ocr.text, { highlights: folded, unitPages: ocrPages.length });
+	const pages = ocr.pages === null ? null : keepEarlierText(ocr.pages, noteContent, folded);
+	const transcript = embedPath === null ? ocr.text : renderTranscript(embedPath, pages, ocr.text, { highlights: folded, unitPages: ocrPages.length });
 	// A notebook note may carry both sections since #115, and refusing it here would leave the
 	// command unable to repair the notes the bug damaged. A PDF keeps the refusal: growing a flat
 	// transcript into its digest note is the F20 leak (see `SyncDeps.marginNotes`). The one-note
@@ -2667,7 +2737,46 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 			: {};
 
 	const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
-	return { kind: "written", empty: transcript === "", row: block === null ? null : { ...row, blockHash: blockHashOf(block), ...store } };
+	return { kind: "written", empty: transcript === "", unreadPages, row: block === null ? null : { ...row, blockHash: blockHashOf(block), ...store } };
+}
+
+/** The pages this run sent and got nothing back for. Without per-page results, every page sent. */
+function unreadPageCount(ocr: UnitOcr, pages: OcrPage[]): number {
+	if (ocr.pages !== null) return ocr.pages.filter((page) => page.status === "failed").length;
+	return ocr.status === "failed" || ocr.status === "unavailable" ? pages.filter((page) => page.scene !== null && page.typed !== true).length : 0;
+}
+
+function readAnything(ocr: UnitOcr): boolean {
+	return ocr.pages === null ? ocr.text !== "" : ocr.pages.some((page) => page.status === "ok");
+}
+
+/**
+ * A failed page with its earlier text put back, read off the note through the same parser the
+ * per-page store uses (issue #117). Fail-soft the other way round from the store: a section it cannot
+ * read back leaves the page failed, which is what it would have been without this.
+ *
+ * Only a unit of two or more pages gets here: a one-page unit whose page failed read nothing, and
+ * `reTranscribeRow` has already left it as it was. Quotes folded into a section are counted from this
+ * run's scenes, which are the same pages the sync folded them from.
+ */
+function keepEarlierText(pages: TranscriptPage[], noteContent: string, folded: HighlightGroup[]): TranscriptPage[] {
+	if (!pages.some((page) => page.status === "failed")) return pages;
+	const sections = transcriptSections(readTranscript(noteContent) ?? "");
+	const quotes = new Map(folded.map((group) => [group.pageLabel, group.quotes.length]));
+	return pages.map((page) => {
+		if (page.status !== "failed") return page;
+		const section = sections.get(page.pageLabel);
+		const text = section === undefined ? null : pageText(section, quotes.get(page.pageLabel) ?? 0);
+		return text === null ? page : { ...page, status: "ok", text };
+	});
+}
+
+/** `unreadPages`: pages that failed and kept what their note had for them (see `reTranscribeRow`). */
+export interface ReTranscribeAllResult {
+	updated: number;
+	unreadPages: number;
+	index: SyncIndex;
+	stopped: boolean;
 }
 
 /**
@@ -2676,7 +2785,7 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
  * transcript is refreshed to match the backend now selected -- typically to replace a garbage
  * transcript from an earlier backend. The embed and the user's free area are never touched.
  */
-export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex): Promise<{ updated: number; index: SyncIndex; stopped: boolean }> {
+export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex): Promise<ReTranscribeAllResult> {
 	const { api, noteStore } = deps;
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
@@ -2693,11 +2802,12 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 	const entryById = new Map(entries.filter((entry) => entry.type === "DocumentType").map((entry) => [entry.id, entry]));
 
 	let updated = 0;
+	let unreadPages = 0;
 	const docIds = [...rowsByDoc.keys()];
 	const checkpoint = deps.saveIndex ? () => deps.saveIndex!({ ...index, rows: { ...rows } }) : async () => {};
 	// A stopped run still hands back every `blockHash` it refreshed: those notes were rewritten, and a
 	// caller that drops them would leave the next sync reading the plugin's own work as a hand edit.
-	const stopHere = (): { updated: number; index: SyncIndex; stopped: boolean } => ({ updated, index: { ...index, rows }, stopped: true });
+	const stopHere = (): ReTranscribeAllResult => ({ updated, unreadPages, index: { ...index, rows }, stopped: true });
 
 	const workload = await scanReTranscribe(deps, rowsByDoc, entryById, report, shouldStop);
 	if (workload.stopped) return stopHere();
@@ -2728,6 +2838,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			// with it -- both needed before the transcript is built, not after (ticket 06).
 			const noteContent = (await noteStore.read(row.notePath)) ?? "";
 			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes }, noteContent, bar);
+			if (outcome.kind === "written" || outcome.kind === "unread") unreadPages += outcome.unreadPages;
 			if (outcome.kind !== "written") continue;
 			updated++;
 			if (outcome.row !== null) rows[row.syncKey] = outcome.row;
@@ -2736,7 +2847,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			await checkpoint();
 		}
 	}
-	return { updated, index: { ...index, rows }, stopped: false };
+	return { updated, unreadPages, index: { ...index, rows }, stopped: false };
 }
 
 /**
@@ -2755,10 +2866,19 @@ export type ReTranscribeNoteOutcome =
 	| "pdf-digest"
 	/** The note has no transcript region and no fence to grow one in. */
 	| "no-transcript-section"
+	/** Every page failed, so the note was left exactly as it was. */
+	| "unread"
 	/** The dialog was answered no. Nothing is said about this one; the user just said it. */
 	| "cancelled"
 	/** The stop was requested before the pages were rendered. */
 	| "stopped";
+
+/** `unreadPages`: pages that failed and kept what the note had for them (see `reTranscribeRow`). */
+export interface ReTranscribeNoteResult {
+	outcome: ReTranscribeNoteOutcome;
+	index: SyncIndex;
+	unreadPages: number;
+}
 
 /**
  * `saveIndex` is omitted rather than ignored: one document is one save, so this path keeps no
@@ -2786,11 +2906,11 @@ export interface ReTranscribeNoteDeps extends Omit<ReTranscribeDeps, "saveIndex"
  * `SyncApi` method would have to be built on both transports and every double, and there is no
  * measurement behind it yet (spec §5.2, §5.3).
  */
-export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncIndexRow, index: SyncIndex): Promise<{ outcome: ReTranscribeNoteOutcome; index: SyncIndex }> {
+export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncIndexRow, index: SyncIndex): Promise<ReTranscribeNoteResult> {
 	const { api, noteStore } = deps;
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
-	const unchanged = (outcome: ReTranscribeNoteOutcome): { outcome: ReTranscribeNoteOutcome; index: SyncIndex } => ({ outcome, index });
+	const unchanged = (outcome: ReTranscribeNoteOutcome, unreadPages = 0): ReTranscribeNoteResult => ({ outcome, index, unreadPages });
 
 	const entries = await api.listItems();
 	// The index said the row is active a moment ago; this is the device saying the same thing. Two
@@ -2831,12 +2951,14 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	// success over a note nothing was written to would be a lie, so the error reaches the caller and
 	// is explained as any other transport failure is.
 	if (outcome.kind === "fetch-failed") throw outcome.error;
+	if (outcome.kind === "unread") return unchanged("unread", outcome.unreadPages);
 	// `no-pages` cannot arrive here: it means a page-tagged row whose page is gone, which is the same
 	// fact as `pageCount === 0` and was refused above. So the only refusal left is `updateTranscript`
 	// finding nowhere to write.
 	if (outcome.kind !== "written") return unchanged("no-transcript-section");
 	return {
 		outcome: outcome.empty ? "emptied" : "written",
+		unreadPages: outcome.unreadPages,
 		index: outcome.row === null ? index : { ...index, rows: { ...index.rows, [row.syncKey]: outcome.row } },
 	};
 }

@@ -177,7 +177,7 @@ export const REGION_LANGUAGE = "remarkable-note";
  * attachment gone, a note whose transcription is empty would otherwise be a callout with a title and
  * no content -- and the block id has to sit on a line of content.
  */
-const NOT_TRANSCRIBED = "Handwriting that could not be transcribed.";
+export const NOT_TRANSCRIBED = "Handwriting that could not be transcribed.";
 
 /**
  * The title of a page added on the device (F21). It says what the entry is -- a page of the reader's

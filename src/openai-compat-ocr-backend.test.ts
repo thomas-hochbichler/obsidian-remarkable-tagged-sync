@@ -628,8 +628,9 @@ describe("deterministic sampling", () => {
 describe("reporting pages dropped for truncation", () => {
 	beforeEach(() => fetchMock.mockReset());
 
+	/** As Ollama answers for a model that reasons: the reasoning in its own field, `message.reasoning`. */
 	function truncated(): Response {
-		return jsonResponse(200, { choices: [{ message: { role: "assistant", content: "half a page" }, finish_reason: "length" }] });
+		return jsonResponse(200, { choices: [{ message: { role: "assistant", content: "", reasoning: "Let me look at the page" }, finish_reason: "length" }] });
 	}
 
 	it("names the count, the cause, the lever and the repair", async () => {
@@ -671,6 +672,162 @@ describe("reporting pages dropped for truncation", () => {
 		const result = await backend.recognize([page(), page()]);
 
 		expect(result.warnings?.[0]).toContain("1 page was left out");
+	});
+
+	/**
+	 * A model that does not reason runs out of room too, and the answer alone does not say why. A
+	 * reporter on qwen2.5vl:3b was told to switch to a model that does not reason -- the one they had --
+	 * and the next guess, a small model repeating a line, was no better founded: measured on 2026-10-13
+	 * with Ollama 0.40.2 at its smallest default context, 4096 tokens, the tall reference page was cut
+	 * off after 20 tokens of an ordinary transcript (prompt 4076 + answer 20 = 4096). So the sentence
+	 * names no cause, and the figures that tell the causes apart go to the diagnostics (`cutOffs`).
+	 */
+	it("guesses no cause when the model did not reason", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { role: "assistant", content: "May\nThree days" }, finish_reason: "length" }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:3b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings).toEqual([
+			"1 page was left out because the model's answer was cut off before it was complete. A later sync will not pick it up on " +
+				'its own: "Copy diagnostics" shows what cut it off, and once that is fixed, run "Re-transcribe all synced notes".',
+		]);
+	});
+
+	/**
+	 * A margin note has no re-transcribe, and the lever here need not change the model: a full context
+	 * is fixed in the server's settings, under the same fingerprint, so no sync retries the note on its
+	 * own. Switching "Handwritten notes" off and on does read every note again.
+	 */
+	it("sends a margin note to the switch that reads it again, not to the next sync", async () => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "Check the" }, finish_reason: "length" }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:3b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()], undefined, "note");
+
+		expect(result.warnings?.[0]).toMatch(/^Margin notes were left out because the model's answer was cut off before it was complete\./);
+		expect(result.warnings?.[0]).toContain(
+			'once that is fixed, switch "Handwritten notes" off and on in the settings to read them again — that reads every PDF\'s margin notes again.',
+		);
+		expect(result.warnings?.[0]).not.toContain("the next sync reads them again");
+	});
+
+	/** The figures that tell a full context, a repeating model and a reasoning one apart, as numbers only. */
+	it("keeps what cut a page off, with the context Ollama gave the model", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "May\nLeg 1\nLeg 1\nLeg 1" }, finish_reason: "length" }], usage: { prompt_tokens: 4076, completion_tokens: 20 } }))
+			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "other:1b", context_length: 8192 }, { name: "qwen2.5vl:7b", context_length: 4096 }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen2.5vl:7b", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs).toEqual([{ promptTokens: 4076, answerTokens: 20, context: 4096, reasoning: false, repeatedLines: 2, lines: 4 }]);
+		expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:11434/api/ps");
+	});
+
+	// Ollama takes a name without a tag as `:latest`, and lists it that way in `/api/ps`, so a model set as
+	// "llava" ran as "llava:latest" -- compared as typed, its context was always unknown.
+	it("finds a model set without a tag under the :latest Ollama lists it as", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] }))
+			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "llava:7b", context_length: 32768 }, { name: "llava:latest", context_length: 8192 }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "llava", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs?.[0].context).toBe(8192);
+	});
+
+	/** Read against LM Studio 0.4.26: `/api/v0/models` names the loaded context of a loaded model only. */
+	it("keeps the context LM Studio loaded the model with", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }], usage: { prompt_tokens: 3900, completion_tokens: 196 } }))
+			.mockResolvedValueOnce(
+				jsonResponse(200, {
+					data: [
+						{ id: "qwen3-vl-8b-instruct-mlx", state: "not-loaded", max_context_length: 262144 },
+						{ id: "qwen3-vl-8b-instruct", state: "loaded", max_context_length: 262144, loaded_context_length: 4096 },
+					],
+				}),
+			);
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "qwen3-vl-8b-instruct", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs?.[0].context).toBe(4096);
+		expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:1234/api/v0/models");
+	});
+
+	// Only Ollama and LM Studio say how large a context they gave the model; any other server leaves it
+	// unknown, and a lookup that fails costs the figures nothing.
+	it.each([
+		["a server that does not report it", "openrouter", "https://openrouter.ai/api/v1"],
+		["an LM Studio that has not loaded the model", "lmstudio", "http://localhost:1234/v1", { data: [{ id: "m", state: "not-loaded", max_context_length: 262144 }] }],
+		["an Ollama that does not answer the lookup", "ollama", "http://localhost:11434/v1"],
+		["an Ollama that no longer holds the model", "ollama", "http://localhost:11434/v1", { models: [] }],
+	])("leaves the context unknown for %s", async (_label, id, baseURL, ps?: object) => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] }));
+		if (ps) fetchMock.mockResolvedValueOnce(jsonResponse(200, ps));
+		const backend = new OpenAiCompatOcrBackend({ id, baseURL, model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs).toEqual([{ promptTokens: null, answerTokens: null, context: null, reasoning: false, repeatedLines: 0, lines: 1 }]);
+	});
+
+	// The lookup is asked only for the diagnostics, so it may not hold up the run it describes: a server
+	// that never answers it leaves the context unknown once the wait is over.
+	it("stops waiting for a context lookup that never answers", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] }))
+			.mockReturnValueOnce(new Promise(() => {}));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock, sleepFn: async () => {} });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs?.[0].context).toBeNull();
+	});
+
+	// Margin notes go to the backend one at a time, so asked per call, a PDF with eighty cut-off notes
+	// sent eighty lookups. The adapter is built afresh for each run, so once per adapter is once per run.
+	it("asks for the context once for the whole run", async () => {
+		const cut = () => jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] });
+		fetchMock
+			.mockResolvedValueOnce(cut())
+			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "m:latest", context_length: 4096 }] }))
+			.mockResolvedValueOnce(cut());
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		await backend.recognize([page()], undefined, "note");
+		const second = await backend.recognize([page()], undefined, "note");
+
+		expect(second.cutOffs?.[0].context).toBe(4096);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it("reports no cut-off when every page read", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("read fine"));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
+
+		expect((await backend.recognize([page()])).cutOffs).toBeUndefined();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	// Each server says it its own way. Empty `content` with no field at all is #116's case: reasoning the
+	// server did not separate, which used up the room before any answer began.
+	it.each([
+		["reasoning_content, as llama-server and LM Studio send it", { message: { content: "", reasoning_content: "hmm" } }],
+		["reasoning tokens, as OpenAI and OpenRouter count them", { message: { content: "half" } }, { completion_tokens_details: { reasoning_tokens: 900 } }],
+		["an inline <think> block", { message: { content: "<think>\nThe page shows" } }],
+		["nothing written at all", { message: { content: "" } }],
+		["no content at all", { message: { content: null } }],
+	])("blames reasoning when the answer carries %s", async (_label, choice, usage?: object) => {
+		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ ...choice, finish_reason: "length" }], ...(usage ? { usage } : {}) }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "some-model", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings?.[0]).toContain("this happens with models that reason before answering");
 	});
 
 	/** A systemic failure displaces it: someone whose server died should read that, not a model tip. */

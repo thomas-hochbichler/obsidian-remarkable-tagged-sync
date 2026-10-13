@@ -12,6 +12,42 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Margin notes that an earlier version could not read are read again, once, without you doing
+  anything.** 1.8.3 retries lost margin notes, but only for PDFs it synced itself: a PDF synced with
+  1.8.2 or earlier kept its *"Handwriting that could not be transcribed"* entries until it changed
+  on the tablet, or until you switched *Handwritten notes* off and on. The first sync after this
+  update now finds those notes in your vault and reads their PDFs again with your transcription
+  backend. With a paid cloud backend and automatic transcription off, that happens on the next
+  *Sync now*. Not under *Off*, which writes that sentence for every margin note because it never
+  looked, and not for a note you edited.
+
+- **A page left out because the model's answer ran too long no longer gets the wrong advice.** The
+  warning always blamed a model that reasons before answering and said to switch to one that
+  doesn't, even for qwen2.5vl:3b, which does not reason. The answer can also be cut off because the
+  page and its transcript do not fit into the model's context: Ollama gives a model as little as
+  4096 tokens by default, and a tall page's image alone can take nearly all of them. The warning now
+  blames reasoning only when the answer shows it, and otherwise points to "Copy diagnostics".
+  "Copy diagnostics" also names the notebook a lost page belongs to, as it already did for margin
+  notes.
+
+- **Re-transcribing no longer replaces a good transcript with "Could not read this page".** When a
+  page could not be read again -- its answer was cut off, or the server refused it -- *Re-transcribe
+  this note* and *Re-transcribe all synced notes* wrote that sentence over the text the page already
+  had, and no sync brought the text back. Such a page now keeps what it had before, a note in which
+  nothing could be read is left exactly as it was, and the notice says how many pages that was.
+
+### Added
+
+- **"Copy diagnostics" shows what cut an answer off**: the tokens the page and the answer took, the
+  context the model had (Ollama and LM Studio report it), whether the model reasoned, and how many
+  lines of the answer repeat. Numbers only, never the text.
+
+- **"Copy diagnostics" says how many documents are waiting to be read again**, for example after a
+  transcription server was not running. Before, notes still waiting for another try could not be
+  told apart from notes nobody had tried to read.
+
 ## [1.8.3] - 2026-10-11
 
 ### Fixed

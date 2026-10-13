@@ -561,3 +561,45 @@
       layer: unit
       file: src/local-ocr-backend.test.ts
       test: "failure mapping (§8.2) > says nothing answered when the runtime is broken, and when it is remembered"
+
+    - id: C26.30
+      scenario: A PDF whose note 1.8.2 or earlier wrote with "Handwriting that could not be transcribed", synced again under this version with the device unchanged
+      expect: The one-time pass marks its row with a retry no backend's fingerprint matches, and the next sync reads the PDF once and clears the retry. Without it the row has no ocrRetry -- older versions never wrote one -- and nothing ever read the PDF again, which is what a reporter on 1.8.3 saw
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > reads a PDF again once whose note an older version wrote with notes it could not read"
+
+    - id: C26.31
+      scenario: The one-time pass meets a note that reads everything, and a note that still says it could not be read but already waits for a retry
+      expect: Both rows come back unchanged. The second keeps the retry it has, so the pass never resets an hour or a fingerprint the 1.8.3 retry already decided
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > leaves a note alone that reads everything, or that already waits for a retry"
+
+    - id: C26.33
+      scenario: The one-time pass meets a note that still says it could not be read, but whose managed block the user edited
+      expect: The row comes back unchanged. A sync never overwrites the user's own words, so marked, the retry would never be spent and the diagnostics would count the document as waiting for good
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > leaves a note alone that the user edited"
+
+    - id: C26.34
+      scenario: The one-time pass runs under Off, or under a backend that cannot run here, over notes Off wrote with "could not be transcribed" for every margin note
+      expect: Nothing is marked. Off never looked, and 1.8.3 gives such notes no retry on purpose; marked, the diagnostics would count every PDF as waiting, and the first Sync now after switching to a paid backend would read and bill every margin note in the library
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > marks nothing under a backend that reads nothing"
+
+    - id: C26.35
+      scenario: The one-time pass cannot read a note from the vault
+      expect: That row is skipped and the pass returns. Thrown, it stopped every sync before the tablet was opened, worded as a tablet failure, and the flag was never set
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > skips a note it cannot read"
+
+    - id: C26.32
+      scenario: One PDF lost its margin notes, is tagged on a second page too, and its row is later orphaned
+      expect: The diagnostics count is 1 while the row is active -- a second row of the same document is still one document -- and 0 once it is orphaned, since an orphaned row is never synced and waits for nothing
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a notebook with typed and handwritten pages (issue #115) > trying a digest's lost transcriptions again > counts the documents whose rows wait for a retry, for the diagnostics"

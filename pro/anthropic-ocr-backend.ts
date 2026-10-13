@@ -11,6 +11,7 @@ import {
 	sanitizeTranscript,
 	type Sleep,
 	transcribePages,
+	them,
 	transcriptionPrompt,
 	triedAgain,
 	upperFirst,
@@ -242,7 +243,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 function timeoutWarning(pages: number, framing: OcrFraming): string {
 	return (
 		`${upperFirst(pageCount(pages, framing))} left out because Anthropic did not answer in ${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ` +
-		`A later sync will not pick them up on their own: ` +
+		`A later sync will not pick ${them(pages, framing)} up on its own: ` +
 		(framing === "page" ? `once it answers again, ${readAgain(framing)}.` : `try a different model, then ${readAgain(framing)}.`)
 	);
 }
@@ -257,6 +258,6 @@ function truncationWarning(pages: number, framing: OcrFraming): string {
 	return (
 		`${upperFirst(pageCount(pages, framing))} left out because the model's answer ran past what it may return — ` +
 		`Claude models reason before answering, and those tokens count against the same limit. ` +
-		`A later sync will not pick them up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
+		`A later sync will not pick ${them(pages, framing)} up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
 	);
 }

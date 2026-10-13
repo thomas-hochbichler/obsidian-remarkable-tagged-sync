@@ -60,6 +60,29 @@ export interface OcrResult {
 	 * Not set for a model field left empty: nothing was sent, and that one is fixed in the settings.
 	 */
 	refused?: true;
+	/** One per page dropped because its answer was cut off, for "Copy diagnostics" -- see `CutOff`. */
+	cutOffs?: CutOff[];
+}
+
+/**
+ * What one answer that was cut off looked like, in numbers only: never a word of the transcript,
+ * because the diagnostics are pasted into public issues.
+ *
+ * The answer itself does not say why it stopped, and the causes want different fixes. A reasoning model
+ * spent the room thinking (`reasoning`). A model that repeats itself fills it with the same line
+ * (`repeatedLines` near `lines`). And a server whose context is full stops an ordinary transcript
+ * wherever it got to: prompt plus answer then equal `context` -- measured with Ollama at a 4096-token
+ * context, where a tall page's image alone took 4076. `null` wherever the server does not say.
+ */
+export interface CutOff {
+	promptTokens: number | null;
+	answerTokens: number | null;
+	/** The context the server gave the model, in tokens; only Ollama and LM Studio report it (`serverContext`). */
+	context: number | null;
+	reasoning: boolean;
+	/** Non-empty lines of the answer that repeat an earlier one, and how many non-empty lines it had. */
+	repeatedLines: number;
+	lines: number;
 }
 
 /**

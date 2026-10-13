@@ -83,6 +83,8 @@ export interface TaggedSyncData {
 	llmProviders: Record<string, BackendSettings>;
 	/** Set once the platform "no transcription here" notice has been shown, so it never nags again (spec §6.2). */
 	ocrUnavailableNoticeShown: boolean;
+	/** Set once `markLegacyOcrLosses` has looked through the vault -- see there for why only once. */
+	legacyOcrLossesMarked: boolean;
 	autoSync: AutoSyncSettings;
 	/** ISO timestamp of the last *completed* sync (manual or auto); drives the interval backstop. */
 	lastSyncAt: string | null;
@@ -123,6 +125,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	ocrBackend: "vision",
 	llmProviders: {},
 	ocrUnavailableNoticeShown: false,
+	legacyOcrLossesMarked: false,
 	autoSync: DEFAULT_AUTO_SYNC,
 	lastSyncAt: null,
 	attachmentsFolder: DEFAULT_ATTACHMENTS_FOLDER,
@@ -229,6 +232,7 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		ocrBackend: env.isKnownBackend(savedBackend) ? (savedBackend as OcrBackendId) : env.defaultBackend,
 		llmProviders: stored?.llmProviders ?? {},
 		ocrUnavailableNoticeShown: stored?.ocrUnavailableNoticeShown ?? false,
+		legacyOcrLossesMarked: stored?.legacyOcrLossesMarked ?? false,
 		autoSync: { ...DEFAULT_AUTO_SYNC, ...stored?.autoSync },
 		lastSyncAt: stored?.lastSyncAt ?? null,
 		attachmentsFolder: stored?.attachmentsFolder ?? DEFAULT_DATA.attachmentsFolder,

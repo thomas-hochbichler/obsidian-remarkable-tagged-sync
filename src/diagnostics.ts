@@ -32,6 +32,12 @@ export interface DiagnosticsInput {
 	reusedPageTranscriptions: { reused: number; total: number } | null;
 	/** What the last sync or re-transcribe sent to the backend and got back, or null before one has run. */
 	ocrTally: OcrTally | null;
+	/**
+	 * Active rows with an `ocrRetry`: documents whose digest lost transcriptions and that a later sync
+	 * is to read again. Without it, notes that stayed unread after an update looked the same as notes
+	 * nobody had tried to read at all.
+	 */
+	pendingOcrRetries: number;
 	mappedTagCount: number;
 	lastSyncAt: string | null;
 	/** Raw text of the last failure, or null. Two error messages end with "see the developer console", which most users have never opened. */
@@ -60,6 +66,7 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
 		// happened, and a 0 under Ollama was once taken for "nothing went unread".
 		`Unreadable ink regions (Apple Vision): ${input.unreadableInkRegions}`,
 		`Reused page transcriptions: ${input.reusedPageTranscriptions === null ? "not measured yet" : `${input.reusedPageTranscriptions.reused} of ${input.reusedPageTranscriptions.total}`}`,
+		`Documents waiting to be read again: ${input.pendingOcrRetries === 0 ? "none" : input.pendingOcrRetries}`,
 		`Mapped tags: ${input.mappedTagCount}`,
 		`Last sync: ${input.lastSyncAt ?? "never"}`,
 		`Last error: ${input.lastSyncError ?? "none"}`,
