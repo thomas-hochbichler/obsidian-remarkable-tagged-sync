@@ -353,6 +353,10 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 	const checkTemplate = (path: string | null) =>
 		void (path === null ? Promise.resolve("") : host.readTemplate(path)).then((found) => void templateRow.setDesc(found === null ? `No note at "${path}": the built-in template is used.` : TEMPLATE_DESC));
 	checkTemplate(profile.template);
+	new Setting(containerEl)
+		.setName("Leave out empty headings")
+		.setDesc("A new note gets no heading for what the page has nothing for. It is added where the template has it once the page does.")
+		.addToggle((toggle) => toggle.setValue(profile.omitEmpty === true).onChange(async (on) => withSettings(host, edit({ omitEmpty: on || undefined }))));
 	// Research 33: big models find what a due date counts from on their own; this helps the rest.
 	new Setting(containerEl)
 		.setName("Dates on these pages")

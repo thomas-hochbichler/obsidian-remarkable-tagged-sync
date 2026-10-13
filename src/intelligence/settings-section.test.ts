@@ -368,6 +368,12 @@ describe("renderIntelligenceSection", () => {
 		await flush();
 		expect(h.settings().profiles[0].signs).toBe(BULLET_JOURNAL_SIGNS);
 		expect(named(editor, "Signs on these pages").texts[0].value).toBe(BULLET_JOURNAL_SIGNS);
+		named(editor, "Leave out empty headings").toggles[0].toggle(true);
+		await flush();
+		expect(h.settings().profiles[0].omitEmpty).toBe(true);
+		named(editor, "Leave out empty headings").toggles[0].toggle(false);
+		await flush();
+		expect(h.settings().profiles[0]).not.toHaveProperty("omitEmpty", expect.anything());
 
 		named(profileEditor(h, "a"), "Template").buttons[0].click();
 		await flush();

@@ -33,6 +33,16 @@ export function analyseTemplate(template: string, slotIds: readonly string[]): R
 	return result;
 }
 
+/** The template without a region-placed Slot's region: its heading and every line up to the next heading. */
+export function withoutRegion(template: string, slotId: string): string {
+	const lines = template.split("\n");
+	const at = lines.findIndex((line) => line.includes(slotPlaceholder(slotId)));
+	const all = headings(lines);
+	const owner = [...all].reverse().find((h) => h.line < at)!;
+	const next = all.find((h) => h.line > at);
+	return [...lines.slice(0, owner.line), ...(next ? lines.slice(next.line) : [])].join("\n");
+}
+
 export interface TemplateValues {
 	/** `ts.date.written` etc., and `ts.<slotId>` with the Slot's rendered body. */
 	ts: Record<string, string>;

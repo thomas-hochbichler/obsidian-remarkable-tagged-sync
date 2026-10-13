@@ -15,9 +15,9 @@ import type { ExtractionBackend } from "./extraction-backend";
 import type { ExtractionResult, SlotResult } from "./extraction";
 import { compileItemFormat, type ItemFormat } from "./item-format";
 import { mergeList, mergeText } from "./merge";
-import { applyListOps, findRegion, parseRegion, readTextRegion, setProposalCallout, writeTextRegion, type Heading } from "./regions";
+import { applyListOps, findRegion, headings, parseRegion, readTextRegion, setProposalCallout, writeTextRegion, type Heading } from "./regions";
 import type { ProfileDef, SlotDef } from "./settings";
-import { analyseTemplate, renderTemplate } from "./template";
+import { analyseTemplate, renderTemplate, withoutRegion } from "./template";
 
 /** The only thing the engine reads from the sync side (§14). A Supernote source would produce the same record. */
 export interface ExtractionUnit {
@@ -120,13 +120,31 @@ export function pendingCount(slot: SlotBase): number {
 /** The heading a body Slot's region sits under; null for a frontmatter Value. */
 const headingOf = (slot: SlotBase): Heading | null => slot.heading;
 
-/** A new Slot's region, placed right after the region of the Slot before it in the Profile, else at the end. */
-function insertRegion(lines: string[], heading: Heading, body: string, after: Heading | null, format: ItemFormat): string[] {
+/** A new Slot's region, inserted before line `at` and the blank lines above it. */
+function insertRegion(lines: string[], heading: Heading, body: string, at: number): string[] {
 	const block = ["", `${"#".repeat(heading.level)} ${heading.text}`, ...(body === "" ? [] : body.split("\n"))];
-	const region = after ? findRegion(lines, after, format) : null;
-	let at = region ? region.end : lines.length;
 	while (at > 0 && lines[at - 1].trim() === "") at--;
 	return [...lines.slice(0, at), ...block, ...lines.slice(at)];
+}
+
+/** One past the region under `heading`; the note's end when there is none. */
+const regionEnd = (lines: string[], heading: Heading | null, format: ItemFormat) => (heading ? findRegion(lines, heading, format)?.end : undefined) ?? lines.length;
+
+/**
+ * Where a region the template places goes when the note lacks its heading: before the first heading
+ * after it in the template that the note has, else after the region of the last one before it, else at
+ * the end. A template heading with a placeholder reads differently in every note and is passed over.
+ */
+function templateSpot(lines: string[], template: string, heading: Heading, format: ItemFormat): number {
+	const same = (a: Heading) => (b: Heading) => a.level === b.level && a.text === b.text;
+	const inTemplate = headings(template.split("\n")).filter((h) => !h.text.includes("{{"));
+	const own = inTemplate.findIndex(same(heading));
+	if (own === -1) return lines.length;
+	const inNote = headings(lines);
+	const following = inTemplate.slice(own + 1).flatMap((h) => inNote.filter(same(h)))[0];
+	if (following !== undefined) return following.line;
+	const preceding = inTemplate.slice(0, own).reverse().find((h) => inNote.some(same(h)));
+	return regionEnd(lines, preceding ?? null, format);
 }
 
 /** A body Slot's first base and the text it fills its region with. */
@@ -143,6 +161,9 @@ function createSlotBase(slot: SlotDef, heading: Heading, got: SlotResult, transc
 	const base: ListSlotBase = { shape: slot.shape, heading, itemFormat: slot.itemFormat, list: merged.base };
 	return { base, body: renderItems(compileItemFormat(slot.itemFormat), merged.base.items), proposals: merged.base.proposals.length };
 }
+
+/** Nothing to write and nothing to review, on a Profile that leaves such a heading out of the note. */
+const leftOut = (run: PageRun, fresh: { body: string; proposals: number }) => run.profile.omitEmpty === true && fresh.body === "" && fresh.proposals === 0;
 
 /**
  * The frontmatter Values, after the body: each reads its property from the note as it now stands and
@@ -203,7 +224,8 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 		const stored = slots[slot.id];
 		if (stored === undefined) {
 			if (settled.includes(slot.id)) continue;
-			// A Slot added to the Profile after this note was made: its region arrives with this change.
+			// A Slot added to the Profile after this note was made, or left out of it while it had nothing to
+			// say (`omitEmpty`): its region arrives with this change.
 			const placement = placements[slot.id];
 			if (placement.kind === "once") {
 				settled.push(slot.id);
@@ -214,13 +236,17 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 			const fresh = createSlotBase(slot, heading, got, transcript, run);
 			const existing = placement.kind === "region" ? findRegion(lines, heading, format) : null;
 			if (existing === null) {
+				if (leftOut(run, fresh)) continue;
+				// The template's place for it; a Slot the template does not place goes after the Slot before it in the Profile.
 				const before = bodySlots
 					.slice(0, index)
 					.reverse()
 					.map((other) => slots[other.id])
 					.find((other) => other !== undefined);
-				lines = insertRegion(lines, heading, fresh.body, before === undefined ? null : headingOf(before), format);
+				const at = placement.kind === "region" ? templateSpot(lines, run.template, heading, format) : regionEnd(lines, before === undefined ? null : headingOf(before), format);
+				lines = insertRegion(lines, heading, fresh.body, at);
 				slots[slot.id] = fresh.base;
+				if (fresh.proposals > 0) lines = setProposalCallout(lines, findRegion(lines, heading, format)!, fresh.proposals, run.reviewLink);
 				continue;
 			}
 			// The template's heading is already in the note, left empty when the note was made: the Slot
@@ -311,6 +337,11 @@ function create(run: PageRun, runSlots: readonly SlotDef[], result: ExtractionRe
 		const placement = placements[slot.id];
 		const heading = placement.kind === "region" ? placement.heading : { level: 2, text: slot.name };
 		const fresh = createSlotBase(slot, heading, results[slot.id], transcript, run);
+		// No base either: the next change adds the region the way it adds a Slot new to the Profile.
+		if (placement.kind === "region" && leftOut(run, fresh)) {
+			template = withoutRegion(template, slot.id);
+			continue;
+		}
 		ts[slot.id] = fresh.body;
 		if (placement.kind === "region") slots[slot.id] = fresh.base;
 		else settled.push(slot.id);

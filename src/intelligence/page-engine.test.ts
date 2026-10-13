@@ -84,6 +84,20 @@ describe("processPage > a new note", () => {
 		expect(Object.keys(out.base.slots)).toEqual(["tasks"]);
 	});
 
+	it("leaves out the heading of a Slot that found nothing when the Profile says so, but keeps one waiting for review", async () => {
+		const profile = { ...genericProfile(false), omitEmpty: true };
+		const out = await processPage(run({ profile, backend: backend({ tasks: [], summary: "Met Bob." }) }));
+		if (out.kind !== "written") throw new Error(out.kind);
+		expect(out.content).toBe("# Work p1\nWritten:  · seen 2026-09-28 · synced 2026-09-29\n\n## Summary\nMet Bob.\n\n## Page\n[[p1.png|Page 1]]\n");
+		expect(Object.keys(out.base.slots)).toEqual(["summary"]);
+		expect(out.base.settled).toEqual([]);
+
+		const unsure = task("Call Bob", "call Bob by Friday", { due: { words: "by Friday", anchor: "2026-09-28", anchor_date: "2026-09-28", date: "2026-10-02" } });
+		const pending = await processPage(run({ profile, backend: backend({ page_date_text: "Mo 28.9.", tasks: [unsure], summary: "Met Bob." }), unit: { key: "doc:p1:work", pageHash: "h1", transcript: PAGE, firstSeen: new Date(2026, 8, 28, 9).getTime(), writtenSpanDays: 3 } }));
+		if (pending.kind !== "written") throw new Error(pending.kind);
+		expect(pending.content).toContain("## Tasks\n> [!todo] 1 proposal — [Review](obsidian://review)\n");
+	});
+
 	it("leaves the date fields empty when the page has neither a written date nor a first-seen stamp", async () => {
 		const out = await processPage(run({ unit: { key: "k", pageHash: "h", transcript: PAGE, firstSeen: null }, backend: backend({ tasks: [], summary: "" }), template: "{{title}}|{{ts.date.firstSeen}}|{{ts.date.written}}|{{ts.page.png}}" }));
 		if (out.kind !== "written") throw new Error(out.kind);
@@ -319,6 +333,40 @@ describe("processPage > an existing note", () => {
 		expect(inline.content).toBeNull();
 		const after = await processPage(run({ slots: [SUMMARY, DECISIONS], template: TEMPLATE + "Decided: {{ts.decisions}}\n", base: inline.base, note: first.content, backend: backend({ summary: "Met Bob.", decisions: [] }) }));
 		expect(after).toMatchObject({ content: null });
+	});
+
+	it("adds a heading left out while empty where the template has it, once the page has something for it", async () => {
+		const profile = { ...genericProfile(false), omitEmpty: true };
+		const first = await created({ profile, backend: backend({ page_date_text: "Mo 28.9.", tasks: [], summary: "Met Bob." }) });
+		const still = await processPage(run({ profile, base: first.base, note: first.content, backend: backend({ page_date_text: "Mo 28.9.", tasks: [], summary: "Met Bob." }) }));
+		expect(still).toMatchObject({ kind: "written", content: null, missingRegions: [] });
+		if (still.kind !== "written") throw new Error(still.kind);
+		expect(Object.keys(still.base.slots)).toEqual(["summary"]);
+
+		const filled = await processPage(run({ profile, base: still.base, note: first.content }));
+		if (filled.kind !== "written") throw new Error(filled.kind);
+		expect(filled.content).toBe((await created()).content);
+	});
+
+	it("puts a heading left out while empty after the last one before it in the template when none follows", async () => {
+		const profile = { ...genericProfile(false), omitEmpty: true };
+		const template = "## Tasks\n{{ts.tasks}}\n\n## Summary\n{{ts.summary}}\n";
+		const first = await created({ profile, template, backend: backend({ tasks: [task("Call Bob", "call Bob by Friday")], summary: "" }) });
+		expect(first.content).toBe("## Tasks\n- [ ] Call Bob\n");
+		const typed = `${first.content}\n## My notes\nMine.\n`;
+		const again = await processPage(run({ profile, template, base: first.base, note: typed, backend: backend({ tasks: [task("Call Bob", "call Bob by Friday", { id: "id1" })], summary: "Met Bob." }) }));
+		if (again.kind !== "written") throw new Error(again.kind);
+		expect(again.content).toBe("## Tasks\n- [ ] Call Bob\n\n## Summary\nMet Bob.\n\n## My notes\nMine.\n");
+	});
+
+	it("says a heading added later is waiting for review", async () => {
+		const profile = { ...genericProfile(false), omitEmpty: true };
+		const first = await created({ profile, backend: backend({ tasks: [], summary: "Met Bob." }) });
+		const unsure = task("Call Bob", "call Bob by Friday", { due: { words: "by Friday", anchor: "2026-09-28", anchor_date: "2026-09-28", date: "2026-10-02" } });
+		const again = await processPage(run({ profile, base: first.base, note: first.content, backend: backend({ page_date_text: "Mo 28.9.", tasks: [unsure], summary: "Met Bob." }), unit: { key: "doc:p1:work", pageHash: "h2", transcript: PAGE, firstSeen: new Date(2026, 8, 28, 9).getTime(), writtenSpanDays: 3 } }));
+		if (again.kind !== "written") throw new Error(again.kind);
+		expect(again.proposals).toBe(1);
+		expect(again.content).toContain("## Tasks\n> [!todo] 1 proposal — [Review](obsidian://review)\n\n## Summary");
 	});
 
 	it("adds a new Summary Slot the template does not place as a bare heading when there is nothing to say", async () => {

@@ -22,6 +22,10 @@ workflow publishes the section as the GitHub release body. See
   one list over all notes. A tick on the page ticks the task in the note. Pages written before you
   switched page notes on are left alone. Free runs on the local model on this computer, for one tag.
 
+- **Leave out empty headings.** Switch this on in a profile, and a page with no tasks gets no
+  "Tasks" heading. When you later write a task on that page, the heading is added exactly where
+  your template has it.
+
 - **With Tagged Sync Pro: your own slots, several profiles, and cloud models.** Build your own
   things to take out of a page — expenses, open questions, a project — as lists, checklists with
   typed fields, single values, or frontmatter properties and tags. Give a tag several profiles and
