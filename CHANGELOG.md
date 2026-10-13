@@ -12,6 +12,16 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Margin notes that an earlier version could not read are read again, once, without you doing
+  anything.** 1.8.3 retries lost margin notes, but only for PDFs it synced itself: a PDF synced with
+  1.8.2 or earlier kept its *"Handwriting that could not be transcribed"* entries until it changed
+  on the tablet, or until you switched *Handwritten notes* off and on. The first sync after this
+  update now finds those notes in your vault and reads their PDFs again with your transcription
+  backend. With a paid cloud backend and automatic transcription off, that happens on the next
+  *Sync now*.
+
 ## [1.8.3] - 2026-10-11
 
 ### Fixed

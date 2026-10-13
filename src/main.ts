@@ -51,7 +51,7 @@ import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
-import { isStaleFrontmatter, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
+import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
@@ -667,6 +667,13 @@ export default class TaggedSyncPlugin extends Plugin {
 		// whether the feature is on, and re-asking a licence gate mid-run could answer differently.
 		const frontmatterOn = this.data.frontmatter && frontmatterAllowed(this.entitlement());
 		try {
+			// Before opening the source, so a tablet that cannot be reached does not put it off: it reads
+			// the vault only. Saved at once, so a failed run does not read every note again next time.
+			if (!this.data.legacyOcrLossesMarked) {
+				this.data.syncIndex = await markLegacyOcrLosses(this.data.syncIndex, createNoteStore(this.app), this.nowIso());
+				this.data.legacyOcrLossesMarked = true;
+				await this.saveData(this.data);
+			}
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;

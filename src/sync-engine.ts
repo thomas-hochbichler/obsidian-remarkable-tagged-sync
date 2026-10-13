@@ -3,7 +3,7 @@ import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, write
 import { md5Hex } from "./file-md5";
 import { pushUnique } from "./push-unique";
 import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipeline";
-import { type DigestPage, renderDigest } from "./digest-builder";
+import { type DigestPage, NOT_TRANSCRIBED, renderDigest } from "./digest-builder";
 import type { ZoteroNoteParts, ZoteroPass } from "./zotero-sync";
 import {
 	blockHashOf,
@@ -1453,6 +1453,35 @@ export function invalidateRenders(index: SyncIndex): SyncIndex {
 		rows[key] = row.status === "active" ? withoutVersion : row;
 	}
 	return { ...index, rows };
+}
+
+/**
+ * The `ocrRetry.with` of a row marked by `markLegacyOcrLosses`. No backend's fingerprint is ever this,
+ * so the first sync under a backend that reads anything finds the retry due at once (`ocrRetryDue`).
+ */
+export const LEGACY_OCR_RETRY = "legacy";
+
+/**
+ * Marks for one retry every note that a version before `ocrRetry` existed wrote with handwriting it
+ * could not read. Such a row carries no `ocrRetry`, so nothing ever read its PDF again: the device is
+ * unchanged, and re-transcribe refuses a digest. A user on 1.8.3 still saw the notes 1.8.2 had lost,
+ * and only switching "Handwritten notes" off and on read them -- a step nobody finds on their own.
+ *
+ * Run once per vault (`TaggedSyncData.legacyOcrLossesMarked`), not on every sync: a note can keep the
+ * sentence after a retry that read everything -- the model answered and found no words -- and marked
+ * again it would be read again on every sync. The note itself is the only record of the loss, so this
+ * reads every active note once; a note whose model honestly found nothing is read once more for it.
+ */
+export async function markLegacyOcrLosses(index: SyncIndex, noteStore: NoteStore, now: string): Promise<SyncIndex> {
+	const rows: Record<string, SyncIndexRow> = { ...index.rows };
+	let marked = false;
+	for (const [key, row] of Object.entries(index.rows)) {
+		if (row.status !== "active" || row.ocrRetry !== undefined) continue;
+		if (!(await noteStore.read(row.notePath))?.includes(NOT_TRANSCRIBED)) continue;
+		rows[key] = withOcrRetry(row, { with: LEGACY_OCR_RETRY, retryable: false, at: now });
+		marked = true;
+	}
+	return marked ? { ...index, rows } : index;
 }
 
 /**

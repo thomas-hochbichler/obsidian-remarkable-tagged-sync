@@ -117,6 +117,7 @@ describe("migrateSettings", () => {
 			ocrBackend: "anthropic",
 			llmProviders: { anthropic: { apiKey: "sk-1" } },
 			ocrUnavailableNoticeShown: true,
+			legacyOcrLossesMarked: true,
 			autoSync: { enabled: true, intervalHours: null, autoTranscribeMetered: true },
 			lastSyncAt: "2026-08-01T00:00:00.000Z",
 			attachmentsFolder: "Attachments",

@@ -12,12 +12,15 @@ import { encodeGrayscalePng } from "./png-encoder";
 import type { RmLayer, RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import { Platform } from "obsidian";
+import { NOT_TRANSCRIBED } from "./digest-builder";
 import { md5Hex } from "./file-md5";
 import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
 	invalidateRenders,
+	LEGACY_OCR_RETRY,
+	markLegacyOcrLosses,
 	notebookSyncKey,
 	pageSyncKey,
 	RENDER_VERSION,
@@ -2821,6 +2824,38 @@ describe("a notebook with typed and handwritten pages (issue #115)", () => {
 			const before = builds();
 			await runSync({ ...deps, now: minutesLater(61) }, first.index);
 			expect(builds() - before).toBe(0);
+		});
+
+		// The reported case: a PDF whose notes 1.8.2 lost has no `ocrRetry`, because 1.8.2 never wrote
+		// one, so the retry that 1.8.3 brought never reached the very notes it was built for.
+		it("reads a PDF again once whose note an older version wrote with notes it could not read", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild(`> ${NOT_TRANSCRIBED}`, [], "ok"));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-legacy"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(first.index.rows[key].ocrRetry).toBeUndefined();
+
+			const marked = await markLegacyOcrLosses(first.index, deps.noteStore, NOW);
+			expect(marked.rows[key].ocrRetry).toEqual({ with: LEGACY_OCR_RETRY, retryable: false, at: NOW });
+
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("", [], "ok"));
+			const before = builds();
+			const second = await runSync(deps, marked);
+			expect(builds() - before).toBe(1);
+			expect(second.index.rows[key].ocrRetry).toBeUndefined();
+		});
+
+		it("leaves a note alone that reads everything, or that already waits for a retry", async () => {
+			typedPages(false, true, false);
+			vi.mocked(buildDigest).mockResolvedValueOnce(digestBuild("> every note read", [], "ok"));
+			const deps = { ...baseDeps(threePageNotebook("root-retry-legacy-clean"), { sync: "Target" }), ocrBackend: perPageOcrBackend() };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+			expect(await markLegacyOcrLosses(first.index, deps.noteStore, NOW)).toEqual(first.index);
+
+			const waiting: SyncIndex = { ...first.index, rows: { [key]: { ...first.index.rows[key], ocrRetry: { with: "x", retryable: true, at: NOW } } } };
+			await deps.noteStore.write(waiting.rows[key].notePath, `> ${NOT_TRANSCRIBED}`);
+			expect(await markLegacyOcrLosses(waiting, deps.noteStore, minutesLater(5)())).toEqual(waiting);
 		});
 	});
 
