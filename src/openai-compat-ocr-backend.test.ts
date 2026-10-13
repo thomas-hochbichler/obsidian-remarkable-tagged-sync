@@ -723,6 +723,19 @@ describe("reporting pages dropped for truncation", () => {
 		expect(fetchMock.mock.calls[1][0]).toBe("http://localhost:11434/api/ps");
 	});
 
+	// Ollama takes a name without a tag as `:latest`, and lists it that way in `/api/ps`, so a model set as
+	// "llava" ran as "llava:latest" -- compared as typed, its context was always unknown.
+	it("finds a model set without a tag under the :latest Ollama lists it as", async () => {
+		fetchMock
+			.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] }))
+			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "llava:7b", context_length: 32768 }, { name: "llava:latest", context_length: 8192 }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "llava", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.cutOffs?.[0].context).toBe(8192);
+	});
+
 	/** Read against LM Studio 0.4.26: `/api/v0/models` names the loaded context of a loaded model only. */
 	it("keeps the context LM Studio loaded the model with", async () => {
 		fetchMock
@@ -779,7 +792,7 @@ describe("reporting pages dropped for truncation", () => {
 		const cut = () => jsonResponse(200, { choices: [{ message: { content: "half" }, finish_reason: "length" }] });
 		fetchMock
 			.mockResolvedValueOnce(cut())
-			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "m", context_length: 4096 }] }))
+			.mockResolvedValueOnce(jsonResponse(200, { models: [{ name: "m:latest", context_length: 4096 }] }))
 			.mockResolvedValueOnce(cut());
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "m", fetchFn: fetchMock });
 

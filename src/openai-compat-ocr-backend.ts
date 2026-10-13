@@ -93,7 +93,11 @@ async function askContext(fetchFn: typeof fetch, id: OcrBackendId, baseURL: stri
 	try {
 		if (id === "ollama") {
 			const body = (await (await fetchFn(`${root}/api/ps`)).json()) as { models?: Array<{ name?: string; context_length?: number }> };
-			return body.models?.find((loaded) => loaded.name === model)?.context_length ?? null;
+			// Ollama runs a name without a tag as `:latest`, and `/api/ps` always prints the tag
+			// (`Name.DisplayShortest`, read at v0.40.2). The tag is after the last `/`, since a registry host
+			// can carry a port: `host:5000/ns/model`.
+			const listed = model.slice(model.lastIndexOf("/") + 1).includes(":") ? model : `${model}:latest`;
+			return body.models?.find((loaded) => loaded.name === listed)?.context_length ?? null;
 		}
 		if (id === "lmstudio") {
 			const body = (await (await fetchFn(`${root}/api/v0/models`)).json()) as { data?: Array<{ id?: string; state?: string; loaded_context_length?: number }> };

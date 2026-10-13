@@ -608,6 +608,13 @@
       file: src/openai-compat-ocr-backend.test.ts
       test: "reporting pages dropped for truncation > asks for the context once for the whole run"
 
+    - id: E25.46
+      scenario: "A page is cut off by Ollama, with the model set as llava -- no tag"
+      expect: "The context of llava:latest is found: Ollama runs an untagged name as :latest, and /api/ps always prints the tag (Name.DisplayShortest, v0.40.2). Compared as typed, it was always unknown"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "reporting pages dropped for truncation > finds a model set without a tag under the :latest Ollama lists it as"
+
     - id: E25.39
       scenario: "Every page reads"
       expect: "No cut-off is reported, and no lookup is sent"
