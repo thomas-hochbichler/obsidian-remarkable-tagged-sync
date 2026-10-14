@@ -333,11 +333,71 @@ export function splitAtTypedText(page: RmPage, options: { splitTall?: boolean } 
 	return parts;
 }
 
+/** An edge between two nodes, with its label if it has one: `-->`, `---`, `<-->`, `-.->`, `==>` and the like. */
+const MERMAID_EDGE = /\s*(<-->|<-\.->|<==>|-->|---|-\.->|-\.-|==>|===|--[xo]|<--)\s*(\|[^|]*\|)?\s*/u;
+/** A line the repair leaves alone: the header, a comment, styling, a subgraph's frame. */
+const MERMAID_KEYWORD = /^(%%|(graph|flowchart|style|classDef|class|linkStyle|subgraph|end|direction|click)\b)/;
+/** A node Mermaid reads as it stands: a plain name, or a name with its text in brackets. */
+const MERMAID_NODE = /^[\p{L}\p{N}_]+(\s*(\[.*\]|\(.*\)|\{.*\}|>.*\]))?$/u;
+const MERMAID_RESERVED = new Set(["end", "graph", "flowchart", "subgraph", "style", "class", "classDef", "click", "default"]);
+
+/**
+ * A drawn diagram's Mermaid, made something Mermaid parses. The prompt says "each word a node", and
+ * models write the words as the nodes themselves: `INS A Browser --> redirect`, `calls.`,
+ * `~~k8s Nginx-Ingress~~`. Mermaid takes no space, dot or tilde in a node's name, so the whole block
+ * showed "Error parsing Mermaid diagram!" in place of the drawing (2026-10-14). Each such node now
+ * gets a name of its own and keeps its words, exactly as written, in quotes: `n1["INS A Browser"]`;
+ * the same words are the same node. A node already written right is left alone, and so is a line the
+ * repair does not understand.
+ *
+ * Here and not in the prompt: the prompt is the one the local model's published figures were
+ * measured with, and the words are what a reader and the measurement (`mermaidAsWords`) care about.
+ */
+export function repairMermaid(text: string): string {
+	return text.replace(/(```mermaid[^\n]*\n)([\s\S]*?)(```)/g, (_, open: string, body: string, close: string) => {
+		const names = new Map<string, string>();
+		const taken = new Set<string>();
+		const nameFor = (words: string) => {
+			let name = names.get(words);
+			if (name === undefined) {
+				let n = names.size + 1;
+				while (taken.has(`n${n}`)) n++;
+				name = `n${n}`;
+				names.set(words, name);
+				taken.add(name);
+			}
+			return `${name}["${words.replace(/"/g, "#quot;")}"]`;
+		};
+		const node = (part: string) => {
+			const words = part.trim();
+			if (MERMAID_NODE.test(words) && !MERMAID_RESERVED.has(words)) {
+				taken.add(/^[\p{L}\p{N}_]+/u.exec(words)?.[0] ?? words);
+				return words;
+			}
+			return nameFor(words);
+		};
+		const lines = body.split("\n").map((raw) => {
+			const line = raw.trim().replace(/;$/, "");
+			if (line === "" || MERMAID_KEYWORD.test(line)) return raw;
+			// split() with the edge's two groups: node, arrow, label (or undefined), node, ...
+			const parts = line.split(MERMAID_EDGE);
+			const nodes = parts.filter((_, i) => i % 3 === 0);
+			if (nodes.some((part) => part.trim() === "")) return raw;
+			const indent = /^\s*/.exec(raw)?.[0] ?? "";
+			let out = node(parts[0]);
+			for (let i = 1; i < parts.length; i += 3) out += ` ${parts[i]}${parts[i + 1] ?? ""} ${node(parts[i + 2])}`;
+			return indent + out;
+		});
+		return open + lines.join("\n") + close;
+	});
+}
+
 /**
  * Strip LLM envelope leakage from a transcript: a model's reasoning, a single leading preamble line
  * and an outer code fence wrapping the whole response (structure-preserving-ocr spec §2). Anchored
  * to the response edges only — never touches inner content, so a code block the user wrote on the
  * page survives. Biased to under-strip: a stray line is a cheap failure, corrupting a note is not.
+ * A drawn diagram's Mermaid block is the one exception, and only to make it parse (`repairMermaid`).
  */
 export function sanitizeTranscript(text: string): string {
 	// 0. Reasoning, up to its closing tag. A model that thinks before it answers can hand its thinking
@@ -389,7 +449,7 @@ export function sanitizeTranscript(text: string): string {
 		kept.push(lines[i]);
 	}
 
-	return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+	return repairMermaid(kept.join("\n").replace(/\n{3,}/g, "\n\n").trim());
 }
 
 // --- the OpenAI-compatible call machinery ----------------------------------------------------

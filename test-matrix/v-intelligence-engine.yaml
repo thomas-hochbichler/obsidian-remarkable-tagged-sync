@@ -3686,6 +3686,34 @@
       file: test-support/cer.test.ts
       test: "a diagram written as Mermaid > takes bare ids, umlauts and edge labels as they come, and leaves other code alone"
 
+    - id: V75.5
+      scenario: "A model writes a diagram's words as the nodes themselves: spaces, a dot, a strike-through (the user's page, 2026-10-14)"
+      expect: "Each such node gets a name and keeps its words in quotes, the same words the same node; the block that failed Mermaid 11's parser now parses"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "repairMermaid > names each node whose words Mermaid cannot take as a name, and keeps the words as written"
+
+    - id: V75.6
+      scenario: "A block already written right, with a comment, a subgraph and a line the repair does not understand"
+      expect: "Left exactly as it is"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "repairMermaid > leaves a block that is already right, and a line it does not understand, as they are"
+
+    - id: V75.7
+      scenario: "A node's words are a reserved word, a name the block already uses, or hold a quote"
+      expect: "The new name is free; the quote is kept as Mermaid's #quot;"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "repairMermaid > never names a node after a reserved word or one the block already uses, and keeps a quote inside the words"
+
+    - id: V75.8
+      scenario: "Arrows outside a mermaid block, and a transcript from any backend"
+      expect: "Nothing outside the block changes; every transcript goes through the repair"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "repairMermaid > touches nothing outside a mermaid block, and is applied to every transcript"
+
 - feature: V76
   name: "The user's signs, set once under Transcription, reach the transcript and the insight notes (ticket 43)"
   code: src/signs.ts

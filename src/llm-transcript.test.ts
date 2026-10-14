@@ -13,6 +13,7 @@ import {
 	PLAIN_TRANSCRIPTION_PROMPT,
 	readAgain,
 	refusalDetail,
+	repairMermaid,
 	sanitizeTranscript,
 	splitAtTypedText,
 	TRANSCRIPTION_PROMPT,
@@ -155,6 +156,49 @@ describe("the words a model backend's warning is made of", () => {
 	it("leaves an added page's count out too", () => {
 		expect(pageCount(1, "added-page")).toBe("pages added on the tablet were");
 		expect(upperFirst(pageCount(1, "added-page"))).toBe("Pages added on the tablet were");
+	});
+});
+
+// 2026-10-14, the user's page: every node with a space, a dot or a tilde in its name broke the whole block
+// ("Error parsing Mermaid diagram!"). Checked against Mermaid 11's own parser: fails as written, parses repaired.
+describe("repairMermaid", () => {
+	const block = (...lines: string[]) => ["```mermaid", ...lines, "```"].join("\n");
+
+	it("names each node whose words Mermaid cannot take as a name, and keeps the words as written", () => {
+		const page = block(
+			"graph TD",
+			"    login --> INS A Browser",
+			"    CAIMAN ADMIN",
+			"    INS A Browser --> calls.",
+			"    calls. --> ~~k8s Nginx-Ingress~~",
+			"    ~~k8s Nginx-Ingress~~ <--> api-gateway",
+			"    bff -->|same secret| auth-code",
+		);
+		expect(repairMermaid(page)).toBe(
+			block(
+				"graph TD",
+				'    login --> n1["INS A Browser"]',
+				'    n2["CAIMAN ADMIN"]',
+				'    n1["INS A Browser"] --> n3["calls."]',
+				'    n3["calls."] --> n4["~~k8s Nginx-Ingress~~"]',
+				'    n4["~~k8s Nginx-Ingress~~"] <--> n5["api-gateway"]',
+				'    bff -->|same secret| n6["auth-code"]',
+			),
+		);
+	});
+
+	it("leaves a block that is already right, and a line it does not understand, as they are", () => {
+		const right = block("flowchart LR", "    A[Einkauf] --- B(Milch)", "    %% a comment", "    subgraph Home", "    C --> D", "    end", "    --> dangling");
+		expect(repairMermaid(right)).toBe(right);
+	});
+
+	it("never names a node after a reserved word or one the block already uses, and keeps a quote inside the words", () => {
+		expect(repairMermaid(block("graph TD", "    n1 --> end", '    n1 --> say "hi"'))).toBe(block("graph TD", '    n1 --> n2["end"]', '    n1 --> n3["say #quot;hi#quot;"]'));
+	});
+
+	it("touches nothing outside a mermaid block, and is applied to every transcript", () => {
+		expect(repairMermaid("a --> b c\n```js\nx --> y z\n```")).toBe("a --> b c\n```js\nx --> y z\n```");
+		expect(sanitizeTranscript(block("graph TD", "    a b --> c"))).toBe(block("graph TD", '    n1["a b"] --> c'));
 	});
 });
 
