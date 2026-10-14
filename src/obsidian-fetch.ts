@@ -60,24 +60,46 @@ function giveSlot(): void {
 	else inFlight--;
 }
 
+/**
+ * The waits before asking reMarkable's cloud again after a 502, 503 or 504: one per retry.
+ *
+ * The cloud answered "503 Server Error ... Service error -27" for a few minutes on 2026-10-14, and the
+ * whole sync failed on the first request that met it. A blip of seconds is ridden out here; an outage
+ * of minutes is not, and then the sync fails as before and says the cloud is unavailable.
+ */
+export const OUTAGE_RETRY_DELAYS_MS = [2_000, 8_000];
+const OUTAGE_STATUSES = new Set([502, 503, 504]);
+/**
+ * Only reads from reMarkable's own hosts are asked again: a GET changes nothing over there. A send to
+ * the tablet is not repeated, Zotero honours `Retry-After` itself, and the OCR providers retry a 429
+ * only (`fetchWithRetry`), each for reasons of its own.
+ */
+const REMARKABLE_URL = /^https:\/\/([^/]+\.)?remarkable\.(com|engineering)(:\d+)?(\/|$)/i;
+
 export async function obsidianFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
 	const headers: Record<string, string> = {};
 	new Headers(init?.headers).forEach((value, key) => {
 		headers[key] = value;
 	});
+	const url = requestUrlOf(input);
+	const method = init?.method ?? "GET";
+	const requestBody = toRequestBody(init?.body);
 
-	await takeSlot();
-	let response;
-	try {
-		response = await requestUrl({
-			url: requestUrlOf(input),
-			method: init?.method ?? "GET",
-			headers,
-			body: toRequestBody(init?.body),
-			throw: false,
-		});
-	} finally {
-		giveSlot();
+	const request = async () => {
+		await takeSlot();
+		try {
+			return await requestUrl({ url, method, headers, body: requestBody, throw: false });
+		} finally {
+			giveSlot();
+		}
+	};
+
+	let response = await request();
+	// No slot is held while waiting: the rest of the plugin's requests go on meanwhile.
+	for (const delay of method === "GET" && REMARKABLE_URL.test(url) ? OUTAGE_RETRY_DELAYS_MS : []) {
+		if (!OUTAGE_STATUSES.has(response.status)) break;
+		await new Promise((resolve) => window.setTimeout(resolve, delay));
+		response = await request();
 	}
 
 	// The Response constructor throws on a non-null body for these statuses.

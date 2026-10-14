@@ -595,6 +595,13 @@
       file: src/explain-error.test.ts
       test: "explainError > treats a forbidden character in a configured folder the same way"
 
+    - id: H9.3
+      scenario: reMarkable's cloud answers 5xx -- down or overloaded for now -- during a sync or while connecting
+      expect: The message says the cloud is unavailable and that this is on reMarkable's side, so waiting is the fix. Not the "did not expect the answer ... check for a plugin update" sentence, which sent the user looking for an update that does not exist, and not "that code was not accepted"
+      layer: unit
+      file: src/explain-error.test.ts
+      test: "explainError > names an outage on reMarkable's side as one, in either context"
+
 - feature: H10
   name: A tablet in a drawer reads as a tablet in a drawer
   code: src/status-model.ts

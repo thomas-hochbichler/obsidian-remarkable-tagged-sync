@@ -25,6 +25,12 @@ export function isOfflineError(error: unknown): boolean {
 	return OFFLINE_RE.test(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
 }
 
+/** The HTTP status on a failed cloud request (rmapi-js's `ResponseError` carries it), or null. */
+function statusOf(error: unknown): number | null {
+	const status = error instanceof Error ? (error as { status?: unknown }).status : undefined;
+	return typeof status === "number" ? status : null;
+}
+
 /**
  * Turns whatever the cloud or the runtime threw into one plain sentence that says what to do next.
  * Users see raw rmapi-js and Electron text otherwise, which explains nothing and reads as a crash.
@@ -37,6 +43,12 @@ export function explainError(error: unknown, context: ErrorContext, source = "re
 	const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 
 	if (OFFLINE_RE.test(text)) return "No connection to the reMarkable cloud. Check your internet connection.";
+
+	// A 5xx is the cloud saying it is down or overloaded for now -- "503 Server Error ... Service error
+	// -27" for a while on 2026-10-14. Before the context: it is no stale code while connecting either,
+	// and the unexpected-answer sentence below sent the user looking for an update that does not exist.
+	const status = statusOf(error);
+	if (status !== null && status >= 500) return "reMarkable's cloud is not available right now. That is on reMarkable's side — try again in a few minutes.";
 
 	if (context === "connect") {
 		return "That code was not accepted. Codes expire after a few minutes — get a fresh one from my.remarkable.com and try again.";

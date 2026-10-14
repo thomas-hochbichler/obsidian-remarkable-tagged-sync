@@ -148,6 +148,27 @@
       file: src/obsidian-fetch.test.ts
       test: "how many it lets out at once > gives a slot back when the request fails, rather than leaking it"
 
+    - id: A6.20
+      scenario: reMarkable's cloud answers a read with 503 or 502 for a moment ("503 Server Error ... Service error -27", 2026-10-14)
+      expect: The read is asked again after 2 s and after 8 s, with no slot held while waiting, and the answer that came then is handed back. Before, the whole sync failed on the first request that met it
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "a moment of outage at reMarkable > reads from the cloud again after a 503 or a 502, and hands back what came then"
+
+    - id: A6.21
+      scenario: The outage outlasts both waits
+      expect: The third answer is handed back as it is, so the sync fails as before and says the cloud is unavailable (H9.3)
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "a moment of outage at reMarkable > hands back the last answer when the outage outlasts the waits"
+
+    - id: A6.22
+      scenario: A write to the cloud, a request to another server, or a 500 meets the same answer
+      expect: Asked once. A GET changes nothing on reMarkable's side; a send is not repeated, Zotero honours Retry-After itself and the OCR providers retry a 429 only, and a host that merely contains "remarkable.com" is not reMarkable's
+      layer: unit
+      file: src/obsidian-fetch.test.ts
+      test: "a moment of outage at reMarkable > asks only once for a write, for another server, and for an answer that is no outage"
+
 - feature: A1
   name: Connect with one-time code -- when the cloud says no
   code: src/remarkable-auth.ts

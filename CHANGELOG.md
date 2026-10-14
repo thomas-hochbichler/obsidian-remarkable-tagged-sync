@@ -26,6 +26,12 @@ workflow publishes the section as the GitHub release body. See
   with a warning, and the next sync tries it again. A page that came back fine needed at most 6 161
   on the reference pages. Cloud providers keep their own limits.
 
+- **When reMarkable's cloud is down for a moment, a sync rides it out, and when it is down for longer,
+  it says so.** A read the cloud answers with 502, 503 or 504 is now asked again after two seconds and
+  after eight. If the cloud is still unavailable, the message says that this is on reMarkable's side
+  and to try again in a few minutes. It used to say the plugin did not expect the answer and to check
+  for an update, which sent you looking for one that did not exist.
+
 ## [1.8.4] - 2026-10-13
 
 ### Fixed

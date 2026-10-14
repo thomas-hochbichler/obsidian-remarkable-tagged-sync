@@ -46,6 +46,16 @@ describe("explainError", () => {
 		expect(message).not.toContain("Unexpected token");
 	});
 
+	// 2026-10-14: the cloud answered "503 Server Error ... Service error -27" for a while. Waiting fixes
+	// it; an update or a new code does not.
+	it("names an outage on reMarkable's side as one, in either context", () => {
+		const outage = Object.assign(new Error("failed reMarkable request: <html><title>503 Server Error</title></html>"), { status: 503 });
+		for (const context of ["sync", "connect"] as const) {
+			expect(explainError(outage, context)).toBe("reMarkable's cloud is not available right now. That is on reMarkable's side — try again in a few minutes.");
+		}
+		expect(explainError(Object.assign(new Error("failed reMarkable request"), { status: 404 }), "sync")).toContain("did not expect");
+	});
+
 	it("never leaks the raw error, including from a non-Error throw", () => {
 		expect(explainError("kaboom", "sync")).not.toContain("kaboom");
 		expect(explainError({ status: 500 }, "sync")).toContain("did not expect");
