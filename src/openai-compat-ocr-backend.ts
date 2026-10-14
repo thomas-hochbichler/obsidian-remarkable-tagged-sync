@@ -36,6 +36,11 @@ export interface OpenAiCompatOcrOptions {
 	 * because nine current Claude models answer a non-default temperature with a 400.
 	 */
 	deterministic?: boolean;
+	/**
+	 * `max_tokens` for one page, reasoning included; unset, none is sent. Set for the servers the user
+	 * runs ({@link OWN_SERVER_MAX_TOKENS}); the cloud ones keep their own ceilings (spec §3.1).
+	 */
+	maxTokens?: number;
 	fetchFn?: typeof fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
@@ -157,6 +162,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly apiKey: string | null;
 	private readonly extraHeaders: Record<string, string>;
 	private readonly deterministic: boolean;
+	private readonly maxTokens: number | undefined;
 	private readonly fetchFn: typeof fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
@@ -195,6 +201,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.apiKey = options.apiKey ?? null;
 		this.extraHeaders = options.extraHeaders ?? {};
 		this.deterministic = options.deterministic ?? false;
+		this.maxTokens = options.maxTokens;
 		// Reads as the global fetch and is not one: esbuild's `inject` rewrites this free identifier to
 		// the CORS-free requestUrl shim inside the bundle. `src/fetch-shim.ts` names this exact pattern
 		// -- "the OCR backends' `fetchFn ?? fetch` defaults" -- as one of the two it exists for. The
@@ -275,8 +282,9 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			const headers: Record<string, string> = { "content-type": "application/json", ...this.extraHeaders };
 			if (this.apiKey) headers["authorization"] = `Bearer ${this.apiKey}`;
 
-			// Still no max_tokens: the spec's request body omits it (§3.1), and providers differ on the
-			// ceiling. Truncation is caught below via `finish_reason` instead of being capped here.
+			// No max_tokens in the cloud: the spec's request body omits it (§3.1), and providers differ on
+			// the ceiling. On the user's own servers `maxTokens` caps a model that reasons without end;
+			// either way truncation is caught below via `finish_reason`.
 			//
 			// `temperature` is spread in rather than always sent, so the cloud providers keep receiving
 			// exactly `{ model, messages }` -- see `deterministic` in the options, and `ProviderMeta` for
@@ -287,7 +295,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				{
 					method: "POST",
 					headers,
-					body: JSON.stringify({ model: this.model, messages: [{ role: "user", content }], ...(this.deterministic ? { temperature: 0 } : {}) }),
+					body: JSON.stringify({ model: this.model, messages: [{ role: "user", content }], ...(this.deterministic ? { temperature: 0 } : {}), ...(this.maxTokens === undefined ? {} : { max_tokens: this.maxTokens }) }),
 				},
 				this.sleepFn,
 			);
@@ -327,6 +335,15 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		}
 	}
 }
+
+/**
+ * The answer budget for one page on a server the user runs, reasoning included (research 30,
+ * 2026-10-02). On the 15 reference pages the text itself took at most 277 tokens and the reasoning
+ * of a page that came back fine at most 6 161 -- this is 2.6 times that. A model that reasons without
+ * end (2 of 75 reads, two models) stops here after 2-5 minutes instead of the 10-minute request
+ * limit; `finish_reason: "length"` fails the page, and the next sync retries it.
+ */
+export const OWN_SERVER_MAX_TOKENS = 16_384;
 
 /**
  * The sentence a run that waited out {@link OCR_REQUEST_TIMEOUT_MS} puts in the report.

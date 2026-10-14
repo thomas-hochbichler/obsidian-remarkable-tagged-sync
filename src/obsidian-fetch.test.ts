@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_REQUESTS_IN_FLIGHT, obsidianFetch } from "./obsidian-fetch";
+import { MAX_REQUESTS_IN_FLIGHT, obsidianFetch, OUTAGE_RETRY_DELAYS_MS } from "./obsidian-fetch";
 
 // Gap G30. This is the single point every cloud request in the plugin passes through -- reMarkable,
 // Polar, and every LLM provider -- and it had no test file and 0 % coverage.
@@ -20,6 +20,8 @@ const requested = vi.hoisted(() => ({
 	failWith: null as Error | null,
 	/** When set, every request waits here until the test lets it go -- for the in-flight tests. */
 	held: null as (() => void)[] | null,
+	/** Statuses the next requests answer with, one each, before `answer`'s own. */
+	statuses: [] as number[],
 }));
 
 vi.mock("obsidian", async (importOriginal) => {
@@ -32,7 +34,8 @@ vi.mock("obsidian", async (importOriginal) => {
 			requested.calls.push(options);
 			if (requested.failWith) return Promise.reject(requested.failWith);
 			if (requested.held) return new Promise((resolve) => requested.held?.push(() => resolve(requested.answer)));
-			return Promise.resolve(requested.answer);
+			const status = requested.statuses.shift();
+			return Promise.resolve(status === undefined ? requested.answer : { ...requested.answer, status });
 		},
 	};
 });
@@ -41,6 +44,7 @@ beforeEach(() => {
 	requested.calls.length = 0;
 	requested.failWith = null;
 	requested.held = null;
+	requested.statuses = [];
 	requested.answer = { status: 200, headers: {}, arrayBuffer: new TextEncoder().encode("hello").buffer as ArrayBuffer };
 });
 
@@ -221,5 +225,57 @@ describe("how many it lets out at once", () => {
 		requested.failWith = null;
 
 		expect((await obsidianFetch("https://example.test/after")).status).toBe(200);
+	});
+});
+
+// 2026-10-14: the cloud answered "503 Server Error ... Service error -27" for a few minutes, and the
+// sync failed on the first request that met it.
+describe("a moment of outage at reMarkable", () => {
+	const ROOT = "https://eu.tectonic.remarkable.com/sync/v3/root";
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		// The wait is the renderer's timer; read at call time, so it is the faked one.
+		vi.stubGlobal("window", { setTimeout: (...args: Parameters<typeof setTimeout>) => setTimeout(...args) });
+		return () => {
+			vi.unstubAllGlobals();
+			vi.useRealTimers();
+		};
+	});
+
+	it("reads from the cloud again after a 503 or a 502, and hands back what came then", async () => {
+		requested.statuses = [503, 502];
+		const response = obsidianFetch(ROOT);
+		await vi.advanceTimersByTimeAsync(OUTAGE_RETRY_DELAYS_MS[0]);
+		expect(requested.calls).toHaveLength(2);
+		await vi.advanceTimersByTimeAsync(OUTAGE_RETRY_DELAYS_MS[1]);
+
+		expect((await response).status).toBe(200);
+		expect(requested.calls.map((call) => call.url)).toEqual([ROOT, ROOT, ROOT]);
+	});
+
+	it("hands back the last answer when the outage outlasts the waits", async () => {
+		requested.statuses = [504, 503, 503, 200];
+		const response = obsidianFetch(ROOT);
+		await vi.runAllTimersAsync();
+
+		expect((await response).status).toBe(503);
+		expect(requested.calls).toHaveLength(OUTAGE_RETRY_DELAYS_MS.length + 1);
+	});
+
+	it("asks only once for a write, for another server, and for an answer that is no outage", async () => {
+		for (const [url, init, status] of [
+			[ROOT, { method: "PUT" }, 503],
+			["https://api.zotero.org/users/1/items", undefined, 503],
+			["https://remarkable.com.example.test/", undefined, 503],
+			[ROOT, undefined, 500],
+		] as const) {
+			requested.calls.length = 0;
+			requested.statuses = [status];
+			const response = obsidianFetch(url, init);
+			await vi.runAllTimersAsync();
+			expect((await response).status, url).toBe(status);
+			expect(requested.calls, url).toHaveLength(1);
+		}
 	});
 });

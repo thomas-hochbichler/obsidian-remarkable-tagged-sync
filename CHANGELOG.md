@@ -12,6 +12,26 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **A model that thinks before it answers no longer writes its thinking into your notes.** With some
+  reasoning models in LM Studio -- Qwen3.6-35B-A3B, for one -- every transcribed page began with the
+  model's deliberation, often a few hundred lines of it, before the text of the page. LM Studio's own
+  chat hides that part, so the same model looked fine there. The plugin now keeps only what follows
+  it. A note already transcribed this way is put right by *Re-transcribe*.
+
+- **A page on your own server -- Ollama, LM Studio or a custom one -- stops after 16 384 tokens.** A
+  model that reasons without end used to hold a page until the ten-minute request limit, and longer
+  still for the pages queued behind it. Now it stops after two to five minutes, the page is left out
+  with a warning, and the next sync tries it again. A page that came back fine needed at most 6 161
+  on the reference pages. Cloud providers keep their own limits.
+
+- **When reMarkable's cloud is down for a moment, a sync rides it out, and when it is down for longer,
+  it says so.** A read the cloud answers with 502, 503 or 504 is now asked again after two seconds and
+  after eight. If the cloud is still unavailable, the message says that this is on reMarkable's side
+  and to try again in a few minutes. It used to say the plugin did not expect the answer and to check
+  for an update, which sent you looking for one that did not exist.
+
 ## [1.8.4] - 2026-10-13
 
 ### Fixed

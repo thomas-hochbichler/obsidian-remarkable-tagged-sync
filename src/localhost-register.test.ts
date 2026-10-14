@@ -3,6 +3,7 @@ import { FakeEl, takeSettings } from "../test-stubs/fake-obsidian";
 import { ocrBackendEntry } from "./ocr-registry";
 import { unreachableMessage } from "./localhost-register";
 import { LOCALHOST_PROVIDERS } from "./localhost-providers";
+import { OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import "./localhost-register";
 
 const probe = vi.hoisted(() => ({ verdict: { vision: "supported", thinking: "unknown" } as { vision: string; thinking: string } }));
@@ -85,6 +86,10 @@ describe("create()", () => {
 
 		expect(result?.status).toBe("failed");
 		expect(result?.warnings?.[0]).toContain("No model is set");
+	});
+
+	it("caps every page's answer on these servers, so a model that reasons without end stops in minutes, not at the ten-minute limit", () => {
+		for (const id of IDS) expect((ocrBackendEntry(id)?.create({ baseURL: "http://h/v1" }) as unknown as { maxTokens: number }).maxTokens, id).toBe(OWN_SERVER_MAX_TOKENS);
 	});
 
 	it("uses the user's base URL over the preset when they set one", () => {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEl, takeSettings, type TextComponent } from "../test-stubs/fake-obsidian";
 import { ocrBackendEntries, ocrBackendEntry } from "../src/ocr-registry";
 import "../src/vision-register";
+import { OWN_SERVER_MAX_TOKENS } from "../src/openai-compat-ocr-backend";
 import "./llm-register";
 
 /**
@@ -65,6 +66,16 @@ vi.mock("./ocr-vision-detect", () => ({
 		});
 	},
 }));
+
+// The free build caps a page on the user's own servers; these entries replace its entries under the
+// same ids, and left the cap behind.
+describe("a page's answer budget", () => {
+	it("caps it on the user's own servers, and leaves the cloud providers their own ceilings", () => {
+		const maxTokens = (id: string, settings: Record<string, string>) => (ocrBackendEntry(id)?.create(settings) as unknown as { maxTokens?: number }).maxTokens;
+		for (const id of ["ollama", "lmstudio", "custom"]) expect(maxTokens(id, { baseURL: "http://h/v1" }), id).toBe(OWN_SERVER_MAX_TOKENS);
+		for (const id of ["openai", "gemini", "openrouter"]) expect(maxTokens(id, { apiKey: "k" }), id).toBeUndefined();
+	});
+});
 
 describe("the live vision-capability callout", () => {
 	/** The provider is one whose reach is `reported`, so the callout is live rather than switched off. */

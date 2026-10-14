@@ -20,7 +20,7 @@ import {
 import { detectLocalhostVisionCapability, type ModelCapabilities, type VisionVerdict } from "./localhost-vision-detect";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
-import { OpenAiCompatOcrBackend } from "./openai-compat-ocr-backend";
+import { OpenAiCompatOcrBackend, OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 
 /**
@@ -78,7 +78,7 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 	// concept and nothing here is metered.
 	if (meta.id === "custom" && !baseURL) return new UnavailableOcrBackend("custom");
 
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic });
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS });
 }
 
 /**

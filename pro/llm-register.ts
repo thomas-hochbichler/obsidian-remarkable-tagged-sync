@@ -9,7 +9,7 @@ import { detectVisionCapability, type ModelCapabilities, type VisionVerdict } fr
 import { visionOnly } from "../src/localhost-vision-detect";
 // In `src/` since the free build gained the localhost providers (free-localhost-ocr spec §2). Same
 // class, same requests; only `metered` changed where it is derived from.
-import { OpenAiCompatOcrBackend } from "../src/openai-compat-ocr-backend";
+import { OpenAiCompatOcrBackend, OWN_SERVER_MAX_TOKENS } from "../src/openai-compat-ocr-backend";
 
 /**
  * Selects the adapter for one run (multi-provider spec §6). The asymmetry is deliberate: a missing
@@ -27,7 +27,10 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 	// `custom` needs a base URL before it can run. Unlike a missing key this is a misconfiguration,
 	// not a reason to quietly transcribe somewhere else, so it reports unavailable rather than falling back.
 	if (meta.id === "custom" && !baseURL) return new UnavailableOcrBackend("custom");
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic });
+	// The same cap as `src/localhost-register.ts`. These entries replace the free build's under the
+	// same ids, so a cap set only there never reached a Pro build: LM Studio with a reasoning model
+	// was asked for pages with no limit at all (2026-10-14).
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS });
 }
 
 /** The thinking line's tone, and `partial`'s: a warning, never an error -- see {@link thinkingSentence}. */
