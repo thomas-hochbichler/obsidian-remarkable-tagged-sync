@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { detectLocalhostVisionCapability } from "./localhost-vision-detect";
+import { closestModel, detectLocalhostVisionCapability, missingModelSentence } from "./localhost-vision-detect";
 
 function jsonResponse(status: number, body: unknown): Response {
 	return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
@@ -293,5 +293,40 @@ describe("detectLocalhostVisionCapability, the thinking half", () => {
 		});
 
 		expect(caps).toEqual({ vision: "supported", thinking: "unknown" });
+	});
+});
+
+/**
+ * A name the server does not have. Live test 2026-10-02: `qwen3-vl-8b` typed for LM Studio's
+ * `qwen/qwen3-vl-8b` was only found out by a sync failing with a 400.
+ */
+describe("detectLocalhostVisionCapability, a model the server does not have", () => {
+	it("says LM Studio has no such model, and names the one it has that fits", async () => {
+		const listing = { data: [{ type: "llm" }, { id: "google/gemma-4-26b-a4b-qat", type: "llm" }, { id: "qwen/qwen3-vl-8b", type: "vlm" }] };
+		const fetchFn = vi.fn().mockResolvedValue(jsonResponse(200, listing));
+		const caps = await detectLocalhostVisionCapability({ provider: "lmstudio", model: "qwen3-vl-8b", baseURL: "http://localhost:1234/v1", fetchFn: fetchFn as unknown as typeof fetch });
+		expect(caps.missing).toEqual({ suggestion: "qwen/qwen3-vl-8b" });
+		const listed = await detectLocalhostVisionCapability({ provider: "lmstudio", model: "qwen/qwen3-vl-8b", baseURL: "http://localhost:1234/v1", fetchFn: fetchFn as unknown as typeof fetch });
+		expect(listed.missing).toBeUndefined();
+	});
+
+	it("says Ollama has no such model when it answers 404, and nothing about the name when the server fails otherwise", async () => {
+		const missing = vi.fn().mockResolvedValue(jsonResponse(404, { error: "model 'llava' not found" }));
+		expect(await detectLocalhostVisionCapability({ provider: "ollama", model: "llava", baseURL: "http://localhost:11434/v1", fetchFn: missing as unknown as typeof fetch })).toEqual({
+			vision: "unconfirmed-name",
+			thinking: "unknown",
+			missing: { suggestion: null },
+		});
+		const broken = vi.fn().mockResolvedValue(jsonResponse(500, {}));
+		expect((await detectLocalhostVisionCapability({ provider: "ollama", model: "llava", baseURL: "http://localhost:11434/v1", fetchFn: broken as unknown as typeof fetch })).missing).toBeUndefined();
+	});
+
+	it("fits a name the same, with a publisher in front, or contained, in that order, ignoring case", () => {
+		const listed = ["pub/model-x-large", "pub/Model-X", "model-x"];
+		expect(closestModel(listed, "MODEL-X")).toBe("model-x");
+		expect(closestModel(["pub/model-x-large", "pub/Model-X"], "model-x")).toBe("pub/Model-X");
+		expect(closestModel(["pub/model-x-large"], "model-x")).toBe("pub/model-x-large");
+		expect(closestModel(["other"], "model-x")).toBeNull();
+		expect(missingModelSentence("a", null)).toBe('⚠ The server has no model "a". Check the name against the models it lists.');
 	});
 });

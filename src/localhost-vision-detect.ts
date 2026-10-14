@@ -50,6 +50,28 @@ export type ThinkingVerdict = "on" | "off" | "unknown";
 export interface ModelCapabilities {
 	vision: VisionVerdict;
 	thinking: ThinkingVerdict;
+	/**
+	 * Set only when the server answered and does not have this model: a name typed short or wrong
+	 * (`qwen3-vl-8b` for LM Studio's `qwen/qwen3-vl-8b`, live test 2026-10-02), which every request
+	 * would answer with a 400. `suggestion` is a model the server has whose name fits, if one does.
+	 */
+	missing?: { suggestion: string | null };
+}
+
+/** Said under a model field when the server has no model of that name: the transcription model's and the extraction model's. */
+export function missingModelSentence(model: string, suggestion: string | null): string {
+	return `⚠ The server has no model "${model}".${suggestion === null ? " Check the name against the models it lists." : ` Did you mean "${suggestion}"?`}`;
+}
+
+/** A model the server lists whose name fits `typed`: the same name, it with a publisher in front, or one containing it. */
+export function closestModel(listed: readonly string[], typed: string): string | null {
+	const want = typed.toLowerCase();
+	const fits = [(id: string) => id === want, (id: string) => id.endsWith(`/${want}`), (id: string) => id.includes(want)];
+	for (const fit of fits) {
+		const found = listed.find((id) => fit(id.toLowerCase()));
+		if (found !== undefined) return found;
+	}
+	return null;
 }
 
 /** The answer when only the vision half could be established -- every other provider path. */
@@ -131,6 +153,9 @@ export async function detectOllama(baseURL: string, model: string, fetchFn: type
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ name: model }),
 	});
+	// Ollama answers a model it does not have with 404 ("model '…' not found", `ShowHandler` in
+	// server/routes.go); anything else that fails is the server, not the name.
+	if (response.status === 404) return { ...visionOnly("unconfirmed-name"), missing: { suggestion: null } };
 	if (!response.ok) return visionOnly("unreachable");
 	const body = (await response.json()) as OllamaShow;
 	const capabilities = body.capabilities ?? [];
@@ -159,25 +184,29 @@ export async function detectLmStudio(
 	const nativeBase = baseURL.replace(/\/v1\/?$/, "");
 	const headers: Record<string, string> = {};
 	if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
-	const [vision, thinking] = await Promise.all([
+	const [seen, thinking] = await Promise.all([
 		lmStudioVision(nativeBase, headers, model, fetchFn),
 		lmStudioThinking(nativeBase, headers, model, fetchFn),
 	]);
-	return { vision, thinking };
+	return { vision: seen.vision, thinking, ...(seen.missing === undefined ? {} : { missing: seen.missing }) };
 }
 
 /**
  * `/api/v0/models` reports each model's `type` -- `"vlm"` for vision-language models -- which the
  * OpenAI-compat `/v1/models` surface omits (multi-provider spec §8). Authoritative like Ollama.
  */
-async function lmStudioVision(nativeBase: string, headers: Record<string, string>, model: string, fetchFn: typeof fetch): Promise<VisionVerdict> {
+async function lmStudioVision(nativeBase: string, headers: Record<string, string>, model: string, fetchFn: typeof fetch): Promise<Pick<ModelCapabilities, "vision" | "missing">> {
 	const response = await fetchFn(`${nativeBase}/api/v0/models`, { headers });
-	if (!response.ok) return "unreachable";
+	if (!response.ok) return { vision: "unreachable" };
 	const body = (await response.json()) as LmStudioModels;
 	const entry = (body.data ?? []).find((m) => m.id === model);
-	// Reached but this model isn't listed (typo / not loaded): fall back to the name heuristic.
-	if (!entry) return looksLikeVisionModel(model) ? "supported" : "unconfirmed-name";
-	return entry.type === "vlm" ? "supported" : "unsupported";
+	// Reached but this model isn't listed -- the library lists every downloaded model, loaded or not,
+	// so it is a name LM Studio does not know: fall back to the name heuristic for vision, and say so.
+	if (!entry) {
+		const listed = (body.data ?? []).flatMap((m) => (m.id === undefined ? [] : [m.id]));
+		return { vision: looksLikeVisionModel(model) ? "supported" : "unconfirmed-name", missing: { suggestion: closestModel(listed, model) } };
+	}
+	return { vision: entry.type === "vlm" ? "supported" : "unsupported" };
 }
 
 /**

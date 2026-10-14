@@ -18,8 +18,8 @@ import { cpus, homedir, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import { MODEL_GENERATIONS, RUNTIME_RELEASE } from "../../src/local-model-artefacts";
 import { localModelPaths } from "../../src/local-model-store";
-import { pageArgs } from "../../src/local-ocr-runtime";
-import { sanitizeTranscript, splitAtTypedText, TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
+import { localPrompt, pageArgs } from "../../src/local-ocr-runtime";
+import { sanitizeTranscript, splitAtTypedText } from "../../src/llm-transcript";
 import { rasterizePage } from "../../src/page-rasterizer";
 import { encodeGrayscalePng } from "../../src/png-encoder";
 import { parseRmV6 } from "../../src/rm-parser";
@@ -76,7 +76,7 @@ async function main() {
 	const tmp = mkdtempSync(join(tmpdir(), "measure-local-"));
 	const measuredAt = new Date().toISOString();
 
-	console.log(`${generation.label} · llama.cpp ${RUNTIME_RELEASE} · renderVersion ${RENDER_VERSION} · prompt ${promptSha()} · ${pages.length} pages\n`);
+	console.log(`${generation.label} · llama.cpp ${RUNTIME_RELEASE} · renderVersion ${RENDER_VERSION} · prompt ${promptSha(generation)} · ${pages.length} pages\n`);
 	const outcomes = new Map<string, { text: string } | { failed: true; httpStatuses: number[] }>();
 	const timings: Record<string, { ms: number; peakRssBytes: number | null }> = {};
 	for (const page of pages) {
@@ -94,7 +94,7 @@ async function main() {
 			}
 			const imageFile = join(tmp, `${page.id}-${at}.png`);
 			writeFileSync(imageFile, encodeGrayscalePng(rasterizePage(part.scene)));
-			const run = await runPage(paths.runtimeExecutable, pageArgs(paths, imageFile, generation, TRANSCRIPTION_PROMPT));
+			const run = await runPage(paths.runtimeExecutable, pageArgs(paths, imageFile, generation, localPrompt(generation)));
 			ms += run.ms;
 			peak = Math.max(peak, peakRssBytes(run.stderr) ?? 0);
 			if (run.code !== 0) { failed = true; break; }
@@ -126,7 +126,7 @@ async function main() {
 			memoryGb: Math.round(totalmem() / 1024 ** 3),
 			os: `macOS ${execFileSync("sw_vers", ["-productVersion"], { encoding: "utf8" }).trim()}`,
 		},
-		promptSha: promptSha(),
+		promptSha: promptSha(generation),
 		renderVersion: RENDER_VERSION,
 		contextTokens: generation.contextTokens,
 		splitsTallPages: generation.splitsTallPages,

@@ -1,4 +1,5 @@
 import {
+	moment,
 	normalizePath,
 	Notice,
 	Plugin,
@@ -9,7 +10,7 @@ import {
 	TFile,
 	TFolder,
 } from "obsidian";
-import { normalizeAttachmentsFolder } from "./attachment-writer";
+import { attachmentPath, normalizeAttachmentsFolder } from "./attachment-writer";
 import { autoSpendBlocked, backgroundConsentGiven, backgroundRunBlocked } from "./auto-sync-gates";
 import { confirmDialog } from "./confirm-modal";
 import { isIntervalSyncDue } from "./auto-sync";
@@ -18,7 +19,7 @@ import { createPolarLicenceApi } from "./licence-client";
 import { endedUnannounced, type Entitlement, entitlementOf } from "./licence-state";
 import { attestTrial, createTrialIssuer, TRIAL_PUBLIC_KEY, type TrialIssuer, vaultHashOf } from "./trial-ticket";
 import type { OcrBackend as OcrBackendId } from "./note-builder";
-import { remapRows, rowForNotePath } from "./note-rename";
+import { rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { type OcrTally, tallyOcr } from "./ocr-tally";
@@ -74,6 +75,13 @@ import {
 	planUnconfiguredFallback,
 } from "./ocr-resolution";
 import { TagRouter } from "./tag-router";
+import { type HostEnvironment, hostEnvironmentFor, intelligenceNotices, type IntelligenceRun, pauseToSay, prepareRun, reviewStoresFor, type RunInputs } from "./intelligence/host";
+import { BUSY, type IntelligenceCommandsHost, registerIntelligenceCommands, reTranscribePageNote } from "./intelligence/commands";
+import { rerunExtraction } from "./intelligence/rerun";
+import { changeProfile } from "./intelligence/change-profile";
+import { followVaultRename } from "./intelligence/vault-follow";
+import { intelligenceProAllowed } from "./intelligence/plugin-rules";
+import { markSaid, markSlotsUsed, modesFor } from "./intelligence/settings";
 import { DEFAULT_DATA, migrateSettings, type TaggedSyncData } from "./settings-store";
 import { createAttachmentStore, createNoteStore, resolveFolderCasing, resolveTagMapCasing } from "./vault-stores";
 import { UnavailableOcrBackend, visionRunStats } from "./vision-ocr-backend";
@@ -453,6 +461,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// The Pro half -- the desktop-app connection and write-back -- is refused in place where it
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
+		registerIntelligenceCommands(this.intelligenceCommands);
 
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
@@ -474,6 +483,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// One does: the local model's download runs on promises and a `window` interval, and a reload
 		// mid-download used to leave both running with no way to reach them.
 		for (const entry of ocrBackendEntries()) entry.onPluginUnload?.();
+		// A sync still running holds the local model's server, a separate process that outlives the plugin.
+		this.runningIntelligence?.dispose();
 	}
 
 	/**
@@ -487,9 +498,11 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (this.syncing) return;
 		const kind = file instanceof TFolder ? "folder" : file instanceof TFile ? "file" : null;
 		if (kind === null) return;
-		const rows = remapRows(this.data.syncIndex.rows, { kind, from: oldPath, to: file.path });
-		if (rows === null) return;
-		this.data.syncIndex.rows = rows;
+		// Transcript notes, insight notes and Profile templates alike: the path is all that follows.
+		const followed = followVaultRename(this.data, { kind, from: oldPath, to: file.path });
+		if (followed === null) return;
+		this.data.syncIndex = followed.syncIndex;
+		this.data.intelligence = followed.intelligence;
 		await this.saveData(this.data);
 	}
 
@@ -514,7 +527,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// `??=` rather than `??`: a backend that writes through its blob during a run -- the local
 		// model records each page's duration there -- needs the live object, not a throwaway copy, or
 		// the measurement is lost the moment the sync ends.
-		const adapter = entry.create((this.data.llmProviders[id] ??= {}), { silent });
+		const adapter = entry.create((this.data.llmProviders[id] ??= {}), { silent, signs: this.data.signs });
 		if (adapter) return adapter;
 		const label = entry.label;
 		return this.applyOcrFallback(planUnconfiguredFallback({ label, visionAvailable: visionPlatformSupported(), silent }), id);
@@ -655,6 +668,59 @@ export default class TaggedSyncPlugin extends Plugin {
 		return preflight;
 	}
 
+	/** The engine's environment in this app; nothing is read until something asks. */
+	private intelligenceEnv(): HostEnvironment {
+		return hostEnvironmentFor(this.app, this.manifest, createNoteStore(this.app), moment);
+	}
+
+	/** What the engine runs on, decided per run: the sync's and "Re-extract this note"'s alike. */
+	private intelligenceInputs(tagFolderMap: Record<string, string>, transcriptionBackend: string, background: boolean): RunInputs {
+		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background, previousSyncAt: this.data.lastSyncAt, signs: this.data.signs };
+	}
+
+	/** The engine's side of the sync in progress, so an unload mid-sync can stop the local model's server. */
+	private runningIntelligence: IntelligenceRun | null = null;
+	/** The engine's pause as the last sync left it; see `pauseToSay`. */
+	private lastEnginePause: string | null = null;
+
+	/** The engine's commands reach the plugin through this; see `intelligence/commands.ts`. */
+	private readonly intelligenceCommands: IntelligenceCommandsHost = {
+		app: this.app,
+		addCommand: (command) => this.addCommand(command),
+		registerObsidianProtocolHandler: (action, handler) => this.registerObsidianProtocolHandler(action, handler),
+		review: () => reviewStoresFor(this.intelligenceEnv(), this.data.syncIndex.intelligenceRows ?? {}),
+		index: () => this.data.syncIndex,
+		setIndex: async (index) => {
+			this.data.syncIndex = index;
+			await this.saveData(this.data);
+		},
+		// The same one-writer rule as switching frontmatter off: the sync's own lock, held for the command.
+		exclusive: async (work) => {
+			if (this.syncing) {
+				new Notice("A sync is running. Try again when it has finished.");
+				return BUSY;
+			}
+			this.syncing = true;
+			try {
+				return await work();
+			} finally {
+				this.syncing = false;
+			}
+		},
+		rerun: async (notePath) => rerunExtraction(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, this.pageRenderPath(notePath)),
+		changeProfile: async (notePath, profileId) => changeProfile(this.intelligenceEnv(), this.intelligenceInputs(this.data.tagFolderMap, this.resolveOcrBackend(true).id, false), this.data.syncIndex, notePath, profileId, this.pageRenderPath(notePath)),
+		profiles: () => this.data.intelligence.profiles,
+		pro: () => intelligenceProAllowed(this.entitlement()),
+		pageNotesOn: (tag) => modesFor(this.data.intelligence, this.data.tagFolderMap, tag).intelligence,
+		syncNow: () => this.syncNow(),
+	};
+
+	/** The render an insight note's row points at, for a re-run: the same attachment the sync writes. */
+	private pageRenderPath(notePath: string): string {
+		const row = Object.values(this.data.syncIndex.intelligenceRows ?? {}).find((candidate) => candidate.notePath === notePath);
+		return row === undefined ? "" : attachmentPath(normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)), row.docId, row.pageId);
+	}
+
 	/** Runs a sync. The caller holds the run lock and releases it; see {@link claimRun}. */
 	private async runSyncNow(backend: OcrBackendAdapter, auto: boolean): Promise<void> {
 		this.stopRequested = false;
@@ -664,6 +730,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// opening never got far enough to say which source it would have been.
 		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
+		let intelligence: IntelligenceRun | null = null;
 		// Asked once and reused below: the run and the key-set pass that follows it have to agree on
 		// whether the feature is on, and re-asking a licence gate mid-run could answer differently.
 		const frontmatterOn = this.data.frontmatter && frontmatterAllowed(this.entitlement());
@@ -678,12 +745,19 @@ export default class TaggedSyncPlugin extends Plugin {
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;
+			// Both configured folder sets resolve to the vault's real casing here, before any path is
+			// derived from them -- see resolveFolderCasing for why (issue #73).
+			const tagFolderMap = await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap);
+			// The per-tag modes and their print go to every device; the engine itself only to the one
+			// that runs it, and only with a backend that can (Intelligence Engine §9).
+			intelligence = await prepareRun(this.intelligenceEnv(), this.intelligenceInputs(tagFolderMap, backend.id, auto));
+			this.runningIntelligence = intelligence;
 			const result = await runSync(
 				{
 					api: session.api,
-					// Both configured folder sets resolve to the vault's real casing here, before any
-					// path is derived from them -- see resolveFolderCasing for why (issue #73).
-					tagRouter: new TagRouter(await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap)),
+					tagRouter: new TagRouter(tagFolderMap, intelligence.modes),
+					intelligence: intelligence.hook,
+					modesFingerprint: intelligence.fingerprint,
 					noteStore: createNoteStore(this.app),
 					attachmentStore: createAttachmentStore(this.app.vault),
 					attachmentsFolder: await resolveFolderCasing(
@@ -721,6 +795,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			const speak = !auto || result.stopped;
 
 			this.data.syncIndex = result.index;
+			// A Slot written into a note keeps its Shape from now on (Intelligence Engine §5.3).
+			this.data.intelligence = markSaid(markSlotsUsed(this.data.intelligence, result.intelligence.usedSlots), result.intelligence.saidOnce);
 			// What the listing found is what the Zotero links judge presence by (spec §2.5): a sent
 			// document is on the tablet while listings keep finding it, tagged or not. `null` means the
 			// run never listed -- the root hash was unchanged, so nothing on the tablet moved.
@@ -769,18 +845,28 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.lastSyncError = errors.length > 0 ? errors.join("\n") : null;
 			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
 
-			this.applyStatus(outcomeStatus(result));
-			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten: result.notesWritten, background: auto });
+			// Insight notes are notes too: a sync that made or updated only those is not "up to date".
+			const notesWritten = result.notesWritten + result.intelligence.notesWritten + result.intelligence.notesUpdated;
+			this.applyStatus(outcomeStatus({ stopped: result.stopped, notesWritten }));
+			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten, background: auto });
 			if (outcome !== null) new Notice(outcome);
 			// Both of these used to be console-only while the notice still reported plain success. A
 			// stopped run's skips and failures are just as real as a completed one's.
 			if (speak) this.reportPartialOutcomes(result);
+			// What the engine has to say -- a pause, a page that keeps failing, pending proposals -- is
+			// said in a background run too: nobody else will ever tell the user. A pause that stands is
+			// said there once, not at every interval.
+			const paused = pauseToSay(intelligence.paused, auto, this.lastEnginePause);
+			this.lastEnginePause = intelligence.paused;
+			for (const line of intelligenceNotices(paused, result.intelligence, !auto)) new Notice(line);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: sync failed");
 			if (!auto) new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
 			await session?.close();
+			intelligence?.dispose();
+			this.runningIntelligence = null;
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.
@@ -1005,6 +1091,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * dialog comes last, once the page count is known and can be quoted.
 	 */
 	async reTranscribeNote(file: TFile): Promise<void> {
+		// An insight note is read again by the next sync, which is the only thing that can read a page.
+		if (await reTranscribePageNote(this.intelligenceCommands, file.path)) return;
 		// With its status, not filtered to `active`: filtering would make a notebook the user deleted
 		// from the device indistinguishable from a note that was never synced, and give it the wrong
 		// sentence (spec §3).

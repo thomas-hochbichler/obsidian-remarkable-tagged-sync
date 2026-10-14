@@ -18,6 +18,7 @@ import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
+	MAX_READ_RETRIES,
 	invalidateRenders,
 	LEGACY_OCR_RETRY,
 	markLegacyOcrLosses,
@@ -5184,6 +5185,57 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 		expect(synced.backendWarnings).toEqual(["a page's answer was cut off"]);
 	});
 
+	/** A backend that cannot read the second page it is handed -- a server that died halfway, say. */
+	function failingSecondPage(): OcrBackend {
+		return {
+			id: "vision",
+			metered: false,
+			fingerprint: "test-backend",
+			recognize: vi.fn(async (pages: RmPage[]): Promise<OcrResult> => ({
+				status: "ok",
+				pages: pages.map((_, index) => (index === 1 || pages.length === 1 ? { status: "failed" as const, text: "" } : { status: "ok" as const, text: "read" })),
+				text: "read",
+				confidence: null,
+			})),
+		};
+	}
+
+	// Live test, 2026-10-09: three pages stayed "Could not read this page" for a week, though the same
+	// model read each of them in two seconds. Nothing on the device changed, so no sync looked again.
+	it("reads a page left unread again on the next sync, though nothing on the device changed", async () => {
+		const deps = { ...baseDeps(notebook("root-retry-a", "hash-1", THREE), { sync: "Target" }), ocrBackend: failingSecondPage() };
+		const first = await runSync(deps, EMPTY_SYNC_INDEX);
+		expect(first.index.rows[KEY].failedReads).toBe(1);
+
+		const retry = countingOcrBackend();
+		const second = await runSync({ ...deps, ocrBackend: retry }, first.index);
+		expect(pagesSent(retry)).toBe(1);
+		expect(second.index.rows[KEY].failedReads).toBeUndefined();
+		expect((await deps.noteStore.read(NOTE))!).not.toContain("Could not read this page");
+
+		const quiet = countingOcrBackend();
+		await runSync({ ...deps, ocrBackend: quiet }, second.index);
+		expect(quiet.recognize).not.toHaveBeenCalled();
+	});
+
+	it("tries a page that keeps failing three more times, then leaves it until Re-transcribe", async () => {
+		const deps = { ...baseDeps(notebook("root-retry-b", "hash-1", THREE), { sync: "Target" }), ocrBackend: failingSecondPage() };
+		let index = (await runSync(deps, EMPTY_SYNC_INDEX)).index;
+		for (let retry = 1; retry <= MAX_READ_RETRIES; retry++) {
+			const backend = failingSecondPage();
+			index = (await runSync({ ...deps, ocrBackend: backend }, index)).index;
+			expect(pagesSent(backend)).toBe(1);
+		}
+		expect(index.rows[KEY].failedReads).toBe(MAX_READ_RETRIES + 1);
+
+		const done = countingOcrBackend();
+		await runSync({ ...deps, ocrBackend: done }, index);
+		expect(done.recognize).not.toHaveBeenCalled();
+
+		const retranscribed = await reTranscribeAll({ api: notebook("root-retry-b", "hash-1", THREE), noteStore: deps.noteStore, ocrBackend: failingSecondPage() }, index);
+		expect(retranscribed.index.rows[KEY].failedReads).toBe(1);
+	});
+
 	// Ticket 04's easy-to-miss half. Without it the user pays twice -- once for the command, and again
 	// on the next sync of every notebook it touched -- which would make the command dearer than it was
 	// before the store existed.
@@ -5351,7 +5403,7 @@ describe("frontmatter page keys (Pro, #107)", () => {
 		expect(page).toContain("remarkable-pages: 1\n");
 	});
 
-	it("writes a page note's position in the document, and none on a notebook note", async () => {
+	it("writes a page-tag note's position in the document, and none on a notebook note", async () => {
 		const deps = { ...baseDeps(threePages(), { sync: "Target", todo: "Pages" }), frontmatter: true };
 
 		const result = await runSync(deps, EMPTY_SYNC_INDEX);
@@ -5359,8 +5411,10 @@ describe("frontmatter page keys (Pro, #107)", () => {
 		const notebook = await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath);
 		const page = await deps.noteStore.read(result.index.rows[pageSyncKey("doc-1", "page-b", "todo")].notePath);
 		expect(page).toContain("remarkable-page: 2\n");
+		// Both are transcript notes: a page-tag note is one too, which the file explorer cannot show.
+		expect([notebook, page].every((note) => note!.includes("remarkable-kind: transcript\n"))).toBe(true);
 		// A notebook note covers pages 1..3, so it has no current page -- and that absence is what a
-		// vault view filters on to get the page notes alone.
+		// vault view filters on to get the page-tag notes alone.
 		expect(notebook).not.toContain("remarkable-page:");
 	});
 });

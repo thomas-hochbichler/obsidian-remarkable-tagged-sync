@@ -78,11 +78,35 @@ function canonicalTableRow(line: string): string {
 }
 
 /**
+ * A drawn diagram transcribed as a Mermaid flowchart (ticket 38) is measured by its words: each node's
+ * label on a paragraph of its own, in the order the block first names them -- the form the reference
+ * pages write a diagram in. Without this the syntax (`A[...] --- B[...]`) counts as misread characters,
+ * and page 08 went from 29 % to 177 % for a reading that had every word right.
+ */
+export function mermaidAsWords(text: string): string {
+	return text.replace(/```mermaid[^\n]*\n([\s\S]*?)```/g, (_, body: string) => {
+		const labels = new Map<string, string>();
+		for (const raw of body.split("\n")) {
+			const line = raw.trim().replace(/;$/, "");
+			if (line === "" || /^(graph|flowchart|%%|style|classDef|class|linkStyle|subgraph|end)\b/.test(line)) continue;
+			for (const part of line.split(/\s*(?:<-->|-->|---|-\.->|-\.-|==>|===|--[^-|>]+-->|--[^-|>]+---)\s*(?:\|[^|]*\|)?\s*/)) {
+				const node = /^([\p{L}\p{N}_]+)\s*(?:[[({>]+\s*"?(.*?)"?\s*[\])}]+)?$/u.exec(part.trim());
+				if (node === null) continue;
+				const [, id, label] = node;
+				if (label !== undefined && label !== "") labels.set(id, label);
+				else if (!labels.has(id)) labels.set(id, id);
+			}
+		}
+		return [...labels.values()].join("\n\n");
+	});
+}
+
+/**
  * The ticket-14 §2 normaliser. Both sides of a comparison go through this; what survives is a
  * reading error. See the file header for the two measured rules that shape it.
  */
 export function normalizeForCer(text: string): string {
-	const repaired = text
+	const repaired = mermaidAsWords(text)
 		.replace(/^\uFEFF/, "")
 		.replace(/\r\n?/g, "\n")
 		.replace(ZERO_WIDTH, "")

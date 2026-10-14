@@ -37,6 +37,11 @@ import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, tr
 import type { TagRouter } from "./tag-router";
 import { mapWithConcurrency } from "./concurrency";
 import { readsNothing } from "./vision-ocr-backend";
+import { splitAtTypedText } from "./llm-transcript";
+import type { SeenEntry } from "./intelligence/seen-set";
+import { EMPTY_INTELLIGENCE_FINGERPRINT } from "./intelligence/settings";
+import { pageModified } from "./intelligence/seen-set";
+import { emptyReport, type IntelligenceRow, type IntelligenceDocument, type IntelligenceState, type PassReport, sweepDeletedDocuments } from "./intelligence/sync-pass";
 
 export type SyncRowStatus = "active" | "orphaned";
 
@@ -195,6 +200,14 @@ export interface SyncIndexRow {
 	 */
 	ocrRetry?: { with: string; retryable: boolean; at: string };
 	/**
+	 * How many syncs in a row left pages of this note unread; absent when the last one read them all.
+	 * While it is at most `MAX_READ_RETRIES` the next sync opens the document even though nothing on the
+	 * device changed, and the transcript store hands back every page already read, so only the unread
+	 * ones go to the backend again. A server that was down for one sync used to leave its pages as
+	 * "Could not read this page" until the notebook changed on the device (live test, 2026-10-09).
+	 */
+	failedReads?: number;
+	/**
 	 * This note's own identity, written out as `remarkable-note-id` -- see `NoteFrontmatter.noteId`
 	 * for why it is minted rather than derived. Minted on the first write of the row and carried
 	 * forward by every later write, including the one that moves the row to a new `syncKey` because
@@ -230,6 +243,23 @@ export interface SyncIndex {
 	 */
 	mappings?: string;
 	rows: Record<string, SyncIndexRow>;
+	/**
+	 * The Intelligence Engine's seen-set (spec §4.1): one small entry per page the engine has decided
+	 * about, note or not. Absent on an index written before 1.9.0.
+	 */
+	seenPages?: Record<string, SeenEntry>;
+	/** One row per insight note. Not in `rows`: a row there with a `pageId` *is* a page-tag unit and is diffed against live tags. */
+	intelligenceRows?: Record<string, IntelligenceRow>;
+	/** `intelligenceFingerprint` of the modes the last completed run used; absent = the empty block's. */
+	intelligenceMappings?: string;
+	/** Per tag, the `enabledAt` whose switch-on scan a completed run finished. */
+	intelligenceScans?: Record<string, string>;
+	/**
+	 * Documents with insight-note work still owed: the engine did not run on them (another device, no
+	 * consent in a background sync), a page failed, or an insight note was marked to be read again. Nothing
+	 * on the tablet changes for any of these, so without this list no sync would ever open them again.
+	 */
+	intelligencePending?: string[];
 }
 
 export const EMPTY_SYNC_INDEX: SyncIndex = { rootHash: null, rows: {} };
@@ -290,6 +320,13 @@ export type SyncProgress =
 			/** Pages of *this* unit -- what explains a bar sitting still on a forty-page notebook. */
 			unitDone: number;
 			unitTotal: number;
+	  }
+	| {
+			/** The Intelligence Engine at work on one notebook's new and changed pages (spec §9). */
+			phase: "extracting";
+			done: number;
+			total: number;
+			document: string;
 	  };
 
 export interface SyncDeps {
@@ -356,6 +393,30 @@ export interface SyncDeps {
 	 * that skipped the retry for another forty minutes would look like it had not noticed.
 	 */
 	manual?: boolean;
+	/**
+	 * The Intelligence Engine, on the device that runs it (spec §9) -- absent everywhere else, and then
+	 * no insight note is written or extracted. Sync and transcription run on every device regardless.
+	 */
+	intelligence?: IntelligenceHook;
+	/**
+	 * `intelligenceFingerprint` of the per-tag modes, on every device: switching a tag's transcript
+	 * note off or on changes what a sync writes even where the engine does not run. Absent = the
+	 * empty block's print, which is what every caller that predates the engine means.
+	 */
+	modesFingerprint?: string;
+}
+
+export interface IntelligenceHook {
+	/** `intelligenceFingerprint` of the current modes: a change opens the level-1 gate. */
+	fingerprint: string;
+	/** The tags whose switch-on scan is due, given what the index says has been scanned. */
+	scansDue: (scanned: Record<string, string>) => string[];
+	/** One document through the engine. Mutates `state`. */
+	process: (doc: IntelligenceDocument, state: IntelligenceState) => Promise<PassReport>;
+	/** Marks every due scan done; called only after a run that opened every document. */
+	completeScans: (state: IntelligenceState) => void;
+	/** Local work before any document is opened: insight notes follow a re-targeted mapping. */
+	beforeRun: (state: IntelligenceState) => Promise<void>;
 }
 
 export interface SyncResult {
@@ -435,6 +496,8 @@ export interface SyncResult {
 	 * and diagnostics nobody opens is not where that gets noticed.
 	 */
 	zoteroNotices: string[];
+	/** What the Intelligence Engine did this run; all zero when it did not run. */
+	intelligence: PassReport;
 }
 
 /**
@@ -1045,6 +1108,13 @@ interface WrittenUnit {
 	shrink: string | null;
 	/** What the Zotero half had to say about this note (spec §3.4.2, §3.4.3). Empty on every other run. */
 	zoteroNotices: readonly string[];
+	/**
+	 * The text of every page this unit read successfully, by page id -- handed to the Intelligence
+	 * Engine so a page is transcribed once per sync, not once per note (spec §3).
+	 */
+	pageTexts: ReadonlyMap<string, string>;
+	/** The pages sent to transcription that came back failed; see `pageFailuresOf`. */
+	pageFailures: ReadonlySet<string>;
 }
 
 interface WriteUnitResult {
@@ -1146,6 +1216,19 @@ async function emptyBlockReport(
  * throw away every page already read whenever the server was down for one sync, so the next edit
  * re-read the whole notebook.
  */
+/** How often a page left unread is tried again on its own, before only the device or a re-transcribe brings it back. */
+export const MAX_READ_RETRIES = 3;
+
+function isReadRetryDue(row: SyncIndexRow): boolean {
+	return row.status === "active" && row.failedReads !== undefined && row.failedReads <= MAX_READ_RETRIES;
+}
+
+/** `failedReads` after an OCR round: one more when a page went unread, gone when none did. */
+function failedReadsAfter(ocr: UnitOcr, previous: number | undefined): Pick<SyncIndexRow, "failedReads"> {
+	const unread = ocr.pages === null ? ocr.status === "failed" : ocr.pages.some((page) => page.status === "failed");
+	return unread ? { failedReads: (previous ?? 0) + 1 } : {};
+}
+
 function transcriptStoreFor(params: UnitParams, ocr: UnitOcr, transcriptHighlights: HighlightGroup[]): Pick<SyncIndexRow, "transcribedPages" | "transcribedWith"> {
 	if (params.transcriptFingerprint === undefined || params.pageContentHash === undefined || params.unitPages <= 1) return {};
 	if (params.keepTranscript !== undefined) {
@@ -1288,6 +1371,8 @@ async function writeUnit(
 				highlightCount,
 				frontmatterTags,
 				...store,
+				// No OCR ran when the transcript was kept, so the pages it left unread are as unread as before.
+				...(params.keepTranscript !== undefined ? (params.previous?.failedReads === undefined ? {} : { failedReads: params.previous.failedReads }) : failedReadsAfter(ocr, params.previous?.failedReads)),
 				noteId,
 				frontmatterVersion,
 			},
@@ -1295,8 +1380,36 @@ async function writeUnit(
 			ocrWarnings: ocr.warnings,
 			shrink: shrinkWarning(params, highlightCount),
 			zoteroNotices: zotero?.notices ?? [],
+			pageTexts: pageTextsOf(params, ocr),
+			pageFailures: pageFailuresOf(params, ocr),
 		},
 	};
+}
+
+/** `ocr.pages` is in the order of `params.ocrPages` (see `transcriptPages`); a page-tag unit's one page carries no id of its own. */
+function pageTextsOf(params: UnitParams, ocr: UnitOcr): Map<string, string> {
+	const texts = new Map<string, string>();
+	params.ocrPages.forEach((page, index) => {
+		const id = page.id ?? params.pageId;
+		const result = ocr.pages?.[index];
+		if (id !== null && result?.status === "ok") texts.set(id, result.text);
+	});
+	return texts;
+}
+
+/**
+ * The pages this unit sent to transcription and got nothing back for. The engine does not ask for
+ * them again in the same sync: a model that reasons without end failed one page twice there, ten
+ * minutes each, before the sync could finish (live test, 2026-10-02). The next sync tries again.
+ */
+function pageFailuresOf(params: UnitParams, ocr: UnitOcr): Set<string> {
+	const failed = new Set<string>();
+	params.ocrPages.forEach((page, index) => {
+		const id = page.id ?? params.pageId;
+		const status = ocr.pages === null ? ocr.status : ocr.pages[index]?.status;
+		if (id !== null && status === "failed") failed.add(id);
+	});
+	return failed;
 }
 
 /**
@@ -1341,13 +1454,22 @@ function hasNotebookTagStateToReconcile(
 	docId: string,
 	notebookTags: string[],
 ): boolean {
-	const current = new Set(notebookTags.filter((tag) => tagRouter.resolveFolder(tag) !== null));
+	const current = new Set(notebookTags.filter((tag) => tagRouter.transcribes(tag)));
 	const active = new Set(
 		Object.values(rows)
-			.filter((row) => row.docId === docId && row.pageId === null && row.status === "active")
+			.filter((row) => row.docId === docId && row.pageId === null && row.status === "active" && !isTranscriptOff(tagRouter, row.tag))
 			.map((row) => row.tag),
 	);
 	return current.size !== active.size || [...current].some((tag) => !active.has(tag));
+}
+
+/**
+ * A tag that is still mapped but whose transcript note is switched off (Intelligence Engine §3.1). Its
+ * rows stay `active` and are simply not planned -- neither orphaned nor re-created -- and nothing about
+ * them opens a document.
+ */
+function isTranscriptOff(tagRouter: TagRouter, tag: string): boolean {
+	return tagRouter.resolveFolder(tag) !== null && !tagRouter.transcribes(tag);
 }
 
 function hasRowWithStatus(rows: Record<string, SyncIndexRow>, docId: string, status: SyncRowStatus): boolean {
@@ -1397,8 +1519,9 @@ function hasRetargetedRow(rows: Record<string, SyncIndexRow>, tagRouter: TagRout
  * detection leaves an unchanged document unopened).
  *
  * 2: `remarkable-pages`, `remarkable-page` (#107) and `remarkable-note-id` (#109).
+ * 3: `remarkable-kind` -- transcript or insight note, which the file explorer cannot show.
  */
-export const FRONTMATTER_KEYS_VERSION = 2;
+export const FRONTMATTER_KEYS_VERSION = 3;
 
 /**
  * True if this note's frontmatter predates the current key set, and so needs one backfill write.
@@ -1518,9 +1641,9 @@ export function pendingOcrRetries(index: SyncIndex): number {
  * notice, since nothing changed on the reMarkable side to trip the hash gates. Local-only reads,
  * so this stays cheap in the common case (nothing missing).
  */
-async function hasMissingActiveNote(noteStore: NoteStore, rows: Record<string, SyncIndexRow>, docId?: string): Promise<boolean> {
+async function hasMissingActiveNote(noteStore: NoteStore, tagRouter: TagRouter, rows: Record<string, SyncIndexRow>, docId?: string): Promise<boolean> {
 	for (const row of Object.values(rows)) {
-		if (row.status !== "active") continue;
+		if (row.status !== "active" || isTranscriptOff(tagRouter, row.tag)) continue;
 		if (docId !== undefined && row.docId !== docId) continue;
 		if ((await noteStore.read(row.notePath)) === null) return true;
 	}
@@ -1611,13 +1734,19 @@ async function needsDocumentOpen(
 	entry: Entry,
 	entryAndInheritedTags: string[],
 	rerenderDue: (row: SyncIndexRow) => boolean,
+	forceOpen = false,
 ): Promise<boolean> {
+	// A due switch-on scan opens every document: page tags sit inside the unread `.content`, so which
+	// documents carry an Intelligence-mapped tag is not knowable here. One `getContent` and one file
+	// listing per document, no render and no OCR (spec §3.1).
+	if (forceOpen) return true;
 	if (findEntryHash(rows, entry.id) !== entry.hash) return true;
 	return (
+		Object.values(rows).some((row) => row.docId === entry.id && isReadRetryDue(row)) ||
 		hasNotebookTagStateToReconcile(rows, tagRouter, entry.id, entryAndInheritedTags) ||
 		hasRetargetedRow(rows, tagRouter, entry.id) ||
 		Object.values(rows).some((row) => row.docId === entry.id && rerenderDue(row)) ||
-		(await hasMissingActiveNote(noteStore, rows, entry.id))
+		(await hasMissingActiveNote(noteStore, tagRouter, rows, entry.id))
 	);
 }
 
@@ -1696,6 +1825,7 @@ async function planUnits(
 	// these carry no per-page hash (spec §7's row schema), so there's no cheaper way to know which
 	// of a reopened notebook's pages are safe to skip -- only page-tag rows track that.
 	for (const tag of mapped.notebook) {
+		if (!tagRouter.transcribes(tag)) continue;
 		const rename = notebookDiff.rename?.newTag === tag ? notebookDiff.rename : null;
 		const existingRow = rows[notebookSyncKey(entry.id, tag)];
 		// Checked before rendering and before OCR: a note we will not write must not cost a download,
@@ -1728,6 +1858,7 @@ async function planUnits(
 
 	for (const pageTag of mapped.page) {
 		if (!livePageIds.has(pageTag.pageId)) continue; // tagged page no longer exists on the device
+		if (!tagRouter.transcribes(pageTag.name)) continue;
 		const rename = pageRenames.get(pageTag.pageId)?.newTag === pageTag.name ? pageRenames.get(pageTag.pageId)! : null;
 		const existingRow = rows[pageSyncKey(entry.id, pageTag.pageId, pageTag.name)];
 		// level 3: page unchanged, don't re-render it -- unless it's currently orphaned (revive), a
@@ -1743,6 +1874,7 @@ async function planUnits(
 			!isRetargeted(existingRow, tagRouter) &&
 			existingRow.pageHash === pageContentHash(pageTag.pageId) &&
 			!rerenderDue(existingRow) &&
+			!isReadRetryDue(existingRow) &&
 			(await noteStore.read(existingRow.notePath)) !== null
 		) {
 			continue;
@@ -1852,6 +1984,7 @@ async function scanWorkload(
 	report: (progress: SyncProgress) => void,
 	shouldStop: () => boolean,
 	rerenderDue: (row: SyncIndexRow) => boolean,
+	forceOpen: (docId: string) => boolean,
 ): Promise<Workload> {
 	const { api, tagRouter } = deps;
 	const unreadable = new Map<string, string>();
@@ -1862,7 +1995,7 @@ async function scanWorkload(
 	for (const entry of documents) {
 		if (shouldStop()) return { total: 0, unreadable, stopped: true };
 		const tags = entryAndInheritedTagNames(entry, entriesById);
-		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags, rerenderDue)) candidates.push({ entry, tags });
+		if (await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, tags, rerenderDue, forceOpen(entry.id))) candidates.push({ entry, tags });
 	}
 
 	let checked = 0;
@@ -1922,6 +2055,50 @@ async function scanWorkload(
 	return { total: steps.reduce((sum, count) => sum + count, 0), unreadable, stopped };
 }
 
+function mergeReport(into: PassReport, from: PassReport): void {
+	into.notesWritten += from.notesWritten;
+	into.notesUpdated += from.notesUpdated;
+	into.proposals += from.proposals;
+	into.proposalNotes += from.proposalNotes;
+	into.failures.push(...from.failures);
+	for (const notice of from.notices) if (!into.notices.includes(notice)) into.notices.push(notice);
+	for (const id of from.usedSlots) if (!into.usedSlots.includes(id)) into.usedSlots.push(id);
+	for (const key of from.saidOnce) if (!into.saidOnce.includes(key)) into.saidOnce.push(key);
+}
+
+/**
+ * Page texts for the engine: what a transcript note already read this round, and one backend call
+ * for the rest. A page of typed text (Type Folio) is its typed layer, never OCR (spec §4). A page the
+ * backend could not read is left out of the map -- the engine counts it as a failed attempt.
+ */
+async function transcribeForEngine(api: SyncApi, backend: OcrBackend, docId: string, pageIds: string[], pageHashes: Map<string, string>, known: ReadonlyMap<string, string>, failed: ReadonlySet<string>): Promise<Map<string, string>> {
+	const texts = new Map<string, string>();
+	const missing: { id: string; scene: RmPage }[] = [];
+	for (const id of pageIds) {
+		// Failed once this sync already: no text, so the page fails as unread and the next sync retries it.
+		if (failed.has(id)) continue;
+		const text = known.get(id);
+		if (text !== undefined) {
+			texts.set(id, text);
+			continue;
+		}
+		const scene = await renderPage(api, docId, id, pageHashes.get(id));
+		if (isDocumentText(scene)) texts.set(id, splitAtTypedText(scene).flatMap((part) => (part.kind === "typed" ? [part.text] : [])).join("\n"));
+		else missing.push({ id, scene });
+	}
+	if (missing.length === 0) return texts;
+	try {
+		const result = await backend.recognize(missing.map((page) => page.scene));
+		missing.forEach((page, index) => {
+			const outcome = result.pages?.[index];
+			if (outcome?.status === "ok" || outcome?.status === "skipped") texts.set(page.id, outcome.text);
+		});
+	} catch (error) {
+		console.warn("Tagged Sync: the Intelligence Engine could not transcribe its pages", error);
+	}
+	return texts;
+}
+
 /**
  * Runs the full one-way sync pipeline: enumerate -> hash-diff -> download -> render -> OCR -> write note,
  * for every mapped tag at both granularities (spec §7).
@@ -1937,6 +2114,23 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	report({ phase: "scanning", checked: 0, candidates: 0 });
 	const [rootHash] = await api.raw.getRootHash();
 	const mappings = tagRouter.fingerprint();
+	const intelligence = deps.intelligence;
+	const modesFingerprint = deps.modesFingerprint ?? EMPTY_INTELLIGENCE_FINGERPRINT;
+	const scansDue = intelligence?.scansDue(previousIndex.intelligenceScans ?? {}) ?? [];
+	// Only a scan that opens every document may be marked done: a page not opened was not stamped.
+	const scanDue = scansDue.length > 0;
+	const pending = new Set(previousIndex.intelligencePending ?? []);
+	// An insight note deleted by hand is made again, as a transcript note is (see `hasMissingActiveNote`):
+	// nothing on the device says so, so its notebook is owed -- where its tag still makes insight notes.
+	if (intelligence !== undefined) {
+		for (const row of Object.values(previousIndex.intelligenceRows ?? {})) {
+			if (row.status === "active" && tagRouter.extracts(row.tag) && !(await deps.noteStore.exists(row.notePath))) pending.add(row.docId);
+		}
+	}
+	/** A due scan opens every document; owed insight-note work opens its own, once the engine can run. */
+	const forceOpen = (docId: string) => scanDue || (intelligence !== undefined && pending.has(docId));
+	// A document the run could not read leaves the scan unfinished: its pages were never stamped.
+	let everyDocumentRead = true;
 	// The stale-render check has to happen here too, not just per doc: nothing on the device changes
 	// when the renderer does, so an unchanged root hash would otherwise return before any doc is
 	// even looked at, and notes rendered by an older version would never be corrected. The mappings
@@ -1955,11 +2149,38 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const startedAt = now();
 	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt, deps.manual ?? false);
 	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
-	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
+	if (
+		rootHash === previousIndex.rootHash &&
+		mappings === previousIndex.mappings &&
+		modesFingerprint === (previousIndex.intelligenceMappings ?? EMPTY_INTELLIGENCE_FINGERPRINT) &&
+		!scanDue &&
+		!(intelligence !== undefined && pending.size > 0) &&
+		!staleRenders &&
+		!Object.values(previousIndex.rows).some(isReadRetryDue) &&
+		!(await hasMissingActiveNote(deps.noteStore, tagRouter, previousIndex.rows))
+	) {
+		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [], intelligence: emptyReport() };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
+	const intelligenceState: IntelligenceState = {
+		seenPages: { ...previousIndex.seenPages },
+		rows: { ...previousIndex.intelligenceRows },
+		scans: { ...previousIndex.intelligenceScans },
+	};
+	const intelligenceReport = emptyReport();
+	if (intelligence !== undefined) await intelligence.beforeRun(intelligenceState);
+	/** The engine's maps as they stand, beside `rows`; the modes print and scans are the caller's to choose. */
+	const indexWith = (rootHash: string | null, mappings: string | undefined, intelligenceMappings: string | undefined, scans: Record<string, string> | undefined): SyncIndex => ({
+		rootHash,
+		mappings,
+		rows: { ...rows },
+		seenPages: { ...intelligenceState.seenPages },
+		intelligenceRows: { ...intelligenceState.rows },
+		intelligenceMappings,
+		intelligenceScans: scans === undefined ? undefined : { ...scans },
+		intelligencePending: [...pending],
+	});
 	let notesWritten = 0;
 	let unavailableOcrUnits = 0;
 	let failedOcrUnits = 0;
@@ -1995,8 +2216,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
+	// The modes print and the scans stay the previous ones for the same reason: a stopped run has not
+	// scanned what the new modes asked for.
 	const checkpoint = deps.saveIndex
-		? () => deps.saveIndex!({ rootHash: previousIndex.rootHash, mappings: previousIndex.mappings, rows: { ...rows } })
+		? () => deps.saveIndex!(indexWith(previousIndex.rootHash, previousIndex.mappings, previousIndex.intelligenceMappings, previousIndex.intelligenceScans))
 		: async () => {};
 
 	/**
@@ -2011,7 +2234,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const stopHere = async (): Promise<SyncResult> => {
 		await checkpoint();
 		return {
-			index: { rootHash: previousIndex.rootHash, mappings: previousIndex.mappings, rows },
+			index: indexWith(previousIndex.rootHash, previousIndex.mappings, previousIndex.intelligenceMappings, previousIndex.intelligenceScans),
 			documentIds,
 			stopped: true,
 			notesWritten,
@@ -2026,6 +2249,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			skipErrors,
 			backendWarnings,
 			zoteroNotices,
+			intelligence: intelligenceReport,
 		};
 	};
 
@@ -2037,7 +2261,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const documents = entries.filter((entry) => entry.type === "DocumentType" && !isInTrash(entry, entriesById));
 	documentIds = documents.map((entry) => entry.id);
 
-	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop, rerenderDue);
+	const workload = await scanWorkload(deps, rows, documents, entriesById, report, shouldStop, rerenderDue, forceOpen);
+	if (workload.unreadable.size > 0) everyDocumentRead = false;
 	// Nothing has been written yet, so there is nothing to checkpoint -- but the caller still has to
 	// hear that this run was stopped rather than finished.
 	if (workload.stopped) return stopHere();
@@ -2056,7 +2281,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// The scan already failed to read this one, and said so. Trying again would report it twice.
 		if (workload.unreadable.has(entry.id)) continue;
-		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags, rerenderDue))) continue; // level 2
+		if (!(await needsDocumentOpen(deps.noteStore, rows, tagRouter, entry, entryAndInheritedTags, rerenderDue, forceOpen(entry.id)))) continue; // level 2
 
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
@@ -2064,6 +2289,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		} catch (error) {
 			console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during sync, skipping`, error);
 			skipErrors.push(`failed to read "${entry.visibleName}" during sync: ${errorText(error)}`);
+			everyDocumentRead = false;
 			skippedDocIds.add(entry.id);
 			continue;
 		}
@@ -2072,7 +2298,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// Nothing mapped now, and nothing previously active to potentially orphan -- truly nothing to do.
 		const hasPreviouslyActiveRow = hasRowWithStatus(rows, entry.id, "active");
-		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow) continue;
+		// Insight notes whose tag just left the notebook are the engine's to orphan.
+		const hasPageNotes = Object.values(intelligenceState.rows).some((row) => row.docId === entry.id && row.status === "active");
+		if (mapped.notebook.length === 0 && mapped.page.length === 0 && !hasPreviouslyActiveRow && !hasPageNotes) continue;
 
 		// A PDF-backed doc's pages are a source PDF with handwritten annotations layered on top. The
 		// render composites the two: each page shows the source page with its `.rm` annotation scene
@@ -2113,17 +2341,22 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		}
 		const pageOrder = docPages.map((page) => page.id);
 		const pageRefById = new Map(docPages.map((page) => [page.id, page]));
+		// Every page text a transcript note read this round, for the engine below -- and every page it
+		// failed to read, which the engine then leaves to the next sync rather than trying again.
+		const pageTexts = new Map<string, string>();
+		const pageFailures = new Set<string>();
 
 		// Defined here rather than beside `frontmatterBase`, because the page keys are per *unit* and
 		// need `docPages`: a notebook-tag note covers every live page, a page-tag note exactly one, and
 		// that difference is the whole point of `remarkable-pages` as a cost signal (#107). A page-tag
 		// unit whose page has since gone from the device still costs one page and simply has no
 		// position, so `page` falls back to absent rather than to 0.
-		const unitFrontmatter = (tag: string, pageId: string | null): Omit<NoteFrontmatter, "synced" | "noteId"> | null =>
+		const unitFrontmatter = (tag: string, pageId: string | null, kind: NoteFrontmatter["kind"] = "transcript"): Omit<NoteFrontmatter, "synced" | "noteId"> | null =>
 			frontmatterBase === null
 				? null
 				: {
 						...frontmatterBase,
+						kind,
 						tags: namespacedTags([...docTags, tag]),
 						pages: pageId === null ? docPages.length : 1,
 						page: pageId === null ? null : pageOrder.indexOf(pageId) + 1 || null,
@@ -2347,6 +2580,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 			const { row, ocr, ocrWarnings, shrink } = written;
 			reportZotero(written.zoteroNotices);
+			for (const [id, text] of written.pageTexts) pageTexts.set(id, text);
+			for (const id of written.pageFailures) pageFailures.add(id);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = withOcrRetry({ ...row, folder }, digest.ocrRetry);
 			notesWritten++;
@@ -2463,6 +2698,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 			const { row, ocr, ocrWarnings, shrink } = written;
 			reportZotero(written.zoteroNotices);
+			for (const [id, text] of written.pageTexts) pageTexts.set(id, text);
+			for (const id of written.pageFailures) pageFailures.add(id);
 			consumeRename(rows, rename);
 			rows[row.syncKey] = withOcrRetry({ ...row, folder }, digest.ocrRetry);
 			notesWritten++;
@@ -2478,6 +2715,57 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			}
 			if (unitOcr === "unavailable") unavailableOcrUnits++;
 			if (unitOcr === "failed") failedOcrUnits++;
+		}
+
+		// A transcript note switched off keeps its old entry hash, so switching it on again reopens the
+		// document and takes one full transcription round, as after any skipped period.
+		for (const row of Object.values(rows)) if (row.docId === entry.id && isTranscriptOff(tagRouter, row.tag)) untouchedKeys.add(row.syncKey);
+
+		// The Intelligence Engine: handwritten notebooks only; annotated PDFs and EPUBs (both `pdfBacked`) keep the digest.
+		// A handwritten notebook with an insight-note tag, or with insight notes whose tag just left it (so they
+		// are orphaned). Owed when the engine cannot run here: another device, or no background consent.
+		const engineTags = [...mapped.notebook, ...mapped.page.map((pageTag) => pageTag.name)];
+		if (intelligence === undefined && !pdfBacked && (engineTags.some((tag) => tagRouter.extracts(tag)) || hasPageNotes)) pending.add(entry.id);
+		// The hook decides per unit which tags extract; it only needs every mapped notebook.
+		if (intelligence !== undefined && !pdfBacked && (engineTags.length > 0 || hasPageNotes)) {
+			// Stopped before the insight notes: the transcript rows already carry this entry hash, so only the
+			// debt reopens the notebook on the next run.
+			if (shouldStop()) {
+				pending.add(entry.id);
+				return stopHere();
+			}
+			const cPages = new Map((content.cPages?.pages ?? []).map((page) => [page.id, page]));
+			const notebookUnits = mapped.notebook.map((tag) => ({ tag, scope: "notebook" as const, pageIds: pageOrder }));
+			// A page under a notebook tag and the same tag on the page is one unit, not two notes.
+			const pageUnits = mapped.page.filter((pageTag) => liveIds.has(pageTag.pageId) && !mapped.notebook.includes(pageTag.name)).map((pageTag) => ({ tag: pageTag.name, scope: "page" as const, pageIds: [pageTag.pageId] }));
+			const pass = await intelligence.process(
+				{
+					docId: entry.id,
+					name: entry.visibleName,
+					legacy: cPages.size === 0,
+					pages: pageOrder.map((id, index) => ({ id, ordinal: index + 1, hash: pageHashes.get(id) ?? null, modified: pageModified(cPages.get(id)) })),
+					units: [...notebookUnits, ...pageUnits],
+					transcribe: (ids) => transcribeForEngine(api, ocrBackend, entry.id, ids, pageHashes, pageTexts, pageFailures),
+					onProgress: (done, total) => report({ phase: "extracting", done, total, document: entry.visibleName }),
+					shouldStop,
+					checkpoint,
+					frontmatter: (tag, pageId) => {
+						const fields = unitFrontmatter(tag, pageId, "insight");
+						return fields === null ? null : { fields, version: FRONTMATTER_KEYS_VERSION };
+					},
+					writeRender: async (pageId) => {
+						const scene = await renderPage(api, entry.id, pageId, pageHashes.get(pageId));
+						const bytes = await renderPagesToPdf([scene], await fetchPageImages(api, [scene], imageFiles));
+						return writeAttachment(deps.attachmentStore, attachmentsFolder, entry.id, pageId, bytes);
+					},
+				},
+				intelligenceState,
+			);
+			mergeReport(intelligenceReport, pass);
+			// A page that failed retries on the next sync, not when the notebook next changes (spec §9).
+			// So do the pages a Stop left unread: the pass starts no further page once it is pressed.
+			if (shouldStop() || pass.failures.some((line) => line.startsWith("page "))) pending.add(entry.id);
+			else pending.delete(entry.id);
 		}
 
 		// Bump entryHash on any of this doc's rows we didn't touch this round (e.g. a page-tag row
@@ -2511,8 +2799,28 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	for (const row of Object.values(rows)) {
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
+	sweepDeletedDocuments(intelligenceState, liveDocIds);
+	if (scanDue && everyDocumentRead) intelligence!.completeScans(intelligenceState);
+	for (const docId of pending) if (!liveDocIds.has(docId)) pending.delete(docId);
 
-	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings, zoteroNotices };
+	return {
+		index: indexWith(rootHash, mappings, modesFingerprint, intelligenceState.scans),
+		documentIds,
+		stopped: false,
+		notesWritten,
+		unavailableOcrUnits,
+		failedOcrUnits,
+		editedNotesSkipped,
+		documentsSkipped: skippedDocIds.size,
+		shrunkNotes,
+		relaidDocuments,
+		reusedPageTranscriptions,
+		pageTranscriptionsConsidered,
+		skipErrors: [...skipErrors, ...intelligenceReport.failures],
+		backendWarnings,
+		zoteroNotices,
+		intelligence: intelligenceReport,
+	};
 }
 
 export interface ReTranscribeDeps {
@@ -2737,7 +3045,9 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 			: {};
 
 	const block = extractManagedBlock((await noteStore.read(row.notePath)) ?? "");
-	return { kind: "written", empty: transcript === "", unreadPages, row: block === null ? null : { ...row, blockHash: blockHashOf(block), ...store } };
+	// Asked for by hand, so it starts the count afresh: the pages it could not read get their retries again.
+	const { failedReads: _, ...rest } = row;
+	return { kind: "written", empty: transcript === "", unreadPages, row: block === null ? null : { ...rest, blockHash: blockHashOf(block), ...store, ...failedReadsAfter(ocr, undefined) } };
 }
 
 /** The pages this run sent and got nothing back for. Without per-page results, every page sent. */

@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TAG_CAP_MESSAGE } from "./licence-messages";
 import type { Entitlement } from "./licence-state";
-import {
-	CAPPED_DESC,
-	FREE_TAG_LIMIT,
-	MAPPABLE_DESC,
-	planTagRouting,
-	REMOVAL_MESSAGE,
-	type TagRoutingItem,
-	tagLimitFor,
-} from "./tag-routing-view";
+import { FREE_TAG_LIMIT, planTagRouting, type TagRoutingItem, tagLimitFor } from "./tag-routing-view";
 
 // Gap G04. These import neither `obsidian` nor the plugin -- which is the point of the seam: the free
 // version's tag cap used to be reachable only by rendering six settings sections.
@@ -37,13 +29,17 @@ function plan(input: {
 	});
 }
 
-/** The shape of the section, one letter per item, in draw order. */
+/** The shape of the section, one letter per item, in draw order: a capped add row is `x`. */
 function shape(items: readonly TagRoutingItem[]): string {
-	return items.map((item) => ({ notice: "N", mapped: "M", mappable: "+", capped: "x" })[item.kind]).join("");
+	return items.map((item) => (item.kind === "add" ? (item.capped ? "x" : "+") : { notice: "N", mapped: "M" }[item.kind])).join("");
 }
 
-function tagsOf(items: readonly TagRoutingItem[], kind: TagRoutingItem["kind"]): string[] {
-	return items.filter((item) => item.kind === kind && "tag" in item).map((item) => (item as { tag: string }).tag);
+function mappedTags(items: readonly TagRoutingItem[]): string[] {
+	return items.flatMap((item) => (item.kind === "mapped" ? [item.tag] : []));
+}
+
+function addable(items: readonly TagRoutingItem[]): readonly string[] {
+	return items.flatMap((item) => (item.kind === "add" ? item.tags : []));
 }
 
 describe("tagLimitFor", () => {
@@ -65,8 +61,8 @@ describe("tagLimitFor", () => {
 });
 
 describe("planTagRouting", () => {
-	it("draws nothing at all before a scan has found anything", () => {
-		expect(plan({}).items).toEqual([]);
+	it("draws only the add row, empty, before a scan has found anything -- it is where a scan starts", () => {
+		expect(plan({}).items).toEqual([{ kind: "add", tags: [], capped: false, options: [] }]);
 		expect(plan({}).recheckLicenceBeforeAdd).toBe(false);
 	});
 
@@ -74,24 +70,27 @@ describe("planTagRouting", () => {
 		const { items, recheckLicenceBeforeAdd } = plan({ discoveredTags: ["#work"] });
 
 		expect(shape(items)).toBe("+");
-		expect(items[0]).toMatchObject({ kind: "mappable", tag: "#work", desc: MAPPABLE_DESC });
-		expect(items[0]).toHaveProperty("options", [
-			{ value: "", label: "Choose a folder…" },
-			{ value: "/", label: "Vault root" },
-			{ value: "Home", label: "Home" },
-			{ value: "Work", label: "Work" },
-		]);
+		expect(items[0]).toEqual({
+			kind: "add",
+			tags: ["#work"],
+			capped: false,
+			options: [
+				{ value: "", label: "Choose a folder…" },
+				{ value: "/", label: "Vault root" },
+				{ value: "Home", label: "Home" },
+				{ value: "Work", label: "Work" },
+			],
+		});
 		// Nothing is mapped yet, so nothing is being unlocked -- a free user never talks to Polar.
 		expect(recheckLicenceBeforeAdd).toBe(false);
 	});
 
-	it("refuses the second tag, and says why above the rows it refuses", () => {
+	it("refuses the second tag, and says why above the row it refuses, which comes before the list", () => {
 		const { items } = plan({ mapping: { "#work": "Work" }, discoveredTags: ["#work", "#home", "#ideas"] });
 
-		expect(shape(items)).toBe("MNNxx");
-		expect(items[1]).toEqual({ kind: "notice", text: REMOVAL_MESSAGE });
-		expect(items[2]).toEqual({ kind: "notice", text: TAG_CAP_MESSAGE });
-		expect(items[3]).toEqual({ kind: "capped", tag: "#home", desc: CAPPED_DESC });
+		expect(shape(items)).toBe("NxM");
+		expect(items[0]).toEqual({ kind: "notice", text: TAG_CAP_MESSAGE });
+		expect(addable(items)).toEqual(["#home", "#ideas"]);
 	});
 
 	it("lets a paid user map the second tag", () => {
@@ -101,15 +100,15 @@ describe("planTagRouting", () => {
 			entitlement: PRO,
 		});
 
-		expect(shape(items)).toBe("MN+");
-		expect(items[2]).toMatchObject({ kind: "mappable", tag: "#home", desc: MAPPABLE_DESC });
+		expect(shape(items)).toBe("+M");
+		expect(addable(items)).toEqual(["#home"]);
 		// Past the free limit, so the licence is re-checked at the moment it is used.
 		expect(recheckLicenceBeforeAdd).toBe(true);
 	});
 
 	it("lets a trialling user map the second tag too", () => {
 		const { items } = plan({ mapping: { "#work": "Work" }, discoveredTags: ["#work", "#home"], entitlement: TRIAL });
-		expect(shape(items)).toBe("MN+");
+		expect(shape(items)).toBe("+M");
 	});
 
 	it("never revokes a mapping the user already has, however far past the cap", () => {
@@ -119,9 +118,9 @@ describe("planTagRouting", () => {
 			entitlement: REVOKED,
 		});
 
-		expect(shape(items)).toBe("MMMNNx");
-		expect(tagsOf(items, "mapped")).toEqual(["#home", "#ideas", "#work"]);
-		expect(tagsOf(items, "capped")).toEqual(["#new"]);
+		expect(shape(items)).toBe("NxMMM");
+		expect(mappedTags(items)).toEqual(["#home", "#ideas", "#work"]);
+		expect(addable(items)).toEqual(["#new"]);
 	});
 
 	it("sorts the mapped tags and leaves the unmapped ones in the order they were discovered", () => {
@@ -131,31 +130,31 @@ describe("planTagRouting", () => {
 			entitlement: PRO,
 		});
 
-		expect(tagsOf(items, "mapped")).toEqual(["#apple", "#zebra"]);
+		expect(mappedTags(items)).toEqual(["#apple", "#zebra"]);
 		// Discovery order, not alphabetical: the scan's own order is the only order the user saw.
-		expect(tagsOf(items, "mappable")).toEqual(["#pear", "#fig"]);
+		expect(addable(items)).toEqual(["#pear", "#fig"]);
 	});
 
-	it("says nothing about removal when there is nothing to remove", () => {
-		expect(shape(plan({ discoveredTags: ["#work", "#home"], entitlement: PRO }).items)).toBe("++");
+	it("puts every unmapped tag in the one add row, not a row each", () => {
+		expect(shape(plan({ discoveredTags: ["#work", "#home"], entitlement: PRO }).items)).toBe("+");
 	});
 
 	it("keeps a mapped folder selectable after it is renamed away, and labels it", () => {
 		const { items } = plan({ mapping: { "#work": "Archive/2025" } });
 
-		expect(items[0]).toHaveProperty("options", [
+		expect(items[1]).toHaveProperty("options", [
 			{ value: "/", label: "Vault root" },
 			{ value: "Home", label: "Home" },
 			{ value: "Work", label: "Work" },
 			{ value: "Archive/2025", label: "Archive/2025 (missing)" },
 		]);
 		// The row still reads as the folder it points at, missing or not.
-		expect(items[0]).toMatchObject({ desc: "Archive/2025", folder: "Archive/2025" });
+		expect(items[1]).toMatchObject({ desc: "Archive/2025", folder: "Archive/2025" });
 	});
 
 	it("does not label a folder that is still there", () => {
 		const { items } = plan({ mapping: { "#work": "Work" } });
-		expect(items[0]).toHaveProperty("options", [
+		expect(items[1]).toHaveProperty("options", [
 			{ value: "/", label: "Vault root" },
 			{ value: "Home", label: "Home" },
 			{ value: "Work", label: "Work" },
@@ -164,7 +163,7 @@ describe("planTagRouting", () => {
 
 	it("calls the vault root by a name, in the row as well as the dropdown", () => {
 		const { items } = plan({ mapping: { "#work": "/" } });
-		expect(items[0]).toMatchObject({ desc: "Vault root", folder: "/" });
+		expect(items[1]).toMatchObject({ desc: "Vault root", folder: "/" });
 	});
 
 	it("offers only the root in an empty vault", () => {
@@ -182,8 +181,9 @@ describe("planTagRouting", () => {
 			entitlement: PRO,
 		});
 
-		expect(shape(items)).toBe("MMN");
-		// No mappable row exists, so nothing can ask Polar. Never true without something to unlock.
+		expect(shape(items)).toBe("+MM");
+		expect(addable(items)).toEqual([]);
+		// No tag can be added, so nothing can ask Polar. Never true without something to unlock.
 		expect(recheckLicenceBeforeAdd).toBe(false);
 	});
 

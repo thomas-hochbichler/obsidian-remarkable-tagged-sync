@@ -503,16 +503,35 @@ export class FakeVault {
 	}
 
 	/**
-	 * The filesystem, not the index -- the only member of `vault.adapter` this plugin reaches, and
-	 * the one `Vault.create` itself calls before it throws.
+	 * The filesystem, not the index -- the member of `vault.adapter` the note paths reach, and the one
+	 * `Vault.create` itself calls before it throws.
 	 *
 	 * app.js: `fsPromises.access(fullPath)`, false on any error. So the *filesystem* decides, which
 	 * means it folds case wherever the platform does. The real signature takes a second `sensitive`
 	 * argument that adds an exact-case confirmation on top; nothing in this plugin passes it, so
 	 * nothing here models it.
 	 */
+	/**
+	 * Files outside the note index -- the plugin folder, where the Intelligence Engine keeps its bases
+	 * and the device id (it reads and writes them through `vault.adapter`, as Obsidian has no index
+	 * entry for them). Kept apart from `fileMap` on purpose: nothing written here appears as a note.
+	 */
+	readonly adapterFiles = new Map<string, string>();
+	/** Obsidian's default; a vault can rename it, which is why the plugin always asks. */
+	readonly configDir = ".obsidian";
+	readonly adapterFolders = new Set<string>();
+
 	readonly adapter = {
-		exists: async (path: string): Promise<boolean> => this.existsOnDisk(path) !== null,
+		exists: async (path: string): Promise<boolean> => this.existsOnDisk(path) !== null || this.adapterFiles.has(path) || this.adapterFolders.has(path),
+		read: async (path: string): Promise<string> => {
+			const content = this.adapterFiles.get(path);
+			// app.js: an fs read of a missing file rejects -- the plugin asks `exists` first.
+			if (content === undefined) throw new Error(`ENOENT: no such file, open '${path}'`);
+			return content;
+		},
+		write: async (path: string, data: string): Promise<void> => void this.adapterFiles.set(path, data),
+		remove: async (path: string): Promise<void> => void this.adapterFiles.delete(path),
+		mkdir: async (path: string): Promise<void> => void this.adapterFolders.add(path),
 	};
 
 	// app.js: `fileMap.hasOwnProperty(p)` and an instance check. Exact string, no folding. The
@@ -866,6 +885,15 @@ export class MarkdownRenderChild {
 // Obsidian paints them.
 
 export class TextComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	value = "";
 	placeholder = "";
 	disabled = false;
@@ -898,11 +926,26 @@ export class TextComponent {
 }
 
 export class ToggleComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	value = false;
 	disabled = false;
 	private changed: ((value: boolean) => unknown) | null = null;
+	/**
+	 * app.js 1.13.7: `setValue` fires the change callback when the value changes -- so a value set
+	 * after `onChange` runs the handler, and a handler that redraws the tab loops forever.
+	 */
 	setValue(value: boolean): this {
+		if (this.value === value) return this;
 		this.value = value;
+		this.changed?.(value);
 		return this;
 	}
 	getValue(): boolean {
@@ -950,6 +993,15 @@ export class FakeSelectEl extends FakeEl {
 }
 
 export class DropdownComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	value = "";
 	disabled = false;
 	readonly selectEl = new FakeSelectEl();
@@ -998,6 +1050,15 @@ export class DropdownComponent {
 }
 
 export class ButtonComponent {
+	/**
+	 * app.js: `BaseComponent.then(cb)` calls `cb(this)` and returns `this` -- which makes every component
+	 * a thenable. A promise callback that *returns* one is adopted, and adoption calls `then` again,
+	 * forever. Modelled so that mistake hangs a test instead of the user's settings tab.
+	 */
+	then(cb: (component: this) => unknown): this {
+		cb(this);
+		return this;
+	}
 	text = "";
 	icon = "";
 	tooltip = "";
@@ -1146,6 +1207,8 @@ export class Plugin {
 	readonly eventRefs: EventRef[] = [];
 	readonly domEvents: { el: FakeEl; type: string }[] = [];
 	readonly codeBlockProcessors = new Map<string, (source: string, el: FakeEl, ctx: unknown) => unknown>();
+	/** `obsidian://<action>` handlers, by action -- a test opens such a link by calling one. */
+	readonly protocolHandlers = new Map<string, (params: Record<string, string>) => unknown>();
 	readonly statusBarItems: FakeEl[] = [];
 	readonly cleanups: (() => void)[] = [];
 	/** What `loadData()` returns. A test sets it to the `data.json` it wants to arrive with. */
@@ -1196,6 +1259,9 @@ export class Plugin {
 		handler: (source: string, el: FakeEl, ctx: unknown) => unknown,
 	): void {
 		this.codeBlockProcessors.set(language, handler);
+	}
+	registerObsidianProtocolHandler(action: string, handler: (params: Record<string, string>) => unknown): void {
+		this.protocolHandlers.set(action, handler);
 	}
 	onload(): void | Promise<void> {}
 	onunload(): void {}

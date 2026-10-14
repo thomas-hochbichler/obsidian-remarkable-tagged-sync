@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnthropicOcrBackend } from "./anthropic-ocr-backend";
-import { NOTE_TRANSCRIPTION_PROMPT, OCR_REQUEST_TIMEOUT_MS } from "../src/llm-transcript";
+import { NOTE_TRANSCRIPTION_PROMPT, OCR_REQUEST_TIMEOUT_MS, TRANSCRIPTION_PROMPT } from "../src/llm-transcript";
 import { ocrImage } from "../src/ocr-backend";
 import type { RmPage } from "../src/rm-parser";
 
@@ -63,6 +63,16 @@ describe("AnthropicOcrBackend", () => {
 
 		expect(result).toEqual({ status: "skipped", pages: [], text: "", confidence: null });
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	// Ticket 43: the user's signs reach the transcript through the prompt the run was built with.
+	it("sends the prompt it was given, and the one for no signs without", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "x" }] }));
+		await new AnthropicOcrBackend({ apiKey: "k", model: "claude-sonnet-5", prompt: "with my signs", fetchFn: fetchMock }).recognize([page()]);
+		await new AnthropicOcrBackend({ apiKey: "k", model: "claude-sonnet-5", fetchFn: fetchMock }).recognize([page()]);
+
+		const sent = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).messages[0].content[0].text);
+		expect(sent).toEqual(["with my signs", TRANSCRIPTION_PROMPT]);
 	});
 
 	it("recognizes a single page in one HTTP call and reports ok status", async () => {
@@ -317,7 +327,7 @@ describe("AnthropicOcrBackend", () => {
 
 			expect(result.pages).toEqual([{ status: "failed", text: "" }]);
 			expect(result.warnings?.[0]).toContain("did not answer in 10 minutes");
-			expect(result.warnings?.[0]).toContain('once it answers again, run "Re-transcribe all synced notes".');
+			expect(result.warnings?.[0]).toContain('The next three syncs try it again; if that does not help, run "Re-transcribe all synced notes".');
 		} finally {
 			vi.useRealTimers();
 		}
@@ -451,8 +461,8 @@ describe("AnthropicOcrBackend reporting", () => {
 		// never a different setting, which is why the sentence differs from the other adapter's.
 		expect(result.warnings?.[0]).toBe(
 			"1 page was left out because the model's answer ran past what it may return — Claude models reason before answering, " +
-				'and those tokens count against the same limit. A later sync will not pick it up on its own: switch to a model that ' +
-				'doesn\'t reason, then run "Re-transcribe all synced notes".',
+				'and those tokens count against the same limit. The next three syncs try it again; if that does not help, switch to a ' +
+				'model that doesn\'t reason, then run "Re-transcribe all synced notes".',
 		);
 	});
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { characterErrorRate, levenshtein, normalizeForCer, structureObservation } from "./cer";
+import { characterErrorRate, levenshtein, mermaidAsWords, normalizeForCer, structureObservation } from "./cer";
 
 /** A reference page's body, read the way the nightly reads it: after the frontmatter block. */
 function pageBody(name: string): string {
@@ -67,6 +67,20 @@ describe("the normaliser", () => {
 	it("strips heading and emphasis markers -- a pen has no bold, so a guessed level or weight is not an error", () => {
 		expect(normalizeForCer("# Packliste Wochenende")).toBe("Packliste Wochenende");
 		expect(normalizeForCer("**fett** und *kursiv* und _unterstrichen_")).toBe("fett und kursiv und unterstrichen");
+	});
+});
+
+describe("a diagram written as Mermaid", () => {
+	// Ticket 38: page 08 is a diagram; its reference writes the words one per paragraph.
+	it("is measured by its node labels, in the order the block names them", () => {
+		const transcript = "Ablauf\n\n```mermaid\nflowchart LR\n    A[Gerät] --> B[Abgleich]\n    B --> C[Notiz]\n    B --> D(Zwischenspeicher);\n```";
+		expect(mermaidAsWords(transcript)).toBe("Ablauf\n\nGerät\n\nAbgleich\n\nNotiz\n\nZwischenspeicher");
+		expect(characterErrorRate("Ablauf\n\nGerät\n\nAbgleich\n\nNotiz\n\nZwischenspeicher", transcript)).toBe(0);
+	});
+
+	it("takes bare ids, umlauts and edge labels as they come, and leaves other code alone", () => {
+		expect(mermaidAsWords("```mermaid\ngraph TD\n  Prüfung -->|ja| Freigabe\n  Prüfung --- Rückfrage\n```")).toBe("Prüfung\n\nFreigabe\n\nRückfrage");
+		expect(mermaidAsWords("```js\nA --> B\n```")).toBe("```js\nA --> B\n```");
 	});
 });
 

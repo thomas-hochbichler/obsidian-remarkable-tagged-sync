@@ -3,8 +3,9 @@
 // Everything that decides what a unit's transcript and status become lives here and is testable
 // without a 5.5 GB model; `local-ocr-runtime.ts` is the half that spawns `llama-mtmd-cli`.
 
-import { splitAtTypedText, transcriptionPrompt } from "./llm-transcript";
+import { splitAtTypedText, TRANSCRIPTION_PROMPT, transcriptionPrompt } from "./llm-transcript";
 import type { ModelGeneration } from "./local-model-artefacts";
+import { localPrompt } from "./local-ocr-runtime";
 import { recordPageDuration } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
 import { type OcrBackend, type OcrFraming, ocrImage, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
@@ -64,6 +65,8 @@ export function classifyRun(run: FinishedRun): LocalPageOutcome {
 
 export interface LocalOcrOptions {
 	runPage: LocalPageRunner;
+	/** The page prompt with the user's signs (ticket 43); absent, the one for no signs. */
+	prompt?: string;
 	/** The generation this install resolved to; its weights' hash becomes the backend's fingerprint. */
 	generation: ModelGeneration;
 	/**
@@ -110,6 +113,8 @@ export class LocalOcrBackend implements OcrBackend {
 	private readonly runPage: LocalPageRunner;
 	private readonly settings: BackendSettings;
 	private readonly onRuntimeFailure: (message: string) => void;
+	/** The page prompt, before `localPrompt` picks the plain one for a model that keeps no marks. */
+	private readonly prompt: string;
 	/**
 	 * Session-scoped and deliberately not on disk (§5.5): the runtime being broken is a fact about this
 	 * run, not a property of the directory. The adapter is rebuilt per sync, so the next one probes
@@ -124,6 +129,7 @@ export class LocalOcrBackend implements OcrBackend {
 		this.runPage = options.runPage;
 		this.settings = options.settings;
 		this.onRuntimeFailure = options.onRuntimeFailure ?? (() => undefined);
+		this.prompt = options.prompt ?? TRANSCRIPTION_PROMPT;
 	}
 
 	async recognize(pages: RmPage[], onPage?: () => void, framing: OcrFraming = "page"): Promise<OcrResult> {
@@ -150,7 +156,8 @@ export class LocalOcrBackend implements OcrBackend {
 					read.push(part.text);
 					continue;
 				}
-				const outcome = await this.runPage(ocrImage(part.scene, framing), transcriptionPrompt(framing));
+				// A page gets this model's page prompt, marks kept or not (research 35); a margin note the note prompt.
+				const outcome = await this.runPage(ocrImage(part.scene, framing), transcriptionPrompt(framing, localPrompt(this.generation, this.prompt)));
 
 				if (outcome.kind === "runtime-broken") {
 					this.runtimeBroken = true;

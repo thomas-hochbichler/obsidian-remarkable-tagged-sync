@@ -28,6 +28,8 @@ import { DEFAULT_ZOTERO_SETTINGS, type ZoteroSettings } from "./zotero-settings"
 import { EMPTY_SYNC_INDEX, type SyncIndex, type SyncIndexRow } from "./sync-engine";
 import type { TransportId } from "./transport";
 import { mappingFingerprint, type TagFolderMap } from "./tag-router";
+import { emptyIntelligence, type IntelligenceSettings, readIntelligence } from "./intelligence/settings";
+import { readSigns, type SignDef } from "./signs";
 
 /** Opt-in background sync (auto-sync spec §"Settings & data model"). */
 export interface AutoSyncSettings {
@@ -81,6 +83,8 @@ export interface TaggedSyncData {
 	 * (multi-provider spec §4). Opaque here -- only the backend that owns a blob reads inside it.
 	 */
 	llmProviders: Record<string, BackendSettings>;
+	/** The signs a line can start with and what they mean: told to the transcript and to insight notes (ticket 43). */
+	signs: SignDef[];
 	/** Set once the platform "no transcription here" notice has been shown, so it never nags again (spec §6.2). */
 	ocrUnavailableNoticeShown: boolean;
 	/** Set once `markLegacyOcrLosses` has looked through the vault -- see there for why only once. */
@@ -108,6 +112,11 @@ export interface TaggedSyncData {
 	 * one vault is one activation, wherever it is opened.
 	 */
 	licence: LicenceState;
+	/**
+	 * The Intelligence Engine: per-mapping modes, Profiles, Slots, extraction backend (1.9.0). A block
+	 * of its own so `tagFolderMap` keeps the shape an older install sharing this file can read.
+	 */
+	intelligence: IntelligenceSettings;
 }
 
 /** Read field by field, never handed out whole -- see the `syncIndex` note in `migrateSettings`. */
@@ -124,6 +133,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	// Placeholder only -- the effective default is platform-derived on load (multi-provider spec §7).
 	ocrBackend: "vision",
 	llmProviders: {},
+	signs: [],
 	ocrUnavailableNoticeShown: false,
 	legacyOcrLossesMarked: false,
 	autoSync: DEFAULT_AUTO_SYNC,
@@ -132,6 +142,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	marginNotes: false,
 	frontmatter: false,
 	licence: NO_LICENCE,
+	intelligence: emptyIntelligence(),
 };
 
 /**
@@ -149,6 +160,8 @@ export interface SettingsEnv {
 	isKnownBackend: (id: unknown) => boolean;
 	/** What an unknown or absent backend becomes -- platform-derived (multi-provider spec §7). */
 	defaultBackend: OcrBackendId;
+	/** The load time, stamped in memory on a mapping switched on without a stamp. Defaults to now. */
+	now?: Date;
 }
 
 function isTransportId(value: unknown): value is TransportId {
@@ -231,6 +244,7 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		syncIndex: stored?.syncIndex ? stampRowFolders(stored.syncIndex, stored.tagFolderMap ?? {}) : { ...EMPTY_SYNC_INDEX, rows: {} },
 		ocrBackend: env.isKnownBackend(savedBackend) ? (savedBackend as OcrBackendId) : env.defaultBackend,
 		llmProviders: stored?.llmProviders ?? {},
+		signs: readSigns(stored?.signs),
 		ocrUnavailableNoticeShown: stored?.ocrUnavailableNoticeShown ?? false,
 		legacyOcrLossesMarked: stored?.legacyOcrLossesMarked ?? false,
 		autoSync: { ...DEFAULT_AUTO_SYNC, ...stored?.autoSync },
@@ -245,5 +259,6 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// Spread over the default so a `data.json` written by an older version, or one a user has
 		// edited by hand, is missing fields rather than being rejected.
 		licence: { ...NO_LICENCE, ...stored?.licence },
+		intelligence: readIntelligence(stored?.intelligence, env.now ?? new Date()),
 	};
 }

@@ -11,7 +11,8 @@ import {
 	sanitizeTranscript,
 	type Sleep,
 	transcribePages,
-	them,
+	TRANSCRIPTION_PROMPT,
+	nextStep,
 	transcriptionPrompt,
 	triedAgain,
 	upperFirst,
@@ -47,6 +48,8 @@ export interface AnthropicOcrOptions {
 	 * refused in {@link AnthropicOcrBackend.recognize} with a sentence naming what to do.
 	 */
 	model?: string;
+	/** The transcription prompt, with the user's signs; absent, the one for no signs. */
+	prompt?: string;
 	fetchFn?: typeof fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
@@ -81,6 +84,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	private readonly apiKey: string;
 	/** The model the requests name, exactly as the user entered it. */
 	readonly model: string;
+	private readonly prompt: string;
 	private readonly fetchFn: typeof fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at the endpoint -- see `recognize`. */
@@ -107,6 +111,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	constructor(options: AnthropicOcrOptions) {
 		this.apiKey = options.apiKey;
 		this.model = options.model ?? "";
+		this.prompt = options.prompt ?? TRANSCRIPTION_PROMPT;
 		this.fingerprint = `anthropic|${this.model}`;
 		this.fetchFn = options.fetchFn ?? fetch;
 		this.sleepFn = options.sleepFn;
@@ -162,7 +167,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	private async transcribePage(page: RmPage, framing: OcrFraming): Promise<LlmPageOutcome> {
 		try {
 			const content = [
-				{ type: "text", text: transcriptionPrompt(framing) },
+				{ type: "text", text: transcriptionPrompt(framing, this.prompt) },
 				{
 					type: "image",
 					source: {
@@ -243,21 +248,20 @@ export class AnthropicOcrBackend implements OcrBackend {
 function timeoutWarning(pages: number, framing: OcrFraming): string {
 	return (
 		`${upperFirst(pageCount(pages, framing))} left out because Anthropic did not answer in ${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ` +
-		`A later sync will not pick ${them(pages, framing)} up on its own: ` +
-		(framing === "page" ? `once it answers again, ${readAgain(framing)}.` : `try a different model, then ${readAgain(framing)}.`)
+		nextStep(pages, framing, framing === "page" ? readAgain(framing) : `try a different model, then ${readAgain(framing)}`)
 	);
 }
 
 /**
  * The truncation sentence. Deliberately the same four things the OpenAI-compatible adapter says --
- * cause in the user's terms, that the page was left out on purpose, the lever, and that the loss does
- * not heal itself -- with the one difference this backend owns: on the current Claude generation
+ * cause in the user's terms, that the page was left out on purpose, the lever, and how far the loss
+ * heals itself (`nextStep`) -- with the one difference this backend owns: on the current Claude generation
  * thinking cannot be switched off, so the lever is a different model rather than a different setting.
  */
 function truncationWarning(pages: number, framing: OcrFraming): string {
 	return (
 		`${upperFirst(pageCount(pages, framing))} left out because the model's answer ran past what it may return — ` +
 		`Claude models reason before answering, and those tokens count against the same limit. ` +
-		`A later sync will not pick ${them(pages, framing)} up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
+		nextStep(pages, framing, `switch to a model that doesn't reason, then ${readAgain(framing)}`)
 	);
 }

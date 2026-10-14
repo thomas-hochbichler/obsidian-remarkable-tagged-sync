@@ -19,6 +19,7 @@
 export {
 	fetchWithRetry,
 	isUnreachable,
+	nextStep,
 	OCR_REQUEST_TIMEOUT_MS,
 	OcrTimeoutError,
 	pageCount,
@@ -27,7 +28,6 @@ export {
 	LLM_MAX_PARALLELISM,
 	sanitizeTranscript,
 	transcribePages,
-	them,
 	TRANSCRIPTION_PROMPT,
 	transcriptionPrompt,
 	triedAgain,

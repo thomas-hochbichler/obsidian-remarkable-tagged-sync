@@ -116,6 +116,7 @@ describe("migrateSettings", () => {
 			syncIndex: { version: 4, rows: { "doc/1": { note: "Work/One.md" } } },
 			ocrBackend: "anthropic",
 			llmProviders: { anthropic: { apiKey: "sk-1" } },
+			signs: [{ glyph: "△", drawn: "a small triangle", meaning: "custom", text: "an idea" }, { glyph: "•", meaning: "task-open" }],
 			ocrUnavailableNoticeShown: true,
 			legacyOcrLossesMarked: true,
 			autoSync: { enabled: true, intervalHours: null, autoTranscribeMetered: true },
@@ -124,6 +125,18 @@ describe("migrateSettings", () => {
 			marginNotes: true,
 			frontmatter: true,
 			licence: { ...NO_LICENCE, key: "k", activationId: "a", validatedAt: "2026-08-01T00:00:00.000Z" },
+			intelligence: {
+				mappings: { "#work": { transcript: false, intelligence: true, profiles: ["meetings"], enabledAt: "2026-09-28T10:00:00.000Z", firstEnabledAt: "2026-09-20T10:00:00.000Z" } },
+				profiles: [{ id: "meetings", name: "Meetings", description: "Meeting notes", template: "Templates/Meeting.md", slots: ["tasks", "summary"] }],
+				slots: [{ id: "tasks", name: "Tasks", shape: "checklist", instruction: "Mine only", examples: [], fields: [], itemFormat: "- [ ] {{text}}", review: false }],
+				backend: "openrouter",
+				model: "anthropic/claude-sonnet-5",
+				engineDeviceId: "device-1",
+				autoExtractMetered: true,
+				autoExtractLocal: false,
+				saidOnce: ["local-classifier"],
+				dateOrder: "mdy",
+			},
 		};
 		expect(migrateSettings(structuredClone(stored), ENV)).toEqual(stored);
 	});

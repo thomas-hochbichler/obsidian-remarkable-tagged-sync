@@ -147,6 +147,8 @@ registerOcrBackend(
 );
 /** Declares the need and forgets the accessors -- the half-declared pair, from the tab's side. */
 registerOcrBackend(testBackend("test-half-consent", { needsBackgroundConsent: true }));
+/** Reads text only, like Apple Vision: the user's signs never reach a transcript. */
+registerOcrBackend(testBackend("test-no-signs", { dropsSigns: () => "Test reader" }));
 
 /**
  * A key pair for the trial ticket (`trial-ticket.ts`). The plugin gets its public half; "signed by
@@ -291,6 +293,11 @@ describe("the shape of the settings screen", () => {
 			"Tag routing",
 			"Vault output",
 			"Transcription",
+			// Right after transcription: the engine reads what transcription produced, and its backend
+			// is chosen next to that one.
+			"Insight notes",
+			"Profiles",
+			"Slots",
 			"Automatic sync",
 			// Between automatic sync and the Pro section: it is a Pro feature, set up once, and it reads
 			// as what it is where it sits next to the thing that unlocks it.
@@ -777,6 +784,37 @@ describe("a backend's own rows", () => {
 		const other = await tabWith({ ocrBackend: "off" });
 		draw(other.tab);
 		expect(settingsRows).toEqual([]);
+	});
+});
+
+// Ticket 43: the writer's notation lives under Transcription, for the transcript and the insight notes alike.
+describe("the signs under Transcription", () => {
+	it("fills in the Bullet Journal, says what a reader without signs loses, and offers to re-transcribe", async () => {
+		const { plugin, tab } = await tabWith({ ocrBackend: "test-no-signs" });
+		// The signs are one card, so their rows are not rows of the tab: read every Setting drawn under the heading.
+		const transcription = () => {
+			takeSettings();
+			tab.display();
+			const all = takeSettings();
+			const start = all.findIndex((setting) => setting.heading && setting.name === "Transcription");
+			const end = all.findIndex((setting, i) => i > start && setting.heading);
+			return all.slice(start + 1, end);
+		};
+		const signs = () => transcription().find((setting) => setting.name === "Signs")!;
+		expect(signs().descEl.allText().join(" ")).toBe("");
+
+		signs().buttons[0].click();
+		await settle();
+		expect((plugin.data.signs as { glyph: string }[]).map((sign) => sign.glyph)).toEqual(["•", "X", ">", "<", "○", "—"]);
+		expect((plugin.saves.at(-1) as { signs: unknown[] }).signs).toHaveLength(6);
+		expect(verdict({ kind: "row", name: "Signs", desc: "", setting: signs() }).allText().join(" ")).toBe("Test reader keeps no signs. Your signs reach insight notes only with a language model that does.");
+
+		const again = transcription().at(-1)!;
+		expect(again.desc).toBe("Applies to pages transcribed from now on.");
+		expect(again.settingEl.visible).toBe(true);
+		const reTranscribe = vi.spyOn(plugin as unknown as { reTranscribeAll(): Promise<void> }, "reTranscribeAll").mockResolvedValue();
+		again.buttons[0].click();
+		expect(reTranscribe).toHaveBeenCalledOnce();
 	});
 });
 

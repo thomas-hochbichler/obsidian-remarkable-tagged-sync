@@ -24,6 +24,8 @@ registerOcrBackend({
 		return reason === "needs-macos-13" ? "Apple Vision — needs macOS 13 or later" : "Apple Vision — macOS only";
 	},
 	create: () => visionBackend(),
+	// Plain text: no signs, no boxes, no strike-through (research 35).
+	dropsSigns: () => "Apple Vision",
 });
 
 // Registered after Vision so it sits below it in the dropdown, and so that a build with neither

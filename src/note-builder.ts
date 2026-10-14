@@ -301,7 +301,7 @@ export function renderTranscript(embedPath: string, pages: TranscriptPage[] | nu
 	if ((extras.unitPages ?? pages.length) <= 1) {
 		const page = pages[0];
 		if (page === undefined) return "";
-		// No quotes folded in here, and none are lost: a page note's digest covers its one page, so it
+		// No quotes folded in here, and none are lost: a page-tag note's digest covers its one page, so it
 		// never leaves an uncovered highlight behind (ticket 05).
 		return pageBody(page, [], typedTextLine([page.pageLabel])).join("\n\n");
 	}
@@ -503,7 +503,7 @@ export function buildNoteContent(fields: NoteFields, existingContent: string | n
  * "Occupies" is `store.exists`, not `store.read`: see the interface. A path this returns is one the
  * vault will actually accept, which is the whole difference.
  */
-async function resolveFreePath(store: NoteStore, folder: string, baseName: string, tag: string, docId: string): Promise<string> {
+export async function resolveFreePath(store: NoteStore, folder: string, baseName: string, tag: string, docId: string): Promise<string> {
 	const suffixes = ["", ` (${sanitizeFilenamePart(tag)})`, ` (${docId.slice(0, 6)})`];
 
 	for (const suffix of suffixes) {

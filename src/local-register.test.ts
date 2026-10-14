@@ -255,6 +255,16 @@ describe("the choice of model", () => {
 	});
 });
 
+// Ticket 43: the two smaller models read with the plain prompt, so the user's signs never reach their transcripts.
+describe("the signs a model keeps", () => {
+	it("names the picked model when it keeps none, and nothing for the one that does", () => {
+		const dropsSigns = (blob: BackendSettings) => ocrBackendEntry("local")?.dropsSigns?.(blob);
+		expect(dropsSigns({})).toBeNull();
+		expect(dropsSigns({ preferredModelDir: SMALL.dir })).toBe(SMALL.label);
+		expect(dropsSigns({ preferredModelDir: OLDER.dir })).toBe(OLDER.label);
+	});
+});
+
 describe("a model that is ready, beside a better one", () => {
 	beforeEach(() => {
 		machine.directories = [complete(OLDER)];

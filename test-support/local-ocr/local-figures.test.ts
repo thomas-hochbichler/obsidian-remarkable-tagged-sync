@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MODEL_GENERATIONS, RUNTIME_RELEASE } from "../../src/local-model-artefacts";
 import { RENDER_VERSION } from "../../src/sync-engine";
-import { checkFigure, type LocalFigure, missingFigures, promptSha } from "./figures";
+import { checkFigure, type LocalFigure, missingFigures } from "./figures";
 
 const DIR = join(process.cwd(), "docs", "ocr-local");
 const figures = (): LocalFigure[] =>
@@ -17,7 +17,7 @@ const figures = (): LocalFigure[] =>
 		.filter((name) => name.endsWith(".json"))
 		.sort()
 		.map((name) => JSON.parse(readFileSync(join(DIR, name), "utf8")) as LocalFigure);
-const current = { generations: MODEL_GENERATIONS, promptSha: promptSha(), renderVersion: RENDER_VERSION, runtime: RUNTIME_RELEASE };
+const current = { generations: MODEL_GENERATIONS, renderVersion: RENDER_VERSION, runtime: RUNTIME_RELEASE };
 
 describe("local figures", () => {
 	it("were each measured against the prompt, raster, runtime and model files this build ships", () => {

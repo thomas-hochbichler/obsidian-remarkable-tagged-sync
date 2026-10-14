@@ -1,6 +1,7 @@
 import { type OcrFraming, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
+import { type SignDef, transcriptSigns } from "./signs";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -16,13 +17,157 @@ import { mapWithConcurrency } from "./concurrency";
  *
  * "No page labels" now means what it says: the sync-engine attaches the page header, so a
  * model-written "Page 3" would be a duplicate at best and wrong at worst.
+ *
+ * The last two sentences keep what the writer marked (research 31): without them a model wrote every
+ * Bullet Journal sign as a plain "- ", so a migrated task read as open and an event as a task, and the
+ * extraction could not tell them apart. Measured on 8 local models and Sonnet 5.5 (pages E01–E17): marks
+ * kept 30/57 -> 57/57 on the cloud, CER within 0.6 points on every model.
+ *
+ * The diagram sentence (ticket 38, 2026-10-09): words joined by drawn lines came out as loose lines that
+ * read like sentences. Now a diagram is written as a Mermaid flowchart, which Obsidian draws. Reference
+ * pages E18–E22: Sonnet 5.5, Haiku 5.5 and Qwen3.8-27B drew all 18 lines right, none invented, no text
+ * lost, no diagram where there is none; Qwen3-VL-8B all 18 with 2 invented. On one real page the 27B
+ * dropped the text around the diagram -- if that holds up, local models move to a second request.
+ *
+ * `PLAIN_TRANSCRIPTION_PROMPT` is the prompt without them, for a managed model that cannot take them
+ * (`ModelGeneration.keepsMarks`).
  */
-export const TRANSCRIPTION_PROMPT =
+export const PLAIN_TRANSCRIPTION_PROMPT =
 	"Transcribe the handwritten text in this page image into clean Markdown, " +
 	"preserving reading order and visible structure: headings, lists, GFM task lists (- [ ] / - [x]), " +
 	"and tables. Do not invent structure that is not visually present; when unsure, use plain " +
 	"paragraphs. Output only the transcript text -- no commentary, preamble, code fences, or page " +
 	"labels. If the page has no legible text, output nothing.";
+/**
+ * The marks-keeping prompt, told the user's signs (ticket 43): the table's characters replace the
+ * fixed Bullet Journal list. The list-marker sentence answers ticket 42: a drawn dash came back as
+ * "- - " and the extraction read the Markdown dash as the writer's. An empty table keeps the measured
+ * prompt byte for byte -- nothing reads a sign's meaning then, and every figure stays valid.
+ */
+export function pagePrompt(signs: readonly SignDef[], diagrams = true): string {
+	const own = transcriptSigns(signs);
+	const marker = own === null ? "" : `The sign stands in place of the list marker: write ${own.first} text, never - ${own.first} text; a list line without a sign starts with - as usual. `;
+	return (
+		PLAIN_TRANSCRIPTION_PROMPT +
+		" Keep what the writer marked. Write struck-through text as ~~text~~. Write a drawn checkbox as - [ ] when it is empty " +
+		`and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: ${own?.list ?? "• X > < ○ —"}. ` +
+		marker +
+		"Transcribe exactly what is written; do not correct spelling or wording." +
+		(diagrams ? DIAGRAM_IN_PAGE : "")
+	);
+}
+
+/** The diagram sentences of the one-request page prompt (ticket 38's `diagram3`, measured 2026-10-09). */
+const DIAGRAM_IN_PAGE =
+	" If words on the page are joined by drawn " +
+	"lines or arrows (a diagram or a mind map), write only those joined words as a Mermaid flowchart in a ```mermaid " +
+	"block -- the one code fence allowed -- placed where the diagram stands on the page: each word a node, copied " +
+	"exactly; each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or " +
+	"label that is not drawn. Lines, boxes, brackets and underlines that do not join words are not a diagram. Every " +
+	"line of text outside the diagram is transcribed as usual, none left out.";
+
+/**
+ * The second request a server of the user's own gets for a page: the diagram alone (ticket 38). Asked
+ * in one prompt with the text, a local model gave back the diagram and dropped the text around it --
+ * Qwen3.8-27B on the user's page 15 (2026-10-09), qwen3-vl-30b-a3b-instruct on page 4 (2026-10-14),
+ * an open task among the lines lost -- and drew lines that only hold an arrow ("8k -> 16k") into it.
+ * The page is read first without diagrams, so its text can never go; `placeDiagram` puts this in.
+ */
+export const DIAGRAM_PROMPT =
+	"This image is a handwritten page. If words on it are joined by drawn lines or arrows (a diagram or a mind " +
+	'map), write only that diagram as a Mermaid flowchart in one ```mermaid block: each word or group of words a node, written as A["words"] and copied exactly; ' +
+	"each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or label that is not " +
+	"drawn. A line of text with an arrow written inside it, such as 8k -> 16k, is text and not part of a diagram. Lines, boxes, " +
+	"brackets and underlines that do not join words are not a diagram. Output only the block, and nothing at all when the page " +
+	"holds no diagram.";
+
+/**
+ * The start of a line of text, never of a diagram's word: a list item, a task, a sign, a number, a
+ * heading. A line that starts so stays in the text; a node that starts so shows a page copied into
+ * the diagram (ticket 38).
+ */
+const TEXT_LINE = /^\s*(?:[-*+•·×✓○◦—–>!→]\s|[Xx]\s|\d+[.)]\s|#{1,6}\s)/u;
+
+/** A Mermaid block's words, node and edge labels alike, lower case: what a line of text is checked against. Null when a node is a line of text. */
+function diagramWords(block: string): Set<string> | null {
+	const words = new Set<string>();
+	let copied = false;
+	const add = (text: string) => {
+		for (const word of wordsOf(text.replace(/#quot;/g, '"'))) words.add(word);
+	};
+	for (const raw of block.split("\n").slice(1, -1)) {
+		const line = raw.trim().replace(/;$/, "");
+		if (line === "" || MERMAID_KEYWORD.test(line)) continue;
+		const parts = line.split(MERMAID_EDGE);
+		parts.forEach((part, i) => {
+			if (part === undefined) return;
+			if (i % 3 === 2) return add(part.replace(/^\||\|$/g, ""));
+			if (i % 3 === 1) return;
+			const node = /^([\p{L}\p{N}_]+)\s*(?:[[({>]+\s*"?(.*?)"?\s*[\])}]+)?$/u.exec(part.trim());
+			if (node === null) return;
+			if (node[2] !== undefined && TEXT_LINE.test(node[2])) copied = true;
+			add(node[2] ?? node[1]);
+		});
+	}
+	return copied ? null : words;
+}
+
+/** An arrow or a line between boxes, as a transcript writes one out. */
+const ARROWS = /[↓↑←→↔⇒⇐⇓⇑↘↙↗↖|<>]/u;
+
+/** A line's words, lower case, with the punctuation and arrows around them dropped. */
+function wordsOf(text: string): string[] {
+	return text
+		.toLowerCase()
+		.split(/\s+/)
+		.map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+		.filter((word) => word !== "");
+}
+
+/**
+ * The diagram the second request found, put into the page's text from the first (ticket 38). The block
+ * takes the place of the lines made only of its words -- the diagram as the first request wrote it, a
+ * word to a line or as ASCII art in a code fence -- and every other line stays where it was. Text can
+ * only ever be replaced by a block that holds its words; a line with one word of its own stays, and so
+ * does a list item, a task or a signed line. No block in the answer, or one that copied the page's
+ * lines into nodes: the text as it was. A block whose words stand on no line: after the text.
+ */
+export function placeDiagram(text: string, answer: string): string {
+	const block = /```mermaid[^\n]*\n[\s\S]*?```/.exec(answer)?.[0];
+	if (block === undefined) return text;
+	const words = diagramWords(block);
+	// Qwen3-VL-8B in LM Studio, 2026-10-14: asked for a page's diagram, it made one of every line of a
+	// page with none, "- fix failing tests" and "× Analyse …" as nodes, and the page's text went with it.
+	if (words === null || words.size === 0) return text;
+	const ofDiagram = (body: string) => {
+		const own = wordsOf(body);
+		return own.length > 0 && own.every((word) => words.has(word));
+	};
+	// A fenced drawing of the diagram goes whole: its frame lines hold no word to test.
+	const PLACE = "\u0000diagram";
+	const unfenced = text.replace(/```[^\n]*\n([\s\S]*?)```/g, (fenced: string, body: string) => (ofDiagram(body) ? PLACE : fenced));
+	const lines = unfenced.split("\n");
+	const inDiagram = lines.map((line) => line === PLACE || (ofDiagram(line) && !TEXT_LINE.test(line)));
+	// A line of arrows alone between the diagram's words ("↓", reference page 08) is the diagram's too;
+	// one anywhere else, and a divider, is not.
+	const next = (from: number, step: number) => {
+		for (let i = from + step; i >= 0 && i < lines.length; i += step) if (lines[i].trim() !== "") return inDiagram[i];
+		return false;
+	};
+	const drawn = lines.map((line, i) => inDiagram[i] || (wordsOf(line).length === 0 && ARROWS.test(line) && (next(i, -1) || next(i, 1))));
+	const out: string[] = [];
+	let placed = false;
+	lines.forEach((line, i) => {
+		if (!drawn[i]) return void out.push(line);
+		if (!placed) out.push(block);
+		placed = true;
+	});
+	if (!placed) out.push("", block);
+	return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** The prompt for a writer who set no signs. */
+export const TRANSCRIPTION_PROMPT = pagePrompt([]);
 
 /**
  * The prompt for a margin note: a few handwritten words cut out of a document's margin.
@@ -41,9 +186,9 @@ export const NOTE_TRANSCRIPTION_PROMPT =
 	"preamble, quotation marks, code fences or Markdown. If the image holds no words at all, only a " +
 	"line, an arrow or a bracket, output nothing.";
 
-/** The prompt for what is being read; see `OcrFraming`. */
-export function transcriptionPrompt(framing: OcrFraming = "page"): string {
-	return framing === "note" ? NOTE_TRANSCRIPTION_PROMPT : TRANSCRIPTION_PROMPT;
+/** The prompt for what is being read; see `OcrFraming`. `page` is the page prompt, with the user's signs when they set any. */
+export function transcriptionPrompt(framing: OcrFraming = "page", page = TRANSCRIPTION_PROMPT): string {
+	return framing === "note" ? NOTE_TRANSCRIPTION_PROMPT : page;
 }
 
 /**
@@ -79,6 +224,15 @@ export function upperFirst(text: string): string {
  */
 export function readAgain(framing: OcrFraming): string {
 	return framing === "page" ? `run "Re-transcribe all synced notes"` : "the next sync reads them again";
+}
+
+/**
+ * What becomes of the pages a warning names, then what the user does if that is not enough. A
+ * notebook page is read again by the next three syncs (`failedReads` in `sync-engine.ts`); a margin
+ * note or a page added to a PDF is not, for a failure that repeats with the same settings.
+ */
+export function nextStep(pages: number, framing: OcrFraming, fix: string): string {
+	return framing === "page" ? `The next three syncs try ${them(pages, framing)} again; if that does not help, ${fix}.` : `A later sync will not pick ${them(pages, framing)} up on its own: ${fix}.`;
 }
 
 /**
@@ -284,11 +438,71 @@ export function splitAtTypedText(page: RmPage, options: { splitTall?: boolean } 
 	return parts;
 }
 
+/** An edge between two nodes, with its label if it has one: `-->`, `---`, `<-->`, `-.->`, `==>` and the like. */
+const MERMAID_EDGE = /\s*(<-->|<-\.->|<==>|-->|---|-\.->|-\.-|==>|===|--[xo]|<--)\s*(\|[^|]*\|)?\s*/u;
+/** A line the repair leaves alone: the header, a comment, styling, a subgraph's frame. */
+const MERMAID_KEYWORD = /^(%%|(graph|flowchart|style|classDef|class|linkStyle|subgraph|end|direction|click)\b)/;
+/** A node Mermaid reads as it stands: a plain name, or a name with its text in brackets. */
+const MERMAID_NODE = /^[\p{L}\p{N}_]+(\s*(\[.*\]|\(.*\)|\{.*\}|>.*\]))?$/u;
+const MERMAID_RESERVED = new Set(["end", "graph", "flowchart", "subgraph", "style", "class", "classDef", "click", "default"]);
+
+/**
+ * A drawn diagram's Mermaid, made something Mermaid parses. The prompt says "each word a node", and
+ * models write the words as the nodes themselves: `INS A Browser --> redirect`, `calls.`,
+ * `~~k8s Nginx-Ingress~~`. Mermaid takes no space, dot or tilde in a node's name, so the whole block
+ * showed "Error parsing Mermaid diagram!" in place of the drawing (2026-10-14). Each such node now
+ * gets a name of its own and keeps its words, exactly as written, in quotes: `n1["INS A Browser"]`;
+ * the same words are the same node. A node already written right is left alone, and so is a line the
+ * repair does not understand.
+ *
+ * Here and not in the prompt: the prompt is the one the local model's published figures were
+ * measured with, and the words are what a reader and the measurement (`mermaidAsWords`) care about.
+ */
+export function repairMermaid(text: string): string {
+	return text.replace(/(```mermaid[^\n]*\n)([\s\S]*?)(```)/g, (_, open: string, body: string, close: string) => {
+		const names = new Map<string, string>();
+		const taken = new Set<string>();
+		const nameFor = (words: string) => {
+			let name = names.get(words);
+			if (name === undefined) {
+				let n = names.size + 1;
+				while (taken.has(`n${n}`)) n++;
+				name = `n${n}`;
+				names.set(words, name);
+				taken.add(name);
+			}
+			return `${name}["${words.replace(/"/g, "#quot;")}"]`;
+		};
+		const node = (part: string) => {
+			const words = part.trim();
+			if (MERMAID_NODE.test(words) && !MERMAID_RESERVED.has(words)) {
+				taken.add(/^[\p{L}\p{N}_]+/u.exec(words)?.[0] ?? words);
+				return words;
+			}
+			return nameFor(words);
+		};
+		const lines = body.split("\n").map((raw) => {
+			const line = raw.trim().replace(/;$/, "");
+			if (line === "" || MERMAID_KEYWORD.test(line)) return raw;
+			// split() with the edge's two groups: node, arrow, label (or undefined), node, ...
+			const parts = line.split(MERMAID_EDGE);
+			const nodes = parts.filter((_, i) => i % 3 === 0);
+			if (nodes.some((part) => part.trim() === "")) return raw;
+			const indent = /^\s*/.exec(raw)?.[0] ?? "";
+			let out = node(parts[0]);
+			for (let i = 1; i < parts.length; i += 3) out += ` ${parts[i]}${parts[i + 1] ?? ""} ${node(parts[i + 2])}`;
+			return indent + out;
+		});
+		return open + lines.join("\n") + close;
+	});
+}
+
 /**
  * Strip LLM envelope leakage from a transcript: a model's reasoning, a single leading preamble line
  * and an outer code fence wrapping the whole response (structure-preserving-ocr spec §2). Anchored
  * to the response edges only — never touches inner content, so a code block the user wrote on the
  * page survives. Biased to under-strip: a stray line is a cheap failure, corrupting a note is not.
+ * A drawn diagram's Mermaid block is the one exception, and only to make it parse (`repairMermaid`).
  */
 export function sanitizeTranscript(text: string): string {
 	// 0. Reasoning, up to its closing tag. A model that thinks before it answers can hand its thinking
@@ -340,7 +554,7 @@ export function sanitizeTranscript(text: string): string {
 		kept.push(lines[i]);
 	}
 
-	return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+	return repairMermaid(kept.join("\n").replace(/\n{3,}/g, "\n\n").trim());
 }
 
 // --- the OpenAI-compatible call machinery ----------------------------------------------------

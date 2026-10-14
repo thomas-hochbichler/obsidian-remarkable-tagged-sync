@@ -4,12 +4,12 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "../test-stubs/fake-obsidian";
 import { MODEL_GENERATIONS } from "./local-model-artefacts";
-import { isLocalModelBusy, pageArgs } from "./local-ocr-runtime";
+import { isLocalModelBusy, localPrompt, pageArgs } from "./local-ocr-runtime";
+import { NOTE_TRANSCRIPTION_PROMPT, PLAIN_TRANSCRIPTION_PROMPT, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { writeLock } from "./local-model-runtime";
 import type { LocalModelPaths } from "./local-model-store";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome } from "./local-ocr-backend";
 import { ENOUGH_PAGES_TO_MEASURE, readLocalModelSettings } from "./local-model-settings";
-import { NOTE_TRANSCRIPTION_PROMPT, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { ocrImage } from "./ocr-backend";
 import type { RmPage } from "./rm-parser";
 
@@ -60,6 +60,15 @@ describe("LocalOcrBackend", () => {
 		const { backend } = backendOver([{ kind: "page-failed", message: "exit 1" }]);
 		const result = await backend.recognize([page()], undefined, "note");
 		expect(result.warnings).toEqual(["a margin note could not be transcribed: exit 1"]);
+	});
+
+	// Ticket 43: the signs are for pages; a margin note keeps its own prompt.
+	it("reads a page with the user's signs, and a margin note with the note prompt still", async () => {
+		const runPage = vi.fn(async () => textOutcome("text"));
+		const backend = new LocalOcrBackend({ runPage, settings: {}, generation: MODEL_GENERATIONS[0], prompt: "with my signs" });
+		await backend.recognize([page()]);
+		await backend.recognize([page()], undefined, "note");
+		expect(runPage.mock.calls.map((call: unknown[]) => call[1])).toEqual(["with my signs", NOTE_TRANSCRIPTION_PROMPT]);
 	});
 
 	it("reads a page with the page prompt, as before", async () => {
@@ -355,6 +364,21 @@ describe("pageArgs", () => {
 		expect(args.filter((a) => a === "--image")).toHaveLength(1);
 		expect(args[args.indexOf("--temp") + 1]).toBe("0");
 		expect(args[args.indexOf("--seed") + 1]).toBe("42");
+	});
+
+	// Research 35: the 2B looped on three reference pages when asked to copy the signs, so it keeps the prompt it was measured with.
+	it("asks a model to keep the writer's marks only when the generation can take it", () => {
+		const prompt = (keepsMarks: boolean) => localPrompt({ ...withContext, keepsMarks });
+		expect(prompt(true)).toBe(TRANSCRIPTION_PROMPT);
+		expect(prompt(false)).toBe(PLAIN_TRANSCRIPTION_PROMPT);
+		// The user's signs (ticket 43) reach only a model that keeps marks.
+		expect(localPrompt({ ...withContext, keepsMarks: true }, "with my signs")).toBe("with my signs");
+		expect(localPrompt({ ...withContext, keepsMarks: false }, "with my signs")).toBe(PLAIN_TRANSCRIPTION_PROMPT);
+		expect(MODEL_GENERATIONS.map((g) => [g.dir, g.keepsMarks])).toEqual([
+			["qwen3-vl-8b-instruct-q4_k_m", true],
+			["qwen2.5-vl-7b-instruct-q4_k_m", false],
+			["qwen3-vl-2b-instruct-q4_k_m", false],
+		]);
 	});
 });
 

@@ -4,6 +4,7 @@ import { ocrBackendEntries, ocrBackendEntry } from "../src/ocr-registry";
 import "../src/vision-register";
 import { OWN_SERVER_MAX_TOKENS } from "../src/openai-compat-ocr-backend";
 import "./llm-register";
+import { DIAGRAM_PROMPT, pagePrompt, TRANSCRIPTION_PROMPT } from "../src/llm-transcript";
 
 /**
  * The regression this file exists to guard, named by the managed-local-LLM spec §6.4.
@@ -74,6 +75,13 @@ describe("a page's answer budget", () => {
 		const maxTokens = (id: string, settings: Record<string, string>) => (ocrBackendEntry(id)?.create(settings) as unknown as { maxTokens?: number }).maxTokens;
 		for (const id of ["ollama", "lmstudio", "custom"]) expect(maxTokens(id, { baseURL: "http://h/v1" }), id).toBe(OWN_SERVER_MAX_TOKENS);
 		for (const id of ["openai", "gemini", "openrouter"]) expect(maxTokens(id, { apiKey: "k" }), id).toBeUndefined();
+	});
+
+	// Ticket 38: the cloud reads text and diagram in one request, as measured; the user's own servers in two.
+	it("asks the user's own servers for the diagram apart, and the cloud in one prompt", () => {
+		const adapter = (id: string, settings: Record<string, string>) => ocrBackendEntry(id)?.create(settings) as unknown as { prompt: string; diagramPrompt?: string };
+		for (const id of ["ollama", "lmstudio", "custom"]) expect(adapter(id, { baseURL: "http://h/v1" }), id).toMatchObject({ prompt: pagePrompt([], false), diagramPrompt: DIAGRAM_PROMPT });
+		for (const id of ["openai", "gemini", "openrouter"]) expect(adapter(id, { apiKey: "k" }), id).toMatchObject({ prompt: TRANSCRIPTION_PROMPT, diagramPrompt: undefined });
 	});
 });
 

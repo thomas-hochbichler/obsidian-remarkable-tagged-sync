@@ -22,6 +22,11 @@ export interface NoteFrontmatter {
 	folder: string | null;
 	type: "notebook" | "pdf" | "epub";
 	/**
+	 * Which of the plugin's two notes this is: the transcript note (Transcript Mode) or an insight note
+	 * (Intelligence Mode). The file explorer cannot tell them apart; a vault view can, by this.
+	 */
+	kind: "transcript" | "insight";
+	/**
 	 * How many pages this *note* covers -- every live page for a notebook-tag note, 1 for a page-tag
 	 * note. The cost signal issue #107 asked for: a transcription backend is billed one request per
 	 * page of the note, so this is what sorting by "expensive first" before a large sync has to read.
@@ -33,7 +38,7 @@ export interface NoteFrontmatter {
 	/**
 	 * Which page of the document this note is, 1-based -- the same ordinal the transcript prints as
 	 * `pageLabel`. Written on page-tag notes only: a notebook-tag note covers pages 1..n and has no
-	 * current page, so it gets no key. That absence doubles as the vault-side filter for "page notes
+	 * current page, so it gets no key. That absence doubles as the vault-side filter for "page-tag notes
 	 * only".
 	 */
 	page: number | null;
@@ -102,6 +107,7 @@ const MANAGED_KEYS = [
 	"remarkable-synced",
 	"remarkable-folder",
 	"remarkable-type",
+	"remarkable-kind",
 	"remarkable-pages",
 	"remarkable-page",
 	"remarkable-pinned",
@@ -117,8 +123,11 @@ const ZOTERO_KEY = "zotero-key";
 const ZOTERO_LIBRARY = "zotero-library";
 const CITEKEY = "citekey";
 
-// Same shape note-builder matches: a leading `---` block closed by `---` on its own line.
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/;
+// Same shape note-builder matches: a leading `---` block closed by `---` on its own line. Insight notes
+// come from the user's template, which can hold an empty block (`---` right under `---`): its body
+// group is absent, and that is tried first (`??`), or the block would run on to the next `---` in
+// the body.
+const FRONTMATTER_RE = /^---\n(?:([\s\S]*?)\n)??---\n?/;
 
 /**
  * Local ISO 8601 to the minute (`2026-08-26T14:30`) -- Dataview-native, and same-day syncs still
@@ -171,6 +180,7 @@ function scalarValues(frontmatter: NoteFrontmatter): Record<(typeof MANAGED_KEYS
 		"remarkable-synced": frontmatter.synced,
 		"remarkable-folder": frontmatter.folder === null ? null : yamlValue(frontmatter.folder),
 		"remarkable-type": frontmatter.type,
+		"remarkable-kind": frontmatter.kind,
 		"remarkable-pages": frontmatter.pages === null ? null : String(frontmatter.pages),
 		"remarkable-page": frontmatter.page === null ? null : String(frontmatter.page),
 		"remarkable-pinned": String(frontmatter.pinned),
@@ -301,7 +311,7 @@ export function applyFrontmatter(
 		return { content: `---\n${lines.join("\n")}\n---\n${content}`, ownTags: frontmatter.tags };
 	}
 
-	const lines = mergeZoteroKeys(mergeScalars(mergeTags(match[1].split("\n"), frontmatter.tags, previousOwnTags), frontmatter), frontmatter);
+	const lines = mergeZoteroKeys(mergeScalars(mergeTags(match[1]?.split("\n") ?? [], frontmatter.tags, previousOwnTags), frontmatter), frontmatter);
 	return {
 		content: `---\n${lines.join("\n")}\n---\n${content.slice(match[0].length)}`,
 		ownTags: frontmatter.tags,
@@ -319,7 +329,8 @@ export function applyFrontmatter(
  */
 export function removeFrontmatter(content: string, ownTags: string[]): string | null {
 	const match = content.match(FRONTMATTER_RE);
-	if (!match) return null;
+	// No block, or an empty one: nothing in it is the plugin's.
+	if (match?.[1] === undefined) return null;
 
 	let lines = mergeTags(match[1].split("\n"), [], ownTags);
 	lines = lines.filter((line) => ![...MANAGED_KEYS, ZOTERO_KEY, ZOTERO_LIBRARY].some((key) => line.startsWith(`${key}:`)));

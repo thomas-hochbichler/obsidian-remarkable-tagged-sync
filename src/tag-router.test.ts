@@ -14,6 +14,20 @@ describe("TagRouter", () => {
 		expect(router.resolveFolder("journal")).toBeNull();
 	});
 
+	it("transcribes and does not extract a mapped tag when no modes are given, as before the Intelligence Engine", () => {
+		const router = new TagRouter({ sync: "reMarkable/Sync" });
+
+		expect([router.transcribes("sync"), router.extracts("sync")]).toEqual([true, false]);
+		expect([router.transcribes("other"), router.extracts("other")]).toEqual([false, false]);
+	});
+
+	it("follows the modes it is given, but only for a tag that is mapped", () => {
+		const router = new TagRouter({ sync: "S" }, (tag) => ({ transcript: tag !== "sync", intelligence: true }));
+
+		expect([router.transcribes("sync"), router.extracts("sync")]).toEqual([false, true]);
+		expect(router.extracts("unmapped")).toBe(false);
+	});
+
 	it("returns null when nothing is mapped", () => {
 		const router = new TagRouter({});
 

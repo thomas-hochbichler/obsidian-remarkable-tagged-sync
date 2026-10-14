@@ -19,6 +19,7 @@ function fields(overrides: Partial<NoteFrontmatter> = {}): NoteFrontmatter {
 		synced: "2026-08-25T17:02",
 		folder: "Work/Projekt X",
 		type: "notebook",
+		kind: "transcript",
 		pages: 12,
 		page: null,
 		pinned: true,
@@ -41,6 +42,7 @@ describe("applyFrontmatter on a note without frontmatter", () => {
 				"remarkable-synced: 2026-08-25T17:02\n" +
 				"remarkable-folder: Work/Projekt X\n" +
 				"remarkable-type: notebook\n" +
+				"remarkable-kind: transcript\n" +
 				"remarkable-pages: 12\n" +
 				"remarkable-pinned: true\n" +
 				"remarkable-uuid: aaaa0002-0000-0000-0000-000000000000\n" +
@@ -91,6 +93,21 @@ describe("applyFrontmatter on a note the user already gave frontmatter", () => {
 	it("quotes a folder YAML would misread", () => {
 		const { content } = applyFrontmatter(BODY, fields({ folder: "Work: Notes" }), []);
 		expect(content).toContain('remarkable-folder: "Work: Notes"\n');
+	});
+});
+
+describe("an empty frontmatter block, as a template can hold one", () => {
+	const EMPTY = "---\n---\nBody\n\n---\nBelow the rule\n";
+
+	it("is filled by applyFrontmatter, instead of a second block stacked on it or the body taken for frontmatter", () => {
+		const { content } = applyFrontmatter(EMPTY, fields(), []);
+		expect(content.startsWith("---\ntags:\n  - remarkable/projekt-x\n")).toBe(true);
+		expect(content.endsWith("\n---\nBody\n\n---\nBelow the rule\n")).toBe(true);
+		expect(content).not.toContain("---\n---");
+	});
+
+	it("is left as it is by removeFrontmatter: nothing in it is the plugin's", () => {
+		expect(removeFrontmatter(EMPTY, [])).toBeNull();
 	});
 });
 

@@ -111,6 +111,38 @@ describe("OpenAiCompatOcrBackend", () => {
 		expect(content[1].image_url!.url.startsWith("data:image/png;base64,")).toBe(true);
 	});
 
+	// Ticket 43: the user's signs reach the transcript through the prompt the run was built with.
+	it("sends the prompt it was given, and the one for no signs without", async () => {
+		fetchMock.mockResolvedValue(chatResponse("x"));
+		await new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", model: "m", prompt: "with my signs", fetchFn: fetchMock }).recognize([page()]);
+		await new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", model: "m", fetchFn: fetchMock }).recognize([page()]);
+
+		const sent = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).messages[0].content[0].text);
+		expect(sent).toEqual(["with my signs", TRANSCRIPTION_PROMPT]);
+	});
+
+	// Ticket 38: on a server of the user's own the diagram is asked for alone, so the page's text cannot go.
+	it("reads a page twice when told to, and puts the diagram into the text", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("Plan\nlogin\nBrowser\nDone")).mockResolvedValueOnce(chatResponse("```mermaid\ngraph TD\n    login --> Browser\n```"));
+		const result = await new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://x/v1", model: "m", prompt: "text only", diagramPrompt: "diagram only", fetchFn: fetchMock }).recognize([page()]);
+
+		expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).messages[0].content[0].text)).toEqual(["text only", "diagram only"]);
+		expect(result.pages?.[0]).toEqual({ status: "ok", text: "Plan\n```mermaid\ngraph TD\n    login --> Browser\n```\nDone" });
+	});
+
+	it("keeps the page's text, and says nothing, when the diagram request fails; and asks a margin note once", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("Plan")).mockResolvedValueOnce(jsonResponse(500, {}));
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://x/v1", model: "m", diagramPrompt: "diagram only", fetchFn: fetchMock, sleepFn: async () => {} });
+		const result = await backend.recognize([page()]);
+		expect(result.pages?.[0]).toEqual({ status: "ok", text: "Plan" });
+		expect(result.warnings ?? []).toEqual([]);
+
+		fetchMock.mockClear();
+		fetchMock.mockResolvedValue(chatResponse("Nachfragen"));
+		await backend.recognize([page()], undefined, "note");
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
 	it("tolerates a trailing slash on the base URL (Gemini compat endpoint)", async () => {
 		fetchMock.mockResolvedValue(chatResponse("x"));
 		const backend = new OpenAiCompatOcrBackend({
@@ -652,7 +684,7 @@ describe("reporting pages dropped for truncation", () => {
 		expect(result.status).toBe("ok");
 		expect(result.warnings).toEqual([
 			"2 pages were left out because the model's answer ran past what it may return — this happens with models that reason " +
-				'before answering. A later sync will not pick them up on its own: switch to a model that doesn\'t reason, then run "Re-transcribe all synced notes".',
+				'before answering. The next three syncs try them again; if that does not help, switch to a model that doesn\'t reason, then run "Re-transcribe all synced notes".',
 		]);
 	});
 
@@ -698,8 +730,8 @@ describe("reporting pages dropped for truncation", () => {
 		const result = await backend.recognize([page()]);
 
 		expect(result.warnings).toEqual([
-			"1 page was left out because the model's answer was cut off before it was complete. A later sync will not pick it up on " +
-				'its own: "Copy diagnostics" shows what cut it off, and once that is fixed, run "Re-transcribe all synced notes".',
+			"1 page was left out because the model's answer was cut off before it was complete. The next three syncs try it again; " +
+				'if that does not help, "Copy diagnostics" shows what cut it off, and once that is fixed, run "Re-transcribe all synced notes".',
 		]);
 	});
 

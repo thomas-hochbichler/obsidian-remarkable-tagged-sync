@@ -12,6 +12,43 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **The Intelligence Engine: one Obsidian note per handwritten page, with its tasks and a summary.**
+  Switch on page notes for a tag, and every page you write from then on becomes a note built from
+  your own template. Tasks land as Tasks-plugin checkboxes with their due dates, a summary under its
+  own heading. When the page changes, the note is updated line by line, and nothing you edited in
+  Obsidian is overwritten: what the engine is unsure about waits for you under **Review proposals**,
+  one list over all notes. A tick on the page ticks the task in the note. Pages written before you
+  switched page notes on are left alone. Free runs on the local model on this computer, for one tag.
+
+- **Leave out empty headings.** Switch this on in a profile, and a page with no tasks gets no
+  "Tasks" heading. When you later write a task on that page, the heading is added exactly where
+  your template has it.
+
+- **With Tagged Sync Pro: your own slots, several profiles, and cloud models.** Build your own
+  things to take out of a page — expenses, open questions, a project — as lists, checklists with
+  typed fields, single values, or frontmatter properties and tags. Give a tag several profiles and
+  let a cloud model sort each page into the right one, or change the profile of one page by hand.
+
+- **Your own signs, in the transcript and in page notes.** Under Transcription → Signs, say which
+  sign a line can start with and what it means: an open task, a done one, one moved elsewhere, an
+  event, a note, or something of your own. **Bullet journal** fills in Ryder Carroll's key in one
+  click. The transcript copies these signs as you drew them, and page notes read them: a crossed
+  task comes back done, a migrated one is left out. Apple Vision and the two smaller local models
+  keep no signs, and the settings say so where you set them.
+
+- **Before you switch page notes on, update Tagged Sync on every device that shares this vault.**
+  An older version writes its settings without the page-note setup, and that would remove it on
+  every device.
+
+### Changed
+
+- **Apple Vision keeps a line in one piece.** Vision sometimes split one line of handwriting in two,
+  such as "Backup → Anna", and the transcript showed the halves on separate lines. Parts on the same
+  row are now joined again. On our reference pages the reading is exactly as accurate as before; on
+  real work pages, page notes find more of your tasks and invent fewer.
+
 ### Fixed
 
 - **A model that thinks before it answers no longer writes its thinking into your notes.** With some

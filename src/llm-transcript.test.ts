@@ -9,8 +9,13 @@ import {
 	LLM_MAX_PARALLELISM,
 	NOTE_TRANSCRIPTION_PROMPT,
 	pageCount,
+	DIAGRAM_PROMPT,
+	pagePrompt,
+	placeDiagram,
+	PLAIN_TRANSCRIPTION_PROMPT,
 	readAgain,
 	refusalDetail,
+	repairMermaid,
 	sanitizeTranscript,
 	splitAtTypedText,
 	TRANSCRIPTION_PROMPT,
@@ -74,6 +79,43 @@ describe("TRANSCRIPTION_PROMPT", () => {
 		expect(TRANSCRIPTION_PROMPT).not.toContain("separated by a blank line");
 	});
 
+	// Research 31: without these a model wrote every Bullet Journal sign as "- ", and a migrated task
+	// read as open; boxes and strike-through went missing as well.
+	it("keeps what the writer marked: strike-through, boxes, and the sign a line starts with", () => {
+		expect(TRANSCRIPTION_PROMPT).toContain("Write struck-through text as ~~text~~");
+		expect(TRANSCRIPTION_PROMPT).toContain("- [ ] when it is empty and as - [x] when it holds a tick or a cross");
+		expect(TRANSCRIPTION_PROMPT).toContain("Copy the sign a line starts with exactly as drawn: • X > < ○ —.");
+	});
+
+	// Ticket 43: the user's signs replace the fixed list, and the sign takes the list marker's place
+	// (ticket 42's "- - "). An empty table is the measured prompt, unchanged.
+	it("copies the user's signs, in place of the list marker", () => {
+		expect(pagePrompt([])).toBe(TRANSCRIPTION_PROMPT);
+		expect(TRANSCRIPTION_PROMPT).not.toContain("list marker");
+
+		const prompt = pagePrompt([
+			{ glyph: "★", meaning: "custom", text: "important" },
+			{ glyph: "△", drawn: "a small triangle", meaning: "custom", text: "an idea" },
+			{ glyph: " ", meaning: "note" },
+		]);
+		expect(prompt).toContain("Copy the sign a line starts with exactly as drawn: ★, △ for a small triangle. ");
+		expect(prompt).toContain("The sign stands in place of the list marker: write ★ text, never - ★ text; a list line without a sign starts with - as usual.");
+		expect(prompt).not.toContain("• X > < ○ —");
+		// The example shows the sign alone, never its look.
+		expect(pagePrompt([{ glyph: "•", drawn: "a dot", meaning: "task-open" }])).toContain("write • text, never - • text;");
+		expect(prompt.startsWith(PLAIN_TRANSCRIPTION_PROMPT)).toBe(true);
+		expect(prompt).toContain("Every line of text outside the diagram is transcribed as usual, none left out.");
+	});
+
+	// Ticket 38: words joined by drawn lines came out as loose lines that read like sentences.
+	it("writes a drawn diagram as a Mermaid flowchart, and nothing else as one", () => {
+		expect(TRANSCRIPTION_PROMPT).toContain("as a Mermaid flowchart in a ```mermaid block");
+		expect(TRANSCRIPTION_PROMPT).toContain("Add no node, edge or label that is not drawn.");
+		expect(TRANSCRIPTION_PROMPT).toContain("Lines, boxes, brackets and underlines that do not join words are not a diagram.");
+		expect(TRANSCRIPTION_PROMPT).toContain("Every line of text outside the diagram is transcribed as usual, none left out.");
+		expect(PLAIN_TRANSCRIPTION_PROMPT).not.toContain("Mermaid");
+	});
+
 	// One prompt, shared verbatim by the six Pro providers and the free local model. A second copy
 	// that drifts would silently regress whichever build owns it.
 	it("is one string, not a template", () => {
@@ -116,6 +158,111 @@ describe("the words a model backend's warning is made of", () => {
 	it("leaves an added page's count out too", () => {
 		expect(pageCount(1, "added-page")).toBe("pages added on the tablet were");
 		expect(upperFirst(pageCount(1, "added-page"))).toBe("Pages added on the tablet were");
+	});
+});
+
+// Ticket 38, 2026-10-14: asked for text and diagram at once, qwen3-vl-30b-a3b-instruct gave back only
+// the diagram for the user's page 4 -- an open and a done task among the lines lost.
+describe("the diagram in a request of its own", () => {
+	it("leaves the diagram sentences out of the page prompt, and nothing else", () => {
+		const text = pagePrompt([], false);
+		expect(text).not.toContain("Mermaid");
+		expect(text.endsWith("Transcribe exactly what is written; do not correct spelling or wording.")).toBe(true);
+		expect(TRANSCRIPTION_PROMPT.startsWith(text)).toBe(true);
+		expect(pagePrompt([])).toBe(TRANSCRIPTION_PROMPT);
+		// The diagram prompt: quoted node words, a line with an arrow in it is text, nothing without a diagram.
+		expect(DIAGRAM_PROMPT).toContain('A["words"]');
+		expect(DIAGRAM_PROMPT).toContain("8k -> 16k, is text");
+		expect(DIAGRAM_PROMPT).toContain("nothing at all when the page holds no diagram");
+	});
+
+	// The user's page 4 as the two requests would read it: the text with the diagram's words loose, and the diagram.
+	const text = [
+		"14/10/2026",
+		"7:30h • CAIMAN loggin issue on PROD analyze",
+		"× TARDIS icto registration on insa-test -> /HSR-7234",
+		"",
+		"CAIMAN PROD ISSUE",
+		"login",
+		"INSK Browser",
+		"calls. callback",
+		"",
+		"Done today",
+	].join("\n");
+	const diagram = ["```mermaid", "graph TD", '    A["CAIMAN PROD ISSUE"] --> B["login"]', '    B --> C["INSK Browser"]', '    C -->|calls.| D["callback"]', "```"].join("\n");
+
+	it("puts the diagram where its words stood, and keeps every other line where it was", () => {
+		expect(placeDiagram(text, diagram)).toBe(
+			["14/10/2026", "7:30h • CAIMAN loggin issue on PROD analyze", "× TARDIS icto registration on insa-test -> /HSR-7234", "", diagram, "", "Done today"].join("\n"),
+		);
+	});
+
+	it("keeps the text as it is without a diagram, and puts a diagram whose words stand nowhere after it", () => {
+		expect(placeDiagram(text, "")).toBe(text);
+		expect(placeDiagram("- [ ] call Anna", diagram)).toBe(`- [ ] call Anna\n\n${diagram}`);
+	});
+
+	// Reference page 08, qwen3-vl-30b-a3b-instruct's text request, live 2026-10-14.
+	it("takes a line of arrows alone between the diagram's words, and leaves one elsewhere and a divider", () => {
+		const block = ["```mermaid", "graph LR", '    A["Gerät"] --> B["Abgleich"]', '    B --> C["Notiz"]', '    B --> D["Zwischenspeicher"]', "```"].join("\n");
+		expect(placeDiagram("Abgab\n\nGerät → Abgleich → Notiz\n↓\nZwischenspeicher\n\n---\n\n↓ morgen\n→", block)).toBe(`Abgab\n\n${block}\n\n---\n\n↓ morgen\n→`);
+	});
+
+	// Qwen3-VL-8B in LM Studio, 2026-10-14: every line of a page with no diagram became a node, and only the block was left.
+	it("trusts no diagram that copied the page's lines into its nodes, and never takes a list item or a task", () => {
+		const page = ["13/10/2026", "- [x] IMSA-7232: Conjur → TARDIS Wipe Out Playground", "  - CICD auth problem", "× Analyse the CAIMAN 502 Login issue on PROD"].join("\n");
+		const copied = ["```mermaid", "flowchart TD", '    A["X IMSA-7232: Conjur → TARDIS Wipe Out Playground"] --> B["- CICD auth problem"]', '    U["× Analyse the CAIMAN 502 Login issue on PROD"]', "```"].join("\n");
+		expect(placeDiagram(page, copied)).toBe(page);
+		const words = ["```mermaid", "graph TD", '    A["login"] --> B["Browser"]', "```"].join("\n");
+		expect(placeDiagram("- login\nX Browser\nlogin\nBrowser", words)).toBe(`- login\nX Browser\n${words}`);
+	});
+
+	it("never takes a line with a word of its own, and takes a diagram drawn in a code fence whole", () => {
+		const drawn = ["Plan", "```", "+-------+     +-------+", "| login | --> | INSK Browser |", "+-------+     +-------+", "```", "login again tomorrow"].join("\n");
+		expect(placeDiagram(drawn, diagram)).toBe(["Plan", diagram, "login again tomorrow"].join("\n"));
+	});
+});
+
+// 2026-10-14, the user's page: every node with a space, a dot or a tilde in its name broke the whole block
+// ("Error parsing Mermaid diagram!"). Checked against Mermaid 11's own parser: fails as written, parses repaired.
+describe("repairMermaid", () => {
+	const block = (...lines: string[]) => ["```mermaid", ...lines, "```"].join("\n");
+
+	it("names each node whose words Mermaid cannot take as a name, and keeps the words as written", () => {
+		const page = block(
+			"graph TD",
+			"    login --> INS A Browser",
+			"    CAIMAN ADMIN",
+			"    INS A Browser --> calls.",
+			"    calls. --> ~~k8s Nginx-Ingress~~",
+			"    ~~k8s Nginx-Ingress~~ <--> api-gateway",
+			"    bff -->|same secret| auth-code",
+		);
+		expect(repairMermaid(page)).toBe(
+			block(
+				"graph TD",
+				'    login --> n1["INS A Browser"]',
+				'    n2["CAIMAN ADMIN"]',
+				'    n1["INS A Browser"] --> n3["calls."]',
+				'    n3["calls."] --> n4["~~k8s Nginx-Ingress~~"]',
+				'    n4["~~k8s Nginx-Ingress~~"] <--> n5["api-gateway"]',
+				'    bff -->|same secret| n6["auth-code"]',
+			),
+		);
+	});
+
+	it("leaves a block that is already right, and a line it does not understand, as they are", () => {
+		const right = block("flowchart LR", "    A[Einkauf] --- B(Milch)", "    %% a comment", "    subgraph Home", "    C --> D", "    end", "    --> dangling");
+		expect(repairMermaid(right)).toBe(right);
+	});
+
+	it("never names a node after a reserved word or one the block already uses, and keeps a quote inside the words", () => {
+		expect(repairMermaid(block("graph TD", "    n1 --> end", '    n1 --> say "hi"'))).toBe(block("graph TD", '    n1 --> n2["end"]', '    n1 --> n3["say #quot;hi#quot;"]'));
+	});
+
+	it("touches nothing outside a mermaid block, and is applied to every transcript", () => {
+		expect(repairMermaid("a --> b c\n```js\nx --> y z\n```")).toBe("a --> b c\n```js\nx --> y z\n```");
+		expect(sanitizeTranscript(block("graph TD", "    a b --> c"))).toBe(block("graph TD", '    n1["a b"] --> c'));
 	});
 });
 

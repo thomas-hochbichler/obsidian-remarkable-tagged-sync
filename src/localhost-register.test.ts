@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEl, takeSettings } from "../test-stubs/fake-obsidian";
+import { extractionBackendEntry } from "./intelligence/extraction-registry";
 import { ocrBackendEntry } from "./ocr-registry";
 import { unreachableMessage } from "./localhost-register";
 import { LOCALHOST_PROVIDERS } from "./localhost-providers";
 import { OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import "./localhost-register";
+import { DIAGRAM_PROMPT, pagePrompt } from "./llm-transcript";
 
-const probe = vi.hoisted(() => ({ verdict: { vision: "supported", thinking: "unknown" } as { vision: string; thinking: string } }));
+const probe = vi.hoisted(() => ({ verdict: { vision: "supported", thinking: "unknown" } as { vision: string; thinking: string; missing?: { suggestion: string | null } } }));
 
 vi.mock("./localhost-vision-detect", async (importOriginal) => ({
 	...(await importOriginal<typeof import("./localhost-vision-detect")>()),
@@ -86,6 +88,15 @@ describe("create()", () => {
 
 		expect(result?.status).toBe("failed");
 		expect(result?.warnings?.[0]).toContain("No model is set");
+	});
+
+	// Ticket 38: a local model asked for text and diagram at once dropped the text; the diagram goes alone.
+	it("reads a page's diagram in a request of its own, with the user's signs in the text prompt", () => {
+		for (const id of IDS) {
+			const adapter = ocrBackendEntry(id)?.create({ baseURL: "http://h/v1" }, { silent: false, signs: [{ glyph: "★", meaning: "note" }] }) as unknown as { prompt: string; diagramPrompt: string };
+			expect(adapter.prompt, id).toBe(pagePrompt([{ glyph: "★", meaning: "note" }], false));
+			expect(adapter.diagramPrompt, id).toBe(DIAGRAM_PROMPT);
+		}
 	});
 
 	it("caps every page's answer on these servers, so a model that reasons without end stops in minutes, not at the ten-minute limit", () => {
@@ -172,6 +183,16 @@ describe("the thinking line in the localhost callout", () => {
 		expect(callout.children.map((line) => line.style["color"])).toEqual(["var(--text-success)", "var(--text-warning)"]);
 	});
 
+	it("says only that the server has no such model, with the name that fits, in the error colour", async () => {
+		probe.verdict = { vision: "supported", thinking: "on", missing: { suggestion: "qwen/qwen3-vl-8b" } };
+		const callout = show("lmstudio", { model: "qwen3-vl-8b" });
+
+		await settle();
+
+		expect(lines(callout)).toEqual(['⚠ The server has no model "qwen3-vl-8b". Did you mean "qwen/qwen3-vl-8b"?']);
+		expect(callout.children[0].style["color"]).toBe("var(--text-error)");
+	});
+
 	it("keeps the field for the urgent half when the model cannot see images", async () => {
 		probe.verdict = { vision: "unsupported", thinking: "on" };
 		const callout = show("ollama", { model: "llama3.2" });
@@ -189,5 +210,24 @@ describe("the thinking line in the localhost callout", () => {
 		await settle();
 
 		expect(lines(callout)).toEqual(['✓ "qwen2.5vl:7b" supports image input.']);
+	});
+});
+
+describe("the same servers as extraction backends", () => {
+	it("name the extraction model when the server says it reasons or does not have it, and nothing when it does not or cannot say", async () => {
+		const before = probe.verdict;
+		try {
+			probe.verdict = { vision: "supported", thinking: "on" };
+			expect(await extractionBackendEntry("lmstudio")!.modelNote!({ model: "set-there" }, null)).toEqual({ kind: "reasons", model: "set-there" });
+			expect(await extractionBackendEntry("ollama")!.modelNote!({ model: "set-there" }, "typed")).toEqual({ kind: "reasons", model: "typed" });
+			for (const thinking of ["off", "unknown"]) {
+				probe.verdict = { vision: "supported", thinking };
+				expect(await extractionBackendEntry("lmstudio")!.modelNote!({ model: "m" }, null)).toBeNull();
+			}
+			probe.verdict = { vision: "supported", thinking: "unknown", missing: { suggestion: "qwen/qwen3-vl-8b" } };
+			expect(await extractionBackendEntry("lmstudio")!.modelNote!({ model: "m" }, "qwen3-vl-8b")).toEqual({ kind: "missing", model: "qwen3-vl-8b", suggestion: "qwen/qwen3-vl-8b" });
+		} finally {
+			probe.verdict = before;
+		}
 	});
 });

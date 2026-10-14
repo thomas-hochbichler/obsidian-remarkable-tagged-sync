@@ -303,6 +303,27 @@
       file: test-stubs/fake-obsidian.test.ts
       test: "the plugin host > holds an onLayoutReady callback until the workspace is ready, then runs it"
 
+    - id: T9.3
+      scenario: A plugin registers an obsidian:// handler, as the review callout needs
+      expect: The handler is kept by its action, so a test opens the link by calling it
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "the plugin host > keeps each obsidian:// handler by its action, so a test can open the link"
+
+    - id: T9.4
+      scenario: The plugin keeps files in its own folder through vault.adapter, outside the note index
+      expect: Written files read back and exist, never appear as notes, a missing one rejects as fs does, and the config folder is Obsidian's default
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "files outside the note index > reads back what was written through the adapter, never as a note, rejects a missing file, and has the default config folder"
+
+    - id: T9.5
+      scenario: A settings component is returned from a promise callback
+      expect: Components are thenables as in Obsidian (BaseComponent.then calls back with itself), so that mistake hangs a test instead of a user's settings tab
+      layer: unit
+      file: test-stubs/fake-obsidian.test.ts
+      test: "components are thenables, as in Obsidian > calls back with the component and hands it back, so a promise returning one never settles"
+
 - feature: T10
   name: The settings controls the plugin reaches past
   code: test-stubs/fake-obsidian.ts

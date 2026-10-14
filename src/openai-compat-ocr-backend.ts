@@ -13,7 +13,9 @@ import {
 	sanitizeTranscript,
 	type Sleep,
 	transcribePages,
-	them,
+	nextStep,
+	placeDiagram,
+	TRANSCRIPTION_PROMPT,
 	transcriptionPrompt,
 	triedAgain,
 	upperFirst,
@@ -41,6 +43,14 @@ export interface OpenAiCompatOcrOptions {
 	 * runs ({@link OWN_SERVER_MAX_TOKENS}); the cloud ones keep their own ceilings (spec §3.1).
 	 */
 	maxTokens?: number;
+	/** The transcription prompt, with the user's signs; absent, the one for no signs. */
+	prompt?: string;
+	/**
+	 * Set for the servers the user runs: a page is read a second time for its diagram alone, and
+	 * `placeDiagram` puts that into the text of the first (ticket 38). `prompt` is then the page prompt
+	 * without diagrams. Absent, one request a page, as the cloud is measured to handle.
+	 */
+	diagramPrompt?: string;
 	fetchFn?: typeof fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
@@ -163,6 +173,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly extraHeaders: Record<string, string>;
 	private readonly deterministic: boolean;
 	private readonly maxTokens: number | undefined;
+	private readonly prompt: string;
+	private readonly diagramPrompt: string | undefined;
 	private readonly fetchFn: typeof fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
@@ -202,6 +214,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.extraHeaders = options.extraHeaders ?? {};
 		this.deterministic = options.deterministic ?? false;
 		this.maxTokens = options.maxTokens;
+		this.prompt = options.prompt ?? TRANSCRIPTION_PROMPT;
+		this.diagramPrompt = options.diagramPrompt;
 		// Reads as the global fetch and is not one: esbuild's `inject` rewrites this free identifier to
 		// the CORS-free requestUrl shim inside the bundle. `src/fetch-shim.ts` names this exact pattern
 		// -- "the OCR backends' `fetchFn ?? fetch` defaults" -- as one of the two it exists for. The
@@ -268,37 +282,62 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		return result;
 	}
 
-	/** One page, one request. Every outcome that isn't usable text is `failed` for that page alone. */
+	/** One request: the page's image under `prompt`. */
+	private async ask(page: RmPage, framing: OcrFraming, prompt: string): Promise<Response> {
+		const content = [
+			{ type: "text", text: prompt },
+			{
+				type: "image_url",
+				image_url: { url: `data:image/png;base64,${Buffer.from(ocrImage(page, framing)).toString("base64")}` },
+			},
+		];
+
+		const headers: Record<string, string> = { "content-type": "application/json", ...this.extraHeaders };
+		if (this.apiKey) headers["authorization"] = `Bearer ${this.apiKey}`;
+
+		// No max_tokens in the cloud: the spec's request body omits it (§3.1), and providers differ on
+		// the ceiling. On the user's own servers `maxTokens` caps a model that reasons without end;
+		// either way truncation is caught via `finish_reason`.
+		//
+		// `temperature` is spread in rather than always sent, so the cloud providers keep receiving
+		// exactly `{ model, messages }` -- see `deterministic` in the options, and `ProviderMeta` for
+		// which providers set it and why.
+		return await fetchWithRetry(
+			this.fetchFn,
+			chatCompletionsUrl(this.baseURL),
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify({ model: this.model, messages: [{ role: "user", content }], ...(this.deterministic ? { temperature: 0 } : {}), ...(this.maxTokens === undefined ? {} : { max_tokens: this.maxTokens }) }),
+			},
+			this.sleepFn,
+		);
+	}
+
+	/**
+	 * The page's diagram, read alone and put into its text (ticket 38). Quiet when it fails: the text is
+	 * whole without it, so nothing was left out and the end-of-sync report has nothing to say.
+	 */
+	private async withDiagram(page: RmPage, framing: OcrFraming, text: string): Promise<string> {
+		if (this.diagramPrompt === undefined || framing === "note") return text;
+		try {
+			const response = await this.ask(page, framing, this.diagramPrompt);
+			const body = response.ok ? ((await response.json()) as OpenAiChatResponse) : null;
+			if (body === null || body.choices?.[0]?.finish_reason === "length") {
+				console.warn(`Tagged Sync: ${this.id} diagram pass gave nothing usable, the page keeps its text`);
+				return text;
+			}
+			return placeDiagram(text, sanitizeTranscript(body.choices?.[0]?.message?.content ?? ""));
+		} catch (error) {
+			console.warn(`Tagged Sync: ${this.id} diagram pass failed, the page keeps its text`, error);
+			return text;
+		}
+	}
+
+	/** One page, one request -- two on a server of the user's own (`withDiagram`). Every outcome that isn't usable text is `failed` for that page alone. */
 	private async transcribePage(page: RmPage, framing: OcrFraming): Promise<LlmPageOutcome> {
 		try {
-			const content = [
-				{ type: "text", text: transcriptionPrompt(framing) },
-				{
-					type: "image_url",
-					image_url: { url: `data:image/png;base64,${Buffer.from(ocrImage(page, framing)).toString("base64")}` },
-				},
-			];
-
-			const headers: Record<string, string> = { "content-type": "application/json", ...this.extraHeaders };
-			if (this.apiKey) headers["authorization"] = `Bearer ${this.apiKey}`;
-
-			// No max_tokens in the cloud: the spec's request body omits it (§3.1), and providers differ on
-			// the ceiling. On the user's own servers `maxTokens` caps a model that reasons without end;
-			// either way truncation is caught below via `finish_reason`.
-			//
-			// `temperature` is spread in rather than always sent, so the cloud providers keep receiving
-			// exactly `{ model, messages }` -- see `deterministic` in the options, and `ProviderMeta` for
-			// which providers set it and why.
-			const response = await fetchWithRetry(
-				this.fetchFn,
-				chatCompletionsUrl(this.baseURL),
-				{
-					method: "POST",
-					headers,
-					body: JSON.stringify({ model: this.model, messages: [{ role: "user", content }], ...(this.deterministic ? { temperature: 0 } : {}), ...(this.maxTokens === undefined ? {} : { max_tokens: this.maxTokens }) }),
-				},
-				this.sleepFn,
-			);
+			const response = await this.ask(page, framing, transcriptionPrompt(framing, this.prompt));
 
 			if (!response.ok) {
 				// First refusal wins: with four pages in flight they are the same refusal anyway, and the
@@ -323,7 +362,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				return { kind: "failed" };
 			}
 
-			return { kind: "ok", text: sanitizeTranscript(body.choices?.[0]?.message?.content ?? "") };
+			return { kind: "ok", text: await this.withDiagram(page, framing, sanitizeTranscript(body.choices?.[0]?.message?.content ?? "")) };
 		} catch (error) {
 			// A server that answers nothing for ten minutes is running and reachable, so it is counted on
 			// its own rather than folded into `unreachable` -- "Is it running?" is the wrong thing to ask
@@ -365,8 +404,7 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
 			: "";
 	return (
 		`${upperFirst(pageCount(pages, framing))} left out because the server at ${baseURL} did not answer in ` +
-		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ${tallPage}A later sync will not pick ${them(pages, framing)} up on ` +
-		`its own: try a different model, then ${readAgain(framing)}.`
+		`${Math.round(OCR_REQUEST_TIMEOUT_MS / 60_000)} minutes. ${tallPage}${nextStep(pages, framing, `try a different model, then ${readAgain(framing)}`)}`
 	);
 }
 
@@ -376,9 +414,10 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
  * Four things it must carry, and each is there for a reason a shorter sentence loses: the cause in
  * the user's terms rather than `finish_reason`; that the page was **left out** on purpose, so it does
  * not read as a plugin bug; the lever, which has to stand alone for someone who never opened
- * settings; and that the loss does **not** heal itself -- the next sync skips a document whose device
- * hash is unchanged. For a page the repair is "Re-transcribe all synced notes"; a margin note or a
- * page added to a PDF has none to run, and `readAgain` says what does bring it back.
+ * settings; and how far the loss heals itself (`nextStep`) -- a notebook page gets three more syncs,
+ * a margin note or a page added to a PDF none, because a document whose device hash is unchanged is
+ * skipped. For a page the repair is "Re-transcribe all synced notes"; a margin note or a page added
+ * to a PDF has none to run, and `readAgain` says what does bring it back.
  *
  * `pro/anthropic-ocr-backend.ts` carries the same four things and says so in its own docstring. The
  * one thing it cannot borrow is the lever: here the fix is a model that does not reason, or the
@@ -396,7 +435,7 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 	if (reasoning) {
 		return (
 			`${head} the model's answer ran past what it may return — this happens with models that reason before answering. ` +
-			`A later sync will not pick ${them(pages, framing)} up on its own: switch to a model that doesn't reason, then ${readAgain(framing)}.`
+			nextStep(pages, framing, `switch to a model that doesn't reason, then ${readAgain(framing)}`)
 		);
 	}
 	// Not `readAgain`: for a margin note that promises the next sync, which reads it again only under a
@@ -408,7 +447,7 @@ function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolea
 			? readAgain(framing)
 			: `switch "Handwritten notes" off and on in the settings to read them again — that reads every PDF's margin notes again`;
 	return (
-		`${head} the model's answer was cut off before it was complete. A later sync will not pick ${them(pages, framing)} up on its own: ` +
-		`"Copy diagnostics" shows what cut it off, and once that is fixed, ${repair}.`
+		`${head} the model's answer was cut off before it was complete. ` +
+		nextStep(pages, framing, `"Copy diagnostics" shows what cut it off, and once that is fixed, ${repair}`)
 	);
 }

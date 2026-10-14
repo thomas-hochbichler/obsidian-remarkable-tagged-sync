@@ -210,6 +210,56 @@ text, and nothing refills it on its own. Re-transcribing does. With the local mo
 whole-vault confirmation tells you how long the run will take on your machine, measured from your
 own pages.
 
+### Re-extracting
+
+Insight notes from Intelligence Mode have the same two commands, for working a page out again rather
+than reading it again. Neither reads your tablet a second time: they use the transcript already held.
+
+**Tagged Sync for reMarkable: Re-extract this note** — on an insight note, extracts its page again, at
+once. On a transcript note, every page of that notebook, pages written before insight notes were
+switched on included: those get their first insight note.
+
+**Tagged Sync for reMarkable: Re-extract all synced notes** does the same for every page under a tag
+with insight notes on. It says how many pages that is and asks first: each page is one request to the
+extraction backend.
+
+When you re-extract, an item the model no longer finds — because you changed the profile, say — is
+not removed on its own: it becomes a proposal to remove it, and you decide in the review. A plain sync
+never does this; there an item stays until its writing is gone from the page, because a model
+sometimes simply overlooks one.
+
+**Re-transcribe this note** on an insight note reads its page off the tablet again, and then extracts
+it. Apart from re-extracting a single insight note, which happens on the spot, each of these starts a
+sync at once; **Sync now** remains the one command that brings both kinds of note up to date.
+
+### Bullet Journal and other signs
+
+A transcript keeps what you marked on the page: struck-through words as ~~struck~~, drawn boxes as
+`- [ ]` and `- [x]`, and the sign a line starts with as you drew it. Insight notes read boxes and
+strike-through the same for everyone: an empty box is an open task, a ticked or crossed one is done, a
+struck line is left out.
+
+Words you joined with drawn lines or arrows — a sketch, a mind map, a little flow — come out as a
+diagram: a Mermaid flowchart that Obsidian draws, with your words as its boxes. Insight notes never take
+a task from inside a diagram. Underlines, boxes, brackets and dividers are left as they are. With a
+server of your own (Ollama, LM Studio), a page is read twice, once for its text and once for the
+diagram: asked for both at once, a local model sometimes kept the diagram and dropped the lines around it.
+
+What a sign means is yours to say, once for every notebook, under **Transcription → Signs**: one row
+per sign, with what it means — an open task, a done one, a task moved elsewhere, an event, a note, or
+something of your own in plain words. **Bullet journal** fills in Ryder Carroll's key: • an open task,
+X done, > migrated and < scheduled (not open on this page), ○ an event, — a note. Add a sign from the
+list offered, or type one; for a mark no character resembles, say what it looks like ("a small
+triangle"). The transcript copies exactly these signs, in place of the list dash, and insight notes
+read them. A change applies to pages transcribed from then on; the button under the table
+re-transcribes the notes already synced.
+
+Transcripts made before version 1.9.0 have no signs in them; **Re-transcribe this note** brings them
+in. Apple Vision reads text only, and the two smaller local models (Qwen3-VL-2B, Qwen2.5-VL-7B) are
+not asked to, so their transcripts keep no signs; the default local model, Qwen3-VL-8B, does. With
+one of those three selected, the settings say so next to your signs and under **Insight notes**: a
+Bullet Journal read without its signs comes back with finished and migrated tasks as open.
+
 ## Handwriting transcription
 
 ![A synced note in Obsidian: the two handwritten pages rendered on top, the searchable transcript below them](docs/screenshot-synced-note.png)
@@ -272,9 +322,10 @@ carries a user's own measurements of the smaller ones, with the caveats they put
 Two things settings will tell you about the model you name, where the server can be asked. A
 **text-only model** cannot read a page image at all. And a model that **reasons before answering**
 transcribes far more slowly and can lose a page: the answer runs past what the model may return, and
-that page is left out rather than saved half-read. If that happens, the sync says so at the end —
-switch to a model that does not reason (often the `-instruct` build of the same family) and run
-**Re-transcribe all synced notes**, because a later sync will not pick those pages up on its own.
+that page is left out rather than saved half-read. If that happens, the sync says so at the end.
+The next three syncs try such a page again on their own, as they do any page that could not be
+read. If it keeps failing, switch to a model that does not reason (often the `-instruct` build
+of the same family) and run **Re-transcribe this note**.
 
 The reasoning hint needs **Ollama**, **LM Studio 0.4.0 or newer**, or — with Pro — **OpenRouter**;
 other servers expose nothing to read it from, and then settings says nothing rather than guessing.
@@ -690,7 +741,7 @@ Three things worth knowing before you rely on it:
   touched.
 - Removed or untagged units are **never deleted**. The plugin stops updating them and leaves the
   note exactly where it is, so nothing you already have can disappear.
-- **A page note is named after the page's position in the document at the time it was written.**
+- **A page-tag note is named after the page's position in the document at the time it was written.**
   Insert a page on the tablet and everything after it moves down one — but a note whose own page did
   not change is not rewritten, so it keeps the name it had. Its contents stay right: the links inside
   it address the page of the source PDF, which insertion does not renumber. Only the file name can go
@@ -717,6 +768,7 @@ remarkable-modified: 2026-08-25T16:20
 remarkable-synced: 2026-08-25T17:02
 remarkable-folder: Work/Projekt X
 remarkable-type: notebook
+remarkable-kind: transcript
 remarkable-pages: 12
 remarkable-pinned: true
 remarkable-uuid: aaaa0002-0000-0000-0000-000000000000
@@ -734,7 +786,11 @@ remarkable-page: 7
 ```
 
 A note made from a notebook tag covers pages 1 to *n* and so carries no `remarkable-page` at all —
-which makes the key itself the filter for "page notes only".
+which makes the key itself the filter for "page-tag notes only".
+
+`remarkable-kind` says which of the plugin's two notes this is: `transcript` for a transcript note,
+`insight` for an insight note from Intelligence Mode. Insight notes also say so in their name —
+`Notebook · Insight p5`, in a folder `Notebook · Insights` — but a vault view filters on the key.
 
 Every document tag — the sync tag included — arrives namespaced under `remarkable/`, so each synced
 note answers `FROM #remarkable`. With [Dataview](https://blacksmithgu.github.io/obsidian-dataview/),
@@ -765,7 +821,7 @@ up to date — you do not have to toggle anything.
 Two of these fields are meant to be relied on by scripts, so here is exactly what they promise.
 
 - **`remarkable-uuid` is the *document* on your reMarkable.** Several notes can carry the same one:
-  a document routed by two mapped tags produces two notes, and a page note carries its notebook's
+  a document routed by two mapped tags produces two notes, and a page-tag note carries its notebook's
   id. It is the document's identity, not the note's.
 - **`remarkable-note-id` is this one note.** No two notes share it.
 

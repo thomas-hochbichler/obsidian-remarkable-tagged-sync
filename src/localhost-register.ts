@@ -17,11 +17,14 @@ import {
 	type ProviderMeta,
 	resolveProviderEndpoint,
 } from "./localhost-providers";
-import { detectLocalhostVisionCapability, type ModelCapabilities, type VisionVerdict } from "./localhost-vision-detect";
+import { detectLocalhostVisionCapability, missingModelSentence, type ModelCapabilities, type VisionVerdict } from "./localhost-vision-detect";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { OpenAiCompatOcrBackend, OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { compatExtractionEntry, registerExtractionBackend } from "./intelligence/extraction-registry";
+import { DIAGRAM_PROMPT, pagePrompt } from "./llm-transcript";
+import type { SignDef } from "./signs";
 
 /**
  * What the transcript looks like, in one sentence under the dropdown.
@@ -69,7 +72,7 @@ const BACKGROUND_CONSENT_DESC =
 /** This backend's slice of the opaque settings blob: the provider config plus its own consent flag. */
 type LocalhostSettings = LlmProviderConfig & { backgroundConsent?: boolean };
 
-function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAdapter {
+function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, signs: readonly SignDef[] = []): OcrBackendAdapter {
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
 
 	// `custom` needs a base URL before it can run. Unlike a missing cloud key this is a
@@ -78,7 +81,8 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 	// concept and nothing here is metered.
 	if (meta.id === "custom" && !baseURL) return new UnavailableOcrBackend("custom");
 
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS });
+	// The diagram in a request of its own (ticket 38): asked together, a local model dropped the text around it.
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS, prompt: pagePrompt(signs, false), diagramPrompt: DIAGRAM_PROMPT });
 }
 
 /**
@@ -121,6 +125,12 @@ function renderCapabilities(el: HTMLElement, caps: ModelCapabilities, model: str
 	// Painted per line from here on, so the container's own colour must not linger from a previous
 	// single-line state (`Checking…`, the empty-model message).
 	el.style.color = NO_COLOR;
+
+	// A name the server does not have fails every page; nothing else about it is worth saying.
+	if (caps.missing !== undefined) {
+		paintLine(el, missingModelSentence(model, caps.missing.suggestion), ERROR_COLOR);
+		return;
+	}
 
 	const vision = visionSentence(caps.vision, model, meta, baseURL);
 	if (vision) paintLine(el, vision.text, vision.color);
@@ -301,6 +311,18 @@ function renderLocalhostSettings(meta: ProviderMeta, containerEl: HTMLElement, c
 
 // Registered after Vision and the managed local model, so they sit below both in the dropdown.
 for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
+	// The same server as an extraction backend (Intelligence Engine §6): same key, same URL, its own model.
+	registerExtractionBackend(
+		compatExtractionEntry({
+			...meta,
+			resolve: (settings) => resolveProviderEndpoint(meta, settings),
+			// The probe the model field above uses (#116), asked for the extraction model.
+			probe: async (endpoint) => {
+				const caps = await detectLocalhostVisionCapability({ provider: meta.id, ...endpoint });
+				return { reasons: caps.thinking === "on", missing: caps.missing ?? null };
+			},
+		}),
+	);
 	registerOcrBackend({
 		id: meta.id,
 		label: meta.label,
@@ -308,7 +330,7 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 		metered: false,
 		requiresLicence: false,
 		needsBackgroundConsent: true,
-		create: (settings: BackendSettings) => createAdapter(meta, settings),
+		create: (settings: BackendSettings, options) => createAdapter(meta, settings, options?.signs),
 		renderSettings: (containerEl, ctx) => renderLocalhostSettings(meta, containerEl, ctx),
 		noteContract: NOTE_CONTRACT,
 		backgroundConsent: {

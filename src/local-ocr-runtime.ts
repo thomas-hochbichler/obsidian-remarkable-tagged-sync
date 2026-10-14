@@ -4,7 +4,7 @@
 // temp directory, runs one process over it, and turns whatever happened into one of three outcomes.
 
 import { Platform } from "obsidian";
-import { sanitizeTranscript } from "./llm-transcript";
+import { PLAIN_TRANSCRIPTION_PROMPT, sanitizeTranscript, TRANSCRIPTION_PROMPT } from "./llm-transcript";
 import { classifyRun, type FinishedRun, LocalOcrBackend, type LocalPageOutcome, type LocalPageRunner } from "./local-ocr-backend";
 import type { ModelGeneration } from "./local-model-artefacts";
 import { readLocalModelSettings } from "./local-model-settings";
@@ -82,6 +82,11 @@ async function repairQuarantine(executable: string): Promise<void> {
 	await new Promise<void>((resolve) => {
 		execFile("xattr", ["-d", "com.apple.quarantine", executable], { timeout: 10_000 }, () => resolve());
 	});
+}
+
+/** The prompt this model reads a page with: the marks-keeping one unless the model cannot take it. */
+export function localPrompt(generation: ModelGeneration, prompt = TRANSCRIPTION_PROMPT): string {
+	return generation.keepsMarks ? prompt : PLAIN_TRANSCRIPTION_PROMPT;
 }
 
 /**
@@ -226,6 +231,7 @@ export function createLocalOcrBackend(
 	pluginId: string,
 	settings: BackendSettings,
 	onRuntimeFailure?: (message: string) => void,
+	prompt?: string,
 ): LocalOcrBackend | null {
 	// The user's pick reaches the sync the same way it reaches the card: a preference, ignored the
 	// moment the model it names is gone or too big for this machine.
@@ -234,5 +240,5 @@ export function createLocalOcrBackend(
 	const { paths, generation } = resolved;
 	if (readLocalModelState(paths, Date.now(), generation) !== "ready") return null;
 	if (isLocalModelBusy(paths)) return null;
-	return new LocalOcrBackend({ runPage: createRunner(paths, generation), settings, onRuntimeFailure, generation });
+	return new LocalOcrBackend({ runPage: createRunner(paths, generation), settings, onRuntimeFailure, generation, prompt });
 }

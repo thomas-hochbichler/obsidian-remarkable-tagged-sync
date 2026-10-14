@@ -90,6 +90,11 @@
 	padding-top: var(--size-4-1);
 }
 
+/* A verdict that is always a warning when it says anything: the reasoning line under the extraction model. */
+.tagged-sync-verdict.mod-warning {
+	color: var(--text-warning);
+}
+
 /*
  * The local model's setup card: one block that carries prose, a progress bar and a button row, so it
  * takes the card treatment itself rather than sitting between the cards as loose text.
@@ -268,3 +273,71 @@ mark.tagged-sync-hl-gray { background-color: rgba(170, 170, 170, 0.4); }
 .theme-dark mark.tagged-sync-hl-magenta { background-color: rgba(229, 110, 238, 0.3); }
 .theme-dark mark.tagged-sync-hl-orange { background-color: rgba(241, 152, 55, 0.3); }
 .theme-dark mark.tagged-sync-hl-gray { background-color: rgba(170, 170, 170, 0.3); }
+
+/* A mapped tag's name in Tag routing, drawn as a tag pill in the theme's tag colours: Obsidian
+   styles `.tag` only inside notes, not on the settings tab. A full pill with room around it and a
+   "#" in front, so it reads as a tag rather than as highlighted text (live test, 2026-10-02). */
+.tagged-sync-tag {
+	display: inline-block;
+	margin-bottom: var(--size-4-1);
+	padding: 2px var(--size-4-3);
+	border: var(--tag-border-width) solid var(--tag-border-color);
+	border-radius: 999px;
+	background-color: var(--tag-background);
+	color: var(--tag-color);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	line-height: 1.5;
+}
+.tagged-sync-tag::before {
+	content: "#";
+	margin-right: 1px;
+	opacity: 0.6;
+}
+
+/*
+ * The signs under Transcription: one grid for all of them, so the fields line up in columns. Each sign
+ * is a Setting for its components, but its own boxes are dissolved into the grid; the name column
+ * would be empty and only push the fields right.
+ */
+.tagged-sync-signs {
+	display: grid;
+	grid-template-columns: 4em minmax(0, 1fr) auto auto;
+	gap: var(--size-4-2);
+	align-items: center;
+	padding-bottom: var(--size-4-2);
+}
+
+.tagged-sync-signs:empty {
+	display: none;
+}
+
+.tagged-sync-signs > .setting-item,
+.tagged-sync-signs .setting-item-control {
+	display: contents;
+}
+
+.tagged-sync-signs .setting-item-info {
+	display: none;
+}
+
+.tagged-sync-signs input[type="text"] {
+	width: 100%;
+	min-width: 0;
+}
+
+.tagged-sync-signs-label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* A new sign starts on a new line, also after a sign whose own words took the line under it. */
+.tagged-sync-signs .tagged-sync-sign-glyph {
+	grid-column: 1;
+	text-align: center;
+	font-size: var(--font-ui-medium);
+}
+
+.tagged-sync-signs .tagged-sync-sign-words {
+	grid-column: 2 / 4;
+}

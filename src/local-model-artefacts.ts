@@ -97,6 +97,16 @@ export interface ModelGeneration {
 	 * shrinks a tall image before reading it and hurts one that handles the shape natively.
 	 */
 	splitsTallPages: boolean;
+	/**
+	 * Whether this model is asked to keep what the writer marked -- strike-through, boxes, the sign a
+	 * line starts with (`TRANSCRIPTION_PROMPT`, research 35) -- or reads with the plain prompt.
+	 *
+	 * Per model because the smallest could not take it: Qwen3-VL-2B looped on three of the fifteen
+	 * reference pages with the sign sentence (6.55 % -> 8.56 % median, 13.4 % -> 408 % on page 12), and on
+	 * at least one page with every shorter wording tried. Qwen2.5-VL-7B was not measured: on an M5 Max
+	 * runtime b10295 answers it with "@@@@…" whatever the prompt.
+	 */
+	keepsMarks: boolean;
 }
 
 /**
@@ -104,7 +114,7 @@ export interface ModelGeneration {
  * Two builds of this model exist at identical file sizes and different hashes; the publisher's own is
  * pinned because a third-party mirror can be deleted and this URL has to work for years.
  */
-const QWEN3_VL_8B: ModelGeneration = {
+export const QWEN3_VL_8B: ModelGeneration = {
 	dir: "qwen3-vl-8b-instruct-q4_k_m",
 	label: "Qwen3-VL-8B-Instruct",
 	modelBytes: 5_027_784_800,
@@ -123,7 +133,7 @@ const QWEN3_VL_8B: ModelGeneration = {
 			sha256: "ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38",
 		},
 	],
-	measured: { medianCer: 0.0179, on: "2026-09-16" },
+	measured: { medianCer: 0.0238, on: "2026-10-09" },
 	peakRssBytes: 8_579_448_832,
 	// **Only true with `contextTokens` pinned.** Unpinned this model peaks at 42.82 GB, and the floor
 	// below would invite a 16 GB Mac to start it.
@@ -139,6 +149,10 @@ const QWEN3_VL_8B: ModelGeneration = {
 	// tallest page anyone has measured is the 8.77x one in the reference set. Trading a measured
 	// 0.33 pp for the behaviour of a page nobody has written yet is the wrong way round.
 	splitsTallPages: true,
+	// On: 1.79 % -> 2.38 % median on the reference set, four pages up by at most 0.84 points. With the
+	// diagram sentence (ticket 38) the median holds; page 08, a diagram, 29 % -> 58 %: drawn, but its
+	// heading dropped and one edge doubled -- the case for a second request if it holds up.
+	keepsMarks: true,
 };
 
 /**
@@ -178,6 +192,8 @@ const QWEN25_VL_7B: ModelGeneration = {
 	// The model splitting was built for: 4.32 % whole against 1.00 % cut, and its peak drops from
 	// 15.09 GB to 13.22 GB with it, which is what keeps the 18 GB floor honest.
 	splitsTallPages: true,
+	// Off: unmeasured -- it answers only "@@@@…" on an M5 Max, so the plain prompt it was measured with stays.
+	keepsMarks: false,
 };
 
 /**
@@ -223,6 +239,8 @@ const QWEN3_VL_2B: ModelGeneration = {
 	// half points -- the wrong way round for the tier whose whole argument is that it beats Apple
 	// Vision by enough to be worth a download.
 	splitsTallPages: false,
+	// Off: it loops on three reference pages with the marks-keeping prompt (see `keepsMarks`).
+	keepsMarks: false,
 };
 
 /**

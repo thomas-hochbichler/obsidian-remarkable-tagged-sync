@@ -90,6 +90,8 @@ describe("backfillFrontmatter (toggle on)", () => {
 		expect(note).toContain(`remarkable-synced: ${SYNCED_MINUTE}\n`);
 		expect(note).toContain("remarkable-folder: Work\n");
 		expect(note).toContain("remarkable-type: notebook\n");
+		// Every note this pass reaches is a transcript note: an older one gains the key here.
+		expect(note).toContain("remarkable-kind: transcript\n");
 		expect(note).toContain("remarkable-pinned: true\n");
 		expect(note).toContain("remarkable-uuid: doc-1\n");
 		// The row now knows which tags are the plugin's to remove again.
@@ -194,6 +196,17 @@ describe("cleanupFrontmatter (toggle off)", () => {
 
 		expect(await cleanupFrontmatter(store, index)).toBe(1);
 		expect(store.files["Target/Old.md"]).toBe(BODY);
+	});
+
+	it("cleans the Intelligence Engine's insight notes too, keeping what the user and the engine's Slots put there", async () => {
+		const pageNote = "---\nmood: good\ntags:\n  - mine\n  - remarkable/work\nremarkable-uuid: doc-1\n---\n## Tasks\n";
+		const store = fakeNoteStore({ "Work/Page.md": pageNote });
+		const pageRow = { syncKey: "doc-1:p1:work", unitKey: "doc-1:p1:work", docId: "doc-1", pageId: "p1", tag: "work", scope: "notebook" as const, notePath: "Work/Page.md", folder: "Work", status: "active" as const, noteId: "n1", profileId: "generic", baseHash: "h", syncedAt: SYNCED_AT, frontmatterTags: ["remarkable/work"], frontmatterVersion: FRONTMATTER_KEYS_VERSION };
+		const index: SyncIndex = { rootHash: "r", rows: {}, intelligenceRows: { "doc-1:p1:work": pageRow } };
+
+		expect(await cleanupFrontmatter(store, index)).toBe(1);
+		expect(store.files["Work/Page.md"]).toBe("---\nmood: good\ntags:\n  - mine\n---\n## Tasks\n");
+		expect(index.intelligenceRows!["doc-1:p1:work"]).toEqual({ ...pageRow, frontmatterTags: undefined, frontmatterVersion: undefined });
 	});
 });
 

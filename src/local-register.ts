@@ -34,6 +34,10 @@ import { type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, offeredGen
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
 import { type BackendSettings, type BackendSettingsContext, registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { registerExtractionBackend } from "./intelligence/extraction-registry";
+import { managedLocalEntry } from "./intelligence/local-server";
+import { managedModelFiles, nodeServerDeps } from "./intelligence/local-server-node";
+import { pagePrompt } from "./llm-transcript";
 
 export const LOCAL_BACKEND_ID = "local";
 const LOCAL_BACKEND_LABEL = "Downloaded model (managed by this plugin)";
@@ -386,6 +390,12 @@ if (offeredOnThisPlatform()) {
 			return null;
 		},
 
+		// The two smaller models read with the plain prompt (`keepsMarks`).
+		dropsSigns(settings) {
+			const generation = resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.generation;
+			return generation && !generation.keepsMarks ? generation.label : null;
+		},
+
 		/**
 		 * **Never `null`.** `null` means "fall back to a free local backend", which map constraint 11
 		 * forbids here: a silent Vision transcript is written once and never revisited, because the sync
@@ -401,7 +411,7 @@ if (offeredOnThisPlatform()) {
 				// the next interval retries.
 				new Notice("Another vault is transcribing right now. Try again in a moment.");
 			}
-			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure);
+			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure, pagePrompt(options?.signs ?? []));
 			// `true`: unavailable for now, not on this machine -- the end-of-sync notice says which.
 			return backend ?? new UnavailableOcrBackend(LOCAL_BACKEND_ID, true);
 		},
@@ -456,6 +466,6 @@ if (offeredOnThisPlatform()) {
 				backgroundConsentDesc(resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.generation ?? MODEL_GENERATIONS[MODEL_GENERATIONS.length - 1]),
 		},
 	});
+	// The same download as an extraction backend: the Free default for insight notes (Intelligence Engine §6, §11).
+	registerExtractionBackend(managedLocalEntry(() => managedModelFiles(PLUGIN_ID), nodeServerDeps));
 }
-
-
