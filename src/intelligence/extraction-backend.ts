@@ -309,8 +309,14 @@ export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
 			const json = (await response.json()) as ChatResponse;
 			const choice = json.choices?.[0];
 			if (choice?.finish_reason === "length") return { kind: "truncated" };
+			// A reasoning model can hand its thinking back as content, closed by </think>: Qwen3.6-35B-A3B in
+			// LM Studio, 2026-10-14, the opening tag left in its chat template, before a tool call or before
+			// the JSON. The answer is what follows, and the thinking says the model reasons, which neither
+			// field read for `reasoned` below then reports.
+			const content = choice?.message?.content;
+			const thought = content?.lastIndexOf("</think>") ?? -1;
 			// A model offered the tool sometimes writes the same JSON as plain content instead (3 of 15).
-			const text = choice?.message?.tool_calls?.[0]?.function?.arguments || choice?.message?.content;
+			const text = choice?.message?.tool_calls?.[0]?.function?.arguments || (thought === -1 ? content : content?.slice(thought + "</think>".length));
 			// LM Studio files a reasoning model's schema-bound answer under `reasoning_content` and leaves
 			// `content` empty: the grammar starts the JSON where the model would open its thinking, and no
 			// request switch changes that. It is not read from there: written in that place the JSON holds
@@ -318,7 +324,7 @@ export function openAiCompatComplete(options: OpenAiCompatOptions): Complete {
 			// live test 2026-10-02). The reason says what to change instead.
 			if (!text?.trim() && request.schema && choice?.message?.reasoning_content?.trim()) return { kind: "failed", reason: REASONED_ONLY };
 			if (typeof text !== "string" || text.trim() === "") return { kind: "failed", reason: "The server sent an empty answer." };
-			const reasoned = (json.usage?.completion_tokens_details?.reasoning_tokens ?? 0) > 0 || Boolean(choice?.message?.reasoning_content?.trim());
+			const reasoned = thought !== -1 || (json.usage?.completion_tokens_details?.reasoning_tokens ?? 0) > 0 || Boolean(choice?.message?.reasoning_content?.trim());
 			return reasoned ? { kind: "ok", text, reasoned } : { kind: "ok", text };
 		} catch (error) {
 			if (error instanceof OcrTimeoutError) return { kind: "failed", reason: `The server at ${options.baseURL} did not answer in time.` };

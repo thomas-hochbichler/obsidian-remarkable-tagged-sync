@@ -290,6 +290,17 @@ describe("openAiCompatComplete", () => {
 		expect(await ask(answer({ usage: { completion_tokens_details: { reasoning_tokens: 0 } } }))).toEqual({ kind: "ok", text: "{}" });
 	});
 
+	// Qwen3.6-35B-A3B in LM Studio, 2026-10-14: the thinking comes back in the answer, closed by </think>,
+	// and neither the reasoning tokens nor `reasoning_content` say so.
+	it("reads the answer after a model's thinking, and learns from the thinking that the model reasons", async () => {
+		const ask = (content: string) => openAiCompatComplete({ baseURL: "u", model: "m", fetchFn: fakeFetch(() => chat(content)).fn })(request);
+		expect(await ask('The user wants the tasks.\n## Tasks\n</think>\n\n{"tasks":[]}')).toEqual({ kind: "ok", text: '\n\n{"tasks":[]}', reasoned: true });
+		expect(await ask("Only thinking.\n</think>")).toEqual({ kind: "failed", reason: "The server sent an empty answer." });
+		// Live, the thinking came before a tool call: the arguments are the answer, the thinking still counts.
+		const toolCall = () => new Response(JSON.stringify({ choices: [{ message: { content: "Extract the tasks.\n</think>\n\n", tool_calls: [{ function: { arguments: '{"tasks":[]}' } }] }, finish_reason: "tool_calls" }] }), { status: 200 });
+		expect(await openAiCompatComplete({ baseURL: "u", model: "m", schemaAsTool: true, fetchFn: fakeFetch(toolCall).fn })(request)).toEqual({ kind: "ok", text: '{"tasks":[]}', reasoned: true });
+	});
+
 	it("explains a refusal with the server's own message", async () => {
 		const refuse = () => new Response(JSON.stringify({ error: { message: "insufficient credits" } }), { status: 402 });
 		expect(await openAiCompatComplete({ baseURL: "https://x", model: "m", fetchFn: fakeFetch(refuse).fn })(request)).toEqual({ kind: "failed", reason: "The server at https://x answered 402: insufficient credits." });
