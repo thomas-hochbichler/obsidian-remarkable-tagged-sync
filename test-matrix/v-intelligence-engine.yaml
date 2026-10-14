@@ -1376,6 +1376,34 @@
       file: src/intelligence/page-engine.test.ts
       test: "processPage > an existing note > passes the base's items with their ids to the model"
 
+    - id: V13.19
+      scenario: "A new note's Profile says to leave out a heading its Slot found nothing for"
+      expect: "The empty heading is not written; a heading whose Slot holds an item waiting for review is kept"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > a new note > leaves out the heading of a Slot that found nothing when the Profile says so, but keeps one waiting for review"
+
+    - id: V13.20
+      scenario: "A page that had nothing for a left-out heading now has something"
+      expect: "The heading is added where the template has it, with the page's items under it"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > adds a heading left out while empty where the template has it, once the page has something for it"
+
+    - id: V13.21
+      scenario: "The template has no heading after the one to add"
+      expect: "It goes after the last heading before it in the template"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > puts a heading left out while empty after the last one before it in the template when none follows"
+
+    - id: V13.22
+      scenario: "A heading added later holds items the engine is unsure of"
+      expect: "The note says they wait for review"
+      layer: unit
+      file: src/intelligence/page-engine.test.ts
+      test: "processPage > an existing note > says a heading added later is waiting for review"
+
 - feature: V14
   name: "The engine's pass over one synced document"
   code: src/intelligence/sync-pass.ts
@@ -2666,6 +2694,13 @@
       file: src/intelligence/settings-section.test.ts
       test: "renderProfileEditor > what a Profile's Slots will do > warns about many Slots on a local model, and not on a cloud one"
 
+    - id: V40.3
+      scenario: "A Profile's Template field names a path no note has, with or without \".md\""
+      expect: "The field says so under it, and checks again as the path is typed"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderProfileEditor > what a Profile's Slots will do > says under the Template field when its path finds no note, and checks again as it is typed"
+
 - feature: V41
   name: "Several Profiles per tag, sorted by a classifier (Pro)"
   code: src/intelligence/sync-pass.ts
@@ -3339,6 +3374,13 @@
       file: src/localhost-register.test.ts
       test: "the same servers as extraction backends > name the extraction model when the server says it reasons or does not have it, and nothing when it does not or cannot say"
 
+    - id: V66.4
+      scenario: "The extraction model hands its thinking back as content, closed by </think>, before a tool call or the JSON (Qwen3.6-35B-A3B in LM Studio, 2026-10-14)"
+      expect: "The answer is what follows the last </think>, or the tool call's arguments; the thinking marks the answer as reasoned, which neither the reasoning tokens nor reasoning_content said"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "openAiCompatComplete > reads the answer after a model's thinking, and learns from the thinking that the model reasons"
+
 - feature: V67
   name: "On a server of the user's own, the schema goes as a tool call"
   code: src/intelligence/extraction-backend.ts
@@ -3546,7 +3588,7 @@
       test: "the review in the running plugin > re-extracts a transcript note's notebook only once insight notes are on for its tag"
 
 - feature: V73
-  name: "Marks on the page: the transcript keeps them, boxes and strike-through decide, a notation's signs come from the Profile"
+  name: "Marks on the page: the transcript keeps them, boxes and strike-through decide, a notation's signs come from the user's table (V76)"
   code: src/intelligence/extraction.ts
   tier: free
   scenarios:
@@ -3644,3 +3686,148 @@
       file: test-support/cer.test.ts
       test: "a diagram written as Mermaid > takes bare ids, umlauts and edge labels as they come, and leaves other code alone"
 
+- feature: V76
+  name: "The user's signs, set once under Transcription, reach the transcript and the insight notes (ticket 43)"
+  code: src/signs.ts
+  tier: free
+  scenarios:
+    - id: V76.1
+      scenario: "data.json holds sign rows, one with a meaning a newer build added, and junk"
+      expect: "Every row with a sign is carried as stored, so a newer build's meaning survives this build's save; anything else is dropped"
+      layer: unit
+      file: src/signs.test.ts
+      test: "readSigns > carries every row with a sign as stored, and nothing else"
+
+    - id: V76.2
+      scenario: "Signs with and without a look, and a row with no sign yet"
+      expect: "The transcript names each sign by its character, \"• for a dot\" where the user gave a look; a row with no sign says nothing"
+      layer: unit
+      file: src/signs.test.ts
+      test: "transcriptSigns > names a sign by its character, and by its look where the user gave one"
+
+    - id: V76.3
+      scenario: "The Bullet Journal rows"
+      expect: "One sentence per sign for the extraction, in the meanings the plugin acts on (open, done, moved elsewhere, event, note), and that a leading - is only the list format"
+      layer: unit
+      file: src/signs.test.ts
+      test: "signRules > says what each Bullet Journal sign means, and that a leading - is only the list format"
+
+    - id: V76.4
+      scenario: "A sign of the user's own, one without words yet, one with no sign, one with a meaning from a newer build"
+      expect: "The own meaning in the user's words; nothing for the rest"
+      layer: unit
+      file: src/signs.test.ts
+      test: "signRules > gives a sign of the user's own in their words, and says nothing it cannot"
+
+    - id: V76.5
+      scenario: "The user's sign is the dash itself"
+      expect: "No sentence calling the dash the list format"
+      layer: unit
+      file: src/signs.test.ts
+      test: "signRules > does not call a dash the list format where the dash is a sign"
+
+    - id: V76.6
+      scenario: "No signs"
+      expect: "No sign sentences at all: the extraction prompt is the one without a notation"
+      layer: unit
+      file: src/signs.test.ts
+      test: "signRules > says nothing without signs"
+
+    - id: V76.7
+      scenario: "\"Bullet journal\" is pressed with one of its signs already there, with another meaning, and one with a look of its own"
+      expect: "The missing signs are added with their looks; a sign already there keeps its meaning and its own look and gets only a look it lacks"
+      layer: unit
+      file: src/signs-section.test.ts
+      test: "renderSignsSettings > fills in the Bullet Journal, and only the look a sign already there lacks"
+
+    - id: V76.8
+      scenario: "A sign is picked from the palette, then \"Another sign\", then the prompt option"
+      expect: "A row with that sign, an empty row to type into, nothing"
+      layer: unit
+      file: src/signs-section.test.ts
+      test: "renderSignsSettings > adds a sign from the palette, or an empty one to type"
+
+    - id: V76.9
+      scenario: "A row's sign, look and meaning are edited, then emptied, then the row is removed"
+      expect: "Text edits save without a redraw so the field keeps its focus; a meaning of the user's own asks for its words; an emptied field is no look and no words, not an empty string"
+      layer: unit
+      file: src/signs-section.test.ts
+      test: "renderSignsSettings > edits a sign in its row, and asks for words only for a meaning of the user's own"
+
+    - id: V76.10
+      scenario: "The transcription backend keeps no signs (Apple Vision, the 2B and 2.5-7B)"
+      expect: "A warning at the table naming it, once there are signs to lose"
+      layer: unit
+      file: src/signs-section.test.ts
+      test: "renderSignsSettings > says when the transcription backend keeps no signs, once there are signs to lose"
+
+    - id: V76.11
+      scenario: "The table is changed"
+      expect: "\"Applies to pages transcribed from now on\" with a button that re-transcribes all synced notes; TRANSCRIPT_VERSION stays"
+      layer: unit
+      file: src/signs-section.test.ts
+      test: "renderSignsSettings > offers to re-transcribe after a change, since only pages read from now on get the new signs"
+
+    - id: V76.12
+      scenario: "The real settings tab with a backend that keeps no signs: \"Bullet journal\" is pressed"
+      expect: "Six rows saved to data.json, the warning names the backend, and the re-transcribe line shows and runs the command"
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the signs under Transcription > fills in the Bullet Journal, says what a reader without signs loses, and offers to re-transcribe"
+
+    - id: V76.13
+      scenario: "The Intelligence settings ask which transcription backend drops the signs"
+      expect: "The selected backend is asked with its own settings; no signs, no answer"
+      layer: unit
+      file: src/intelligence/settings-host.test.ts
+      test: "settingsHostFor > names the transcription backend that drops the user's signs, asking it with its own settings"
+
+    - id: V76.14
+      scenario: "The downloaded model is the transcription backend"
+      expect: "The 2B and 2.5-7B are named as keeping no signs; the 8B is not"
+      layer: unit
+      file: src/local-register.test.ts
+      test: "the signs a model keeps > names the picked model when it keeps none, and nothing for the one that does"
+
+    - id: V76.15
+      scenario: "Insight notes are about to be switched on with signs set and a reader that keeps none"
+      expect: "The warning under the Insight notes toggle, before the first note"
+      layer: unit
+      file: src/intelligence/settings-section.test.ts
+      test: "renderTagModes > says before the first insight note when the transcription backend keeps none of the user's signs"
+
+    - id: V76.16
+      scenario: "The page prompt is built from the table"
+      expect: "No signs: the measured prompt byte for byte. Signs: exactly those signs, and that the sign stands in place of the list marker, shown with the sign alone"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "TRANSCRIPTION_PROMPT > copies the user's signs, in place of the list marker"
+
+    - id: V76.17
+      scenario: "An OpenAI-compatible server is given the signs prompt, or none"
+      expect: "It sends the prompt it was given; without one, the prompt for no signs"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > sends the prompt it was given, and the one for no signs without"
+
+    - id: V76.18
+      scenario: "Anthropic is given the signs prompt, or none"
+      tier: pro
+      expect: "The same"
+      layer: unit
+      file: pro/anthropic-ocr-backend.test.ts
+      test: "AnthropicOcrBackend > sends the prompt it was given, and the one for no signs without"
+
+    - id: V76.19
+      scenario: "The downloaded model reads a page and a margin note with signs set"
+      expect: "The page gets the signs prompt (the plain one on a model that keeps no marks); the margin note keeps the note prompt"
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "LocalOcrBackend > reads a page with the user's signs, and a margin note with the note prompt still"
+
+    - id: V76.20
+      scenario: "A local model's line pass with signs set"
+      expect: "It is told what each sign means, as the one-call prompt is"
+      layer: unit
+      file: src/intelligence/extraction-backend.test.ts
+      test: "twoCallBackend > tells the line pass what the user's signs mean"
