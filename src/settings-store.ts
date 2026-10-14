@@ -29,6 +29,7 @@ import { EMPTY_SYNC_INDEX, type SyncIndex, type SyncIndexRow } from "./sync-engi
 import type { TransportId } from "./transport";
 import { mappingFingerprint, type TagFolderMap } from "./tag-router";
 import { emptyIntelligence, type IntelligenceSettings, readIntelligence } from "./intelligence/settings";
+import { readSigns, type SignDef } from "./signs";
 
 /** Opt-in background sync (auto-sync spec §"Settings & data model"). */
 export interface AutoSyncSettings {
@@ -82,6 +83,8 @@ export interface TaggedSyncData {
 	 * (multi-provider spec §4). Opaque here -- only the backend that owns a blob reads inside it.
 	 */
 	llmProviders: Record<string, BackendSettings>;
+	/** The signs a line can start with and what they mean: told to the transcript and to insight notes (ticket 43). */
+	signs: SignDef[];
 	/** Set once the platform "no transcription here" notice has been shown, so it never nags again (spec §6.2). */
 	ocrUnavailableNoticeShown: boolean;
 	/** Set once `markLegacyOcrLosses` has looked through the vault -- see there for why only once. */
@@ -130,6 +133,7 @@ export const DEFAULT_DATA: TaggedSyncData = {
 	// Placeholder only -- the effective default is platform-derived on load (multi-provider spec §7).
 	ocrBackend: "vision",
 	llmProviders: {},
+	signs: [],
 	ocrUnavailableNoticeShown: false,
 	legacyOcrLossesMarked: false,
 	autoSync: DEFAULT_AUTO_SYNC,
@@ -240,6 +244,7 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		syncIndex: stored?.syncIndex ? stampRowFolders(stored.syncIndex, stored.tagFolderMap ?? {}) : { ...EMPTY_SYNC_INDEX, rows: {} },
 		ocrBackend: env.isKnownBackend(savedBackend) ? (savedBackend as OcrBackendId) : env.defaultBackend,
 		llmProviders: stored?.llmProviders ?? {},
+		signs: readSigns(stored?.signs),
 		ocrUnavailableNoticeShown: stored?.ocrUnavailableNoticeShown ?? false,
 		legacyOcrLossesMarked: stored?.legacyOcrLossesMarked ?? false,
 		autoSync: { ...DEFAULT_AUTO_SYNC, ...stored?.autoSync },

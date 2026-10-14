@@ -9,6 +9,7 @@ import {
 	LLM_MAX_PARALLELISM,
 	NOTE_TRANSCRIPTION_PROMPT,
 	pageCount,
+	pagePrompt,
 	PLAIN_TRANSCRIPTION_PROMPT,
 	readAgain,
 	refusalDetail,
@@ -81,6 +82,24 @@ describe("TRANSCRIPTION_PROMPT", () => {
 		expect(TRANSCRIPTION_PROMPT).toContain("Write struck-through text as ~~text~~");
 		expect(TRANSCRIPTION_PROMPT).toContain("- [ ] when it is empty and as - [x] when it holds a tick or a cross");
 		expect(TRANSCRIPTION_PROMPT).toContain("Copy the sign a line starts with exactly as drawn: • X > < ○ —.");
+	});
+
+	// Ticket 43: the user's signs replace the fixed list, and the sign takes the list marker's place
+	// (ticket 42's "- - "). An empty table is the measured prompt, unchanged.
+	it("copies the user's signs, in place of the list marker", () => {
+		expect(pagePrompt([])).toBe(TRANSCRIPTION_PROMPT);
+		expect(TRANSCRIPTION_PROMPT).not.toContain("list marker");
+
+		const prompt = pagePrompt([
+			{ glyph: "★", meaning: "custom", text: "important" },
+			{ glyph: "△", drawn: "a small triangle", meaning: "custom", text: "an idea" },
+			{ glyph: " ", meaning: "note" },
+		]);
+		expect(prompt).toContain("Copy the sign a line starts with exactly as drawn: ★ △ (a small triangle). ");
+		expect(prompt).toContain("The sign stands in place of the list marker: write ★ text, never - ★ text; a list line without a sign starts with - as usual.");
+		expect(prompt).not.toContain("• X > < ○ —");
+		expect(prompt.startsWith(PLAIN_TRANSCRIPTION_PROMPT)).toBe(true);
+		expect(prompt).toContain("Every line of text outside the diagram is transcribed as usual, none left out.");
 	});
 
 	// Ticket 38: words joined by drawn lines came out as loose lines that read like sentences.

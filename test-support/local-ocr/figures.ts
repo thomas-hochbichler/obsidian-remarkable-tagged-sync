@@ -13,7 +13,7 @@
 
 import { createHash } from "node:crypto";
 import type { ModelGeneration } from "../../src/local-model-artefacts";
-import { transcriptionPrompt } from "../../src/local-ocr-runtime";
+import { localPrompt } from "../../src/local-ocr-runtime";
 import type { BackendStatus, PageMeasurement } from "../nightly/ocr";
 
 export interface LocalFigure {
@@ -40,7 +40,7 @@ export interface LocalFigure {
 
 /** The same sixteen hex characters the nightly writes as `promptSha`. */
 export function promptSha(generation: ModelGeneration): string {
-	return createHash("sha256").update(transcriptionPrompt(generation)).digest("hex").slice(0, 16);
+	return createHash("sha256").update(localPrompt(generation)).digest("hex").slice(0, 16);
 }
 
 export interface CurrentPins {

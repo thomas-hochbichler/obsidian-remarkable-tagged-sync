@@ -18,6 +18,7 @@ import { compileItemFormat } from "./item-format";
 import { processPage } from "./page-engine";
 import { classifyUnit, type SeenEntry, switchOnStamp } from "./seen-set";
 import { genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, type SlotDef } from "./settings";
+import type { SignDef } from "../signs";
 import { analyseTemplate, starterTemplate } from "./template";
 
 /** One insight note, in `SyncIndex.intelligenceRows`. Not a `SyncIndexRow`: those are diffed against live page tags. */
@@ -114,6 +115,8 @@ export interface IntelligencePassDeps {
 	dateOrder?: DateOrder;
 	/** When the last sync ran, epoch ms: the earliest a page new in this one can have been written. */
 	previousSyncAt?: number | null;
+	/** The user's signs (ticket 43); none when absent. */
+	signs?: readonly SignDef[];
 }
 
 export interface PassReport {
@@ -372,6 +375,7 @@ async function processItem(deps: IntelligencePassDeps, doc: IntelligenceDocument
 	const outcome = await processPage({
 		unit: { key, pageHash: page.hash, transcript, firstSeen: seen?.firstSeen ?? page.modified, writtenSpanDays: writtenSpanDays(seen, page.modified, deps.previousSyncAt ?? null) },
 		dateOrder: deps.dateOrder,
+		signs: deps.signs,
 		noteId,
 		base,
 		note: alive ? noteText : null,

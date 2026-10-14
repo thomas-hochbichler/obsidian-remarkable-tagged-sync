@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { NoteStore } from "../note-builder";
 import type { HostEnvironment } from "./host";
+import { registerOcrBackend } from "../ocr-registry";
+import type { SignDef } from "../signs";
 import { emptyIntelligence } from "./settings";
 import { freeTemplatePath, settingsHostFor, templateFolder } from "./settings-host";
 
@@ -22,7 +24,32 @@ describe("freeTemplatePath", () => {
 	});
 });
 
+// A reader that keeps no signs, and one that keeps them -- the registry is the host's only source.
+registerOcrBackend({ id: "host-plain-text", label: "Plain text", metered: false, requiresLicence: false, needsBackgroundConsent: false, create: () => null, dropsSigns: (settings) => (settings.small ? "Small model" : null) });
+registerOcrBackend({ id: "host-keeps-signs", label: "Keeps signs", metered: false, requiresLicence: false, needsBackgroundConsent: false, create: () => null });
+
 describe("settingsHostFor", () => {
+	// Ticket 43: said under the Insight notes toggle, so only when there are signs to lose.
+	it("names the transcription backend that drops the user's signs, asking it with its own settings", () => {
+		const dropsSigns = (ocrBackend: string, signs: SignDef[], small: boolean | null = true) =>
+			settingsHostFor({
+				env: {} as HostEnvironment,
+				data: { intelligence: emptyIntelligence(), tagFolderMap: {}, ocrBackend, llmProviders: small === null ? {} : { [ocrBackend]: { small } }, signs },
+				pro: false,
+				save: async () => {},
+				redraw: () => {},
+				confirm: async () => true,
+				dialog: () => undefined,
+			}).dropsSigns();
+		const bujo = [{ glyph: "•", meaning: "task-open" as const }];
+		expect(dropsSigns("host-plain-text", bujo)).toBe("Small model");
+		expect(dropsSigns("host-plain-text", bujo, false)).toBeNull();
+		expect(dropsSigns("host-plain-text", bujo, null)).toBeNull();
+		expect(dropsSigns("host-plain-text", [])).toBeNull();
+		expect(dropsSigns("host-keeps-signs", bujo)).toBeNull();
+		expect(dropsSigns("not-in-this-build", bujo)).toBeNull();
+	});
+
 	it("reads and writes the settings block, saves with and without a redraw, and creates a template in its folder", async () => {
 		const written: string[] = [];
 		const folders: string[] = [];
@@ -39,13 +66,15 @@ describe("settingsHostFor", () => {
 			randomId: () => "rid",
 			now: () => new Date("2026-09-28T00:00:00.000Z"),
 		};
-		const data = { intelligence: emptyIntelligence(), tagFolderMap: { work: "Work" }, ocrBackend: "lmstudio", llmProviders: { lmstudio: { model: "m" } } };
+		const data = { intelligence: emptyIntelligence(), tagFolderMap: { work: "Work" }, ocrBackend: "lmstudio", llmProviders: { lmstudio: { model: "m" } }, signs: [] };
 		const log: string[] = [];
 		const host = settingsHostFor({ env, data, pro: true, save: async () => void log.push("save"), redraw: () => void log.push("redraw"), confirm: async () => true, dialog: () => undefined });
 
 		host.update({ ...host.settings(), model: "m" });
 		expect(data.intelligence.model).toBe("m");
 		expect(host.tagFolderMap()).toEqual({ work: "Work" });
+		// No signs set, nothing to lose -- and the server keeps them anyway.
+		expect(host.dropsSigns()).toBeNull();
 		await host.save();
 		await host.saveAndRedraw();
 		expect(log).toEqual(["save", "save", "redraw"]);

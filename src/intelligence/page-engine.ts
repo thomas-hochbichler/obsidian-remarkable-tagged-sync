@@ -17,6 +17,7 @@ import { compileItemFormat, type ItemFormat } from "./item-format";
 import { mergeList, mergeText } from "./merge";
 import { applyListOps, findRegion, headings, parseRegion, readTextRegion, setProposalCallout, writeTextRegion, type Heading } from "./regions";
 import type { ProfileDef, SlotDef } from "./settings";
+import type { SignDef } from "../signs";
 import { analyseTemplate, renderTemplate, withoutRegion } from "./template";
 
 /** The only thing the engine reads from the sync side (§14). A Supernote source would produce the same record. */
@@ -58,6 +59,8 @@ export interface PageRun {
 	newId: () => string;
 	/** How the user writes dates with slashes; day/month when absent. */
 	dateOrder?: DateOrder;
+	/** The user's signs (ticket 43); none when absent. */
+	signs?: readonly SignDef[];
 	/** The user asked for this page again ("Re-extract"); see `ListMergeInput.asked`. */
 	asked?: boolean;
 }
@@ -200,7 +203,7 @@ export async function processPage(run: PageRun): Promise<PageOutcome> {
 	const runSlots = run.slots;
 
 	const dates = { order: run.dateOrder ?? "dmy", writtenSpanDays: run.unit.writtenSpanDays ?? null, userRules: (run.profile.dates ?? "").trim() !== "" } as const;
-	const outcome = await run.backend.extract({ profile: run.profile, slots: runSlots, transcript: run.unit.transcript, referenceDate, known: knownItems(run.base), dates });
+	const outcome = await run.backend.extract({ profile: run.profile, slots: runSlots, transcript: run.unit.transcript, referenceDate, known: knownItems(run.base), dates, signs: run.signs });
 	if (outcome.kind === "failed") {
 		const sameHash = previous.extraction.failedHash === run.unit.pageHash;
 		const attempts = (sameHash ? previous.extraction.attempts : 0) + 1;

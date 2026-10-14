@@ -116,6 +116,7 @@ describe("migrateSettings", () => {
 			syncIndex: { version: 4, rows: { "doc/1": { note: "Work/One.md" } } },
 			ocrBackend: "anthropic",
 			llmProviders: { anthropic: { apiKey: "sk-1" } },
+			signs: [{ glyph: "△", drawn: "a small triangle", meaning: "custom", text: "an idea" }, { glyph: "•", meaning: "task-open" }],
 			ocrUnavailableNoticeShown: true,
 			legacyOcrLossesMarked: true,
 			autoSync: { enabled: true, intervalHours: null, autoTranscribeMetered: true },

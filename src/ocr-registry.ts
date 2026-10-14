@@ -29,6 +29,8 @@ export interface CreateOptions {
 	 * otherwise explain why it is standing this run out stays quiet instead; the next interval retries.
 	 */
 	silent: boolean;
+	/** The marks-keeping prompt with the user's signs (`transcriptionPrompt`); absent, the one for no signs. */
+	prompt?: string;
 }
 
 /**
@@ -114,6 +116,11 @@ export interface OcrBackendEntry {
 	 * with another backend selected is about to get.
 	 */
 	readonly noteContract?: string;
+	/**
+	 * The reader's name when its transcripts keep no signs, so the user's notation never reaches an
+	 * insight note (ticket 43); null when they keep them. Absent: they keep them.
+	 */
+	dropsSigns?(settings: BackendSettings): string | null;
 	/**
 	 * Renders this backend's own rows under the backend dropdown, when it has any -- for the selected
 	 * backend only. A backend that has to be downloaded before it can run draws its setup card here,

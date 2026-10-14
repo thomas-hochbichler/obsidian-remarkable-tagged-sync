@@ -5,10 +5,10 @@
  * every Pro control, disabled and marked "(Pro)": a feature nobody can see is one nobody decides to buy.
  */
 
-import { Setting, type TextAreaComponent } from "obsidian";
+import { Setting } from "obsidian";
 import type { BackendSettings } from "../ocr-registry";
 import { missingModelSentence } from "../localhost-vision-detect";
-import { BULLET_JOURNAL_SIGNS } from "./extraction";
+import { dropsSignsSentence } from "../signs";
 import { extractionBackendEntries, extractionBackendEntry, type ModelNote } from "./extraction-registry";
 import { freeTag, isEngineDevice } from "./plugin-rules";
 import { type FieldDef, type FieldType, genericProfile, type IntelligenceSettings, modesFor, type ProfileDef, setIntelligenceMode, type Shape, type SlotDef, slotIdFor, TASKS_FORMAT } from "./settings";
@@ -36,6 +36,8 @@ export interface IntelligenceSettingsHost {
 	randomId(): string;
 	/** The transcription backend's id: what extracts while no extraction backend is picked. */
 	transcriptionBackend(): string;
+	/** The transcription backend's name when the user set signs and its transcripts keep none (ticket 43). */
+	dropsSigns(): string | null;
 	/** A provider's own settings: its address, key and model. */
 	providerSettings(id: string): BackendSettings;
 	/** Opens a dialog that `draw` fills, and fills again whenever the tab redraws. */
@@ -94,7 +96,7 @@ export function renderTagModes(containerEl: HTMLElement, tag: string, host: Inte
 				.setValue(modes.transcript)
 				.onChange(async (on) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), transcript: on } } }))),
 		);
-	new Setting(containerEl)
+	const insightRow = new Setting(containerEl)
 		.setName(locked ? `Insight notes${PRO}` : "Insight notes")
 		.setDesc(
 			!modes.transcript && modes.intelligence
@@ -113,6 +115,8 @@ export function renderTagModes(containerEl: HTMLElement, tag: string, host: Inte
 					await host.saveAndRedraw();
 				}),
 		);
+	const reader = host.dropsSigns();
+	if (reader !== null) insightRow.descEl.createDiv({ cls: "tagged-sync-verdict mod-warning", text: dropsSignsSentence(reader) });
 	// The Profile only matters, and is only offered, where insight notes are on.
 	if (!modes.intelligence) return;
 	const setProfiles = (profiles: string[]) => withSettings(host, (s) => ({ ...s, mappings: { ...s.mappings, [tag]: { ...modesFor(s, host.tagFolderMap(), tag), profiles } } }));
@@ -366,24 +370,6 @@ export function renderProfileEditor(containerEl: HTMLElement, host: Intelligence
 				.setValue(profile.dates ?? "")
 				.setPlaceholder("Each entry starts with its date, day first. Tasks count from the date of their entry.")
 				.onChange(async (dates) => typed(host, edit({ dates: dates.trim() === "" ? undefined : dates }))),
-		);
-	// Research 31: a dot is a task in a Bullet Journal and a plain bullet elsewhere, so the meaning is the Profile's.
-	let signsArea: TextAreaComponent | null = null;
-	new Setting(containerEl)
-		.setName("Signs on these pages")
-		.setDesc("Optional. What the sign at the start of a line means, in your words. Checkboxes and struck-through lines are always read.")
-		.addTextArea((text) => {
-			signsArea = text;
-			text
-				.setValue(profile.signs ?? "")
-				.setPlaceholder("A dot before a line is an open task, a cross one that is done.")
-				.onChange(async (signs) => typed(host, edit({ signs: signs.trim() === "" ? undefined : signs })));
-		})
-		.addButton((button) =>
-			button.setButtonText("Use bullet journal").onClick(async () => {
-				signsArea?.setValue(BULLET_JOURNAL_SIGNS);
-				await typed(host, edit({ signs: BULLET_JOURNAL_SIGNS }));
-			}),
 		);
 	new Setting(containerEl).setName("Fills").setHeading();
 	// A small model loses tasks when asked for many things at once (research 15): warned, never refused.

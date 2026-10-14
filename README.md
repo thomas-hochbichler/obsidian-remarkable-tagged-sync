@@ -235,21 +235,28 @@ sync at once; **Sync now** remains the one command that brings both kinds of not
 ### Bullet Journal and other signs
 
 A transcript keeps what you marked on the page: struck-through words as ~~struck~~, drawn boxes as
-`- [ ]` and `- [x]`, and the sign a line starts with as you drew it (• X > < ○ —). Insight notes read
-boxes and strike-through the same for everyone: an empty box is an open task, a ticked or crossed one
-is done, a struck line is left out.
+`- [ ]` and `- [x]`, and the sign a line starts with as you drew it. Insight notes read boxes and
+strike-through the same for everyone: an empty box is an open task, a ticked or crossed one is done, a
+struck line is left out.
 
 Words you joined with drawn lines or arrows — a sketch, a mind map, a little flow — come out as a
 diagram: a Mermaid flowchart that Obsidian draws, with your words as its boxes. Insight notes never take
 a task from inside a diagram. Underlines, boxes, brackets and dividers are left as they are.
 
-What any other sign means is yours to say, in the profile's **Signs on these pages** field. **Use
-bullet journal** fills in Ryder Carroll's key: • an open task, X done, > migrated and < scheduled (not
-open on this page), ○ an event, — a note. Add your own signs to it in plain words.
+What a sign means is yours to say, once for every notebook, under **Transcription → Signs**: one row
+per sign, with what it means — an open task, a done one, a task moved elsewhere, an event, a note, or
+something of your own in plain words. **Bullet journal** fills in Ryder Carroll's key: • an open task,
+X done, > migrated and < scheduled (not open on this page), ○ an event, — a note. Add a sign from the
+list offered, or type one; for a mark no character resembles, say what it looks like ("a small
+triangle"). The transcript copies exactly these signs, in place of the list dash, and insight notes
+read them. A change applies to pages transcribed from then on; the button under the table
+re-transcribes the notes already synced.
 
 Transcripts made before version 1.9.0 have no signs in them; **Re-transcribe this note** brings them
 in. Apple Vision reads text only, and the two smaller local models (Qwen3-VL-2B, Qwen2.5-VL-7B) are
-not asked to, so their transcripts keep no signs; the default local model, Qwen3-VL-8B, does.
+not asked to, so their transcripts keep no signs; the default local model, Qwen3-VL-8B, does. With
+one of those three selected, the settings say so next to your signs and under **Insight notes**: a
+Bullet Journal read without its signs comes back with finished and migrated tasks as open.
 
 ## Handwriting transcription
 

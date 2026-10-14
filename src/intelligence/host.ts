@@ -13,6 +13,7 @@ import { type BaseFiles, type BaseStore, createBaseStore } from "./base-store";
 import { extractionBackendEntry } from "./extraction-registry";
 import { backgroundExtractionAllowed, chooseExtractionBackend, effectiveModes, effectiveSlotsFor, isEngineDevice, scansDue } from "./plugin-rules";
 import { intelligenceFingerprint, type IntelligenceSettings } from "./settings";
+import type { SignDef } from "../signs";
 import { completeScans, followRetargets, type IntelligencePassDeps, type IntelligenceRow, type PassReport, processDocument } from "./sync-pass";
 
 /** A plain file API over the plugin folder: `vault.adapter` in the app. */
@@ -86,6 +87,8 @@ export interface RunInputs {
 	background: boolean;
 	/** When the last sync ran (`lastSyncAt`): the earliest a page new in this one can have been written. */
 	previousSyncAt?: string | null;
+	/** The user's signs (ticket 43); none when absent. */
+	signs?: readonly SignDef[];
 }
 
 export interface IntelligenceRun {
@@ -155,6 +158,7 @@ export async function prepareRun(env: HostEnvironment, input: RunInputs): Promis
 		reviewLink: REVIEW_LINK,
 		dateOrder: input.settings.dateOrder === "auto" ? (env.localeDateOrder?.() ?? "dmy") : input.settings.dateOrder,
 		previousSyncAt: input.previousSyncAt ? Date.parse(input.previousSyncAt) : null,
+		signs: input.signs,
 	};
 	const hook: IntelligenceHook = {
 		fingerprint,

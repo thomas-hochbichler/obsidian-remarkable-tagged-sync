@@ -70,7 +70,7 @@ const BACKGROUND_CONSENT_DESC =
 /** This backend's slice of the opaque settings blob: the provider config plus its own consent flag. */
 type LocalhostSettings = LlmProviderConfig & { backgroundConsent?: boolean };
 
-function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAdapter {
+function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, prompt?: string): OcrBackendAdapter {
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
 
 	// `custom` needs a base URL before it can run. Unlike a missing cloud key this is a
@@ -79,7 +79,7 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 	// concept and nothing here is metered.
 	if (meta.id === "custom" && !baseURL) return new UnavailableOcrBackend("custom");
 
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS });
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS, prompt });
 }
 
 /**
@@ -327,7 +327,7 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 		metered: false,
 		requiresLicence: false,
 		needsBackgroundConsent: true,
-		create: (settings: BackendSettings) => createAdapter(meta, settings),
+		create: (settings: BackendSettings, options) => createAdapter(meta, settings, options?.prompt),
 		renderSettings: (containerEl, ctx) => renderLocalhostSettings(meta, containerEl, ctx),
 		noteContract: NOTE_CONTRACT,
 		backgroundConsent: {

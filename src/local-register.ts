@@ -389,6 +389,12 @@ if (offeredOnThisPlatform()) {
 			return null;
 		},
 
+		// The two smaller models read with the plain prompt (`keepsMarks`).
+		dropsSigns(settings) {
+			const generation = resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir)?.generation;
+			return generation && !generation.keepsMarks ? generation.label : null;
+		},
+
 		/**
 		 * **Never `null`.** `null` means "fall back to a free local backend", which map constraint 11
 		 * forbids here: a silent Vision transcript is written once and never revisited, because the sync
@@ -404,7 +410,7 @@ if (offeredOnThisPlatform()) {
 				// the next interval retries.
 				new Notice("Another vault is transcribing right now. Try again in a moment.");
 			}
-			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure);
+			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure, options?.prompt);
 			// `true`: unavailable for now, not on this machine -- the end-of-sync notice says which.
 			return backend ?? new UnavailableOcrBackend(LOCAL_BACKEND_ID, true);
 		},

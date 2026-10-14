@@ -18,7 +18,7 @@ import { cpus, homedir, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import { MODEL_GENERATIONS, RUNTIME_RELEASE } from "../../src/local-model-artefacts";
 import { localModelPaths } from "../../src/local-model-store";
-import { pageArgs, transcriptionPrompt } from "../../src/local-ocr-runtime";
+import { localPrompt, pageArgs } from "../../src/local-ocr-runtime";
 import { sanitizeTranscript, splitAtTypedText } from "../../src/llm-transcript";
 import { rasterizePage } from "../../src/page-rasterizer";
 import { encodeGrayscalePng } from "../../src/png-encoder";
@@ -94,7 +94,7 @@ async function main() {
 			}
 			const imageFile = join(tmp, `${page.id}-${at}.png`);
 			writeFileSync(imageFile, encodeGrayscalePng(rasterizePage(part.scene)));
-			const run = await runPage(paths.runtimeExecutable, pageArgs(paths, imageFile, generation, transcriptionPrompt(generation)));
+			const run = await runPage(paths.runtimeExecutable, pageArgs(paths, imageFile, generation, localPrompt(generation)));
 			ms += run.ms;
 			peak = Math.max(peak, peakRssBytes(run.stderr) ?? 0);
 			if (run.code !== 0) { failed = true; break; }

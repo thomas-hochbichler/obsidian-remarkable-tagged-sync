@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { FakeEl, takeSettings, type Setting as FakeSetting } from "../../test-stubs/fake-obsidian";
-import { BULLET_JOURNAL_SIGNS } from "./extraction";
 import { registerExtractionBackend } from "./extraction-registry";
 import { type IntelligenceSettingsHost, renderIntelligenceSection, renderProfileEditor, renderSlotEditor, renderTagModes, tagModesSummary, uniqueName } from "./settings-section";
 import { emptyIntelligence, setIntelligenceMode, TASKS_FORMAT, type IntelligenceSettings } from "./settings";
@@ -26,7 +25,7 @@ registerExtractionBackend({
 const MAP = { work: "Work", home: "Home" };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function host(initial: IntelligenceSettings, pro: boolean, options: { device?: string | null; confirm?: boolean; templates?: Record<string, string>; transcription?: string; providers?: Record<string, Record<string, unknown>> } = {}) {
+function host(initial: IntelligenceSettings, pro: boolean, options: { device?: string | null; confirm?: boolean; templates?: Record<string, string>; transcription?: string; providers?: Record<string, Record<string, unknown>>; dropsSigns?: string } = {}) {
 	let settings = initial;
 	let device = options.device ?? null;
 	const log: string[] = [];
@@ -51,6 +50,7 @@ function host(initial: IntelligenceSettings, pro: boolean, options: { device?: s
 		now: () => new Date("2026-09-28T10:00:00.000Z"),
 		randomId: () => "0123456789abcdef",
 		transcriptionBackend: () => options.transcription ?? "vision",
+		dropsSigns: () => options.dropsSigns ?? null,
 		providerSettings: (id) => options.providers?.[id] ?? {},
 		dialog: (title, draw) => void dialogs.push({ title, draw }),
 	};
@@ -99,6 +99,13 @@ describe("renderTagModes", () => {
 		pageNotes(h, "home").toggles[0].toggle(true);
 		await flush();
 		expect(h.settings().engineDeviceId).toBe("other");
+	});
+
+	// Ticket 43: a Bullet Journal read by Apple Vision comes back with finished work as open.
+	it("says before the first insight note when the transcription backend keeps none of the user's signs", () => {
+		const warning = (h: IntelligenceSettingsHost) => pageNotes(h, "work").descEl.allText().join(" ");
+		expect(warning(host(emptyIntelligence(), false, { dropsSigns: "Apple Vision" }))).toBe("Apple Vision keeps no signs. Your signs reach insight notes only with a language model that does.");
+		expect(warning(host(emptyIntelligence(), false))).toBe("");
 	});
 
 	it("locks insight notes on a second tag without Pro, and not with it", () => {
@@ -360,14 +367,8 @@ describe("renderIntelligenceSection", () => {
 		named(editor, "Dates on these pages").texts[0].type("  ");
 		await flush();
 		expect(h.settings().profiles[0]).not.toHaveProperty("dates", expect.anything());
-		// The signs are the Profile's: typed, or the Bullet Journal's from the button.
-		named(editor, "Signs on these pages").texts[0].type("! means urgent");
-		await flush();
-		expect(h.settings().profiles[0].signs).toBe("! means urgent");
-		named(editor, "Signs on these pages").buttons[0].click();
-		await flush();
-		expect(h.settings().profiles[0].signs).toBe(BULLET_JOURNAL_SIGNS);
-		expect(named(editor, "Signs on these pages").texts[0].value).toBe(BULLET_JOURNAL_SIGNS);
+		// The signs are the writer's, under Transcription, not a Profile's (ticket 43).
+		expect(editor.some((s) => s.name === "Signs on these pages")).toBe(false);
 		named(editor, "Leave out empty headings").toggles[0].toggle(true);
 		await flush();
 		expect(h.settings().profiles[0].omitEmpty).toBe(true);

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnthropicOcrBackend } from "./anthropic-ocr-backend";
-import { NOTE_TRANSCRIPTION_PROMPT, OCR_REQUEST_TIMEOUT_MS } from "../src/llm-transcript";
+import { NOTE_TRANSCRIPTION_PROMPT, OCR_REQUEST_TIMEOUT_MS, TRANSCRIPTION_PROMPT } from "../src/llm-transcript";
 import { ocrImage } from "../src/ocr-backend";
 import type { RmPage } from "../src/rm-parser";
 
@@ -63,6 +63,16 @@ describe("AnthropicOcrBackend", () => {
 
 		expect(result).toEqual({ status: "skipped", pages: [], text: "", confidence: null });
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	// Ticket 43: the user's signs reach the transcript through the prompt the run was built with.
+	it("sends the prompt it was given, and the one for no signs without", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(200, { content: [{ type: "text", text: "x" }] }));
+		await new AnthropicOcrBackend({ apiKey: "k", model: "claude-sonnet-5", prompt: "with my signs", fetchFn: fetchMock }).recognize([page()]);
+		await new AnthropicOcrBackend({ apiKey: "k", model: "claude-sonnet-5", fetchFn: fetchMock }).recognize([page()]);
+
+		const sent = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).messages[0].content[0].text);
+		expect(sent).toEqual(["with my signs", TRANSCRIPTION_PROMPT]);
 	});
 
 	it("recognizes a single page in one HTTP call and reports ok status", async () => {

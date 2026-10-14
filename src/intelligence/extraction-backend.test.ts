@@ -75,6 +75,13 @@ describe("twoCallBackend", () => {
 		return { complete, requests };
 	}
 
+	// Ticket 43: the user's signs reach the line pass, where the model marks each line.
+	it("tells the line pass what the user's signs mean", async () => {
+		const { complete, requests } = scripted({ kind: "ok", text: "## tasks\n" }, { kind: "ok", text: ANSWER });
+		await twoCallBackend("local", false, complete).extract({ ...INPUT, signs: [{ glyph: "•", meaning: "task-open" }] });
+		expect(requests[0].system.indexOf("The sign • before a line marks an open task.")).toBeLessThan(requests[0].system.indexOf("Work in two steps"));
+	});
+
 	it("writes free-text notes first, line by line, then formats them under the schema with the page beside them", async () => {
 		const { complete, requests } = scripted({ kind: "ok", text: "call Bob => TASK\n\n## tasks\n- Call Bob | SOURCE: call Bob | due: NONE\n## summary\nA call." }, { kind: "ok", text: ANSWER });
 		const outcome = await twoCallBackend("local", false, complete).extract(INPUT);
@@ -90,6 +97,7 @@ describe("twoCallBackend", () => {
 		expect(requests[0].system).toContain('Step 1. Write "LINES:"');
 		// What the marks say comes before the line pass, so the model marks a struck or ticked line by it (research 31).
 		expect(requests[0].system.indexOf("Marks on the page decide")).toBeLessThan(requests[0].system.indexOf("Work in two steps"));
+		expect(requests[0].system).not.toContain("The sign ");
 		expect(requests[0].system).toContain('Under "## tasks" write one line per line you marked TASK: "- <text> | SOURCE: <the transcript line, copied exactly> | due: <date words as written, then @ and the anchor they count from as written, or NONE>".');
 		// A Slot with a date Field brings the date rules, calendar included, into both passes.
 		expect(requests[0].system).toContain("## Due dates");

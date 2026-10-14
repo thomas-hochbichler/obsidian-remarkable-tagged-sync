@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calendarDay, isoDay } from "./dates";
-import { buildPrompt, buildSchema, BULLET_JOURNAL_SIGNS, defuseTemplater, PAGE_DATE_KEY, parseExtraction } from "./extraction";
+import { buildPrompt, buildSchema, defuseTemplater, PAGE_DATE_KEY, parseExtraction } from "./extraction";
+import { BULLET_JOURNAL } from "../signs";
 import { defaultSlots, genericProfile, type SlotDef } from "./settings";
 
 const [TASKS, DECISIONS, SUMMARY, TAGS] = defaultSlots();
@@ -55,12 +56,13 @@ describe("buildPrompt", () => {
 		// A mind map's "Band fragen" is no task (user, 2026-10-09).
 		expect(system).toContain("Words inside a ```mermaid block are a drawn diagram or mind map: they are NOT tasks");
 		expect(buildPrompt({ profile: genericProfile(false), slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {} }).system).not.toContain("How to recognise a task");
-		// Boxes and strike-through mean the same to everyone; a notation's signs only through the Profile (research 31).
+		// Boxes and strike-through mean the same to everyone; a notation's signs only through the user's table (ticket 43).
 		expect(system).toContain("An empty checkbox before a line is an open task");
-		expect(system).not.toContain("The signs at the start of a line");
-		const bujo = buildPrompt({ profile: { ...genericProfile(false), signs: BULLET_JOURNAL_SIGNS }, slots: [TASKS], transcript: "x", referenceDate: MON, known: {} }).system;
-		expect(bujo).toContain("The signs at the start of a line on these pages, from the user: Bullet Journal. A dot (•) before a line is an open task.");
-		expect(buildPrompt({ profile: { ...genericProfile(false), signs: BULLET_JOURNAL_SIGNS }, slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {} }).system).not.toContain("Marks on the page");
+		expect(system).not.toContain("The sign ");
+		const bujo = buildPrompt({ profile: genericProfile(false), slots: [TASKS], transcript: "x", referenceDate: MON, known: {}, signs: BULLET_JOURNAL }).system;
+		expect(bujo).toContain("The sign • before a line marks an open task.");
+		expect(bujo).toContain("A - at the start of a line is the list format, not a sign.");
+		expect(buildPrompt({ profile: genericProfile(false), slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {}, signs: BULLET_JOURNAL }).system).not.toContain("Marks on the page");
 		expect(user).toContain("Page type: Work meeting notes");
 		expect(user).toContain("Monday, 2026-09-28");
 		expect(user).toContain('Example: "call Bob" → Call Bob');

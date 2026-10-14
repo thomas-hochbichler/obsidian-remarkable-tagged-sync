@@ -11,6 +11,7 @@ import { calendarDay, type DateOrder, resolveWrittenDate } from "./dates";
 import { type FieldContext, FIELD_TYPES } from "./field-types";
 import type { Fields, ModelItem } from "./merge";
 import type { ProfileDef, SlotDef } from "./settings";
+import { type SignDef, signRules } from "../signs";
 
 export const PAGE_DATE_KEY = "page_date_text";
 
@@ -130,24 +131,19 @@ export const TASK_CRITERIA = [
  * What a mark on the page means for a task (research 31). The transcript keeps the marks, so they decide:
  * boxes and strike-through mean the same to everyone. Signs of a notation -- a Bullet Journal's dot,
  * cross, arrows and circle -- do not: a dot is a task there and a plain list bullet elsewhere, so their
- * meaning comes from the Profile ("Signs on these pages"), never from here.
+ * meaning is the user's (`signRules`, ticket 43), never from here.
  */
-export function markRules(input: { profile: ProfileDef; slots: readonly SlotDef[] }): string[] {
+export function markRules(input: { slots: readonly SlotDef[]; signs?: readonly SignDef[] }): string[] {
 	if (!input.slots.some((slot) => slot.id === "tasks")) return [];
-	const signs = input.profile.signs?.trim();
 	return [
 		"",
 		"Marks on the page decide. An empty checkbox before a line is an open task. A ticked or crossed checkbox is a task that is done: set done to true. Leave out a line that is struck through (~~like this~~ in the page text). Where one word is struck and another written beside it, use the word that is not struck.",
-		...(signs ? [`The signs at the start of a line on these pages, from the user: ${signs}`] : []),
+		...signRules(input.signs ?? []),
 	];
 }
 
-/** Signs of the Bullet Journal (Ryder Carroll), offered in the Profile dialog; the measured wording of research 31. */
-export const BULLET_JOURNAL_SIGNS =
-	"Bullet Journal. A dot (•) before a line is an open task. An X before a line is a task that is done: set done to true. A line starting with > (migrated) or < (scheduled) is not open here: leave it out. A circle (○) before a line is an event and a dash (— or -) a note: neither is a task.";
-
 /** The one-call prompt (cloud). The local two-call prompts live with the local backend. */
-export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDef[]; transcript: string; referenceDate: Date; known: Record<string, readonly KnownItem[]>; dates?: DateReading }): { system: string; user: string } {
+export function buildPrompt(input: { profile: ProfileDef; slots: readonly SlotDef[]; transcript: string; referenceDate: Date; known: Record<string, readonly KnownItem[]>; dates?: DateReading; signs?: readonly SignDef[] }): { system: string; user: string } {
 	const day = input.referenceDate;
 	const system = [
 		"You extract structured information from one handwritten notebook page.",

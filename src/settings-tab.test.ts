@@ -147,6 +147,8 @@ registerOcrBackend(
 );
 /** Declares the need and forgets the accessors -- the half-declared pair, from the tab's side. */
 registerOcrBackend(testBackend("test-half-consent", { needsBackgroundConsent: true }));
+/** Reads text only, like Apple Vision: the user's signs never reach a transcript. */
+registerOcrBackend(testBackend("test-no-signs", { dropsSigns: () => "Test reader" }));
 
 /**
  * A key pair for the trial ticket (`trial-ticket.ts`). The plugin gets its public half; "signed by
@@ -782,6 +784,28 @@ describe("a backend's own rows", () => {
 		const other = await tabWith({ ocrBackend: "off" });
 		draw(other.tab);
 		expect(settingsRows).toEqual([]);
+	});
+});
+
+// Ticket 43: the writer's notation lives under Transcription, for the transcript and the insight notes alike.
+describe("the signs under Transcription", () => {
+	it("fills in the Bullet Journal, says what a reader without signs loses, and offers to re-transcribe", async () => {
+		const { plugin, tab } = await tabWith({ ocrBackend: "test-no-signs" });
+		const signs = () => row(section(draw(tab), "Transcription"), "Signs");
+		expect(signs().setting.descEl.allText().join(" ")).toBe("");
+
+		signs().setting.buttons[0].click();
+		await settle();
+		expect((plugin.data.signs as { glyph: string }[]).map((sign) => sign.glyph)).toEqual(["•", "X", ">", "<", "○", "—"]);
+		expect((plugin.saves.at(-1) as { signs: unknown[] }).signs).toHaveLength(6);
+		expect(verdict(signs()).allText().join(" ")).toBe("Test reader keeps no signs. Your signs reach insight notes only with a language model that does.");
+
+		const again = section(draw(tab), "Transcription").filter((item) => item.kind === "row").at(-1) as Extract<Drawn, { kind: "row" }>;
+		expect(again.desc).toBe("Applies to pages transcribed from now on.");
+		expect(again.setting.settingEl.visible).toBe(true);
+		const reTranscribe = vi.spyOn(plugin as unknown as { reTranscribeAll(): Promise<void> }, "reTranscribeAll").mockResolvedValue();
+		again.setting.buttons[0].click();
+		expect(reTranscribe).toHaveBeenCalledOnce();
 	});
 });
 

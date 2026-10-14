@@ -43,6 +43,7 @@ import { intelligenceProAllowed } from "./intelligence/plugin-rules";
 import { type IntelligenceSettingsHost, renderIntelligenceSection, renderTagModes, tagModesSummary } from "./intelligence/settings-section";
 import { settingsHostFor } from "./intelligence/settings-host";
 import { createNoteStore } from "./vault-stores";
+import { renderSignsSettings } from "./signs-section";
 
 /**
  * The settings screen, whole.
@@ -91,6 +92,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private devicePassword = "";
 	/** The dialogs open over this tab: drawn again with it, so they never show a stale value. */
 	private readonly dialogs = new Set<EditorDialog>();
+	/** The signs were edited in this session: "Applies from now on" and its button show. */
+	private signsChanged = false;
 
 	constructor(
 		app: App,
@@ -917,6 +920,18 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const id = this.plugin.data.ocrBackend;
 		ocrBackendEntry(id)?.renderSettings?.(containerEl, contextFor(id));
+
+		renderSignsSettings(containerEl, {
+			signs: this.plugin.data.signs,
+			save: async (redraw) => {
+				this.signsChanged = true;
+				await this.plugin.saveData(this.plugin.data);
+				if (redraw) this.display();
+			},
+			changed: this.signsChanged,
+			dropsSigns: selected?.dropsSigns?.(this.plugin.data.llmProviders[id] ?? {}) ?? null,
+			reTranscribeAll: () => void this.plugin.reTranscribeAll(),
+		});
 	}
 
 	/**

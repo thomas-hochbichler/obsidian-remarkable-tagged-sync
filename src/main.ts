@@ -23,6 +23,7 @@ import { rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { type OcrTally, tallyOcr } from "./ocr-tally";
+import { pagePrompt } from "./llm-transcript";
 import {
 	NOTE_NOT_SYNCED_NOTICE,
 	NOTEBOOK_GONE_NOTICE,
@@ -527,7 +528,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// `??=` rather than `??`: a backend that writes through its blob during a run -- the local
 		// model records each page's duration there -- needs the live object, not a throwaway copy, or
 		// the measurement is lost the moment the sync ends.
-		const adapter = entry.create((this.data.llmProviders[id] ??= {}), { silent });
+		const adapter = entry.create((this.data.llmProviders[id] ??= {}), { silent, prompt: pagePrompt(this.data.signs) });
 		if (adapter) return adapter;
 		const label = entry.label;
 		return this.applyOcrFallback(planUnconfiguredFallback({ label, visionAvailable: visionPlatformSupported(), silent }), id);
@@ -675,7 +676,7 @@ export default class TaggedSyncPlugin extends Plugin {
 
 	/** What the engine runs on, decided per run: the sync's and "Re-extract this note"'s alike. */
 	private intelligenceInputs(tagFolderMap: Record<string, string>, transcriptionBackend: string, background: boolean): RunInputs {
-		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background, previousSyncAt: this.data.lastSyncAt };
+		return { settings: this.data.intelligence, tagFolderMap, pro: intelligenceProAllowed(this.entitlement()), transcriptionBackend, providerSettings: this.data.llmProviders, background, previousSyncAt: this.data.lastSyncAt, signs: this.data.signs };
 	}
 
 	/** The engine's side of the sync in progress, so an unload mid-sync can stop the local model's server. */

@@ -1,6 +1,7 @@
 import { type OcrFraming, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
+import { type SignDef, signNames } from "./signs";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -37,16 +38,31 @@ export const PLAIN_TRANSCRIPTION_PROMPT =
 	"and tables. Do not invent structure that is not visually present; when unsure, use plain " +
 	"paragraphs. Output only the transcript text -- no commentary, preamble, code fences, or page " +
 	"labels. If the page has no legible text, output nothing.";
-export const TRANSCRIPTION_PROMPT =
-	PLAIN_TRANSCRIPTION_PROMPT +
-	" Keep what the writer marked. Write struck-through text as ~~text~~. Write a drawn checkbox as - [ ] when it is empty " +
-	"and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: • X > < ○ —. " +
-	"Transcribe exactly what is written; do not correct spelling or wording. If words on the page are joined by drawn " +
-	"lines or arrows (a diagram or a mind map), write only those joined words as a Mermaid flowchart in a ```mermaid " +
-	"block -- the one code fence allowed -- placed where the diagram stands on the page: each word a node, copied " +
-	"exactly; each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or " +
-	"label that is not drawn. Lines, boxes, brackets and underlines that do not join words are not a diagram. Every " +
-	"line of text outside the diagram is transcribed as usual, none left out.";
+/**
+ * The marks-keeping prompt, told the user's signs (ticket 43): the table's characters replace the
+ * fixed Bullet Journal list. The list-marker sentence answers ticket 42: a drawn dash came back as
+ * "- - " and the extraction read the Markdown dash as the writer's. An empty table keeps the measured
+ * prompt byte for byte -- nothing reads a sign's meaning then, and every figure stays valid.
+ */
+export function pagePrompt(signs: readonly SignDef[]): string {
+	const own = signNames(signs);
+	const marker = own.length === 0 ? "" : `The sign stands in place of the list marker: write ${own[0]} text, never - ${own[0]} text; a list line without a sign starts with - as usual. `;
+	return (
+		PLAIN_TRANSCRIPTION_PROMPT +
+		" Keep what the writer marked. Write struck-through text as ~~text~~. Write a drawn checkbox as - [ ] when it is empty " +
+		`and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: ${own.length === 0 ? "• X > < ○ —" : own.join(" ")}. ` +
+		marker +
+		"Transcribe exactly what is written; do not correct spelling or wording. If words on the page are joined by drawn " +
+		"lines or arrows (a diagram or a mind map), write only those joined words as a Mermaid flowchart in a ```mermaid " +
+		"block -- the one code fence allowed -- placed where the diagram stands on the page: each word a node, copied " +
+		"exactly; each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or " +
+		"label that is not drawn. Lines, boxes, brackets and underlines that do not join words are not a diagram. Every " +
+		"line of text outside the diagram is transcribed as usual, none left out."
+	);
+}
+
+/** The prompt for a writer who set no signs. */
+export const TRANSCRIPTION_PROMPT = pagePrompt([]);
 
 /**
  * The prompt for a margin note: a few handwritten words cut out of a document's margin.
@@ -65,9 +81,9 @@ export const NOTE_TRANSCRIPTION_PROMPT =
 	"preamble, quotation marks, code fences or Markdown. If the image holds no words at all, only a " +
 	"line, an arrow or a bracket, output nothing.";
 
-/** The prompt for what is being read; see `OcrFraming`. */
-export function transcriptionPrompt(framing: OcrFraming = "page"): string {
-	return framing === "note" ? NOTE_TRANSCRIPTION_PROMPT : TRANSCRIPTION_PROMPT;
+/** The prompt for what is being read; see `OcrFraming`. `page` is the page prompt, with the user's signs when they set any. */
+export function transcriptionPrompt(framing: OcrFraming = "page", page = TRANSCRIPTION_PROMPT): string {
+	return framing === "note" ? NOTE_TRANSCRIPTION_PROMPT : page;
 }
 
 /**

@@ -31,6 +31,13 @@ workflow publishes the section as the GitHub release body. See
   typed fields, single values, or frontmatter properties and tags. Give a tag several profiles and
   let a cloud model sort each page into the right one, or change the profile of one page by hand.
 
+- **Your own signs, in the transcript and in page notes.** Under Transcription → Signs, say which
+  sign a line can start with and what it means: an open task, a done one, one moved elsewhere, an
+  event, a note, or something of your own. **Bullet journal** fills in Ryder Carroll's key in one
+  click. The transcript copies these signs as you drew them, and page notes read them: a crossed
+  task comes back done, a migrated one is left out. Apple Vision and the two smaller local models
+  keep no signs, and the settings say so where you set them.
+
 - **Before you switch page notes on, update Tagged Sync on every device that shares this vault.**
   An older version writes its settings without the page-note setup, and that would remove it on
   every device.

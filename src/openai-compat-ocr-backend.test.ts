@@ -111,6 +111,16 @@ describe("OpenAiCompatOcrBackend", () => {
 		expect(content[1].image_url!.url.startsWith("data:image/png;base64,")).toBe(true);
 	});
 
+	// Ticket 43: the user's signs reach the transcript through the prompt the run was built with.
+	it("sends the prompt it was given, and the one for no signs without", async () => {
+		fetchMock.mockResolvedValue(chatResponse("x"));
+		await new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", model: "m", prompt: "with my signs", fetchFn: fetchMock }).recognize([page()]);
+		await new OpenAiCompatOcrBackend({ id: "openai", baseURL: "http://x/v1", model: "m", fetchFn: fetchMock }).recognize([page()]);
+
+		const sent = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).messages[0].content[0].text);
+		expect(sent).toEqual(["with my signs", TRANSCRIPTION_PROMPT]);
+	});
+
 	it("tolerates a trailing slash on the base URL (Gemini compat endpoint)", async () => {
 		fetchMock.mockResolvedValue(chatResponse("x"));
 		const backend = new OpenAiCompatOcrBackend({

@@ -48,6 +48,7 @@ async function chooseBackend(
 	plugin.data = {
 		ocrBackend: settings.backend,
 		llmProviders: settings.keys ?? {},
+		signs: [],
 		licence: { ...NO_LICENCE, ...settings.licence },
 	};
 	return (plugin.resolveOcrBackend as (s: boolean) => Chosen).call(plugin, silent);

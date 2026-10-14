@@ -4,7 +4,8 @@
  */
 
 import type { NoteStore } from "../note-builder";
-import type { BackendSettings } from "../ocr-registry";
+import { type BackendSettings, ocrBackendEntry } from "../ocr-registry";
+import type { SignDef } from "../signs";
 import { localDeviceId, type HostEnvironment, type PluginFiles } from "./host";
 import type { IntelligenceSettingsHost } from "./settings-section";
 import type { IntelligenceSettings } from "./settings";
@@ -34,7 +35,7 @@ export async function freeTemplatePath(noteStore: Pick<NoteStore, "exists">, pat
 
 export interface SettingsHostInput {
 	env: HostEnvironment;
-	data: { intelligence: IntelligenceSettings; tagFolderMap: Record<string, string>; ocrBackend: string; llmProviders: Record<string, BackendSettings> };
+	data: { intelligence: IntelligenceSettings; tagFolderMap: Record<string, string>; ocrBackend: string; llmProviders: Record<string, BackendSettings>; signs: readonly SignDef[] };
 	pro: boolean;
 	save: () => Promise<void>;
 	redraw: () => void;
@@ -67,6 +68,7 @@ export function settingsHostFor(input: SettingsHostInput): IntelligenceSettingsH
 		},
 		readTemplate: (path) => env.readVaultNote(path),
 		transcriptionBackend: () => data.ocrBackend,
+		dropsSigns: () => (data.signs.length === 0 ? null : (ocrBackendEntry(data.ocrBackend)?.dropsSigns?.(data.llmProviders[data.ocrBackend] ?? {}) ?? null)),
 		providerSettings: (id) => data.llmProviders[id] ?? {},
 		now: () => env.now(),
 		randomId: () => env.randomId(),

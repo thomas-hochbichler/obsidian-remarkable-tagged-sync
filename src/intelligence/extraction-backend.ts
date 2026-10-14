@@ -12,6 +12,7 @@ import { fetchWithRetry, isUnreachable, OcrTimeoutError, refusalDetail, type Sle
 import { obsidianFetch } from "../obsidian-fetch";
 import { buildPrompt, buildSchema, type DateReading, dateRules, describeSlot, markRules, type ExtractionResult, type KnownItem, parseExtraction, TASK_CRITERIA, WEEKDAYS } from "./extraction";
 import type { ProfileDef, SlotDef } from "./settings";
+import type { SignDef } from "../signs";
 
 export interface CompletionRequest {
 	system: string;
@@ -38,6 +39,8 @@ export interface ExtractionInput {
 	known: Record<string, readonly KnownItem[]>;
 	/** How due dates are read; plain day/month with nothing else known when absent. */
 	dates?: DateReading;
+	/** The user's signs (ticket 43); none when absent. */
+	signs?: readonly SignDef[];
 }
 
 export type ExtractionOutcome = { kind: "ok"; result: ExtractionResult } | { kind: "failed"; reason: string };

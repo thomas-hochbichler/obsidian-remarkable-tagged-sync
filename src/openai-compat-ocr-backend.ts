@@ -14,6 +14,7 @@ import {
 	type Sleep,
 	transcribePages,
 	them,
+	TRANSCRIPTION_PROMPT,
 	transcriptionPrompt,
 	triedAgain,
 	upperFirst,
@@ -41,6 +42,8 @@ export interface OpenAiCompatOcrOptions {
 	 * runs ({@link OWN_SERVER_MAX_TOKENS}); the cloud ones keep their own ceilings (spec §3.1).
 	 */
 	maxTokens?: number;
+	/** The transcription prompt, with the user's signs; absent, the one for no signs. */
+	prompt?: string;
 	fetchFn?: typeof fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
@@ -163,6 +166,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly extraHeaders: Record<string, string>;
 	private readonly deterministic: boolean;
 	private readonly maxTokens: number | undefined;
+	private readonly prompt: string;
 	private readonly fetchFn: typeof fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
@@ -202,6 +206,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.extraHeaders = options.extraHeaders ?? {};
 		this.deterministic = options.deterministic ?? false;
 		this.maxTokens = options.maxTokens;
+		this.prompt = options.prompt ?? TRANSCRIPTION_PROMPT;
 		// Reads as the global fetch and is not one: esbuild's `inject` rewrites this free identifier to
 		// the CORS-free requestUrl shim inside the bundle. `src/fetch-shim.ts` names this exact pattern
 		// -- "the OCR backends' `fetchFn ?? fetch` defaults" -- as one of the two it exists for. The
@@ -272,7 +277,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private async transcribePage(page: RmPage, framing: OcrFraming): Promise<LlmPageOutcome> {
 		try {
 			const content = [
-				{ type: "text", text: transcriptionPrompt(framing) },
+				{ type: "text", text: transcriptionPrompt(framing, this.prompt) },
 				{
 					type: "image_url",
 					image_url: { url: `data:image/png;base64,${Buffer.from(ocrImage(page, framing)).toString("base64")}` },

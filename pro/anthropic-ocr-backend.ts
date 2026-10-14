@@ -12,6 +12,7 @@ import {
 	type Sleep,
 	transcribePages,
 	them,
+	TRANSCRIPTION_PROMPT,
 	transcriptionPrompt,
 	triedAgain,
 	upperFirst,
@@ -47,6 +48,8 @@ export interface AnthropicOcrOptions {
 	 * refused in {@link AnthropicOcrBackend.recognize} with a sentence naming what to do.
 	 */
 	model?: string;
+	/** The transcription prompt, with the user's signs; absent, the one for no signs. */
+	prompt?: string;
 	fetchFn?: typeof fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
@@ -81,6 +84,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	private readonly apiKey: string;
 	/** The model the requests name, exactly as the user entered it. */
 	readonly model: string;
+	private readonly prompt: string;
 	private readonly fetchFn: typeof fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at the endpoint -- see `recognize`. */
@@ -107,6 +111,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	constructor(options: AnthropicOcrOptions) {
 		this.apiKey = options.apiKey;
 		this.model = options.model ?? "";
+		this.prompt = options.prompt ?? TRANSCRIPTION_PROMPT;
 		this.fingerprint = `anthropic|${this.model}`;
 		this.fetchFn = options.fetchFn ?? fetch;
 		this.sleepFn = options.sleepFn;
@@ -162,7 +167,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	private async transcribePage(page: RmPage, framing: OcrFraming): Promise<LlmPageOutcome> {
 		try {
 			const content = [
-				{ type: "text", text: transcriptionPrompt(framing) },
+				{ type: "text", text: transcriptionPrompt(framing, this.prompt) },
 				{
 					type: "image",
 					source: {

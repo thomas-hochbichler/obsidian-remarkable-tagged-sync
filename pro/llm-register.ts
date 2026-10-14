@@ -18,12 +18,12 @@ import { compatExtractionEntry, registerExtractionBackend } from "../src/intelli
  * rerouting to another metered API. Local providers (Ollama/LM Studio) and a configured `custom`
  * endpoint are never key-gated (free / BYO), so they build unconditionally.
  */
-function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAdapter | null {
+function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, prompt?: string): OcrBackendAdapter | null {
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
 
-	if (meta.id === "anthropic") return apiKey ? new AnthropicOcrBackend({ apiKey, model }) : null;
+	if (meta.id === "anthropic") return apiKey ? new AnthropicOcrBackend({ apiKey, model, prompt }) : null;
 	if (meta.kind === "cloud") {
-		return apiKey ? new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic }) : null;
+		return apiKey ? new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic, prompt }) : null;
 	}
 	// `custom` needs a base URL before it can run. Unlike a missing key this is a misconfiguration,
 	// not a reason to quietly transcribe somewhere else, so it reports unavailable rather than falling back.
@@ -31,7 +31,7 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig): OcrBackendAd
 	// The same cap as `src/localhost-register.ts`. These entries replace the free build's under the
 	// same ids, so a cap set only there never reached a Pro build: LM Studio with a reasoning model
 	// was asked for pages with no limit at all (2026-10-14).
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS });
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS, prompt });
 }
 
 /** The thinking line's tone, and `partial`'s: a warning, never an error -- see {@link thinkingSentence}. */
@@ -244,7 +244,7 @@ for (const meta of Object.values(PROVIDERS)) {
 		// correct, closing it would be a change to this build's behaviour that its own spec did not ask
 		// for.
 		needsBackgroundConsent: meta.kind === "cloud",
-		create: (settings: BackendSettings) => createAdapter(meta, settings),
+		create: (settings: BackendSettings, options) => createAdapter(meta, settings, options?.prompt),
 		renderSettings: (containerEl, ctx) => renderProviderSettings(meta, containerEl, ctx),
 	});
 }

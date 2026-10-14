@@ -58,8 +58,6 @@ export interface ProfileDef {
 	 * count from their entry"), given to the model as written. Absent or empty: none.
 	 */
 	dates?: string;
-	/** What the signs at the start of a line mean on these pages (a Bullet Journal's • X > < ○ —), as written. Absent or empty: none. */
-	signs?: string;
 	/**
 	 * A new note leaves out the heading of a Slot that found nothing; it is added where the template has
 	 * it once the page has something for it. Absent: every heading is written, empty or not.

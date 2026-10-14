@@ -84,6 +84,11 @@ async function repairQuarantine(executable: string): Promise<void> {
 	});
 }
 
+/** The prompt this model reads a page with: the marks-keeping one unless the model cannot take it. */
+export function localPrompt(generation: ModelGeneration, prompt = TRANSCRIPTION_PROMPT): string {
+	return generation.keepsMarks ? prompt : PLAIN_TRANSCRIPTION_PROMPT;
+}
+
 /**
  * The invocation of §3.3, with one image per process and per-page results.
  *
@@ -94,11 +99,6 @@ async function repairQuarantine(executable: string): Promise<void> {
  * that decides anything, and what it decides -- whether a context is pinned -- is the difference
  * between 7.99 GB and 42.82 GB of peak memory.
  */
-/** The page prompt this model reads with: the marks-keeping one unless the model cannot take it. */
-export function transcriptionPrompt(generation: ModelGeneration): string {
-	return generation.keepsMarks ? TRANSCRIPTION_PROMPT : PLAIN_TRANSCRIPTION_PROMPT;
-}
-
 export function pageArgs(paths: LocalModelPaths, imageFile: string, generation: ModelGeneration, prompt: string): string[] {
 	return [
 		"-m",
@@ -231,6 +231,7 @@ export function createLocalOcrBackend(
 	pluginId: string,
 	settings: BackendSettings,
 	onRuntimeFailure?: (message: string) => void,
+	prompt?: string,
 ): LocalOcrBackend | null {
 	// The user's pick reaches the sync the same way it reaches the card: a preference, ignored the
 	// moment the model it names is gone or too big for this machine.
@@ -239,5 +240,5 @@ export function createLocalOcrBackend(
 	const { paths, generation } = resolved;
 	if (readLocalModelState(paths, Date.now(), generation) !== "ready") return null;
 	if (isLocalModelBusy(paths)) return null;
-	return new LocalOcrBackend({ runPage: createRunner(paths, generation), settings, onRuntimeFailure, generation });
+	return new LocalOcrBackend({ runPage: createRunner(paths, generation), settings, onRuntimeFailure, generation, prompt });
 }
