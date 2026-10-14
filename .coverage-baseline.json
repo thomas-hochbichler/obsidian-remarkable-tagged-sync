@@ -163,8 +163,8 @@
 			"branches": 0
 		},
 		"src/local-model-runtime.ts": {
-			"lines": 23,
-			"branches": 13
+			"lines": 45,
+			"branches": 20
 		},
 		"src/local-model-settings.ts": {
 			"lines": 0,
@@ -415,8 +415,8 @@
 			"branches": 7
 		},
 		"src/vision-ocr-runtime.ts": {
-			"lines": 28,
-			"branches": 16
+			"lines": 30,
+			"branches": 19
 		},
 		"src/vision-register.ts": {
 			"lines": 0,
