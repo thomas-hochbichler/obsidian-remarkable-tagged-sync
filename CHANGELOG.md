@@ -20,6 +20,12 @@ workflow publishes the section as the GitHub release body. See
   chat hides that part, so the same model looked fine there. The plugin now keeps only what follows
   it. A note already transcribed this way is put right by *Re-transcribe*.
 
+- **A page on your own server -- Ollama, LM Studio or a custom one -- stops after 16 384 tokens.** A
+  model that reasons without end used to hold a page until the ten-minute request limit, and longer
+  still for the pages queued behind it. Now it stops after two to five minutes, the page is left out
+  with a warning, and the next sync tries it again. A page that came back fine needed at most 6 161
+  on the reference pages. Cloud providers keep their own limits.
+
 ## [1.8.4] - 2026-10-13
 
 ### Fixed

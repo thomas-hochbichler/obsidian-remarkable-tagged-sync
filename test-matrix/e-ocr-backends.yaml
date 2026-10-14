@@ -725,6 +725,14 @@
       file: src/localhost-register.test.ts
       test: "create() > caps every page's answer on these servers, so a model that reasons without end stops in minutes, not at the ten-minute limit"
 
+    - id: E26.6
+      scenario: "The same servers in a Pro build, whose entries replace the free build's under the same ids"
+      tier: pro
+      expect: "The same 16 384 cap; the cloud providers still send none. The cap was set only on the free entries, so LM Studio with a reasoning model was asked for pages with no limit at all (2026-10-14)"
+      layer: unit
+      file: pro/llm-register.test.ts
+      test: "a page's answer budget > caps it on the user's own servers, and leaves the cloud providers their own ceilings"
+
 - feature: E40
   name: What the localhost backends say a background run costs
   code: src/localhost-register.ts
