@@ -327,7 +327,7 @@ describe("AnthropicOcrBackend", () => {
 
 			expect(result.pages).toEqual([{ status: "failed", text: "" }]);
 			expect(result.warnings?.[0]).toContain("did not answer in 10 minutes");
-			expect(result.warnings?.[0]).toContain('once it answers again, run "Re-transcribe all synced notes".');
+			expect(result.warnings?.[0]).toContain('The next three syncs try it again; if that does not help, run "Re-transcribe all synced notes".');
 		} finally {
 			vi.useRealTimers();
 		}
@@ -461,8 +461,8 @@ describe("AnthropicOcrBackend reporting", () => {
 		// never a different setting, which is why the sentence differs from the other adapter's.
 		expect(result.warnings?.[0]).toBe(
 			"1 page was left out because the model's answer ran past what it may return — Claude models reason before answering, " +
-				'and those tokens count against the same limit. A later sync will not pick it up on its own: switch to a model that ' +
-				'doesn\'t reason, then run "Re-transcribe all synced notes".',
+				'and those tokens count against the same limit. The next three syncs try it again; if that does not help, switch to a ' +
+				'model that doesn\'t reason, then run "Re-transcribe all synced notes".',
 		);
 	});
 

@@ -122,6 +122,15 @@ export function readAgain(framing: OcrFraming): string {
 }
 
 /**
+ * What becomes of the pages a warning names, then what the user does if that is not enough. A
+ * notebook page is read again by the next three syncs (`failedReads` in `sync-engine.ts`); a margin
+ * note or a page added to a PDF is not, for a failure that repeats with the same settings.
+ */
+export function nextStep(pages: number, framing: OcrFraming, fix: string): string {
+	return framing === "page" ? `The next three syncs try ${them(pages, framing)} again; if that does not help, ${fix}.` : `A later sync will not pick ${them(pages, framing)} up on its own: ${fix}.`;
+}
+
+/**
  * The sentence an unreachable or failing server's warning ends with: for a margin note or a page added
  * to a PDF, that nothing is lost -- a sync tries it again with the same settings (`OcrResult.retryable`).
  * "Later", not "next": that retry waits an hour (`OCR_RETRY_INTERVAL_MS`), so the very next auto-sync

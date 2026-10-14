@@ -13,7 +13,7 @@ import {
 	sanitizeTranscript,
 	type Sleep,
 	transcribePages,
-	them,
+	nextStep,
 	TRANSCRIPTION_PROMPT,
 	transcriptionPrompt,
 	triedAgain,
@@ -349,15 +349,6 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
  * limit; `finish_reason: "length"` fails the page, and the next sync retries it.
  */
 export const OWN_SERVER_MAX_TOKENS = 16_384;
-
-/**
- * What becomes of the pages a warning names, then what the user does if that is not enough. A
- * notebook page is read again by the next three syncs (`failedReads` in `sync-engine.ts`); a margin
- * note or a page added to a PDF is not, for a failure that repeats with the same settings.
- */
-function nextStep(pages: number, framing: OcrFraming, fix: string): string {
-	return framing === "page" ? `The next three syncs try ${them(pages, framing)} again; if that does not help, ${fix}.` : `A later sync will not pick ${them(pages, framing)} up on its own: ${fix}.`;
-}
 
 /**
  * The sentence a run that waited out {@link OCR_REQUEST_TIMEOUT_MS} puts in the report.
