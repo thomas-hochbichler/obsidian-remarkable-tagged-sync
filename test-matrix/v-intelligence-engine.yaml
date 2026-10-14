@@ -3749,6 +3749,13 @@
       file: src/llm-transcript.test.ts
       test: "the diagram in a request of its own > never takes a line with a word of its own, and takes a diagram drawn in a code fence whole"
 
+    - id: V75.18
+      scenario: "The diagram request copies a page's lines into nodes, '- ' and '×' included (Qwen3-VL-8B in LM Studio, 2026-10-14: page 1 came out as nothing but the block); a list item or a task holds only diagram words"
+      expect: "The copied diagram is not trusted and the text stays as it was; a list item, a task or a signed line is never taken into a diagram"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the diagram in a request of its own > trusts no diagram that copied the page's lines into its nodes, and never takes a list item or a task"
+
     - id: V75.14
       scenario: "An adapter told to read diagrams apart transcribes a page"
       expect: "Two requests, the text prompt then the diagram prompt; the page's text with the diagram put in"

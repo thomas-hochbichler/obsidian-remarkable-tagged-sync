@@ -81,9 +81,17 @@ export const DIAGRAM_PROMPT =
 	"brackets and underlines that do not join words are not a diagram. Output only the block, and nothing at all when the page " +
 	"holds no diagram.";
 
-/** A Mermaid block's words, node and edge labels alike, lower case: what a line of text is checked against. */
-function diagramWords(block: string): Set<string> {
+/**
+ * The start of a line of text, never of a diagram's word: a list item, a task, a sign, a number, a
+ * heading. A line that starts so stays in the text; a node that starts so shows a page copied into
+ * the diagram (ticket 38).
+ */
+const TEXT_LINE = /^\s*(?:[-*+•·×✓○◦—–>!→]\s|[Xx]\s|\d+[.)]\s|#{1,6}\s)/u;
+
+/** A Mermaid block's words, node and edge labels alike, lower case: what a line of text is checked against. Null when a node is a line of text. */
+function diagramWords(block: string): Set<string> | null {
 	const words = new Set<string>();
+	let copied = false;
 	const add = (text: string) => {
 		for (const word of wordsOf(text.replace(/#quot;/g, '"'))) words.add(word);
 	};
@@ -96,10 +104,12 @@ function diagramWords(block: string): Set<string> {
 			if (i % 3 === 2) return add(part.replace(/^\||\|$/g, ""));
 			if (i % 3 === 1) return;
 			const node = /^([\p{L}\p{N}_]+)\s*(?:[[({>]+\s*"?(.*?)"?\s*[\])}]+)?$/u.exec(part.trim());
-			if (node !== null) add(node[2] ?? node[1]);
+			if (node === null) return;
+			if (node[2] !== undefined && TEXT_LINE.test(node[2])) copied = true;
+			add(node[2] ?? node[1]);
 		});
 	}
-	return words;
+	return copied ? null : words;
 }
 
 /** An arrow or a line between boxes, as a transcript writes one out. */
@@ -118,14 +128,17 @@ function wordsOf(text: string): string[] {
  * The diagram the second request found, put into the page's text from the first (ticket 38). The block
  * takes the place of the lines made only of its words -- the diagram as the first request wrote it, a
  * word to a line or as ASCII art in a code fence -- and every other line stays where it was. Text can
- * only ever be replaced by a block that holds its words; a line with one word of its own stays. No
- * block in the answer: the text as it was. A block whose words stand on no line: after the text.
+ * only ever be replaced by a block that holds its words; a line with one word of its own stays, and so
+ * does a list item, a task or a signed line. No block in the answer, or one that copied the page's
+ * lines into nodes: the text as it was. A block whose words stand on no line: after the text.
  */
 export function placeDiagram(text: string, answer: string): string {
 	const block = /```mermaid[^\n]*\n[\s\S]*?```/.exec(answer)?.[0];
 	if (block === undefined) return text;
 	const words = diagramWords(block);
-	if (words.size === 0) return text;
+	// Qwen3-VL-8B in LM Studio, 2026-10-14: asked for a page's diagram, it made one of every line of a
+	// page with none, "- fix failing tests" and "× Analyse …" as nodes, and the page's text went with it.
+	if (words === null || words.size === 0) return text;
 	const ofDiagram = (body: string) => {
 		const own = wordsOf(body);
 		return own.length > 0 && own.every((word) => words.has(word));
@@ -134,7 +147,7 @@ export function placeDiagram(text: string, answer: string): string {
 	const PLACE = "\u0000diagram";
 	const unfenced = text.replace(/```[^\n]*\n([\s\S]*?)```/g, (fenced: string, body: string) => (ofDiagram(body) ? PLACE : fenced));
 	const lines = unfenced.split("\n");
-	const inDiagram = lines.map((line) => line === PLACE || ofDiagram(line));
+	const inDiagram = lines.map((line) => line === PLACE || (ofDiagram(line) && !TEXT_LINE.test(line)));
 	// A line of arrows alone between the diagram's words ("↓", reference page 08) is the diagram's too;
 	// one anywhere else, and a divider, is not.
 	const next = (from: number, step: number) => {

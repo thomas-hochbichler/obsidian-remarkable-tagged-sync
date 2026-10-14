@@ -208,6 +208,15 @@ describe("the diagram in a request of its own", () => {
 		expect(placeDiagram("Abgab\n\nGerät → Abgleich → Notiz\n↓\nZwischenspeicher\n\n---\n\n↓ morgen\n→", block)).toBe(`Abgab\n\n${block}\n\n---\n\n↓ morgen\n→`);
 	});
 
+	// Qwen3-VL-8B in LM Studio, 2026-10-14: every line of a page with no diagram became a node, and only the block was left.
+	it("trusts no diagram that copied the page's lines into its nodes, and never takes a list item or a task", () => {
+		const page = ["13/10/2026", "- [x] IMSA-7232: Conjur → TARDIS Wipe Out Playground", "  - CICD auth problem", "× Analyse the CAIMAN 502 Login issue on PROD"].join("\n");
+		const copied = ["```mermaid", "flowchart TD", '    A["X IMSA-7232: Conjur → TARDIS Wipe Out Playground"] --> B["- CICD auth problem"]', '    U["× Analyse the CAIMAN 502 Login issue on PROD"]', "```"].join("\n");
+		expect(placeDiagram(page, copied)).toBe(page);
+		const words = ["```mermaid", "graph TD", '    A["login"] --> B["Browser"]', "```"].join("\n");
+		expect(placeDiagram("- login\nX Browser\nlogin\nBrowser", words)).toBe(`- login\nX Browser\n${words}`);
+	});
+
 	it("never takes a line with a word of its own, and takes a diagram drawn in a code fence whole", () => {
 		const drawn = ["Plan", "```", "+-------+     +-------+", "| login | --> | INSK Browser |", "+-------+     +-------+", "```", "login again tomorrow"].join("\n");
 		expect(placeDiagram(drawn, diagram)).toBe(["Plan", diagram, "login again tomorrow"].join("\n"));
