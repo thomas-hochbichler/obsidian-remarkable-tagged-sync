@@ -285,12 +285,21 @@ export function splitAtTypedText(page: RmPage, options: { splitTall?: boolean } 
 }
 
 /**
- * Strip LLM envelope leakage from a transcript: a single leading preamble line and an outer code
- * fence wrapping the whole response (structure-preserving-ocr spec §2). Anchored to the response
- * edges only — never touches inner content, so a code block the user wrote on the page survives.
- * Biased to under-strip: a stray line is a cheap failure, corrupting a note is not.
+ * Strip LLM envelope leakage from a transcript: a model's reasoning, a single leading preamble line
+ * and an outer code fence wrapping the whole response (structure-preserving-ocr spec §2). Anchored
+ * to the response edges only — never touches inner content, so a code block the user wrote on the
+ * page survives. Biased to under-strip: a stray line is a cheap failure, corrupting a note is not.
  */
 export function sanitizeTranscript(text: string): string {
+	// 0. Reasoning, up to its closing tag. A model that thinks before it answers can hand its thinking
+	//    back as answer text: Qwen3.6-35B-A3B in LM Studio did, the opening <think> left in its chat
+	//    template and only the closing tag in the answer, and every page of the note began with two
+	//    hundred lines of "The user wants the handwritten text transcribed" (2026-10-14). LM Studio's
+	//    own chat hides that part, so the same model looked clean there. Everything before the last
+	//    closing tag is the model's, never the page's: nobody writes </think> by hand.
+	const reasoningEnd = text.lastIndexOf("</think>");
+	if (reasoningEnd !== -1) text = text.slice(reasoningEnd + "</think>".length);
+
 	let lines = text.trim().split("\n");
 
 	// 1. Leading preamble line: only a tight "Here is/are (the) transcript/transcription" match.

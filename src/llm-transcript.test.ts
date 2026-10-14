@@ -120,6 +120,15 @@ describe("the words a model backend's warning is made of", () => {
 });
 
 describe("sanitizeTranscript", () => {
+	// Qwen3.6-35B-A3B in LM Studio, 2026-10-14: the opening tag stays in the chat template, the
+	// thinking and the closing tag come back as the answer.
+	it("drops a model's reasoning, with or without its opening tag", () => {
+		expect(sanitizeTranscript("The user wants the handwritten text transcribed.\n\n1. **Transcribe line by line:**\n</think>\n\n# Planung\n- a")).toBe("# Planung\n- a");
+		expect(sanitizeTranscript("<think>\nIs it 2024 or 2026?\n</think>\n\n1.10.2026 Do")).toBe("1.10.2026 Do");
+		// Reasoning and nothing after it: nothing of the page.
+		expect(sanitizeTranscript("Hmm, the page is blank.\n</think>")).toBe("");
+	});
+
 	it("strips a tight preamble line", () => {
 		expect(sanitizeTranscript("Here is the transcript:\n\n# Title")).toBe("# Title");
 		expect(sanitizeTranscript("Here are the transcription\n- a")).toBe("- a");

@@ -756,6 +756,13 @@
       file: src/llm-transcript.test.ts
       test: "sanitizeTranscript > drops an opener no closer follows, and a line of nothing but backticks"
 
+    - id: E42.3
+      scenario: "A model that thinks before it answers hands its thinking back as answer text (Qwen3.6-35B-A3B in LM Studio, 2026-10-14: the opening <think> in the chat template, the thinking and </think> in the answer)"
+      expect: "Only what follows the last </think>. Every page of the note began with two hundred lines of \"The user wants the handwritten text transcribed\"; LM Studio's own chat hides that part, so the same model looked clean there"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "sanitizeTranscript > drops a model's reasoning, with or without its opening tag"
+
 - feature: E43
   name: A margin note is sent as a note, not as a page
   code: src/ocr-backend.ts

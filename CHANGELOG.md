@@ -12,6 +12,14 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **A model that thinks before it answers no longer writes its thinking into your notes.** With some
+  reasoning models in LM Studio -- Qwen3.6-35B-A3B, for one -- every transcribed page began with the
+  model's deliberation, often a few hundred lines of it, before the text of the page. LM Studio's own
+  chat hides that part, so the same model looked fine there. The plugin now keeps only what follows
+  it. A note already transcribed this way is put right by *Re-transcribe*.
+
 ## [1.8.4] - 2026-10-13
 
 ### Fixed
