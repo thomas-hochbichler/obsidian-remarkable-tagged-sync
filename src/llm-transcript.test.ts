@@ -9,7 +9,9 @@ import {
 	LLM_MAX_PARALLELISM,
 	NOTE_TRANSCRIPTION_PROMPT,
 	pageCount,
+	DIAGRAM_PROMPT,
 	pagePrompt,
+	placeDiagram,
 	PLAIN_TRANSCRIPTION_PROMPT,
 	readAgain,
 	refusalDetail,
@@ -156,6 +158,59 @@ describe("the words a model backend's warning is made of", () => {
 	it("leaves an added page's count out too", () => {
 		expect(pageCount(1, "added-page")).toBe("pages added on the tablet were");
 		expect(upperFirst(pageCount(1, "added-page"))).toBe("Pages added on the tablet were");
+	});
+});
+
+// Ticket 38, 2026-10-14: asked for text and diagram at once, qwen3-vl-30b-a3b-instruct gave back only
+// the diagram for the user's page 4 -- an open and a done task among the lines lost.
+describe("the diagram in a request of its own", () => {
+	it("leaves the diagram sentences out of the page prompt, and nothing else", () => {
+		const text = pagePrompt([], false);
+		expect(text).not.toContain("Mermaid");
+		expect(text.endsWith("Transcribe exactly what is written; do not correct spelling or wording.")).toBe(true);
+		expect(TRANSCRIPTION_PROMPT.startsWith(text)).toBe(true);
+		expect(pagePrompt([])).toBe(TRANSCRIPTION_PROMPT);
+		// The diagram prompt: quoted node words, a line with an arrow in it is text, nothing without a diagram.
+		expect(DIAGRAM_PROMPT).toContain('A["words"]');
+		expect(DIAGRAM_PROMPT).toContain("8k -> 16k, is text");
+		expect(DIAGRAM_PROMPT).toContain("nothing at all when the page holds no diagram");
+	});
+
+	// The user's page 4 as the two requests would read it: the text with the diagram's words loose, and the diagram.
+	const text = [
+		"14/10/2026",
+		"7:30h • CAIMAN loggin issue on PROD analyze",
+		"× TARDIS icto registration on insa-test -> /HSR-7234",
+		"",
+		"CAIMAN PROD ISSUE",
+		"login",
+		"INSK Browser",
+		"calls. callback",
+		"",
+		"Done today",
+	].join("\n");
+	const diagram = ["```mermaid", "graph TD", '    A["CAIMAN PROD ISSUE"] --> B["login"]', '    B --> C["INSK Browser"]', '    C -->|calls.| D["callback"]', "```"].join("\n");
+
+	it("puts the diagram where its words stood, and keeps every other line where it was", () => {
+		expect(placeDiagram(text, diagram)).toBe(
+			["14/10/2026", "7:30h • CAIMAN loggin issue on PROD analyze", "× TARDIS icto registration on insa-test -> /HSR-7234", "", diagram, "", "Done today"].join("\n"),
+		);
+	});
+
+	it("keeps the text as it is without a diagram, and puts a diagram whose words stand nowhere after it", () => {
+		expect(placeDiagram(text, "")).toBe(text);
+		expect(placeDiagram("- [ ] call Anna", diagram)).toBe(`- [ ] call Anna\n\n${diagram}`);
+	});
+
+	// Reference page 08, qwen3-vl-30b-a3b-instruct's text request, live 2026-10-14.
+	it("takes a line of arrows alone between the diagram's words, and leaves one elsewhere and a divider", () => {
+		const block = ["```mermaid", "graph LR", '    A["Gerät"] --> B["Abgleich"]', '    B --> C["Notiz"]', '    B --> D["Zwischenspeicher"]', "```"].join("\n");
+		expect(placeDiagram("Abgab\n\nGerät → Abgleich → Notiz\n↓\nZwischenspeicher\n\n---\n\n↓ morgen\n→", block)).toBe(`Abgab\n\n${block}\n\n---\n\n↓ morgen\n→`);
+	});
+
+	it("never takes a line with a word of its own, and takes a diagram drawn in a code fence whole", () => {
+		const drawn = ["Plan", "```", "+-------+     +-------+", "| login | --> | INSK Browser |", "+-------+     +-------+", "```", "login again tomorrow"].join("\n");
+		expect(placeDiagram(drawn, diagram)).toBe(["Plan", diagram, "login again tomorrow"].join("\n"));
 	});
 });
 

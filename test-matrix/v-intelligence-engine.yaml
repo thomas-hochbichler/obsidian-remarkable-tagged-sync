@@ -3714,6 +3714,70 @@
       file: src/llm-transcript.test.ts
       test: "repairMermaid > touches nothing outside a mermaid block, and is applied to every transcript"
 
+    - id: V75.9
+      scenario: "The page prompt for a server of the user's own, and the diagram prompt"
+      expect: "The page prompt without its diagram sentences, the one-request prompt unchanged byte for byte; the diagram prompt asks for quoted node words, calls a line with an arrow inside it text, and wants nothing without a diagram"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the diagram in a request of its own > leaves the diagram sentences out of the page prompt, and nothing else"
+
+    - id: V75.10
+      scenario: "The user's page 4: the text request writes the diagram's words loose among the lines, the diagram request draws them (qwen3-vl-30b-a3b-instruct had dropped an open and a done task in one request, 2026-10-14)"
+      expect: "The block takes the place of the lines made only of its words; the date, both task lines and the line after stay where they were"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the diagram in a request of its own > puts the diagram where its words stood, and keeps every other line where it was"
+
+    - id: V75.11
+      scenario: "The diagram request finds no diagram, or one whose words stand on no line"
+      expect: "The text as it was; the block after the text"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the diagram in a request of its own > keeps the text as it is without a diagram, and puts a diagram whose words stand nowhere after it"
+
+    - id: V75.12
+      scenario: "A line of arrows alone between the diagram's lines, another elsewhere, and a divider (reference page 08, live)"
+      expect: "The first goes into the diagram; the others stay"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the diagram in a request of its own > takes a line of arrows alone between the diagram's words, and leaves one elsewhere and a divider"
+
+    - id: V75.13
+      scenario: "The text request drew the diagram as ASCII art in a code fence, and a line beside it holds a word of its own"
+      expect: "The fenced drawing goes whole; the line stays"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "the diagram in a request of its own > never takes a line with a word of its own, and takes a diagram drawn in a code fence whole"
+
+    - id: V75.14
+      scenario: "An adapter told to read diagrams apart transcribes a page"
+      expect: "Two requests, the text prompt then the diagram prompt; the page's text with the diagram put in"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > reads a page twice when told to, and puts the diagram into the text"
+
+    - id: V75.15
+      scenario: "The diagram request fails, and a margin note is read"
+      expect: "The page keeps its text and the report says nothing, since nothing was left out; a margin note gets one request"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > keeps the page's text, and says nothing, when the diagram request fails; and asks a margin note once"
+
+    - id: V75.16
+      scenario: "Ollama, LM Studio or a custom server is the transcription backend, with signs set"
+      expect: "The text prompt carries the signs and no diagram sentences; the diagram prompt is set"
+      layer: unit
+      file: src/localhost-register.test.ts
+      test: "create() > reads a page's diagram in a request of its own, with the user's signs in the text prompt"
+
+    - id: V75.17
+      scenario: "The same servers in a Pro build, and the cloud providers"
+      tier: pro
+      expect: "The servers read the diagram apart; the cloud keeps the one-request prompt it was measured with"
+      layer: unit
+      file: pro/llm-register.test.ts
+      test: "a page's answer budget > asks the user's own servers for the diagram apart, and the cloud in one prompt"
+
 - feature: V76
   name: "The user's signs, set once under Transcription, reach the transcript and the insight notes (ticket 43)"
   code: src/signs.ts

@@ -121,6 +121,28 @@ describe("OpenAiCompatOcrBackend", () => {
 		expect(sent).toEqual(["with my signs", TRANSCRIPTION_PROMPT]);
 	});
 
+	// Ticket 38: on a server of the user's own the diagram is asked for alone, so the page's text cannot go.
+	it("reads a page twice when told to, and puts the diagram into the text", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("Plan\nlogin\nBrowser\nDone")).mockResolvedValueOnce(chatResponse("```mermaid\ngraph TD\n    login --> Browser\n```"));
+		const result = await new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://x/v1", model: "m", prompt: "text only", diagramPrompt: "diagram only", fetchFn: fetchMock }).recognize([page()]);
+
+		expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).messages[0].content[0].text)).toEqual(["text only", "diagram only"]);
+		expect(result.pages?.[0]).toEqual({ status: "ok", text: "Plan\n```mermaid\ngraph TD\n    login --> Browser\n```\nDone" });
+	});
+
+	it("keeps the page's text, and says nothing, when the diagram request fails; and asks a margin note once", async () => {
+		fetchMock.mockResolvedValueOnce(chatResponse("Plan")).mockResolvedValueOnce(jsonResponse(500, {}));
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://x/v1", model: "m", diagramPrompt: "diagram only", fetchFn: fetchMock, sleepFn: async () => {} });
+		const result = await backend.recognize([page()]);
+		expect(result.pages?.[0]).toEqual({ status: "ok", text: "Plan" });
+		expect(result.warnings ?? []).toEqual([]);
+
+		fetchMock.mockClear();
+		fetchMock.mockResolvedValue(chatResponse("Nachfragen"));
+		await backend.recognize([page()], undefined, "note");
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
 	it("tolerates a trailing slash on the base URL (Gemini compat endpoint)", async () => {
 		fetchMock.mockResolvedValue(chatResponse("x"));
 		const backend = new OpenAiCompatOcrBackend({

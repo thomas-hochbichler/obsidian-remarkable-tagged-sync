@@ -6,6 +6,7 @@ import { unreachableMessage } from "./localhost-register";
 import { LOCALHOST_PROVIDERS } from "./localhost-providers";
 import { OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import "./localhost-register";
+import { DIAGRAM_PROMPT, pagePrompt } from "./llm-transcript";
 
 const probe = vi.hoisted(() => ({ verdict: { vision: "supported", thinking: "unknown" } as { vision: string; thinking: string; missing?: { suggestion: string | null } } }));
 
@@ -87,6 +88,15 @@ describe("create()", () => {
 
 		expect(result?.status).toBe("failed");
 		expect(result?.warnings?.[0]).toContain("No model is set");
+	});
+
+	// Ticket 38: a local model asked for text and diagram at once dropped the text; the diagram goes alone.
+	it("reads a page's diagram in a request of its own, with the user's signs in the text prompt", () => {
+		for (const id of IDS) {
+			const adapter = ocrBackendEntry(id)?.create({ baseURL: "http://h/v1" }, { silent: false, signs: [{ glyph: "★", meaning: "note" }] }) as unknown as { prompt: string; diagramPrompt: string };
+			expect(adapter.prompt, id).toBe(pagePrompt([{ glyph: "★", meaning: "note" }], false));
+			expect(adapter.diagramPrompt, id).toBe(DIAGRAM_PROMPT);
+		}
 	});
 
 	it("caps every page's answer on these servers, so a model that reasons without end stops in minutes, not at the ten-minute limit", () => {

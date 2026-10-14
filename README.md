@@ -241,7 +241,9 @@ struck line is left out.
 
 Words you joined with drawn lines or arrows — a sketch, a mind map, a little flow — come out as a
 diagram: a Mermaid flowchart that Obsidian draws, with your words as its boxes. Insight notes never take
-a task from inside a diagram. Underlines, boxes, brackets and dividers are left as they are.
+a task from inside a diagram. Underlines, boxes, brackets and dividers are left as they are. With a
+server of your own (Ollama, LM Studio), a page is read twice, once for its text and once for the
+diagram: asked for both at once, a local model sometimes kept the diagram and dropped the lines around it.
 
 What a sign means is yours to say, once for every notebook, under **Transcription → Signs**: one row
 per sign, with what it means — an open task, a done one, a task moved elsewhere, an event, a note, or

@@ -11,6 +11,8 @@ import { visionOnly } from "../src/localhost-vision-detect";
 // class, same requests; only `metered` changed where it is derived from.
 import { OpenAiCompatOcrBackend, OWN_SERVER_MAX_TOKENS } from "../src/openai-compat-ocr-backend";
 import { compatExtractionEntry, registerExtractionBackend } from "../src/intelligence/extraction-registry";
+import { DIAGRAM_PROMPT, pagePrompt } from "../src/llm-transcript";
+import type { SignDef } from "../src/signs";
 
 /**
  * Selects the adapter for one run (multi-provider spec §6). The asymmetry is deliberate: a missing
@@ -18,8 +20,9 @@ import { compatExtractionEntry, registerExtractionBackend } from "../src/intelli
  * rerouting to another metered API. Local providers (Ollama/LM Studio) and a configured `custom`
  * endpoint are never key-gated (free / BYO), so they build unconditionally.
  */
-function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, prompt?: string): OcrBackendAdapter | null {
+function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, signs: readonly SignDef[] = []): OcrBackendAdapter | null {
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
+	const prompt = pagePrompt(signs);
 
 	if (meta.id === "anthropic") return apiKey ? new AnthropicOcrBackend({ apiKey, model, prompt }) : null;
 	if (meta.kind === "cloud") {
@@ -31,7 +34,8 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, prompt?: stri
 	// The same cap as `src/localhost-register.ts`. These entries replace the free build's under the
 	// same ids, so a cap set only there never reached a Pro build: LM Studio with a reasoning model
 	// was asked for pages with no limit at all (2026-10-14).
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS, prompt });
+	// And, as there, the diagram in a request of its own (ticket 38); the cloud reads both at once.
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, extraHeaders: meta.extraHeaders, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS, prompt: pagePrompt(signs, false), diagramPrompt: DIAGRAM_PROMPT });
 }
 
 /** The thinking line's tone, and `partial`'s: a warning, never an error -- see {@link thinkingSentence}. */
@@ -244,7 +248,7 @@ for (const meta of Object.values(PROVIDERS)) {
 		// correct, closing it would be a change to this build's behaviour that its own spec did not ask
 		// for.
 		needsBackgroundConsent: meta.kind === "cloud",
-		create: (settings: BackendSettings, options) => createAdapter(meta, settings, options?.prompt),
+		create: (settings: BackendSettings, options) => createAdapter(meta, settings, options?.signs),
 		renderSettings: (containerEl, ctx) => renderProviderSettings(meta, containerEl, ctx),
 	});
 }

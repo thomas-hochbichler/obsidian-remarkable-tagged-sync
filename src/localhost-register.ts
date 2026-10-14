@@ -23,6 +23,8 @@ import { type BackendSettings, type BackendSettingsContext, registerOcrBackend }
 import { OpenAiCompatOcrBackend, OWN_SERVER_MAX_TOKENS } from "./openai-compat-ocr-backend";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
 import { compatExtractionEntry, registerExtractionBackend } from "./intelligence/extraction-registry";
+import { DIAGRAM_PROMPT, pagePrompt } from "./llm-transcript";
+import type { SignDef } from "./signs";
 
 /**
  * What the transcript looks like, in one sentence under the dropdown.
@@ -70,7 +72,7 @@ const BACKGROUND_CONSENT_DESC =
 /** This backend's slice of the opaque settings blob: the provider config plus its own consent flag. */
 type LocalhostSettings = LlmProviderConfig & { backgroundConsent?: boolean };
 
-function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, prompt?: string): OcrBackendAdapter {
+function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, signs: readonly SignDef[] = []): OcrBackendAdapter {
 	const { baseURL, model, apiKey } = resolveProviderEndpoint(meta, cfg);
 
 	// `custom` needs a base URL before it can run. Unlike a missing cloud key this is a
@@ -79,7 +81,8 @@ function createAdapter(meta: ProviderMeta, cfg: LlmProviderConfig, prompt?: stri
 	// concept and nothing here is metered.
 	if (meta.id === "custom" && !baseURL) return new UnavailableOcrBackend("custom");
 
-	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS, prompt });
+	// The diagram in a request of its own (ticket 38): asked together, a local model dropped the text around it.
+	return new OpenAiCompatOcrBackend({ id: meta.id, baseURL, apiKey, model, deterministic: meta.deterministic, maxTokens: OWN_SERVER_MAX_TOKENS, prompt: pagePrompt(signs, false), diagramPrompt: DIAGRAM_PROMPT });
 }
 
 /**
@@ -327,7 +330,7 @@ for (const meta of Object.values(LOCALHOST_PROVIDERS)) {
 		metered: false,
 		requiresLicence: false,
 		needsBackgroundConsent: true,
-		create: (settings: BackendSettings, options) => createAdapter(meta, settings, options?.prompt),
+		create: (settings: BackendSettings, options) => createAdapter(meta, settings, options?.signs),
 		renderSettings: (containerEl, ctx) => renderLocalhostSettings(meta, containerEl, ctx),
 		noteContract: NOTE_CONTRACT,
 		backgroundConsent: {

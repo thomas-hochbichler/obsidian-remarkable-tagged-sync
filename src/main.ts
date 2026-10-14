@@ -23,7 +23,6 @@ import { rowForNotePath } from "./note-rename";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
 import { isRegisteredOcrBackend, ocrBackendEntries, ocrBackendEntry } from "./ocr-registry";
 import { type OcrTally, tallyOcr } from "./ocr-tally";
-import { pagePrompt } from "./llm-transcript";
 import {
 	NOTE_NOT_SYNCED_NOTICE,
 	NOTEBOOK_GONE_NOTICE,
@@ -528,7 +527,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// `??=` rather than `??`: a backend that writes through its blob during a run -- the local
 		// model records each page's duration there -- needs the live object, not a throwaway copy, or
 		// the measurement is lost the moment the sync ends.
-		const adapter = entry.create((this.data.llmProviders[id] ??= {}), { silent, prompt: pagePrompt(this.data.signs) });
+		const adapter = entry.create((this.data.llmProviders[id] ??= {}), { silent, signs: this.data.signs });
 		if (adapter) return adapter;
 		const label = entry.label;
 		return this.applyOcrFallback(planUnconfiguredFallback({ label, visionAvailable: visionPlatformSupported(), silent }), id);

@@ -1,5 +1,6 @@
 import type { OcrBackend as OcrBackendId } from "./note-builder";
 import type { OcrBackend as OcrBackendAdapter } from "./ocr-backend";
+import type { SignDef } from "./signs";
 
 /**
  * One backend's own persisted settings, stored in `data.json` under the backend's id. Deliberately
@@ -29,8 +30,8 @@ export interface CreateOptions {
 	 * otherwise explain why it is standing this run out stays quiet instead; the next interval retries.
 	 */
 	silent: boolean;
-	/** The marks-keeping prompt with the user's signs (`transcriptionPrompt`); absent, the one for no signs. */
-	prompt?: string;
+	/** The user's signs (ticket 43); each backend builds its page prompt from them. Absent, none. */
+	signs?: readonly SignDef[];
 }
 
 /**

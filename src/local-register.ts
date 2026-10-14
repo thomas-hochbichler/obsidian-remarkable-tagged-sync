@@ -37,6 +37,7 @@ import { UnavailableOcrBackend } from "./vision-ocr-backend";
 import { registerExtractionBackend } from "./intelligence/extraction-registry";
 import { managedLocalEntry } from "./intelligence/local-server";
 import { managedModelFiles, nodeServerDeps } from "./intelligence/local-server-node";
+import { pagePrompt } from "./llm-transcript";
 
 export const LOCAL_BACKEND_ID = "local";
 const LOCAL_BACKEND_LABEL = "Downloaded model (managed by this plugin)";
@@ -410,7 +411,7 @@ if (offeredOnThisPlatform()) {
 				// the next interval retries.
 				new Notice("Another vault is transcribing right now. Try again in a moment.");
 			}
-			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure, options?.prompt);
+			const backend = createLocalOcrBackend(PLUGIN_ID, settings, noteLocalRuntimeFailure, pagePrompt(options?.signs ?? []));
 			// `true`: unavailable for now, not on this machine -- the end-of-sync notice says which.
 			return backend ?? new UnavailableOcrBackend(LOCAL_BACKEND_ID, true);
 		},

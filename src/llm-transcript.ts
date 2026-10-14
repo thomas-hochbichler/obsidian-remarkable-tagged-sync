@@ -44,7 +44,7 @@ export const PLAIN_TRANSCRIPTION_PROMPT =
  * "- - " and the extraction read the Markdown dash as the writer's. An empty table keeps the measured
  * prompt byte for byte -- nothing reads a sign's meaning then, and every figure stays valid.
  */
-export function pagePrompt(signs: readonly SignDef[]): string {
+export function pagePrompt(signs: readonly SignDef[], diagrams = true): string {
 	const own = transcriptSigns(signs);
 	const marker = own === null ? "" : `The sign stands in place of the list marker: write ${own.first} text, never - ${own.first} text; a list line without a sign starts with - as usual. `;
 	return (
@@ -52,13 +52,105 @@ export function pagePrompt(signs: readonly SignDef[]): string {
 		" Keep what the writer marked. Write struck-through text as ~~text~~. Write a drawn checkbox as - [ ] when it is empty " +
 		`and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: ${own?.list ?? "• X > < ○ —"}. ` +
 		marker +
-		"Transcribe exactly what is written; do not correct spelling or wording. If words on the page are joined by drawn " +
-		"lines or arrows (a diagram or a mind map), write only those joined words as a Mermaid flowchart in a ```mermaid " +
-		"block -- the one code fence allowed -- placed where the diagram stands on the page: each word a node, copied " +
-		"exactly; each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or " +
-		"label that is not drawn. Lines, boxes, brackets and underlines that do not join words are not a diagram. Every " +
-		"line of text outside the diagram is transcribed as usual, none left out."
+		"Transcribe exactly what is written; do not correct spelling or wording." +
+		(diagrams ? DIAGRAM_IN_PAGE : "")
 	);
+}
+
+/** The diagram sentences of the one-request page prompt (ticket 38's `diagram3`, measured 2026-10-09). */
+const DIAGRAM_IN_PAGE =
+	" If words on the page are joined by drawn " +
+	"lines or arrows (a diagram or a mind map), write only those joined words as a Mermaid flowchart in a ```mermaid " +
+	"block -- the one code fence allowed -- placed where the diagram stands on the page: each word a node, copied " +
+	"exactly; each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or " +
+	"label that is not drawn. Lines, boxes, brackets and underlines that do not join words are not a diagram. Every " +
+	"line of text outside the diagram is transcribed as usual, none left out.";
+
+/**
+ * The second request a server of the user's own gets for a page: the diagram alone (ticket 38). Asked
+ * in one prompt with the text, a local model gave back the diagram and dropped the text around it --
+ * Qwen3.8-27B on the user's page 15 (2026-10-09), qwen3-vl-30b-a3b-instruct on page 4 (2026-10-14),
+ * an open task among the lines lost -- and drew lines that only hold an arrow ("8k -> 16k") into it.
+ * The page is read first without diagrams, so its text can never go; `placeDiagram` puts this in.
+ */
+export const DIAGRAM_PROMPT =
+	"This image is a handwritten page. If words on it are joined by drawn lines or arrows (a diagram or a mind " +
+	'map), write only that diagram as a Mermaid flowchart in one ```mermaid block: each word or group of words a node, written as A["words"] and copied exactly; ' +
+	"each drawn line an edge (A --- B), each arrow an edge in its direction (A --> B). Add no node, edge or label that is not " +
+	"drawn. A line of text with an arrow written inside it, such as 8k -> 16k, is text and not part of a diagram. Lines, boxes, " +
+	"brackets and underlines that do not join words are not a diagram. Output only the block, and nothing at all when the page " +
+	"holds no diagram.";
+
+/** A Mermaid block's words, node and edge labels alike, lower case: what a line of text is checked against. */
+function diagramWords(block: string): Set<string> {
+	const words = new Set<string>();
+	const add = (text: string) => {
+		for (const word of wordsOf(text.replace(/#quot;/g, '"'))) words.add(word);
+	};
+	for (const raw of block.split("\n").slice(1, -1)) {
+		const line = raw.trim().replace(/;$/, "");
+		if (line === "" || MERMAID_KEYWORD.test(line)) continue;
+		const parts = line.split(MERMAID_EDGE);
+		parts.forEach((part, i) => {
+			if (part === undefined) return;
+			if (i % 3 === 2) return add(part.replace(/^\||\|$/g, ""));
+			if (i % 3 === 1) return;
+			const node = /^([\p{L}\p{N}_]+)\s*(?:[[({>]+\s*"?(.*?)"?\s*[\])}]+)?$/u.exec(part.trim());
+			if (node !== null) add(node[2] ?? node[1]);
+		});
+	}
+	return words;
+}
+
+/** An arrow or a line between boxes, as a transcript writes one out. */
+const ARROWS = /[↓↑←→↔⇒⇐⇓⇑↘↙↗↖|<>]/u;
+
+/** A line's words, lower case, with the punctuation and arrows around them dropped. */
+function wordsOf(text: string): string[] {
+	return text
+		.toLowerCase()
+		.split(/\s+/)
+		.map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+		.filter((word) => word !== "");
+}
+
+/**
+ * The diagram the second request found, put into the page's text from the first (ticket 38). The block
+ * takes the place of the lines made only of its words -- the diagram as the first request wrote it, a
+ * word to a line or as ASCII art in a code fence -- and every other line stays where it was. Text can
+ * only ever be replaced by a block that holds its words; a line with one word of its own stays. No
+ * block in the answer: the text as it was. A block whose words stand on no line: after the text.
+ */
+export function placeDiagram(text: string, answer: string): string {
+	const block = /```mermaid[^\n]*\n[\s\S]*?```/.exec(answer)?.[0];
+	if (block === undefined) return text;
+	const words = diagramWords(block);
+	if (words.size === 0) return text;
+	const ofDiagram = (body: string) => {
+		const own = wordsOf(body);
+		return own.length > 0 && own.every((word) => words.has(word));
+	};
+	// A fenced drawing of the diagram goes whole: its frame lines hold no word to test.
+	const PLACE = "\u0000diagram";
+	const unfenced = text.replace(/```[^\n]*\n([\s\S]*?)```/g, (fenced: string, body: string) => (ofDiagram(body) ? PLACE : fenced));
+	const lines = unfenced.split("\n");
+	const inDiagram = lines.map((line) => line === PLACE || ofDiagram(line));
+	// A line of arrows alone between the diagram's words ("↓", reference page 08) is the diagram's too;
+	// one anywhere else, and a divider, is not.
+	const next = (from: number, step: number) => {
+		for (let i = from + step; i >= 0 && i < lines.length; i += step) if (lines[i].trim() !== "") return inDiagram[i];
+		return false;
+	};
+	const drawn = lines.map((line, i) => inDiagram[i] || (wordsOf(line).length === 0 && ARROWS.test(line) && (next(i, -1) || next(i, 1))));
+	const out: string[] = [];
+	let placed = false;
+	lines.forEach((line, i) => {
+		if (!drawn[i]) return void out.push(line);
+		if (!placed) out.push(block);
+		placed = true;
+	});
+	if (!placed) out.push("", block);
+	return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** The prompt for a writer who set no signs. */
