@@ -60,7 +60,7 @@ describe("buildPrompt", () => {
 		expect(system).toContain("An empty checkbox before a line is an open task");
 		expect(system).not.toContain("The sign ");
 		const bujo = buildPrompt({ profile: genericProfile(false), slots: [TASKS], transcript: "x", referenceDate: MON, known: {}, signs: BULLET_JOURNAL }).system;
-		expect(bujo).toContain("The sign • before a line marks an open task.");
+		expect(bujo).toContain("The sign • (a dot) before a line marks an open task.");
 		expect(bujo).toContain("A - at the start of a line is the list format, not a sign.");
 		expect(buildPrompt({ profile: genericProfile(false), slots: [SUMMARY], transcript: "x", referenceDate: MON, known: {}, signs: BULLET_JOURNAL }).system).not.toContain("Marks on the page");
 		expect(user).toContain("Page type: Work meeting notes");

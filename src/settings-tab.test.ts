@@ -791,20 +791,29 @@ describe("a backend's own rows", () => {
 describe("the signs under Transcription", () => {
 	it("fills in the Bullet Journal, says what a reader without signs loses, and offers to re-transcribe", async () => {
 		const { plugin, tab } = await tabWith({ ocrBackend: "test-no-signs" });
-		const signs = () => row(section(draw(tab), "Transcription"), "Signs");
-		expect(signs().setting.descEl.allText().join(" ")).toBe("");
+		// The signs are one card, so their rows are not rows of the tab: read every Setting drawn under the heading.
+		const transcription = () => {
+			takeSettings();
+			tab.display();
+			const all = takeSettings();
+			const start = all.findIndex((setting) => setting.heading && setting.name === "Transcription");
+			const end = all.findIndex((setting, i) => i > start && setting.heading);
+			return all.slice(start + 1, end);
+		};
+		const signs = () => transcription().find((setting) => setting.name === "Signs")!;
+		expect(signs().descEl.allText().join(" ")).toBe("");
 
-		signs().setting.buttons[0].click();
+		signs().buttons[0].click();
 		await settle();
 		expect((plugin.data.signs as { glyph: string }[]).map((sign) => sign.glyph)).toEqual(["•", "X", ">", "<", "○", "—"]);
 		expect((plugin.saves.at(-1) as { signs: unknown[] }).signs).toHaveLength(6);
-		expect(verdict(signs()).allText().join(" ")).toBe("Test reader keeps no signs. Your signs reach insight notes only with a language model that does.");
+		expect(verdict({ kind: "row", name: "Signs", desc: "", setting: signs() }).allText().join(" ")).toBe("Test reader keeps no signs. Your signs reach insight notes only with a language model that does.");
 
-		const again = section(draw(tab), "Transcription").filter((item) => item.kind === "row").at(-1) as Extract<Drawn, { kind: "row" }>;
+		const again = transcription().at(-1)!;
 		expect(again.desc).toBe("Applies to pages transcribed from now on.");
-		expect(again.setting.settingEl.visible).toBe(true);
+		expect(again.settingEl.visible).toBe(true);
 		const reTranscribe = vi.spyOn(plugin as unknown as { reTranscribeAll(): Promise<void> }, "reTranscribeAll").mockResolvedValue();
-		again.setting.buttons[0].click();
+		again.buttons[0].click();
 		expect(reTranscribe).toHaveBeenCalledOnce();
 	});
 });

@@ -1,7 +1,7 @@
 import { type OcrFraming, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
-import { type SignDef, signNames } from "./signs";
+import { type SignDef, transcriptSigns } from "./signs";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
 
@@ -45,12 +45,12 @@ export const PLAIN_TRANSCRIPTION_PROMPT =
  * prompt byte for byte -- nothing reads a sign's meaning then, and every figure stays valid.
  */
 export function pagePrompt(signs: readonly SignDef[]): string {
-	const own = signNames(signs);
-	const marker = own.length === 0 ? "" : `The sign stands in place of the list marker: write ${own[0]} text, never - ${own[0]} text; a list line without a sign starts with - as usual. `;
+	const own = transcriptSigns(signs);
+	const marker = own === null ? "" : `The sign stands in place of the list marker: write ${own.first} text, never - ${own.first} text; a list line without a sign starts with - as usual. `;
 	return (
 		PLAIN_TRANSCRIPTION_PROMPT +
 		" Keep what the writer marked. Write struck-through text as ~~text~~. Write a drawn checkbox as - [ ] when it is empty " +
-		`and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: ${own.length === 0 ? "• X > < ○ —" : own.join(" ")}. ` +
+		`and as - [x] when it holds a tick or a cross. Copy the sign a line starts with exactly as drawn: ${own?.list ?? "• X > < ○ —"}. ` +
 		marker +
 		"Transcribe exactly what is written; do not correct spelling or wording. If words on the page are joined by drawn " +
 		"lines or arrows (a diagram or a mind map), write only those joined words as a Mermaid flowchart in a ```mermaid " +

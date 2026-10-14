@@ -28,17 +28,17 @@ export const MEANING_LABELS: Record<SignMeaning, string> = {
 	"task-elsewhere": "Task moved elsewhere",
 	event: "Event",
 	note: "Note",
-	custom: "Something else",
+	custom: "In my own words…",
 };
 
-/** Ryder Carroll's key, as measured in research 31 and 35. No `drawn`: the characters say it. */
+/** Ryder Carroll's key, as measured in research 31 and 35; the looks are ticket 43's table. */
 export const BULLET_JOURNAL: readonly SignDef[] = [
-	{ glyph: "•", meaning: "task-open" },
-	{ glyph: "X", meaning: "task-done" },
-	{ glyph: ">", meaning: "task-elsewhere" },
-	{ glyph: "<", meaning: "task-elsewhere" },
-	{ glyph: "○", meaning: "event" },
-	{ glyph: "—", meaning: "note" },
+	{ glyph: "•", drawn: "a dot", meaning: "task-open" },
+	{ glyph: "X", drawn: "a cross over the dot", meaning: "task-done" },
+	{ glyph: ">", drawn: "an arrow to the right", meaning: "task-elsewhere" },
+	{ glyph: "<", drawn: "an arrow to the left", meaning: "task-elsewhere" },
+	{ glyph: "○", drawn: "a small circle", meaning: "event" },
+	{ glyph: "—", drawn: "a dash", meaning: "note" },
 ];
 
 /**
@@ -57,8 +57,17 @@ const usable = (signs: readonly SignDef[]) => signs.filter((sign) => sign.glyph.
 /** "△ (a small triangle)", or the character alone. */
 const named = (sign: SignDef) => (sign.drawn?.trim() ? `${sign.glyph.trim()} (${sign.drawn.trim()})` : sign.glyph.trim());
 
-/** The signs the transcript is told to copy, as the user set them. */
-export const signNames = (signs: readonly SignDef[]) => usable(signs).map(named);
+/**
+ * The signs the transcript is told to copy, "• for a dot, ★", and the first for its example; null without any.
+ * The look follows "for", not in brackets as for extraction: the transcript writes out what it is told
+ * to copy, and a look beside the sign must not read as part of it.
+ */
+export function transcriptSigns(signs: readonly SignDef[]): { list: string; first: string } | null {
+	const rows = usable(signs);
+	if (rows.length === 0) return null;
+	const list = rows.map((sign) => (sign.drawn?.trim() ? `${sign.glyph.trim()} for ${sign.drawn.trim()}` : sign.glyph.trim()));
+	return { list: list.join(", "), first: rows[0].glyph.trim() };
+}
 
 const RULE: Record<SignMeaning, string> = {
 	"task-open": "marks an open task.",

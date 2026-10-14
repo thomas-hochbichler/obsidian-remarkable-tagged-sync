@@ -294,3 +294,50 @@ mark.tagged-sync-hl-gray { background-color: rgba(170, 170, 170, 0.4); }
 	margin-right: 1px;
 	opacity: 0.6;
 }
+
+/*
+ * The signs under Transcription: one grid for all of them, so the fields line up in columns. Each sign
+ * is a Setting for its components, but its own boxes are dissolved into the grid; the name column
+ * would be empty and only push the fields right.
+ */
+.tagged-sync-signs {
+	display: grid;
+	grid-template-columns: 4em minmax(0, 1fr) auto auto;
+	gap: var(--size-4-2);
+	align-items: center;
+	padding-bottom: var(--size-4-2);
+}
+
+.tagged-sync-signs:empty {
+	display: none;
+}
+
+.tagged-sync-signs > .setting-item,
+.tagged-sync-signs .setting-item-control {
+	display: contents;
+}
+
+.tagged-sync-signs .setting-item-info {
+	display: none;
+}
+
+.tagged-sync-signs input[type="text"] {
+	width: 100%;
+	min-width: 0;
+}
+
+.tagged-sync-signs-label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* A new sign starts on a new line, also after a sign whose own words took the line under it. */
+.tagged-sync-signs .tagged-sync-sign-glyph {
+	grid-column: 1;
+	text-align: center;
+	font-size: var(--font-ui-medium);
+}
+
+.tagged-sync-signs .tagged-sync-sign-words {
+	grid-column: 2 / 4;
+}

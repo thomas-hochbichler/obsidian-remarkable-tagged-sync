@@ -30,12 +30,15 @@ const signRows = (rows: FakeSetting[]) => rows.slice(1, -1);
 const after = (rows: FakeSetting[]) => rows[rows.length - 1];
 
 describe("renderSignsSettings", () => {
-	it("fills in the Bullet Journal, without a second row for a sign already there", async () => {
-		const h = host([{ glyph: "•", meaning: "note" }]);
+	it("fills in the Bullet Journal, and only the look a sign already there lacks", async () => {
+		const h = host([
+			{ glyph: "•", meaning: "note" },
+			{ glyph: "X", drawn: "a big cross", meaning: "task-done" },
+		]);
 		head(draw(h)).buttons[0].click();
 		await flush();
 
-		expect(h.signs).toEqual([{ glyph: "•", meaning: "note" }, ...BULLET_JOURNAL.slice(1)]);
+		expect(h.signs).toEqual([{ glyph: "•", drawn: "a dot", meaning: "note" }, { glyph: "X", drawn: "a big cross", meaning: "task-done" }, ...BULLET_JOURNAL.slice(2)]);
 		expect(h.log).toEqual(["redraw"]);
 	});
 

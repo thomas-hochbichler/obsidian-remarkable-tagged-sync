@@ -25,12 +25,19 @@ export function renderSignsSettings(containerEl: HTMLElement, host: SignsHost): 
 		await host.save(redraw);
 	};
 
-	const head = new Setting(containerEl)
+	// One card with the signs as a table. A card a sign ran six cards down the tab, each with its fields somewhere else.
+	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
+	const head = new Setting(card)
 		.setName("Signs")
 		.setDesc("The sign a line starts with, and what it means. Transcripts copy these signs; insight notes read them. Checkboxes and struck-through lines are always read.")
 		.addButton((button) =>
 			button.setButtonText("Bullet journal").onClick(async () => {
-				signs.push(...BULLET_JOURNAL.filter((preset) => !signs.some((sign) => sign.glyph === preset.glyph)).map((preset) => ({ ...preset })));
+				for (const preset of BULLET_JOURNAL) {
+					const sign = signs.find((candidate) => candidate.glyph === preset.glyph);
+					// A sign already there keeps its meaning and gets only the look it lacks.
+					if (sign) sign.drawn ??= preset.drawn;
+					else signs.push({ ...preset });
+				}
 				await edited(true);
 			}),
 		)
@@ -51,20 +58,23 @@ export function renderSignsSettings(containerEl: HTMLElement, host: SignsHost): 
 		head.descEl.createDiv({ cls: "tagged-sync-verdict mod-warning", text: dropsSignsSentence(host.dropsSigns) });
 	}
 
+	const table = card.createDiv({ cls: "tagged-sync-signs" });
+	if (signs.length > 0) for (const label of ["Sign", "Looks like", "Meaning", ""]) table.createDiv({ cls: "tagged-sync-signs-label", text: label });
 	for (const sign of signs) {
-		const row = new Setting(containerEl)
-			.addText((text) =>
+		const row = new Setting(table)
+			.addText((text) => {
+				text.inputEl.addClass("tagged-sync-sign-glyph");
 				text
 					.setPlaceholder("Sign")
 					.setValue(sign.glyph)
 					.onChange(async (glyph) => {
 						sign.glyph = glyph.trim();
 						await edited(false);
-					}),
-			)
+					});
+			})
 			.addText((text) =>
 				text
-					.setPlaceholder("Looks like (optional)")
+					.setPlaceholder("Optional")
 					.setValue(sign.drawn ?? "")
 					.onChange(async (drawn) => {
 						sign.drawn = drawn.trim() || undefined;
@@ -78,30 +88,32 @@ export function renderSignsSettings(containerEl: HTMLElement, host: SignsHost): 
 					sign.meaning = meaning as SignMeaning;
 					await edited(true);
 				});
-			});
+			})
+			.addExtraButton((button) =>
+				button
+					.setIcon("x")
+					.setTooltip("Remove this sign")
+					.onClick(async () => {
+						signs.splice(signs.indexOf(sign), 1);
+						await edited(true);
+					}),
+			);
+		// After the remove button, so the grid puts it on a line of its own under the sign's look and meaning.
 		if (sign.meaning === "custom") {
-			row.addText((text) =>
+			row.addText((text) => {
+				text.inputEl.addClass("tagged-sync-sign-words");
 				text
 					.setPlaceholder("What it means")
 					.setValue(sign.text ?? "")
 					.onChange(async (meaning) => {
 						sign.text = meaning.trim() || undefined;
 						await edited(false);
-					}),
-			);
+					});
+			});
 		}
-		row.addExtraButton((button) =>
-			button
-				.setIcon("x")
-				.setTooltip("Remove this sign")
-				.onClick(async () => {
-					signs.splice(signs.indexOf(sign), 1);
-					await edited(true);
-				}),
-		);
 	}
 
 	// Transcripts already written keep their signs as they were read (TRANSCRIPT_VERSION stays, user 2026-10-09).
-	after = new Setting(containerEl).setDesc("Applies to pages transcribed from now on.").addButton((button) => button.setButtonText("Re-transcribe all synced notes").onClick(() => host.reTranscribeAll()));
+	after = new Setting(card).setDesc("Applies to pages transcribed from now on.").addButton((button) => button.setButtonText("Re-transcribe all synced notes").onClick(() => host.reTranscribeAll()));
 	after.settingEl.toggle(host.changed);
 }

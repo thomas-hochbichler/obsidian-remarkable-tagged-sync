@@ -95,9 +95,11 @@ describe("TRANSCRIPTION_PROMPT", () => {
 			{ glyph: "△", drawn: "a small triangle", meaning: "custom", text: "an idea" },
 			{ glyph: " ", meaning: "note" },
 		]);
-		expect(prompt).toContain("Copy the sign a line starts with exactly as drawn: ★ △ (a small triangle). ");
+		expect(prompt).toContain("Copy the sign a line starts with exactly as drawn: ★, △ for a small triangle. ");
 		expect(prompt).toContain("The sign stands in place of the list marker: write ★ text, never - ★ text; a list line without a sign starts with - as usual.");
 		expect(prompt).not.toContain("• X > < ○ —");
+		// The example shows the sign alone, never its look.
+		expect(pagePrompt([{ glyph: "•", drawn: "a dot", meaning: "task-open" }])).toContain("write • text, never - • text;");
 		expect(prompt.startsWith(PLAIN_TRANSCRIPTION_PROMPT)).toBe(true);
 		expect(prompt).toContain("Every line of text outside the diagram is transcribed as usual, none left out.");
 	});
