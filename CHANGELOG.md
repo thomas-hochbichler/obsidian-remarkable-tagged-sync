@@ -14,6 +14,12 @@ workflow publishes the section as the GitHub release body. See
 
 ### Fixed
 
+- **A page the model declines is reported instead of arriving blank.** Gemini declines to transcribe
+  text it recognises as published, such as a poem or a book passage copied by hand. The plugin wrote
+  such a page as an empty one, with no warning, so you only noticed when the words were missing. It
+  now leaves the page out and says why at the end of the sync: switch to another model, such as
+  Claude, and re-transcribe.
+
 - **A model that thinks before it answers no longer writes its thinking into your notes.** With some
   reasoning models in LM Studio -- Qwen3.6-35B-A3B, for one -- every transcribed page began with the
   model's deliberation, often a few hundred lines of it, before the text of the page. LM Studio's own

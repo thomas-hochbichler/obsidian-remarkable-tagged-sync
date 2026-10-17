@@ -191,6 +191,8 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private context: Promise<number | null> | null = null;
 	/** How many pages were dropped because the server never answered -- see `recognize`. */
 	private timedOut = 0;
+	/** How many pages the model declined to transcribe (#204) -- see `transcribePage`. */
+	private declined = 0;
 
 	constructor(options: OpenAiCompatOcrOptions) {
 		this.id = options.id;
@@ -219,6 +221,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.refusal = null;
 		this.cutOffs = [];
 		this.timedOut = 0;
+		this.declined = 0;
 
 		// An empty model field is a misconfiguration, and sending it anyway is worse than refusing:
 		// LM Studio answers `"model": ""` with whatever happens to be loaded -- so the note would carry
@@ -253,6 +256,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 				if (this.unreachable) return `Could not reach the server at ${this.baseURL} — ${pageCount(failedPages, framing)} not transcribed. Is it running?${triedAgain(framing)}`;
 				if (this.refusal) return `The server at ${this.baseURL} answered ${this.refusal} — ${pageCount(failedPages, framing)} not transcribed.${this.serverError ? triedAgain(framing) : ""}`;
 				if (this.timedOut > 0) return timeoutWarning(this.timedOut, this.baseURL, framing);
+				if (this.declined > 0) return declinedWarning(this.declined, framing);
 				if (this.cutOffs.length > 0) return truncationWarning(this.cutOffs.length, framing, this.cutOffs.some((cut) => cut.reasoning));
 				return null;
 			},
@@ -320,6 +324,16 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 			if (body.choices?.[0]?.finish_reason === "length") {
 				this.cutOffs.push(cutOff(body));
 				console.warn(`Tagged Sync: ${this.id} OCR response was truncated, marking the page failed`);
+				return { kind: "failed" };
+			}
+			// A declined page is `failed`, not `ok` (#204): Gemini answers text it recognises as published
+			// (RECITATION) with a 200, empty content and `content_filter` -- `error` through OpenRouter --
+			// which read as `ok` was a blank page with nothing to say why. An empty answer that finished
+			// normally stays an empty page: the prompt asks for nothing when nothing is legible.
+			const finish = body.choices?.[0]?.finish_reason;
+			if (finish === "content_filter" || finish === "error") {
+				this.declined++;
+				console.warn(`Tagged Sync: ${this.id} OCR response finished with ${finish}, marking the page failed`);
 				return { kind: "failed" };
 			}
 
@@ -391,6 +405,14 @@ function timeoutWarning(pages: number, baseURL: string, framing: OcrFraming): st
  * context window -- which no other model fixes -- cuts an ordinary transcript off just the same. So
  * that sentence names no cause, and its lever is the figures that do (`CutOff`, in "Copy diagnostics").
  */
+/** Repeating the request reads the same refusal, so the fix is another model, then reading again. */
+function declinedWarning(pages: number, framing: OcrFraming): string {
+	return (
+		`${upperFirst(pageCount(pages, framing))} left out because the model declined to transcribe ${them(pages, framing)} — Gemini does this with text it recognises as published, such as a passage copied by hand. ` +
+		`A later sync will not pick ${them(pages, framing)} up on its own: switch to another model, such as Claude, then ${readAgain(framing)}.`
+	);
+}
+
 function truncationWarning(pages: number, framing: OcrFraming, reasoning: boolean): string {
 	const head = `${upperFirst(pageCount(pages, framing))} left out because`;
 	if (reasoning) {
