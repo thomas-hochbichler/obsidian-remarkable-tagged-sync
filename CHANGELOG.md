@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.8.5] - 2026-10-17
+
 ### Fixed
 
 - **A page the model declines is reported instead of arriving blank.** Gemini declines to transcribe
