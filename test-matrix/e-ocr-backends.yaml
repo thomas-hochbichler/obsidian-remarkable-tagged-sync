@@ -839,3 +839,29 @@
       layer: unit
       file: src/local-ocr-backend.test.ts
       test: "timing > leaves margin notes out of the page timings"
+
+- feature: E44
+  name: A page the model declined is a failed page, not a blank one
+  code: src/openai-compat-ocr-backend.ts
+  tier: free
+  scenarios:
+    - id: E44.1
+      scenario: "Gemini declines a page copied from published text (RECITATION): 200, empty content, `content_filter`"
+      expect: "The page is `failed`, and the report says the model declined it, that Gemini does this with text it recognises as published, and to switch model and read again. It used to come back `ok` and blank, so nothing told the user a page was missing (#204)"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > reports a page the model declined (content_filter) as failed, and says why"
+
+    - id: E44.3
+      scenario: "The same refusal through OpenRouter, which reports it as `finish_reason: error`"
+      expect: "Read the same way as `content_filter`: the page is `failed` and the report says why"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > reports a page the model declined (error) as failed, and says why"
+
+    - id: E44.2
+      scenario: "A page comes back empty with `finish_reason: stop`"
+      expect: "It stays an empty page with no warning: the prompt asks for nothing when nothing is legible, so an empty answer that finished normally is a page without text"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "OpenAiCompatOcrBackend > keeps an empty answer that finished normally as an empty page"

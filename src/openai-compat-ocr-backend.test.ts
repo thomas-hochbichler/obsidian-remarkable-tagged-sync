@@ -222,6 +222,29 @@ describe("OpenAiCompatOcrBackend", () => {
 		expect((await backend.recognize([page()])).pages).toEqual([{ status: "failed", text: "" }]);
 	});
 
+	// #204: Gemini declines text it recognises as published (RECITATION) with a 200, empty content and
+	// `content_filter`, and the page used to come back `ok` and blank -- no warning, no way to tell.
+	it.each(["content_filter", "error"])("reports a page the model declined (%s) as failed, and says why", async (finish) => {
+		fetchMock.mockResolvedValue(jsonResponse(200, { choices: [{ message: { content: "" }, finish_reason: finish }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "gemini", baseURL: "http://x/v1", apiKey: "k", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.pages).toEqual([{ status: "failed", text: "" }]);
+		expect(result.warnings?.[0]).toContain("declined");
+		expect(result.warnings?.[0]).toContain('run "Re-transcribe all synced notes"');
+	});
+
+	it("keeps an empty answer that finished normally as an empty page", async () => {
+		fetchMock.mockResolvedValue(jsonResponse(200, { choices: [{ message: { content: "" }, finish_reason: "stop" }] }));
+		const backend = new OpenAiCompatOcrBackend({ id: "gemini", baseURL: "http://x/v1", apiKey: "k", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.pages).toEqual([{ status: "skipped", text: "" }]);
+		expect(result.warnings).toBeUndefined();
+	});
+
 	it("retries a rate-limited page and gives up after three attempts", async () => {
 		const rateLimited = { ...jsonResponse(429, {}), headers: { get: () => null } } as unknown as Response;
 		fetchMock.mockResolvedValue(rateLimited);
