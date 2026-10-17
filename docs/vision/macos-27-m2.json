@@ -1,0 +1,91 @@
+{
+	"status": "pass",
+	"measuredAt": "2026-10-17T11:10:52.034Z",
+	"detail": {
+		"renderVersion": 31,
+		"backends": {
+			"vision/apple": {
+				"status": "pass",
+				"pages": {
+					"10": {
+						"cer": 0.16765755053507728,
+						"structure": {}
+					},
+					"11": {
+						"cer": 0.19710144927536233,
+						"structure": {}
+					},
+					"12": {
+						"cer": 0.09803921568627451,
+						"structure": {}
+					},
+					"13": {
+						"cer": 0.24778761061946902,
+						"structure": {}
+					},
+					"14": {
+						"cer": 0.1794871794871795,
+						"structure": {}
+					},
+					"15": {
+						"cer": 0.09302325581395349,
+						"structure": {}
+					},
+					"01": {
+						"cer": 0.132,
+						"structure": {}
+					},
+					"02": {
+						"cer": 0.298,
+						"structure": {}
+					},
+					"03": {
+						"cer": 0.15306122448979592,
+						"structure": {
+							"list": "ok"
+						}
+					},
+					"04": {
+						"cer": 0.10256410256410256,
+						"structure": {
+							"list": "ok"
+						}
+					},
+					"05": {
+						"cer": 0.7055214723926381,
+						"structure": {
+							"table": "lost"
+						}
+					},
+					"06": {
+						"cer": 0.26785714285714285,
+						"structure": {}
+					},
+					"07": {
+						"cer": 0.1360381861575179,
+						"structure": {}
+					},
+					"08": {
+						"cer": 0.4791666666666667,
+						"structure": {}
+					},
+					"09": {
+						"cer": 0.2727272727272727,
+						"structure": {}
+					}
+				},
+				"medianCer": 0.1794871794871795,
+				"visionRevision": "3",
+				"unreadableInkRegions": 2,
+				"macos": "darwin 27.0.0",
+				"macosBuild": "26A434",
+				"totalMs": 1722
+			}
+		}
+	},
+	"machine": {
+		"cpu": "Apple M2 Max",
+		"memoryGb": 64,
+		"os": "macOS 27.0.1"
+	}
+}
