@@ -313,6 +313,23 @@ Like any transcription it misreads sometimes, and it misreads *differently*: Vis
 usually look broken on the page, while this model writes its mistakes as fluent text. Check
 anything that matters against the handwriting.
 
+### Cloud backends (Pro)
+
+Which model you name is still your choice. For what it is worth: in October 2026 I measured seven
+cloud models on 264 handwritten pages (German scans, English phone photos and my own reMarkable
+pages), with the request exactly as 1.8.4 sends it and the cost as each provider billed it.
+**Gemini 3.1 Flash-Lite** was the cheapest, the fastest, and the best or close to the best reader on
+every set. **Claude Haiku 5.5** costs the same per page and is the one to set if you copy published
+text by hand: Gemini declines to transcribe text it recognises as published, and since 1.8.5 the
+sync names such a page at the end instead of writing it blank. **Gemini 4 Argon** halves the errors
+on scanned paper at eight times the price.
+
+A page cost about **0.05 cents** with either of the first two, so 250 pages a month come to 12 or 13
+cents. The provider bills your own API key directly; that is separate from the price of Pro. A model
+that thinks before it answers is billed for the thinking too, so the list price per token says
+little about the price of a page. The full measurement is in
+[Which cloud model reads handwriting best](https://taggedsync.com/blog/best-cloud-model-for-handwriting).
+
 ## Typed text and the Type Folio
 
 Not everything on a reMarkable is ink. Text you type with the **Type Folio** — or send over with
