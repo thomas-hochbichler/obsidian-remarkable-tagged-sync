@@ -16,6 +16,7 @@ import {
 } from "pdf-lib";
 import { HEADING_TEXT_SIZE_PX, PLAIN_TEXT_SIZE_PX, TEXT_LEFT_PADDING_PX } from "./device-font";
 import { repairPagePaint } from "./pdf-paint-repair";
+import { LOAD_WITHOUT_PAUSES, SAVE_WITHOUT_PAUSES } from "./pdf-source";
 import type { RmHighlight, RmPage, RmRect, RmStroke } from "./rm-parser";
 import { faceOf, layoutText, LIST_MARKER_OFFSET_PX } from "./text-layout";
 
@@ -588,7 +589,7 @@ export async function renderPagesToPdf(pages: RmPage[], images: ReadonlyMap<stri
 		drawPageText(page, rmPage, pageCanvas, font, encodable);
 		drawPageStrokes(page, rmPage, pageCanvas);
 	}
-	return doc.save();
+	return doc.save(SAVE_WITHOUT_PAUSES);
 }
 
 /** One page of a PDF-backed document: which source-PDF page it shows, plus any handwritten annotation scene drawn on it (null if never drawn on). */
@@ -760,7 +761,7 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 	if (pages.length === 0) throw new Error("renderAnnotatedPdf: no pages to render");
 
 	const device = resolveDeviceCanvas(pages.map((page) => page.annotations).filter((scene): scene is RmPage => scene !== null));
-	const src = await PDFDocument.load(sourcePdfBytes);
+	const src = await PDFDocument.load(sourcePdfBytes, LOAD_WITHOUT_PAUSES);
 	const out = await PDFDocument.create();
 
 	// Before anything is copied out of it: a page the device rendered from an EPUB can carry a colour
@@ -797,5 +798,5 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 		if (scale !== 1) outPage.pushOperators(popGraphicsState());
 	}
 
-	return out.save();
+	return out.save(SAVE_WITHOUT_PAUSES);
 }
