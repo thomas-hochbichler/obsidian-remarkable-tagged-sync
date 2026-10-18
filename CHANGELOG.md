@@ -12,6 +12,15 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **A book no longer stalls while Obsidian is minimised or hidden.** Reading and writing a PDF
+  paused many times along the way, and while Obsidian's window is hidden each pause can last a
+  second or, after a few minutes, a whole minute. A large book from the tablet therefore never
+  finished syncing in the background. The PDF is now read and written without pausing, so
+  Obsidian may be busy for a moment while a book syncs, but the sync ends. Thanks to @adyt24 for
+  the report and for tracking it down to the exact line (#211).
+
 ## [1.8.5] - 2026-10-17
 
 ### Fixed

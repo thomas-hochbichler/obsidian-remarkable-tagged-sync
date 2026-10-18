@@ -43,6 +43,13 @@
       file: src/sync-engine.test.ts
       test: "runSync > follows the order the device holds, not the order the pages arrived in"
 
+    - id: D1.2
+      scenario: A 300-page notebook is written to PDF while Obsidian's window is hidden (#211)
+      expect: pdf-lib never waits on the window's timer while writing, which it otherwise does every 50 objects -- 18 waits on main, each one throttled in a hidden window
+      layer: unit
+      file: src/pdf-hidden-window.test.ts
+      test: "the sync's PDF path while Obsidian's window is hidden (issue #211) > does not wait on the window's timer while writing a notebook either"
+
 - feature: D3
   name: Pen colours, widths and tools
   code: src/pdf-renderer.ts
