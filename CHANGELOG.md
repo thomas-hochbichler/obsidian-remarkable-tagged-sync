@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.8.6] - 2026-10-18
+
 ### Fixed
 
 - **A book no longer stalls while Obsidian is minimised or hidden.** Reading and writing a PDF
