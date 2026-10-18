@@ -37,6 +37,13 @@
       file: src/sync-engine.test.ts
       test: "runSync > PDF-backed documents > treats a tagged EPUB as PDF-backed: the book the device rendered, with its annotations"
 
+    - id: K2.2
+      scenario: A 617-page book is validated and composited while Obsidian's window is hidden (#211)
+      expect: pdf-lib never waits on the window's timer. Chromium throttles that timer in a hidden window -- a second per wait, later a minute -- and the reporter's book never finished syncing. A test cannot hide a window, so it counts the waits; main had 12 + 12
+      layer: unit
+      file: src/pdf-hidden-window.test.ts
+      test: "the sync's PDF path while Obsidian's window is hidden (issue #211) > does not wait on the window's timer, which Chromium throttles in a hidden window"
+
 - feature: K3
   name: Reading the prose out of an `.epub`
   code: src/epub-text.ts
