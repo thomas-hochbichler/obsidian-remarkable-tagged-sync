@@ -3,6 +3,15 @@
 Read at review time. Rules here are judgement calls no linter, type check or matrix gate can make;
 anything mechanical belongs in one of those instead.
 
+## Writes
+
+- **A rewritten note and its `blockHash` reach the index together.** Whatever runs after a note is
+  written -- a render, a Zotero call, a second write -- is either caught or moved before the note
+  write, so the code that hands back the refreshed row always runs. A throw in between leaves a note
+  whose stored hash no longer describes it, and every later sync reads the plugin's own work as a hand
+  edit and never touches the note again. Check each `await` between the note write and the returned
+  row: can it throw, and who catches it? (Ticket 20: the render written after `updateTranscript`.)
+
 ## Tests
 
 - **A fake answers only what the real adapter can answer.** A stub backend, runner or store returns
