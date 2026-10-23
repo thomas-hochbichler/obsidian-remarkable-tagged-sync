@@ -45,7 +45,16 @@ function loadMatrix() {
 		.sort();
 	for (const f of files) {
 		const path = join(MATRIX_DIR, f);
-		const features = parseYaml(readFileSync(path, "utf8")) ?? [];
+		let features;
+		try {
+			features = parseYaml(readFileSync(path, "utf8")) ?? [];
+		} catch (error) {
+			// One line naming the place: the parser's own dump ends in `linePos`, and its message scrolls away.
+			const line = error.linePos?.[0]?.line ?? "?";
+			const hint = /mapping/i.test(error.message) ? ' -- a value containing ": " needs quotes' : "";
+			console.error(`${path}:${line}: ${error.message.split("\n")[0].replace(/:$/, "")}${hint}`);
+			process.exit(1);
+		}
 		for (const feature of features) {
 			for (const s of feature.scenarios ?? []) {
 				rows.push({ ...s, feature: feature.feature, name: feature.name, tier: s.tier ?? feature.tier, path });
