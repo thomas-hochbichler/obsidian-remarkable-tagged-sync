@@ -85,7 +85,7 @@ jobs:
 
       # --- gate 5: types and tests -------------------------------------------------------------
       - name: Typecheck
-        run: npx tsc -noEmit -skipLibCheck
+        run: npm run typecheck
 
       - name: Tests
         run: npm run test:coverage

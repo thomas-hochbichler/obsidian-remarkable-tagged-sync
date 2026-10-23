@@ -7,7 +7,8 @@
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
     "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "tsc -noEmit -skipLibCheck",
+    "build": "npm run typecheck && node esbuild.config.mjs production",
     "test": "vitest run",
     "lint": "eslint .",
     "generate:kaitai": "node src/kaitai/generate.mjs",
