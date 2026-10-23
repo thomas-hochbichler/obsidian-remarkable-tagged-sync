@@ -24,6 +24,9 @@ workflow publishes the section as the GitHub release body. See
   setting, and it is free. On Windows and Linux the PDF has no text layer yet; the transcript under the
   note is still searchable.
 
+- **"Copy diagnostics" says how the text layer went.** One more line: how many pages of the last sync
+  got a text layer, and how many words were placed and left out.
+
 ### Changed
 
 - **The first sync after the update re-renders every note once.** On a Mac, that gives notes synced

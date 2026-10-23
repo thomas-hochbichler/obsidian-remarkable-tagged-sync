@@ -38,7 +38,7 @@ import {
 import { mappingFingerprint, TagRouter } from "./tag-router";
 import { transcriptFingerprint } from "./transcript-store";
 import { OffOcrBackend } from "./off-ocr-backend";
-import type { LayerReader } from "./text-layer";
+import { addTextLayer, type LayerReader } from "./text-layer";
 import { UnavailableOcrBackend, type VisionBatchResult, VisionOcrBackend } from "./vision-ocr-backend";
 
 // The real pipeline runs in every test but one: every partial failure inside it is deliberately
@@ -62,6 +62,13 @@ vi.mock("./scene-text", async (importOriginal) => {
 vi.mock("./rm-parser", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./rm-parser")>();
 	return { ...actual, parseRmV6: vi.fn(actual.parseRmV6) };
+});
+
+// Laying the layer fails only on a PDF pdf-lib cannot load, and the sync renders its PDFs itself. The
+// spy stages that failure; it delegates to the real implementation until a test says otherwise.
+vi.mock("./text-layer", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./text-layer")>();
+	return { ...actual, addTextLayer: vi.fn(actual.addTextLayer) };
 });
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -3467,6 +3474,45 @@ describe("the text layer (searchable PDF)", () => {
 		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
 		expect(result.notesWritten).toBe(1);
 		expect(result.skipErrors).toEqual([]);
+	});
+
+	// "Copy diagnostics" reads this (spec §2.7). A page counts as layered only if its render carries
+	// words; every other way of ending up without them counts against it.
+	it.each([
+		["every word is placed", () => model("Rapoldeck Hütte", "Rapoldeck Hütte"), () => vision(READ).backend, { pages: 2, layered: 2, placed: 4, leftOut: 0 }],
+		["a word Vision did not see is left out", () => model("Rapoldeck Hütte Gipfel", "Rapoldeck Hütte"), () => vision(READ).backend, { pages: 2, layered: 2, placed: 4, leftOut: 1 }],
+		["Vision gives no boxes for a page", () => model("Rapoldeck Hütte", "Rapoldeck Hütte"), () => vision(READ, { error: "unreadable_image" }).backend, { pages: 2, layered: 1, placed: 2, leftOut: 2 }],
+		["the backend failed on a page", () => model("Rapoldeck Hütte", null), () => vision(READ).backend, { pages: 2, layered: 1, placed: 2, leftOut: 0 }],
+		["Vision cannot run at all", () => model("Rapoldeck Hütte", "Rapoldeck Hütte"), () => new VisionOcrBackend({ runBatch: vi.fn(), probe: async () => false }), { pages: 2, layered: 0, placed: 0, leftOut: 4 }],
+	])("counts the layer for diagnostics when %s", async (_case, backend, reader, expected) => {
+		const deps = { ...baseDeps(notebook("root-21", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: backend(), layerReader: reader() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.textLayer).toEqual(expected);
+	});
+
+	it("counts no page as layered when the layer cannot be laid over the render", async () => {
+		vi.mocked(addTextLayer).mockRejectedValueOnce(new Error("pdf-lib could not load the render"));
+		const deps = { ...baseDeps(notebook("root-21-b", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte", "Rapoldeck Hütte"), layerReader: vision(READ).backend };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.textLayer).toEqual({ pages: 2, layered: 0, placed: 0, leftOut: 4 });
+	});
+
+	// Nothing was measured: off macOS there is no layer to count, and a sync that wrote no render has
+	// none either. "Copy diagnostics" then keeps the figure it had rather than reading "0 of 0".
+	it.each([
+		["the sync has no layer reader (Windows, Linux)", "root-21-c", () => ({ ocrBackend: model("Rapoldeck Hütte") })],
+		["the sync writes no render", "root-21-d", () => ({ ocrBackend: model("Rapoldeck Hütte"), layerReader: vision(READ).backend, mapped: false })],
+	])("measures no layer when %s", async (_case, root, setUp) => {
+		const { mapped, ...wiring } = { mapped: true, ...setUp() };
+		const deps = { ...baseDeps(notebook(root), mapped ? { sync: "Target" } : { other: "Target" }), ...wiring };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.textLayer).toBeNull();
 	});
 
 	// Off macOS the plugin hands the sync no layer reader at all. One whose probe says no stands in here,

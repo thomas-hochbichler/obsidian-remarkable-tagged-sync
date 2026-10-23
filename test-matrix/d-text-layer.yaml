@@ -427,3 +427,71 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "the text layer (searchable PDF) > re-transcribe > writes no render for an annotated PDF"
+
+- feature: D27
+  name: The text layer in "Copy diagnostics"
+  code: src/diagnostics.ts
+  tier: free
+  scenarios:
+    - id: D27.1
+      scenario: A bug report ("Cmd+F does not find my word") is copied after a sync with a layer
+      expect: 'The block says "Text layer (last sync): 48 of 50 pages, 1203 words placed, 97 left out", and "not measured yet" before any sync has run'
+      layer: unit
+      file: src/diagnostics.test.ts
+      test: "buildDiagnostics > says how the last sync's text layer went"
+
+    - id: D27.2
+      scenario: A two-page notebook, every word Vision sees
+      expect: 2 of 2 pages layered, 4 words placed, none left out
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > counts the layer for diagnostics when every word is placed"
+
+    - id: D27.3
+      scenario: The transcript holds a word Vision did not see
+      expect: It counts as left out; the pages still count as layered
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > counts the layer for diagnostics when a word Vision did not see is left out"
+
+    - id: D27.4
+      scenario: Vision gives no boxes for one page
+      expect: That page counts as without a layer, and its transcript's words as left out
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > counts the layer for diagnostics when Vision gives no boxes for a page"
+
+    - id: D27.5
+      scenario: The backend fails on one page
+      expect: That page counts as without a layer; it has no transcript, so no words are left out
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > counts the layer for diagnostics when the backend failed on a page"
+
+    - id: D27.6
+      scenario: Vision cannot run at all
+      expect: No page counts as layered, and every transcript word as left out
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > counts the layer for diagnostics when Vision cannot run at all"
+
+    - id: D27.7
+      scenario: The layer cannot be laid over the render (pdf-lib fails)
+      expect: No page counts as layered and no word as placed, though Vision found boxes for them
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > counts no page as layered when the layer cannot be laid over the render"
+
+    - id: D27.8
+      scenario: A sync on Windows or Linux, with no layer reader
+      expect: Nothing is measured, so diagnostics keep their last figure rather than "0 of N pages" with every word left out
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > measures no layer when the sync has no layer reader (Windows, Linux)"
+
+    - id: D27.9
+      scenario: A sync that writes no render
+      expect: Nothing is measured, so an idle sync does not overwrite the last figure with "0 of 0"
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > measures no layer when the sync writes no render"

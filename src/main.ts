@@ -53,6 +53,7 @@ import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
+import type { TextLayerTally } from "./text-layer";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
@@ -140,6 +141,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * from a run three weeks ago would be read as this one's.
 	 */
 	lastPageTranscriptions: { reused: number; total: number } | null = null;
+	/** How the last sync's text layer went (searchable-pdf spec §2.7), for "Copy diagnostics". Session state, as above. */
+	lastTextLayer: TextLayerTally | null = null;
 	/**
 	 * What the last sync or re-transcribe sent to its OCR backend and got back, for "Copy diagnostics".
 	 * Session state for the same reason as the two above. Replaced when a run first sends an image, so
@@ -764,6 +767,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			const errors = backfillError === null ? result.skipErrors : [...result.skipErrors, backfillError];
 			this.lastSyncError = errors.length > 0 ? errors.join("\n") : null;
 			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
+			// Kept when this run measured nothing: an idle sync would otherwise erase the figure a "Cmd+F
+			// does not find my word" report needs.
+			this.lastTextLayer = result.textLayer ?? this.lastTextLayer;
 
 			this.applyStatus(outcomeStatus(result));
 			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten: result.notesWritten, background: auto });

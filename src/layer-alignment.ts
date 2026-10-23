@@ -27,7 +27,7 @@ function similarity(a: string, b: string): number {
  * (`**`, `*`, `__`, `` ` ``, `~~`, `==`) go, and so does every token that is only Markdown -- a
  * heading's `#`, a list's `-`, a table's `|` and its `|---|` rule.
  */
-function transcriptWords(transcript: string): string[] {
+export function transcriptWords(transcript: string): string[] {
 	return transcript
 		.replace(/<!--[\s\S]*?-->/g, " ")
 		.replace(/__|~~|==|[*`]/g, "")

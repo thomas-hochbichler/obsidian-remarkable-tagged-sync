@@ -1,4 +1,5 @@
 import { describeOcrTally, type OcrTally } from "./ocr-tally";
+import type { TextLayerTally } from "./text-layer";
 
 export interface DiagnosticsInput {
 	pluginVersion: string;
@@ -30,6 +31,12 @@ export interface DiagnosticsInput {
 	 * exchange.
 	 */
 	reusedPageTranscriptions: { reused: number; total: number } | null;
+	/**
+	 * How the last sync's text layer went, or null before a sync has run under this feature. Not a
+	 * notice either (spec §2.7): it answers "Cmd+F does not find my word" -- a page with no layer, or a
+	 * word Vision could not place.
+	 */
+	textLayer: TextLayerTally | null;
 	/** What the last sync or re-transcribe sent to the backend and got back, or null before one has run. */
 	ocrTally: OcrTally | null;
 	/**
@@ -66,6 +73,7 @@ export function buildDiagnostics(input: DiagnosticsInput): string {
 		// happened, and a 0 under Ollama was once taken for "nothing went unread".
 		`Unreadable ink regions (Apple Vision): ${input.unreadableInkRegions}`,
 		`Reused page transcriptions: ${input.reusedPageTranscriptions === null ? "not measured yet" : `${input.reusedPageTranscriptions.reused} of ${input.reusedPageTranscriptions.total}`}`,
+		`Text layer (last sync): ${input.textLayer === null ? "not measured yet" : `${input.textLayer.layered} of ${input.textLayer.pages} pages, ${input.textLayer.placed} words placed, ${input.textLayer.leftOut} left out`}`,
 		`Documents waiting to be read again: ${input.pendingOcrRetries === 0 ? "none" : input.pendingOcrRetries}`,
 		`Mapped tags: ${input.mappedTagCount}`,
 		`Last sync: ${input.lastSyncAt ?? "never"}`,

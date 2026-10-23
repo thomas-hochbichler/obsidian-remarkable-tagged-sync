@@ -35,6 +35,19 @@ export interface LayerReader {
 	readLayer(pages: RmPage[]): Promise<(LayerLine[] | null)[]>;
 }
 
+/**
+ * How a sync's text layer went, for "Copy diagnostics" (spec §2.7): of the pages it rendered, how many
+ * carry a layer, and of the words their transcripts hold, how many were placed and how many left out.
+ * Left out includes text typed on a page: it is in the transcript, and the render carries it as real
+ * text already, so the layer never places it.
+ */
+export interface TextLayerTally {
+	pages: number;
+	layered: number;
+	placed: number;
+	leftOut: number;
+}
+
 /** The boxes of a line's words, if Vision gave each word one of its own: none missing, no two the same. */
 function ownWordBoxes(line: LayerLine): VisionBox[] | null {
 	const boxes = line.words.map((word) => word.box);

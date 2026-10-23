@@ -32,8 +32,8 @@ import { validateSourcePdf } from "./pdf-source";
 import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, type NoteFrontmatter } from "./frontmatter";
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
-import { placeWords } from "./layer-alignment";
-import { addTextLayer, type LayerLine, type LayerReader } from "./text-layer";
+import { placeWords, transcriptWords } from "./layer-alignment";
+import { addTextLayer, type LayerLine, type LayerReader, type TextLayerTally } from "./text-layer";
 import { isDocumentText } from "./scene-text";
 import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint, transcriptSections } from "./transcript-store";
 import type { TagRouter } from "./tag-router";
@@ -427,6 +427,12 @@ export interface SyncResult {
 	 * "0 of 100" says it did not.
 	 */
 	pageTranscriptionsConsidered: number;
+	/**
+	 * How the text layer went over every render this run wrote, for "Copy diagnostics" (spec §2.7). Not
+	 * a notice, for the same reason as above. Null when nothing was measured -- no render written, or no
+	 * layer reader (Windows, Linux) -- so an idle sync does not overwrite the last figure with "0 of 0".
+	 */
+	textLayer: TextLayerTally | null;
 	/**
 	 * The raw error text behind each skip, one entry per skipped unit, for "Copy diagnostics" -- the
 	 * console.warn alone left diagnostics reporting "Last error: none" after a partially-failed sync.
@@ -1080,6 +1086,8 @@ interface WriteUnitResult {
 	written: WrittenUnit | null;
 	/** The line for `skipErrors` when the block came out empty, refused or not; null on the ordinary path. */
 	emptyBlock: string | null;
+	/** How the render's layer went, written even when the note was refused; null for a unit whose attachment takes no layer. */
+	textLayer: TextLayerTally | null;
 }
 
 /**
@@ -1248,6 +1256,23 @@ async function unitLayer(
 	return layer;
 }
 
+/**
+ * How one render's layer went. A page counts as layered only when the written render carries words on
+ * it: a page with no boxes, a page the backend failed on, and every page of a render the layer could
+ * not be laid over all count against it (spec §2.7). Left out is what a page's transcript holds beyond
+ * what was placed.
+ */
+function layerTally(scenes: RmPage[], texts: { embedPage: number; text: string }[], layer: ReadonlyMap<number, LayerLine[]>, laid: boolean): TextLayerTally {
+	const placedOn = (embedPage: number) => (laid ? (layer.get(embedPage) ?? []).reduce((sum, line) => sum + line.words.length, 0) : 0);
+	const placed = scenes.map((_, index) => placedOn(index + 1));
+	return {
+		pages: scenes.length,
+		layered: placed.filter((count) => count > 0).length,
+		placed: placed.reduce((sum, count) => sum + count, 0),
+		leftOut: texts.reduce((sum, page) => sum + Math.max(0, transcriptWords(page.text).length - placedOn(page.embedPage)), 0),
+	};
+}
+
 /** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
@@ -1263,10 +1288,17 @@ async function writeUnit(
 			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage, params.reused);
 	// Once, after the transcript and before the empty-block check below: the transcript is what the
 	// render carries as its text layer.
-	const pdfBytes =
-		params.renderScenes === undefined
-			? params.pdfBytes
-			: await withTextLayer(params.pdfBytes, params.renderScenes, await unitLayer(deps.layerReader, deps.ocrBackend, params.renderScenes, ocr, params.keepTranscript));
+	let pdfBytes = params.pdfBytes;
+	let textLayer: TextLayerTally | null = null;
+	if (params.renderScenes !== undefined) {
+		const layer = await unitLayer(deps.layerReader, deps.ocrBackend, params.renderScenes, ocr, params.keepTranscript);
+		pdfBytes = await withTextLayer(params.pdfBytes, params.renderScenes, layer);
+		// Off macOS there is no layer to count (spec §2.6). The same bytes back mean no layer went on:
+		// none to lay, or one that could not be laid.
+		if (deps.layerReader !== undefined) {
+			textLayer = layerTally(params.renderScenes, layerTexts(ocr, params.keepTranscript, params.renderScenes.length), layer, pdfBytes !== params.pdfBytes);
+		}
+	}
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, pdfBytes);
 
 	const synced = deps.now();
@@ -1292,7 +1324,7 @@ async function writeUnit(
 	// would replace are known. The attachment above is already written and stays: the embed is
 	// correct, and it is what the retry would write again anyway.
 	const empty = await emptyBlockReport(deps.noteStore, params, fields, ocr.status, ocr.pages === null && ocr.text === "");
-	if (empty?.refuse === true) return { written: null, emptyBlock: empty.line };
+	if (empty?.refuse === true) return { written: null, emptyBlock: empty.line, textLayer };
 
 	// Asked before the write puts the note back: a row whose note is not on disk is one the user
 	// deleted by hand (the self-heal is what brought the document here), and write-back reads that
@@ -1359,6 +1391,7 @@ async function writeUnit(
 
 	return {
 		emptyBlock: empty?.line ?? null,
+		textLayer,
 		written: {
 			row: {
 				syncKey,
@@ -2043,7 +2076,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt, deps.manual ?? false);
 	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
+		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -2079,6 +2112,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// answers it without a round of questions.
 	let reusedPageTranscriptions = 0;
 	let pageTranscriptionsConsidered = 0;
+	let textLayer: TextLayerTally | null = null;
+	const countLayer = (unit: TextLayerTally | null): void => {
+		if (unit === null) return;
+		textLayer = textLayer === null ? unit : { pages: textLayer.pages + unit.pages, layered: textLayer.layered + unit.layered, placed: textLayer.placed + unit.placed, leftOut: textLayer.leftOut + unit.leftOut };
+	};
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -2110,6 +2148,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			relaidDocuments,
 			reusedPageTranscriptions,
 			pageTranscriptionsConsidered,
+			textLayer,
 			skipErrors,
 			backendWarnings,
 			zoteroNotices,
@@ -2394,7 +2433,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			reusedPageTranscriptions += store.reused.size;
 			pageTranscriptionsConsidered += store.considered;
 
-			const { written, emptyBlock } = await writeUnit(
+			const { written, emptyBlock, textLayer: unitLayerTally } = await writeUnit(
 				writeDeps,
 				{
 					ocrPages: split.transcribe,
@@ -2425,6 +2464,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
+			countLayer(unitLayerTally);
 			if (emptyBlock !== null) skipErrors.push(emptyBlock);
 			if (written === null) {
 				// Refused, so no note was written (the render was). The row keeps its old entry hash and render version,
@@ -2517,7 +2557,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
-			const { written, emptyBlock } = await writeUnit(
+			const { written, emptyBlock, textLayer: unitLayerTally } = await writeUnit(
 				writeDeps,
 				{
 					ocrPages: split.transcribe,
@@ -2546,6 +2586,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
+			countLayer(unitLayerTally);
 			if (emptyBlock !== null) skipErrors.push(emptyBlock);
 			if (written === null) {
 				// See the notebook-tag branch.
@@ -2605,7 +2646,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings, zoteroNotices };
+	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices };
 }
 
 export interface ReTranscribeDeps {

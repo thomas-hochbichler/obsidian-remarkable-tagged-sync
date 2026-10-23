@@ -10,6 +10,7 @@ const BASE = {
 	visionRevision: 3,
 	unreadableInkRegions: 0,
 	reusedPageTranscriptions: { reused: 0, total: 0 },
+	textLayer: null,
 	ocrTally: null,
 	pendingOcrRetries: 0,
 	mappedTagCount: 1,
@@ -44,6 +45,13 @@ describe("buildDiagnostics", () => {
 	/** The first question behind "I edited a page and the transcript did not update" (issue #117). */
 	it("reports how much of the transcription the per-page store answered", () => {
 		expect(buildDiagnostics({ ...BASE, reusedPageTranscriptions: { reused: 99, total: 100 } })).toContain("Reused page transcriptions: 99 of 100");
+	});
+
+	/** The first question behind "Cmd+F does not find my word" (searchable-pdf spec §2.7). */
+	it("says how the last sync's text layer went", () => {
+		expect(buildDiagnostics({ ...BASE, textLayer: { pages: 50, layered: 48, placed: 1203, leftOut: 97 } })).toContain(
+			"Text layer (last sync): 48 of 50 pages, 1203 words placed, 97 left out",
+		);
 	});
 
 	/** The revision is the OS's choice, never ours -- so "which one ran" is a fact only the machine has. */
@@ -90,6 +98,7 @@ describe("buildDiagnostics", () => {
 		expect(text).toContain("Last sync: never");
 		expect(text).toContain("Last error: none");
 		expect(text).toContain("Reused page transcriptions: not measured yet");
+		expect(text).toContain("Text layer (last sync): not measured yet");
 		expect(text).not.toContain("null");
 	});
 });
