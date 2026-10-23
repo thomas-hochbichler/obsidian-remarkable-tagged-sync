@@ -84,6 +84,13 @@ async function main() {
 	const encodable = new Set(font.getCharacterSet());
 	const drawn = (text: string) => foldWord(text, encodable);
 
+	// What folding changed: Vision's own spelling beside the one written into the layer.
+	reads.forEach((lines, page) => {
+		for (const { text } of lines.flatMap((line) => line.words)) {
+			if (drawn(text) !== text) console.log(`folded: page ${files[page].slice(0, 2)} "${text}" -> "${drawn(text)}"`);
+		}
+	});
+
 	const device = notebookCanvas(scenes);
 	const placed: Placed[] = [];
 	reads.forEach((lines, page) => {
