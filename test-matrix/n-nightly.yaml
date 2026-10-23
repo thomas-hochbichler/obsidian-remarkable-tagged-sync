@@ -549,10 +549,10 @@
 
     - id: N12.2
       scenario: Every pin moved past the figure at once
-      expect: Seven problems, each naming the pin and both values -- a moved pin is a baseline-moving event (spec §3.4), and the fix is named, not guessed
+      expect: Eight problems, each naming the pin -- the encoder's place (#218) among them -- a moved pin is a baseline-moving event (spec §3.4), and the fix is named, not guessed
       layer: unit
       file: test-support/local-ocr/figures.test.ts
-      test: "a local figure > names each pin that moved past it -- prompt, raster, runtime, model files, context, splitting"
+      test: "a local figure > names each pin that moved past it -- prompt, raster, runtime, model files, context, splitting, encoder"
 
     - id: N12.3
       scenario: The settings card quotes a median or a day other than the figure's

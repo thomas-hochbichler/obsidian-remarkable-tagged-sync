@@ -16,6 +16,7 @@ const generation: ModelGeneration = {
 	floorGb: { darwin: 16, win32: 24 },
 	contextTokens: 8192,
 	splitsTallPages: true,
+	encoderOnCpu: false,
 };
 const current = { generations: [generation], promptSha: "635b0b92a4432be2", renderVersion: 31, runtime: "b10295" };
 const figure = (over: Partial<LocalFigure> = {}): LocalFigure => ({
@@ -31,6 +32,7 @@ const figure = (over: Partial<LocalFigure> = {}): LocalFigure => ({
 	renderVersion: 31,
 	contextTokens: 8192,
 	splitsTallPages: true,
+	encoderOnCpu: false,
 	status: "pass",
 	medianCer: 0.01786,
 	pages: {},
@@ -42,13 +44,13 @@ describe("a local figure", () => {
 		expect(checkFigure(figure(), current)).toEqual([]);
 	});
 
-	it("names each pin that moved past it -- prompt, raster, runtime, model files, context, splitting", () => {
+	it("names each pin that moved past it -- prompt, raster, runtime, model files, context, splitting, encoder", () => {
 		const problems = checkFigure(
-			figure({ promptSha: "0000000000000000", renderVersion: 30, runtime: "b10000", modelSha256: "cc", mmprojSha256: "dd", contextTokens: null, splitsTallPages: false }),
+			figure({ promptSha: "0000000000000000", renderVersion: 30, runtime: "b10000", modelSha256: "cc", mmprojSha256: "dd", contextTokens: null, splitsTallPages: false, encoderOnCpu: true }),
 			current,
 		);
-		expect(problems).toHaveLength(7);
-		expect(problems.join("\n")).toMatch(/prompt changed .*render version changed .*runtime changed .*model file .*projector file .*context pin .*splitting/s);
+		expect(problems).toHaveLength(8);
+		expect(problems.join("\n")).toMatch(/prompt changed .*render version changed .*runtime changed .*model file .*projector file .*context pin .*splitting .*encoder/s);
 	});
 
 	it("is refused when the settings card quotes a different number or day than it measured", () => {

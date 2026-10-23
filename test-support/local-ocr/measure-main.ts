@@ -130,6 +130,7 @@ async function main() {
 		renderVersion: RENDER_VERSION,
 		contextTokens: generation.contextTokens,
 		splitsTallPages: generation.splitsTallPages,
+		encoderOnCpu: generation.encoderOnCpu,
 		status: result.status,
 		medianCer: result.medianCer,
 		pages: Object.fromEntries(pages.map((page) => [page.id, { ...result.pages[page.id], ...timings[page.id] }])),

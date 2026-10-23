@@ -15,6 +15,7 @@
 	"renderVersion": 32,
 	"contextTokens": 8192,
 	"splitsTallPages": true,
+	"encoderOnCpu": false,
 	"status": "pass",
 	"medianCer": 0.017857142857142856,
 	"pages": {

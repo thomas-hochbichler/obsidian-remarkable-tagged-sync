@@ -444,6 +444,18 @@ describe("the context every generation runs at", () => {
 	});
 });
 
+// #218: on an M5 Max with macOS 27, Qwen2.5-VL's encoder on Metal turns every page into "@@@@"; on the
+// CPU it reads correctly. The Qwen3-VL encoders read correctly on the GPU and stay there.
+describe("where each generation's vision encoder runs", () => {
+	it("keeps Qwen2.5-VL's on the CPU, and every other generation's on the GPU", () => {
+		expect(Object.fromEntries(MODEL_GENERATIONS.map((g) => [g.dir, g.encoderOnCpu]))).toEqual({
+			"qwen3-vl-8b-instruct-q4_k_m": false,
+			"qwen2.5-vl-7b-instruct-q4_k_m": true,
+			"qwen3-vl-2b-instruct-q4_k_m": false,
+		});
+	});
+});
+
 /**
  * The list is a size ladder, not a timeline. "Newest wins" only looked right while both generations
  * had the same memory floor; the moment one is offered on a smaller machine it hands that machine a

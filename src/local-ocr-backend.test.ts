@@ -356,6 +356,12 @@ describe("pageArgs", () => {
 		expect(args[args.indexOf("--temp") + 1]).toBe("0");
 		expect(args[args.indexOf("--seed") + 1]).toBe("42");
 	});
+
+	// #218: Qwen2.5-VL's vision encoder on Metal (M5 Max, macOS 27) reads every page as "@@@@".
+	it("keeps the vision encoder on the CPU when the generation says so, and on the GPU otherwise", () => {
+		expect(pageArgs(paths, "/tmp/page.png", { ...withContext, encoderOnCpu: true }, TRANSCRIPTION_PROMPT)).toContain("--no-mmproj-offload");
+		expect(pageArgs(paths, "/tmp/page.png", { ...withContext, encoderOnCpu: false }, TRANSCRIPTION_PROMPT)).not.toContain("--no-mmproj-offload");
+	});
 });
 
 /**

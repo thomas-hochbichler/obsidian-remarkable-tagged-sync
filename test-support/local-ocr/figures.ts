@@ -32,6 +32,8 @@ export interface LocalFigure {
 	renderVersion: number;
 	contextTokens: number | null;
 	splitsTallPages: boolean;
+	/** `ModelGeneration.encoderOnCpu` at measurement time (#218). */
+	encoderOnCpu: boolean;
 	status: BackendStatus;
 	medianCer: number | null;
 	pages: Record<string, PageMeasurement & { ms: number; peakRssBytes: number | null }>;
@@ -70,6 +72,7 @@ export function checkFigure(figure: LocalFigure, current: CurrentPins): string[]
 	if (figure.mmprojSha256 !== pinned("mmproj.gguf")) problems.push(`${figure.generation}: projector file is not the pinned one`);
 	if (figure.contextTokens !== generation.contextTokens) problems.push(`${figure.generation}: context pin changed (${figure.contextTokens} -> ${generation.contextTokens})`);
 	if (figure.splitsTallPages !== generation.splitsTallPages) problems.push(`${figure.generation}: tall-page splitting changed`);
+	if (figure.encoderOnCpu !== generation.encoderOnCpu) problems.push(`${figure.generation}: where the vision encoder runs changed`);
 	if (figure.medianCer === null || Math.abs(figure.medianCer - generation.measured.medianCer) >= 0.00005) {
 		problems.push(`${figure.generation}: the settings card says ${generation.measured.medianCer}, the figure measured ${figure.medianCer}`);
 	}

@@ -115,6 +115,7 @@ export function pageArgs(paths: LocalModelPaths, imageFile: string, generation: 
 		// against 7.99 GB at 8192, for byte-identical output on all fifteen reference pages. One page is
 		// one image plus at most `MAX_TOKENS` of answer, so nothing here ever needs more.
 		...(generation.contextTokens === null ? [] : ["-c", String(generation.contextTokens)]),
+		...(generation.encoderOnCpu ? ["--no-mmproj-offload"] : []),
 	];
 }
 

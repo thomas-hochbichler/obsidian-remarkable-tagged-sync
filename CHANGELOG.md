@@ -32,6 +32,15 @@ workflow publishes the section as the GitHub release body. See
   its render without the layer; *Re-transcribe this note* gives it one, but replaces your corrections in
   the transcript, so it asks first.
 
+### Fixed
+
+- **The older built-in model, Qwen2.5-VL-7B, no longer turns every page into `@@@@` on newer Macs.**
+  On an M5 Max with macOS 27 its image reader miscalculated on the graphics chip, and every
+  transcript came back as a run of `@` characters without an error. That part of the model now runs
+  on the processor, on every Mac; the language part stays on the graphics chip. It reads the
+  reference pages at 4.2 % error again, at a few seconds more per page. The Qwen3-VL models were not
+  affected. (#218)
+
 ## [1.8.6] - 2026-10-18
 
 ### Fixed
