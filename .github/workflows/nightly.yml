@@ -14,6 +14,10 @@
 # skip the other measurement, and this workflow publishes nothing so there is nothing to save by
 # failing early. Secrets live in the `nightly` environment, limited to `main`, passed per step.
 #
+# To try a change to a measuring job before it reaches `main`: `gh workflow run nightly.yml --ref
+# <branch>`. Only `vision` and `perf` run; `ocr` and `verdict` are refused by the environment, so
+# nothing is committed. Read the result from the job log or the `part-vision` / `part-perf` artifact.
+#
 # Actions are pinned by commit SHA. The trailing comment is the human-readable tag; update both
 # together.
 

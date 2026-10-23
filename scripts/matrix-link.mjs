@@ -7,6 +7,7 @@
 //   2. a test that no row and no allowlist entry claims    -> a test was written without its row
 //   3. a row with no scenario or no expected behaviour     -> a row that says nothing
 //   4. an allowlist entry naming a test that is gone       -> the allowlist may only shrink
+//   5. a row bound to a CI job whose job does not run it  -> the matrix claims a check nothing runs
 //
 //   node scripts/matrix-link.mjs [--write-allowlist]
 //
@@ -81,7 +82,7 @@ const tests = listTests();
 console.log(`matrix link: ${rows.length} scenario rows in ${files.length} files, ${tests.length} tests collected\n`);
 
 // -- row shape: a row must say what happens and what is expected, and be in exactly one state
-const STATES = ["test", "gap", "waived"];
+const STATES = ["test", "gap", "waived", "job"];
 const seenIds = new Set();
 for (const r of rows) {
 	const where = `${r.path} ${r.id ?? "(row with no id)"}`;
@@ -99,7 +100,7 @@ for (const r of rows) {
 	if (states.length === 0)
 		fail(
 			"rows in no state",
-			`${where}: add one of \`test:\` (it is covered), \`gap:\` (planned, cite the gap id) or \`waived:\` (never automated, say why)`,
+			`${where}: add one of \`test:\` (it is covered), \`job:\` (a CI job runs the check), \`gap:\` (planned, cite the gap id) or \`waived:\` (never automated, say why)`,
 		);
 	if (states.length > 1) fail("rows in two states at once", `${where}: has ${states.join(" and ")} -- pick one`);
 }
@@ -127,6 +128,23 @@ for (const r of rows.filter((r) => r.test)) {
 			"rows naming a test that does not exist",
 			`${r.id} ${r.feature} ${r.name}\n          wants: ${r.file} :: ${r.test}\n          -- write it, or fix the name in ${r.path} if the test was renamed`,
 		);
+}
+
+// -- the CI binding: a check that is a script, not a vitest test (the nightly's PDFKit check). The
+// row names the workflow job and the command; the job must run that command, or deleting the step
+// from the workflow would leave the row claiming a check nothing runs.
+for (const r of rows.filter((r) => r.job)) {
+	const [workflow, jobName] = String(r.job).split("#");
+	let steps;
+	try {
+		steps = parseYaml(readFileSync(join(".github", "workflows", workflow), "utf8"))?.jobs?.[jobName]?.steps;
+	} catch {
+		steps = undefined;
+	}
+	if (!r.run) fail("rows with no job command", `${r.path} ${r.id}: \`job:\` needs a \`run:\` beside it`);
+	else if (!steps) fail("rows naming a job that does not exist", `${r.id}: no job \`${jobName}\` in .github/workflows/${workflow} (want \`job: <workflow>.yml#<job>\`)`);
+	else if (!steps.some((step) => String(step.run ?? "").includes(r.run)))
+		fail("rows naming a command the job does not run", `${r.id}: job ${r.job} has no step running \`${r.run}\``);
 }
 
 // -- tests with no row, against the shrink-only allowlist
@@ -182,6 +200,7 @@ const featureCount = new Set(rows.map((r) => r.feature)).size;
 
 if (groups.size === 0) {
 	ok(`${bound} rows bound to a test`);
+	ok(`${rows.filter((r) => r.job).length} rows bound to a CI job`);
 	ok(`${planned} rows planned (gap ids: ${[...new Set(rows.filter((r) => r.gap).map((r) => r.gap))].sort().join(", ")})`);
 	ok(`${waived} row${waived === 1 ? "" : "s"} waived`);
 	ok(`${allow.length} tests on the shrink-only allowlist`);
