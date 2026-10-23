@@ -17,7 +17,8 @@ export interface OcrPageResult {
 	/**
 	 * Where the page's words sit, for the render's text layer: the lines read off the page image, each
 	 * word with its box. Only a backend that reads positions sets it -- Apple Vision -- and only on an
-	 * "ok" page. Lines the page image does not carry (typed text, a rescued crop) are not in it.
+	 * "ok" page. Lines the page image does not carry (typed text, a rescued crop) are not in it. Absent,
+	 * the sync asks Vision for the boxes and places the page's text on them; empty, it places nothing.
 	 */
 	layer?: LayerLine[];
 }

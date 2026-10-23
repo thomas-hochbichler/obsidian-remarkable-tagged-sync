@@ -19,6 +19,10 @@ real handwriting.
 - `pages/NN-*.md` — page NN's ground truth. Frontmatter carries `id`, `trait`, `language`,
   `difficulty` and the writing instruction; the body after the frontmatter is the expected text,
   verbatim.
+- `vision-layer/NN.json` — Apple Vision's page pass over page NN, as `VisionOcrBackend.readLayer`
+  returns it: each line's box and its words with their boxes. Recorded on 2026-10-23 under macOS
+  27.0.1, for pages 05 and 10 only, so the text-layer alignment has a fixed input on every
+  platform; Vision itself reads differently from one macOS to the next.
 
 Page order binds a scene to its ground truth: `scenes/03-*.rm` is measured against `pages/03-*.md`.
 

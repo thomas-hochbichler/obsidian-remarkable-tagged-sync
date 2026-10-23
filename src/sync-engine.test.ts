@@ -38,6 +38,7 @@ import {
 import { mappingFingerprint, TagRouter } from "./tag-router";
 import { transcriptFingerprint } from "./transcript-store";
 import { OffOcrBackend } from "./off-ocr-backend";
+import type { LayerReader } from "./text-layer";
 import { UnavailableOcrBackend, type VisionBatchResult, VisionOcrBackend } from "./vision-ocr-backend";
 
 // The real pipeline runs in every test but one: every partial failure inside it is deliberately
@@ -3275,7 +3276,8 @@ describe("the text layer (searchable PDF)", () => {
 
 	it("lays Vision's words invisibly over the notebook's render, from the one reading that wrote the transcript", async () => {
 		const { backend, runBatch } = vision(READ);
-		const deps = { ...baseDeps(notebook("root-16-a"), { sync: "Target" }), ocrBackend: backend };
+		// As the plugin wires it on a Mac: the one Vision is backend and layer reader both.
+		const deps = { ...baseDeps(notebook("root-16-a"), { sync: "Target" }), ocrBackend: backend, layerReader: backend };
 
 		const result = await runSync(deps, EMPTY_SYNC_INDEX);
 
@@ -3300,7 +3302,8 @@ describe("the text layer (searchable PDF)", () => {
 	});
 
 	it("gives a page Vision could not read no layer, and the other pages theirs", async () => {
-		const deps = { ...baseDeps(notebook("root-16-c", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: vision(READ, { error: "unreadable_image" }).backend };
+		const { backend } = vision(READ, { error: "unreadable_image" });
+		const deps = { ...baseDeps(notebook("root-16-c", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: backend, layerReader: backend };
 
 		await runSync(deps, EMPTY_SYNC_INDEX);
 
@@ -3314,23 +3317,164 @@ describe("the text layer (searchable PDF)", () => {
 		const api = notebook("root-16-d");
 		api.raw.getHash = vi.fn(async () => HIGHLIGHTED_PAGE_BYTES);
 		vi.mocked(isDocumentText).mockReturnValueOnce(false); // the page's handwriting is transcribed, its typed text with it
-		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: vision(READ).backend };
+		const { backend, runBatch } = vision(READ);
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: backend, layerReader: backend };
 
 		const result = await runSync(deps, EMPTY_SYNC_INDEX);
 
 		expect(await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath)).toContain("Cape Marrow");
 		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(runBatch).toHaveBeenCalledTimes(1);
 	});
 
-	it.each([
-		["transcription is off", (): OcrBackend => new OffOcrBackend()],
-		["Apple Vision cannot run here (Windows, Linux)", (): OcrBackend => new UnavailableOcrBackend("vision")],
-	])("writes the render without a layer when %s", async (_case, backend) => {
-		const deps = { ...baseDeps(notebook("root-16-e"), { sync: "Target" }), ocrBackend: backend() };
+	// Ink that is only a marker band, say: Vision returns text off the rescue pass, and the page pass
+	// it would read again holds no word. Reading it twice would find the same nothing.
+	it("does not read a page again for its boxes when Vision read it as the backend and placed no word", async () => {
+		const { backend, runBatch } = vision({ lines: [], boxes: [], words: [] }, { lines: ["Rapoldeck"], boxes: [WHOLE_PAGE], words: [[{ text: "Rapoldeck", box: WHOLE_PAGE }]] });
+		const deps = { ...baseDeps(notebook("root-18-b"), { sync: "Target" }), ocrBackend: backend, layerReader: backend };
 
 		await runSync(deps, EMPTY_SYNC_INDEX);
 
 		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+		expect(runBatch).toHaveBeenCalledTimes(2); // the page and its rescue, and no third time
+	});
+
+	/** A model backend (Ollama here) that reads `answers` off the pages it is handed, in order; `null` is a page that failed. */
+	function model(...answers: (string | null)[]): OcrBackend {
+		return { ...scriptedPageBackend(answers), id: "ollama" };
+	}
+
+	it("lays another backend's words over the render, on the boxes Vision reads for them", async () => {
+		const { backend: reader, runBatch } = vision(READ);
+		const deps = { ...baseDeps(notebook("root-18-a"), { sync: "Target" }), ocrBackend: model("**Rapoldeck** Hütte"), layerReader: reader };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath)).toContain("**Rapoldeck** Hütte");
+		expect(runBatch).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+	});
+
+	/** The notebook again on a later sync: `hash` is the document's, `pages` each page's own. */
+	function notebookAgain(rootHash: string, hash: string, pages: Record<string, string>, bytes = PAGE_BYTES) {
+		const api = fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(Object.keys(pages)) }) },
+			pageHashesByDoc: { "doc-1": pages },
+		});
+		api.raw.getHash = vi.fn(async () => bytes);
+		return api;
+	}
+
+	/** A sync's backend and layer reader, as the plugin wires them on a Mac: with Apple Vision they are one. */
+	const BACKENDS: [string, () => { backend: OcrBackend; reader: LayerReader; runBatch: ReturnType<typeof vision>["runBatch"] }][] = [
+		[
+			"another backend",
+			() => {
+				const { backend: reader, runBatch } = vision(READ);
+				return { backend: model("Rapoldeck Hütte", "Rapoldeck Hütte"), reader, runBatch };
+			},
+		],
+		[
+			"Apple Vision",
+			() => {
+				const { backend, runBatch } = vision(READ);
+				return { backend, reader: backend, runBatch };
+			},
+		],
+	];
+
+	// Page a's text comes out of the store on the second sync, unread; its layer must not go missing.
+	it.each(BACKENDS)("gives a page whose text comes from the store a layer, with %s as the backend", async (_case, setUp) => {
+		const pages = { "page-a": "h-a", "page-b": "h-b" };
+		const before = setUp();
+		const first = { ...baseDeps(notebookAgain("root-18-e", "hash-1", pages), { sync: "Target" }), ocrBackend: before.backend, layerReader: before.reader };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const { backend, reader } = setUp();
+		const second = { ...baseDeps(notebookAgain("root-18-e2", "hash-2", { ...pages, "page-b": "h-b-edited" }), { sync: "Target" }), noteStore: first.noteStore, ocrBackend: backend, layerReader: reader };
+		const result = await runSync(second, synced.index);
+
+		expect(result.reusedPageTranscriptions).toBe(1);
+		expect(await invisibleWords(second.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(second.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	// A rebuild for the renderer alone keeps the note's transcript and reads nothing for it
+	// (`keepTranscript`). The boxes are read all the same: without them there is nothing to place on.
+	it.each(BACKENDS)("gives a unit that keeps its whole transcript a layer, with %s as the backend", async (_case, setUp) => {
+		const pages = { "page-a": "h-a", "page-b": "h-b" };
+		const before = setUp();
+		const first = { ...baseDeps(notebookAgain("root-18-f", "hash-1", pages, UNANCHORED_PAGE_BYTES), { sync: "Target" }), ocrBackend: before.backend, layerReader: before.reader };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const key = notebookSyncKey("doc-1", "sync");
+		const stale: SyncIndex = { ...synced.index, rows: { [key]: { ...synced.index.rows[key], renderVersion: RENDER_VERSION - 1 } } };
+
+		const { backend, reader, runBatch } = setUp();
+		const recognize = vi.spyOn(backend, "recognize");
+		const rebuild = { ...baseDeps(notebookAgain("root-18-f", "hash-1", pages, UNANCHORED_PAGE_BYTES), { sync: "Target" }), noteStore: first.noteStore, ocrBackend: backend, layerReader: reader };
+		const result = await runSync(rebuild, stale);
+
+		expect(result.notesWritten).toBe(1);
+		expect(recognize).not.toHaveBeenCalled();
+		expect(runBatch.mock.calls.map(([images]) => images.length)).toEqual([2]); // the boxes, once, and no transcript
+		expect(await invisibleWords(rebuild.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(rebuild.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	// A model reads the typed text off the page along with the ink. Vision's page pass never sees it --
+	// the rasterizer draws ink only -- so the typed words find no box and stay out of the layer.
+	it("gives the text typed on a page no invisible copy when another backend read it with the handwriting", async () => {
+		const api = notebook("root-18-g");
+		api.raw.getHash = vi.fn(async () => HIGHLIGHTED_PAGE_BYTES);
+		vi.mocked(isDocumentText).mockReturnValueOnce(false);
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte\nCape Marrow"), layerReader: vision(READ).backend };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	it("gives a page the backend failed on no layer, and no Vision text in its place", async () => {
+		const { backend: reader, runBatch } = vision(READ);
+		const deps = { ...baseDeps(notebook("root-18-c", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte", null), layerReader: reader };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual([]);
+		expect(runBatch.mock.calls.map(([images]) => images.length)).toEqual([1]); // the failed page is not even read for boxes
+	});
+
+	it.each([
+		["the permission is missing", { runBatch: vi.fn(), probe: async () => false }],
+		["osascript fails", { runBatch: vi.fn().mockRejectedValue(new Error("osascript failed")), probe: async () => true }],
+	])("writes the render without a layer when Vision cannot run at all (%s), and says nothing new", async (_case, options) => {
+		const deps = { ...baseDeps(notebook("root-18-d"), { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte"), layerReader: new VisionOcrBackend(options) };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+		expect(result.notesWritten).toBe(1);
+		expect(result.skipErrors).toEqual([]);
+	});
+
+	// Off macOS the plugin hands the sync no layer reader at all. One whose probe says no stands in here,
+	// so the spy can show nothing was spawned however the reader got there.
+	it.each([
+		["transcription is off", (): OcrBackend => new OffOcrBackend(), true],
+		["Apple Vision cannot run here (Windows, Linux)", (): OcrBackend => new UnavailableOcrBackend("vision"), false],
+		["another backend reads on Windows or Linux", (): OcrBackend => model("Rapoldeck Hütte"), false],
+	])("writes the render without a layer, and runs no Vision, when %s", async (_case, backend, onMac) => {
+		const runBatch = vi.fn(async (images: Uint8Array[]) => images.map(() => READ));
+		const deps = { ...baseDeps(notebook("root-16-e"), { sync: "Target" }), ocrBackend: backend(), layerReader: new VisionOcrBackend({ runBatch, probe: async () => onMac }) };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+		expect(runBatch).not.toHaveBeenCalled();
 	});
 });
 

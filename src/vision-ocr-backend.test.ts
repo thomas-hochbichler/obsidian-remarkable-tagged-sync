@@ -272,8 +272,8 @@ describe("VisionOcrBackend", () => {
 		expect(result).toEqual({
 			status: "ok",
 			pages: [
-				{ status: "ok", text: "page one" },
-				{ status: "ok", text: "page two" },
+				{ status: "ok", text: "page one", layer: [] },
+				{ status: "ok", text: "page two", layer: [] },
 			],
 			text: "page one\n\npage two",
 			confidence: null,
@@ -335,7 +335,7 @@ describe("VisionOcrBackend", () => {
 		expect(await backend.recognize([page(), page()])).toEqual({
 			status: "ok",
 			pages: [
-				{ status: "ok", text: "kept" },
+				{ status: "ok", text: "kept", layer: [] },
 				{ status: "failed", text: "" },
 			],
 			text: "kept",
@@ -401,7 +401,8 @@ describe("VisionOcrBackend", () => {
 
 		expect(await backend.recognize([typed])).toEqual({
 			status: "ok",
-			pages: [{ status: "ok", text: "first\nsecond" }],
+			// Typed text is real text in the render already: none of it goes into the layer.
+			pages: [{ status: "ok", text: "first\nsecond", layer: [] }],
 			text: "first\nsecond",
 			confidence: null,
 		});
@@ -432,6 +433,35 @@ describe("VisionOcrBackend", () => {
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
 		expect(await backend.recognize([page()])).toEqual({ status: "failed", pages: null, text: "", confidence: null });
+	});
+});
+
+// The boxes a text layer is placed on when another backend wrote the words (searchable-pdf spec §2.1).
+describe("VisionOcrBackend.readLayer", () => {
+	const WORDS = { lines: ["Rapoldeck Hütte"], boxes: [{ x: 0, y: 0, w: 1, h: 1 }], words: [[{ text: "Rapoldeck", box: { x: 0, y: 0, w: 0.6, h: 1 } }, { text: "Hütte", box: null }]] };
+
+	// The second page reads as nothing, which `recognize` would answer with a rescue pass.
+	it("reads each page's lines and word boxes off one page pass, no rescue and no typed text after it", async () => {
+		const typed: RmPage = { ...page(), text: { posX: 0, posY: 0, width: 800, runs: [{ id: "1:1", text: "typed", deleted: 0 }], styles: new Map() } };
+		const { runBatch, batchSizes } = stubRunner([[WORDS, { lines: [], boxes: [], words: [] }, { error: "unreadable_image" }]]);
+		const backend = new VisionOcrBackend({ runBatch, probe: available });
+
+		expect(await backend.readLayer([typed, page(), page()])).toEqual([[{ box: WORDS.boxes[0], words: WORDS.words[0] }], [], null]);
+		expect(batchSizes).toEqual([3]);
+	});
+
+	it.each([
+		["Vision cannot run here", { runBatch: vi.fn(), probe: () => Promise.resolve(false) }],
+		["the runner throws", { runBatch: vi.fn().mockRejectedValue(new Error("spawn EACCES")), probe: available }],
+	])("has no boxes for any page when %s, and never throws", async (_case, options) => {
+		expect(await new VisionOcrBackend(options).readLayer([page(), page()])).toEqual([null, null]);
+	});
+
+	it("reads nothing for no pages", async () => {
+		const runBatch = vi.fn();
+
+		expect(await new VisionOcrBackend({ runBatch, probe: available }).readLayer([])).toEqual([]);
+		expect(runBatch).not.toHaveBeenCalled();
 	});
 });
 

@@ -158,7 +158,7 @@ function uncoveredClusters(page: RmPage, boxes: VisionBox[]): { scene: RmPage; c
 }
 
 /** Levenshtein distance, two-row DP. */
-function levenshtein(a: string, b: string): number {
+export function levenshtein(a: string, b: string): number {
 	if (a.length === 0) return b.length;
 	if (b.length === 0) return a.length;
 	let prev = new Uint32Array(b.length + 1);
@@ -317,6 +317,22 @@ export class VisionOcrBackend implements OcrBackend {
 	}
 
 	/**
+	 * Where the words sit on each page, for a text layer whose words come from another backend (spec
+	 * §2.1): the page pass alone, no rescue, no typed text, no transcript. One entry per page, `null`
+	 * for a page Vision could not read -- and for every page when Vision cannot run here at all, which
+	 * leaves the render without a layer, as before 1.9.0 (spec §2.7).
+	 */
+	async readLayer(pages: RmPage[]): Promise<(LayerLine[] | null)[]> {
+		if (pages.length === 0 || !(await this.available())) return pages.map(() => null);
+		try {
+			return (await this.read(pages.map((page) => ocrImage(page)))).map((result) => ("lines" in result ? pageLayer(result) : null));
+		} catch (error) {
+			console.warn("Tagged Sync: Vision could not read the word boxes, the render is written without a text layer", error);
+			return pages.map(() => null);
+		}
+	}
+
+	/**
 	 * A margin note is read exactly as a page is, whatever `framing` says -- measured, not assumed. Over
 	 * the 180 line crops of the reference set, Vision returned nothing for five real lines once they
 	 * were padded, among them "Taschenlampe, Ersatzbatterien", and recovered none: it reads a crop best
@@ -344,8 +360,8 @@ export class VisionOcrBackend implements OcrBackend {
 				if (read === null) return { status: "failed", text: "" };
 				const text = read.lines.join("\n").trim();
 				if (text.length === 0) return { status: "skipped", text: "" };
-				const layer = pageLayer(perPage[index]);
-				return layer.length > 0 ? { status: "ok", text, layer } : { status: "ok", text };
+				// Set even when empty: it says the page was read with positions, and not to read it again for them.
+				return { status: "ok", text, layer: pageLayer(perPage[index]) };
 			});
 			const text = pageResults
 				.filter((page) => page.status === "ok")

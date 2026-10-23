@@ -32,7 +32,8 @@ import { validateSourcePdf } from "./pdf-source";
 import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, type NoteFrontmatter } from "./frontmatter";
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
-import { addTextLayer, type LayerLine } from "./text-layer";
+import { placeWords } from "./layer-alignment";
+import { addTextLayer, type LayerLine, type LayerReader } from "./text-layer";
 import { isDocumentText } from "./scene-text";
 import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint, transcriptSections } from "./transcript-store";
 import type { TagRouter } from "./tag-router";
@@ -300,6 +301,12 @@ export interface SyncDeps {
 	attachmentStore: AttachmentStore;
 	attachmentsFolder?: string;
 	ocrBackend: OcrBackend;
+	/**
+	 * Apple Vision's word boxes, for the text layer of a page whose words came from another backend, or
+	 * from the store or the note (spec §2.1). Absent where Vision cannot exist (Windows, Linux): the
+	 * render is then written without a layer, as before 1.9.0.
+	 */
+	layerReader?: LayerReader;
 	/**
 	 * F20's setting, default **off** -- the same default the plugin ships, so a caller that says
 	 * nothing gets the shipped behaviour rather than a second, quieter policy.
@@ -1194,9 +1201,49 @@ async function withTextLayer(pdf: Uint8Array, scenes: RmPage[], layer: ReadonlyM
 	}
 }
 
+/**
+ * The text each page's layer carries: what the page was read as, from the backend or the store, or --
+ * for a unit that keeps its whole transcript -- the page's section of the note, read back as the store
+ * reads it. A failed page has no text here (spec §2.7).
+ */
+function layerTexts(ocr: UnitOcr, keptTranscript: string | undefined, pageCount: number): { embedPage: number; text: string }[] {
+	if (keptTranscript === undefined) return (ocr.pages ?? []).filter((page) => page.status === "ok");
+	// One page prints no heading (`renderTranscript`), so its section is the whole transcript. No quote
+	// bullets to drop: a quote is highlighted typed text, and `reusableTranscript` keeps no unit with any.
+	const sections = pageCount === 1 ? new Map([[1, keptTranscript]]) : transcriptSections(keptTranscript);
+	return [...sections].flatMap(([label, section]) => {
+		const text = pageText(section, 0);
+		return text === null ? [] : [{ embedPage: label, text }];
+	});
+}
+
+/**
+ * Each page's text layer, by `embedPage`: the words the backend read with positions where it did
+ * (Apple Vision, one reading), else the page's transcript placed on the boxes `reader` reads for it
+ * (spec §2.1). A page that failed has no transcript and so no layer (spec §2.7).
+ */
+async function unitLayer(
+	reader: LayerReader | undefined,
+	backend: OcrBackend,
+	scenes: RmPage[],
+	ocr: UnitOcr,
+	keptTranscript: string | undefined,
+): Promise<ReadonlyMap<number, LayerLine[]>> {
+	const layer = new Map(ocr.layer);
+	if (reader === undefined || readsNothing(backend)) return layer;
+	const texts = layerTexts(ocr, keptTranscript, scenes.length).filter((page) => !layer.has(page.embedPage));
+	if (texts.length === 0) return layer;
+	const reads = await reader.readLayer(texts.map((page) => scenes[page.embedPage - 1]));
+	texts.forEach((page, index) => {
+		const lines = reads[index];
+		if (lines) layer.set(page.embedPage, placeWords(page.text, lines));
+	});
+	return layer;
+}
+
 /** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
-	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
+	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<WriteUnitResult> {
@@ -1209,7 +1256,10 @@ async function writeUnit(
 			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage, params.reused);
 	// Once, after the transcript and before the empty-block check below: the transcript is what the
 	// render carries as its text layer.
-	const pdfBytes = params.renderScenes === undefined ? params.pdfBytes : await withTextLayer(params.pdfBytes, params.renderScenes, ocr.layer ?? new Map());
+	const pdfBytes =
+		params.renderScenes === undefined
+			? params.pdfBytes
+			: await withTextLayer(params.pdfBytes, params.renderScenes, await unitLayer(deps.layerReader, deps.ocrBackend, params.renderScenes, ocr, params.keepTranscript));
 	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, pdfBytes);
 
 	const synced = deps.now();
@@ -1960,7 +2010,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const { api, tagRouter, now, ocrBackend } = deps;
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
 	const newNoteId = deps.newNoteId ?? (() => crypto.randomUUID());
-	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, newNoteId, zotero: deps.zotero };
+	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, layerReader: deps.layerReader, newNoteId, zotero: deps.zotero };
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 

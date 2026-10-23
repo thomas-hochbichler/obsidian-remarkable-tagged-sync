@@ -691,6 +691,9 @@ export default class TaggedSyncPlugin extends Plugin {
 						normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
 					),
 					ocrBackend: this.countedOcr(backend),
+					// Every backend's text layer is placed on Vision's boxes: the same Vision as the backend, so
+					// its probe runs once. None off a Mac or below macOS 13: the render gets no layer there (spec §2.6).
+					layerReader: visionPlatformSupported() ? visionBackend() : undefined,
 					marginNotes: this.data.marginNotes,
 					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
 					// touching what is already in the vault -- a sync that keeps working, minus the Pro part.

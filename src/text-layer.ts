@@ -29,6 +29,12 @@ export interface LayerLine {
 	words: VisionWord[];
 }
 
+/** Reads where the words sit on each page, for a layer whose words come from elsewhere: `VisionOcrBackend.readLayer`. */
+export interface LayerReader {
+	/** One entry per page, `null` for a page it has no boxes for. */
+	readLayer(pages: RmPage[]): Promise<(LayerLine[] | null)[]>;
+}
+
 /** The boxes of a line's words, if Vision gave each word one of its own: none missing, no two the same. */
 function ownWordBoxes(line: LayerLine): VisionBox[] | null {
 	const boxes = line.words.map((word) => word.box);

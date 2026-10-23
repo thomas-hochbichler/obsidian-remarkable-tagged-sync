@@ -99,20 +99,249 @@
 
     - id: D24.14
       scenario: Transcription is off
-      expect: The render is written without a layer. Off reads nothing, so there is nothing to place and no Vision to run
+      expect: The render is written without a layer. Off reads nothing, so there is nothing to place and no Vision is run for boxes
       layer: engine
       file: src/sync-engine.test.ts
-      test: "the text layer (searchable PDF) > writes the render without a layer when transcription is off"
+      test: "the text layer (searchable PDF) > writes the render without a layer, and runs no Vision, when transcription is off"
 
     - id: D24.15
       scenario: Apple Vision cannot run here (Windows, Linux)
-      expect: The render is written without a layer, as before 1.9.0
+      expect: The render is written without a layer, as before 1.9.0, and no Vision is run for boxes
       layer: engine
       file: src/sync-engine.test.ts
-      test: "the text layer (searchable PDF) > writes the render without a layer when Apple Vision cannot run here (Windows, Linux)"
+      test: "the text layer (searchable PDF) > writes the render without a layer, and runs no Vision, when Apple Vision cannot run here (Windows, Linux)"
 
     - id: D24.16
       scenario: On a Mac, the reference pages are read by the real Vision driver and laid over their render
-      expect: PDFKit -- what Preview searches with -- finds each placed word again, on its box
+      expect: PDFKit -- what Preview searches with -- finds each placed word again, on its box; with the ground truth as backend text on Vision's boxes too
       layer: e2e
       gap: searchable-pdf-22 # the nightly's Vision job takes it; until then `npm run check:text-layer` on a Mac, by hand
+
+    - id: D24.17
+      scenario: A word carries a letter outside WinAnsi (`Łódź`)
+      expect: The word is folded to its base letters as a whole (`Lodz`), so the plain spelling finds it
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "foldWord > folds a word with a letter outside WinAnsi as a whole, so the plain spelling finds it"
+
+    - id: D24.18
+      scenario: A word WinAnsi holds (`Grüße`, `„ “`, `…`)
+      expect: It is written as it is
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "foldWord > leaves a word WinAnsi holds as it is, umlauts and typographic marks included"
+
+    - id: D24.19
+      scenario: A WinAnsi word arrives decomposed (`u` and a combining diaeresis)
+      expect: It is composed and written whole, not folded
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "foldWord > leaves a WinAnsi word sent decomposed whole, umlaut composed"
+
+    - id: D24.20
+      scenario: A sign with no base letter (`√`)
+      expect: It becomes `·`
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "foldWord > writes a sign with no base letter as ·"
+
+    - id: D24.21
+      scenario: Several characters with no base letter in one word
+      expect: One `·` for each, as `drawPageText` writes typed text
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "foldWord > writes one · per character with no base letter, as typed text does"
+
+    - id: D24.22
+      scenario: A minus sign (`−`)
+      expect: It is written as a hyphen
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "foldWord > writes a minus sign as a hyphen"
+
+- feature: D25
+  name: Text layer for every backend on a Mac
+  code: src/layer-alignment.ts
+  tier: free
+  scenarios:
+    - id: D25.1
+      scenario: Another backend's transcript and the words Vision read on the same page
+      expect: The transcript's words go on the boxes of the words Vision read for them
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > puts the transcript's words on the boxes of the words Vision read"
+
+    - id: D25.2
+      scenario: A transcript word and a Vision word exactly half alike
+      expect: The word is not placed there; only a read more than half like it (above 0.5) gives a word its box
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > places a word only on a read more than half like it"
+
+    - id: D25.3
+      scenario: The transcript and Vision differ in case and accents, or Vision misread a letter
+      expect: The word still takes its box
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > tells words apart by neither case nor accents, so a misread in the right place still takes its box"
+
+    - id: D25.4
+      scenario: Between two placed words on one line, the transcript has words Vision read differently
+      expect: They share the boxes of the reads between their neighbours, by characters
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > spreads the words between two placed neighbours on one line over the reads between them"
+
+    - id: D25.5
+      scenario: A transcript word Vision read nothing for
+      expect: The word is left out of the layer; it stays in the transcript
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > leaves out a word with no place: Vision read nothing for it"
+
+    - id: D25.6
+      scenario: A word between neighbours with no read between them
+      expect: It is left out
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > leaves out a word with no place: it sits between neighbours with no read between them"
+
+    - id: D25.7
+      scenario: A word whose neighbours are on different lines
+      expect: It is left out
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > leaves out a word with no place: its neighbours are on different lines"
+
+    - id: D25.8
+      scenario: Vision ran several words together ("100547108.")
+      expect: The read is split by characters, one stretch for each word
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > splits a read Vision ran several words together in by characters, one stretch for each"
+
+    - id: D25.9
+      scenario: Reference page 05, the table, read by column by Vision and by row in the ground truth
+      expect: Today 12 words are placed and none on a cell it does not resemble; a change to either is a change to how tables come out
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > on the reference pages, the ground truth on Vision's pinned page pass > page 05, the table: keeps today's count of words placed (12) and of words on a cell they do not resemble (0)"
+
+    - id: D25.10
+      scenario: Reference page 10, dense, where Vision misses whole lines
+      expect: The words of the missed lines are not in the layer
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > on the reference pages, the ground truth on Vision's pinned page pass > page 10, dense: the words of the lines Vision did not see are not in the layer"
+
+    - id: D25.11
+      scenario: A model writes Markdown around the words (`#`, `-`, `|`, `**`, `<!-- margin -->`)
+      expect: Only the words are aligned and placed
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > aligns the words, not the Markdown a model wrote around them"
+
+    - id: D25.12
+      scenario: A notebook is synced on a Mac with another backend (own server, managed model, cloud)
+      expect: The render carries that backend's words on the boxes Vision reads for them, the note its transcript; the PDF is written once, after the reading
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > lays another backend's words over the render, on the boxes Vision reads for them"
+
+    - id: D25.13
+      scenario: Apple Vision is the backend and layer reader both, and read a page with no word on its page pass
+      expect: The page is not read a third time for boxes
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > does not read a page again for its boxes when Vision read it as the backend and placed no word"
+
+    - id: D25.14
+      scenario: A page's text comes from the per-page store, another backend
+      expect: The page gets a layer; Vision reads it for boxes
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives a page whose text comes from the store a layer, with another backend as the backend"
+
+    - id: D25.15
+      scenario: A page's text comes from the per-page store, Apple Vision as the backend
+      expect: The page gets a layer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives a page whose text comes from the store a layer, with Apple Vision as the backend"
+
+    - id: D25.16
+      scenario: A unit rebuilt for the renderer alone keeps its whole transcript (`keepTranscript`), another backend
+      expect: Nothing is transcribed, Vision reads the boxes once, every page gets a layer from the note's transcript
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives a unit that keeps its whole transcript a layer, with another backend as the backend"
+
+    - id: D25.17
+      scenario: The same rebuild with Apple Vision as the backend
+      expect: Vision reads the boxes once and transcribes nothing; every page gets a layer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives a unit that keeps its whole transcript a layer, with Apple Vision as the backend"
+
+    - id: D25.18
+      scenario: The backend fails on one page of a notebook
+      expect: That page has no layer, and no Vision text stands in; it is not even read for boxes. The other pages have theirs
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives a page the backend failed on no layer, and no Vision text in its place"
+
+    - id: D25.19
+      scenario: Vision cannot run at all, the permission missing
+      expect: The PDF is written without a layer, as before 1.9.0; no new notice
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > writes the render without a layer when Vision cannot run at all (the permission is missing), and says nothing new"
+
+    - id: D25.20
+      scenario: Vision cannot run at all, `osascript` failing
+      expect: The PDF is written without a layer; no new notice
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > writes the render without a layer when Vision cannot run at all (osascript fails), and says nothing new"
+
+    - id: D25.21
+      scenario: Another backend reads on Windows or Linux
+      expect: The render is written without a layer, and no Vision is run for boxes
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > writes the render without a layer, and runs no Vision, when another backend reads on Windows or Linux"
+
+    - id: D25.22
+      scenario: Another backend reads a page's typed text along with its handwriting
+      expect: The typed words get no invisible copy -- Vision's page pass never sees them, so they find no box
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives the text typed on a page no invisible copy when another backend read it with the handwriting"
+
+    - id: D25.23
+      scenario: Vision is asked only for the boxes of some pages
+      expect: One page pass over them, no rescue pass and no typed text after it; a page Vision could not read has no boxes
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "VisionOcrBackend.readLayer > reads each page's lines and word boxes off one page pass, no rescue and no typed text after it"
+
+    - id: D25.24
+      scenario: Vision is asked for boxes where it cannot run
+      expect: No page has boxes, nothing is spawned, nothing throws
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "VisionOcrBackend.readLayer > has no boxes for any page when Vision cannot run here, and never throws"
+
+    - id: D25.25
+      scenario: Vision's runner throws while reading boxes
+      expect: No page has boxes, and nothing throws
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "VisionOcrBackend.readLayer > has no boxes for any page when the runner throws, and never throws"
+
+    - id: D25.26
+      scenario: Vision is asked for the boxes of no pages
+      expect: Nothing is read
+      layer: unit
+      file: src/vision-ocr-backend.test.ts
+      test: "VisionOcrBackend.readLayer > reads nothing for no pages"
