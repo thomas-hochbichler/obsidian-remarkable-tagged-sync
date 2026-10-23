@@ -8,6 +8,7 @@ import {
 	DEFAULT_MAX_PARALLELISM,
 	UnavailableOcrBackend,
 	type VisionBatchResult,
+	type VisionBox,
 	VisionOcrBackend,
 	visionRunStats,
 } from "./vision-ocr-backend";
@@ -99,10 +100,20 @@ function threeLinePage(): RmPage {
 	};
 }
 
+/**
+ * A read in the shape the JXA driver sends it: every line with its box and its words. Each word comes
+ * without a box of its own, which the driver sends when `boundingBoxForRange` gives none.
+ */
+function driverRead(lines: string[], boxes: VisionBox[]): VisionBatchResult {
+	return { lines, boxes, words: lines.map((line) => (line.match(/\S+/g) ?? []).map((text) => ({ text, box: null }))) };
+}
+
 /** A page read whose one observation covers the whole image, so no cluster is left for the rescue pass. */
 function readAll(text: string): VisionBatchResult {
-	return { lines: text.trim() === "" ? [] : [text], boxes: text.trim() === "" ? [] : [{ x: 0, y: 0, w: 1, h: 1 }] };
+	return text.trim() === "" ? driverRead([], []) : driverRead([text], [WHOLE_IMAGE]);
 }
+
+const WHOLE_IMAGE: VisionBox = { x: 0, y: 0, w: 1, h: 1 };
 
 const available = () => Promise.resolve(true);
 
@@ -186,7 +197,7 @@ describe("the numbers this backend ships with", () => {
 					// The page pass first: one observation over the top line only, covering `coverage` of
 					// its height. Everything after is the rescue pass.
 					return calls === 1
-						? [{ lines: ["the top line"], boxes: [{ x: 0, y: 0, w: 1, h: TOP_BAND_H * coverage }] }]
+						? [driverRead(["the top line"], [{ x: 0, y: 0, w: 1, h: TOP_BAND_H * coverage }])]
 						: images.map(() => readAll("rescued"));
 				},
 			});
@@ -213,7 +224,7 @@ describe("the numbers this backend ships with", () => {
 				sent.push(images.length);
 				// Nothing read at all, so every cluster on the page is rescued -- the images sent after
 				// the page pass are exactly the clusters it found.
-				return calls === 1 ? [{ lines: [], boxes: [] }] : images.map(() => readAll("rescued"));
+				return calls === 1 ? [driverRead([], [])] : images.map(() => readAll("rescued"));
 			},
 		});
 
@@ -272,8 +283,8 @@ describe("VisionOcrBackend", () => {
 		expect(result).toEqual({
 			status: "ok",
 			pages: [
-				{ status: "ok", text: "page one", layer: [] },
-				{ status: "ok", text: "page two", layer: [] },
+				{ status: "ok", text: "page one", layer: [{ box: WHOLE_IMAGE, words: [{ text: "page", box: null }, { text: "one", box: null }] }] },
+				{ status: "ok", text: "page two", layer: [{ box: WHOLE_IMAGE, words: [{ text: "page", box: null }, { text: "two", box: null }] }] },
 			],
 			text: "page one\n\npage two",
 			confidence: null,
@@ -335,7 +346,7 @@ describe("VisionOcrBackend", () => {
 		expect(await backend.recognize([page(), page()])).toEqual({
 			status: "ok",
 			pages: [
-				{ status: "ok", text: "kept", layer: [] },
+				{ status: "ok", text: "kept", layer: [{ box: WHOLE_IMAGE, words: [{ text: "kept", box: null }] }] },
 				{ status: "failed", text: "" },
 			],
 			text: "kept",
@@ -349,7 +360,7 @@ describe("VisionOcrBackend", () => {
 	 */
 	it("re-reads ink no observation covers and splices the line in where its writing sits", async () => {
 		// One observation over the lower line only: the upper line is ink with no text over it.
-		const pageRead: VisionBatchResult = { lines: ["lower"], boxes: [{ x: 0, y: 0, w: 1, h: 0.1 }] };
+		const pageRead = driverRead(["lower"], [{ x: 0, y: 0, w: 1, h: 0.1 }]);
 		const { runBatch, batchSizes } = stubRunner([[pageRead], [readAll("upper")]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
@@ -360,7 +371,7 @@ describe("VisionOcrBackend", () => {
 	});
 
 	it("drops a rescued line the page pass already returned, rather than printing it twice", async () => {
-		const pageRead: VisionBatchResult = { lines: ["lower"], boxes: [{ x: 0, y: 0, w: 1, h: 0.1 }] };
+		const pageRead = driverRead(["lower"], [{ x: 0, y: 0, w: 1, h: 0.1 }]);
 		const { runBatch } = stubRunner([[pageRead], [readAll("Lower ")]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
@@ -377,10 +388,13 @@ describe("VisionOcrBackend", () => {
 			text: { posX: 0, posY: 200, width: 800, runs: [{ id: "1:1", text: "Hello World!", deleted: 0 }], styles: new Map() },
 		};
 		// Both lines of writing are covered, so nothing is rescued and only the typed line is added.
-		const pageRead: VisionBatchResult = {
-			lines: ["upper", "lower"],
-			boxes: [{ x: 0, y: 0.93, w: 1, h: 0.07 }, { x: 0, y: 0, w: 1, h: 0.1 }],
-		};
+		const pageRead = driverRead(
+			["upper", "lower"],
+			[
+				{ x: 0, y: 0.93, w: 1, h: 0.07 },
+				{ x: 0, y: 0, w: 1, h: 0.1 },
+			],
+		);
 		const { runBatch, batchSizes } = stubRunner([[pageRead]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
@@ -409,7 +423,7 @@ describe("VisionOcrBackend", () => {
 	});
 
 	it("counts ink that stays wordless at its own framing, for the diagnostics block", async () => {
-		const pageRead: VisionBatchResult = { lines: ["lower"], boxes: [{ x: 0, y: 0, w: 1, h: 0.1 }] };
+		const pageRead = driverRead(["lower"], [{ x: 0, y: 0, w: 1, h: 0.1 }]);
 		const { runBatch } = stubRunner([[pageRead], [readAll("")]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available, batchSize: 5 });
 
