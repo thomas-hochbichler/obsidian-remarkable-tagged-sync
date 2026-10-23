@@ -118,6 +118,11 @@ export type SyncRowStatus = "active" | "orphaned";
  * marker's colour): a bump re-renders every note, and on the way re-transcribes typed-text pages and
  * every margin note through a backend the user may be paying for. A cosmetic change waits for the
  * document's next real change; only a change to what is *drawn* earns a bump.
+ *
+ * A bump owes two follow-ups in the same commit: `npm run goldens:update` (each golden's header line
+ * names this number), and a re-measure of every local model, `npm run measure:local -- <generation>`
+ * on a Mac -- `docs/ocr-local/` figures are bound to the render version they were measured at, and
+ * each feeds its model's settings card.
  */
 export const RENDER_VERSION = 32;
 
