@@ -28,7 +28,8 @@ export interface VisionWord {
  * image-level error (missing/unreadable). `lines` and `boxes` are index-aligned, and so is `words`,
  * each line's words in the order they were read. `words` is absent from a driver that does not box them.
  */
-export type VisionBatchResult = { lines: string[]; boxes: VisionBox[]; words?: VisionWord[][]; revision?: number } | { error: string };
+/** `words` and `revision` are required because the JXA driver always sends both: a fake must answer them too. */
+export type VisionBatchResult = { lines: string[]; boxes: VisionBox[]; words: VisionWord[][]; revision: number } | { error: string };
 
 /**
  * Runs one `osascript`/Vision process over a batch of page PNGs and returns a per-image result in
@@ -237,7 +238,7 @@ function insertTypedText(read: ReadLines, page: RmPage): void {
  * bitmap; typed text is real text in the render already.
  */
 function pageLayer(result: VisionBatchResult): LayerLine[] {
-	if (!("lines" in result) || result.words === undefined) return [];
+	if (!("lines" in result)) return [];
 	const { boxes, words } = result;
 	return result.lines.map((_, i) => ({ box: boxes[i], words: words[i] ?? [] })).filter((line) => line.words.length > 0);
 }
@@ -346,7 +347,7 @@ export class VisionOcrBackend implements OcrBackend {
 		try {
 			const perPage = await this.read(pages.map((page) => ocrImage(page)));
 			const reads = perPage.map((result): ReadLines | null => ("lines" in result ? { lines: [...result.lines], boxes: [...result.boxes] } : null));
-			for (const result of perPage) if ("revision" in result && result.revision !== undefined) visionRunStats.revision = result.revision;
+			for (const result of perPage) if ("revision" in result) visionRunStats.revision = result.revision;
 
 			await this.rescue(pages, reads);
 			reads.forEach((read, index) => {

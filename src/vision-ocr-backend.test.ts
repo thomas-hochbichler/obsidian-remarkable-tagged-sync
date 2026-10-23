@@ -105,7 +105,7 @@ function threeLinePage(): RmPage {
  * without a box of its own, which the driver sends when `boundingBoxForRange` gives none.
  */
 function driverRead(lines: string[], boxes: VisionBox[]): VisionBatchResult {
-	return { lines, boxes, words: lines.map((line) => (line.match(/\S+/g) ?? []).map((text) => ({ text, box: null }))) };
+	return { lines, boxes, words: lines.map((line) => (line.match(/\S+/g) ?? []).map((text) => ({ text, box: null }))), revision: 3 };
 }
 
 /** A page read whose one observation covers the whole image, so no cluster is left for the rescue pass. */
@@ -452,12 +452,12 @@ describe("VisionOcrBackend", () => {
 
 // The boxes a text layer is placed on when another backend wrote the words (searchable-pdf spec §2.1).
 describe("VisionOcrBackend.readLayer", () => {
-	const WORDS = { lines: ["Rapoldeck Hütte"], boxes: [{ x: 0, y: 0, w: 1, h: 1 }], words: [[{ text: "Rapoldeck", box: { x: 0, y: 0, w: 0.6, h: 1 } }, { text: "Hütte", box: null }]] };
+	const WORDS = { lines: ["Rapoldeck Hütte"], boxes: [{ x: 0, y: 0, w: 1, h: 1 }], words: [[{ text: "Rapoldeck", box: { x: 0, y: 0, w: 0.6, h: 1 } }, { text: "Hütte", box: null }]], revision: 3 };
 
 	// The second page reads as nothing, which `recognize` would answer with a rescue pass.
 	it("reads each page's lines and word boxes off one page pass, no rescue and no typed text after it", async () => {
 		const typed: RmPage = { ...page(), text: { posX: 0, posY: 0, width: 800, runs: [{ id: "1:1", text: "typed", deleted: 0 }], styles: new Map() } };
-		const { runBatch, batchSizes } = stubRunner([[WORDS, { lines: [], boxes: [], words: [] }, { error: "unreadable_image" }]]);
+		const { runBatch, batchSizes } = stubRunner([[WORDS, { lines: [], boxes: [], words: [], revision: 3 }, { error: "unreadable_image" }]]);
 		const backend = new VisionOcrBackend({ runBatch, probe: available });
 
 		expect(await backend.readLayer([typed, page(), page()])).toEqual([[{ box: WORDS.boxes[0], words: WORDS.words[0] }], [], null]);

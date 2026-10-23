@@ -3248,6 +3248,7 @@ describe("the text layer (searchable PDF)", () => {
 				{ text: "Hütte", box: { x: 0.7, y: 0, w: 0.3, h: 1 } },
 			],
 		],
+		revision: 3,
 	};
 
 	/** Apple Vision as the backend, its driver answering each page from `answers` in turn (the last one repeats). */
@@ -3337,7 +3338,7 @@ describe("the text layer (searchable PDF)", () => {
 	// Ink that is only a marker band, say: Vision returns text off the rescue pass, and the page pass
 	// it would read again holds no word. Reading it twice would find the same nothing.
 	it("does not read a page again for its boxes when Vision read it as the backend and placed no word", async () => {
-		const { backend, runBatch } = vision({ lines: [], boxes: [], words: [] }, { lines: ["Rapoldeck"], boxes: [WHOLE_PAGE], words: [[{ text: "Rapoldeck", box: WHOLE_PAGE }]] });
+		const { backend, runBatch } = vision({ lines: [], boxes: [], words: [], revision: 3 }, { lines: ["Rapoldeck"], boxes: [WHOLE_PAGE], words: [[{ text: "Rapoldeck", box: WHOLE_PAGE }]], revision: 3 });
 		const deps = { ...baseDeps(notebook("root-18-b"), { sync: "Target" }), ocrBackend: backend, layerReader: backend };
 
 		await runSync(deps, EMPTY_SYNC_INDEX);

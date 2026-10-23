@@ -149,9 +149,9 @@ const runBatch: VisionBatchRunner = async (images) => {
 			return filePath;
 		});
 		const stdout = await runOsascript(paths);
-		const parsed = JSON.parse(stdout) as { pages: Array<{ lines?: string[]; boxes?: VisionBox[]; words?: VisionWord[][]; revision?: number; error?: string }> };
+		const parsed = JSON.parse(stdout) as { pages: Array<{ lines?: string[]; boxes?: VisionBox[]; words?: VisionWord[][]; revision: number; error?: string }> };
 		return parsed.pages.map((pg): VisionBatchResult =>
-			pg.error ? { error: pg.error } : { lines: pg.lines ?? [], boxes: pg.boxes ?? [], words: pg.words, revision: pg.revision },
+			pg.error ? { error: pg.error } : { lines: pg.lines ?? [], boxes: pg.boxes ?? [], words: pg.words ?? [], revision: pg.revision },
 		);
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
