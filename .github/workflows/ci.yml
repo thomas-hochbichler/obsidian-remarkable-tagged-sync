@@ -151,7 +151,7 @@ jobs:
 
       # --- gate 5: types and tests -------------------------------------------------------------
       - name: Typecheck
-        run: npx tsc -noEmit -skipLibCheck
+        run: npm run typecheck
 
       # `pro/` is in this repo and in this run. It used to be excluded as a known, accepted gap;
       # leaving it out now would mean CI stopped covering the paid half on the day it went on sale.

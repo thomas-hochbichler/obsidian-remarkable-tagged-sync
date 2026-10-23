@@ -31,6 +31,7 @@ Every scenario needs `id`, `scenario`, `expect`, `layer`, and **exactly one** of
 | state | means |
 |---|---|
 | `test:` + `file:` | it is covered, by this exact test |
+| `job:` + `run:` | it is covered by a script a CI job runs: `job: nightly.yml#vision`, `run: npm run nightly:vision`. The gate checks the job runs that command |
 | `gap:` | not covered yet, and this is the gap id it is tracked under |
 | `waived:` | it will never be automated, and this says why |
 

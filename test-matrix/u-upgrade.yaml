@@ -91,6 +91,43 @@
       file: src/legacy-upgrade.test.ts
       test: "upgrading a vault the last release wrote > finds nothing left to do on a second upgrade, which is what a settled vault looks like"
 
+    # 1.9.0's step to renderer 32 (searchable-pdf spec §2.4). Layer `engine`: the frozen vault was
+    # synced with transcription off, so it has no transcript to keep and no layer to gain.
+    - id: A8.33
+      scenario: An active notebook note synced before 1.9.0 (`renderVersion` 31), one page with nothing placed, one with its anchored ink placed; another backend, on a Mac
+      expect: The PDF is written again, with a layer on both pages. The transcript is kept -- the backend reads the placed page alone, the other comes from the per-page store -- and Vision reads each page once for its boxes. The row now carries today's renderer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > a note synced before 1.9.0 (renderVersion 31) > writes its PDF again with a layer, reading only the page whose anchors are placed, with another backend as the backend"
+
+    - id: A8.34
+      scenario: The same note with Apple Vision as the backend
+      expect: The same, and still one reading per page -- the placed page's text and boxes come off one pass, the reused page is read for its boxes alone
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > a note synced before 1.9.0 (renderVersion 31) > writes its PDF again with a layer, reading only the page whose anchors are placed, with Apple Vision as the backend"
+
+    - id: A8.37
+      scenario: The same note with typed text on page b and no anchored ink anywhere
+      expect: The backend reads page b alone -- its transcript predates typed text being transcribed -- and page a comes from the store. Staged by dropping the anchor groups from the parse, because every typed fixture also has ink anchored to it and would be re-read for that reason alone
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > a note synced before 1.9.0 (renderVersion 31) > reads a page carrying typed text again, and only that page"
+
+    - id: A8.35
+      scenario: The same note on Windows or Linux, another backend
+      expect: The PDF is written again without a layer and no Vision runs; the transcript is kept as on a Mac, the backend reading the placed page alone; the row carries today's renderer, so the step happens once on every platform, with no Mac-only marker
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > a note synced before 1.9.0 (renderVersion 31) > writes its PDF again without a layer on Windows or Linux, and runs no Vision"
+
+    - id: A8.36
+      scenario: The user edited such a note inside the managed block
+      expect: Skipped and counted, the hand correction kept, its PDF not written, no Vision run, and its row still on renderer 31. It gets the layer through Re-transcribe
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > a note synced before 1.9.0 (renderVersion 31) > skips it when the user edited it, and leaves its PDF as it was"
+
 - feature: G7
   name: Notes are never deleted -- and never quietly duplicated
   code: src/sync-engine.ts

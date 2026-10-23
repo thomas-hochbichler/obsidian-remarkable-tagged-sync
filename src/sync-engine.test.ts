@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { PDFDocument } from "pdf-lib";
+import { inflateSync } from "node:zlib";
+import { PDFArray, PDFDocument, PDFName, type PDFRawStream } from "pdf-lib";
 import type { Content, CPages, DocumentContent, Entry, Metadata } from "rmapi-js";
 import { describe, expect, it, vi } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
@@ -9,7 +10,7 @@ import { formatLocalMinute } from "./frontmatter";
 import { remapRows } from "./note-rename";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { encodeGrayscalePng } from "./png-encoder";
-import type { RmLayer, RmPage } from "./rm-parser";
+import { parseRmV6, type RmLayer, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import { Platform } from "obsidian";
 import { NOT_TRANSCRIBED } from "./digest-builder";
@@ -37,7 +38,8 @@ import {
 import { mappingFingerprint, TagRouter } from "./tag-router";
 import { transcriptFingerprint } from "./transcript-store";
 import { OffOcrBackend } from "./off-ocr-backend";
-import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { addTextLayer, type LayerReader } from "./text-layer";
+import { UnavailableOcrBackend, type VisionBatchResult, VisionOcrBackend } from "./vision-ocr-backend";
 
 // The real pipeline runs in every test but one: every partial failure inside it is deliberately
 // caught, so a build that *throws* -- which the sync engine still has to survive -- can only be
@@ -53,6 +55,20 @@ vi.mock("./digest-pipeline", async (importOriginal) => {
 vi.mock("./scene-text", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./scene-text")>();
 	return { ...actual, isDocumentText: vi.fn(actual.isDocumentText) };
+});
+
+// Every fixture with typed text also has ink anchored to it, so a page whose typed text is all that
+// sets it apart is staged by dropping the anchor groups -- the parse of a page whose nodes carry none.
+vi.mock("./rm-parser", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./rm-parser")>();
+	return { ...actual, parseRmV6: vi.fn(actual.parseRmV6) };
+});
+
+// Laying the layer fails only on a PDF pdf-lib cannot load, and the sync renders its PDFs itself. The
+// spy stages that failure; it delegates to the real implementation until a test says otherwise.
+vi.mock("./text-layer", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./text-layer")>();
+	return { ...actual, addTextLayer: vi.fn(actual.addTextLayer) };
 });
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -3132,6 +3148,22 @@ describe("a unit that would be written with neither section", () => {
 		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
 	});
 
+	// The render is written after the transcript and before the refusal is decided, so the refused
+	// sync still leaves the new render behind -- the retry would write the same file.
+	it("writes the render once, after the transcript, even when the empty block is refused", async () => {
+		const first = { ...baseDeps(onePageNotebook("root-15-a", "hash-1"), { sync: "Target" }), ocrBackend: perPageOcrBackend("real text") };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const ocrBackend = emptyPerPageOcrBackend();
+		const second = { ...baseDeps(onePageNotebook("root-15-a2", "hash-2"), { sync: "Target" }), noteStore: first.noteStore, ocrBackend };
+		const result = await runSync(second, synced.index);
+
+		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
+		const writes = vi.mocked(second.attachmentStore.writeBinary).mock;
+		expect(writes.calls.map(([path]) => path)).toEqual(["tagged-sync/attachments/doc-1.pdf"]);
+		expect(writes.invocationCallOrder[0]).toBeGreaterThan(vi.mocked(ocrBackend.recognize).mock.invocationCallOrder[0]);
+	});
+
 	// Desk test 2026-09-13: the reader deleted a page's whole annotation layer; the render came back
 	// blank and the note kept quoting the old marks, because the net took the empty block for a loss.
 	// A unit that is blank on the tablet is the explanation it lacked: there is nothing left that
@@ -3210,6 +3242,550 @@ describe("a unit that would be written with neither section", () => {
 	});
 });
 
+describe("the text layer (searchable PDF)", () => {
+	/** A box over the page's whole ink: every stroke counts as read, so Vision's rescue pass never runs. */
+	const WHOLE_PAGE = { x: 0, y: 0, w: 1, h: 1 };
+	/** What Vision reads on every page: one line of two words, each with a box of its own. */
+	const READ: VisionBatchResult = {
+		lines: ["Rapoldeck Hütte"],
+		boxes: [WHOLE_PAGE],
+		words: [
+			[
+				{ text: "Rapoldeck", box: { x: 0, y: 0, w: 0.6, h: 1 } },
+				{ text: "Hütte", box: { x: 0.7, y: 0, w: 0.3, h: 1 } },
+			],
+		],
+		revision: 3,
+	};
+
+	/** Apple Vision as the backend, its driver answering each page from `answers` in turn (the last one repeats). */
+	function vision(...answers: VisionBatchResult[]) {
+		let read = 0;
+		const runBatch = vi.fn(async (images: Uint8Array[]) => images.map(() => answers[Math.min(read++, answers.length - 1)]));
+		return { backend: new VisionOcrBackend({ runBatch, probe: async () => true }), runBatch };
+	}
+
+	function notebook(rootHash: string, pageIds = ["page-a"]) {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(pageIds) }) },
+			pageHashesByDoc: { "doc-1": Object.fromEntries(pageIds.map((id) => [id, `hash-${id}`])) },
+		});
+	}
+
+	/** The words of one page of a written attachment that are written invisibly -- the layer, and nothing the render shows. */
+	async function invisibleWords(store: AttachmentStore, path: string, page = 0): Promise<string[]> {
+		const doc = await embeddedPdf(store, path);
+		const contents = doc.getPage(page).node.Contents();
+		const refs = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : [];
+		const ops = refs
+			.map((ref) => {
+				const stream = doc.context.lookup(ref) as PDFRawStream;
+				return stream.dict.get(PDFName.of("Filter")) ? inflateSync(stream.contents).toString("latin1") : Buffer.from(stream.contents).toString("latin1");
+			})
+			.join("\n");
+		const layers = Array.from(ops.matchAll(/BT\n3 Tr\n([\s\S]*?)\nET/g), (match) => match[1]);
+		return layers.flatMap((layer) => Array.from(layer.matchAll(/<([0-9A-F]*)> Tj/g), (match) => Buffer.from(match[1], "hex").toString("latin1")));
+	}
+
+	it("lays Vision's words invisibly over the notebook's render, from the one reading that wrote the transcript", async () => {
+		const { backend, runBatch } = vision(READ);
+		// As the plugin wires it on a Mac: the one Vision is backend and layer reader both.
+		const deps = { ...baseDeps(notebook("root-16-a"), { sync: "Target" }), ocrBackend: backend, layerReader: backend };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath)).toContain("Rapoldeck Hütte");
+		expect(runBatch).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+	});
+
+	it("lays the words over a page note's render the same way", async () => {
+		const api = fakeApi({
+			rootHash: "root-16-b",
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }] }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = { ...baseDeps(api, { todo: "Target" }), ocrBackend: vision(READ).backend };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1-page-a.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	it("gives a page Vision could not read no layer, and the other pages theirs", async () => {
+		const { backend } = vision(READ, { error: "unreadable_image" });
+		const deps = { ...baseDeps(notebook("root-16-c", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: backend, layerReader: backend };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual([]);
+	});
+
+	// Typed text is real text in the render already (`drawPageText`); a second, invisible copy would
+	// make every search hit it twice.
+	it("gives the text typed on a page no invisible copy, while the transcript still carries it", async () => {
+		const api = notebook("root-16-d");
+		api.raw.getHash = vi.fn(async () => HIGHLIGHTED_PAGE_BYTES);
+		vi.mocked(isDocumentText).mockReturnValueOnce(false); // the page's handwriting is transcribed, its typed text with it
+		const { backend, runBatch } = vision(READ);
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: backend, layerReader: backend };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath)).toContain("Cape Marrow");
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(runBatch).toHaveBeenCalledTimes(1);
+	});
+
+	// Ink that is only a marker band, say: Vision returns text off the rescue pass, and the page pass
+	// it would read again holds no word. Reading it twice would find the same nothing.
+	it("does not read a page again for its boxes when Vision read it as the backend and placed no word", async () => {
+		const { backend, runBatch } = vision({ lines: [], boxes: [], words: [], revision: 3 }, { lines: ["Rapoldeck"], boxes: [WHOLE_PAGE], words: [[{ text: "Rapoldeck", box: WHOLE_PAGE }]], revision: 3 });
+		const deps = { ...baseDeps(notebook("root-18-b"), { sync: "Target" }), ocrBackend: backend, layerReader: backend };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+		expect(runBatch).toHaveBeenCalledTimes(2); // the page and its rescue, and no third time
+	});
+
+	/** A model backend (Ollama here) that reads `answers` off the pages it is handed, in order; `null` is a page that failed. */
+	function model(...answers: (string | null)[]): OcrBackend {
+		return { ...scriptedPageBackend(answers), id: "ollama" };
+	}
+
+	it("lays another backend's words over the render, on the boxes Vision reads for them", async () => {
+		const { backend: reader, runBatch } = vision(READ);
+		const deps = { ...baseDeps(notebook("root-18-a"), { sync: "Target" }), ocrBackend: model("**Rapoldeck** Hütte"), layerReader: reader };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath)).toContain("**Rapoldeck** Hütte");
+		expect(runBatch).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+	});
+
+	/** The notebook again on a later sync: `hash` is the document's, `pages` each page's own. */
+	function notebookAgain(rootHash: string, hash: string, pages: Record<string, string>, bytes = PAGE_BYTES) {
+		const api = fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash, visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(Object.keys(pages)) }) },
+			pageHashesByDoc: { "doc-1": pages },
+		});
+		api.raw.getHash = vi.fn(async () => bytes);
+		return api;
+	}
+
+	/** A sync's backend and layer reader, as the plugin wires them on a Mac: with Apple Vision they are one. */
+	const BACKENDS: [string, () => { backend: OcrBackend; reader: LayerReader; runBatch: ReturnType<typeof vision>["runBatch"] }][] = [
+		[
+			"another backend",
+			() => {
+				const { backend: reader, runBatch } = vision(READ);
+				return { backend: model("Rapoldeck Hütte", "Rapoldeck Hütte"), reader, runBatch };
+			},
+		],
+		[
+			"Apple Vision",
+			() => {
+				const { backend, runBatch } = vision(READ);
+				return { backend, reader: backend, runBatch };
+			},
+		],
+	];
+
+	// Page a's text comes out of the store on the second sync, unread; its layer must not go missing.
+	it.each(BACKENDS)("gives a page whose text comes from the store a layer, with %s as the backend", async (_case, setUp) => {
+		const pages = { "page-a": "h-a", "page-b": "h-b" };
+		const before = setUp();
+		const first = { ...baseDeps(notebookAgain("root-18-e", "hash-1", pages), { sync: "Target" }), ocrBackend: before.backend, layerReader: before.reader };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const { backend, reader } = setUp();
+		const second = { ...baseDeps(notebookAgain("root-18-e2", "hash-2", { ...pages, "page-b": "h-b-edited" }), { sync: "Target" }), noteStore: first.noteStore, ocrBackend: backend, layerReader: reader };
+		const result = await runSync(second, synced.index);
+
+		expect(result.reusedPageTranscriptions).toBe(1);
+		expect(await invisibleWords(second.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(second.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	// A rebuild for the renderer alone keeps the note's transcript and reads nothing for it
+	// (`keepTranscript`). The boxes are read all the same: without them there is nothing to place on.
+	it.each(BACKENDS)("gives a unit that keeps its whole transcript a layer, with %s as the backend", async (_case, setUp) => {
+		const pages = { "page-a": "h-a", "page-b": "h-b" };
+		const before = setUp();
+		const first = { ...baseDeps(notebookAgain("root-18-f", "hash-1", pages, UNANCHORED_PAGE_BYTES), { sync: "Target" }), ocrBackend: before.backend, layerReader: before.reader };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const key = notebookSyncKey("doc-1", "sync");
+		const stale: SyncIndex = { ...synced.index, rows: { [key]: { ...synced.index.rows[key], renderVersion: RENDER_VERSION - 1 } } };
+
+		const { backend, reader, runBatch } = setUp();
+		const recognize = vi.spyOn(backend, "recognize");
+		const rebuild = { ...baseDeps(notebookAgain("root-18-f", "hash-1", pages, UNANCHORED_PAGE_BYTES), { sync: "Target" }), noteStore: first.noteStore, ocrBackend: backend, layerReader: reader };
+		const result = await runSync(rebuild, stale);
+
+		expect(result.notesWritten).toBe(1);
+		expect(recognize).not.toHaveBeenCalled();
+		expect(runBatch.mock.calls.map(([images]) => images.length)).toEqual([2]); // the boxes, once, and no transcript
+		expect(await invisibleWords(rebuild.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(rebuild.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	// A model reads the typed text off the page along with the ink. Vision's page pass never sees it --
+	// the rasterizer draws ink only -- so the typed words find no box and stay out of the layer.
+	it("gives the text typed on a page no invisible copy when another backend read it with the handwriting", async () => {
+		const api = notebook("root-18-g");
+		api.raw.getHash = vi.fn(async () => HIGHLIGHTED_PAGE_BYTES);
+		vi.mocked(isDocumentText).mockReturnValueOnce(false);
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte\nCape Marrow"), layerReader: vision(READ).backend };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	it("gives a page the backend failed on no layer, and no Vision text in its place", async () => {
+		const { backend: reader, runBatch } = vision(READ);
+		const deps = { ...baseDeps(notebook("root-18-c", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte", null), layerReader: reader };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual([]);
+		expect(runBatch.mock.calls.map(([images]) => images.length)).toEqual([1]); // the failed page is not even read for boxes
+	});
+
+	it.each([
+		["the permission is missing", { runBatch: vi.fn(), probe: async () => false }],
+		["osascript fails", { runBatch: vi.fn().mockRejectedValue(new Error("osascript failed")), probe: async () => true }],
+	])("writes the render without a layer when Vision cannot run at all (%s), and says nothing new", async (_case, options) => {
+		const deps = { ...baseDeps(notebook("root-18-d"), { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte"), layerReader: new VisionOcrBackend(options) };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+		expect(result.notesWritten).toBe(1);
+		expect(result.skipErrors).toEqual([]);
+	});
+
+	// "Copy diagnostics" reads this (spec §2.7). A page counts as layered only if its render carries
+	// words; every other way of ending up without them counts against it.
+	it.each([
+		["every word is placed", () => model("Rapoldeck Hütte", "Rapoldeck Hütte"), () => vision(READ).backend, { pages: 2, layered: 2, placed: 4, leftOut: 0 }],
+		["a word Vision did not see is left out", () => model("Rapoldeck Hütte Gipfel", "Rapoldeck Hütte"), () => vision(READ).backend, { pages: 2, layered: 2, placed: 4, leftOut: 1 }],
+		["Vision gives no boxes for a page", () => model("Rapoldeck Hütte", "Rapoldeck Hütte"), () => vision(READ, { error: "unreadable_image" }).backend, { pages: 2, layered: 1, placed: 2, leftOut: 2 }],
+		["the backend failed on a page", () => model("Rapoldeck Hütte", null), () => vision(READ).backend, { pages: 2, layered: 1, placed: 2, leftOut: 0 }],
+		["Vision cannot run at all", () => model("Rapoldeck Hütte", "Rapoldeck Hütte"), () => new VisionOcrBackend({ runBatch: vi.fn(), probe: async () => false }), { pages: 2, layered: 0, placed: 0, leftOut: 4 }],
+	])("counts the layer for diagnostics when %s", async (_case, backend, reader, expected) => {
+		const deps = { ...baseDeps(notebook("root-21", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: backend(), layerReader: reader() };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.textLayer).toEqual(expected);
+	});
+
+	it("counts no page as layered when the layer cannot be laid over the render", async () => {
+		vi.mocked(addTextLayer).mockRejectedValueOnce(new Error("pdf-lib could not load the render"));
+		const deps = { ...baseDeps(notebook("root-21-b", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: model("Rapoldeck Hütte", "Rapoldeck Hütte"), layerReader: vision(READ).backend };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.textLayer).toEqual({ pages: 2, layered: 0, placed: 0, leftOut: 4 });
+	});
+
+	// Nothing was measured: off macOS there is no layer to count, and a sync that wrote no render has
+	// none either. "Copy diagnostics" then keeps the figure it had rather than reading "0 of 0".
+	it.each([
+		["the sync has no layer reader (Windows, Linux)", "root-21-c", () => ({ ocrBackend: model("Rapoldeck Hütte") })],
+		["the sync writes no render", "root-21-d", () => ({ ocrBackend: model("Rapoldeck Hütte"), layerReader: vision(READ).backend, mapped: false })],
+	])("measures no layer when %s", async (_case, root, setUp) => {
+		const { mapped, ...wiring } = { mapped: true, ...setUp() };
+		const deps = { ...baseDeps(notebook(root), mapped ? { sync: "Target" } : { other: "Target" }), ...wiring };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(result.textLayer).toBeNull();
+	});
+
+	// Off macOS the plugin hands the sync no layer reader at all. One whose probe says no stands in here,
+	// so the spy can show nothing was spawned however the reader got there.
+	it.each([
+		["transcription is off", (): OcrBackend => new OffOcrBackend(), true],
+		["Apple Vision cannot run here (Windows, Linux)", (): OcrBackend => new UnavailableOcrBackend("vision"), false],
+		["another backend reads on Windows or Linux", (): OcrBackend => model("Rapoldeck Hütte"), false],
+	])("writes the render without a layer, and runs no Vision, when %s", async (_case, backend, onMac) => {
+		const runBatch = vi.fn(async (images: Uint8Array[]) => images.map(() => READ));
+		const deps = { ...baseDeps(notebook("root-16-e"), { sync: "Target" }), ocrBackend: backend(), layerReader: new VisionOcrBackend({ runBatch, probe: async () => onMac }) };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+		expect(runBatch).not.toHaveBeenCalled();
+	});
+
+	// Every note synced before 1.9.0 carries `renderVersion` 31 (spec §2.4). The first sync after the
+	// update writes its PDF again, with the layer, and the backend reads almost nothing again.
+	describe("a note synced before 1.9.0 (renderVersion 31)", () => {
+		const key = notebookSyncKey("doc-1", "sync");
+		const renderedBy31 = (index: SyncIndex): SyncIndex => ({ ...index, rows: { [key]: { ...index.rows[key], renderVersion: 31 } } });
+
+		/**
+		 * Page a has nothing placed on it and no typed text; page b is `pageB` -- by default its anchored
+		 * ink is placed, which makes it worth reading again after a renderer step.
+		 */
+		function twoPageNotebook(pageB = PAGE_BYTES) {
+			const api = notebookAgain("root-19", "hash-1", { "page-a": "h-a", "page-b": "h-b" });
+			api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-b") ? pageB : UNANCHORED_PAGE_BYTES));
+			return api;
+		}
+
+		/** The notebook as 1.8 left it: synced once, its row rendered by renderer 31. */
+		async function syncedBefore(backend: OcrBackend, reader?: LayerReader, pageB?: typeof PAGE_BYTES) {
+			const deps = { ...baseDeps(twoPageNotebook(pageB), { sync: "Target" }), ocrBackend: backend, layerReader: reader };
+			return { noteStore: deps.noteStore, index: renderedBy31((await runSync(deps, EMPTY_SYNC_INDEX)).index) };
+		}
+
+		/** The first sync after the update, on the same device. */
+		function upgrade(synced: Awaited<ReturnType<typeof syncedBefore>>, backend: OcrBackend, reader: LayerReader, pageB?: typeof PAGE_BYTES) {
+			const deps = { ...baseDeps(twoPageNotebook(pageB), { sync: "Target" }), noteStore: synced.noteStore, ocrBackend: backend, layerReader: reader };
+			return { deps, run: () => runSync(deps, synced.index) };
+		}
+
+		it.each(BACKENDS)("writes its PDF again with a layer, reading only the page whose anchors are placed, with %s as the backend", async (_case, setUp) => {
+			const before = setUp();
+			const synced = await syncedBefore(before.backend, before.reader);
+
+			const { backend, reader, runBatch } = setUp();
+			const recognize = vi.spyOn(backend, "recognize");
+			const { deps, run } = upgrade(synced, backend, reader);
+			const result = await run();
+
+			expect(result.notesWritten).toBe(1);
+			expect(result.reusedPageTranscriptions).toBe(1);
+			expect(recognize.mock.calls.map(([pages]) => pages.length)).toEqual([1]);
+			expect(runBatch.mock.calls.flatMap(([images]) => images)).toHaveLength(2); // each page once, for its text or for its boxes
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual(["Rapoldeck ", "Hütte "]);
+			expect(result.index.rows[key].renderVersion).toBe(RENDER_VERSION);
+		});
+
+		// Its transcript was written before typed text was transcribed at all, so it lacks words the page has.
+		it("reads a page carrying typed text again, and only that page", async () => {
+			const parse = vi.mocked(parseRmV6).getMockImplementation()!;
+			vi.mocked(parseRmV6).mockImplementation((bytes) => {
+				const page = parse(bytes);
+				return { ...page, layers: page.layers.map(({ anchor: _anchor, placement: _placement, ...layer }) => layer) };
+			});
+			vi.mocked(isDocumentText).mockReturnValue(false); // the typed page's handwriting is transcribed, its typed text with it
+			try {
+				const synced = await syncedBefore(model("Rapoldeck Hütte", "Rapoldeck Hütte"), vision(READ).backend, HIGHLIGHTED_PAGE_BYTES);
+
+				const backend = model("Rapoldeck Hütte\nCape Marrow");
+				const { run } = upgrade(synced, backend, vision(READ).backend, HIGHLIGHTED_PAGE_BYTES);
+				const result = await run();
+
+				expect(result.notesWritten).toBe(1);
+				expect(result.reusedPageTranscriptions).toBe(1);
+				expect(vi.mocked(backend.recognize).mock.calls.map(([pages]) => pages.length)).toEqual([1]);
+			} finally {
+				vi.mocked(isDocumentText).mockReset();
+				vi.mocked(parseRmV6).mockReset();
+			}
+		});
+
+		// Off macOS the plugin hands the sync no layer reader at all; one whose probe says no stands in, so
+		// the spy can show nothing was spawned.
+		it("writes its PDF again without a layer on Windows or Linux, and runs no Vision", async () => {
+			const synced = await syncedBefore(model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+
+			const runBatch = vi.fn(async (images: Uint8Array[]) => images.map(() => READ));
+			const backend = model("Rapoldeck Hütte");
+			const { deps, run } = upgrade(synced, backend, new VisionOcrBackend({ runBatch, probe: async () => false }));
+			const result = await run();
+
+			expect(result.notesWritten).toBe(1);
+			expect(result.reusedPageTranscriptions).toBe(1);
+			expect(vi.mocked(backend.recognize).mock.calls.map(([pages]) => pages.length)).toEqual([1]);
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+			expect(runBatch).not.toHaveBeenCalled();
+			expect(result.index.rows[key].renderVersion).toBe(RENDER_VERSION);
+		});
+
+		// It gets its layer through Re-transcribe instead (spec §2.5).
+		it("skips it when the user edited it, and leaves its PDF as it was", async () => {
+			const synced = await syncedBefore(model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+			const path = synced.index.rows[key].notePath;
+			await synced.noteStore.write(path, (await synced.noteStore.read(path))!.replace("## Transcript", "## Transcript\ncorrected by hand"));
+
+			const { backend: reader, runBatch } = vision(READ);
+			const { deps, run } = upgrade(synced, model("Rapoldeck Hütte"), reader);
+			const result = await run();
+
+			expect(result.editedNotesSkipped).toBe(1);
+			expect(result.notesWritten).toBe(0);
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).not.toHaveBeenCalled();
+			expect(runBatch).not.toHaveBeenCalled();
+			expect(await synced.noteStore.read(path)).toContain("corrected by hand");
+			expect(result.index.rows[key].renderVersion).toBe(31);
+		});
+	});
+
+	// Re-transcribe writes the render too, so its layer says what the new transcript says (spec §2.5).
+	describe("re-transcribe", () => {
+		const key = notebookSyncKey("doc-1", "sync");
+		const PATH = "tagged-sync/attachments/doc-1.pdf";
+
+		/** A two-page notebook, synced once by a model that read `before`. */
+		async function synced(...before: (string | null)[]) {
+			const deps = { ...baseDeps(notebook("root-20", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: model(...before), layerReader: vision(READ).backend };
+			return { noteStore: deps.noteStore, index: (await runSync(deps, EMPTY_SYNC_INDEX)).index };
+		}
+
+		/** The re-transcribe's own deps: a fresh attachment store, so only what this run wrote is in it. */
+		function again(noteStore: NoteStore, backend: OcrBackend, reader: LayerReader = vision(READ).backend) {
+			return { api: notebook("root-20", ["page-a", "page-b"]), noteStore, attachmentStore: fakeAttachmentStore(), ocrBackend: backend, layerReader: reader };
+		}
+
+		// Both commands run the one body, `reTranscribeRow`, so both write the PDF.
+		const COMMANDS: [string, (deps: ReturnType<typeof again>, index: SyncIndex) => Promise<SyncIndex>][] = [
+			["Re-transcribe this note", async (deps, index) => (await reTranscribeNote(deps, index.rows[key], index)).index],
+			["Re-transcribe all synced notes", async (deps, index) => (await reTranscribeAll(deps, index)).index],
+		];
+
+		it.each(COMMANDS)("lays the new transcript over the same render when a page is read again (%s)", async (_command, run) => {
+			const first = await synced("Rapoldeck", "Rapoldeck");
+			const deps = again(first.noteStore, model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+
+			const index = await run(deps, first.index);
+
+			expect(await invisibleWords(deps.attachmentStore, PATH, 0)).toEqual(["Rapoldeck ", "Hütte "]);
+			expect(await invisibleWords(deps.attachmentStore, PATH, 1)).toEqual(["Rapoldeck ", "Hütte "]);
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+			expect(await embeddedPageCount(deps.attachmentStore, PATH)).toBe(2);
+			expect(await first.noteStore.read(index.rows[key].notePath)).toContain(`![[${PATH}]]`);
+			expect(index.rows[key].renderVersion).toBe(first.index.rows[key].renderVersion);
+		});
+
+		it("lays a page's earlier text over the render when the page could not be read again", async () => {
+			const first = await synced("Rapoldeck Hütte", "Rapoldeck Hütte");
+			const deps = again(first.noteStore, model("Rapoldeck", null));
+
+			const { outcome } = await reTranscribeNote(deps, first.index.rows[key], first.index);
+
+			expect(outcome).toBe("written");
+			expect(await invisibleWords(deps.attachmentStore, PATH, 0)).toEqual(["Rapoldeck "]);
+			expect(await invisibleWords(deps.attachmentStore, PATH, 1)).toEqual(["Rapoldeck ", "Hütte "]);
+		});
+
+		it("leaves the render as it was when nothing could be read, like the note", async () => {
+			const first = await synced("Rapoldeck Hütte", "Rapoldeck Hütte");
+			const deps = again(first.noteStore, model(null, null));
+
+			const { outcome } = await reTranscribeNote(deps, first.index.rows[key], first.index);
+
+			expect(outcome).toBe("unread");
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).not.toHaveBeenCalled();
+		});
+
+		// The user broke the managed block: the note keeps what it says, so the render keeps what it says.
+		it("leaves the render as it was when the note has nowhere to write the transcript", async () => {
+			const first = await synced("Rapoldeck", "Rapoldeck");
+			await first.noteStore.write(first.index.rows[key].notePath, "# My own words, and no fence left\n");
+			const deps = again(first.noteStore, model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+
+			const { outcome } = await reTranscribeNote(deps, first.index.rows[key], first.index);
+
+			expect(outcome).toBe("no-transcript-section");
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).not.toHaveBeenCalled();
+		});
+
+		// The note is rewritten by then, and a lost `blockHash` would make the next sync read it as a hand edit.
+		it("still hands back the refreshed block hash when the render cannot be written", async () => {
+			const first = await synced("Rapoldeck", "Rapoldeck");
+			const deps = again(first.noteStore, model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+			vi.mocked(deps.attachmentStore.writeBinary).mockRejectedValue(new Error("disk full"));
+
+			const { outcome, index } = await reTranscribeNote(deps, first.index.rows[key], first.index);
+
+			expect(outcome).toBe("written");
+			expect(index.rows[key].blockHash).not.toBe(first.index.rows[key].blockHash);
+		});
+
+		// The sync skips a note edited by hand and leaves its render without the layer (spec §2.4).
+		it("gives a note edited by hand its layer", async () => {
+			const first = await synced("Rapoldeck Hütte", "Rapoldeck Hütte");
+			const path = first.index.rows[key].notePath;
+			await first.noteStore.write(path, (await first.noteStore.read(path))!.replace("## Transcript", "## Transcript\ncorrected by hand"));
+			const deps = { ...again(first.noteStore, model("Rapoldeck Hütte", "Rapoldeck Hütte")), confirm: async () => true };
+
+			const { outcome } = await reTranscribeNote(deps, first.index.rows[key], first.index);
+
+			expect(outcome).toBe("written");
+			expect(await invisibleWords(deps.attachmentStore, PATH, 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		});
+
+		// The note's embed is hand-broken, or was written by a much older version. The render goes where the sync puts it.
+		it("writes the render where the sync writes it when the note no longer embeds it", async () => {
+			const first = await synced("Rapoldeck", "Rapoldeck");
+			const path = first.index.rows[key].notePath;
+			await first.noteStore.write(path, (await first.noteStore.read(path))!.replace(`![[${PATH}]]`, ""));
+			const deps = again(first.noteStore, model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+
+			const { outcome } = await reTranscribeNote(deps, first.index.rows[key], first.index);
+
+			expect(outcome).toBe("written");
+			expect(await invisibleWords(deps.attachmentStore, PATH, 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		});
+
+		it("writes a page note's render with the new layer", async () => {
+			const api = () =>
+				fakeApi({
+					rootHash: "root-20-page",
+					entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [] })],
+					contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }] }) },
+					pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+				});
+			const first = { ...baseDeps(api(), { todo: "Target" }), ocrBackend: model("Rapoldeck"), layerReader: vision(READ).backend };
+			const synced = await runSync(first, EMPTY_SYNC_INDEX);
+			const deps = { api: api(), noteStore: first.noteStore, attachmentStore: fakeAttachmentStore(), ocrBackend: model("Rapoldeck Hütte"), layerReader: vision(READ).backend };
+
+			await reTranscribeAll(deps, synced.index);
+
+			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1-page-a.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+		});
+
+		// An annotated PDF or a book gets no layer in 1.9.0 (spec §2.3), so there is nothing to write again.
+		it("writes no render for an annotated PDF", async () => {
+			const book = async () =>
+				fakeApi({
+					rootHash: "root-20-pdf",
+					entries: [documentEntry({ fileType: "pdf", visibleName: "Book", tags: [{ name: "sync", timestamp: 0 }] })],
+					contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 1, cPages: cPagesWith([{ id: "p0", redir: 0 }]) }) },
+					sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100]]) },
+					pageHashesByDoc: { "doc-1": { p0: "p0-anno" } },
+				});
+			const first = { ...baseDeps(await book(), { sync: "Target" }), marginNotes: false };
+			const synced = await runSync(first, EMPTY_SYNC_INDEX);
+			const deps = { api: await book(), noteStore: first.noteStore, attachmentStore: fakeAttachmentStore(), ocrBackend: model("on the margin"), layerReader: vision(READ).backend };
+
+			const { updated } = await reTranscribeAll(deps, synced.index);
+
+			expect(updated).toBe(1);
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).not.toHaveBeenCalled();
+		});
+	});
+});
+
 describe("reTranscribeAll", () => {
 	function notebookApi() {
 		return fakeApi({
@@ -3239,7 +3815,7 @@ describe("reTranscribeAll", () => {
 		const onProgress = vi.fn();
 
 		await reTranscribeAll(
-			{ api, noteStore: first.noteStore, ocrBackend: tickingOcrBackend(), onProgress },
+			{ api, noteStore: first.noteStore, attachmentStore: fakeAttachmentStore(), ocrBackend: tickingOcrBackend(), onProgress },
 			synced.index,
 		);
 
@@ -3256,7 +3832,7 @@ describe("reTranscribeAll", () => {
 		const notePath = Object.values(first.index.rows)[0].notePath;
 		const before = await noteStore.read(notePath);
 
-		const result = await reTranscribeAll({ api: notebookApi(), noteStore, ocrBackend: scriptedPageBackend([null]) }, first.index);
+		const result = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api: notebookApi(), noteStore, ocrBackend: scriptedPageBackend([null]) }, first.index);
 
 		expect(result).toMatchObject({ updated: 0, unreadPages: 1, stopped: false });
 		expect(await noteStore.read(notePath)).toBe(before);
@@ -3288,6 +3864,7 @@ describe("reTranscribeAll", () => {
 				{
 					api: twoDocs("root-1", ""),
 					noteStore,
+					attachmentStore: fakeAttachmentStore(),
 					ocrBackend: fakeOcrBackend({ status: "ok", text: "fresh text", confidence: null }),
 					saveIndex: async (index) => {
 						saved.push(index);
@@ -3316,7 +3893,7 @@ describe("reTranscribeAll", () => {
 		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
 
 		const newBackend: OcrBackend = { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn().mockResolvedValue({ status: "ok", text: "fresh", confidence: null }) };
-		const stopped = await reTranscribeAll({ api, noteStore, ocrBackend: newBackend, shouldStop: () => true }, first.index);
+		const stopped = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: newBackend, shouldStop: () => true }, first.index);
 
 		expect(stopped.stopped).toBe(true);
 		expect(stopped.updated).toBe(0);
@@ -3335,7 +3912,7 @@ describe("reTranscribeAll", () => {
 		expect((await noteStore.read(notePath))!).toContain("old garbage");
 
 		const newBackend: OcrBackend = { id: "vision", metered: false, fingerprint: "test-backend", recognize: vi.fn().mockResolvedValue({ status: "ok", text: "fresh vision text", confidence: null }) };
-		const { updated } = await reTranscribeAll({ api, noteStore, ocrBackend: newBackend }, first.index);
+		const { updated } = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: newBackend }, first.index);
 
 		expect(updated).toBe(1);
 		expect(newBackend.recognize).toHaveBeenCalledTimes(1);
@@ -3386,7 +3963,7 @@ describe("reTranscribeAll", () => {
 			expect((await noteStore.read(notePath))!).toContain("before");
 
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			const { updated } = await reTranscribeAll({ api, noteStore, ocrBackend: perPageOcrBackend("after") }, index);
+			const { updated } = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: perPageOcrBackend("after") }, index);
 
 			const note = (await noteStore.read(notePath))!;
 			expect(updated).toBe(1);
@@ -3404,7 +3981,7 @@ describe("reTranscribeAll", () => {
 			expect(quoted.length).toBeGreaterThan(0);
 
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			await reTranscribeAll({ api, noteStore, ocrBackend: perPageOcrBackend("after") }, index);
+			await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: perPageOcrBackend("after") }, index);
 
 			expect((await noteStore.read(notePath))!.split("\n").filter((line) => line.startsWith("- "))).toEqual(quoted);
 		});
@@ -3418,7 +3995,7 @@ describe("reTranscribeAll", () => {
 
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
 			const backend = perPageOcrBackend("after");
-			await reTranscribeAll({ api, noteStore, ocrBackend: backend }, index);
+			await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: backend }, index);
 
 			expect((backend.recognize as ReturnType<typeof vi.fn>).mock.calls.flatMap((call) => call[0] as RmPage[])).toHaveLength(1);
 			expect((await noteStore.read(notePath))!).not.toContain("is typed text");
@@ -3436,7 +4013,7 @@ describe("reTranscribeAll", () => {
 			expect((await deps.noteStore.read(notePath))!).not.toContain("## Digest");
 
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(false);
-			await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("after") }, synced.index);
+			await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("after") }, synced.index);
 
 			expect((await deps.noteStore.read(notePath))!).toContain("*Page 1 is typed text — see the embedded page.*");
 		});
@@ -3456,7 +4033,7 @@ describe("reTranscribeAll", () => {
 
 			vi.mocked(isDocumentText).mockReturnValueOnce(true).mockReturnValueOnce(true);
 			const backend = perPageOcrBackend("after");
-			await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: backend }, synced.index);
+			await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore: deps.noteStore, ocrBackend: backend }, synced.index);
 
 			const note = (await deps.noteStore.read(notePath))!;
 			expect(note).toContain("*Page 2 is typed text — see the embedded page.*");
@@ -3480,7 +4057,7 @@ describe("reTranscribeAll", () => {
 			const before = (await deps.noteStore.read(notePath))!;
 			expect(before).toContain("## Digest");
 
-			const { updated } = await reTranscribeAll({ api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("leaked") }, synced.index);
+			const { updated } = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore: deps.noteStore, ocrBackend: perPageOcrBackend("leaked") }, synced.index);
 
 			expect(updated).toBe(0);
 			expect(await deps.noteStore.read(notePath)).toBe(before);
@@ -3498,7 +4075,7 @@ describe("reTranscribeAll", () => {
 
 		const emptyApi = fakeApi({ rootHash: "root-2", entries: [] });
 		const newBackend = fakeOcrBackend({ status: "ok", text: "should not appear", confidence: null });
-		const { updated } = await reTranscribeAll({ api: emptyApi, noteStore, ocrBackend: newBackend }, first.index);
+		const { updated } = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api: emptyApi, noteStore, ocrBackend: newBackend }, first.index);
 
 		expect(updated).toBe(0);
 		expect(newBackend.recognize).not.toHaveBeenCalled();
@@ -3519,7 +4096,7 @@ describe("reTranscribeAll", () => {
 		};
 
 		const newBackend = fakeOcrBackend({ status: "ok", text: "nope", confidence: null });
-		const { updated } = await reTranscribeAll({ api, noteStore, ocrBackend: newBackend }, orphanedIndex);
+		const { updated } = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: newBackend }, orphanedIndex);
 
 		expect(updated).toBe(0);
 		expect(newBackend.recognize).not.toHaveBeenCalled();
@@ -3559,7 +4136,7 @@ describe("reTranscribeNote", () => {
 		expect(before).toContain("## Digest");
 
 		const backend = perPageOcrBackend("leaked");
-		const { outcome } = await reTranscribeNote({ api, noteStore: deps.noteStore, ocrBackend: backend }, synced.index.rows[KEY], synced.index);
+		const { outcome } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore: deps.noteStore, ocrBackend: backend }, synced.index.rows[KEY], synced.index);
 
 		expect(outcome).toBe("pdf-digest");
 		expect(backend.recognize).not.toHaveBeenCalled();
@@ -3580,7 +4157,7 @@ describe("reTranscribeNote", () => {
 		// Per page, because the store keys text to a page's own `.rm` hash: only a backend that answers
 		// per page produces the `readPages` it is built from.
 		const newBackend = perPageOcrBackend("fresh text");
-		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: newBackend }, first.index.rows[KEY], first.index);
+		const { outcome, index } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: newBackend }, first.index.rows[KEY], first.index);
 
 		expect(outcome).toBe("written");
 		expect(index.rows[KEY].blockHash).not.toBe(first.index.rows[KEY].blockHash);
@@ -3607,7 +4184,7 @@ describe("reTranscribeNote", () => {
 		const notePath = first.index.rows[KEY].notePath;
 		const before = await noteStore.read(notePath);
 
-		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend([null]) }, first.index.rows[KEY], first.index);
+		const result = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: scriptedPageBackend([null]) }, first.index.rows[KEY], first.index);
 
 		expect(result).toMatchObject({ outcome: "unread", unreadPages: 1, index: first.index });
 		expect(await noteStore.read(notePath)).toBe(before);
@@ -3620,7 +4197,7 @@ describe("reTranscribeNote", () => {
 		const notePath = first.index.rows[KEY].notePath;
 		const before = await noteStore.read(notePath);
 
-		const result = await reTranscribeNote({ api, noteStore, ocrBackend: throwingOcrBackend() }, first.index.rows[KEY], first.index);
+		const result = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: throwingOcrBackend() }, first.index.rows[KEY], first.index);
 
 		expect(result).toMatchObject({ outcome: "unread", unreadPages: 2 });
 		expect(await noteStore.read(notePath)).toBe(before);
@@ -3631,7 +4208,7 @@ describe("reTranscribeNote", () => {
 		const noteStore = fakeNoteStore();
 		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: scriptedPageBackend(["old first", "old second"]) }, EMPTY_SYNC_INDEX);
 
-		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
+		const result = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
 
 		expect(result).toMatchObject({ outcome: "written", unreadPages: 1 });
 		const note = (await noteStore.read(first.index.rows[KEY].notePath))!;
@@ -3647,7 +4224,7 @@ describe("reTranscribeNote", () => {
 		const noteStore = fakeNoteStore();
 		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: scriptedPageBackend(["old first", null]) }, EMPTY_SYNC_INDEX);
 
-		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
+		const result = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
 
 		expect(result).toMatchObject({ outcome: "written", unreadPages: 1 });
 		const note = (await noteStore.read(first.index.rows[KEY].notePath))!;
@@ -3660,7 +4237,7 @@ describe("reTranscribeNote", () => {
 		const noteStore = fakeNoteStore();
 		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore, ocrBackend: unavailableOcrBackend() }, EMPTY_SYNC_INDEX);
 
-		const result = await reTranscribeNote({ api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
+		const result = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: scriptedPageBackend(["new first", null]) }, first.index.rows[KEY], first.index);
 
 		expect(result).toMatchObject({ outcome: "written", unreadPages: 1 });
 		const note = (await noteStore.read(first.index.rows[KEY].notePath))!;
@@ -3675,7 +4252,7 @@ describe("reTranscribeNote", () => {
 		const confirm = vi.fn(async () => false);
 
 		const backend = perPageOcrBackend("never");
-		const { outcome } = await reTranscribeNote({ api, noteStore, ocrBackend: backend, confirm }, first.index.rows[KEY], first.index);
+		const { outcome } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: backend, confirm }, first.index.rows[KEY], first.index);
 
 		expect(confirm).toHaveBeenCalledWith({ pageCount: 2, handEdited: false });
 		expect(outcome).toBe("cancelled");
@@ -3692,7 +4269,7 @@ describe("reTranscribeNote", () => {
 		const confirm = vi.fn(async () => true);
 
 		const backend = perPageOcrBackend("never");
-		const { outcome } = await reTranscribeNote({ api, noteStore, ocrBackend: backend, confirm }, { ...first.index.rows[KEY], pageId: "page-that-left" }, first.index);
+		const { outcome } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: backend, confirm }, { ...first.index.rows[KEY], pageId: "page-that-left" }, first.index);
 
 		expect(outcome).toBe("not-on-device");
 		expect(confirm).not.toHaveBeenCalled();
@@ -3708,7 +4285,7 @@ describe("reTranscribeNote", () => {
 		const before = (await noteStore.read(first.index.rows[KEY].notePath))!;
 
 		const backend = perPageOcrBackend("never");
-		const { outcome, index } = await reTranscribeNote({ api: fakeApi({ rootHash: "root-2", entries: [] }), noteStore, ocrBackend: backend }, first.index.rows[KEY], first.index);
+		const { outcome, index } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api: fakeApi({ rootHash: "root-2", entries: [] }), noteStore, ocrBackend: backend }, first.index.rows[KEY], first.index);
 
 		expect(outcome).toBe("not-on-device");
 		expect(backend.recognize).not.toHaveBeenCalled();
@@ -3724,12 +4301,12 @@ describe("reTranscribeNote", () => {
 		const first = await runSync({ ...baseDeps(api, { sync: "Target" }), noteStore }, EMPTY_SYNC_INDEX);
 
 		const early = perPageOcrBackend("never");
-		expect((await reTranscribeNote({ api, noteStore, ocrBackend: early, shouldStop: () => true }, first.index.rows[KEY], first.index)).outcome).toBe("stopped");
+		expect((await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: early, shouldStop: () => true }, first.index.rows[KEY], first.index)).outcome).toBe("stopped");
 		expect(early.recognize).not.toHaveBeenCalled();
 
 		const late = perPageOcrBackend("never");
 		const stopWhileAsking = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
-		const { outcome } = await reTranscribeNote({ api, noteStore, ocrBackend: late, shouldStop: stopWhileAsking, confirm: async () => true }, first.index.rows[KEY], first.index);
+		const { outcome } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: late, shouldStop: stopWhileAsking, confirm: async () => true }, first.index.rows[KEY], first.index);
 
 		expect(outcome).toBe("stopped");
 		expect(late.recognize).not.toHaveBeenCalled();
@@ -3749,7 +4326,7 @@ describe("reTranscribeNote", () => {
 		expect((await noteStore.read(notePath))!).toContain("old words");
 
 		const silent = fakeOcrBackend({ status: "ok", text: "", confidence: null });
-		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: silent, confirm: async () => true }, first.index.rows[KEY], first.index);
+		const { outcome, index } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: silent, confirm: async () => true }, first.index.rows[KEY], first.index);
 
 		expect(outcome).toBe("emptied");
 		expect((await noteStore.read(notePath))!).not.toContain("## Transcript");
@@ -3766,7 +4343,7 @@ describe("reTranscribeNote", () => {
 		const notePath = first.index.rows[KEY].notePath;
 		await noteStore.write(notePath, "# My own words, and no fence left\n");
 
-		const { outcome, index } = await reTranscribeNote({ api, noteStore, ocrBackend: perPageOcrBackend("fresh") }, first.index.rows[KEY], first.index);
+		const { outcome, index } = await reTranscribeNote({ attachmentStore: fakeAttachmentStore(), api, noteStore, ocrBackend: perPageOcrBackend("fresh") }, first.index.rows[KEY], first.index);
 
 		expect(outcome).toBe("no-transcript-section");
 		expect(index).toBe(first.index);
@@ -4268,7 +4845,7 @@ describe("edited sync blocks", () => {
 		const key = notebookSyncKey("doc-1", "sync");
 
 		const retranscribed = await reTranscribeAll(
-			{ api: taggedDoc(), noteStore, ocrBackend: fakeOcrBackend({ status: "ok", text: "fresh text", confidence: null }) },
+			{ api: taggedDoc(), noteStore, attachmentStore: fakeAttachmentStore(), ocrBackend: fakeOcrBackend({ status: "ok", text: "fresh text", confidence: null }) },
 			index,
 		);
 		expect(retranscribed.updated).toBe(1);
@@ -4761,7 +5338,7 @@ describe("page-anchored transcripts", () => {
 			{ status: "ok", text: "on page three" },
 			{ status: "ok", text: "on page five" },
 		);
-		await reTranscribeAll({ api: await book("root-book-labels"), noteStore: deps.noteStore, ocrBackend: backend }, synced.index);
+		await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api: await book("root-book-labels"), noteStore: deps.noteStore, ocrBackend: backend }, synced.index);
 
 		const written = deps.noteStore.write.mock.calls.at(-1)![1] as string;
 		// The three annotated pages carry their real ordinals, and each heading anchors at the same
@@ -5190,7 +5767,7 @@ describe("transcribing only the pages that changed (issue #117)", () => {
 	it("leaves a store behind Re-transcribe all notes, so the next sync does not read it all again", async () => {
 		const first = await firstSync("root-117-g");
 		const after = countingOcrBackend();
-		const retranscribed = await reTranscribeAll({ api: notebook("root-117-g", "hash-1", THREE), noteStore: first.deps.noteStore, ocrBackend: after }, first.synced.index);
+		const retranscribed = await reTranscribeAll({ attachmentStore: fakeAttachmentStore(), api: notebook("root-117-g", "hash-1", THREE), noteStore: first.deps.noteStore, ocrBackend: after }, first.synced.index);
 
 		expect(pagesSent(after)).toBe(3); // the command reads everything, store or no store
 		expect(retranscribed.index.rows[KEY].transcribedPages).toHaveLength(3);

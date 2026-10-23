@@ -1,6 +1,6 @@
 import { Platform } from "obsidian";
 import { encodeGrayscalePng } from "./png-encoder";
-import { DEFAULT_MAX_PARALLELISM, type VisionBatchResult, type VisionBatchRunner, type VisionBox, VisionOcrBackend } from "./vision-ocr-backend";
+import { DEFAULT_MAX_PARALLELISM, type VisionBatchResult, type VisionBatchRunner, type VisionBox, VisionOcrBackend, type VisionWord } from "./vision-ocr-backend";
 
 /**
  * The Vision driver, piped to `osascript -l JavaScript` on stdin (spec §3.1). Nothing is ever
@@ -25,18 +25,34 @@ function ocrOne(path) {
   if (!ok) return { error: 'unreadable_image' };
   var res = req.results;
   if (res.isNil()) return { error: 'no_results' };
-  var lines = [], boxes = [];
+  var lines = [], boxes = [], words = [];
   for (var i = 0; i < res.count; i++) {
     var obs = res.objectAtIndex(i);
     var cands = obs.topCandidates(1);
     if (cands.isNil() || cands.count == 0) continue;   // no candidate: nothing to place either
-    lines.push(ObjC.unwrap(cands.objectAtIndex(0).string));
+    var cand = cands.objectAtIndex(0);
+    var text = ObjC.unwrap(cand.string);
+    lines.push(text);
     // Normalised against the image, origin BOTTOM-LEFT. Pushed only beside a kept line, so the
-    // two arrays stay index-aligned -- the caller pairs them by position.
+    // arrays stay index-aligned -- the caller pairs them by position.
     var bb = obs.boundingBox;
     boxes.push({ x: bb.origin.x, y: bb.origin.y, w: bb.size.width, h: bb.size.height });
+    // One box per word, for the text layer. JS string offsets are UTF-16, as NSRange's are.
+    var lineWords = [], re = /\\S+/g, m;
+    while ((m = re.exec(text)) !== null) {
+      var wb = null;
+      try {
+        var rect = cand.boundingBoxForRangeError($.NSMakeRange(m.index, m[0].length), $());
+        if (!rect.isNil()) {
+          var r = rect.boundingBox;
+          wb = { x: r.origin.x, y: r.origin.y, w: r.size.width, h: r.size.height };
+        }
+      } catch (e) {}   // no box for this word: the text layer shares its line out by characters
+      lineWords.push({ text: m[0], box: wb });
+    }
+    words.push(lineWords);
   }
-  return { lines: lines, boxes: boxes, revision: req.revision };
+  return { lines: lines, boxes: boxes, words: words, revision: req.revision };
 }
 function run(argv) {
   var pages = [];
@@ -133,9 +149,9 @@ const runBatch: VisionBatchRunner = async (images) => {
 			return filePath;
 		});
 		const stdout = await runOsascript(paths);
-		const parsed = JSON.parse(stdout) as { pages: Array<{ lines?: string[]; boxes?: VisionBox[]; revision?: number; error?: string }> };
+		const parsed = JSON.parse(stdout) as { pages: Array<{ lines?: string[]; boxes?: VisionBox[]; words?: VisionWord[][]; revision: number; error?: string }> };
 		return parsed.pages.map((pg): VisionBatchResult =>
-			pg.error ? { error: pg.error } : { lines: pg.lines ?? [], boxes: pg.boxes ?? [], revision: pg.revision },
+			pg.error ? { error: pg.error } : { lines: pg.lines ?? [], boxes: pg.boxes ?? [], words: pg.words ?? [], revision: pg.revision },
 		);
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });

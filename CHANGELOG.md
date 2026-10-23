@@ -12,6 +12,52 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Your handwriting is searchable inside the PDF itself.** On a Mac, the render -- the PDF of your
+  pages at the top of a notebook's note -- now carries your transcript as invisible text, each word
+  laid over the word you wrote. `Cmd+F` in Obsidian's PDF viewer and in Preview highlights the
+  handwritten word on the page, and Spotlight finds the PDF. The page looks exactly as before. It works
+  with every transcription backend: Apple Vision reads each page locally to find where the words sit,
+  and the words themselves come from your backend's transcript, so the PDF and the note say the same
+  thing. A word Vision cannot locate is left out of the PDF and stays in the transcript. There is no
+  setting, and it is free. On Windows and Linux the PDF has no text layer yet; the transcript under the
+  note is still searchable.
+
+- **`Cmd+F` searches the PDF embedded in a note.** Click into the PDF at the top of a note and press
+  `Cmd+F` (`Ctrl+F` on Windows and Linux): the PDF's own search bar opens and finds the word on the
+  page. Obsidian sends `Cmd+F` to the
+  note's search otherwise. Anywhere else in the note, `Cmd+F` searches the note as before. If a future
+  Obsidian version changes how embedded PDFs work inside, `Cmd+F` opens the PDF in a new tab instead,
+  where it can be searched.
+
+- **"Copy diagnostics" says how the text layer went.** One more line: how many pages of the last sync
+  got a text layer, and how many words were placed and left out.
+
+### Changed
+
+- **The first sync after the update re-renders every note once.** On a Mac, that gives notes synced
+  before the text layer too; on Windows and Linux the render comes out as before. Transcripts are kept,
+  so your backend reads almost nothing again. A note you edited by hand is skipped, as always, and keeps
+  its render without the layer; *Re-transcribe this note* gives it one, but replaces your corrections in
+  the transcript, so it asks first.
+
+- ***Re-transcribe* now rewrites the render as well**, with the same name and the same pages, so its
+  text layer follows the new transcript. It used to leave the render untouched.
+
+### Fixed
+
+- **The older built-in model, Qwen2.5-VL-7B, no longer turns every page into `@@@@` on newer Macs.**
+  On an M5 Max with macOS 27 its image reader miscalculated on the graphics chip, and every
+  transcript came back as a run of `@` characters without an error. That part of the model now runs
+  on the processor, on every Mac; the language part stays on the graphics chip. It reads the
+  reference pages at 4.2 % error again, at a few seconds more per page. The Qwen3-VL models were not
+  affected. (#218)
+
+- **"Copy diagnostics" keeps the "Reused page transcriptions" figure after a sync with nothing to
+  do.** A background sync that found no changes used to replace it with "0 of 0", so the block pasted
+  into a bug report rarely showed what the sync before it had done.
+
 ## [1.8.6] - 2026-10-18
 
 ### Fixed

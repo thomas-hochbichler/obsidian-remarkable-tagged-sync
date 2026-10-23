@@ -6,9 +6,10 @@ import { inkBounds, type InkBounds, rasterizePage } from "./page-rasterizer";
 import { isHighlighterOrShader } from "./pdf-renderer";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage, RmStroke } from "./rm-parser";
+import type { LayerLine } from "./text-layer";
 import { layoutText } from "./text-layout";
 
-/** One recognized line's box, normalized against the image it was read from, with a bottom-left origin. */
+/** One recognized line's (or word's) box, normalized against the image it was read from, with a bottom-left origin. */
 export interface VisionBox {
 	x: number;
 	y: number;
@@ -16,11 +17,19 @@ export interface VisionBox {
 	h: number;
 }
 
+/** One word of a recognized line, with the box `boundingBoxForRange` gave it -- null where it gave none. */
+export interface VisionWord {
+	text: string;
+	box: VisionBox | null;
+}
+
 /**
  * One image's outcome from a single Vision process: its recognized lines with the box of each, or an
- * image-level error (missing/unreadable). `lines` and `boxes` are index-aligned.
+ * image-level error (missing/unreadable). `lines` and `boxes` are index-aligned, and so is `words`,
+ * each line's words in the order they were read. `words` is absent from a driver that does not box them.
  */
-export type VisionBatchResult = { lines: string[]; boxes: VisionBox[]; revision?: number } | { error: string };
+/** `words` and `revision` are required because the JXA driver always sends both: a fake must answer them too. */
+export type VisionBatchResult = { lines: string[]; boxes: VisionBox[]; words: VisionWord[][]; revision: number } | { error: string };
 
 /**
  * Runs one `osascript`/Vision process over a batch of page PNGs and returns a per-image result in
@@ -150,7 +159,7 @@ function uncoveredClusters(page: RmPage, boxes: VisionBox[]): { scene: RmPage; c
 }
 
 /** Levenshtein distance, two-row DP. */
-function levenshtein(a: string, b: string): number {
+export function levenshtein(a: string, b: string): number {
 	if (a.length === 0) return b.length;
 	if (b.length === 0) return a.length;
 	let prev = new Uint32Array(b.length + 1);
@@ -221,6 +230,17 @@ function insertTypedText(read: ReadLines, page: RmPage): void {
 		// document order -- which is the order they are laid out in.
 		insertLine(read, line.text, frame ? 1 - (line.yPx - frame.minY) / frame.height : 0);
 	}
+}
+
+/**
+ * The page pass's lines with their word boxes, for the text layer -- taken before the rescue pass and
+ * the typed text go in. A rescued line was read off a crop, so its boxes would place it on the wrong
+ * bitmap; typed text is real text in the render already.
+ */
+function pageLayer(result: VisionBatchResult): LayerLine[] {
+	if (!("lines" in result)) return [];
+	const { boxes, words } = result;
+	return result.lines.map((_, i) => ({ box: boxes[i], words: words[i] ?? [] })).filter((line) => line.words.length > 0);
 }
 
 /**
@@ -298,6 +318,22 @@ export class VisionOcrBackend implements OcrBackend {
 	}
 
 	/**
+	 * Where the words sit on each page, for a text layer whose words come from another backend (spec
+	 * §2.1): the page pass alone, no rescue, no typed text, no transcript. One entry per page, `null`
+	 * for a page Vision could not read -- and for every page when Vision cannot run here at all, which
+	 * leaves the render without a layer, as before 1.9.0 (spec §2.7).
+	 */
+	async readLayer(pages: RmPage[]): Promise<(LayerLine[] | null)[]> {
+		if (pages.length === 0 || !(await this.available())) return pages.map(() => null);
+		try {
+			return (await this.read(pages.map((page) => ocrImage(page)))).map((result) => ("lines" in result ? pageLayer(result) : null));
+		} catch (error) {
+			console.warn("Tagged Sync: Vision could not read the word boxes, the render is written without a text layer", error);
+			return pages.map(() => null);
+		}
+	}
+
+	/**
 	 * A margin note is read exactly as a page is, whatever `framing` says -- measured, not assumed. Over
 	 * the 180 line crops of the reference set, Vision returned nothing for five real lines once they
 	 * were padded, among them "Taschenlampe, Ersatzbatterien", and recovered none: it reads a crop best
@@ -311,7 +347,7 @@ export class VisionOcrBackend implements OcrBackend {
 		try {
 			const perPage = await this.read(pages.map((page) => ocrImage(page)));
 			const reads = perPage.map((result): ReadLines | null => ("lines" in result ? { lines: [...result.lines], boxes: [...result.boxes] } : null));
-			for (const result of perPage) if ("revision" in result && result.revision !== undefined) visionRunStats.revision = result.revision;
+			for (const result of perPage) if ("revision" in result) visionRunStats.revision = result.revision;
 
 			await this.rescue(pages, reads);
 			reads.forEach((read, index) => {
@@ -321,10 +357,12 @@ export class VisionOcrBackend implements OcrBackend {
 			// One entry per input page, in input order. The per-page outcome was always computed here --
 			// `VisionBatchResult` is `{ lines } | { error }` -- and used to be thrown away by a `.filter()`
 			// that dropped the empty pages, losing the error flag and the index alignment together.
-			const pageResults = reads.map((read): OcrPageResult => {
+			const pageResults = reads.map((read, index): OcrPageResult => {
 				if (read === null) return { status: "failed", text: "" };
 				const text = read.lines.join("\n").trim();
-				return text.length > 0 ? { status: "ok", text } : { status: "skipped", text: "" };
+				if (text.length === 0) return { status: "skipped", text: "" };
+				// Set even when empty: it says the page was read with positions, and not to read it again for them.
+				return { status: "ok", text, layer: pageLayer(perPage[index]) };
 			});
 			const text = pageResults
 				.filter((page) => page.status === "ok")

@@ -2,6 +2,7 @@ import type { OcrBackend as OcrBackendId, OcrStatus } from "./note-builder";
 import { rasterizePage } from "./page-rasterizer";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage } from "./rm-parser";
+import type { LayerLine } from "./text-layer";
 
 /**
  * A single page's outcome. Deliberately narrower than the unit-level `OcrStatus`: `unavailable` is a
@@ -13,6 +14,13 @@ export interface OcrPageResult {
 	status: OcrPageStatus;
 	/** Empty unless `status` is "ok". */
 	text: string;
+	/**
+	 * Where the page's words sit, for the render's text layer: the lines read off the page image, each
+	 * word with its box. Only a backend that reads positions sets it -- Apple Vision -- and only on an
+	 * "ok" page. Lines the page image does not carry (typed text, a rescued crop) are not in it. Absent,
+	 * the sync asks Vision for the boxes and places the page's text on them; empty, it places nothing.
+	 */
+	layer?: LayerLine[];
 }
 
 export interface OcrResult {

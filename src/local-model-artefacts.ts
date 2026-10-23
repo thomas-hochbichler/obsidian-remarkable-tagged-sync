@@ -97,6 +97,15 @@ export interface ModelGeneration {
 	 * shrinks a tall image before reading it and hurts one that handles the shape natively.
 	 */
 	splitsTallPages: boolean;
+	/**
+	 * Whether the vision encoder (the mmproj) runs on the CPU (`--no-mmproj-offload`) while the
+	 * language model stays on the GPU.
+	 *
+	 * Per model because it is a workaround, not a preference (#218): on an M5 Max with macOS 27,
+	 * Qwen2.5-VL's encoder on Metal turns every page into "@@@@" -- 328 % median error -- and on the
+	 * CPU reads it correctly. The Qwen3-VL encoders read correctly on the GPU and stay there.
+	 */
+	encoderOnCpu: boolean;
 }
 
 /**
@@ -123,7 +132,7 @@ const QWEN3_VL_8B: ModelGeneration = {
 			sha256: "ca524100ebf825c9a870db1c580d03879e0da0ab2541697e2458e64891cf9d38",
 		},
 	],
-	measured: { medianCer: 0.0179, on: "2026-09-16" },
+	measured: { medianCer: 0.0179, on: "2026-10-23" },
 	peakRssBytes: 8_579_448_832,
 	// **Only true with `contextTokens` pinned.** Unpinned this model peaks at 42.82 GB, and the floor
 	// below would invite a 16 GB Mac to start it.
@@ -139,6 +148,7 @@ const QWEN3_VL_8B: ModelGeneration = {
 	// tallest page anyone has measured is the 8.77x one in the reference set. Trading a measured
 	// 0.33 pp for the behaviour of a page nobody has written yet is the wrong way round.
 	splitsTallPages: true,
+	encoderOnCpu: false,
 };
 
 /**
@@ -164,7 +174,7 @@ const QWEN25_VL_7B: ModelGeneration = {
 			sha256: "2ddb555391bae966e412deab9e07b58afa18bcc06930ba0f1c78a3695ab9e506",
 		},
 	],
-	measured: { medianCer: 0.0432, on: "2026-09-09" },
+	measured: { medianCer: 0.0416, on: "2026-10-23" },
 	peakRssBytes: 16_200_204_288,
 	// Left at the shipped 18 / 24, deliberately, although `peakRssBytes` above is the 15.09 GiB the
 	// tall reference page reached rather than the 13.43 GiB these floors were derived from. Raising
@@ -178,6 +188,10 @@ const QWEN25_VL_7B: ModelGeneration = {
 	// The model splitting was built for: 4.32 % whole against 1.00 % cut, and its peak drops from
 	// 15.09 GB to 13.22 GB with it, which is what keeps the 18 GB floor honest.
 	splitsTallPages: true,
+	// On every machine, although only an M5 Max with macOS 27 is known to need it (#218): the
+	// encoder's fault cannot be detected from the outside except by its output, and the CPU path
+	// reads correctly everywhere.
+	encoderOnCpu: true,
 };
 
 /**
@@ -204,7 +218,7 @@ const QWEN3_VL_2B: ModelGeneration = {
 			sha256: "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82",
 		},
 	],
-	measured: { medianCer: 0.0655, on: "2026-09-16" },
+	measured: { medianCer: 0.0655, on: "2026-10-23" },
 	peakRssBytes: 3_107_241_984,
 	// 2.89 GiB + 4 GiB = 6.89 GiB, against the 7 GiB an 8 GB Mac reports: **114 MB of margin**, the
 	// thinnest of any tier and set by one page. Windows is 16 GB and is **derived, never measured** --
@@ -223,6 +237,7 @@ const QWEN3_VL_2B: ModelGeneration = {
 	// half points -- the wrong way round for the tier whose whole argument is that it beats Apple
 	// Vision by enough to be worth a download.
 	splitsTallPages: false,
+	encoderOnCpu: false,
 };
 
 /**

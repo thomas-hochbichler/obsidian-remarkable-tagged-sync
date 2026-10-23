@@ -19,7 +19,8 @@ computer — no upload, no account with us. The plugin is free; Pro is an option
 ## A notebook you wrote in
 
 The pages as you drew them, embedded in the note, plus a searchable transcript underneath — split
-by page, so a long notebook stays navigable.
+by page, so a long notebook stays navigable. On a Mac, the pages themselves are searchable too:
+click into the page and `Cmd+F` finds a handwritten word right on it.
 
 ![Writing a note on the reMarkable, tagging it sync, running Sync now in Obsidian, and the note arriving with the handwriting render and a searchable transcript split by page](docs/showcase-handwriting.gif)
 
@@ -56,6 +57,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | **What arrives in your vault** | | |
 | [Handwritten notebooks, page render embedded](#what-gets-synced) | ✓ | ✓ |
 | [Handwriting → searchable text](#handwriting-transcription) | ✓ | ✓ |
+| [Your handwriting searchable inside the PDF itself — Obsidian's PDF viewer, Preview, Spotlight (macOS)](#the-text-layer) | ✓ | ✓ |
 | [PDF highlights extracted as quotes, with the sentence around them](#annotated-pdfs) | ✓ | ✓ |
 | [Pen marks — underline, circle — count as annotations](#annotated-pdfs) | ✓ | ✓ |
 | [Margin notes transcribed and placed at the passage they point at](#the-notes-you-write-in-the-margin) | ✓ | ✓ |
@@ -201,8 +203,9 @@ section to write into.
 **Tagged Sync for reMarkable: Re-transcribe all synced notes** does the same for every synced note in
 the vault. That is the one to run after switching backends. It asks for confirmation first.
 
-Both re-fetch the notebook and rewrite only the transcript region, leaving your own notes and the
-embedded render untouched.
+Both re-fetch the notebook and rewrite the transcript region, leaving your own notes untouched. They
+also write the embedded PDF again, with the same name and the same pages, so that on a Mac its
+[text layer](#the-text-layer) follows the new transcript.
 
 Re-transcribing is also the way to fill in a transcript that never arrived — a note synced while
 the local model was still downloading, or while its engine was missing, keeps its render and no
@@ -249,7 +252,8 @@ API is macOS Swift-only and unavailable here. It can also misread; see
 
 For transparency: the page PNGs are transcribed by invoking the built-in `/usr/bin/osascript`
 binary, which drives Apple's Vision framework. This runs on your machine with **no network
-egress**.
+egress**. On a Mac it also runs alongside any other backend, to place the
+[text layer](#the-text-layer).
 
 ### A local server you run yourself
 
@@ -329,6 +333,28 @@ cents. The provider bills your own API key directly; that is separate from the p
 that thinks before it answers is billed for the thinking too, so the list price per token says
 little about the price of a page. The full measurement is in
 [Which cloud model reads handwriting best](https://taggedsync.com/blog/best-cloud-model-for-handwriting).
+
+### The text layer
+
+On a Mac, the PDF of your pages is searchable. Click into the page embedded in the note, or open the
+PDF in Preview, press `Cmd+F`, and the word you wrote is highlighted on the page. Anywhere else in
+the note, `Cmd+F` searches the note as usual. Spotlight finds the PDF. The page looks exactly as
+before.
+
+The text layer is free: on a Mac, every PDF of a handwritten notebook or page the plugin writes
+carries your transcript as invisible, searchable text, whichever backend read it. On Windows and
+Linux the PDF has no text layer yet; the transcript under the note is still searchable.
+
+Apple Vision finds where each word sits on the page, whatever transcription backend you chose. The
+words come from your backend's transcript, so the PDF and the note say the same thing. A word Vision
+cannot locate is left out of the layer; it stays in the transcript. With the backend set to **Off**
+there is no transcript, and so no text layer.
+
+There is nothing to switch on. Notes you synced before 1.9.0 get the layer on the first sync after
+the update. A note you edited by hand is skipped, as always, and keeps its PDF without the layer
+until you run **Re-transcribe this note** on it.
+
+Obsidian's own search pane does not look inside PDFs. What it finds is the transcript under the note.
 
 ## Typed text and the Type Folio
 
@@ -670,8 +696,8 @@ Three things worth knowing before you rely on it:
 - **Without margin notes switched on, the digest is built from what you *marked*, not from what you
   *wrote*.** Handwriting then stays in the render where you wrote it — no text is extracted from it,
   and a PDF you only wrote on syncs with the render and no text at all.
-- **It reads the PDF's own text layer.** A scanned page without one gives less: highlights arrive as
-  the words your tablet recorded, and pen marks are not recognised as marks at all.
+- **It reads the PDF's own text.** A scanned page that is only a picture gives less: highlights
+  arrive as the words your tablet recorded, and pen marks are not recognised as marks at all.
 - **Section headings are partly guessed.** They come from the PDF's own outline where it has one,
   and from a font-size guess where it does not — so a document without bookmarks can file a quote
   under the wrong heading.
@@ -691,6 +717,9 @@ Three things worth knowing before you rely on it:
   `## Transcript` section — the render is never lost. An annotated PDF gets a
   [`## Digest`](#annotated-pdfs) instead, and a notebook with
   [typed pages](#typed-text-and-the-type-folio) among handwritten ones can carry both.
+- **On a Mac, the embedded PDF carries a [text layer](#the-text-layer)**: your transcript as
+  invisible text over the handwriting, so searching the PDF finds what you wrote. Typed text is real
+  text in the PDF already.
 - **[Typed text](#typed-text-and-the-type-folio) is taken from the file, never transcribed**, and
   joins the transcript of the page it is on — at the position it sits at with Apple Vision, at the
   end of the page with the other backends. A typed page that reads like a document gets the digest
@@ -830,6 +859,13 @@ stays where it is and is still preserved on every sync — new notes just no lon
   transcript, since it is the transcript it joins.
 - **A PDF you only wrote on syncs with the render and no text.** The digest quotes what you marked;
   handwriting on the page is not read.
+- **The [text layer](#the-text-layer) is Mac only.** On Windows and Linux the PDF has no text layer
+  yet; the transcript under the note is still searchable. On a Mac it covers handwritten notebooks
+  and pages: handwriting on a typed document, and margin notes on a PDF or book, get no layer.
+- **The text layer is only as good as the transcript.** A word Apple Vision cannot locate is left
+  out. In a table, a word can land in the wrong cell. A word with a letter the PDF's standard font
+  cannot write is written without accents: *Łódź* is in the layer as *Lodz*. And Preview's search
+  tells accents apart, so *Gruße* does not find *Grüße*.
 - The reMarkable cloud API used here (via `rmapi-js`) is reverse-engineered and unversioned;
   firmware changes on reMarkable's side can break sync. See below. [Syncing straight from the
   tablet](#syncing-without-the-cloud) avoids that interface entirely, and is what Pro buys you as
@@ -900,6 +936,9 @@ entirely on the backend selected in settings:
   back. This is the one case where a page image leaves your device. You choose it, you pay for it,
   and it is off unless you turn it on. The provider's own terms apply.
 
+On a Mac, Apple Vision also reads each page locally to place the [text layer](#the-text-layer),
+whichever backend you chose; nothing leaves your machine.
+
 Two more hosts are contacted **only if you opt in to the local model**
 ([see above](#local-model-optional-opt-in)), once, to download it — never during a sync, and never
 again once the files are on disk:
@@ -955,7 +994,7 @@ Two behaviours show up in Obsidian's automated plugin review, so they are spelle
 
 - **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
   version, Obsidian version, platform, whether Apple Vision is available, the selected transcription
-  backend, a few transcription counters, the number of mapped tags, the last sync time and the last
+  backend, a few transcription and text-layer counters, the number of mapped tags, the last sync time and the last
   error to the clipboard, so you can paste them into a bug report. The last error can name a
   notebook or document — look before you paste it anywhere public. The plugin **never reads** your
   clipboard, and nothing is sent anywhere — you choose where to paste it.

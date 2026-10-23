@@ -32,6 +32,7 @@ import {
 	unreadPagesSentence,
 } from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
+import { registerEmbeddedPdfSearch } from "./embedded-pdf-keys";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { CloudTransport } from "./cloud-transport";
 import {
@@ -52,7 +53,8 @@ import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
-import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
+import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
+import type { TextLayerTally } from "./text-layer";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
@@ -140,6 +142,8 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * from a run three weeks ago would be read as this one's.
 	 */
 	lastPageTranscriptions: { reused: number; total: number } | null = null;
+	/** How the last sync's text layer went (searchable-pdf spec §2.7), for "Copy diagnostics". Session state, as above. */
+	lastTextLayer: TextLayerTally | null = null;
 	/**
 	 * What the last sync or re-transcribe sent to its OCR backend and got back, for "Copy diagnostics".
 	 * Session state for the same reason as the two above. Replaced when a run first sends an image, so
@@ -395,6 +399,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// Registered whatever the setting says: it governs whether a sync *writes* margin notes, while a
 		// note that already carries one has to keep working after the setting is switched off again.
 		registerRegionProcessor(this);
+		// Any PDF embedded in a note, not only renders: Obsidian sends Cmd+F to the note's search there.
+		registerEmbeddedPdfSearch(this);
 		this.addCommand({
 			id: "sync-now",
 			name: "Sync now",
@@ -685,11 +691,7 @@ export default class TaggedSyncPlugin extends Plugin {
 					// path is derived from them -- see resolveFolderCasing for why (issue #73).
 					tagRouter: new TagRouter(await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap)),
 					noteStore: createNoteStore(this.app),
-					attachmentStore: createAttachmentStore(this.app.vault),
-					attachmentsFolder: await resolveFolderCasing(
-						this.app.vault,
-						normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
-					),
+					...(await this.renderDeps()),
 					ocrBackend: this.countedOcr(backend),
 					marginNotes: this.data.marginNotes,
 					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
@@ -767,7 +769,10 @@ export default class TaggedSyncPlugin extends Plugin {
 			// is not itself an error and contributes nothing here; only what the partial run hit does.
 			const errors = backfillError === null ? result.skipErrors : [...result.skipErrors, backfillError];
 			this.lastSyncError = errors.length > 0 ? errors.join("\n") : null;
-			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
+			// Both kept when this run measured nothing: an idle sync would otherwise write "0 of 0" over
+			// the figure a bug report needs.
+			if (result.pageTranscriptionsConsidered > 0) this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
+			this.lastTextLayer = result.textLayer ?? this.lastTextLayer;
 
 			this.applyStatus(outcomeStatus(result));
 			const outcome = outcomeNotice({ stopped: result.stopped, notesWritten: result.notesWritten, background: auto });
@@ -901,8 +906,20 @@ export default class TaggedSyncPlugin extends Plugin {
 		new Notice(notice, LONG_NOTICE_MS);
 	}
 
+	/** What writing a render takes: the sync and both re-transcribe commands write the same PDF (searchable-pdf spec §2.5). */
+	private async renderDeps(): Promise<Pick<SyncDeps, "attachmentStore" | "attachmentsFolder" | "layerReader">> {
+		return {
+			attachmentStore: createAttachmentStore(this.app.vault),
+			// Resolved to the vault's real casing before any path is derived from it (issue #73).
+			attachmentsFolder: await resolveFolderCasing(this.app.vault, normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder))),
+			// Every backend's text layer is placed on Vision's boxes: the same Vision as the backend, so
+			// its probe runs once. None off a Mac or below macOS 13: the render gets no layer there (spec §2.6).
+			layerReader: visionPlatformSupported() ? visionBackend() : undefined,
+		};
+	}
+
 	/**
-	 * Re-runs OCR over every already-synced note and rewrites just its transcript (spec §8.4). Opt-in
+	 * Re-runs OCR over every already-synced note and rewrites just its transcript and render (spec §8.4). Opt-in
 	 * and confirmed first, because for LLM-vision it re-fetches every `.rm` and spends money -- a
 	 * destructive-by-cost operation must never be automatic.
 	 */
@@ -958,6 +975,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
+					...(await this.renderDeps()),
 					ocrBackend: this.countedOcr(backend),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -996,7 +1014,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	}
 
 	/**
-	 * Re-runs OCR over the one note on screen and rewrites just its transcript
+	 * Re-runs OCR over the one note on screen and rewrites just its transcript and render
 	 * (selective-re-transcribe spec §4). Repairing one bad transcript used to cost a whole-vault run.
 	 *
 	 * The order of the steps is the design: every free check runs before every expensive one, so no
@@ -1041,6 +1059,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
+					...(await this.renderDeps()),
 					ocrBackend: this.countedOcr(backend),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,

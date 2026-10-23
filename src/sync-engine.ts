@@ -32,6 +32,8 @@ import { validateSourcePdf } from "./pdf-source";
 import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, type NoteFrontmatter } from "./frontmatter";
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
+import { placeWords, transcriptWords } from "./layer-alignment";
+import { addTextLayer, type LayerLine, type LayerReader, type TextLayerTally } from "./text-layer";
 import { isDocumentText } from "./scene-text";
 import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint, transcriptSections } from "./transcript-store";
 import type { TagRouter } from "./tag-router";
@@ -108,14 +110,21 @@ export type SyncRowStatus = "active" | "orphaned";
  * gesture across wrapped lines as the one entry the reader drew -- the per-line runs the device
  * records are rejoined, and closing punctuation stays with the sentence it ends, which had been
  * printing a parenthetical twice, once behind a stranded closing quote -- and a margin note's clip
- * now spans the paragraph the ink sits beside, so the picture carries the context the note is about.
+ * now spans the paragraph the ink sits beside, so the picture carries the context the note is about;
+ * version 32 lays the transcript over the handwriting as invisible text on a Mac, which a note synced
+ * before it has no way to grow on its own -- the transcript is kept, only the PDF is written again.
  *
  * Not bumped for a change in how the note *reads* (decided 2026-09-13, when the digest gained the
  * marker's colour): a bump re-renders every note, and on the way re-transcribes typed-text pages and
  * every margin note through a backend the user may be paying for. A cosmetic change waits for the
  * document's next real change; only a change to what is *drawn* earns a bump.
+ *
+ * A bump owes two follow-ups in the same commit: `npm run goldens:update` (each golden's header line
+ * names this number), and a re-measure of every local model, `npm run measure:local -- <generation>`
+ * on a Mac -- `docs/ocr-local/` figures are bound to the render version they were measured at, and
+ * each feeds its model's settings card.
  */
-export const RENDER_VERSION = 31;
+export const RENDER_VERSION = 32;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -300,6 +309,12 @@ export interface SyncDeps {
 	attachmentsFolder?: string;
 	ocrBackend: OcrBackend;
 	/**
+	 * Apple Vision's word boxes, for the text layer of a page whose words came from another backend, or
+	 * from the store or the note (spec §2.1). Absent where Vision cannot exist (Windows, Linux): the
+	 * render is then written without a layer, as before 1.9.0.
+	 */
+	layerReader?: LayerReader;
+	/**
 	 * F20's setting, default **off** -- the same default the plugin ships, so a caller that says
 	 * nothing gets the shipped behaviour rather than a second, quieter policy.
 	 *
@@ -412,6 +427,12 @@ export interface SyncResult {
 	 * "0 of 100" says it did not.
 	 */
 	pageTranscriptionsConsidered: number;
+	/**
+	 * How the text layer went over every render this run wrote, for "Copy diagnostics" (spec §2.7). Not
+	 * a notice, for the same reason as above. Null when nothing was measured -- no render written, or no
+	 * layer reader (Windows, Linux) -- so an idle sync does not overwrite the last figure with "0 of 0".
+	 */
+	textLayer: TextLayerTally | null;
 	/**
 	 * The raw error text behind each skip, one entry per skipped unit, for "Copy diagnostics" -- the
 	 * console.warn alone left diagnostics reporting "Last error: none" after a partially-failed sync.
@@ -767,6 +788,8 @@ interface UnitOcr {
 	 * positional coupling ticket 04 refused.
 	 */
 	readPages: { id: string; label: number }[];
+	/** Where the words sit on each page the backend read with positions, by `embedPage`; absent when none was. */
+	layer?: ReadonlyMap<number, LayerLine[]>;
 }
 
 /**
@@ -819,8 +842,13 @@ async function runOcr(backend: OcrBackend, pages: OcrPage[], onPage?: () => void
 		return degraded(result.status, [...warnings, arity], pages, kept, sent, result.text);
 	}
 
-	for (const [index, page] of sent.entries()) kept.set(page, perPage[index]);
-	return { status: result.status, warnings, pages: transcriptPages(pages, kept), text: result.text, readPages: storablePages(pages, kept) };
+	const layer = new Map<number, LayerLine[]>();
+	for (const [index, page] of sent.entries()) {
+		kept.set(page, perPage[index]);
+		const lines = perPage[index].status === "ok" ? perPage[index].layer : undefined;
+		if (lines !== undefined) layer.set(page.embedPage, lines);
+	}
+	return { status: result.status, warnings, pages: transcriptPages(pages, kept), text: result.text, readPages: storablePages(pages, kept), layer };
 }
 
 /**
@@ -923,6 +951,12 @@ function splitForTranscript(
 interface UnitParams {
 	/** Finished attachment bytes: a `.rm` render for handwritten docs, the embedded source for PDF-backed ones. */
 	pdfBytes: Uint8Array;
+	/**
+	 * The scenes `renderPagesToPdf` drew `pdfBytes` from, in page order: set for a notebook render, the
+	 * one kind of attachment that takes a text layer. Absent for a PDF-backed unit, whose margin notes
+	 * get none (spec §2.3).
+	 */
+	renderScenes?: RmPage[];
 	/** The pages the transcript is responsible for -- see `splitForTranscript`. Empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
 	ocrPages: OcrPage[];
 	/** How many pages the whole *unit* has, which a digest can make more than `ocrPages.length`. Decides whether the transcript prints page headings. */
@@ -1052,6 +1086,8 @@ interface WriteUnitResult {
 	written: WrittenUnit | null;
 	/** The line for `skipErrors` when the block came out empty, refused or not; null on the ordinary path. */
 	emptyBlock: string | null;
+	/** How the render's layer went, written even when the note was refused; null for a unit whose attachment takes no layer. */
+	textLayer: TextLayerTally | null;
 }
 
 /**
@@ -1167,13 +1203,82 @@ function storedPages(readPages: { id: string; label: number }[], hashOf: (pageId
 	return readPages.map((page) => ({ id: page.id, hash: hashOf(page.id), label: page.label, quotes: quotesByLabel.get(page.label) ?? 0 }));
 }
 
-/** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
+/**
+ * The render with the unit's text layer laid over it. A layer that cannot be made leaves the render as
+ * it was: the page still looks right, and only the search inside it is missing (spec §2.7).
+ */
+async function withTextLayer(pdf: Uint8Array, scenes: RmPage[], layer: ReadonlyMap<number, LayerLine[]>): Promise<Uint8Array> {
+	try {
+		return await addTextLayer(pdf, scenes, scenes.map((_, index) => layer.get(index + 1) ?? []));
+	} catch (error) {
+		console.warn("Tagged Sync: could not add the text layer, the render is written without it", error);
+		return pdf;
+	}
+}
+
+/**
+ * The text each page's layer carries: what the page was read as, from the backend or the store, or --
+ * for a unit that keeps its whole transcript -- the page's section of the note, read back as the store
+ * reads it. A failed page has no text here (spec §2.7).
+ */
+function layerTexts(ocr: UnitOcr, keptTranscript: string | undefined, pageCount: number): { embedPage: number; text: string }[] {
+	if (keptTranscript === undefined) return (ocr.pages ?? []).filter((page) => page.status === "ok");
+	// One page prints no heading (`renderTranscript`), so its section is the whole transcript. No quote
+	// bullets to drop: a quote is highlighted typed text, and `reusableTranscript` keeps no unit with any.
+	const sections = pageCount === 1 ? new Map([[1, keptTranscript]]) : transcriptSections(keptTranscript);
+	return [...sections].flatMap(([label, section]) => {
+		const text = pageText(section, 0);
+		return text === null ? [] : [{ embedPage: label, text }];
+	});
+}
+
+/**
+ * Each page's text layer, by `embedPage`: the words the backend read with positions where it did
+ * (Apple Vision, one reading), else the page's transcript placed on the boxes `reader` reads for it
+ * (spec §2.1). A page that failed has no transcript and so no layer (spec §2.7).
+ */
+async function unitLayer(
+	reader: LayerReader | undefined,
+	backend: OcrBackend,
+	scenes: RmPage[],
+	ocr: UnitOcr,
+	keptTranscript: string | undefined,
+): Promise<ReadonlyMap<number, LayerLine[]>> {
+	const layer = new Map(ocr.layer);
+	if (reader === undefined || readsNothing(backend)) return layer;
+	const texts = layerTexts(ocr, keptTranscript, scenes.length).filter((page) => !layer.has(page.embedPage));
+	if (texts.length === 0) return layer;
+	const reads = await reader.readLayer(texts.map((page) => scenes[page.embedPage - 1]));
+	texts.forEach((page, index) => {
+		const lines = reads[index];
+		if (lines) layer.set(page.embedPage, placeWords(page.text, lines));
+	});
+	return layer;
+}
+
+/**
+ * How one render's layer went. A page counts as layered only when the written render carries words on
+ * it: a page with no boxes, a page the backend failed on, and every page of a render the layer could
+ * not be laid over all count against it (spec §2.7). Left out is what a page's transcript holds beyond
+ * what was placed.
+ */
+function layerTally(scenes: RmPage[], texts: { embedPage: number; text: string }[], layer: ReadonlyMap<number, LayerLine[]>, laid: boolean): TextLayerTally {
+	const placedOn = (embedPage: number) => (laid ? (layer.get(embedPage) ?? []).reduce((sum, line) => sum + line.words.length, 0) : 0);
+	const placed = scenes.map((_, index) => placedOn(index + 1));
+	return {
+		pages: scenes.length,
+		layered: placed.filter((count) => count > 0).length,
+		placed: placed.reduce((sum, count) => sum + count, 0),
+		leftOut: texts.reduce((sum, page) => sum + Math.max(0, transcriptWords(page.text).length - placedOn(page.embedPage)), 0),
+	};
+}
+
+/** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
-	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
+	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<WriteUnitResult> {
-	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
 	const ocr: UnitOcr =
 		params.keepTranscript !== undefined
 			? // No OCR ran, so there is no fingerprint to stamp and nothing to store. A render-bump-only
@@ -1181,6 +1286,20 @@ async function writeUnit(
 				// its one catch-up round (ticket 03).
 				{ status: "ok", warnings: [], pages: null, text: params.keepTranscript, readPages: [] }
 			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage, params.reused);
+	// Once, after the transcript and before the empty-block check below: the transcript is what the
+	// render carries as its text layer.
+	let pdfBytes = params.pdfBytes;
+	let textLayer: TextLayerTally | null = null;
+	if (params.renderScenes !== undefined) {
+		const layer = await unitLayer(deps.layerReader, deps.ocrBackend, params.renderScenes, ocr, params.keepTranscript);
+		pdfBytes = await withTextLayer(params.pdfBytes, params.renderScenes, layer);
+		// Off macOS there is no layer to count (spec §2.6). The same bytes back mean no layer went on:
+		// none to lay, or one that could not be laid.
+		if (deps.layerReader !== undefined) {
+			textLayer = layerTally(params.renderScenes, layerTexts(ocr, params.keepTranscript, params.renderScenes.length), layer, pdfBytes !== params.pdfBytes);
+		}
+	}
+	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, pdfBytes);
 
 	const synced = deps.now();
 	// The quotes folded into the transcript: the note is rendered from them, and the store records how
@@ -1205,7 +1324,7 @@ async function writeUnit(
 	// would replace are known. The attachment above is already written and stays: the embed is
 	// correct, and it is what the retry would write again anyway.
 	const empty = await emptyBlockReport(deps.noteStore, params, fields, ocr.status, ocr.pages === null && ocr.text === "");
-	if (empty?.refuse === true) return { written: null, emptyBlock: empty.line };
+	if (empty?.refuse === true) return { written: null, emptyBlock: empty.line, textLayer };
 
 	// Asked before the write puts the note back: a row whose note is not on disk is one the user
 	// deleted by hand (the self-heal is what brought the document here), and write-back reads that
@@ -1272,6 +1391,7 @@ async function writeUnit(
 
 	return {
 		emptyBlock: empty?.line ?? null,
+		textLayer,
 		written: {
 			row: {
 				syncKey,
@@ -1930,7 +2050,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const { api, tagRouter, now, ocrBackend } = deps;
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
 	const newNoteId = deps.newNoteId ?? (() => crypto.randomUUID());
-	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, newNoteId, zotero: deps.zotero };
+	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, layerReader: deps.layerReader, newNoteId, zotero: deps.zotero };
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 
@@ -1956,7 +2076,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const rerenderDue = (row: SyncIndexRow) => isStaleRender(row) || ocrRetryDue(row, retryKey, startedAt, deps.manual ?? false);
 	const staleRenders = Object.values(previousIndex.rows).some(rerenderDue);
 	if (rootHash === previousIndex.rootHash && mappings === previousIndex.mappings && !staleRenders && !(await hasMissingActiveNote(deps.noteStore, previousIndex.rows))) {
-		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
+		return { index: previousIndex, documentIds: null, stopped: false, notesWritten: 0, unavailableOcrUnits: 0, failedOcrUnits: 0, editedNotesSkipped: 0, documentsSkipped: 0, shrunkNotes: 0, relaidDocuments: 0, reusedPageTranscriptions: 0, pageTranscriptionsConsidered: 0, textLayer: null, skipErrors: [], backendWarnings: [], zoteroNotices: [] };
 	}
 
 	const rows: Record<string, SyncIndexRow> = { ...previousIndex.rows };
@@ -1992,6 +2112,11 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	// answers it without a round of questions.
 	let reusedPageTranscriptions = 0;
 	let pageTranscriptionsConsidered = 0;
+	let textLayer: TextLayerTally | null = null;
+	const countLayer = (unit: TextLayerTally | null): void => {
+		if (unit === null) return;
+		textLayer = textLayer === null ? unit : { pages: textLayer.pages + unit.pages, layered: textLayer.layered + unit.layered, placed: textLayer.placed + unit.placed, leftOut: textLayer.leftOut + unit.leftOut };
+	};
 
 	// Keeps the previous rootHash (and mappings fingerprint) so an interrupted run is re-scanned
 	// rather than mistaken for done.
@@ -2023,6 +2148,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			relaidDocuments,
 			reusedPageTranscriptions,
 			pageTranscriptionsConsidered,
+			textLayer,
 			skipErrors,
 			backendWarnings,
 			zoteroNotices,
@@ -2177,8 +2303,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					{
 						source: pdfBacked ? { kind: "pdf", bytes: await getSourcePdf(), book: getBook } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
-						// `writeAttachment` derives it from, so the digest can link into it before the
-						// attachment is written and `writeUnit` needs no reordering.
+						// `writeAttachment` derives it from, so the digest can link into it before
+						// `writeUnit` writes the attachment.
 						embedPath: attachmentPath(attachmentsFolder, entry.id, pageId),
 						pages,
 					},
@@ -2249,6 +2375,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.start(unit.steps, entry.visibleName, tag, "rendering");
 
 			let pdfBytes: Uint8Array;
+			let renderScenes: RmPage[] | undefined;
 			let ocrPages: OcrPage[];
 			let highlights: HighlightGroup[];
 			// Non-null exactly for a PDF-backed unit, i.e. the units that get a digest instead of a transcript.
@@ -2264,6 +2391,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					ocrPages = notebookOcrPages(scenes, pageOrder);
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
+					renderScenes = scenes;
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
 					// Per page, not per document. `scenes.some(isDocumentText)` here is issue #115: one typed
@@ -2305,7 +2433,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			reusedPageTranscriptions += store.reused.size;
 			pageTranscriptionsConsidered += store.considered;
 
-			const { written, emptyBlock } = await writeUnit(
+			const { written, emptyBlock, textLayer: unitLayerTally } = await writeUnit(
 				writeDeps,
 				{
 					ocrPages: split.transcribe,
@@ -2316,6 +2444,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					transcriptFingerprint: store.key,
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.entryHash === entry.hash, ocrPages),
 					pdfBytes,
+					renderScenes,
 					highlights,
 					transcriptHighlights: split.highlights(highlights),
 					digest: digest.markdown,
@@ -2335,9 +2464,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
+			countLayer(unitLayerTally);
 			if (emptyBlock !== null) skipErrors.push(emptyBlock);
 			if (written === null) {
-				// Refused, so nothing was written. The row keeps its old entry hash and render version,
+				// Refused, so no note was written (the render was). The row keeps its old entry hash and render version,
 				// which is what reopens the document on the next run: whatever fixes the bug behind the
 				// empty block then repairs the note by itself. See the render failure above.
 				untouchedKeys.add(notebookSyncKey(entry.id, tag));
@@ -2391,6 +2521,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const folder = tagRouter.resolveFolder(tag)!;
 
 			let pdfBytes: Uint8Array;
+			let renderScenes: RmPage[] | undefined;
 			let ocrPages: OcrPage[];
 			let highlights: HighlightGroup[];
 			let digestPages: DigestPageInput[] | null = null;
@@ -2407,6 +2538,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = [await renderPage(api, entry.id, unit.pageId, pageHashes.get(unit.pageId))];
 					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles));
+					renderScenes = scenes;
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
 					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
 					// A single-page embed, so the `#page=` anchor is 1 -- as in the PDF branch above.
@@ -2425,7 +2557,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
-			const { written, emptyBlock } = await writeUnit(
+			const { written, emptyBlock, textLayer: unitLayerTally } = await writeUnit(
 				writeDeps,
 				{
 					ocrPages: split.transcribe,
@@ -2433,6 +2565,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					blank: isBlankUnit(ocrPages),
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.pageHash === pageHash, ocrPages),
 					pdfBytes,
+					renderScenes,
 					highlights,
 					transcriptHighlights: split.highlights(highlights),
 					digest: digest.markdown,
@@ -2453,6 +2586,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
+			countLayer(unitLayerTally);
 			if (emptyBlock !== null) skipErrors.push(emptyBlock);
 			if (written === null) {
 				// See the notebook-tag branch.
@@ -2512,13 +2646,18 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		if (row.status === "active" && !liveDocIds.has(row.docId)) rows[row.syncKey] = { ...row, status: "orphaned", entryHash: "" };
 	}
 
-	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, skipErrors, backendWarnings, zoteroNotices };
+	return { index: { rootHash, mappings, rows }, documentIds, stopped: false, notesWritten, unavailableOcrUnits, failedOcrUnits, editedNotesSkipped, documentsSkipped: skippedDocIds.size, shrunkNotes, relaidDocuments, reusedPageTranscriptions, pageTranscriptionsConsidered, textLayer, skipErrors, backendWarnings, zoteroNotices };
 }
 
 export interface ReTranscribeDeps {
 	api: SyncApi;
 	noteStore: NoteStore;
+	/** Where the run writes the render again, so its text layer follows the new transcript (spec §2.5). See `SyncDeps`. */
+	attachmentStore: AttachmentStore;
+	attachmentsFolder?: string;
 	ocrBackend: OcrBackend;
+	/** See `SyncDeps.layerReader`. */
+	layerReader?: LayerReader;
 	onProgress?: (progress: SyncProgress) => void;
 	/** Polled at note boundaries; see `SyncDeps.shouldStop`. A note already being re-transcribed finishes. */
 	shouldStop?: () => boolean;
@@ -2539,20 +2678,30 @@ export interface ReTranscribeDeps {
  * A notebook's pages are classified the way the sync classifies them, so a page of typed text is
  * named rather than sent -- which makes the command cheaper, not dearer (ticket 06). Whether such a
  * page is *named* is the caller's call, because it depends on what the note already carries.
+ *
+ * `scenes` are the pages a notebook or page note's render is drawn from, `null` for a PDF-backed row,
+ * whose PDF gets no layer and is therefore not written again (spec §2.3).
  */
-async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, pdfBacked: boolean): Promise<OcrPage[] | null> {
+async function ocrPagesForRow(
+	api: SyncApi,
+	docId: string,
+	row: SyncIndexRow,
+	docPages: DocPageRef[],
+	pageHashes: Map<string, string>,
+	pdfBacked: boolean,
+): Promise<{ pages: OcrPage[]; scenes: RmPage[] | null } | null> {
 	if (row.pageId === null) {
-		if (pdfBacked) return annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes));
+		if (pdfBacked) return { pages: annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes)), scenes: null };
 		const scenes = await Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id))));
-		return notebookOcrPages(scenes, docPages.map((page) => page.id)).map((page, index) => ({ ...page, typed: isDocumentText(scenes[index]) }));
+		return { pages: notebookOcrPages(scenes, docPages.map((page) => page.id)).map((page, index) => ({ ...page, typed: isDocumentText(scenes[index]) })), scenes };
 	}
 	const pageIndex = docPages.findIndex((candidate) => candidate.id === row.pageId);
 	if (pageIndex === -1) return null; // the tagged page no longer exists on the device
 	// A single-page embed, so the `#page=` anchor is 1 -- matching the page-tag branch of `runSync`.
 	const labels = { pageLabel: pageIndex + 1, embedPage: 1 };
-	if (pdfBacked) return [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }];
+	if (pdfBacked) return { pages: [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }], scenes: null };
 	const scene = await renderPage(api, docId, row.pageId, pageHashes.get(row.pageId));
-	return [{ scene, ...labels, typed: isDocumentText(scene) }];
+	return { pages: [{ scene, ...labels, typed: isDocumentText(scene) }], scenes: [scene] };
 }
 
 /**
@@ -2621,6 +2770,7 @@ interface ReTranscribeDoc {
 	readonly pdfBacked: boolean;
 	readonly docPages: DocPageRef[];
 	readonly pageHashes: Map<string, string>;
+	readonly images: DocumentFiles["images"];
 }
 
 /**
@@ -2644,7 +2794,8 @@ type ReTranscribeRowOutcome =
 
 /**
  * Re-transcribing exactly one already-synced row: render its pages, run OCR, rewrite just its
- * transcript, and hand back the row with the refreshed `blockHash` and per-page store.
+ * transcript and -- for a notebook or page note -- its render, whose text layer follows the transcript,
+ * and hand back the row with the refreshed `blockHash` and per-page store.
  *
  * Extracted so both commands run the same body -- `reTranscribeAll` per row of every document,
  * `reTranscribeNote` once. Everything about a *run* stays with the caller (the listing, the pre-scan,
@@ -2659,18 +2810,24 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 	// not, as it looks, a pure OCR path.
 	bar.start(reTranscribeSteps(row, docPages), entry.visibleName, row.tag, "rendering");
 	const noteHasDigest = extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
-	let ocrPages: OcrPage[] | null;
+	let rendered: Awaited<ReturnType<typeof ocrPagesForRow>>;
+	// Drawn here, before a page is sent, so a render that fails costs nothing and leaves the note as it
+	// was. None for an empty notebook, which `renderPagesToPdf` refuses and which has nothing to search.
+	let render: { scenes: RmPage[]; pdf: Uint8Array } | null = null;
 	try {
-		ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
+		rendered = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
+		const scenes = rendered?.scenes;
+		if (scenes?.length) render = { scenes, pdf: await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, doc.images)) };
 	} catch (error) {
-		console.warn(`Tagged Sync: failed to re-fetch "${entry.visibleName}" for re-transcribe, skipping`, error);
+		console.warn(`Tagged Sync: failed to re-fetch or render "${entry.visibleName}" for re-transcribe, skipping`, error);
 		bar.finish(); // counted before it failed; the bar must still reach its total
 		return { kind: "fetch-failed", error };
 	}
-	if (ocrPages === null) {
+	if (rendered === null) {
 		bar.finish();
 		return { kind: "no-pages" };
 	}
+	const ocrPages = rendered.pages;
 	bar.step("transcribing");
 
 	// `splitForTranscript`'s three-way split, read back off the note. A typed page the digest
@@ -2714,14 +2871,28 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 		bar.finish();
 		return { kind: "not-written" };
 	}
+	// After the note, so a note that refused the transcript keeps the render that matches it. The path is
+	// the sync's own, not the note's embed, which a hand-broken note may no longer carry: same file, same
+	// pages. A page that kept its earlier text keeps it in the layer too (`pages`, not `ocr.pages`).
+	//
+	// A render that cannot be written leaves the old one in place and must not throw: the note is already
+	// rewritten, and losing its refreshed `blockHash` would make the next sync read it as a hand edit.
+	if (render !== null) {
+		try {
+			const layer = await unitLayer(deps.layerReader, ocrBackend, render.scenes, { ...ocr, pages }, undefined);
+			await writeAttachment(deps.attachmentStore, deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER, entry.id, row.pageId, await withTextLayer(render.pdf, render.scenes, layer));
+		} catch (error) {
+			console.warn(`Tagged Sync: could not write the render of "${entry.visibleName}" again, the old one stays`, error);
+		}
+	}
 	bar.finish();
 
 	// The store the *sync* will read next (issue #117, ticket 04). Without it the user pays
 	// twice: once for this command, and again on the next sync of every notebook it touched --
 	// which would make "Re-transcribe all synced notes" dearer than it was before the store existed.
-	// `renderVersion` is deliberately not touched: this rewrites a transcript, not an
-	// attachment, so a row whose render is stale keeps saying so and its typed and anchored
-	// pages are re-read on the next sync (ticket 02's per-page carve-out).
+	// `renderVersion` is deliberately not touched, though the render was written again above: a row
+	// whose render is stale keeps saying so, and its typed and anchored pages are re-read on the next
+	// sync (ticket 02's per-page carve-out; searchable-pdf spec §2.5).
 	//
 	// Every term here is about the row and none about the run, so both commands store on the same
 	// terms by construction (selective-re-transcribe spec §5.6).
@@ -2780,10 +2951,10 @@ export interface ReTranscribeAllResult {
 }
 
 /**
- * Re-runs OCR over every active note and rewrites just its transcript (spec §8.4). Re-fetches each
+ * Re-runs OCR over every active note and rewrites just its transcript and render (spec §8.4). Re-fetches each
  * doc's current content once and re-derives the same OCR input the sync would produce, so a note's
  * transcript is refreshed to match the backend now selected -- typically to replace a garbage
- * transcript from an earlier backend. The embed and the user's free area are never touched.
+ * transcript from an earlier backend. The embed line and the user's free area are never touched.
  */
 export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex): Promise<ReTranscribeAllResult> {
 	const { api, noteStore } = deps;
@@ -2828,7 +2999,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 		}
 
 		const pdfBacked = isPdfBacked(content);
-		const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
+		const { pages: pageHashes, images } = await getDocumentFiles(api, entry.id, entry.hash);
 		const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
 
 		for (const row of rowsByDoc.get(docId)!) {
@@ -2837,7 +3008,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			// whether a transcript may grow beside a digest, and which quotes have to be written back
 			// with it -- both needed before the transcript is built, not after (ticket 06).
 			const noteContent = (await noteStore.read(row.notePath)) ?? "";
-			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes }, noteContent, bar);
+			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes, images }, noteContent, bar);
 			if (outcome.kind === "written" || outcome.kind === "unread") unreadPages += outcome.unreadPages;
 			if (outcome.kind !== "written") continue;
 			updated++;
@@ -2897,7 +3068,7 @@ export interface ReTranscribeNoteDeps extends Omit<ReTranscribeDeps, "saveIndex"
 }
 
 /**
- * Re-runs OCR over exactly one already-synced note and rewrites just its transcript.
+ * Re-runs OCR over exactly one already-synced note and rewrites just its transcript and render.
  *
  * The same body as `reTranscribeAll` per row (see `reTranscribeRow`), with the run around it dropped
  * to what one note needs: no row grouping, no pre-scan -- it would fetch the content and page hashes
@@ -2921,7 +3092,7 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 
 	const content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
 	const pdfBacked = isPdfBacked(content);
-	const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
+	const { pages: pageHashes, images } = await getDocumentFiles(api, entry.id, entry.hash);
 	const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
 	// Read before rendering rather than after, for the reason `reTranscribeAll` reads it there: what
 	// the note already carries decides whether a transcript may grow beside a digest at all.
@@ -2946,7 +3117,7 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	// The dialog may have sat open for a while, and stopping is still allowed while it did.
 	if (shouldStop()) return unchanged("stopped");
 
-	const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes }, noteContent, progressTicker(report, pageCount));
+	const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes, images }, noteContent, progressTicker(report, pageCount));
 	// A whole-vault run logs this and moves to the next note. There is no next note here, and a silent
 	// success over a note nothing was written to would be a lie, so the error reaches the caller and
 	// is explained as any other transport failure is.

@@ -13,7 +13,7 @@
 
 import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, homedir, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import { MODEL_GENERATIONS, RUNTIME_RELEASE } from "../../src/local-model-artefacts";
@@ -25,7 +25,7 @@ import { encodeGrayscalePng } from "../../src/png-encoder";
 import { parseRmV6 } from "../../src/rm-parser";
 import { RENDER_VERSION } from "../../src/sync-engine";
 import { evaluateBackend, loadReferencePages } from "../nightly/ocr";
-import { type LocalFigure, promptSha } from "./figures";
+import { figureBaseline, type LocalFigure, promptSha } from "./figures";
 
 const FIXTURES = join(process.cwd(), "test-fixtures", "ocr-reference");
 const OUT_DIR = join(process.cwd(), "docs", "ocr-local");
@@ -106,8 +106,10 @@ async function main() {
 		console.log(`${page.id} ${page.trait.padEnd(26)} ${(ms / 1000).toFixed(1).padStart(6)} s  ${peak ? (peak / 1024 ** 3).toFixed(2) + " GB" : "  ?   "}${parts.length > 1 ? `  ${parts.length} pieces` : ""}`);
 	}
 
-	const result = evaluateBackend(pages, outcomes, {});
-	console.log(`\nstatus ${result.status}   median CER ${result.medianCer === null ? "n/a" : (result.medianCer * 100).toFixed(2) + " %"}\n`);
+	const out = join(OUT_DIR, `${generation.dir}.json`);
+	const committed = existsSync(out) ? (JSON.parse(readFileSync(out, "utf8")) as LocalFigure) : undefined;
+	const result = evaluateBackend(pages, outcomes, figureBaseline(committed));
+	console.log(`\nstatus ${result.status}   median CER ${result.medianCer === null ? "n/a" : (result.medianCer * 100).toFixed(2) + " %"}${result.reason ? `   (${result.reason})` : ""}\n`);
 	for (const page of pages) {
 		const m = result.pages[page.id];
 		console.log(`${page.id} ${page.trait.padEnd(26)} ${m?.cer === null || m?.cer === undefined ? (m?.problem ?? "n/a") : (m.cer * 100).toFixed(2) + " %"}`);
@@ -130,12 +132,15 @@ async function main() {
 		renderVersion: RENDER_VERSION,
 		contextTokens: generation.contextTokens,
 		splitsTallPages: generation.splitsTallPages,
+		encoderOnCpu: generation.encoderOnCpu,
 		status: result.status,
 		medianCer: result.medianCer,
 		pages: Object.fromEntries(pages.map((page) => [page.id, { ...result.pages[page.id], ...timings[page.id] }])),
 	};
+	// A catastrophe against the committed figure is a broken run until shown otherwise (#218), and the
+	// settings card would quote it to every user. A real regression is accepted by deleting the file.
+	if (result.status === "catastrophe") throw new Error(`not written: ${result.reason}. If the model really reads this badly now, delete ${out} and measure again`);
 	mkdirSync(OUT_DIR, { recursive: true });
-	const out = join(OUT_DIR, `${generation.dir}.json`);
 	writeFileSync(out, `${JSON.stringify(figure, null, "\t")}\n`);
 	console.log(`\n-> ${out}`);
 }

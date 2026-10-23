@@ -348,6 +348,20 @@
       file: src/local-ocr-backend.test.ts
       test: "pageArgs > sends one image per process, at temperature zero and a fixed seed"
 
+    - id: E29.25
+      scenario: The argv for a generation whose vision encoder must stay off the GPU
+      expect: '`--no-mmproj-offload` is passed, and for every other generation it is not. On an M5 Max with macOS 27, Qwen2.5-VL''s encoder on Metal turns every page into "@@@@" (#218)'
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "pageArgs > keeps the vision encoder on the CPU when the generation says so, and on the GPU otherwise"
+
+    - id: E29.26
+      scenario: Where each shipped generation's vision encoder runs
+      expect: Qwen2.5-VL-7B's on the CPU, on every machine -- the fault shows only in the output, so there is nothing to detect it by beforehand. Both Qwen3-VL encoders stay on the GPU, where they read correctly
+      layer: unit
+      file: src/local-model-download.test.ts
+      test: "where each generation's vision encoder runs > keeps Qwen2.5-VL's on the CPU, and every other generation's on the GPU"
+
     - id: E29.21
       scenario: A ready install that is not on the newest generation
       expect: An offer carrying both error rates and the real download size, the runtime archive included -- so the card can state a trade rather than assert an improvement

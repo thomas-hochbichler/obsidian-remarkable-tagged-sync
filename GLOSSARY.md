@@ -21,3 +21,14 @@ the person using it lives in [README.md](README.md).
 - **Write-back** — the highlights and margin notes of a Zotero-linked document becoming native
   Zotero annotations in the user's own library. Add-and-refresh only: a field the user edited in
   Zotero wins, and is never overwritten again.
+- **Render** — the PDF of a synced document that the plugin writes into the vault and embeds at
+  the top of its note: the pages with everything you wrote and drew on them. The render is not the
+  transcript, and not the source PDF on the tablet.
+- **Text layer** — the transcript, laid over the handwriting in the render as invisible text, each
+  word on the word it transcribes. It changes nothing you can see on the page; it only gives
+  search something to find. The words are the transcript's words, so the layer and the note say
+  the same thing. Not the text a PDF from elsewhere already carries, which the digest quotes
+  from: that is the *source PDF's own text*.
+- **Searchable PDF** — a render that carries a text layer: searching it finds the handwritten word.
+  *Searchable PDF* names the result, *text layer* the feature; *searchable text* still means the
+  transcript under the note.

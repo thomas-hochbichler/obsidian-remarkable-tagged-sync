@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import type { ModelGeneration } from "../../src/local-model-artefacts";
 import { TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
-import type { BackendStatus, PageMeasurement } from "../nightly/ocr";
+import type { BackendStatus, BaselineEntry, PageMeasurement } from "../nightly/ocr";
 
 export interface LocalFigure {
 	schema: 1;
@@ -32,6 +32,8 @@ export interface LocalFigure {
 	renderVersion: number;
 	contextTokens: number | null;
 	splitsTallPages: boolean;
+	/** `ModelGeneration.encoderOnCpu` at measurement time (#218). */
+	encoderOnCpu: boolean;
 	status: BackendStatus;
 	medianCer: number | null;
 	pages: Record<string, PageMeasurement & { ms: number; peakRssBytes: number | null }>;
@@ -70,6 +72,7 @@ export function checkFigure(figure: LocalFigure, current: CurrentPins): string[]
 	if (figure.mmprojSha256 !== pinned("mmproj.gguf")) problems.push(`${figure.generation}: projector file is not the pinned one`);
 	if (figure.contextTokens !== generation.contextTokens) problems.push(`${figure.generation}: context pin changed (${figure.contextTokens} -> ${generation.contextTokens})`);
 	if (figure.splitsTallPages !== generation.splitsTallPages) problems.push(`${figure.generation}: tall-page splitting changed`);
+	if (figure.encoderOnCpu !== generation.encoderOnCpu) problems.push(`${figure.generation}: where the vision encoder runs changed`);
 	if (figure.medianCer === null || Math.abs(figure.medianCer - generation.measured.medianCer) >= 0.00005) {
 		problems.push(`${figure.generation}: the settings card says ${generation.measured.medianCer}, the figure measured ${figure.medianCer}`);
 	}
@@ -77,6 +80,17 @@ export function checkFigure(figure: LocalFigure, current: CurrentPins): string[]
 		problems.push(`${figure.generation}: the settings card dates it ${generation.measured.on}, the figure is from ${figure.measuredAt.slice(0, 10)}`);
 	}
 	return problems;
+}
+
+/**
+ * The committed figure as the baseline a re-measurement is judged against, per page. Without one,
+ * `evaluateBackend` has nothing to compare with and calls any output a pass -- Qwen2.5-VL reading
+ * every page as "@@@@" (#218, 328 % median) included.
+ */
+export function figureBaseline(figure: LocalFigure | undefined): Record<string, BaselineEntry> {
+	return Object.fromEntries(
+		Object.entries(figure?.pages ?? {}).flatMap(([id, page]) => (page.cer === null ? [] : [[id, { cer: page.cer }]])),
+	);
 }
 
 /** Generations this build can fetch that have no figure. A model offered without a number is a claim. */
