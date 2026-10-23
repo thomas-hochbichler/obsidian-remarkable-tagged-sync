@@ -3132,6 +3132,22 @@ describe("a unit that would be written with neither section", () => {
 		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
 	});
 
+	// The render is written after the transcript and before the refusal is decided, so the refused
+	// sync still leaves the new render behind -- the retry would write the same file.
+	it("writes the render once, after the transcript, even when the empty block is refused", async () => {
+		const first = { ...baseDeps(onePageNotebook("root-15-a", "hash-1"), { sync: "Target" }), ocrBackend: perPageOcrBackend("real text") };
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+
+		const ocrBackend = emptyPerPageOcrBackend();
+		const second = { ...baseDeps(onePageNotebook("root-15-a2", "hash-2"), { sync: "Target" }), noteStore: first.noteStore, ocrBackend };
+		const result = await runSync(second, synced.index);
+
+		expect(result.skipErrors).toContainEqual(expect.stringContaining(EMPTY_LINE));
+		const writes = vi.mocked(second.attachmentStore.writeBinary).mock;
+		expect(writes.calls.map(([path]) => path)).toEqual(["tagged-sync/attachments/doc-1.pdf"]);
+		expect(writes.invocationCallOrder[0]).toBeGreaterThan(vi.mocked(ocrBackend.recognize).mock.invocationCallOrder[0]);
+	});
+
 	// Desk test 2026-09-13: the reader deleted a page's whole annotation layer; the render came back
 	// blank and the note kept quoting the old marks, because the net took the empty block for a loss.
 	// A unit that is blank on the tablet is the explanation it lacked: there is nothing left that

@@ -50,6 +50,13 @@
       file: src/pdf-hidden-window.test.ts
       test: "the sync's PDF path while Obsidian's window is hidden (issue #211) > does not wait on the window's timer while writing a notebook either"
 
+    - id: D1.3
+      scenario: A notebook is synced, and its block comes back empty and is refused
+      expect: The render is written once, after the transcript and before the empty-block check, so the refused sync still leaves it behind. The transcript comes first because the render is about to carry it as its text layer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "a unit that would be written with neither section > writes the render once, after the transcript, even when the empty block is refused"
+
 - feature: D3
   name: Pen colours, widths and tools
   code: src/pdf-renderer.ts

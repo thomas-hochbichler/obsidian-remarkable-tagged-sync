@@ -1167,13 +1167,12 @@ function storedPages(readPages: { id: string; label: number }[], hashOf: (pageId
 	return readPages.map((page) => ({ id: page.id, hash: hashOf(page.id), label: page.label, quotes: quotesByLabel.get(page.label) ?? 0 }));
 }
 
-/** Writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
+/** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<WriteUnitResult> {
-	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
 	const ocr: UnitOcr =
 		params.keepTranscript !== undefined
 			? // No OCR ran, so there is no fingerprint to stamp and nothing to store. A render-bump-only
@@ -1181,6 +1180,9 @@ async function writeUnit(
 				// its one catch-up round (ticket 03).
 				{ status: "ok", warnings: [], pages: null, text: params.keepTranscript, readPages: [] }
 			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage, params.reused);
+	// Once, after the transcript and before the empty-block check below: the transcript is what the
+	// render is about to carry as its text layer.
+	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
 
 	const synced = deps.now();
 	// The quotes folded into the transcript: the note is rendered from them, and the store records how
@@ -2177,8 +2179,8 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					{
 						source: pdfBacked ? { kind: "pdf", bytes: await getSourcePdf(), book: getBook } : { kind: "typed-text" },
 						// The embed the note is about to carry. It is derived from the same two ids
-						// `writeAttachment` derives it from, so the digest can link into it before the
-						// attachment is written and `writeUnit` needs no reordering.
+						// `writeAttachment` derives it from, so the digest can link into it before
+						// `writeUnit` writes the attachment.
 						embedPath: attachmentPath(attachmentsFolder, entry.id, pageId),
 						pages,
 					},
@@ -2337,7 +2339,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			);
 			if (emptyBlock !== null) skipErrors.push(emptyBlock);
 			if (written === null) {
-				// Refused, so nothing was written. The row keeps its old entry hash and render version,
+				// Refused, so no note was written (the render was). The row keeps its old entry hash and render version,
 				// which is what reopens the document on the next run: whatever fixes the bug behind the
 				// empty block then repairs the note by itself. See the render failure above.
 				untouchedKeys.add(notebookSyncKey(entry.id, tag));
