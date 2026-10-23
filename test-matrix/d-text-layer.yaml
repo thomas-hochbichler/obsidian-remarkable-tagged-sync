@@ -1,0 +1,118 @@
+# The text layer (1.9.0, searchable-pdf spec): the transcript, as invisible text, laid over the
+# handwriting in the render, each word on the word it transcribes.
+
+- feature: D24
+  name: Text layer in the render
+  code: src/text-layer.ts
+  tier: free
+  scenarios:
+    - id: D24.1
+      scenario: Vision's words are laid over a notebook render
+      expect: Each word is written invisibly (3 Tr) over its box, in Vision's reading order, followed by a space, squeezed to its box's width
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > writes each word invisibly over its box, in reading order, each followed by a space"
+
+    - id: D24.2
+      scenario: The words of one line came back with boxes of different heights
+      expect: All of them are set at the line's height, so a viewer's highlight does not jump along the line
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > sets every word of a line at the line's height, however tall the word's own box is"
+
+    - id: D24.3
+      scenario: Vision ran two words together under one box, or gave a word none
+      expect: The line is shared out by characters, spaces included, so every word still lands on its own stretch of the line
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > shares a line out by characters where Vision gave its words no boxes of their own"
+
+    - id: D24.4
+      scenario: A word carries a character Helvetica's WinAnsi set has no code for
+      expect: That character becomes the render's own substitute, the rest of the word stays findable
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > writes a character Helvetica has no code for as the render's own substitute, keeping the rest of the word"
+
+    - id: D24.5
+      scenario: A render gets its text layer
+      expect: The page looks exactly as before -- the render's content stream is kept whole, the page size is unchanged, and the layer shows nothing
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > leaves the drawing as it was: the render's own stream is kept whole, and nothing but the layer is shown"
+
+    - id: D24.6
+      scenario: One page of a render has no words to place
+      expect: That page has no layer, the others keep theirs
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > gives a page with no words no layer, and the others theirs"
+
+    - id: D24.7
+      scenario: No page of a render has a word to place
+      expect: The render's bytes come back untouched, so the PDF is exactly what it was without the feature
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > hands the render back untouched when no page has a word to place"
+
+    - id: D24.8
+      scenario: Reference page 15, written on below the screen, so its render grew downwards
+      expect: A word at the bottom of the ink lands on the grown part of the page, not below it
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "addTextLayer > puts a word written below the screen on the grown page, where it was written"
+
+    - id: D24.9
+      scenario: A Vision box, normalised on the page's ink bitmap, is placed on the page
+      expect: It maps through scene px into the frame the render drew the page in
+      layer: unit
+      file: src/text-layer.test.ts
+      test: "visionBoxToPdf > maps a box normalised on the ink bitmap onto the page it was drawn on"
+
+    - id: D24.10
+      scenario: A notebook is synced with Apple Vision as the backend
+      expect: The render carries Vision's words as its text layer, from the same reading that wrote the transcript -- Vision is not run a second time, and the PDF is written once
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > lays Vision's words invisibly over the notebook's render, from the one reading that wrote the transcript"
+
+    - id: D24.11
+      scenario: A tagged page's own note (`<docId>-<pageId>.pdf`) is synced with Apple Vision
+      expect: Its render gets the layer the same way, no special case
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > lays the words over a page note's render the same way"
+
+    - id: D24.12
+      scenario: Vision could not read one page of a notebook, so it has no boxes for it
+      expect: That page has no layer, the other pages of the notebook have theirs
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives a page Vision could not read no layer, and the other pages theirs"
+
+    - id: D24.13
+      scenario: A notebook page carries typed text beside the handwriting
+      expect: The typed text is in the transcript but gets no invisible copy -- it is real text in the render already, and a copy would make every search hit it twice
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > gives the text typed on a page no invisible copy, while the transcript still carries it"
+
+    - id: D24.14
+      scenario: Transcription is off
+      expect: The render is written without a layer. Off reads nothing, so there is nothing to place and no Vision to run
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > writes the render without a layer when transcription is off"
+
+    - id: D24.15
+      scenario: Apple Vision cannot run here (Windows, Linux)
+      expect: The render is written without a layer, as before 1.9.0
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > writes the render without a layer when Apple Vision cannot run here (Windows, Linux)"
+
+    - id: D24.16
+      scenario: On a Mac, the reference pages are read by the real Vision driver and laid over their render
+      expect: PDFKit -- what Preview searches with -- finds each placed word again, on its box
+      layer: e2e
+      gap: searchable-pdf-22 # the nightly's Vision job takes it; until then `npm run check:text-layer` on a Mac, by hand

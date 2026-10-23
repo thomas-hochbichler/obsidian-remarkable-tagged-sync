@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { PDFDocument } from "pdf-lib";
+import { inflateSync } from "node:zlib";
+import { PDFArray, PDFDocument, PDFName, type PDFRawStream } from "pdf-lib";
 import type { Content, CPages, DocumentContent, Entry, Metadata } from "rmapi-js";
 import { describe, expect, it, vi } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
@@ -37,7 +38,7 @@ import {
 import { mappingFingerprint, TagRouter } from "./tag-router";
 import { transcriptFingerprint } from "./transcript-store";
 import { OffOcrBackend } from "./off-ocr-backend";
-import { UnavailableOcrBackend } from "./vision-ocr-backend";
+import { UnavailableOcrBackend, type VisionBatchResult, VisionOcrBackend } from "./vision-ocr-backend";
 
 // The real pipeline runs in every test but one: every partial failure inside it is deliberately
 // caught, so a build that *throws* -- which the sync engine still has to survive -- can only be
@@ -3223,6 +3224,113 @@ describe("a unit that would be written with neither section", () => {
 
 		expect(result.unavailableOcrUnits).toBe(1);
 		expect(result.skipErrors).not.toContainEqual(expect.stringContaining(EMPTY_LINE));
+	});
+});
+
+describe("the text layer (searchable PDF)", () => {
+	/** A box over the page's whole ink: every stroke counts as read, so Vision's rescue pass never runs. */
+	const WHOLE_PAGE = { x: 0, y: 0, w: 1, h: 1 };
+	/** What Vision reads on every page: one line of two words, each with a box of its own. */
+	const READ: VisionBatchResult = {
+		lines: ["Rapoldeck Hütte"],
+		boxes: [WHOLE_PAGE],
+		words: [
+			[
+				{ text: "Rapoldeck", box: { x: 0, y: 0, w: 0.6, h: 1 } },
+				{ text: "Hütte", box: { x: 0.7, y: 0, w: 0.3, h: 1 } },
+			],
+		],
+	};
+
+	/** Apple Vision as the backend, its driver answering each page from `answers` in turn (the last one repeats). */
+	function vision(...answers: VisionBatchResult[]) {
+		let read = 0;
+		const runBatch = vi.fn(async (images: Uint8Array[]) => images.map(() => answers[Math.min(read++, answers.length - 1)]));
+		return { backend: new VisionOcrBackend({ runBatch, probe: async () => true }), runBatch };
+	}
+
+	function notebook(rootHash: string, pageIds = ["page-a"]) {
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(pageIds) }) },
+			pageHashesByDoc: { "doc-1": Object.fromEntries(pageIds.map((id) => [id, `hash-${id}`])) },
+		});
+	}
+
+	/** The words of one page of a written attachment that are written invisibly -- the layer, and nothing the render shows. */
+	async function invisibleWords(store: AttachmentStore, path: string, page = 0): Promise<string[]> {
+		const doc = await embeddedPdf(store, path);
+		const contents = doc.getPage(page).node.Contents();
+		const refs = contents instanceof PDFArray ? contents.asArray() : contents ? [contents] : [];
+		const ops = refs
+			.map((ref) => {
+				const stream = doc.context.lookup(ref) as PDFRawStream;
+				return stream.dict.get(PDFName.of("Filter")) ? inflateSync(stream.contents).toString("latin1") : Buffer.from(stream.contents).toString("latin1");
+			})
+			.join("\n");
+		const layers = Array.from(ops.matchAll(/BT\n3 Tr\n([\s\S]*?)\nET/g), (match) => match[1]);
+		return layers.flatMap((layer) => Array.from(layer.matchAll(/<([0-9A-F]*)> Tj/g), (match) => Buffer.from(match[1], "hex").toString("latin1")));
+	}
+
+	it("lays Vision's words invisibly over the notebook's render, from the one reading that wrote the transcript", async () => {
+		const { backend, runBatch } = vision(READ);
+		const deps = { ...baseDeps(notebook("root-16-a"), { sync: "Target" }), ocrBackend: backend };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath)).toContain("Rapoldeck Hütte");
+		expect(runBatch).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+	});
+
+	it("lays the words over a page note's render the same way", async () => {
+		const api = fakeApi({
+			rootHash: "root-16-b",
+			entries: [documentEntry({ hash: "hash-1", visibleName: "Notebook", tags: [] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]), pageTags: [{ name: "todo", timestamp: 0, pageId: "page-a" }] }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const deps = { ...baseDeps(api, { todo: "Target" }), ocrBackend: vision(READ).backend };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1-page-a.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	it("gives a page Vision could not read no layer, and the other pages theirs", async () => {
+		const deps = { ...baseDeps(notebook("root-16-c", ["page-a", "page-b"]), { sync: "Target" }), ocrBackend: vision(READ, { error: "unreadable_image" }).backend };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual([]);
+	});
+
+	// Typed text is real text in the render already (`drawPageText`); a second, invisible copy would
+	// make every search hit it twice.
+	it("gives the text typed on a page no invisible copy, while the transcript still carries it", async () => {
+		const api = notebook("root-16-d");
+		api.raw.getHash = vi.fn(async () => HIGHLIGHTED_PAGE_BYTES);
+		vi.mocked(isDocumentText).mockReturnValueOnce(false); // the page's handwriting is transcribed, its typed text with it
+		const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: vision(READ).backend };
+
+		const result = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await deps.noteStore.read(result.index.rows[notebookSyncKey("doc-1", "sync")].notePath)).toContain("Cape Marrow");
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
+	});
+
+	it.each([
+		["transcription is off", (): OcrBackend => new OffOcrBackend()],
+		["Apple Vision cannot run here (Windows, Linux)", (): OcrBackend => new UnavailableOcrBackend("vision")],
+	])("writes the render without a layer when %s", async (_case, backend) => {
+		const deps = { ...baseDeps(notebook("root-16-e"), { sync: "Target" }), ocrBackend: backend() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
 	});
 });
 

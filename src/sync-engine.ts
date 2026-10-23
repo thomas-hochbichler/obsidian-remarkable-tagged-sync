@@ -32,6 +32,7 @@ import { validateSourcePdf } from "./pdf-source";
 import { applyFrontmatter, deviceModified, formatLocalMinute, namespacedTags, type NoteFrontmatter } from "./frontmatter";
 import { folderPathOf, inheritedFolderTagNames, isInTrash, tagNames } from "./remarkable-tags";
 import { parseRmV6, type RmHighlight, type RmPage } from "./rm-parser";
+import { addTextLayer, type LayerLine } from "./text-layer";
 import { isDocumentText } from "./scene-text";
 import { pageText, type ReuseCandidate, reusableTranscripts, type StoredPage, transcriptFingerprint, transcriptSections } from "./transcript-store";
 import type { TagRouter } from "./tag-router";
@@ -767,6 +768,8 @@ interface UnitOcr {
 	 * positional coupling ticket 04 refused.
 	 */
 	readPages: { id: string; label: number }[];
+	/** Where the words sit on each page the backend read with positions, by `embedPage`; absent when none was. */
+	layer?: ReadonlyMap<number, LayerLine[]>;
 }
 
 /**
@@ -819,8 +822,13 @@ async function runOcr(backend: OcrBackend, pages: OcrPage[], onPage?: () => void
 		return degraded(result.status, [...warnings, arity], pages, kept, sent, result.text);
 	}
 
-	for (const [index, page] of sent.entries()) kept.set(page, perPage[index]);
-	return { status: result.status, warnings, pages: transcriptPages(pages, kept), text: result.text, readPages: storablePages(pages, kept) };
+	const layer = new Map<number, LayerLine[]>();
+	for (const [index, page] of sent.entries()) {
+		kept.set(page, perPage[index]);
+		const lines = perPage[index].status === "ok" ? perPage[index].layer : undefined;
+		if (lines !== undefined) layer.set(page.embedPage, lines);
+	}
+	return { status: result.status, warnings, pages: transcriptPages(pages, kept), text: result.text, readPages: storablePages(pages, kept), layer };
 }
 
 /**
@@ -923,6 +931,12 @@ function splitForTranscript(
 interface UnitParams {
 	/** Finished attachment bytes: a `.rm` render for handwritten docs, the embedded source for PDF-backed ones. */
 	pdfBytes: Uint8Array;
+	/**
+	 * The scenes `renderPagesToPdf` drew `pdfBytes` from, in page order: set for a notebook render, the
+	 * one kind of attachment that takes a text layer. Absent for a PDF-backed unit, whose margin notes
+	 * get none (spec §2.3).
+	 */
+	renderScenes?: RmPage[];
 	/** The pages the transcript is responsible for -- see `splitForTranscript`. Empty for a PDF-backed doc, whose source is embedded rather than transcribed. */
 	ocrPages: OcrPage[];
 	/** How many pages the whole *unit* has, which a digest can make more than `ocrPages.length`. Decides whether the transcript prints page headings. */
@@ -1167,6 +1181,19 @@ function storedPages(readPages: { id: string; label: number }[], hashOf: (pageId
 	return readPages.map((page) => ({ id: page.id, hash: hashOf(page.id), label: page.label, quotes: quotesByLabel.get(page.label) ?? 0 }));
 }
 
+/**
+ * The render with the unit's text layer laid over it. A layer that cannot be made leaves the render as
+ * it was: the page still looks right, and only the search inside it is missing (spec §2.7).
+ */
+async function withTextLayer(pdf: Uint8Array, scenes: RmPage[], layer: ReadonlyMap<number, LayerLine[]>): Promise<Uint8Array> {
+	try {
+		return await addTextLayer(pdf, scenes, scenes.map((_, index) => layer.get(index + 1) ?? []));
+	} catch (error) {
+		console.warn("Tagged Sync: could not add the text layer, the render is written without it", error);
+		return pdf;
+	}
+}
+
 /** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
 	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
@@ -1181,8 +1208,9 @@ async function writeUnit(
 				{ status: "ok", warnings: [], pages: null, text: params.keepTranscript, readPages: [] }
 			: await runOcr(deps.ocrBackend, params.ocrPages, params.onPage, params.reused);
 	// Once, after the transcript and before the empty-block check below: the transcript is what the
-	// render is about to carry as its text layer.
-	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, params.pdfBytes);
+	// render carries as its text layer.
+	const pdfBytes = params.renderScenes === undefined ? params.pdfBytes : await withTextLayer(params.pdfBytes, params.renderScenes, ocr.layer ?? new Map());
+	const embedPath = await writeAttachment(deps.attachmentStore, deps.attachmentsFolder, params.docId, params.pageId, pdfBytes);
 
 	const synced = deps.now();
 	// The quotes folded into the transcript: the note is rendered from them, and the store records how
@@ -2251,6 +2279,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			bar.start(unit.steps, entry.visibleName, tag, "rendering");
 
 			let pdfBytes: Uint8Array;
+			let renderScenes: RmPage[] | undefined;
 			let ocrPages: OcrPage[];
 			let highlights: HighlightGroup[];
 			// Non-null exactly for a PDF-backed unit, i.e. the units that get a digest instead of a transcript.
@@ -2266,6 +2295,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					ocrPages = notebookOcrPages(scenes, pageOrder);
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles)); // throws on an empty notebook -- surfaced, not written as a blank note
+					renderScenes = scenes;
 					highlights = collectHighlights(scenes.map((scene, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: scene.highlights ?? [] })));
 					skipErrors.push(...renderNotes(scenes, (i) => `Page ${i + 1} of "${entry.visibleName}"`));
 					// Per page, not per document. `scenes.some(isDocumentText)` here is issue #115: one typed
@@ -2318,6 +2348,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					transcriptFingerprint: store.key,
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.entryHash === entry.hash, ocrPages),
 					pdfBytes,
+					renderScenes,
 					highlights,
 					transcriptHighlights: split.highlights(highlights),
 					digest: digest.markdown,
@@ -2393,6 +2424,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			const folder = tagRouter.resolveFolder(tag)!;
 
 			let pdfBytes: Uint8Array;
+			let renderScenes: RmPage[] | undefined;
 			let ocrPages: OcrPage[];
 			let highlights: HighlightGroup[];
 			let digestPages: DigestPageInput[] | null = null;
@@ -2409,6 +2441,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					const scenes = [await renderPage(api, entry.id, unit.pageId, pageHashes.get(unit.pageId))];
 					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
 					pdfBytes = await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, imageFiles));
+					renderScenes = scenes;
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: scenes[0].highlights ?? [] }]);
 					skipErrors.push(...renderNotes(scenes, () => `Page ${pageIndex} of "${entry.visibleName}"`));
 					// A single-page embed, so the `#page=` anchor is 1 -- as in the PDF branch above.
@@ -2435,6 +2468,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					blank: isBlankUnit(ocrPages),
 					keepTranscript: await reusableTranscript(deps.noteStore, unit.writtenRow, existingRow?.pageHash === pageHash, ocrPages),
 					pdfBytes,
+					renderScenes,
 					highlights,
 					transcriptHighlights: split.highlights(highlights),
 					digest: digest.markdown,

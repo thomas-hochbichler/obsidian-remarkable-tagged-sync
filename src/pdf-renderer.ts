@@ -562,6 +562,11 @@ export function notebookPageFrame(rmPage: RmPage, device: DeviceCanvas): DeviceC
 	return scrolledCanvas(rmPage, expandedCanvas(rmPage, device));
 }
 
+/** The device a notebook was drawn on: what its scenes declare, else what their ink implies. Each page's frame grows from it. */
+export function notebookCanvas(pages: RmPage[]): DeviceCanvas {
+	return declaredCanvas(pages) ?? detectCanvas(pages);
+}
+
 /**
  * Renders notebook pages to a PDF.
  *
@@ -575,7 +580,7 @@ export async function renderPagesToPdf(pages: RmPage[], images: ReadonlyMap<stri
 	// uploaded PDF) go through `renderAnnotatedPdf` instead and never reach here.
 	if (pages.length === 0) throw new Error("renderPagesToPdf: no pages to render");
 
-	const canvas = declaredCanvas(pages) ?? detectCanvas(pages);
+	const canvas = notebookCanvas(pages);
 	const doc = await PDFDocument.create();
 	const font = await doc.embedFont(StandardFonts.Helvetica);
 	const encodable = new Set(font.getCharacterSet());

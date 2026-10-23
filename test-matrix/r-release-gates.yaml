@@ -309,3 +309,10 @@
       layer: unit
       file: scripts/bundled-scripts.test.mjs
       test: "the scripts that bundle > resolves every import of measure:local"
+
+    - id: R4.11
+      scenario: The text-layer check on a Mac
+      expect: The same. It is run by hand before a release, so a broken import would otherwise surface only then
+      layer: unit
+      file: scripts/bundled-scripts.test.mjs
+      test: "the scripts that bundle > resolves every import of check:text-layer"

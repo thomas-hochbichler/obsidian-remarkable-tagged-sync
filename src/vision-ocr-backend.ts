@@ -6,9 +6,10 @@ import { inkBounds, type InkBounds, rasterizePage } from "./page-rasterizer";
 import { isHighlighterOrShader } from "./pdf-renderer";
 import { encodeGrayscalePng } from "./png-encoder";
 import type { RmPage, RmStroke } from "./rm-parser";
+import type { LayerLine } from "./text-layer";
 import { layoutText } from "./text-layout";
 
-/** One recognized line's box, normalized against the image it was read from, with a bottom-left origin. */
+/** One recognized line's (or word's) box, normalized against the image it was read from, with a bottom-left origin. */
 export interface VisionBox {
 	x: number;
 	y: number;
@@ -16,11 +17,18 @@ export interface VisionBox {
 	h: number;
 }
 
+/** One word of a recognized line, with the box `boundingBoxForRange` gave it -- null where it gave none. */
+export interface VisionWord {
+	text: string;
+	box: VisionBox | null;
+}
+
 /**
  * One image's outcome from a single Vision process: its recognized lines with the box of each, or an
- * image-level error (missing/unreadable). `lines` and `boxes` are index-aligned.
+ * image-level error (missing/unreadable). `lines` and `boxes` are index-aligned, and so is `words`,
+ * each line's words in the order they were read. `words` is absent from a driver that does not box them.
  */
-export type VisionBatchResult = { lines: string[]; boxes: VisionBox[]; revision?: number } | { error: string };
+export type VisionBatchResult = { lines: string[]; boxes: VisionBox[]; words?: VisionWord[][]; revision?: number } | { error: string };
 
 /**
  * Runs one `osascript`/Vision process over a batch of page PNGs and returns a per-image result in
@@ -224,6 +232,17 @@ function insertTypedText(read: ReadLines, page: RmPage): void {
 }
 
 /**
+ * The page pass's lines with their word boxes, for the text layer -- taken before the rescue pass and
+ * the typed text go in. A rescued line was read off a crop, so its boxes would place it on the wrong
+ * bitmap; typed text is real text in the render already.
+ */
+function pageLayer(result: VisionBatchResult): LayerLine[] {
+	if (!("lines" in result) || result.words === undefined) return [];
+	const { boxes, words } = result;
+	return result.lines.map((_, i) => ({ box: boxes[i], words: words[i] ?? [] })).filter((line) => line.words.length > 0);
+}
+
+/**
  * Native macOS OCR backend (spec §3): rasterizes each page with the shared
  * `rasterizePage` → `encodeGrayscalePng` pipeline, then hands the PNGs to Apple's Vision framework
  * via an injected `osascript` runner. Batches pages per process and caps parallelism to amortise
@@ -321,10 +340,12 @@ export class VisionOcrBackend implements OcrBackend {
 			// One entry per input page, in input order. The per-page outcome was always computed here --
 			// `VisionBatchResult` is `{ lines } | { error }` -- and used to be thrown away by a `.filter()`
 			// that dropped the empty pages, losing the error flag and the index alignment together.
-			const pageResults = reads.map((read): OcrPageResult => {
+			const pageResults = reads.map((read, index): OcrPageResult => {
 				if (read === null) return { status: "failed", text: "" };
 				const text = read.lines.join("\n").trim();
-				return text.length > 0 ? { status: "ok", text } : { status: "skipped", text: "" };
+				if (text.length === 0) return { status: "skipped", text: "" };
+				const layer = pageLayer(perPage[index]);
+				return layer.length > 0 ? { status: "ok", text, layer } : { status: "ok", text };
 			});
 			const text = pageResults
 				.filter((page) => page.status === "ok")

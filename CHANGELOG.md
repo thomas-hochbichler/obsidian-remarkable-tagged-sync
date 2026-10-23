@@ -12,6 +12,18 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Your handwriting is searchable inside the PDF itself.** On a Mac, the render -- the PDF of your
+  pages at the top of a notebook's note -- now carries your transcript as invisible text, each word
+  laid over the word you wrote. `Cmd+F` in Obsidian's PDF viewer and in Preview highlights the
+  handwritten word on the page, and Spotlight finds the PDF. The page looks exactly as before. It works
+  with every transcription backend: Apple Vision reads each page locally to find where the words sit,
+  and the words themselves come from your backend's transcript, so the PDF and the note say the same
+  thing. A word Vision cannot locate is left out of the PDF and stays in the transcript. There is no
+  setting, and it is free. On Windows and Linux the PDF has no text layer yet; the transcript under the
+  note is still searchable.
+
 ## [1.8.6] - 2026-10-18
 
 ### Fixed
