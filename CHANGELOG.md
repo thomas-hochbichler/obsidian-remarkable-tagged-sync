@@ -32,6 +32,9 @@ workflow publishes the section as the GitHub release body. See
   its render without the layer; *Re-transcribe this note* gives it one, but replaces your corrections in
   the transcript, so it asks first.
 
+- ***Re-transcribe* now rewrites the render as well**, with the same name and the same pages, so its
+  text layer follows the new transcript. It used to leave the render untouched.
+
 ### Fixed
 
 - **The older built-in model, Qwen2.5-VL-7B, no longer turns every page into `@@@@` on newer Macs.**

@@ -2611,7 +2611,12 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 export interface ReTranscribeDeps {
 	api: SyncApi;
 	noteStore: NoteStore;
+	/** Where the run writes the render again, so its text layer follows the new transcript (spec §2.5). See `SyncDeps`. */
+	attachmentStore: AttachmentStore;
+	attachmentsFolder?: string;
 	ocrBackend: OcrBackend;
+	/** See `SyncDeps.layerReader`. */
+	layerReader?: LayerReader;
 	onProgress?: (progress: SyncProgress) => void;
 	/** Polled at note boundaries; see `SyncDeps.shouldStop`. A note already being re-transcribed finishes. */
 	shouldStop?: () => boolean;
@@ -2632,20 +2637,30 @@ export interface ReTranscribeDeps {
  * A notebook's pages are classified the way the sync classifies them, so a page of typed text is
  * named rather than sent -- which makes the command cheaper, not dearer (ticket 06). Whether such a
  * page is *named* is the caller's call, because it depends on what the note already carries.
+ *
+ * `scenes` are the pages a notebook or page note's render is drawn from, `null` for a PDF-backed row,
+ * whose PDF gets no layer and is therefore not written again (spec §2.3).
  */
-async function ocrPagesForRow(api: SyncApi, docId: string, row: SyncIndexRow, docPages: DocPageRef[], pageHashes: Map<string, string>, pdfBacked: boolean): Promise<OcrPage[] | null> {
+async function ocrPagesForRow(
+	api: SyncApi,
+	docId: string,
+	row: SyncIndexRow,
+	docPages: DocPageRef[],
+	pageHashes: Map<string, string>,
+	pdfBacked: boolean,
+): Promise<{ pages: OcrPage[]; scenes: RmPage[] | null } | null> {
 	if (row.pageId === null) {
-		if (pdfBacked) return annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes));
+		if (pdfBacked) return { pages: annotationOcrPages(await annotatedPdfPages(api, docId, docPages, pageHashes)), scenes: null };
 		const scenes = await Promise.all(docPages.map((page) => renderPage(api, docId, page.id, pageHashes.get(page.id))));
-		return notebookOcrPages(scenes, docPages.map((page) => page.id)).map((page, index) => ({ ...page, typed: isDocumentText(scenes[index]) }));
+		return { pages: notebookOcrPages(scenes, docPages.map((page) => page.id)).map((page, index) => ({ ...page, typed: isDocumentText(scenes[index]) })), scenes };
 	}
 	const pageIndex = docPages.findIndex((candidate) => candidate.id === row.pageId);
 	if (pageIndex === -1) return null; // the tagged page no longer exists on the device
 	// A single-page embed, so the `#page=` anchor is 1 -- matching the page-tag branch of `runSync`.
 	const labels = { pageLabel: pageIndex + 1, embedPage: 1 };
-	if (pdfBacked) return [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }];
+	if (pdfBacked) return { pages: [{ scene: (await annotatedPdfPages(api, docId, [docPages[pageIndex]], pageHashes))[0]?.annotations ?? null, ...labels }], scenes: null };
 	const scene = await renderPage(api, docId, row.pageId, pageHashes.get(row.pageId));
-	return [{ scene, ...labels, typed: isDocumentText(scene) }];
+	return { pages: [{ scene, ...labels, typed: isDocumentText(scene) }], scenes: [scene] };
 }
 
 /**
@@ -2714,6 +2729,7 @@ interface ReTranscribeDoc {
 	readonly pdfBacked: boolean;
 	readonly docPages: DocPageRef[];
 	readonly pageHashes: Map<string, string>;
+	readonly images: DocumentFiles["images"];
 }
 
 /**
@@ -2737,7 +2753,8 @@ type ReTranscribeRowOutcome =
 
 /**
  * Re-transcribing exactly one already-synced row: render its pages, run OCR, rewrite just its
- * transcript, and hand back the row with the refreshed `blockHash` and per-page store.
+ * transcript and -- for a notebook or page note -- its render, whose text layer follows the transcript,
+ * and hand back the row with the refreshed `blockHash` and per-page store.
  *
  * Extracted so both commands run the same body -- `reTranscribeAll` per row of every document,
  * `reTranscribeNote` once. Everything about a *run* stays with the caller (the listing, the pre-scan,
@@ -2752,18 +2769,24 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 	// not, as it looks, a pure OCR path.
 	bar.start(reTranscribeSteps(row, docPages), entry.visibleName, row.tag, "rendering");
 	const noteHasDigest = extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
-	let ocrPages: OcrPage[] | null;
+	let rendered: Awaited<ReturnType<typeof ocrPagesForRow>>;
+	// Drawn here, before a page is sent, so a render that fails costs nothing and leaves the note as it
+	// was. None for an empty notebook, which `renderPagesToPdf` refuses and which has nothing to search.
+	let render: { scenes: RmPage[]; pdf: Uint8Array } | null = null;
 	try {
-		ocrPages = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
+		rendered = await ocrPagesForRow(api, entry.id, row, docPages, pageHashes, pdfBacked);
+		const scenes = rendered?.scenes;
+		if (scenes?.length) render = { scenes, pdf: await renderPagesToPdf(scenes, await fetchPageImages(api, scenes, doc.images)) };
 	} catch (error) {
-		console.warn(`Tagged Sync: failed to re-fetch "${entry.visibleName}" for re-transcribe, skipping`, error);
+		console.warn(`Tagged Sync: failed to re-fetch or render "${entry.visibleName}" for re-transcribe, skipping`, error);
 		bar.finish(); // counted before it failed; the bar must still reach its total
 		return { kind: "fetch-failed", error };
 	}
-	if (ocrPages === null) {
+	if (rendered === null) {
 		bar.finish();
 		return { kind: "no-pages" };
 	}
+	const ocrPages = rendered.pages;
 	bar.step("transcribing");
 
 	// `splitForTranscript`'s three-way split, read back off the note. A typed page the digest
@@ -2807,14 +2830,28 @@ async function reTranscribeRow(deps: ReTranscribeDeps, row: SyncIndexRow, doc: R
 		bar.finish();
 		return { kind: "not-written" };
 	}
+	// After the note, so a note that refused the transcript keeps the render that matches it. The path is
+	// the sync's own, not the note's embed, which a hand-broken note may no longer carry: same file, same
+	// pages. A page that kept its earlier text keeps it in the layer too (`pages`, not `ocr.pages`).
+	//
+	// A render that cannot be written leaves the old one in place and must not throw: the note is already
+	// rewritten, and losing its refreshed `blockHash` would make the next sync read it as a hand edit.
+	if (render !== null) {
+		try {
+			const layer = await unitLayer(deps.layerReader, ocrBackend, render.scenes, { ...ocr, pages }, undefined);
+			await writeAttachment(deps.attachmentStore, deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER, entry.id, row.pageId, await withTextLayer(render.pdf, render.scenes, layer));
+		} catch (error) {
+			console.warn(`Tagged Sync: could not write the render of "${entry.visibleName}" again, the old one stays`, error);
+		}
+	}
 	bar.finish();
 
 	// The store the *sync* will read next (issue #117, ticket 04). Without it the user pays
 	// twice: once for this command, and again on the next sync of every notebook it touched --
 	// which would make "Re-transcribe all synced notes" dearer than it was before the store existed.
-	// `renderVersion` is deliberately not touched: this rewrites a transcript, not an
-	// attachment, so a row whose render is stale keeps saying so and its typed and anchored
-	// pages are re-read on the next sync (ticket 02's per-page carve-out).
+	// `renderVersion` is deliberately not touched, though the render was written again above: a row
+	// whose render is stale keeps saying so, and its typed and anchored pages are re-read on the next
+	// sync (ticket 02's per-page carve-out; searchable-pdf spec §2.5).
 	//
 	// Every term here is about the row and none about the run, so both commands store on the same
 	// terms by construction (selective-re-transcribe spec §5.6).
@@ -2873,10 +2910,10 @@ export interface ReTranscribeAllResult {
 }
 
 /**
- * Re-runs OCR over every active note and rewrites just its transcript (spec §8.4). Re-fetches each
+ * Re-runs OCR over every active note and rewrites just its transcript and render (spec §8.4). Re-fetches each
  * doc's current content once and re-derives the same OCR input the sync would produce, so a note's
  * transcript is refreshed to match the backend now selected -- typically to replace a garbage
- * transcript from an earlier backend. The embed and the user's free area are never touched.
+ * transcript from an earlier backend. The embed line and the user's free area are never touched.
  */
 export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex): Promise<ReTranscribeAllResult> {
 	const { api, noteStore } = deps;
@@ -2921,7 +2958,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 		}
 
 		const pdfBacked = isPdfBacked(content);
-		const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
+		const { pages: pageHashes, images } = await getDocumentFiles(api, entry.id, entry.hash);
 		const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
 
 		for (const row of rowsByDoc.get(docId)!) {
@@ -2930,7 +2967,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			// whether a transcript may grow beside a digest, and which quotes have to be written back
 			// with it -- both needed before the transcript is built, not after (ticket 06).
 			const noteContent = (await noteStore.read(row.notePath)) ?? "";
-			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes }, noteContent, bar);
+			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes, images }, noteContent, bar);
 			if (outcome.kind === "written" || outcome.kind === "unread") unreadPages += outcome.unreadPages;
 			if (outcome.kind !== "written") continue;
 			updated++;
@@ -2990,7 +3027,7 @@ export interface ReTranscribeNoteDeps extends Omit<ReTranscribeDeps, "saveIndex"
 }
 
 /**
- * Re-runs OCR over exactly one already-synced note and rewrites just its transcript.
+ * Re-runs OCR over exactly one already-synced note and rewrites just its transcript and render.
  *
  * The same body as `reTranscribeAll` per row (see `reTranscribeRow`), with the run around it dropped
  * to what one note needs: no row grouping, no pre-scan -- it would fetch the content and page hashes
@@ -3014,7 +3051,7 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 
 	const content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
 	const pdfBacked = isPdfBacked(content);
-	const { pages: pageHashes } = await getDocumentFiles(api, entry.id, entry.hash);
+	const { pages: pageHashes, images } = await getDocumentFiles(api, entry.id, entry.hash);
 	const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
 	// Read before rendering rather than after, for the reason `reTranscribeAll` reads it there: what
 	// the note already carries decides whether a transcript may grow beside a digest at all.
@@ -3039,7 +3076,7 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	// The dialog may have sat open for a while, and stopping is still allowed while it did.
 	if (shouldStop()) return unchanged("stopped");
 
-	const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes }, noteContent, progressTicker(report, pageCount));
+	const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes, images }, noteContent, progressTicker(report, pageCount));
 	// A whole-vault run logs this and moves to the next note. There is no next note here, and a silent
 	// success over a note nothing was written to would be a lie, so the error reaches the caller and
 	// is explained as any other transport failure is.

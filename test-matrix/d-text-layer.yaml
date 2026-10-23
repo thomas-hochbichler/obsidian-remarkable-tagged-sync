@@ -352,3 +352,78 @@
       layer: unit
       file: src/vision-ocr-backend.test.ts
       test: "VisionOcrBackend.readLayer > reads nothing for no pages"
+
+- feature: D26
+  name: Re-transcribe writes the render too
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: D26.1
+      scenario: Re-transcribe this note, another backend on a Mac, every page read again
+      expect: The render is written once, at the same path with the same page count, its layer from the new transcript; the note still embeds it, and the row's renderVersion is unchanged
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > lays the new transcript over the same render when a page is read again (Re-transcribe this note)"
+
+    - id: D26.2
+      scenario: The same through Re-transcribe all synced notes
+      expect: The same -- both commands run one body
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > lays the new transcript over the same render when a page is read again (Re-transcribe all synced notes)"
+
+    - id: D26.3
+      scenario: One page read again, the other failed and kept its earlier text in the note
+      expect: The read page's layer carries the new text, the failed page's layer its earlier text
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > lays a page's earlier text over the render when the page could not be read again"
+
+    - id: D26.4
+      scenario: Every page failed (unread)
+      expect: The render is not written, like the note
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > leaves the render as it was when nothing could be read, like the note"
+
+    - id: D26.9
+      scenario: The note has no fence left, so the transcript has nowhere to go
+      expect: The render is not written either, so note and layer still agree
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > leaves the render as it was when the note has nowhere to write the transcript"
+
+    - id: D26.10
+      scenario: The note is rewritten, then writing the render fails
+      expect: Nothing throws; the old render stays and the refreshed blockHash still reaches the caller, so the next sync does not read the note as a hand edit
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > still hands back the refreshed block hash when the render cannot be written"
+
+    - id: D26.5
+      scenario: A note edited by hand, which the sync skips and leaves without a layer, is re-transcribed after the dialog
+      expect: Its render gets the layer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > gives a note edited by hand its layer"
+
+    - id: D26.6
+      scenario: The note no longer embeds its PDF (the embed line removed by hand)
+      expect: The render is still written, at the path the sync derives from the document and page
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > writes the render where the sync writes it when the note no longer embeds it"
+
+    - id: D26.7
+      scenario: A page note is re-transcribed
+      expect: Its single-page render is written with the new layer
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > writes a page note's render with the new layer"
+
+    - id: D26.8
+      scenario: An annotated PDF's note (no digest, margin notes off) is re-transcribed
+      expect: The transcript is rewritten; no render is written -- it gets no layer in 1.9.0
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > writes no render for an annotated PDF"

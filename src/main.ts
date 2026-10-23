@@ -52,7 +52,7 @@ import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
-import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncProgress } from "./sync-engine";
+import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
@@ -685,15 +685,8 @@ export default class TaggedSyncPlugin extends Plugin {
 					// path is derived from them -- see resolveFolderCasing for why (issue #73).
 					tagRouter: new TagRouter(await resolveTagMapCasing(this.app.vault, this.data.tagFolderMap)),
 					noteStore: createNoteStore(this.app),
-					attachmentStore: createAttachmentStore(this.app.vault),
-					attachmentsFolder: await resolveFolderCasing(
-						this.app.vault,
-						normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder)),
-					),
+					...(await this.renderDeps()),
 					ocrBackend: this.countedOcr(backend),
-					// Every backend's text layer is placed on Vision's boxes: the same Vision as the backend, so
-					// its probe runs once. None off a Mac or below macOS 13: the render gets no layer there (spec §2.6).
-					layerReader: visionPlatformSupported() ? visionBackend() : undefined,
 					marginNotes: this.data.marginNotes,
 					// The gate is re-asked per run, so a lapsed licence stops writing new keys without
 					// touching what is already in the vault -- a sync that keeps working, minus the Pro part.
@@ -904,8 +897,20 @@ export default class TaggedSyncPlugin extends Plugin {
 		new Notice(notice, LONG_NOTICE_MS);
 	}
 
+	/** What writing a render takes: the sync and both re-transcribe commands write the same PDF (searchable-pdf spec §2.5). */
+	private async renderDeps(): Promise<Pick<SyncDeps, "attachmentStore" | "attachmentsFolder" | "layerReader">> {
+		return {
+			attachmentStore: createAttachmentStore(this.app.vault),
+			// Resolved to the vault's real casing before any path is derived from it (issue #73).
+			attachmentsFolder: await resolveFolderCasing(this.app.vault, normalizePath(normalizeAttachmentsFolder(this.data.attachmentsFolder))),
+			// Every backend's text layer is placed on Vision's boxes: the same Vision as the backend, so
+			// its probe runs once. None off a Mac or below macOS 13: the render gets no layer there (spec §2.6).
+			layerReader: visionPlatformSupported() ? visionBackend() : undefined,
+		};
+	}
+
 	/**
-	 * Re-runs OCR over every already-synced note and rewrites just its transcript (spec §8.4). Opt-in
+	 * Re-runs OCR over every already-synced note and rewrites just its transcript and render (spec §8.4). Opt-in
 	 * and confirmed first, because for LLM-vision it re-fetches every `.rm` and spends money -- a
 	 * destructive-by-cost operation must never be automatic.
 	 */
@@ -961,6 +966,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
+					...(await this.renderDeps()),
 					ocrBackend: this.countedOcr(backend),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -999,7 +1005,7 @@ export default class TaggedSyncPlugin extends Plugin {
 	}
 
 	/**
-	 * Re-runs OCR over the one note on screen and rewrites just its transcript
+	 * Re-runs OCR over the one note on screen and rewrites just its transcript and render
 	 * (selective-re-transcribe spec §4). Repairing one bad transcript used to cost a whole-vault run.
 	 *
 	 * The order of the steps is the design: every free check runs before every expensive one, so no
@@ -1044,6 +1050,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
+					...(await this.renderDeps()),
 					ocrBackend: this.countedOcr(backend),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
