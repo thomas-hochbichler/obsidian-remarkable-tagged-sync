@@ -113,9 +113,10 @@
 
     - id: D24.16
       scenario: On a Mac, the reference pages are read by the real Vision driver and laid over their render
-      expect: PDFKit -- what Preview searches with -- finds each placed word again, on its box; with the ground truth as backend text on Vision's boxes too
-      layer: e2e
-      gap: searchable-pdf-22 # the nightly's Vision job takes it; until then `npm run check:text-layer` on a Mac, by hand
+      expect: PDFKit -- what Preview searches with -- finds each placed word again, with the ground truth as backend text on Vision's boxes too; how many on their box is a figure. The PDFKit run itself is `npm run nightly:vision` on the pinned macOS runner (by hand, `npm run check:text-layer`); this test pins its rule, that a word not found turns the Vision part into a catastrophe
+      layer: unit
+      file: test-support/nightly/vision.test.ts
+      test: "the Vision part's text layer check (searchable-pdf spec §7.4) > turns the part into a catastrophe when PDFKit does not find a ground-truth word the layer placed"
 
     - id: D24.17
       scenario: A word carries a letter outside WinAnsi (`Łódź`)

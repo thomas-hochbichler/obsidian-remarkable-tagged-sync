@@ -85,4 +85,19 @@ describe("the commit subject", () => {
 		});
 		expect(commitSubject(verdict)).toBe("chore(nightly): ocr unknown · perf unknown · vision pass (median CER 17.4 %) [skip ci]");
 	});
+
+	// What every non-Vision backend's text layer gets: the share of a perfect transcript that finds a
+	// place on tonight's Vision boxes (searchable-pdf spec §7.4). The OS moves it as it moves the CER.
+	it("carries the share of ground-truth words placed on Vision's boxes beside the Vision median", () => {
+		const textLayer = { groundTruth: { words: 784, placed: 684, found: 684, onBox: 679 }, vision: { words: 742, ownBoxes: 742, placed: 742, found: 742, onBox: 737 } };
+		const verdict = mergeParts({
+			parts: {
+				vision: { status: "pass", measuredAt: NOW, detail: { backends: { "vision/apple": { status: "pass", pages: {}, medianCer: 0.157 } }, textLayer } },
+			},
+			previous: null,
+			now: NOW,
+			run: RUN,
+		});
+		expect(commitSubject(verdict)).toBe("chore(nightly): ocr unknown · perf unknown · vision pass (median CER 15.7 %, layer 87.2 % placed) [skip ci]");
+	});
 });

@@ -95,6 +95,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Also lays the text layer over the reference render and has PDFKit find every placed word
+      # (searchable-pdf spec §7.4). A word PDFKit cannot find writes the part as a catastrophe and then
+      # fails this step, so the job is red and the part still reaches the verdict.
       - name: Read the reference pages with Apple Vision
         run: npm run nightly:vision
       - name: Write the run summary
@@ -104,10 +107,20 @@ jobs:
             node scripts/nightly-summary.mjs nightly-parts/vision.json >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Keep the part for the verdict job
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: part-vision
           path: nightly-parts/vision.json
+          if-no-files-found: ignore
+      - name: Keep the layered PDFs for whoever debugs a red text layer
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vision-text-layer
+          path: nightly-parts/text-layer/
+          retention-days: 14
+          if-no-files-found: ignore
 
   # The perf half (ticket 21): the heavy synthetic page timed on this fixed runner class. No
   # secrets, no network -- its own job so no other step's work leaks into the timing.

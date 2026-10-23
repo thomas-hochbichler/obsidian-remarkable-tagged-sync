@@ -28,6 +28,15 @@ export function renderSummary(part, baselineEntries, title = "OCR") {
 		}
 		lines.push(`| **median** | **${pct(backend.medianCer)}** | | | |`, "");
 	}
+	// The Vision part's text layer (searchable-pdf spec §7.4). Off its box is a figure, not a failure.
+	const layer = part.detail?.textLayer;
+	if (layer) {
+		const { groundTruth: truth, vision } = layer;
+		lines.push("### text layer", "", "| layer | words placed | found by PDFKit | on their box |", "|---|---|---|---|");
+		const share = truth.words > 0 ? ` (${pct(truth.placed / truth.words)})` : "";
+		lines.push(`| ground truth on Vision's boxes | ${truth.placed} of ${truth.words}${share} | ${truth.found} | ${truth.onBox} |`);
+		lines.push(`| Vision's own words (${vision.ownBoxes} of ${vision.words} with a box of their own) | ${vision.placed} | ${vision.found} | ${vision.onBox} |`, "");
+	}
 	return lines.join("\n");
 }
 

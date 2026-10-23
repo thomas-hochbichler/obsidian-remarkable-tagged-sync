@@ -2,8 +2,7 @@
 //
 // Reads the 15 public reference pages the way a sync does -- the shipped Vision driver over a
 // `renderPagesToPdf` render -- lays the text layer over the render with `addTextLayer`, and asks
-// PDFKit, what Preview searches with, to find every placed word again. A word counts as found on its
-// box when PDFKit's hit sits within half a line height of where the layer put it.
+// PDFKit, what Preview searches with, to find every placed word again (`checkWithPdfKit`).
 //
 // Two layers, each checked on its own: Vision's own words, as with Vision as the backend (one reading
 // for transcript and boxes), and each page's ground truth placed on Vision's boxes by `placeWords`,
@@ -11,20 +10,17 @@
 //
 // Writes the layered PDFs to `.scratch/searchable-pdf/check/`, lists every word found off its box, and
 // exits non-zero when PDFKit does not find a word at all. Only the public reference pages go through
-// here.
+// here. The nightly's Vision job runs the same check (`vision-main.ts`).
 
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Platform } from "obsidian";
-import { PDFDocument, StandardFonts } from "pdf-lib";
 import { placeWords } from "../../src/layer-alignment";
-import { inkBounds } from "../../src/page-rasterizer";
-import { notebookCanvas, notebookPageFrame, renderPagesToPdf } from "../../src/pdf-renderer";
+import { renderPagesToPdf } from "../../src/pdf-renderer";
 import { parseRmV6, type RmPage } from "../../src/rm-parser";
-import { addTextLayer, foldWord, type LayerLine, visionBoxToPdf, wordBoxes } from "../../src/text-layer";
+import type { LayerLine } from "../../src/text-layer";
 import { createVisionOcrBackend } from "../../src/vision-ocr-runtime";
+import { checkWithPdfKit, printCheck } from "./pdfkit-check";
 
 Platform.isDesktop = true;
 Platform.isMacOS = true;
@@ -32,44 +28,6 @@ Platform.isMacOS = true;
 const REFERENCE = join(process.cwd(), "test-fixtures", "ocr-reference");
 const SCENES = join(REFERENCE, "scenes");
 const OUT_DIR = join(process.cwd(), ".scratch", "searchable-pdf", "check");
-
-/** Every selection PDFKit finds for each query, with the page it is on and its bounds in PDF points. */
-const PDFKIT_FIND_JXA = `
-ObjC.import('Foundation');
-ObjC.import('PDFKit');
-function run(argv) {
-  var doc = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(argv[0]));
-  var queries = JSON.parse(ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(argv[1], 4, $())));
-  var hits = {};
-  for (var q = 0; q < queries.length; q++) {
-    var sels = doc.findStringWithOptions($(queries[q]), 0);
-    var found = [];
-    for (var i = 0; i < sels.count; i++) {
-      var sel = sels.objectAtIndex(i);
-      var page = sel.pages.objectAtIndex(0);
-      var b = sel.boundsForPage(page);
-      found.push({ page: Number(doc.indexForPage(page)), x: b.origin.x, y: b.origin.y, w: b.size.width, h: b.size.height });
-    }
-    hits[queries[q]] = found;
-  }
-  return JSON.stringify(hits);
-}
-`;
-
-interface Box {
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-}
-
-/** A word where the layer put it: its line's height, centred on its own box -- `addTextLayer`'s rule. */
-interface Placed extends Box {
-	page: number;
-	text: string;
-}
-
-const centre = (box: Box) => ({ x: box.x + box.w / 2, y: box.y + box.h / 2 });
 
 async function main() {
 	const files = readdirSync(SCENES).filter((name) => name.endsWith(".rm")).sort();
@@ -95,77 +53,16 @@ async function main() {
 
 /** Lays `reads` over the render, writes it to `OUT_DIR/name`, and says whether PDFKit found every word. */
 async function check(label: string, name: string, files: string[], scenes: RmPage[], render: Uint8Array, reads: LayerLine[][]): Promise<boolean> {
-	const layered = await addTextLayer(render, scenes, reads);
 	const layeredPath = join(OUT_DIR, name);
-	writeFileSync(layeredPath, layered);
-
-	// What the layer wrote for a word, and so what a search has to ask for: the word, folded to WinAnsi.
-	const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
-	const encodable = new Set(font.getCharacterSet());
-	const drawn = (text: string) => foldWord(text, encodable);
+	const result = await checkWithPdfKit(render, scenes, reads, layeredPath);
+	const pageId = (page: number) => files[page].slice(0, 2);
 
 	// What folding changed: Vision's own spelling beside the one written into the layer.
-	reads.forEach((lines, page) => {
-		for (const { text } of lines.flatMap((line) => line.words)) {
-			if (drawn(text) !== text) console.log(`folded: page ${files[page].slice(0, 2)} "${text}" -> "${drawn(text)}"`);
-		}
-	});
-
-	const device = notebookCanvas(scenes);
-	const placed: Placed[] = [];
-	reads.forEach((lines, page) => {
-		const ink = inkBounds(scenes[page]);
-		if (!ink) return;
-		const frame = notebookPageFrame(scenes[page], device);
-		for (const line of lines) {
-			const lineRect = visionBoxToPdf(line.box, ink, frame);
-			wordBoxes(line).forEach((box, i) => {
-				const rect = visionBoxToPdf(box, ink, frame);
-				placed.push({ page, text: drawn(line.words[i].text), x: rect.x, y: rect.y + rect.height / 2 - lineRect.height / 2, w: rect.width, h: lineRect.height });
-			});
-		}
-	});
-
-	const scratch = join(tmpdir(), `text-layer-check-${process.pid}-${name}`);
-	mkdirSync(scratch, { recursive: true });
-	writeFileSync(join(scratch, "queries.json"), JSON.stringify([...new Set(placed.map((word) => word.text))]));
-	writeFileSync(join(scratch, "find.js"), PDFKIT_FIND_JXA);
-	const hits = JSON.parse(
-		execFileSync("/usr/bin/osascript", ["-l", "JavaScript", join(scratch, "find.js"), layeredPath, join(scratch, "queries.json")], { maxBuffer: 64 * 1024 * 1024 }).toString(),
-	) as Record<string, (Box & { page: number })[]>;
-
-	// One hit per word and one word per hit, nearest pairs first: "und" four times on a page, or "der"
-	// inside "oder", must not let one hit count for several words.
-	const matched = new Map<Placed, number>();
-	const groups = new Map<string, Placed[]>();
-	for (const word of placed) {
-		const key = `${word.page}\u0000${word.text}`;
-		groups.set(key, [...(groups.get(key) ?? []), word]);
-	}
-	for (const words of groups.values()) {
-		const pageHits = (hits[words[0].text] ?? []).filter((hit) => hit.page === words[0].page);
-		const pairs = words
-			.flatMap((word) => pageHits.map((hit) => ({ word, hit, distance: Math.hypot(centre(hit).x - centre(word).x, centre(hit).y - centre(word).y) })))
-			.sort((a, b) => a.distance - b.distance);
-		const used = new Set<Box>();
-		for (const { word, hit, distance } of pairs) {
-			if (matched.has(word) || used.has(hit)) continue;
-			matched.set(word, distance);
-			used.add(hit);
-		}
-	}
-
-	const missed = placed.filter((word) => !matched.has(word) || matched.get(word)! > word.h / 2);
-	const found = placed.filter((word) => matched.has(word)).length;
-	console.log(`text layer, ${label}: ${placed.length} words placed, ${found} found by PDFKit, ${placed.length - missed.length} on their box -> ${layeredPath}`);
-	for (const word of missed) {
-		const page = files[word.page].slice(0, 2);
-		const distance = matched.get(word);
-		console.log(`  page ${page}: "${word.text}" ${distance === undefined ? "not found" : `found ${distance.toFixed(1)} pt off`}`);
-	}
+	for (const { page, from, to } of result.folded) console.log(`folded: page ${pageId(page)} "${from}" -> "${to}"`);
+	printCheck(label, result, pageId, ` -> ${layeredPath}`);
 	// Off its box is listed, not failed: on close lines PDFKit draws a hit two lines high (page 14),
 	// which moves its centre without the word being anywhere else. A word not found at all is a fault.
-	return found === placed.length;
+	return result.found === result.words;
 }
 
 main().catch((error) => {

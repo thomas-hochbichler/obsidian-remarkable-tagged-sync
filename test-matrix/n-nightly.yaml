@@ -595,3 +595,43 @@
       layer: unit
       file: test-support/local-ocr/figures.test.ts
       test: "a re-measurement > is a catastrophe when every page comes back as a run of '@' against the committed Qwen2.5-VL figure"
+
+- feature: N13
+  name: The Vision part's text layer -- words placed and the PDFKit check (searchable-pdf spec §7.4)
+  code: test-support/nightly/vision.ts
+  tier: free
+  scenarios:
+    - id: N13.1
+      scenario: PDFKit finds every placed word in both layers, a few of them off their box
+      expect: The part stays as the CER left it. Off its box is a figure in the report -- PDFKit draws a hit two lines high on close lines (page 14) -- not a failure
+      layer: unit
+      file: test-support/nightly/vision.test.ts
+      test: "the Vision part's text layer check (searchable-pdf spec §7.4) > leaves the part as it was when PDFKit finds every placed word, off its box or not"
+
+    - id: N13.2
+      scenario: PDFKit does not find a ground-truth word the layer placed on Vision's boxes
+      expect: The part is a catastrophe, named with the count. `vision-main.ts` then exits non-zero so the job goes red, and the release gate blocks on the catastrophe as on a CER one (decided in ticket 22; the gate's own rows are group R)
+      layer: unit
+      file: test-support/nightly/vision.test.ts
+      test: "the Vision part's text layer check (searchable-pdf spec §7.4) > turns the part into a catastrophe when PDFKit does not find a ground-truth word the layer placed"
+
+    - id: N13.3
+      scenario: PDFKit does not find one of Vision's own words, every ground-truth word found
+      expect: A catastrophe as well -- Vision as the backend lays its own words, and each must be found
+      layer: unit
+      file: test-support/nightly/vision.test.ts
+      test: "the Vision part's text layer check (searchable-pdf spec §7.4) > turns the part into a catastrophe when PDFKit does not find one of Vision's own words"
+
+    - id: N13.4
+      scenario: A night that measured the Vision part's text layer
+      expect: The commit subject carries the share of ground-truth words placed on Vision's boxes beside the median CER -- `vision pass (median CER 15.7 %, layer 87.2 % placed)`
+      layer: unit
+      file: scripts/nightly-merge.test.mjs
+      test: "the commit subject > carries the share of ground-truth words placed on Vision's boxes beside the Vision median"
+
+    - id: N13.5
+      scenario: The Vision job writes its run summary
+      expect: A text layer table -- words placed of the ground truth with the share, found by PDFKit, on their box; and Vision's own words with how many came with a box of their own (spec §8, macOS 13–26)
+      layer: unit
+      file: scripts/nightly-summary.test.mjs
+      test: "the run summary table > shows the Vision part's text layer: words placed, found by PDFKit, on their box, and Vision's own word boxes"
