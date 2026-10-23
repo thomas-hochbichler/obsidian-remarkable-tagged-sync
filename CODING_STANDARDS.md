@@ -12,6 +12,14 @@ anything mechanical belongs in one of those instead.
   edit and never touches the note again. Check each `await` between the note write and the returned
   row: can it throw, and who catches it? (Ticket 20: the render written after `updateTranscript`.)
 
+## Diagnostics
+
+- **A "last sync" figure survives a run that measured nothing.** A sync with nothing to do, or one on a
+  platform where the figure cannot exist, leaves the previous value in "Copy diagnostics" rather than
+  writing zeros over it. An idle background sync runs minutes after the one that matters, and the
+  reporter pastes the block after it. Check each value a sync result feeds into diagnostics: what does
+  an idle sync write there? (Ticket 21: "Text layer" turned to "0 of 0 pages".)
+
 ## Tests
 
 - **A fake answers only what the real adapter can answer.** A stub backend, runner or store returns

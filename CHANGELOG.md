@@ -47,6 +47,10 @@ workflow publishes the section as the GitHub release body. See
   reference pages at 4.2 % error again, at a few seconds more per page. The Qwen3-VL models were not
   affected. (#218)
 
+- **"Copy diagnostics" keeps the "Reused page transcriptions" figure after a sync with nothing to
+  do.** A background sync that found no changes used to replace it with "0 of 0", so the block pasted
+  into a bug report rarely showed what the sync before it had done.
+
 ## [1.8.6] - 2026-10-18
 
 ### Fixed

@@ -766,9 +766,9 @@ export default class TaggedSyncPlugin extends Plugin {
 			// is not itself an error and contributes nothing here; only what the partial run hit does.
 			const errors = backfillError === null ? result.skipErrors : [...result.skipErrors, backfillError];
 			this.lastSyncError = errors.length > 0 ? errors.join("\n") : null;
-			this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
-			// Kept when this run measured nothing: an idle sync would otherwise erase the figure a "Cmd+F
-			// does not find my word" report needs.
+			// Both kept when this run measured nothing: an idle sync would otherwise write "0 of 0" over
+			// the figure a bug report needs.
+			if (result.pageTranscriptionsConsidered > 0) this.lastPageTranscriptions = { reused: result.reusedPageTranscriptions, total: result.pageTranscriptionsConsidered };
 			this.lastTextLayer = result.textLayer ?? this.lastTextLayer;
 
 			this.applyStatus(outcomeStatus(result));
