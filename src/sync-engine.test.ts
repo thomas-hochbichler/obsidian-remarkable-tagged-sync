@@ -10,7 +10,7 @@ import { formatLocalMinute } from "./frontmatter";
 import { remapRows } from "./note-rename";
 import type { OcrBackend, OcrPageResult, OcrResult } from "./ocr-backend";
 import { encodeGrayscalePng } from "./png-encoder";
-import type { RmLayer, RmPage } from "./rm-parser";
+import { parseRmV6, type RmLayer, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import { Platform } from "obsidian";
 import { NOT_TRANSCRIBED } from "./digest-builder";
@@ -55,6 +55,13 @@ vi.mock("./digest-pipeline", async (importOriginal) => {
 vi.mock("./scene-text", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./scene-text")>();
 	return { ...actual, isDocumentText: vi.fn(actual.isDocumentText) };
+});
+
+// Every fixture with typed text also has ink anchored to it, so a page whose typed text is all that
+// sets it apart is staged by dropping the anchor groups -- the parse of a page whose nodes carry none.
+vi.mock("./rm-parser", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./rm-parser")>();
+	return { ...actual, parseRmV6: vi.fn(actual.parseRmV6) };
 });
 
 const FIXTURE_PATH = "./test-fixtures/rmv6/normal-a-stroke-2-layers.rm";
@@ -3475,6 +3482,115 @@ describe("the text layer (searchable PDF)", () => {
 
 		expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
 		expect(runBatch).not.toHaveBeenCalled();
+	});
+
+	// Every note synced before 1.9.0 carries `renderVersion` 31 (spec §2.4). The first sync after the
+	// update writes its PDF again, with the layer, and the backend reads almost nothing again.
+	describe("a note synced before 1.9.0 (renderVersion 31)", () => {
+		const key = notebookSyncKey("doc-1", "sync");
+		const renderedBy31 = (index: SyncIndex): SyncIndex => ({ ...index, rows: { [key]: { ...index.rows[key], renderVersion: 31 } } });
+
+		/**
+		 * Page a has nothing placed on it and no typed text; page b is `pageB` -- by default its anchored
+		 * ink is placed, which makes it worth reading again after a renderer step.
+		 */
+		function twoPageNotebook(pageB = PAGE_BYTES) {
+			const api = notebookAgain("root-19", "hash-1", { "page-a": "h-a", "page-b": "h-b" });
+			api.raw.getHash = vi.fn(async (path: string) => (path.includes("page-b") ? pageB : UNANCHORED_PAGE_BYTES));
+			return api;
+		}
+
+		/** The notebook as 1.8 left it: synced once, its row rendered by renderer 31. */
+		async function syncedBefore(backend: OcrBackend, reader?: LayerReader, pageB?: typeof PAGE_BYTES) {
+			const deps = { ...baseDeps(twoPageNotebook(pageB), { sync: "Target" }), ocrBackend: backend, layerReader: reader };
+			return { noteStore: deps.noteStore, index: renderedBy31((await runSync(deps, EMPTY_SYNC_INDEX)).index) };
+		}
+
+		/** The first sync after the update, on the same device. */
+		function upgrade(synced: Awaited<ReturnType<typeof syncedBefore>>, backend: OcrBackend, reader: LayerReader, pageB?: typeof PAGE_BYTES) {
+			const deps = { ...baseDeps(twoPageNotebook(pageB), { sync: "Target" }), noteStore: synced.noteStore, ocrBackend: backend, layerReader: reader };
+			return { deps, run: () => runSync(deps, synced.index) };
+		}
+
+		it.each(BACKENDS)("writes its PDF again with a layer, reading only the page whose anchors are placed, with %s as the backend", async (_case, setUp) => {
+			const before = setUp();
+			const synced = await syncedBefore(before.backend, before.reader);
+
+			const { backend, reader, runBatch } = setUp();
+			const recognize = vi.spyOn(backend, "recognize");
+			const { deps, run } = upgrade(synced, backend, reader);
+			const result = await run();
+
+			expect(result.notesWritten).toBe(1);
+			expect(result.reusedPageTranscriptions).toBe(1);
+			expect(recognize.mock.calls.map(([pages]) => pages.length)).toEqual([1]);
+			expect(runBatch.mock.calls.flatMap(([images]) => images)).toHaveLength(2); // each page once, for its text or for its boxes
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 0)).toEqual(["Rapoldeck ", "Hütte "]);
+			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf", 1)).toEqual(["Rapoldeck ", "Hütte "]);
+			expect(result.index.rows[key].renderVersion).toBe(RENDER_VERSION);
+		});
+
+		// Its transcript was written before typed text was transcribed at all, so it lacks words the page has.
+		it("reads a page carrying typed text again, and only that page", async () => {
+			const parse = vi.mocked(parseRmV6).getMockImplementation()!;
+			vi.mocked(parseRmV6).mockImplementation((bytes) => {
+				const page = parse(bytes);
+				return { ...page, layers: page.layers.map(({ anchor: _anchor, placement: _placement, ...layer }) => layer) };
+			});
+			vi.mocked(isDocumentText).mockReturnValue(false); // the typed page's handwriting is transcribed, its typed text with it
+			try {
+				const synced = await syncedBefore(model("Rapoldeck Hütte", "Rapoldeck Hütte"), vision(READ).backend, HIGHLIGHTED_PAGE_BYTES);
+
+				const backend = model("Rapoldeck Hütte\nCape Marrow");
+				const { run } = upgrade(synced, backend, vision(READ).backend, HIGHLIGHTED_PAGE_BYTES);
+				const result = await run();
+
+				expect(result.notesWritten).toBe(1);
+				expect(result.reusedPageTranscriptions).toBe(1);
+				expect(vi.mocked(backend.recognize).mock.calls.map(([pages]) => pages.length)).toEqual([1]);
+			} finally {
+				vi.mocked(isDocumentText).mockReset();
+				vi.mocked(parseRmV6).mockReset();
+			}
+		});
+
+		// Off macOS the plugin hands the sync no layer reader at all; one whose probe says no stands in, so
+		// the spy can show nothing was spawned.
+		it("writes its PDF again without a layer on Windows or Linux, and runs no Vision", async () => {
+			const synced = await syncedBefore(model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+
+			const runBatch = vi.fn(async (images: Uint8Array[]) => images.map(() => READ));
+			const backend = model("Rapoldeck Hütte");
+			const { deps, run } = upgrade(synced, backend, new VisionOcrBackend({ runBatch, probe: async () => false }));
+			const result = await run();
+
+			expect(result.notesWritten).toBe(1);
+			expect(result.reusedPageTranscriptions).toBe(1);
+			expect(vi.mocked(backend.recognize).mock.calls.map(([pages]) => pages.length)).toEqual([1]);
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).toHaveBeenCalledTimes(1);
+			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1.pdf")).toEqual([]);
+			expect(runBatch).not.toHaveBeenCalled();
+			expect(result.index.rows[key].renderVersion).toBe(RENDER_VERSION);
+		});
+
+		// It gets its layer through Re-transcribe instead (spec §2.5).
+		it("skips it when the user edited it, and leaves its PDF as it was", async () => {
+			const synced = await syncedBefore(model("Rapoldeck Hütte", "Rapoldeck Hütte"));
+			const path = synced.index.rows[key].notePath;
+			await synced.noteStore.write(path, (await synced.noteStore.read(path))!.replace("## Transcript", "## Transcript\ncorrected by hand"));
+
+			const { backend: reader, runBatch } = vision(READ);
+			const { deps, run } = upgrade(synced, model("Rapoldeck Hütte"), reader);
+			const result = await run();
+
+			expect(result.editedNotesSkipped).toBe(1);
+			expect(result.notesWritten).toBe(0);
+			expect(vi.mocked(deps.attachmentStore.writeBinary)).not.toHaveBeenCalled();
+			expect(runBatch).not.toHaveBeenCalled();
+			expect(await synced.noteStore.read(path)).toContain("corrected by hand");
+			expect(result.index.rows[key].renderVersion).toBe(31);
+		});
 	});
 });
 

@@ -1,5 +1,5 @@
 # golden cape-marrow-typed-highlights
-# render-version 31
+# render-version 32
 # fixture test-fixtures/rmv6/cape-marrow-typed-highlights.rm
 
 ## scene

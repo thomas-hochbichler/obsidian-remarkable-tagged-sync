@@ -24,6 +24,14 @@ workflow publishes the section as the GitHub release body. See
   setting, and it is free. On Windows and Linux the PDF has no text layer yet; the transcript under the
   note is still searchable.
 
+### Changed
+
+- **The first sync after the update re-renders every note once.** On a Mac, that gives notes synced
+  before the text layer too; on Windows and Linux the render comes out as before. Transcripts are kept,
+  so your backend reads almost nothing again. A note you edited by hand is skipped, as always, and keeps
+  its render without the layer; *Re-transcribe this note* gives it one, but replaces your corrections in
+  the transcript, so it asks first.
+
 ## [1.8.6] - 2026-10-18
 
 ### Fixed

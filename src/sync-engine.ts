@@ -110,14 +110,16 @@ export type SyncRowStatus = "active" | "orphaned";
  * gesture across wrapped lines as the one entry the reader drew -- the per-line runs the device
  * records are rejoined, and closing punctuation stays with the sentence it ends, which had been
  * printing a parenthetical twice, once behind a stranded closing quote -- and a margin note's clip
- * now spans the paragraph the ink sits beside, so the picture carries the context the note is about.
+ * now spans the paragraph the ink sits beside, so the picture carries the context the note is about;
+ * version 32 lays the transcript over the handwriting as invisible text on a Mac, which a note synced
+ * before it has no way to grow on its own -- the transcript is kept, only the PDF is written again.
  *
  * Not bumped for a change in how the note *reads* (decided 2026-09-13, when the digest gained the
  * marker's colour): a bump re-renders every note, and on the way re-transcribes typed-text pages and
  * every margin note through a backend the user may be paying for. A cosmetic change waits for the
  * document's next real change; only a change to what is *drawn* earns a bump.
  */
-export const RENDER_VERSION = 31;
+export const RENDER_VERSION = 32;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
