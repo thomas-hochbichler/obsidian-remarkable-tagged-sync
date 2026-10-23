@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ModelGeneration } from "../../src/local-model-artefacts";
-import { checkFigure, type LocalFigure, missingFigures } from "./figures";
+import { evaluateBackend, loadReferencePages } from "../nightly/ocr";
+import { checkFigure, figureBaseline, type LocalFigure, missingFigures } from "./figures";
 
 const generation: ModelGeneration = {
 	dir: "qwen3-vl-8b-instruct-q4_k_m",
@@ -62,5 +65,23 @@ describe("a local figure", () => {
 		expect(checkFigure(figure({ generation: "qwen9-vl-1b" }), current)).toEqual(["qwen9-vl-1b: no such model generation in this build"]);
 		expect(missingFigures([], [generation])).toEqual([generation.dir]);
 		expect(missingFigures([figure()], [generation])).toEqual([]);
+	});
+});
+
+describe("a re-measurement", () => {
+	it("takes each page the committed figure measured as its baseline, and leaves out the pages it could not", () => {
+		const pages = { "01": { cer: 0.04, structure: {}, ms: 1, peakRssBytes: null }, "02": { cer: null, structure: {}, problem: "empty-output" as const, ms: 1, peakRssBytes: null } };
+		expect(figureBaseline(figure({ pages }))).toEqual({ "01": { cer: 0.04 } });
+		expect(figureBaseline(undefined)).toEqual({});
+	});
+
+	// #218: Qwen2.5-VL on Metal (M5 Max, macOS 27) read every page as "@@@@", 328 % median, and the
+	// measurement had called it a pass -- it was judged against no baseline at all.
+	it("is a catastrophe when every page comes back as a run of '@' against the committed Qwen2.5-VL figure", () => {
+		const committed = JSON.parse(readFileSync(join(process.cwd(), "docs", "ocr-local", "qwen2.5-vl-7b-instruct-q4_k_m.json"), "utf8")) as LocalFigure;
+		const pages = loadReferencePages(join(process.cwd(), "test-fixtures", "ocr-reference", "pages"));
+		const outcomes = new Map(pages.map((page) => [page.id, { text: "@".repeat(2 * page.body.length) }]));
+
+		expect(evaluateBackend(pages, outcomes, figureBaseline(committed)).status).toBe("catastrophe");
 	});
 });

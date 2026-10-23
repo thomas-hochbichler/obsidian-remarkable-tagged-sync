@@ -581,3 +581,17 @@
       layer: integration
       file: test-support/local-ocr/local-figures.test.ts
       test: "local figures > exist for every model generation the plugin can fetch"
+
+    - id: N12.7
+      scenario: A re-measurement is about to be judged
+      expect: Each page the committed figure measured is its baseline; a page it could not measure has none, and a generation with no figure yet has an empty baseline (degraded at worst, never a catastrophe)
+      layer: unit
+      file: test-support/local-ocr/figures.test.ts
+      test: "a re-measurement > takes each page the committed figure measured as its baseline, and leaves out the pages it could not"
+
+    - id: N12.8
+      scenario: Every page comes back as a run of '@', against the committed Qwen2.5-VL figure (#218)
+      expect: A catastrophe, so measure:local writes nothing and names the reason. Judged against no baseline, the same run had been called a pass at 328 % median and would have gone onto the settings card
+      layer: unit
+      file: test-support/local-ocr/figures.test.ts
+      test: "a re-measurement > is a catastrophe when every page comes back as a run of '@' against the committed Qwen2.5-VL figure"
