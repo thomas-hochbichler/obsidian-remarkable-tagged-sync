@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
-import { PDFArray, PDFDocument, PDFName, type PDFRawStream } from "pdf-lib";
+import { PDFArray, PDFDocument, PDFName, type PDFRawStream, StandardFonts } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import { renderPagesToPdf } from "./pdf-renderer";
 import { parseRmV6, type RmPage } from "./rm-parser";
-import { addTextLayer, visionBoxToPdf } from "./text-layer";
+import { addTextLayer, foldWord, visionBoxToPdf } from "./text-layer";
 
 const PT_PER_PX = 72 / 226;
 
@@ -171,5 +171,40 @@ describe("addTextLayer", () => {
 		const [word] = shownWords(await pageOps(layered));
 		expect(word.y).toBeGreaterThan(0);
 		expect(word.y).toBeLessThan(height - 1872 * PT_PER_PX);
+	});
+});
+
+describe("foldWord", () => {
+	/** What Helvetica can write: WinAnsi. */
+	async function winAnsi(): Promise<Set<number>> {
+		const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+		return new Set(font.getCharacterSet());
+	}
+
+	// Letter by letter, `ó` (in WinAnsi) would stay and give "Lódz", which neither spelling finds.
+	it("folds a word with a letter outside WinAnsi as a whole, so the plain spelling finds it", async () => {
+		expect(foldWord("Łódź", await winAnsi())).toBe("Lodz");
+	});
+
+	it("leaves a word WinAnsi holds as it is, umlauts and typographic marks included", async () => {
+		const encodable = await winAnsi();
+		for (const word of ["Grüße", "€", "„", "“", "–", "…"]) expect(foldWord(word, encodable)).toBe(word);
+	});
+
+	// "Grüße": the umlaut sent as u plus a combining mark, which WinAnsi does not hold on its own.
+	it("leaves a WinAnsi word sent decomposed whole, umlaut composed", async () => {
+		expect(foldWord("Grüße", await winAnsi())).toBe("Grüße");
+	});
+
+	it("writes a sign with no base letter as ·", async () => {
+		expect(foldWord("√2", await winAnsi())).toBe("·2");
+	});
+
+	it("writes one · per character with no base letter, as typed text does", async () => {
+		expect(foldWord("한국", await winAnsi())).toBe("··");
+	});
+
+	it("writes a minus sign as a hyphen", async () => {
+		expect(foldWord("−1", await winAnsi())).toBe("-1");
 	});
 });

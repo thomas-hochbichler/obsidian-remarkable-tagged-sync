@@ -54,6 +54,27 @@ export function wordBoxes(line: LayerLine): VisionBox[] {
 	});
 }
 
+/** Letters NFD does not split into a base letter and a mark, and the minus sign. */
+const BASE_LETTERS: Record<string, string> = { ł: "l", Ł: "L", đ: "d", Đ: "D", ı: "i", "−": "-", "‐": "-", "‑": "-" };
+
+/**
+ * A word as Helvetica can write it (searchable-pdf spec §2.2). One that WinAnsi holds stays as it is; one
+ * that it does not is folded to its base letters as a whole, so `Łódź` becomes `Lodz` and the plain
+ * spelling finds it. A character with no base letter (`√`) becomes one `·`, as `drawPageText` writes it.
+ */
+export function foldWord(text: string, encodable: ReadonlySet<number>): string {
+	const writable = (characters: string) => [...characters].every((character) => encodable.has(character.codePointAt(0) ?? 0));
+	// Composed first: a `ü` sent as `u` and a mark is still a WinAnsi word.
+	const composed = text.normalize("NFC");
+	if (writable(composed)) return composed;
+	return [...composed]
+		.map((character) => {
+			const base = BASE_LETTERS[character] ?? character.normalize("NFD").replace(/\p{M}/gu, "");
+			return writable(base) ? base : "·";
+		})
+		.join("");
+}
+
 /**
  * A Vision box in the PDF page it was read from.
  *
@@ -91,9 +112,8 @@ export async function addTextLayer(pdf: Uint8Array, scenes: RmPage[], reads: Lay
 	const heightAtOne = font.heightAtSize(1);
 	const descent = heightAtOne - font.heightAtSize(1, { descender: false });
 	const device = notebookCanvas(scenes);
-	// WinAnsi throws on what it cannot encode; `drawPageText`'s substitute keeps the rest of the word findable.
+	// WinAnsi throws on what it cannot encode, so every word goes through `foldWord`.
 	const encodable = new Set(font.getCharacterSet());
-	const drawable = (text: string) => [...text].map((character) => (encodable.has(character.codePointAt(0) ?? 0) ? character : "·")).join("");
 
 	scenes.forEach((scene, index) => {
 		const ink = inkBounds(scene);
@@ -108,7 +128,7 @@ export async function addTextLayer(pdf: Uint8Array, scenes: RmPage[], reads: Lay
 			const size = lineHeight / heightAtOne;
 			const boxes = wordBoxes(line);
 			for (const [i, word] of line.words.entries()) {
-				const text = drawable(word.text);
+				const text = foldWord(word.text, encodable);
 				const rect = visionBoxToPdf(boxes[i], ink, frame);
 				// The line's height, centred on the word: a drifting baseline is followed, the height is not.
 				const bottom = rect.y + rect.height / 2 - lineHeight / 2;

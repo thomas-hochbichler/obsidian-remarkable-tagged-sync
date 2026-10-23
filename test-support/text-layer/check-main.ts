@@ -19,7 +19,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { inkBounds } from "../../src/page-rasterizer";
 import { notebookCanvas, notebookPageFrame, renderPagesToPdf } from "../../src/pdf-renderer";
 import { parseRmV6 } from "../../src/rm-parser";
-import { addTextLayer, type LayerLine, visionBoxToPdf, wordBoxes } from "../../src/text-layer";
+import { addTextLayer, foldWord, type LayerLine, visionBoxToPdf, wordBoxes } from "../../src/text-layer";
 import { createVisionOcrBackend } from "../../src/vision-ocr-runtime";
 
 Platform.isDesktop = true;
@@ -79,10 +79,10 @@ async function main() {
 	const layeredPath = join(OUT_DIR, "reference.pdf");
 	writeFileSync(layeredPath, layered);
 
-	// What the layer wrote for a word, and so what a search has to ask for: WinAnsi or `·`.
+	// What the layer wrote for a word, and so what a search has to ask for: the word, folded to WinAnsi.
 	const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
 	const encodable = new Set(font.getCharacterSet());
-	const drawn = (text: string) => [...text].map((c) => (encodable.has(c.codePointAt(0) ?? 0) ? c : "·")).join("");
+	const drawn = (text: string) => foldWord(text, encodable);
 
 	const device = notebookCanvas(scenes);
 	const placed: Placed[] = [];
