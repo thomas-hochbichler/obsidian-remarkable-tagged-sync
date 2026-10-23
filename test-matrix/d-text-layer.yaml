@@ -186,7 +186,7 @@
       test: "placeWords > tells words apart by neither case nor accents, so a misread in the right place still takes its box"
 
     - id: D25.4
-      scenario: Between two placed words on one line, the transcript has words Vision read differently
+      scenario: Between two placed words on one line, the transcript has a different number of words than Vision read
       expect: They share the boxes of the reads between their neighbours, by characters
       layer: unit
       file: src/layer-alignment.test.ts
@@ -207,11 +207,18 @@
       test: "placeWords > leaves out a word with no place: it sits between neighbours with no read between them"
 
     - id: D25.7
-      scenario: A word whose neighbours are on different lines
+      scenario: A word whose neighbours are on different lines, with more reads than words between them
       expect: It is left out
       layer: unit
       file: src/layer-alignment.test.ts
-      test: "placeWords > leaves out a word with no place: its neighbours are on different lines"
+      test: "placeWords > leaves out a word with no place: its neighbours are on different lines, with more reads than words between them"
+
+    - id: D25.27
+      scenario: Between two placed words, the transcript has as many words as Vision read, across a line break too ("war lange Zeit sich" read "was / couge tit sich")
+      expect: Each word takes the read in its place, on whichever line that read is
+      layer: unit
+      file: src/layer-alignment.test.ts
+      test: "placeWords > lays the words of a gap one to one on its reads when there are as many of each, across a line break too"
 
     - id: D25.8
       scenario: Vision ran several words together ("100547108.")

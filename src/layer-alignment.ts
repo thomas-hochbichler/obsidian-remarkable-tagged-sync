@@ -102,11 +102,16 @@ export function placeWords(transcript: string, lines: LayerLine[]): LayerLine[] 
 	};
 	matches.forEach((match, k) => {
 		const previous = matches[k - 1];
-		// A gap between two placed neighbours on one line: the words in it share the reads in it, which
-		// is what a misread looks like. With no read between them, or a line break, they have no place.
 		const line = reads[match.read].line;
-		if (previous !== undefined && match.from > previous.to && match.read > previous.read + 1 && reads[previous.read].line === line) {
-			place(words.slice(previous.to, match.from), spanning(reads.slice(previous.read + 1, match.read).map((read) => read.box)), line);
+		// A gap between two placed neighbours is what a misread looks like. As many words as reads in it:
+		// each word takes the read in its place, across a line break too. Otherwise, on one line, the
+		// words share the reads in it. With no read in it, or a line break, they have no place.
+		const gapWords = previous === undefined ? [] : words.slice(previous.to, match.from);
+		const gapReads = previous === undefined ? [] : reads.slice(previous.read + 1, match.read);
+		if (gapWords.length > 0 && gapWords.length === gapReads.length) {
+			gapWords.forEach((word, i) => place([word], gapReads[i].box, gapReads[i].line));
+		} else if (gapWords.length > 0 && gapReads.length > 0 && reads[previous.read].line === line) {
+			place(gapWords, spanning(gapReads.map((read) => read.box)), line);
 		}
 		place(words.slice(match.from, match.to), reads[match.read].box, line);
 	});

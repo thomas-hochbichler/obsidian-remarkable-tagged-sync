@@ -50,10 +50,23 @@ describe("placeWords", () => {
 		]);
 	});
 
+	// Page 02: "war lange Zeit sich", read "was / couge tit sich". As many words as reads between two placed
+	// neighbours: each takes the read in its place, on whichever line that read is.
+	it("lays the words of a gap one to one on its reads when there are as many of each, across a line break too", () => {
+		expect(placed(placeWords("war lange Zeit sich", [line(0.9, "was"), line(0.8, "couge", "tit", "sich")]))).toEqual([
+			[["war", 0, 0.1]],
+			[
+				["lange", 0, 0.1],
+				["Zeit", 0.15, 0.1],
+				["sich", 0.3, 0.1],
+			],
+		]);
+	});
+
 	it.each([
 		["Vision read nothing for it", "Rapoldeck Hütte Gipfel", [line(0.5, "Rapoldeck", "Hütte")]],
 		["it sits between neighbours with no read between them", "Wir gehen morgen", [line(0.5, "Wir", "morgen")]],
-		["its neighbours are on different lines", "Wir gehen morgen", [line(0.9, "Wir", "qqqqq"), line(0.8, "morgen")]],
+		["its neighbours are on different lines, with more reads than words between them", "Wir gehen morgen", [line(0.9, "Wir", "qqqqq", "qqq"), line(0.8, "morgen")]],
 	])("leaves out a word with no place: %s", (_case, transcript, read) => {
 		const words = placeWords(transcript, read).flatMap((placedLine) => placedLine.words.map((word) => word.text));
 
