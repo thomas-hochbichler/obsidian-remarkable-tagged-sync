@@ -24,6 +24,13 @@ workflow publishes the section as the GitHub release body. See
   setting, and it is free. On Windows and Linux the PDF has no text layer yet; the transcript under the
   note is still searchable.
 
+- **`Cmd+F` searches the PDF embedded in a note.** Click into the PDF at the top of a note and press
+  `Cmd+F` (`Ctrl+F` on Windows and Linux): the PDF's own search bar opens and finds the word on the
+  page. Obsidian sends `Cmd+F` to the
+  note's search otherwise. Anywhere else in the note, `Cmd+F` searches the note as before. If a future
+  Obsidian version changes how embedded PDFs work inside, `Cmd+F` opens the PDF in a new tab instead,
+  where it can be searched.
+
 - **"Copy diagnostics" says how the text layer went.** One more line: how many pages of the last sync
   got a text layer, and how many words were placed and left out.
 

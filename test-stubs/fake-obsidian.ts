@@ -719,6 +719,14 @@ export class FakeApp {
 		 */
 		activeFile: null as TFile | null,
 		getActiveFile: (): TFile | null => this.workspace.activeFile,
+		/** Where `embedded-pdf-keys.ts` listens for the focus moving into an embedded PDF. Recording. */
+		containerEl: new FakeEl(),
+		/**
+		 * The view on screen, whatever type is asked for: only `embedded-pdf-keys.ts` asks, and only for
+		 * a `MarkdownView`. A test sets it, as it sets `activeFile`.
+		 */
+		activeView: null as unknown,
+		getActiveViewOfType: (_type: unknown): unknown => this.workspace.activeView,
 		onLayoutReady: (cb: () => void): void => {
 			if (this.workspace.layoutReady) cb();
 			else this.workspace.pending.push(cb);
@@ -767,10 +775,34 @@ export class FakeApp {
 		fileToLinktext: (file: TFile, _sourcePath: string): string => file.basename,
 	};
 
+	/** The root scope, which `embedded-pdf-keys.ts` hangs its own scope under. */
+	readonly scope = new Scope();
+	/** Recording: the scopes pushed and not yet popped, last on top. Claims nothing about key routing. */
+	readonly keymap = {
+		pushed: [] as Scope[],
+		pushScope: (scope: Scope): void => void this.keymap.pushed.push(scope),
+		popScope: (scope: Scope): void => {
+			this.keymap.pushed = this.keymap.pushed.filter((pushed) => pushed !== scope);
+		},
+	};
+
 	constructor(vault: FakeVault = new FakeVault()) {
 		this.vault = vault;
 	}
 }
+
+/** Recording. The keys registered on it; nothing routes a key here -- a test calls `func` itself. */
+export class Scope {
+	readonly keys: { modifiers: string[] | null; key: string | null; func: () => unknown }[] = [];
+	constructor(readonly parent?: unknown) {}
+	register(modifiers: string[] | null, key: string | null, func: () => unknown): object {
+		this.keys.push({ modifiers, key, func });
+		return {};
+	}
+}
+
+/** Only ever a type tag handed to `getActiveViewOfType`; a test sets the view it answers with. */
+export class MarkdownView {}
 
 // --- the constructible classes ---------------------------------------------------------------------
 

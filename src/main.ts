@@ -32,6 +32,7 @@ import {
 	unreadPagesSentence,
 } from "./re-transcribe-prompt";
 import { registerRegionProcessor } from "./region-view";
+import { registerEmbeddedPdfSearch } from "./embedded-pdf-keys";
 import { type AuthStore, RemarkableAuth } from "./remarkable-auth";
 import { CloudTransport } from "./cloud-transport";
 import {
@@ -398,6 +399,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		// Registered whatever the setting says: it governs whether a sync *writes* margin notes, while a
 		// note that already carries one has to keep working after the setting is switched off again.
 		registerRegionProcessor(this);
+		// Any PDF embedded in a note, not only renders: Obsidian sends Cmd+F to the note's search there.
+		registerEmbeddedPdfSearch(this);
 		this.addCommand({
 			id: "sync-now",
 			name: "Sync now",

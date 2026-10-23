@@ -496,3 +496,91 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "the text layer (searchable PDF) > measures no layer when the sync writes no render"
+
+- feature: D28
+  name: Cmd+F in a PDF embedded in a note
+  code: src/embedded-pdf-search.ts, src/embedded-pdf-keys.ts
+  tier: free
+  scenarios:
+    - id: D28.1
+      scenario: A click into the embedded page, then Cmd+F
+      expect: The embed's own find bar opens, not the note's search
+      layer: unit
+      file: src/embedded-pdf-search.test.ts
+      test: "Cmd+F in an embedded PDF > opens the embed's own find bar"
+
+    - id: D28.2
+      scenario: Cmd+F before the embed's PDF viewer has loaded
+      expect: The PDF opens in a tab, where Cmd+F searches it
+      layer: unit
+      file: src/embedded-pdf-search.test.ts
+      test: "Cmd+F in an embedded PDF > opens the PDF in a tab while the embed's viewer has not loaded yet"
+
+    - id: D28.3
+      scenario: An Obsidian update has moved the find bar off the viewer
+      expect: The PDF opens in a tab; no error, no notice
+      layer: unit
+      file: src/embedded-pdf-search.test.ts
+      test: "Cmd+F in an embedded PDF > opens the PDF in a tab when an Obsidian update has moved the find bar"
+
+    - id: D28.4
+      scenario: An Obsidian update has renamed the component tree's children
+      expect: The PDF opens in a tab; no find bar is reached
+      layer: unit
+      file: src/embedded-pdf-search.test.ts
+      test: "Cmd+F in an embedded PDF > opens the PDF in a tab when the tree no longer leads to the embed"
+
+    - id: D28.5
+      scenario: A note embeds two PDFs; the second has the focus
+      expect: Only the second one's find bar opens
+      layer: unit
+      file: src/embedded-pdf-search.test.ts
+      test: "Cmd+F in an embedded PDF > opens the find bar of the embed that has the focus, not another one in the note"
+
+    - id: D28.7
+      scenario: A click into the PDF embedded in a note
+      expect: A scope taking Mod+F is pushed, under the note view's own scope, so every other key keeps its handling
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > takes Cmd+F while an embed in a note has the focus, under the view's own scope"
+
+    - id: D28.8
+      scenario: A click back into the note's text after one into the embed
+      expect: The scope is popped; Cmd+F searches the note again
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > gives Cmd+F back when the focus moves out of the embed"
+
+    - id: D28.9
+      scenario: A click into a PDF embedded in a canvas
+      expect: Nothing is pushed; Cmd+F does what Obsidian does there
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > leaves Cmd+F alone in a PDF embedded outside a note, such as a canvas"
+
+    - id: D28.10
+      scenario: The plugin is disabled while an embed has the focus
+      expect: The scope is popped
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > gives Cmd+F back when the plugin unloads"
+
+    - id: D28.11
+      scenario: Cmd+F in an embed whose find bar cannot be reached
+      expect: The PDF opens in a new tab through the link the note embeds it by
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > opens the PDF in a tab, by the note's own link, when the embed has no find bar to reach"
+
+    - id: D28.12
+      scenario: A sync redraws the note while its embed has the focus, then Cmd+F
+      expect: The note's search opens and the scope is popped
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > searches the note when the embed was redrawn away under the focus"
+
+    - id: D28.6
+      scenario: Cmd+F with the focus in the embed (reading view, live preview) and in the note's text, in Obsidian 1.14.5
+      expect: The embed's find bar in the first two, the note's search in the third
+      layer: e2e
+      waived: Obsidian's keymap and its PDF embed internals exist only in the running app; checked by hand in the demo vault (ticket 26, 2026-10-23), again before each release that bumps minAppVersion
