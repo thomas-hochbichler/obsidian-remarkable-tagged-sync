@@ -50,6 +50,13 @@ describe("Cmd+F in an embedded PDF: the focus", () => {
 		expect(scope.parent).toBe(viewScope);
 	});
 
+	it("takes Cmd+F when the keyboard moves the focus into an embed, under Obsidian's root scope without a note view", () => {
+		const { app } = registered();
+		app.workspace.containerEl.dispatch("focusin", { target: noteEmbed().inside });
+		expect(app.keymap.pushed).toHaveLength(1);
+		expect((app.keymap.pushed[0] as Scope).parent).toBe(app.scope);
+	});
+
 	it("gives Cmd+F back when the focus moves out of the embed", () => {
 		const { app, click } = registered();
 		click(noteEmbed().inside);
@@ -79,6 +86,17 @@ describe("Cmd+F in an embedded PDF: the focus", () => {
 		click(noteEmbed().inside);
 		expect(pressCmdF()).toBe(false);
 		expect(openLinkText).toHaveBeenCalledWith("attachments/doc.pdf", "Work/Note.md", "tab");
+	});
+
+	it("opens nothing when the embed carries no link to open in a tab", () => {
+		const { app, click, pressCmdF } = registered();
+		const openLinkText = vi.fn(async () => undefined);
+		Object.assign(app.workspace, { openLinkText });
+		const embed = element({ ".workspace-leaf-content[data-type='markdown']": element() });
+
+		click(element({ ".pdf-embed": embed }));
+		expect(pressCmdF()).toBe(false);
+		expect(openLinkText).not.toHaveBeenCalled();
 	});
 
 	it("searches the note when the embed was redrawn away under the focus", () => {

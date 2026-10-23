@@ -62,6 +62,13 @@ describe("Cmd+F in an embedded PDF", () => {
 		expect(tabs).toBe(1);
 	});
 
+	it("opens the PDF in a tab when no note view is on screen to search under", () => {
+		let tabs = 0;
+
+		searchEmbeddedPdf(undefined, {}, () => tabs++);
+		expect(tabs).toBe(1);
+	});
+
 	it("opens the find bar of the embed that has the focus, not another one in the note", () => {
 		const first = findBar();
 		const second = findBar();

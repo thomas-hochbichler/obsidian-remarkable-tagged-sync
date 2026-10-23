@@ -579,6 +579,27 @@
       file: src/embedded-pdf-keys.test.ts
       test: "Cmd+F in an embedded PDF: the focus > searches the note when the embed was redrawn away under the focus"
 
+    - id: D28.13
+      scenario: Cmd+F in an embed with no note view on screen
+      expect: The PDF opens in a tab
+      layer: unit
+      file: src/embedded-pdf-search.test.ts
+      test: "Cmd+F in an embedded PDF > opens the PDF in a tab when no note view is on screen to search under"
+
+    - id: D28.14
+      scenario: Tab moves the keyboard focus into an embed in a note
+      expect: Cmd+F is taken, as after a click; without a note view the scope hangs under Obsidian's root scope
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > takes Cmd+F when the keyboard moves the focus into an embed, under Obsidian's root scope without a note view"
+
+    - id: D28.15
+      scenario: Cmd+F in an embed without a find bar and without an `.internal-embed` link
+      expect: Nothing opens; the key is still held back from the note
+      layer: unit
+      file: src/embedded-pdf-keys.test.ts
+      test: "Cmd+F in an embedded PDF: the focus > opens nothing when the embed carries no link to open in a tab"
+
     - id: D28.6
       scenario: Cmd+F with the focus in the embed (reading view, live preview) and in the note's text, in Obsidian 1.14.5
       expect: The embed's find bar in the first two, the note's search in the third
