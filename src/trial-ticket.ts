@@ -25,7 +25,7 @@
 
 import { withTimeout } from "./licence-client";
 import type { LicenceState } from "./licence-state";
-import { obsidianFetch } from "./obsidian-fetch";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 
 export const TRIAL_TICKET_URL = "https://taggedsync.com/trial";
 
@@ -147,7 +147,7 @@ export async function attestTrial(
 }
 
 /** The real issuer: one POST, a JSON body with the hash, a JSON answer with the ticket. */
-export function createTrialIssuer(fetchFn: typeof fetch = obsidianFetch): TrialIssuer {
+export function createTrialIssuer(fetchFn: Fetch = obsidianFetch): TrialIssuer {
 	return {
 		async issue(vault) {
 			// `withTimeout`, not an `AbortSignal`: `obsidianFetch` is Obsidian's `requestUrl`,
