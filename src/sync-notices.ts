@@ -33,6 +33,28 @@ export interface PartialOutcome {
 }
 
 /**
+ * A page the backend lost while the rest of the unit read fine -- truncated, timed out, the server
+ * gone -- was written into diagnostics and nowhere else, so a notebook that lost three pages of five
+ * reported a clean sync. The backend's own sentence goes up as it was written. Shared by a sync and
+ * "Re-transcribe all synced notes", so both say it the same way.
+ *
+ * Capped: each is a 15-second notice, background syncs raise them too, and a server that words every
+ * refusal differently could stack a screenful. The rest are in "Copy diagnostics", which carries every
+ * one of them as the last error.
+ */
+export function backendWarningNotices(warnings: readonly string[]): NoticeText[] {
+	const notices: NoticeText[] = warnings.slice(0, MAX_BACKEND_NOTICES).map((warning) => ({ message: warning, timeout: LONG_NOTICE_MS }));
+	const unshown = warnings.length - MAX_BACKEND_NOTICES;
+	if (unshown > 0) {
+		notices.push({
+			message: `…and ${unshown} more from the transcription backend. Press Copy diagnostics in settings to see them all.`,
+			timeout: LONG_NOTICE_MS,
+		});
+	}
+	return notices;
+}
+
+/**
  * The ways a sync finishes "successfully" while quietly not doing what the user expected.
  *
  * The order is not cosmetic. Notices stack and the last one raised sits on top, so whichever goes
@@ -51,21 +73,7 @@ export function partialOutcomeNotices(result: PartialOutcome): NoticeText[] {
 			timeout: LONG_NOTICE_MS,
 		});
 	}
-	// A page the backend lost while the rest of the unit read fine -- truncated, timed out, the server
-	// gone -- was written into diagnostics and nowhere else, so a notebook that lost three pages of
-	// five reported a clean sync. The backend's own sentence goes up as it was written.
-	// Capped: each is a 15-second notice, background syncs raise them too, and a server that words
-	// every refusal differently could stack a screenful. The rest are in "Copy diagnostics", which
-	// carries every one of them as the last error.
-	const backendWarnings = result.backendWarnings ?? [];
-	for (const warning of backendWarnings.slice(0, MAX_BACKEND_NOTICES)) notices.push({ message: warning, timeout: LONG_NOTICE_MS });
-	const unshown = backendWarnings.length - MAX_BACKEND_NOTICES;
-	if (unshown > 0) {
-		notices.push({
-			message: `…and ${unshown} more from the transcription backend. Press Copy diagnostics in settings to see them all.`,
-			timeout: LONG_NOTICE_MS,
-		});
-	}
+	notices.push(...backendWarningNotices(result.backendWarnings ?? []));
 	// Beside the backend's warnings and for the same reason: the sync itself succeeded, and the half
 	// that did not is invisible from anywhere else. Its sentences are already one per document and
 	// already say what to do about it, so they go up as they were written (spec §3.4.2).
