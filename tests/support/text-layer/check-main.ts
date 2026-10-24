@@ -15,11 +15,11 @@
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Platform } from "obsidian";
-import { placeWords } from "../../src/layer-alignment";
-import { renderPagesToPdf } from "../../src/pdf-renderer";
-import { parseRmV6, type RmPage } from "../../src/rm-parser";
-import type { LayerLine } from "../../src/text-layer";
-import { createVisionOcrBackend } from "../../src/vision-ocr-runtime";
+import { placeWords } from "../../../src/layer-alignment";
+import { renderPagesToPdf } from "../../../src/pdf-renderer";
+import { parseRmV6, type RmPage } from "../../../src/rm-parser";
+import type { LayerLine } from "../../../src/text-layer";
+import { createVisionOcrBackend } from "../../../src/vision-ocr-runtime";
 import { checkWithPdfKit, printCheck } from "./pdfkit-check";
 
 Platform.isDesktop = true;

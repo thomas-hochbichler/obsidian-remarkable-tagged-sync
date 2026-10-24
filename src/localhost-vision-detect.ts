@@ -7,6 +7,7 @@
 // keeping a second copy, so both builds ask a host the same question.
 
 import { looksLikeVisionModel, LOCALHOST_PROVIDERS, type LocalhostProviderId } from "./localhost-providers";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 
 /**
  * The outcome of a best-effort vision-capability check (multi-provider spec §8). Advisory only -- it
@@ -63,7 +64,7 @@ export interface LocalhostVisionDetectInput {
 	/** Resolved base URL: the preset, or the user's own for these three (all editable). */
 	baseURL: string;
 	apiKey?: string | null;
-	fetchFn?: typeof fetch;
+	fetchFn?: Fetch;
 }
 
 interface OllamaShow {
@@ -98,10 +99,9 @@ export async function detectLocalhostVisionCapability(input: LocalhostVisionDete
 	if (reach === "heuristic") return visionOnly(model.length > 0 && looksLikeVisionModel(model) ? "supported" : "unconfirmed-name");
 	if (model.length === 0) return visionOnly("unconfirmed-name");
 
-	// Rewritten to the requestUrl shim by esbuild's `inject`, same as the adapter's default — see
-	// `src/fetch-shim.ts`. The lint warning rides in the ratchet baseline; disabling the rule is not
-	// allowed in this repo, and quietly working around it would hide the one thing worth knowing.
-	const fetchFn = input.fetchFn ?? fetch;
+	// `obsidianFetch` by name, same as the adapter's default: Obsidian's `requestUrl`, which no CORS
+	// rule stops, rather than the renderer's global `fetch`.
+	const fetchFn = input.fetchFn ?? obsidianFetch;
 	try {
 		if (input.provider === "ollama") return await detectOllama(input.baseURL, model, fetchFn);
 		if (input.provider === "lmstudio") return await detectLmStudio(input.baseURL, input.apiKey, model, fetchFn);
@@ -123,7 +123,7 @@ export async function detectLocalhostVisionCapability(input: LocalhostVisionDete
  * capability reasons on every page we send it. This is the same array the server itself reasons
  * about (`/api/show` returns `m.Capabilities()` verbatim), not a second opinion about the model.
  */
-export async function detectOllama(baseURL: string, model: string, fetchFn: typeof fetch): Promise<ModelCapabilities> {
+export async function detectOllama(baseURL: string, model: string, fetchFn: Fetch): Promise<ModelCapabilities> {
 	// /api/show lives on the native surface, not the OpenAI-compat /v1 path.
 	const nativeBase = baseURL.replace(/\/v1\/?$/, "");
 	const response = await fetchFn(`${nativeBase}/api/show`, {
@@ -153,7 +153,7 @@ export async function detectLmStudio(
 	baseURL: string,
 	apiKey: string | null | undefined,
 	model: string,
-	fetchFn: typeof fetch,
+	fetchFn: Fetch,
 ): Promise<ModelCapabilities> {
 	// Both live on the native surface, not the OpenAI-compat /v1 path.
 	const nativeBase = baseURL.replace(/\/v1\/?$/, "");
@@ -170,7 +170,7 @@ export async function detectLmStudio(
  * `/api/v0/models` reports each model's `type` -- `"vlm"` for vision-language models -- which the
  * OpenAI-compat `/v1/models` surface omits (multi-provider spec §8). Authoritative like Ollama.
  */
-async function lmStudioVision(nativeBase: string, headers: Record<string, string>, model: string, fetchFn: typeof fetch): Promise<VisionVerdict> {
+async function lmStudioVision(nativeBase: string, headers: Record<string, string>, model: string, fetchFn: Fetch): Promise<VisionVerdict> {
 	const response = await fetchFn(`${nativeBase}/api/v0/models`, { headers });
 	if (!response.ok) return "unreachable";
 	const body = (await response.json()) as LmStudioModels;
@@ -196,7 +196,7 @@ async function lmStudioVision(nativeBase: string, headers: Record<string, string
  * "absent when no reasoning config is exposed", which is a statement about the server rather than
  * about the model.
  */
-async function lmStudioThinking(nativeBase: string, headers: Record<string, string>, model: string, fetchFn: typeof fetch): Promise<ThinkingVerdict> {
+async function lmStudioThinking(nativeBase: string, headers: Record<string, string>, model: string, fetchFn: Fetch): Promise<ThinkingVerdict> {
 	try {
 		const response = await fetchFn(`${nativeBase}/api/v1/models`, { headers });
 		if (!response.ok) return "unknown";

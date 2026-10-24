@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
-import { asApp, type Command, FakeApp, noticeLog, takeModals, takeSettings, TFile } from "../test-stubs/fake-obsidian";
+import { asApp, type Command, FakeApp, noticeLog, takeModals, takeSettings, TFile } from "../tests/stubs/fake-obsidian";
 import type { EventRef } from "obsidian";
 import { entitlementOf, NO_LICENCE, type Entitlement } from "./licence-state";
 import { NOTE_NOT_SYNCED_NOTICE } from "./re-transcribe-prompt";

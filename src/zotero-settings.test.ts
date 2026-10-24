@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetNetwork, stubNetwork } from "../tests/stubs/network";
 import { entitlementOf, type Entitlement, NO_LICENCE } from "./licence-state";
 import {
 	zoteroUnavailable,
@@ -16,6 +17,11 @@ vi.stubGlobal("window", {
 	setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
 	clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
 });
+
+// The connections built without a `fetchImpl` default to `obsidianFetch`, so `stubNetwork` answers in
+// place of the desktop app (tests/stubs/network.ts).
+vi.mock("./obsidian-fetch", async () => (await import("../tests/stubs/network")).obsidianFetchModule());
+beforeEach(resetNetwork);
 
 const NOW = new Date("2026-09-11T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -144,7 +150,7 @@ describe("from the settings block to Zotero and back", () => {
 			writtenWith.push(new Headers(init?.headers).get("Zotero-API-Key"));
 			return new Response(JSON.stringify({ success: { "0": "NEW1" } }), { status: 200 });
 		});
-		vi.stubGlobal("fetch", impl);
+		stubNetwork(impl);
 		return { data, asked, writtenWith };
 	}
 

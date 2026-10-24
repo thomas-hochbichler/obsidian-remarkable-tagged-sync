@@ -91,6 +91,15 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.redraw();
+	}
+
+	/**
+	 * The whole tab, drawn again in place. Controls call this rather than `display()`: that is
+	 * deprecated since Obsidian 1.13 and the store's lint flags every call to it, while Obsidian itself
+	 * still calls it to open the tab.
+	 */
+	private redraw(): void {
 		const { containerEl } = this;
 		// Read before the rebuild, restored after it. Nearly every control on this page redraws the
 		// whole tab in place -- choosing a backend, a transport, a tag -- and an emptied element scrolls
@@ -159,7 +168,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				data.primaryTransport = value as TransportId;
 				if (data.fallbackTransport === data.primaryTransport) data.fallbackTransport = null;
 				await this.plugin.saveData(data);
-				this.display();
+				this.redraw();
 			});
 		});
 
@@ -177,7 +186,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					data.fallbackTransport = value === "none" ? null : (value as TransportId);
 					await this.plugin.saveData(data);
-					this.display();
+					this.redraw();
 				});
 			});
 
@@ -210,7 +219,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						this.deviceHost = ssh.host === USB_HOST ? "" : ssh.host;
 						this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
 						await this.plugin.saveData(this.plugin.data);
-						this.display();
+						this.redraw();
 					}),
 				)
 				.addButton((button) =>
@@ -221,7 +230,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						this.plugin.data.ssh = { ...DEFAULT_SSH_SETTINGS };
 						this.plugin.data.sshHashes = {};
 						await this.plugin.saveData(this.plugin.data);
-						this.display();
+						this.redraw();
 					}),
 				);
 			return;
@@ -320,7 +329,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			// one nobody asked to store, and the redraw is what makes the emptied field visible rather
 			// than leaving the box on screen full of a password the next "Pair" would no longer send.
 			this.devicePassword = "";
-			this.display();
+			this.redraw();
 		}
 	}
 
@@ -337,7 +346,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			connectionSetting.addButton((button) =>
 				button.setButtonText("Disconnect").onClick(async () => {
 					await this.plugin.auth.disconnect();
-					this.display();
+					this.redraw();
 				}),
 			);
 		} else {
@@ -367,7 +376,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							try {
 								await this.plugin.auth.connect(this.code);
 								new Notice("Connected to reMarkable.");
-								this.display();
+								this.redraw();
 							} catch (error) {
 								new Notice(explainError(error, "connect"), 10_000);
 							}
@@ -418,7 +427,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							return;
 						}
 						await this.plugin.saveData(this.plugin.data);
-						this.display();
+						this.redraw();
 					}),
 			);
 		}
@@ -436,7 +445,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					await deactivateHere(this.plugin.data.licence, this.plugin.licenceApi);
 					this.plugin.data.licence = withoutLicence(this.plugin.data.licence);
 					await this.plugin.saveData(this.plugin.data);
-					this.display();
+					this.redraw();
 				}),
 			);
 		} else {
@@ -469,7 +478,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.licence = result.state;
 					await this.plugin.saveData(this.plugin.data);
 					new Notice(activationMessage(result.outcome));
-					this.display();
+					this.redraw();
 				}),
 			);
 	}
@@ -578,7 +587,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		// changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading
 		// "Connected via web." until the tab was reopened). Each probe is numbered, so a slow answer
 		// never lands on top of a newer one; a render that has been superseded drops its own answer on
-		// the floor (`display()` empties the container and draws a new one).
+		// the floor (`redraw()` empties the container and draws a new one).
 		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		// Coloured like the vision verdict under Model (asked for in the desk test of 2026-09-13): the
 		// theme's own success and error tones, through a variable, so the answer reads at a glance.
@@ -656,7 +665,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
 					await this.plugin.saveData(this.plugin.data);
 					// Redrawn, because the status line above is now about a different set of connections.
-					this.display();
+					this.redraw();
 				});
 			});
 
@@ -757,7 +766,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.zoteroGroups = found;
 					// Drawn again only when the answer adds a row: the same list twice is not a reason to
 					// pull the screen out from under a person reading it.
-					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.display();
+					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.redraw();
 				},
 				(error: unknown) => status.setText(`Could not list your groups: ${describeZoteroError(error)}`),
 			);
@@ -891,7 +900,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.data.ocrBackend = value;
 					await this.plugin.saveData(this.plugin.data);
-					this.display();
+					this.redraw();
 				});
 			});
 
@@ -901,7 +910,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			selectDefaultBackend: async () => {
 				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
 				await this.plugin.saveData(this.plugin.data);
-				this.display();
+				this.redraw();
 			},
 		});
 
@@ -922,7 +931,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
 			this.plugin.rearmAutoSyncInterval();
-			this.display();
+			this.redraw();
 		};
 
 		new Setting(containerEl)
@@ -1014,7 +1023,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					} finally {
 						await session?.close();
 					}
-					this.display();
+					this.redraw();
 				}),
 			);
 
@@ -1036,7 +1045,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
-			this.display();
+			this.redraw();
 		};
 
 		for (const item of view.items) {
@@ -1063,7 +1072,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						view.recheckLicenceBeforeAdd &&
 						(await this.plugin.refreshLicence()).tier === "free"
 					) {
-						this.display();
+						this.redraw();
 						return;
 					}
 					mapping[item.tag] = value;

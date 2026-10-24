@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createEl, createFragment, FakeApp, type FakeCanvasEl, FakeEl } from "../test-stubs/fake-obsidian";
+import { createEl, createFragment, FakeApp, type FakeCanvasEl, FakeEl } from "../tests/stubs/fake-obsidian";
 import { REGION_LANGUAGE } from "./digest-builder";
 import { UNREADABLE_BLOCK } from "./note-region";
 

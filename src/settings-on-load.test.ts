@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
-import { FakeApp } from "../test-stubs/fake-obsidian";
+import { FakeClock } from "../tests/stubs/fake-clock";
+import { FakeApp } from "../tests/stubs/fake-obsidian";
 import { NO_LICENCE } from "./licence-state";
 
 // Gap G20 -- what the plugin arrives with. Every field of `data.json` is read raw, with no schema

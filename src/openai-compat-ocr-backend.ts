@@ -18,6 +18,7 @@ import {
 	triedAgain,
 	upperFirst,
 } from "./llm-transcript";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 import type { RmPage } from "./rm-parser";
 
 export interface OpenAiCompatOcrOptions {
@@ -41,7 +42,7 @@ export interface OpenAiCompatOcrOptions {
 	 * runs ({@link OWN_SERVER_MAX_TOKENS}); the cloud ones keep their own ceilings (spec §3.1).
 	 */
 	maxTokens?: number;
-	fetchFn?: typeof fetch;
+	fetchFn?: Fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
 }
@@ -84,7 +85,7 @@ function cutOff(body: OpenAiChatResponse): CutOff {
  * so a run that read everything sends nothing extra; and anything that goes wrong here, a server that
  * never answers included, costs only this one figure, never the page results it describes.
  */
-async function serverContext(fetchFn: typeof fetch, sleep: Sleep, id: OcrBackendId, baseURL: string, model: string): Promise<number | null> {
+async function serverContext(fetchFn: Fetch, sleep: Sleep, id: OcrBackendId, baseURL: string, model: string): Promise<number | null> {
 	// Raced rather than aborted: `fetch` in Obsidian is `requestUrl`, which accepts a signal and ignores
 	// it (see `withTimeout` in licence-client.ts). The lookup is for the diagnostics only, and a server
 	// that never answers it may not hold up the run whose pages it describes.
@@ -94,7 +95,7 @@ async function serverContext(fetchFn: typeof fetch, sleep: Sleep, id: OcrBackend
 /** How long a context lookup may take: it is a local server listing what it has loaded. */
 const CONTEXT_LOOKUP_TIMEOUT_MS = 5_000;
 
-async function askContext(fetchFn: typeof fetch, id: OcrBackendId, baseURL: string, model: string): Promise<number | null> {
+async function askContext(fetchFn: Fetch, id: OcrBackendId, baseURL: string, model: string): Promise<number | null> {
 	const root = baseURL.replace(/\/v1\/?$/, "");
 	try {
 		if (id === "ollama") {
@@ -163,7 +164,7 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 	private readonly extraHeaders: Record<string, string>;
 	private readonly deterministic: boolean;
 	private readonly maxTokens: number | undefined;
-	private readonly fetchFn: typeof fetch;
+	private readonly fetchFn: Fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at `baseURL` -- see `recognize`. */
 	private unreachable = false;
@@ -204,12 +205,9 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.extraHeaders = options.extraHeaders ?? {};
 		this.deterministic = options.deterministic ?? false;
 		this.maxTokens = options.maxTokens;
-		// Reads as the global fetch and is not one: esbuild's `inject` rewrites this free identifier to
-		// the CORS-free requestUrl shim inside the bundle. `src/fetch-shim.ts` names this exact pattern
-		// -- "the OCR backends' `fetchFn ?? fetch` defaults" -- as one of the two it exists for. The
-		// lint warning it earns is carried in the ratchet baseline rather than silenced, because the
-		// repo forbids disabling that rule.
-		this.fetchFn = options.fetchFn ?? fetch;
+		// `obsidianFetch` by name, not the global `fetch`: Obsidian's `requestUrl`, which no CORS rule
+		// stops. A provider that sends no CORS headers would otherwise be blocked before the request left.
+		this.fetchFn = options.fetchFn ?? obsidianFetch;
 		this.sleepFn = options.sleepFn;
 	}
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
-import { type Command, createFragment, FakeApp, noticeLog, Platform, takeModals, takeSettings } from "../test-stubs/fake-obsidian";
+import { FakeClock } from "../tests/stubs/fake-clock";
+import { type Command, createFragment, FakeApp, noticeLog, Platform, takeModals, takeSettings } from "../tests/stubs/fake-obsidian";
 import { NO_LICENCE } from "./licence-state";
 import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client";
 import { linkFor } from "./zotero-links";

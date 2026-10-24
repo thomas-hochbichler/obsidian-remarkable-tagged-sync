@@ -1,6 +1,12 @@
 import { requestUrl } from "obsidian";
 
 /**
+ * The shape of a fetch, for the parameters that take one so a test can answer in its place. A type
+ * only: the value the plugin passes is always `obsidianFetch`, never the free global.
+ */
+export type Fetch = typeof fetch;
+
+/**
  * reMarkable's cloud API sends no CORS headers, so the renderer's native fetch() is blocked before
  * the request is even sent (rmapi-js sets an Authorization header, which forces a CORS preflight).
  * rmapi-js always calls the global fetch with no injection point, so its calls are routed through

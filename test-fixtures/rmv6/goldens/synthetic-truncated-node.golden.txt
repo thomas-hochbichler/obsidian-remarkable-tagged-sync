@@ -1,6 +1,6 @@
 # golden synthetic-truncated-node
 # render-version 32
-# fixture synthetic (test-support/golden/scenes.ts)
+# fixture synthetic (tests/support/golden/scenes.ts)
 
 ## scene
 formatVersion 6

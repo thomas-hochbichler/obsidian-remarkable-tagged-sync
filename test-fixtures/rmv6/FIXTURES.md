@@ -74,7 +74,7 @@ Both block types were read off a real page and are documented in
 ## goldens/
 
 One render golden per fixture above plus five synthetic scenes
-(`test-support/golden/scenes.ts` — each exists because no device page on hand
+(`tests/support/golden/scenes.ts` — each exists because no device page on hand
 can express its case), plus `weather-station-page1-annotated` — the same
 seven-highlight page composited onto `weather-station.pdf` through
 `renderAnnotatedPdf`, the one render entry point the notebook goldens never

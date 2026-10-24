@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
-import { FakeApp, Platform, takeNotices, takeSettings } from "../test-stubs/fake-obsidian";
+import { FakeClock } from "../tests/stubs/fake-clock";
+import { FakeApp, Platform, takeNotices, takeSettings } from "../tests/stubs/fake-obsidian";
 import { NO_LICENCE } from "./licence-state";
 import { registerOcrBackend } from "./ocr-registry";
 import { ALREADY_RUNNING_NOTICE } from "./sync-guards";

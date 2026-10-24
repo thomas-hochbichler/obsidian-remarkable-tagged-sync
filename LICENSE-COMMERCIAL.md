@@ -5,10 +5,11 @@ Version 1.0
 This document grants the rights that a purchased licence key buys. It is the paid half of a dual
 licence, and it exists because the public licence on `pro/` does not permit commercial use.
 
-## 0. How the three licence files fit together
+## 0. How the licence files fit together
 
 | File | Covers | Grants |
 |---|---|---|
+| [`LICENSING.md`](./LICENSING.md) | the whole repository | which licence covers what, and redistribution of the unmodified official build, to everyone |
 | [`LICENSE`](./LICENSE) | everything except `pro/` | Apache-2.0, to everyone, free |
 | [`pro/LICENSE`](./pro/LICENSE) | `pro/` | PolyForm Strict 1.0.0 — **noncommercial purposes only** |
 | **this file** | `pro/` | **commercial use**, to a licence holder, for a fee |

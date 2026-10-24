@@ -3,7 +3,7 @@
 // `test-fixtures/` may ever feed one (the measurement corpus lives outside the repo on purpose).
 
 import { readFileSync } from "node:fs";
-import { parseRmV6 } from "../../src/rm-parser";
+import { parseRmV6 } from "../../../src/rm-parser";
 import type { GoldenTarget } from "./extract";
 import { syntheticScenes } from "./scenes";
 
@@ -31,6 +31,6 @@ export function goldenTargets(): GoldenTarget[] {
 			source: "test-fixtures/rmv6/weather-station.pdf + weather-station-page1.rm",
 			sourcePdf: new Uint8Array(readFileSync("test-fixtures/rmv6/weather-station.pdf")),
 		},
-		...syntheticScenes().map(({ name, page }) => ({ name, page, source: "synthetic (test-support/golden/scenes.ts)" })),
+		...syntheticScenes().map(({ name, page }) => ({ name, page, source: "synthetic (tests/support/golden/scenes.ts)" })),
 	];
 }

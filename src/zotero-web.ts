@@ -6,11 +6,11 @@
  * closed. What it cannot do is know where a file sits on disk, so `filePath` answers `null` and the
  * send command falls through to downloading the bytes (spec §2.4).
  *
- * Requests go through the global `fetch`, which esbuild rewrites to Obsidian's `requestUrl`
- * (`obsidian-fetch.ts`), so there is no CORS problem and no new dependency -- the same route
- * `licence-client.ts` takes.
+ * Requests go through `obsidianFetch`, which wraps Obsidian's `requestUrl` (`obsidian-fetch.ts`),
+ * so there is no CORS problem and no new dependency -- the same route `licence-client.ts` takes.
  */
 
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 import {
 	createZoteroConnection,
 	libraryPath,
@@ -43,7 +43,6 @@ export const ZOTERO_WEB_TIMEOUT_MS = 15_000;
  */
 const MAX_BACKOFF_MS = 30_000;
 
-type Fetch = typeof fetch;
 type Sleep = (ms: number) => Promise<void>;
 
 const realSleep: Sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -54,7 +53,7 @@ function waitMs(response: Response, header: string): number {
 	return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
 }
 
-export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = fetch, sleep: Sleep = realSleep): ZoteroConnection {
+export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obsidianFetch, sleep: Sleep = realSleep): ZoteroConnection {
 	/**
 	 * The numeric user id, asked for once and then remembered.
 	 *

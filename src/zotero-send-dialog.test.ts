@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { asApp, FakeApp, takeModals, takeSettings } from "../test-stubs/fake-obsidian";
+import { asApp, FakeApp, takeModals, takeSettings } from "../tests/stubs/fake-obsidian";
 import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
 import { askWhatToSend, NO_PDF, NO_RESULTS, type SendChoice, type SendDialogDeps } from "./zotero-send-dialog";
 

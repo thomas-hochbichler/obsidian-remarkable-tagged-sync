@@ -16,7 +16,7 @@
 // Build + run (from the repo root; CJS because the node layer uses a dynamic require by design):
 //   SP=<scratchpad>
 //   npx esbuild scripts/release-gate.ts --bundle --platform=node \
-//     --format=cjs --external:iconv-lite --alias:obsidian=./test-stubs/obsidian.ts --outfile=$SP/gate.cjs
+//     --format=cjs --external:iconv-lite --alias:obsidian=./tests/stubs/obsidian.ts --outfile=$SP/gate.cjs
 //   node $SP/gate.cjs <outDir>
 //
 // Resumable in both halves: a finished artefact is skipped by the downloader, and a page whose

@@ -8,7 +8,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { RENDER_VERSION } from "../../src/sync-engine";
+import { RENDER_VERSION } from "../../../src/sync-engine";
 import { diagnoseGoldenChange, goldenRenderVersion, renderGolden } from "./extract";
 import { GOLDENS_DIR, goldenTargets } from "./targets";
 

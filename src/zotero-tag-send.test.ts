@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { asApp, FakeApp, Platform, takeModals } from "../test-stubs/fake-obsidian";
+import { asApp, FakeApp, Platform, takeModals } from "../tests/stubs/fake-obsidian";
 import type { EventRef } from "obsidian";
 import type { Entitlement } from "./licence-state";
 import { DEFAULT_DATA, type TaggedSyncData } from "./settings-store";

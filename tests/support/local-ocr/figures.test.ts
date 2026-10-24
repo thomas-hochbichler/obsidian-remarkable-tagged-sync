@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ModelGeneration } from "../../src/local-model-artefacts";
+import type { ModelGeneration } from "../../../src/local-model-artefacts";
 import { evaluateBackend, loadReferencePages } from "../nightly/ocr";
 import { checkFigure, figureBaseline, type LocalFigure, missingFigures } from "./figures";
 

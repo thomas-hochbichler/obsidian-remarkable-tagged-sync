@@ -3,6 +3,7 @@ import { inkBounds } from "./page-rasterizer";
 import type { RmPage, RmStroke } from "./rm-parser";
 import { layoutText } from "./text-layout";
 import { mapWithConcurrency } from "./concurrency";
+import type { Fetch } from "./obsidian-fetch";
 
 /**
  * The transcription prompt shared verbatim by every LLM-vision backend (multi-provider spec §3).
@@ -407,7 +408,7 @@ export class OcrTimeoutError extends Error {
  * Bare `setTimeout` and not `realSleep`'s `window.setTimeout`, which is what the two lint warnings
  * this earns are about: there is no DOM in a delay, and every suite runs on Node, where `window` does
  * not exist and this function runs on every request a test makes. The warnings are carried in the
- * ratchet baseline rather than silenced, exactly as the `fetch` defaults above are.
+ * ratchet baseline rather than silenced, because the repo forbids disabling a lint rule.
  */
 function withTimeout(request: Promise<Response>): Promise<Response> {
 	let timer: ReturnType<typeof setTimeout>;
@@ -461,7 +462,7 @@ function retryDelay(response: Response, attempt: number, now: number): number {
  * about, and a failed page is already a graceful, visible outcome rather than a lost note. Not retried
  * *here*, that is: a margin note lost to one is tried again by a later sync (`OcrResult.retryable`).
  */
-export async function fetchWithRetry(fetchFn: typeof fetch, url: string, init: RequestInit, sleep: Sleep = realSleep): Promise<Response> {
+export async function fetchWithRetry(fetchFn: Fetch, url: string, init: RequestInit, sleep: Sleep = realSleep): Promise<Response> {
 	let response = await withTimeout(fetchFn(url, init));
 	for (let attempt = 1; attempt < MAX_ATTEMPTS && response.status === 429; attempt++) {
 		await sleep(retryDelay(response, attempt, Date.now()));

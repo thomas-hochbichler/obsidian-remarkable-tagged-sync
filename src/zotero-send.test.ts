@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Platform } from "../test-stubs/fake-obsidian";
+import { Platform } from "../tests/stubs/fake-obsidian";
 import type { ZoteroAttachment, ZoteroClient, ZoteroItem } from "./zotero-client";
 import { linkFor, type StoredZoteroLinks, type ZoteroLink } from "./zotero-links";
 import {

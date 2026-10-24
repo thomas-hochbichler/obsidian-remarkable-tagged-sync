@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeEl, takeSettings } from "../test-stubs/fake-obsidian";
+import { FakeEl, takeSettings } from "../tests/stubs/fake-obsidian";
 import { ocrBackendEntry } from "./ocr-registry";
 import { unreachableMessage } from "./localhost-register";
 import { LOCALHOST_PROVIDERS } from "./localhost-providers";

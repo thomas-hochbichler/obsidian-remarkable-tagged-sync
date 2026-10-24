@@ -24,6 +24,7 @@
  */
 
 import { fileURLToPath } from "url";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 import {
 	createZoteroConnection,
 	libraryPath,
@@ -56,8 +57,6 @@ export const ZOTERO_LOCAL_TIMEOUT_MS = 5_000;
  */
 export const ZOTERO_AUTHORIZE_TIMEOUT_MS = 120_000;
 
-type Fetch = typeof fetch;
-
 /**
  * Where the granted local key is kept between runs, keyed by `Zotero-Server-ID`.
  *
@@ -81,7 +80,7 @@ export function memoryKeyStore(): LocalKeyStore {
 	};
 }
 
-export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fetch = fetch): ZoteroConnection {
+export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fetch = obsidianFetch): ZoteroConnection {
 	/** Cached per process. It identifies the database Zotero has open, and that does not change under us. */
 	let serverId: string | null = null;
 

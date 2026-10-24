@@ -90,7 +90,7 @@ thing that can move the numbers.
 
 ```bash
 npx esbuild scripts/release-gate.ts --bundle --platform=node --format=cjs \
-  --external:iconv-lite --alias:obsidian=./test-stubs/obsidian.ts --outfile=/tmp/gate.cjs
+  --external:iconv-lite --alias:obsidian=./tests/stubs/obsidian.ts --outfile=/tmp/gate.cjs
 node /tmp/gate.cjs /tmp/gate-out
 npx esbuild .scratch/managed-local-llm-ocr/prototype/mdbench.ts --bundle --platform=node \
   --format=cjs --external:iconv-lite --outfile=/tmp/mdbench.cjs

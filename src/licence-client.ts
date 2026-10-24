@@ -6,12 +6,13 @@
  * key is the organization id, which is public. That is why a licence check can ship inside a plugin
  * bundle at all — there is no secret to hide in it.
  *
- * Requests go through the global `fetch`, which esbuild rewrites to Obsidian's `requestUrl`
- * (see `obsidian-fetch.ts`), so there is no CORS problem and no new dependency.
+ * Requests go through `obsidianFetch`, which wraps Obsidian's `requestUrl` (see `obsidian-fetch.ts`),
+ * so there is no CORS problem and no new dependency.
  */
 
 import type { ActivationResult, LicenceApi } from "./licence-check";
 import type { LicenceOutcome } from "./licence-state";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 
 const POLAR_API = "https://api.polar.sh/v1/customer-portal/license-keys";
 
@@ -20,8 +21,6 @@ const POLAR_API = "https://api.polar.sh/v1/customer-portal/license-keys";
  * credential: it only says which organization's keys to look up.
  */
 export const POLAR_ORGANIZATION_ID = "e1f4bd71-6fb3-4f0f-a602-f42985a89e15";
-
-type Fetch = typeof fetch;
 
 /** Polar's wording for a key that exists and cannot be used. Read, never relied on — see below. */
 const NOT_ACTIVE = "no longer active";
@@ -66,8 +65,8 @@ export const LICENCE_TIMEOUT_MS = 10_000;
 /**
  * Stops waiting after `ms`, and rejects.
  *
- * The request itself is abandoned rather than cancelled: `fetch` here is esbuild-rewritten to
- * Obsidian's `requestUrl`, which has no abort of its own, so an `AbortSignal` would be accepted and
+ * The request itself is abandoned rather than cancelled: `fetch` here is `obsidianFetch`, which is
+ * Obsidian's `requestUrl`, and that has no abort of its own, so an `AbortSignal` would be accepted and
  * ignored. What matters is that the *caller* stops waiting -- an abandoned socket costs nothing next
  * to a sync that never ends.
  */
@@ -89,7 +88,7 @@ export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 
 export function createPolarLicenceApi(
 	organizationId: string = POLAR_ORGANIZATION_ID,
-	fetchImpl: Fetch = fetch,
+	fetchImpl: Fetch = obsidianFetch,
 	timeoutMs: number = LICENCE_TIMEOUT_MS,
 ): LicenceApi {
 	const post = async (path: string, body: Record<string, unknown>): Promise<Response> =>

@@ -7,8 +7,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { rasterizePage } from "../../src/page-rasterizer";
-import { renderPagesToPdf } from "../../src/pdf-renderer";
+import { rasterizePage } from "../../../src/page-rasterizer";
+import { renderPagesToPdf } from "../../../src/pdf-renderer";
 import { heavyPage } from "../perf/heavy-page";
 import { type PerfBaseline, evaluatePerf } from "./perf";
 
