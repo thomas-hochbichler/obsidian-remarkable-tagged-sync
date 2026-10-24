@@ -408,6 +408,27 @@
       file: src/llm-transcript.test.ts
       test: "isUnreachable > handles something thrown that is not an Error at all"
 
+    - id: E25.47
+      scenario: "Inside Obsidian a request throws Chromium's net error for a closed, unresolvable or dropped address (net::ERR_CONNECTION_REFUSED and kin)"
+      expect: "Recognised as unreachable. `requestUrl` throws these, not Node's ECONNREFUSED, so missing them left a closed LM Studio failing pages with no warning"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "isUnreachable > recognises Electron's net errors"
+
+    - id: E25.48
+      scenario: "A net error that means the server answered, e.g. an untrusted certificate"
+      expect: "Not called unreachable: \"is it running?\" is the wrong question about a server that answered"
+      layer: unit
+      file: src/llm-transcript.test.ts
+      test: "isUnreachable > does not call every net error unreachable"
+
+    - id: E25.49
+      scenario: "LM Studio is closed and a page is sent from inside Obsidian"
+      expect: "\"Could not reach the server at http://localhost:1234/v1 … Is it running?\" and the page is retryable, from the error as Obsidian reports it"
+      layer: unit
+      file: src/openai-compat-ocr-backend.test.ts
+      test: "the not-running warning > recognises a closed port the way Obsidian reports it"
+
     - id: E25.17
       scenario: "An OpenAI-compatible server is not running when a margin note is sent"
       expect: "\"Margin notes were not transcribed\" -- no count -- with \"Is it running?\" and the promise that a later sync tries them again; the note is retryable. A note goes alone, so \"1 page\" named the wrong thing, and a count the sync then merges across a document's notes"
