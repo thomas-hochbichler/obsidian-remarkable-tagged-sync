@@ -18,6 +18,7 @@ import {
 	triedAgain,
 	upperFirst,
 } from "./llm-transcript";
+import { obsidianFetch } from "./obsidian-fetch";
 import type { RmPage } from "./rm-parser";
 
 export interface OpenAiCompatOcrOptions {
@@ -204,12 +205,9 @@ export class OpenAiCompatOcrBackend implements OcrBackend {
 		this.extraHeaders = options.extraHeaders ?? {};
 		this.deterministic = options.deterministic ?? false;
 		this.maxTokens = options.maxTokens;
-		// Reads as the global fetch and is not one: esbuild's `inject` rewrites this free identifier to
-		// the CORS-free requestUrl shim inside the bundle. `src/fetch-shim.ts` names this exact pattern
-		// -- "the OCR backends' `fetchFn ?? fetch` defaults" -- as one of the two it exists for. The
-		// lint warning it earns is carried in the ratchet baseline rather than silenced, because the
-		// repo forbids disabling that rule.
-		this.fetchFn = options.fetchFn ?? fetch;
+		// `obsidianFetch` by name, not the global `fetch`: Obsidian's `requestUrl`, which no CORS rule
+		// stops. A provider that sends no CORS headers would otherwise be blocked before the request left.
+		this.fetchFn = options.fetchFn ?? obsidianFetch;
 		this.sleepFn = options.sleepFn;
 	}
 

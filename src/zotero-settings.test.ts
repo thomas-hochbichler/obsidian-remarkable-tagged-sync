@@ -17,6 +17,18 @@ vi.stubGlobal("window", {
 	clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
 });
 
+// The connections built without a `fetchImpl` default to `obsidianFetch`, imported by name, so that
+// is what a test answers in place of the desktop app. Unset, it stays real, and the real one reaches
+// the stub `requestUrl`, which throws.
+const network = vi.hoisted(() => ({ fetch: null as ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | null }));
+vi.mock("./obsidian-fetch", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./obsidian-fetch")>();
+	return {
+		...actual,
+		obsidianFetch: (input: RequestInfo | URL, init?: RequestInit) => (network.fetch ?? actual.obsidianFetch)(input, init),
+	};
+});
+
 const NOW = new Date("2026-09-11T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -144,7 +156,7 @@ describe("from the settings block to Zotero and back", () => {
 			writtenWith.push(new Headers(init?.headers).get("Zotero-API-Key"));
 			return new Response(JSON.stringify({ success: { "0": "NEW1" } }), { status: 200 });
 		});
-		vi.stubGlobal("fetch", impl);
+		network.fetch = impl;
 		return { data, asked, writtenWith };
 	}
 

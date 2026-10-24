@@ -7,6 +7,7 @@
 // keeping a second copy, so both builds ask a host the same question.
 
 import { looksLikeVisionModel, LOCALHOST_PROVIDERS, type LocalhostProviderId } from "./localhost-providers";
+import { obsidianFetch } from "./obsidian-fetch";
 
 /**
  * The outcome of a best-effort vision-capability check (multi-provider spec §8). Advisory only -- it
@@ -98,10 +99,9 @@ export async function detectLocalhostVisionCapability(input: LocalhostVisionDete
 	if (reach === "heuristic") return visionOnly(model.length > 0 && looksLikeVisionModel(model) ? "supported" : "unconfirmed-name");
 	if (model.length === 0) return visionOnly("unconfirmed-name");
 
-	// Rewritten to the requestUrl shim by esbuild's `inject`, same as the adapter's default — see
-	// `src/fetch-shim.ts`. The lint warning rides in the ratchet baseline; disabling the rule is not
-	// allowed in this repo, and quietly working around it would hide the one thing worth knowing.
-	const fetchFn = input.fetchFn ?? fetch;
+	// `obsidianFetch` by name, same as the adapter's default: Obsidian's `requestUrl`, which no CORS
+	// rule stops, rather than the renderer's global `fetch`.
+	const fetchFn = input.fetchFn ?? obsidianFetch;
 	try {
 		if (input.provider === "ollama") return await detectOllama(input.baseURL, model, fetchFn);
 		if (input.provider === "lmstudio") return await detectLmStudio(input.baseURL, input.apiKey, model, fetchFn);

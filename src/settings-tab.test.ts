@@ -268,6 +268,21 @@ function field(drawn: Drawn[], name: string): TextComponent {
 	return row(drawn, name).setting.texts[0];
 }
 
+// Every request the plugin makes goes through `obsidianFetch`, imported by name, so that is what a
+// test answers in place of zotero.org or the desktop app. Unset, it stays real -- and the real one
+// reaches the stub `requestUrl`, which throws, so a request nobody expected cannot pass quietly.
+const network = vi.hoisted(() => ({ fetch: null as ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | null }));
+vi.mock("./obsidian-fetch", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./obsidian-fetch")>();
+	return {
+		...actual,
+		obsidianFetch: (input: RequestInfo | URL, init?: RequestInit) => (network.fetch ?? actual.obsidianFetch)(input, init),
+	};
+});
+const stubNetwork = (impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): void => {
+	network.fetch = impl;
+};
+
 /** Lets an `onClick`/`onChange` promise chain finish -- the fake's `click()` cannot await it. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -276,6 +291,7 @@ beforeEach(() => {
 	Platform.isMacOS = false;
 	machine.visionAvailable = false;
 	pairing.fail = null;
+	network.fetch = null;
 	cloud.register = async () => "device-token";
 	opened.length = 0;
 	copied.length = 0;
@@ -955,7 +971,7 @@ describe("the Zotero section", () => {
 	// a single request going out.
 	it("reads a key with zotero.org switched off as not connected, without asking zotero.org", async () => {
 		const fetched = vi.fn(async () => new Response("[]", { status: 200 }));
-		vi.stubGlobal("fetch", fetched);
+		stubNetwork(fetched);
 		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: false, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
 		const drawn = draw(tab);
 		await settle();
@@ -991,7 +1007,7 @@ describe("the Zotero section", () => {
 	// as what is configured -- a key that is set up and rejected reads as "not connected", which is the
 	// state the user has to see to go and fix it.
 	it("replaces the line with what actually answered", async () => {
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL) =>
+		stubNetwork(async (input: RequestInfo | URL) =>
 			String(input).endsWith("/keys/current")
 				? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 })
 				: new Response("[]", { status: 200 }),
@@ -1017,7 +1033,7 @@ describe("the Zotero section", () => {
 	};
 
 	it("lists the groups Zotero names as switches", async () => {
-		vi.stubGlobal("fetch", zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		stubNetwork(zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
 		const { plugin, tab } = await tabWith({ ...PRO, zotero: WEB });
 		draw(tab);
 		await settle();
@@ -1031,7 +1047,7 @@ describe("the Zotero section", () => {
 	});
 
 	it("keeps a switched-on group on the screen while Zotero does not list it, so it can be switched off", async () => {
-		vi.stubGlobal("fetch", zoteroAnswering([]));
+		stubNetwork(zoteroAnswering([]));
 		const { plugin, tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
 		draw(tab);
 		await settle();
@@ -1045,7 +1061,7 @@ describe("the Zotero section", () => {
 
 	it("shows the group switches shut to a free vault, without asking Zotero for its groups", async () => {
 		const fetched = vi.fn(zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
-		vi.stubGlobal("fetch", fetched);
+		stubNetwork(fetched);
 		const drawn = draw((await tabWith({ zotero: WEB })).tab);
 		await settle();
 
@@ -1055,7 +1071,7 @@ describe("the Zotero section", () => {
 	});
 
 	it("says not connected when the connection that is set up does not answer", async () => {
-		vi.stubGlobal("fetch", async () => {
+		stubNetwork(async () => {
 			throw new TypeError("fetch failed");
 		});
 		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: false, localKeys: {} } });
@@ -1169,7 +1185,7 @@ describe("the Zotero section", () => {
 		// A good answer is held back while `held` is set, so a slow probe can be overtaken by a later one.
 		const held: (() => void)[] = [];
 		let holding = false;
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+		stubNetwork(async (input: RequestInfo | URL) => {
 			if (!accepted) return new Response("Forbidden", { status: 403 });
 			if (holding && String(input).includes("/items/top")) await new Promise<void>((resolve) => held.push(resolve));
 			return String(input).endsWith("/keys/current") ? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 }) : new Response("[]", { status: 200 });
@@ -1210,7 +1226,7 @@ describe("the Zotero section", () => {
 	// The listing runs once per draw and answers late; two draws in flight would otherwise redraw
 	// twice for one list. Only an answer that adds a row is a reason to redraw.
 	it("redraws once for the answer that adds groups, and not again for the same list", async () => {
-		vi.stubGlobal("fetch", zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		stubNetwork(zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
 		const { tab } = await tabWith({ ...PRO, zotero: WEB });
 		draw(tab);
 		draw(tab);
@@ -1224,7 +1240,7 @@ describe("the Zotero section", () => {
 
 	it("says why when the groups cannot be listed", async () => {
 		const answering = zoteroAnswering([]);
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+		stubNetwork(async (input: RequestInfo | URL) => {
 			if (String(input).includes("/groups?")) throw new TypeError("fetch failed");
 			return answering(input);
 		});
@@ -1237,7 +1253,7 @@ describe("the Zotero section", () => {
 
 	// A group the user switched on is theirs to see and to switch off before Zotero has said a word.
 	it("shows a switched-on group before Zotero has answered", async () => {
-		vi.stubGlobal("fetch", zoteroAnswering([]));
+		stubNetwork(zoteroAnswering([]));
 		const { tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
 
 		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Group libraries", "Lab reading group"]);

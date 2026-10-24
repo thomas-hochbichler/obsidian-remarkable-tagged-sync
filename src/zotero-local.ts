@@ -24,6 +24,7 @@
  */
 
 import { fileURLToPath } from "url";
+import { obsidianFetch } from "./obsidian-fetch";
 import {
 	createZoteroConnection,
 	libraryPath,
@@ -81,7 +82,7 @@ export function memoryKeyStore(): LocalKeyStore {
 	};
 }
 
-export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fetch = fetch): ZoteroConnection {
+export function createZoteroLocalConnection(store: LocalKeyStore, fetchImpl: Fetch = obsidianFetch): ZoteroConnection {
 	/** Cached per process. It identifies the database Zotero has open, and that does not change under us. */
 	let serverId: string | null = null;
 

@@ -16,6 +16,7 @@ import {
 	triedAgain,
 	upperFirst,
 } from "./llm-transcript";
+import { obsidianFetch } from "../src/obsidian-fetch";
 import type { RmPage } from "../src/rm-parser";
 
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -108,7 +109,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 		this.apiKey = options.apiKey;
 		this.model = options.model ?? "";
 		this.fingerprint = `anthropic|${this.model}`;
-		this.fetchFn = options.fetchFn ?? fetch;
+		this.fetchFn = options.fetchFn ?? obsidianFetch;
 		this.sleepFn = options.sleepFn;
 	}
 

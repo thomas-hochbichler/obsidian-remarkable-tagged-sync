@@ -1,4 +1,5 @@
 import { detectLmStudio, detectOllama, type ModelCapabilities, type ThinkingVerdict, visionOnly } from "../src/localhost-vision-detect";
+import { obsidianFetch } from "../src/obsidian-fetch";
 import { looksLikeVisionModel, PROVIDERS, type LlmProviderId } from "./ocr-providers";
 
 // The Ollama and LM Studio probes moved to `src/localhost-vision-detect.ts` with the free build's
@@ -104,7 +105,7 @@ export async function detectVisionCapability(input: VisionDetectInput): Promise<
 	if (reach === "heuristic") return visionOnly(model.length > 0 && looksLikeVisionModel(model) ? "supported" : "unconfirmed-name");
 	if (model.length === 0) return visionOnly("unconfirmed-name");
 
-	const fetchFn = input.fetchFn ?? fetch;
+	const fetchFn = input.fetchFn ?? obsidianFetch;
 	try {
 		if (input.provider === "openrouter") return await detectOpenRouter(input.baseURL, input.apiKey, model, fetchFn);
 		if (input.provider === "ollama") return await detectOllama(input.baseURL, model, fetchFn);

@@ -309,7 +309,7 @@ export interface ZoteroFiles {
 
 /**
  * Stops waiting after `ms` and rejects. The request itself is abandoned rather than cancelled:
- * `fetch` here is esbuild-rewritten to Obsidian's `requestUrl`, which has no abort of its own.
+ * the connections' default is `obsidianFetch`, Obsidian's `requestUrl`, which has no abort of its own.
  *
  * Here rather than in one of the two connections because both need it and neither owns it -- the
  * desktop's authorize call blocks on a modal and needs a far longer one than any web request.

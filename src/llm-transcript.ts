@@ -407,7 +407,7 @@ export class OcrTimeoutError extends Error {
  * Bare `setTimeout` and not `realSleep`'s `window.setTimeout`, which is what the two lint warnings
  * this earns are about: there is no DOM in a delay, and every suite runs on Node, where `window` does
  * not exist and this function runs on every request a test makes. The warnings are carried in the
- * ratchet baseline rather than silenced, exactly as the `fetch` defaults above are.
+ * ratchet baseline rather than silenced, because the repo forbids disabling a lint rule.
  */
 function withTimeout(request: Promise<Response>): Promise<Response> {
 	let timer: ReturnType<typeof setTimeout>;
