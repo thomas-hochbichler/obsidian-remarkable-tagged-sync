@@ -28,10 +28,12 @@ import { computePerfBaseline, perfNightFromVerdict } from "./perf-baseline.mjs";
 
 // npm's own form for a tree that is not under one licence: `src/` is Apache-2.0, `pro/` is PolyForm
 // Strict 1.0.0, and paid commercial use is granted separately. PolyForm Strict has no settled SPDX
-// identifier, so there is no expression to write here instead. The gate still earns its place --
-// what it now catches is the two files drifting apart, which is how `package-lock.json` sat stale
-// for five releases.
-const LICENSE = "SEE LICENSE IN LICENSE";
+// identifier, so there is no expression to write here instead. The split is explained in
+// `LICENSING.md`, not `LICENSE`: GitHub only recognises a `LICENSE` that is the bare Apache text,
+// and the store reads its licence from GitHub. The gate still earns its place -- what it now
+// catches is the two files drifting apart, which is how `package-lock.json` sat stale for five
+// releases.
+const LICENSE = "SEE LICENSE IN LICENSING.md";
 const CHANGELOG = "CHANGELOG.md";
 const BASELINE = ".eslint-baseline.json";
 // The numbers in the baseline are PLATFORM-DEPENDENT, and this gate runs on Linux. A macOS run
