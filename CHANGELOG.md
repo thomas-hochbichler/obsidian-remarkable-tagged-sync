@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-24
+
 ### Changed
 
 - **The licence split moved from `LICENSE` to `LICENSING.md`.** `LICENSE` is now the bare Apache-2.0
