@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { stubNetwork } from "../tests/stubs/network";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetNetwork, stubNetwork } from "../tests/stubs/network";
 import { entitlementOf, type Entitlement, NO_LICENCE } from "./licence-state";
 import {
 	zoteroUnavailable,
@@ -21,6 +21,7 @@ vi.stubGlobal("window", {
 // The connections built without a `fetchImpl` default to `obsidianFetch`, so `stubNetwork` answers in
 // place of the desktop app (tests/stubs/network.ts).
 vi.mock("./obsidian-fetch", async () => (await import("../tests/stubs/network")).obsidianFetchModule());
+beforeEach(resetNetwork);
 
 const NOW = new Date("2026-09-11T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1000;
