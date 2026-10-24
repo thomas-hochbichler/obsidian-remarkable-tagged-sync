@@ -1000,7 +1000,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				new Notice(`Re-transcribe stopped. ${updated} note(s) refreshed; the rest are unchanged.`);
 			} else {
 				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
-				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages)}`);
+				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages, this.lastOcrTally?.warnings[0])}`);
 			}
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
@@ -1089,7 +1089,9 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.data.syncIndex = index;
 				await this.saveData(this.data);
 			}
-			const notice = reTranscribeNoteNotice(outcome, file.basename, unreadPages);
+			// The run's first backend warning is the why -- "Is it running?" for a closed local server.
+			// Current here: a page that went unread was sent, and the tally starts over on the first send.
+			const notice = reTranscribeNoteNotice(outcome, file.basename, unreadPages, this.lastOcrTally?.warnings[0]);
 			if (notice !== null) new Notice(notice);
 			// Every outcome leaves a final status: the bar was set to busy above, and a refusal that
 			// left it there would spin over a run that is long over.
