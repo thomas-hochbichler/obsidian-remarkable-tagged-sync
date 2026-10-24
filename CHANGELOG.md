@@ -25,12 +25,12 @@ workflow publishes the section as the GitHub release body. See
 - **A local model server that isn't running is now named as such.** With LM Studio, Ollama or
   another server of your own closed, a sync failed the page with only "Could not read this page"
   and no reason. It now says "Could not reach the server at http://localhost:1234/v1 … Is it
-  running?", as it was meant to, and a later sync tries the page again. Inside Obsidian a closed
-  port is reported in Chromium's words (`net::ERR_CONNECTION_REFUSED`), which the check did not
-  know.
+  running?", as it was meant to. Margin notes and pages added to a PDF are tried again by a later
+  sync; a notebook page keeps its render until you re-transcribe it. Inside Obsidian a closed port
+  is reported in Chromium's words (`net::ERR_CONNECTION_REFUSED`), which the check did not know.
 
-- **Re-transcribe says why a page could not be read.** Its notice used to end with "Copy
-  diagnostics shows why" even when the reason was known, such as a local server that isn't
+- **Re-transcribing one note says why a page could not be read.** Its notice used to end with
+  "Copy diagnostics shows why" even when the reason was known, such as a local server that isn't
   running. It now ends with that reason, as a sync already does.
 
 ## [1.9.0] - 2026-10-23

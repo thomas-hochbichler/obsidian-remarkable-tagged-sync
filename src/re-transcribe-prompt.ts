@@ -133,13 +133,15 @@ export function reTranscribeNoteConfirmation(question: ReTranscribeNoteQuestion)
  *
  * `reason` is the backend's own warning for the run ("Could not reach the server … Is it running?"),
  * when it gave one: then the notice says why itself instead of sending the user to the diagnostics.
+ * One note only: across a whole-vault run the first warning may belong to another note than the
+ * unread pages, so `reTranscribeAll`'s notice keeps pointing to the diagnostics.
  */
 export function reTranscribeNoteNotice(outcome: ReTranscribeNoteOutcome, noteName: string, unreadPages = 0, reason?: string): string | null {
 	switch (outcome) {
 		case "written":
 			return unreadPages === 0 ? `Re-transcribed "${noteName}".` : `Re-transcribed "${noteName}". ${unreadPagesSentence(unreadPages, reason)}`;
 		case "unread":
-			return `Could not read "${noteName}" again, so it was left as it was. ${why(reason)}`;
+			return `Could not read "${noteName}" again, so it was left as it was. ${reasonOrDiagnostics(reason)}`;
 		case "emptied":
 			return "No text was found. The transcript has been removed.";
 		case "not-on-device":
@@ -161,10 +163,10 @@ export function reTranscribeNoteNotice(outcome: ReTranscribeNoteOutcome, noteNam
  */
 export function unreadPagesSentence(pages: number, reason?: string): string {
 	const kept = pages === 1 ? "1 page could not be read and keeps what it had before." : `${pages} pages could not be read and keep what they had before.`;
-	return `${kept} ${why(reason)}`;
+	return `${kept} ${reasonOrDiagnostics(reason)}`;
 }
 
 /** The backend's reason when there is one, else where to find it. */
-function why(reason: string | undefined): string {
+function reasonOrDiagnostics(reason: string | undefined): string {
 	return reason ?? '"Copy diagnostics" shows why.';
 }
