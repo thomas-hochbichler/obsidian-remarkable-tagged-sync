@@ -1000,7 +1000,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				new Notice(`Re-transcribe stopped. ${updated} note(s) refreshed; the rest are unchanged.`);
 			} else {
 				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
-				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages, this.lastOcrTally?.warnings[0])}`);
+				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages)}`);
 			}
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
