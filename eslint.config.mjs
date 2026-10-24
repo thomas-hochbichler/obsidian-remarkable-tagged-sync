@@ -1,7 +1,7 @@
 // The Obsidian store's automated review runs `eslint-plugin-obsidianmd` with its `recommended`
 // preset. This file reproduces that locally, so a rejection is something you find before you
-// submit rather than after. It buys a local gate only: the store's scanner ignores this config,
-// so `globalIgnores` below never changes what the reviewer sees.
+// submit rather than after. The store's scanner ignores this config, so nothing here changes what
+// the reviewer sees -- which is why the ignore list below is the scanner's own and not ours.
 //
 // The gate is a never-worse ratchet, not fail-on-error -- see scripts/release-checks.mjs and
 // docs/RELEASING.md.
@@ -12,35 +12,45 @@ import { globalIgnores, defineConfig } from "eslint/config";
 
 export default defineConfig(
 	globalIgnores([
+		// The scanner's hardcoded ignore list, copied verbatim from obsidianmd/eslint-plugin PR #158.
+		// A list of our own drifts: a file we skip and the scanner reads is a scorecard finding no
+		// local run shows, and a file we read and the scanner skips is a ratchet number the store
+		// never sees. Edit it only when the scanner's list changes.
 		"node_modules",
-		"main.js",
+		"dist",
+		"build",
+		"pkg",
+		"test-vault",
+		".obsidian",
 		"esbuild.config.mjs",
-		"vitest.config.ts",
-		"package-lock.json",
-		"tsconfig.json",
-		"versions.json",
+		"version-bump.mjs",
 		"**/*.test.*",
 		"**/*.spec.*",
 		"**/test/**",
 		"**/tests/**",
+		"**/__tests__/**",
+		"**/mocks/**",
+		"**/__mocks__/**",
 		"**/*.cjs",
 		"**/*.mjs",
 		"**/*.cts",
 		"**/*.mts",
+		"**/vite*",
 		"**/scripts/**",
 		"**/docs/**",
-		"test-fixtures/**",
-		"tools/**",
-		// These sit on disk in the maintainer's copy but are gitignored, so CI never sees them.
-		// Without these entries `eslint .` counts them locally and not in CI, and the ratchet
-		// baseline would mean two different numbers on two machines. Same principle as the
-		// vitest `include`. (`.scratch/` alone contributed 3 parse errors that CI cannot see.)
-		//
-		// `pro/**` was on this list until it was published, on the same reasoning. It is in the repo
-		// now, so CI does see it -- and leaving it here would mean the paid source is the one source
-		// nobody lints.
+		"automation/**",
+		"e2e-tests/**",
+		// Kept in addition. These sit on disk in the maintainer's copy but are gitignored, so
+		// neither CI nor the scanner sees them. Without these entries `eslint .` counts them locally
+		// and nowhere else, and the ratchet baseline would mean two different numbers on two
+		// machines. (`.scratch/` alone once contributed 3 parse errors that CI cannot see; agent
+		// worktrees under `.claude/` would count the whole repo again.)
+		"main.js",
 		".scratch/**",
 		".scratch-inspect/**",
+		".claude/**",
+		// No lintable source today; ignored so a fixture never turns into a lint finding.
+		"test-fixtures/**",
 		// NOTE: `package.json` is deliberately NOT ignored, even though the official template
 		// ignores it. Ignoring it switches off `depend/ban-dependencies`, the check that flags
 		// `builtin-modules` and `js-yaml`.
