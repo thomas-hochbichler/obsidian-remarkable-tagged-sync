@@ -182,4 +182,20 @@ describe("reTranscribeNoteNotice", () => {
 		expect(unreadPagesSentence(1)).toBe('1 page could not be read and keeps what it had before. "Copy diagnostics" shows why.');
 		expect(unreadPagesSentence(3)).toBe('3 pages could not be read and keep what they had before. "Copy diagnostics" shows why.');
 	});
+
+	/**
+	 * Found testing 1.9.1-beta.2 with LM Studio closed: the notice sent the user to "Copy diagnostics"
+	 * for a reason the run already had in words. The backend's warning is the why, so it goes in.
+	 */
+	it("names the reason when the backend gave one", () => {
+		const why = "Could not reach the server at http://localhost:1234/v1 — 1 page was not transcribed. Is it running?";
+
+		expect(reTranscribeNoteNotice("unread", "Diary — Page 1", 0, why)).toBe(`Could not read "Diary — Page 1" again, so it was left as it was. ${why}`);
+		expect(unreadPagesSentence(1, why)).toBe(`1 page could not be read and keeps what it had before. ${why}`);
+		expect(reTranscribeNoteNotice("written", "Meeting 12.3", 2, why)).toBe(`Re-transcribed "Meeting 12.3". 2 pages could not be read and keep what they had before. ${why}`);
+	});
+
+	it("keeps pointing to the diagnostics when there is no reason to give", () => {
+		expect(reTranscribeNoteNotice("unread", "Meeting 12.3", 0, undefined)).toContain('"Copy diagnostics" shows why.');
+	});
 });

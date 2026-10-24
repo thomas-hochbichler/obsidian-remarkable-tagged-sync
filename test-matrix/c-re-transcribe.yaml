@@ -468,6 +468,20 @@
       file: src/re-transcribe-prompt.test.ts
       test: "reTranscribeNoteNotice > counts the pages that kept what they had before in the grammar of the count"
 
+    - id: C21.43
+      scenario: A re-transcribe leaves pages unread and the backend said why (e.g. LM Studio closed)
+      expect: The notice carries the backend's own sentence ("Could not reach the server … Is it running?") instead of sending the user to "Copy diagnostics"
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteNotice > names the reason when the backend gave one"
+
+    - id: C21.44
+      scenario: A re-transcribe leaves pages unread and the backend gave no reason
+      expect: The notice still points to "Copy diagnostics"
+      layer: unit
+      file: src/re-transcribe-prompt.test.ts
+      test: "reTranscribeNoteNotice > keeps pointing to the diagnostics when there is no reason to give"
+
     - id: C21.42
       scenario: Some pages read, one fails, and the note had no transcript before
       expect: The failed page says "Could not read this page" -- with no earlier section to read back, there is nothing to keep
