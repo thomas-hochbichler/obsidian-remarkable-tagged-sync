@@ -9,11 +9,11 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
-import { OpenAiCompatOcrBackend } from "../../src/openai-compat-ocr-backend";
-import { PROVIDERS } from "../../pro/ocr-providers";
-import { parseRmV6 } from "../../src/rm-parser";
-import { RENDER_VERSION } from "../../src/sync-engine";
+import { TRANSCRIPTION_PROMPT } from "../../../src/llm-transcript";
+import { OpenAiCompatOcrBackend } from "../../../src/openai-compat-ocr-backend";
+import { PROVIDERS } from "../../../pro/ocr-providers";
+import { parseRmV6 } from "../../../src/rm-parser";
+import { RENDER_VERSION } from "../../../src/sync-engine";
 import {
 	type BackendRun,
 	type BaselineEntry,

@@ -4,7 +4,7 @@
 // x 50 points the same machine measured 210 ms with a 17 % spread. The stroke pattern is a fixed
 // arithmetic walk, never random, so every run renders byte-identical work.
 
-import type { RmPage, RmStroke } from "../../src/rm-parser";
+import type { RmPage, RmStroke } from "../../../src/rm-parser";
 
 export function heavyPage(strokes: number, pointsPer = 50): RmPage {
 	const layerStrokes: RmStroke[] = [];

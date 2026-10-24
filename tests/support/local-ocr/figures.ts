@@ -12,8 +12,8 @@
 // No transcript text, ever. Rates, structure verdicts, timings and provenance only.
 
 import { createHash } from "node:crypto";
-import type { ModelGeneration } from "../../src/local-model-artefacts";
-import { TRANSCRIPTION_PROMPT } from "../../src/llm-transcript";
+import type { ModelGeneration } from "../../../src/local-model-artefacts";
+import { TRANSCRIPTION_PROMPT } from "../../../src/llm-transcript";
 import type { BackendStatus, BaselineEntry, PageMeasurement } from "../nightly/ocr";
 
 export interface LocalFigure {

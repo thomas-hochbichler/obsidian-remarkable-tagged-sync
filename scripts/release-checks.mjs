@@ -452,10 +452,10 @@ const DISABLED = [
 ];
 
 function disabledTests() {
-	// `git ls-files src pro test-stubs` and filter here, rather than passing a glob to git: a
+	// `git ls-files src pro tests/stubs` and filter here, rather than passing a glob to git: a
 	// pathspec that matches nothing is not an error, so a mistyped glob makes this gate print
 	// "no skip, only or todo" over zero files. It did, on the first run.
-	const files = execFileSync("git", ["ls-files", "src", "pro", "test-stubs"], { encoding: "utf8" })
+	const files = execFileSync("git", ["ls-files", "src", "pro", "tests/stubs"], { encoding: "utf8" })
 		.split("\n")
 		.filter((f) => f.endsWith(".test.ts"));
 

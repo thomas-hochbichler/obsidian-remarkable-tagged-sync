@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
-import { FakeApp, FakeVault } from "../test-stubs/fake-obsidian";
+import { FakeClock } from "../tests/stubs/fake-clock";
+import { FakeApp, FakeVault } from "../tests/stubs/fake-obsidian";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { EMPTY_SYNC_INDEX } from "./sync-engine";
 

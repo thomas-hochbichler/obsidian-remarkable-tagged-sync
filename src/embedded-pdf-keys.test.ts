@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { FakeApp, type Scope } from "../test-stubs/fake-obsidian";
+import { FakeApp, type Scope } from "../tests/stubs/fake-obsidian";
 import { registerEmbeddedPdfSearch } from "./embedded-pdf-keys";
 
 // What the focus can land on, as far as `closest` and `isConnected` tell: no DOM under vitest, so each

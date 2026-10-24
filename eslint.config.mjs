@@ -28,12 +28,8 @@ export default defineConfig(
 		"**/*.cts",
 		"**/*.mts",
 		"**/scripts/**",
-		// The nightly's runner and instrument: Node CLI code like `scripts/`, not plugin code, so
-		// the Obsidian rules (no console, no fetch) do not apply to it.
-		"test-support/**",
 		"**/docs/**",
 		"test-fixtures/**",
-		"test-stubs/**",
 		"tools/**",
 		// These sit on disk in the maintainer's copy but are gitignored, so CI never sees them.
 		// Without these entries `eslint .` counts them locally and not in CI, and the ratchet

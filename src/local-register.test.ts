@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type ButtonComponent, type DropdownComponent, FakeEl, Platform, type Setting, takeNotices, takeSettings } from "../test-stubs/fake-obsidian";
+import { type ButtonComponent, type DropdownComponent, FakeEl, Platform, type Setting, takeNotices, takeSettings } from "../tests/stubs/fake-obsidian";
 import { MODEL_GENERATIONS } from "./local-model-artefacts";
 import type { LocalModelPaths, LocalModelSnapshot } from "./local-model-store";
 import { type BackendSettings, ocrBackendEntry } from "./ocr-registry";

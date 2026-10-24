@@ -16,7 +16,7 @@
 // those), and the annotated-PDF path (`renderAnnotatedPdf`), which needs a source PDF and has no
 // golden yet.
 
-import { parseRmV6, type RmPage, type RmStroke } from "../../src/rm-parser";
+import { parseRmV6, type RmPage, type RmStroke } from "../../../src/rm-parser";
 
 function point(x: number, y: number, width = 8) {
 	return { x, y, speed: 0, width, direction: 0, pressure: 128 };

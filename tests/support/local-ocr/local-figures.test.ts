@@ -7,8 +7,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MODEL_GENERATIONS, RUNTIME_RELEASE } from "../../src/local-model-artefacts";
-import { RENDER_VERSION } from "../../src/sync-engine";
+import { MODEL_GENERATIONS, RUNTIME_RELEASE } from "../../../src/local-model-artefacts";
+import { RENDER_VERSION } from "../../../src/sync-engine";
 import { checkFigure, type LocalFigure, missingFigures, promptSha } from "./figures";
 
 const DIR = join(process.cwd(), "docs", "ocr-local");

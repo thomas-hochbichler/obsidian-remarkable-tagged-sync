@@ -10,8 +10,8 @@
 // a clean attempt, so pass-on-any-attempt is sound.
 
 import { describe, expect, it } from "vitest";
-import { rasterizePage } from "../../src/page-rasterizer";
-import { renderPagesToPdf } from "../../src/pdf-renderer";
+import { rasterizePage } from "../../../src/page-rasterizer";
+import { renderPagesToPdf } from "../../../src/pdf-renderer";
 import { heavyPage } from "./heavy-page";
 
 const SMALL = heavyPage(500);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
+import { FakeClock } from "../tests/stubs/fake-clock";
 import {
 	type ButtonComponent,
 	createFragment,
@@ -8,7 +8,7 @@ import {
 	FakeEl,
 	type Setting,
 	takeSettings,
-} from "../test-stubs/fake-obsidian";
+} from "../tests/stubs/fake-obsidian";
 import { TAG_CAP_MESSAGE } from "./licence-messages";
 import { type Entitlement, NO_LICENCE } from "./licence-state";
 

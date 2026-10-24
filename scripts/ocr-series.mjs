@@ -124,7 +124,7 @@ const byMeasurement = (a, b) =>
  * rows of the same series, under `local/<generation>`. Nobody hosts the models a laptop can run, so
  * these were measured on a Mac through the shipped runtime rather than by the nightly; what licenses
  * them to sit in the same file is that they were scored by the same code on the same PNGs, and that
- * `test-support/local-ocr/local-figures.test.ts` refuses a build whose pins have moved past them.
+ * `tests/support/local-ocr/local-figures.test.ts` refuses a build whose pins have moved past them.
  *
  * The envelope columns are the nightly's and stay empty: nothing was routed, served or billed. The
  * runtime release goes where the endpoint would, and the machine where the provider would, because

@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Platform } from "../test-stubs/fake-obsidian";
+import { Platform } from "../tests/stubs/fake-obsidian";
 import { MODEL_GENERATIONS } from "./local-model-artefacts";
 import { isLocalModelBusy, pageArgs } from "./local-ocr-runtime";
 import { writeLock } from "./local-model-runtime";

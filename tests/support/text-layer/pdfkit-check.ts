@@ -9,10 +9,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { inkBounds } from "../../src/page-rasterizer";
-import { notebookCanvas, notebookPageFrame } from "../../src/pdf-renderer";
-import type { RmPage } from "../../src/rm-parser";
-import { addTextLayer, foldWord, type LayerLine, visionBoxToPdf, wordBoxes } from "../../src/text-layer";
+import { inkBounds } from "../../../src/page-rasterizer";
+import { notebookCanvas, notebookPageFrame } from "../../../src/pdf-renderer";
+import type { RmPage } from "../../../src/rm-parser";
+import { addTextLayer, foldWord, type LayerLine, visionBoxToPdf, wordBoxes } from "../../../src/text-layer";
 
 /** Every selection PDFKit finds for each query, with the page it is on and its bounds in PDF points. */
 const PDFKIT_FIND_JXA = `

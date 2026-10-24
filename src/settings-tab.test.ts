@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
+import { FakeClock } from "../tests/stubs/fake-clock";
 import {
 	type ButtonComponent,
 	createFragment,
@@ -12,7 +12,7 @@ import {
 	takeSettings,
 	type TextComponent,
 	type ToggleComponent,
-} from "../test-stubs/fake-obsidian";
+} from "../tests/stubs/fake-obsidian";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { explainError } from "./explain-error";
 import {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { Platform } from "../test-stubs/fake-obsidian";
+import { Platform } from "../tests/stubs/fake-obsidian";
 import { md5Hex } from "./file-md5";
 
 // The plugin is `isDesktopOnly`; the stub defaults to the least capable environment, so the one

@@ -21,7 +21,7 @@ vi.mock("rmapi-js", () => ({ session: () => ({}) }));
 
 describe("the plugin's module graph", () => {
 	it("loads against this fake, which is the whole reason the fake exists", async () => {
-		const main = await import("../src/main");
+		const main = await import("../../src/main");
 		expect(typeof main.default).toBe("function");
 	});
 });

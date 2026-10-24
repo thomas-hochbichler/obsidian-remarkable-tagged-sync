@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeApp, Platform, takeNotices } from "../test-stubs/fake-obsidian";
+import { FakeApp, Platform, takeNotices } from "../tests/stubs/fake-obsidian";
 import { NO_LICENCE } from "./licence-state";
 import { ocrBackendEntries } from "./ocr-registry";
 

@@ -14,11 +14,11 @@
 
 import { createHash } from "node:crypto";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, decodePDFRawStream } from "pdf-lib";
-import { inkBounds, rasterizePage } from "../../src/page-rasterizer";
-import { notebookPageFrame, renderAnnotatedPdf, renderPagesToPdf, resolveDeviceCanvas } from "../../src/pdf-renderer";
-import type { RmPage } from "../../src/rm-parser";
-import { sceneTextPage } from "../../src/scene-text";
-import { RENDER_VERSION } from "../../src/sync-engine";
+import { inkBounds, rasterizePage } from "../../../src/page-rasterizer";
+import { notebookPageFrame, renderAnnotatedPdf, renderPagesToPdf, resolveDeviceCanvas } from "../../../src/pdf-renderer";
+import type { RmPage } from "../../../src/rm-parser";
+import { sceneTextPage } from "../../../src/scene-text";
+import { RENDER_VERSION } from "../../../src/sync-engine";
 
 const pt = (n: number) => (Object.is(n, -0) ? "0.0" : n.toFixed(1));
 const size2 = (n: number) => n.toFixed(2);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { asApp, asVault, FakeApp, FakeVault } from "../test-stubs/fake-obsidian";
+import { asApp, asVault, FakeApp, FakeVault } from "../tests/stubs/fake-obsidian";
 import { type NoteFields, writeNote } from "./note-builder";
 import {
 	createAttachmentStore,

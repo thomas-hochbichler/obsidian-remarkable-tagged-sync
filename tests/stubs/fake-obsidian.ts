@@ -1251,5 +1251,5 @@ export class PluginSettingTab {
  * else's server being up.
  */
 export function requestUrl(): never {
-	throw new Error("test-stubs: requestUrl is not implemented. A test tried to make a real network request.");
+	throw new Error("tests/stubs: requestUrl is not implemented. A test tried to make a real network request.");
 }

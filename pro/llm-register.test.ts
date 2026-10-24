@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeEl, takeSettings, type TextComponent } from "../test-stubs/fake-obsidian";
+import { FakeEl, takeSettings, type TextComponent } from "../tests/stubs/fake-obsidian";
 import { ocrBackendEntries, ocrBackendEntry } from "../src/ocr-registry";
 import "../src/vision-register";
 import { OWN_SERVER_MAX_TOKENS } from "../src/openai-compat-ocr-backend";

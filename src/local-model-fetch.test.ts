@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Platform } from "../test-stubs/fake-obsidian";
+import { Platform } from "../tests/stubs/fake-obsidian";
 import type { LocalModelPaths } from "./local-model-store";
 
 // Gap G18 -- the half of the downloader that touches the disk and the network. 504 lines, and the

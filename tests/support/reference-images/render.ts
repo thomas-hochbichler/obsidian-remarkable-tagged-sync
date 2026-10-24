@@ -19,8 +19,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
-import { type RasterImage, rasterizePage } from "../../src/page-rasterizer";
-import { parseRmV6 } from "../../src/rm-parser";
+import { type RasterImage, rasterizePage } from "../../../src/page-rasterizer";
+import { parseRmV6 } from "../../../src/rm-parser";
 
 export const FIXTURES = join(process.cwd(), "test-fixtures", "ocr-reference");
 export const IMAGES_DIR = join(FIXTURES, "images");

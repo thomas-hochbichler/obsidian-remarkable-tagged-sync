@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { asApp, FakeApp, takeModals, takeSettings } from "../test-stubs/fake-obsidian";
+import { asApp, FakeApp, takeModals, takeSettings } from "../tests/stubs/fake-obsidian";
 import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
 import { askWhichAttachment, askWhichPdf, askZoteroItem, EVIDENCE, ITEM_HAS_NO_PDF, NOTHING_FOUND } from "./zotero-link-dialog";
 import type { ZoteroQuestion } from "./zotero-sync";

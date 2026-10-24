@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
-import { FakeApp, takeNotices, takeSettings } from "../test-stubs/fake-obsidian";
+import { FakeClock } from "../tests/stubs/fake-clock";
+import { FakeApp, takeNotices, takeSettings } from "../tests/stubs/fake-obsidian";
 import { EMPTY_SYNC_INDEX } from "./sync-engine";
 
 // Gap G15 -- one run at a time. Both long jobs share a single `syncing` flag and a single sync

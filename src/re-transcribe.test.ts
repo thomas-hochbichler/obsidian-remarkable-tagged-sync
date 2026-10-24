@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeClock } from "../test-stubs/fake-clock";
-import { type ButtonComponent, type Command, FakeApp, Platform, type Modal, modalLog, type Setting, takeModals, takeNotices, takeSettings, TFile } from "../test-stubs/fake-obsidian";
+import { FakeClock } from "../tests/stubs/fake-clock";
+import { type ButtonComponent, type Command, FakeApp, Platform, type Modal, modalLog, type Setting, takeModals, takeNotices, takeSettings, TFile } from "../tests/stubs/fake-obsidian";
 import { NO_LICENCE } from "./licence-state";
 import { registerOcrBackend } from "./ocr-registry";
 import { UnavailableOcrBackend } from "./vision-ocr-backend";
