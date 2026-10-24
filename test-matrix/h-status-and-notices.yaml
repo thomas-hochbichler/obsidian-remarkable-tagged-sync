@@ -356,6 +356,13 @@
       file: src/sync-notices.test.ts
       test: "partialOutcomeNotices > raises each backend warning as the backend wrote it"
 
+    - id: H7.32
+      scenario: "\"Re-transcribe all synced notes\" leaves pages unread and the backend warned, e.g. LM Studio closed"
+      expect: The same backend notices a sync raises, capped the same way, after the run's own notice. Its notice used to end at "Copy diagnostics shows why"
+      layer: unit
+      file: src/sync-notices.test.ts
+      test: "partialOutcomeNotices > gives re-transcribe all the same backend warnings a sync raises"
+
     - id: H7.18
       scenario: A run where nothing was skipped
       expect: "An empty list, so the caller has nothing to raise rather than a list of empty strings"

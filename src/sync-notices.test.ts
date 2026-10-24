@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	backendWarningNotices,
 	LONG_NOTICE_MS,
 	outcomeNotice,
 	type PartialOutcome,
@@ -110,6 +111,16 @@ describe("partialOutcomeNotices", () => {
 			"c",
 			"…and 2 more from the transcription backend. Press Copy diagnostics in settings to see them all.",
 		]);
+	});
+
+	/**
+	 * "Re-transcribe all synced notes" raises the run's backend warnings the same way a sync does (found
+	 * testing 1.9.1-beta.4 with LM Studio closed: its notice only pointed to "Copy diagnostics").
+	 */
+	it("gives re-transcribe all the same backend warnings a sync raises", () => {
+		const warnings = ["Could not reach the server at http://localhost:1234/v1 — 1 page was not transcribed. Is it running?", "b", "c", "d"];
+
+		expect(backendWarningNotices(warnings)).toEqual(partialOutcomeNotices({ ...NOTHING_SKIPPED, backendWarnings: warnings }));
 	});
 
 	// A sync whose notes all landed and whose highlights silently stopped reaching Zotero the day a

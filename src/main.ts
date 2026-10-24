@@ -59,6 +59,7 @@ import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
 import { outcomeStatus, progressStatus, type StatusRequest, statusView, type SyncStatusState } from "./status-model";
 import {
+	backendWarningNotices,
 	LONG_NOTICE_MS,
 	outcomeNotice,
 	partialOutcomeNotices,
@@ -1002,6 +1003,11 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.setStatus("ok", `Tagged Sync: re-transcribed ${updated} note(s)`);
 				new Notice(unreadPages === 0 ? `Re-transcribed ${updated} note(s).` : `Re-transcribed ${updated} note(s). ${unreadPagesSentence(unreadPages)}`);
 			}
+			// The backend's own sentences, raised as a sync raises them: "Is it running?" for a closed local
+			// server. Not folded into the notice above -- across many notes the first warning may belong to
+			// another note than the unread pages. Only after unread pages: then pages were sent, and the
+			// tally starts over on the first send, so it describes this run.
+			if (unreadPages > 0) for (const notice of backendWarningNotices(this.lastOcrTally?.warnings ?? [])) new Notice(notice.message, notice.timeout);
 		} catch (error) {
 			this.lastSyncError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 			this.setStatus("failed", "Tagged Sync: re-transcribe failed");

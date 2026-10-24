@@ -29,9 +29,10 @@ workflow publishes the section as the GitHub release body. See
   sync; a notebook page keeps its render until you re-transcribe it. Inside Obsidian a closed port
   is reported in Chromium's words (`net::ERR_CONNECTION_REFUSED`), which the check did not know.
 
-- **Re-transcribing one note says why a page could not be read.** Its notice used to end with
-  "Copy diagnostics shows why" even when the reason was known, such as a local server that isn't
-  running. It now ends with that reason, as a sync already does.
+- **Re-transcribe says why a page could not be read.** Its notice used to end with "Copy
+  diagnostics shows why" even when the reason was known, such as a local server that isn't
+  running. For one note the notice now ends with that reason; "Re-transcribe all synced notes"
+  raises the backend's warnings as their own notices, as a sync already does.
 
 ## [1.9.0] - 2026-10-23
 
