@@ -212,6 +212,14 @@ type Drawn =
 function draw(tab: Tab): Drawn[] {
 	takeSettings();
 	tab.display();
+	return onScreen(tab);
+}
+
+/**
+ * What the screen holds now, without drawing it again -- so a control that changed the page and lost
+ * its re-render reads as the stale page it left behind.
+ */
+function onScreen(tab: Tab): Drawn[] {
 	const bySettingEl = new Map(takeSettings().map((setting: Setting) => [setting.settingEl, setting]));
 	return tab.containerEl.children.map((child): Drawn => {
 		const setting = bySettingEl.get(child);
@@ -795,7 +803,7 @@ describe("automatic sync", () => {
 		await settle();
 
 		expect((plugin.saves.at(-1) as { autoSync: { enabled: boolean } }).autoSync.enabled).toBe(true);
-		expect(rowNames(section(draw(tab), "Automatic sync"))).toEqual(["Enable automatic sync", "Sync interval"]);
+		expect(rowNames(section(onScreen(tab), "Automatic sync"))).toEqual(["Enable automatic sync", "Sync interval"]);
 	});
 
 	it("offers launch-only and four intervals, and stores launch-only as no interval at all", async () => {
@@ -1206,11 +1214,12 @@ describe("the Zotero section", () => {
 		const { tab } = await tabWith({ ...PRO, zotero: WEB });
 		draw(tab);
 		draw(tab);
-		const redraws = vi.spyOn(tab, "display");
 		await settle();
 		await settle();
 
-		expect(redraws).toHaveBeenCalledTimes(1);
+		// Every draw starts with this heading, so counting it counts the redraws since the two above.
+		const redraws = takeSettings().filter((setting: Setting) => setting.heading && setting.name === "Where your notes come from");
+		expect(redraws).toHaveLength(1);
 	});
 
 	it("says why when the groups cannot be listed", async () => {
