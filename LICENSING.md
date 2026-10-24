@@ -1,7 +1,7 @@
 This repository is not licensed under one licence. Read this section first.
 
   1. Everything in this repository EXCEPT the `pro/` directory is licensed
-     under the Apache License, Version 2.0, reproduced in full below.
+     under the Apache License, Version 2.0, reproduced in full in `LICENSE`.
 
   2. The `pro/` directory is NOT covered by the Apache License. It is licensed
      under the PolyForm Strict License 1.0.0 — see `pro/LICENSE` — which
