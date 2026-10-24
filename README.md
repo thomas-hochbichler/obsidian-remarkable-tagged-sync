@@ -1043,6 +1043,6 @@ npm test         # vitest
 ## License
 
 Apache-2.0 for the plugin, **except `pro/`**, which is under the PolyForm Strict License 1.0.0
-(noncommercial purposes only) — see [LICENSE](./LICENSE) and [pro/LICENSE](./pro/LICENSE). Paid
+(noncommercial purposes only) — see [LICENSING.md](./LICENSING.md) and [pro/LICENSE](./pro/LICENSE). Paid
 commercial use is granted by [LICENSE-COMMERCIAL.md](./LICENSE-COMMERCIAL.md). Third-party notices
 are in [NOTICE](./NOTICE).
