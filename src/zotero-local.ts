@@ -24,7 +24,7 @@
  */
 
 import { fileURLToPath } from "url";
-import { obsidianFetch } from "./obsidian-fetch";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 import {
 	createZoteroConnection,
 	libraryPath,
@@ -56,8 +56,6 @@ export const ZOTERO_LOCAL_TIMEOUT_MS = 5_000;
  * answer" for a Zotero that is waiting for a click. Two minutes, and Deny is a fast answer anyway.
  */
 export const ZOTERO_AUTHORIZE_TIMEOUT_MS = 120_000;
-
-type Fetch = typeof fetch;
 
 /**
  * Where the granted local key is kept between runs, keyed by `Zotero-Server-ID`.

@@ -13,6 +13,7 @@ import {
 	type TextComponent,
 	type ToggleComponent,
 } from "../tests/stubs/fake-obsidian";
+import { resetNetwork, stubNetwork } from "../tests/stubs/network";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { explainError } from "./explain-error";
 import {
@@ -268,20 +269,8 @@ function field(drawn: Drawn[], name: string): TextComponent {
 	return row(drawn, name).setting.texts[0];
 }
 
-// Every request the plugin makes goes through `obsidianFetch`, imported by name, so that is what a
-// test answers in place of zotero.org or the desktop app. Unset, it stays real -- and the real one
-// reaches the stub `requestUrl`, which throws, so a request nobody expected cannot pass quietly.
-const network = vi.hoisted(() => ({ fetch: null as ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | null }));
-vi.mock("./obsidian-fetch", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("./obsidian-fetch")>();
-	return {
-		...actual,
-		obsidianFetch: (input: RequestInfo | URL, init?: RequestInit) => (network.fetch ?? actual.obsidianFetch)(input, init),
-	};
-});
-const stubNetwork = (impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): void => {
-	network.fetch = impl;
-};
+// Requests are answered by `stubNetwork` in place of zotero.org or the desktop app (tests/stubs/network.ts).
+vi.mock("./obsidian-fetch", async () => (await import("../tests/stubs/network")).obsidianFetchModule());
 
 /** Lets an `onClick`/`onChange` promise chain finish -- the fake's `click()` cannot await it. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -291,7 +280,7 @@ beforeEach(() => {
 	Platform.isMacOS = false;
 	machine.visionAvailable = false;
 	pairing.fail = null;
-	network.fetch = null;
+	resetNetwork();
 	cloud.register = async () => "device-token";
 	opened.length = 0;
 	copied.length = 0;

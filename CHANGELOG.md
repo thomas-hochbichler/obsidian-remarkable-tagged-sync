@@ -17,8 +17,8 @@ workflow publishes the section as the GitHub release body. See
 - **The licence split moved from `LICENSE` to `LICENSING.md`.** `LICENSE` is now the bare Apache-2.0
   text, so GitHub and the plugin store recognise it as Apache-2.0 instead of "other". The terms are
   unchanged: everything outside `pro/` is Apache-2.0, `pro/` stays under the PolyForm Strict License
-  1.0.0, and the permission to redistribute the unmodified official build is now in `LICENSING.md`,
-  word for word. `package.json` says `SEE LICENSE IN LICENSING.md`.
+  1.0.0, and the permission to redistribute the unmodified official build, now in `LICENSING.md`,
+  is unchanged. `package.json` says `SEE LICENSE IN LICENSING.md`.
 
 ## [1.9.0] - 2026-10-23
 

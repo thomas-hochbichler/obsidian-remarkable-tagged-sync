@@ -12,7 +12,7 @@
 
 import type { ActivationResult, LicenceApi } from "./licence-check";
 import type { LicenceOutcome } from "./licence-state";
-import { obsidianFetch } from "./obsidian-fetch";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 
 const POLAR_API = "https://api.polar.sh/v1/customer-portal/license-keys";
 
@@ -21,8 +21,6 @@ const POLAR_API = "https://api.polar.sh/v1/customer-portal/license-keys";
  * credential: it only says which organization's keys to look up.
  */
 export const POLAR_ORGANIZATION_ID = "e1f4bd71-6fb3-4f0f-a602-f42985a89e15";
-
-type Fetch = typeof fetch;
 
 /** Polar's wording for a key that exists and cannot be used. Read, never relied on — see below. */
 const NOT_ACTIVE = "no longer active";

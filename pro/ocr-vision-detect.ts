@@ -1,5 +1,5 @@
 import { detectLmStudio, detectOllama, type ModelCapabilities, type ThinkingVerdict, visionOnly } from "../src/localhost-vision-detect";
-import { obsidianFetch } from "../src/obsidian-fetch";
+import { type Fetch, obsidianFetch } from "../src/obsidian-fetch";
 import { looksLikeVisionModel, PROVIDERS, type LlmProviderId } from "./ocr-providers";
 
 // The Ollama and LM Studio probes moved to `src/localhost-vision-detect.ts` with the free build's
@@ -16,7 +16,7 @@ export interface VisionDetectInput {
 	/** Resolved base URL (preset from {@link PROVIDERS}, or the user's for editable providers). */
 	baseURL: string;
 	apiKey?: string | null;
-	fetchFn?: typeof fetch;
+	fetchFn?: Fetch;
 }
 
 interface OpenRouterModels {
@@ -121,7 +121,7 @@ export async function detectVisionCapability(input: VisionDetectInput): Promise<
  * OpenRouter's models list exposes `architecture.input_modalities` -- the authoritative signal (spec
  * §8) -- and, on the same entry, the `reasoning` object. One request, both answers.
  */
-async function detectOpenRouter(baseURL: string, apiKey: string | null | undefined, model: string, fetchFn: typeof fetch): Promise<ModelCapabilities> {
+async function detectOpenRouter(baseURL: string, apiKey: string | null | undefined, model: string, fetchFn: Fetch): Promise<ModelCapabilities> {
 	const headers: Record<string, string> = {};
 	if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
 	const response = await fetchFn(`${baseURL.replace(/\/+$/, "")}/models`, { headers });
@@ -143,7 +143,7 @@ async function detectOpenRouter(baseURL: string, apiKey: string | null | undefin
  * reachable -- the verdict is always `partial` on success. A working query still catches a dead
  * endpoint or bad key.
  */
-async function detectGemini(baseURL: string, apiKey: string | null | undefined, fetchFn: typeof fetch): Promise<ModelCapabilities> {
+async function detectGemini(baseURL: string, apiKey: string | null | undefined, fetchFn: Fetch): Promise<ModelCapabilities> {
 	const headers: Record<string, string> = {};
 	if (apiKey) headers["authorization"] = `Bearer ${apiKey}`;
 	const response = await fetchFn(`${baseURL.replace(/\/+$/, "")}/models`, { headers });

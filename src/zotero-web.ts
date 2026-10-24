@@ -10,7 +10,7 @@
  * so there is no CORS problem and no new dependency -- the same route `licence-client.ts` takes.
  */
 
-import { obsidianFetch } from "./obsidian-fetch";
+import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 import {
 	createZoteroConnection,
 	libraryPath,
@@ -43,7 +43,6 @@ export const ZOTERO_WEB_TIMEOUT_MS = 15_000;
  */
 const MAX_BACKOFF_MS = 30_000;
 
-type Fetch = typeof fetch;
 type Sleep = (ms: number) => Promise<void>;
 
 const realSleep: Sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));

@@ -16,7 +16,7 @@ import {
 	triedAgain,
 	upperFirst,
 } from "./llm-transcript";
-import { obsidianFetch } from "../src/obsidian-fetch";
+import { type Fetch, obsidianFetch } from "../src/obsidian-fetch";
 import type { RmPage } from "../src/rm-parser";
 
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -48,7 +48,7 @@ export interface AnthropicOcrOptions {
 	 * refused in {@link AnthropicOcrBackend.recognize} with a sentence naming what to do.
 	 */
 	model?: string;
-	fetchFn?: typeof fetch;
+	fetchFn?: Fetch;
 	/** Injected by tests so a 429 backoff doesn't actually wait. */
 	sleepFn?: Sleep;
 }
@@ -82,7 +82,7 @@ export class AnthropicOcrBackend implements OcrBackend {
 	private readonly apiKey: string;
 	/** The model the requests name, exactly as the user entered it. */
 	readonly model: string;
-	private readonly fetchFn: typeof fetch;
+	private readonly fetchFn: Fetch;
 	private readonly sleepFn: Sleep | undefined;
 	/** Set when a page failed because nothing answered at the endpoint -- see `recognize`. */
 	private unreachable = false;
