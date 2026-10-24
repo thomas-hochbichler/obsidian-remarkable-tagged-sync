@@ -566,8 +566,11 @@ export async function refusalDetail(response: Response): Promise<string> {
  *
  * Deliberately loose in the harmless direction: a false positive says "is it running?" about a server
  * that is, which costs a wrong hint. A false negative restores the silence this exists to end.
+ *
+ * Two vocabularies: Node's (`ECONNREFUSED`, what the tests and the nightly see) and Chromium's
+ * (`net::ERR_CONNECTION_REFUSED`, what `requestUrl` throws inside Obsidian, so what users see).
  */
 export function isUnreachable(error: unknown): boolean {
 	const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-	return /econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up/i.test(text);
+	return /econnrefused|enotfound|ehostunreach|enetunreach|econnreset|failed to fetch|fetch failed|network|socket hang up|err_connection_(refused|reset|closed|failed|timed_out)|err_name_not_resolved|err_address_unreachable|err_internet_disconnected/i.test(text);
 }

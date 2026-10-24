@@ -20,6 +20,15 @@ workflow publishes the section as the GitHub release body. See
   1.0.0, and the permission to redistribute the unmodified official build, now in `LICENSING.md`,
   is unchanged. `package.json` says `SEE LICENSE IN LICENSING.md`.
 
+### Fixed
+
+- **A local model server that isn't running is now named as such.** With LM Studio, Ollama or
+  another server of your own closed, a sync failed the page with only "Could not read this page"
+  and no reason. It now says "Could not reach the server at http://localhost:1234/v1 … Is it
+  running?", as it was meant to, and a later sync tries the page again. Inside Obsidian a closed
+  port is reported in Chromium's words (`net::ERR_CONNECTION_REFUSED`), which the check did not
+  know.
+
 ## [1.9.0] - 2026-10-23
 
 ### Added

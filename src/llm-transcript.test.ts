@@ -359,6 +359,26 @@ describe("isUnreachable", () => {
 		}
 	});
 
+	/** What `requestUrl` throws inside Obsidian: Chromium's net error names, not Node's. */
+	it("recognises Electron's net errors", () => {
+		for (const message of [
+			"net::ERR_CONNECTION_REFUSED",
+			"net::ERR_CONNECTION_RESET",
+			"net::ERR_CONNECTION_CLOSED",
+			"net::ERR_CONNECTION_FAILED",
+			"net::ERR_CONNECTION_TIMED_OUT",
+			"net::ERR_NAME_NOT_RESOLVED",
+			"net::ERR_ADDRESS_UNREACHABLE",
+			"net::ERR_INTERNET_DISCONNECTED",
+		]) {
+			expect(isUnreachable(new Error(message)), message).toBe(true);
+		}
+	});
+
+	it("does not call every net error unreachable", () => {
+		expect(isUnreachable(new Error("net::ERR_CERT_AUTHORITY_INVALID"))).toBe(false);
+	});
+
 	it("does not call a server that answered badly unreachable", () => {
 		expect(isUnreachable(new Error("Unexpected token < in JSON"))).toBe(false);
 	});
