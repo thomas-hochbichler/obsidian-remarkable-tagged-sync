@@ -990,7 +990,7 @@ Two things, both only on the paths your OS reserves for exactly this:
 
 ### Other permissions this plugin uses
 
-Two behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
+Three behaviours show up in Obsidian's automated plugin review, so they are spelled out here:
 
 - **Clipboard — write only.** The *Copy diagnostics* button in settings writes your plugin
   version, Obsidian version, platform, whether Apple Vision is available, the selected transcription
@@ -1001,6 +1001,19 @@ Two behaviours show up in Obsidian's automated plugin review, so they are spelle
 - **Vault folder list.** The tag-routing settings read the list of folders in your vault to fill
   the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
   scanned for this, and the list never leaves your machine.
+- **Running programs on your computer.** Four programs, each for one job:
+  - **`/usr/bin/osascript`**, built into macOS, drives Apple Vision whenever a page is transcribed
+    on a Mac.
+  - **The `llama.cpp` engine** reads each page, but only if you opted in to the
+    [local model](#local-model-optional-opt-in).
+  - **`tar`**, the one your OS ships, unpacks that engine once, right after it is downloaded.
+  - **`xattr`** clears the engine's macOS quarantine flag, and only if macOS kills the engine on
+    its very first start.
+
+  Nothing else is executed. The programs and their options are fixed in the plugin's code and
+  started directly, never through a shell; the only things filled in are the plugin's own temporary
+  page images, the folder it keeps the local model in, and its built-in transcription prompt —
+  nothing you type is passed to them.
 
 ## Support
 
