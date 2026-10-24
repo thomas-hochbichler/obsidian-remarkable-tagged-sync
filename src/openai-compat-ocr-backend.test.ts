@@ -403,6 +403,21 @@ describe("the not-running warning", () => {
 		expect(result.warnings?.[0]).toContain("2 pages were not transcribed");
 	});
 
+	/**
+	 * Inside Obsidian the request goes through `requestUrl`, and Electron names a closed port its own
+	 * way: `net::ERR_CONNECTION_REFUSED`, not Node's `ECONNREFUSED`. Missed, LM Studio left closed failed
+	 * the page with no warning at all.
+	 */
+	it("recognises a closed port the way Obsidian reports it", async () => {
+		fetchMock.mockRejectedValue(new Error("net::ERR_CONNECTION_REFUSED"));
+		const backend = new OpenAiCompatOcrBackend({ id: "lmstudio", baseURL: "http://localhost:1234/v1", model: "m", fetchFn: fetchMock });
+
+		const result = await backend.recognize([page()]);
+
+		expect(result.warnings?.[0]).toContain("Could not reach the server at http://localhost:1234/v1");
+		expect(result.retryable).toBe(true);
+	});
+
 	/** A note goes alone, so "1 page" named the wrong thing, and a count that the sync then merges across a document's notes. */
 	it("says margin notes, without a count, when the scene is a note", async () => {
 		fetchMock.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:11434"));
