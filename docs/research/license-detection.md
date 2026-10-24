@@ -67,7 +67,7 @@ What the file must look like, per **licensee** source:
   Before comparing, licensee strips title, version, copyright lines, Markdown/HTML markup, and
   **everything after `END OF TERMS AND CONDITIONS`** (`strip_end_of_terms`,
   `END_OF_TERMS_REGEX`). A file that matches nothing becomes `License.find('other')`.
-- Our preamble adds roughly 200 words of non-Apache text in front of the terms, which pushes the
+- Our preamble adds about 160 words of non-Apache text in front of the terms, which pushes the
   similarity below 98 % → `other`. That is the whole cause of the finding.
 
 ## 2. Would the planned restructure report Apache-2.0?
