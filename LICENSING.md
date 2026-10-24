@@ -1,4 +1,4 @@
-This repository is not licensed under one licence. Read this section first.
+This repository is not licensed under one licence. Read this file first.
 
   1. Everything in this repository EXCEPT the `pro/` directory is licensed
      under the Apache License, Version 2.0, reproduced in full in `LICENSE`.
