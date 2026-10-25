@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       # One credential: every model rides through OpenRouter (see NIGHTLY_BACKENDS), bought as
       # credits with a spend cap on OpenRouter's side. Direct-provider keys would buy live coverage
       # of the direct endpoints' envelopes; that belongs to the contract half when it lands.
@@ -98,7 +98,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       # Also lays the text layer over the reference render and has PDFKit find every placed word
       # (searchable-pdf spec §7.4). A word PDFKit cannot find writes the part as a catastrophe and then
       # fails this step, so the job is red and the part still reaches the verdict.
@@ -138,7 +138,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - name: Time the heavy page
         run: npm run nightly:perf
       - name: Keep the part for the verdict job

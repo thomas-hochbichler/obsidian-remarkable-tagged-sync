@@ -50,7 +50,14 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+
+      # --- gate: dependency audit, whole tree --------------------------------------------------
+      #
+      # Same gate as release.yml, for the same reason: a beta is the rehearsal for the release,
+      # and a lockfile that would cost the release a scorecard Warning should fail here first.
+      - name: Dependency audit
+        run: npm audit --audit-level=moderate
 
       # --- stamp the beta version --------------------------------------------------------------
       #
