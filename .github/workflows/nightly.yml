@@ -63,13 +63,13 @@ jobs:
             node scripts/nightly-summary.mjs >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Keep the part for the verdict job
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: part-ocr
           path: nightly-parts/ocr.json
       - name: Keep the failing transcripts for whoever debugs a CER jump
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ocr-transcripts
           path: nightly-parts/artifacts/
@@ -112,14 +112,14 @@ jobs:
           fi
       - name: Keep the part for the verdict job
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: part-vision
           path: nightly-parts/vision.json
           if-no-files-found: ignore
       - name: Keep the layered PDFs for whoever debugs a red text layer
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vision-text-layer
           path: nightly-parts/text-layer/
@@ -142,7 +142,7 @@ jobs:
       - name: Time the heavy page
         run: npm run nightly:perf
       - name: Keep the part for the verdict job
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: part-perf
           path: nightly-parts/perf.json
