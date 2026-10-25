@@ -12,6 +12,28 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-10-25
+
+### Added
+
+- **A security policy.** `SECURITY.md` in the repository says how to report a vulnerability
+  privately (GitHub's private reporting form or e-mail), what response to expect, and that only
+  the latest store release receives fixes. Behind it, dependency updates now arrive automatically
+  and every release is refused while any dependency, build tooling included, carries a known
+  vulnerability of moderate severity or higher.
+
+### Changed
+
+- **The reMarkable cloud library is current again, closing a reported vulnerability.** The plugin
+  talks to the reMarkable cloud through rmapi-js, which is now at 14.4.0. That brings zod 4.6.7
+  for checking what the cloud sends back; the zod the plugin shipped before could be made to run
+  out of memory by an oversized reply (CVE-2023-54404). Syncing, sending to the tablet and the
+  SSH device connection behave as before. `main.js` is about 0.8 MB larger, because the new
+  library carries the compatibility code that older Obsidian versions still need.
+
+- **All 18 open dependency alerts on GitHub are resolved.** The other 17 were in the build and
+  test tooling, which never ships to you.
+
 ## [1.9.1] - 2026-10-24
 
 ### Changed
