@@ -14,7 +14,7 @@ export interface NotebookTags {
 
 type EnumerateApi = Pick<RemarkableApi, "listItems" | "getContent">;
 
-export function tagNames(tags: Tag[] | string[] | undefined): string[] {
+export function tagNames(tags: Tag[] | string[] | null | undefined): string[] {
 	if (!tags) return [];
 	return tags.map((tag) => (typeof tag === "string" ? tag : tag.name));
 }
@@ -92,7 +92,7 @@ export async function enumerateNotebookTags(api: EnumerateApi): Promise<Notebook
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
 			// getContent for a DocumentType entry is always document content, never collection/template content.
-			content = (await api.getContent(item.id, item.hash)) as DocumentContent | LegacyDocumentContent;
+			content = (await api.getContent(item)) as DocumentContent | LegacyDocumentContent;
 		} catch (error) {
 			console.warn(`Tagged Sync: failed to read tags for "${item.visibleName}"`, error);
 			continue;

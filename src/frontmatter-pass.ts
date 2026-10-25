@@ -61,7 +61,7 @@ export async function backfillFrontmatter(api: PassApi, noteStore: NoteStore, in
 		}
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
-			content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+			content = (await api.getContent(entry)) as DocumentContent | LegacyDocumentContent;
 		} catch (error) {
 			console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during the frontmatter backfill, skipping`, error);
 			result.skipped += syncKeys.length;

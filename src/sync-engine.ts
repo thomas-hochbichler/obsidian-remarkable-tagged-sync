@@ -636,7 +636,7 @@ export function contentPageOrder(doc: DocumentContent | LegacyDocumentContent): 
 /** Renders one handwritten page, or a blank page when it has no `.rm` file yet (`pageHash` undefined) -- a real, still-live page the user simply never drew on. */
 async function renderPage(api: SyncApi, docId: string, pageId: string, pageHash: string | undefined): Promise<RmPage> {
 	if (pageHash === undefined) return { formatVersion: 6, layers: [] };
-	const bytes = await api.raw.getHash(`${docId}/${pageId}.rm`, pageHash);
+	const bytes = await api.raw.getHash({ id: `${docId}/${pageId}.rm`, hash: pageHash });
 	return parseRmV6(bytes);
 }
 
@@ -662,7 +662,7 @@ async function fetchPageImages(api: SyncApi, scenes: RmPage[], files: DocumentFi
 				return;
 			}
 			try {
-				fetched.set(fileName, await api.raw.getHash(file.id, file.hash));
+				fetched.set(fileName, await api.raw.getHash(file));
 			} catch (error) {
 				console.warn(`Tagged Sync: couldn't fetch ${fileName}, so the page is drawn without it`, error);
 			}
@@ -676,7 +676,7 @@ async function annotatedPdfPages(api: SyncApi, docId: string, docPages: DocPageR
 	return Promise.all(
 		docPages.map(async ({ id, sourceIndex }) => {
 			const hash = pageHashes.get(id);
-			return { sourceIndex, annotations: hash ? parseRmV6(await api.raw.getHash(`${docId}/${id}.rm`, hash)) : null };
+			return { sourceIndex, annotations: hash ? parseRmV6(await api.raw.getHash({ id: `${docId}/${id}.rm`, hash })) : null };
 		}),
 	);
 }
@@ -2002,7 +2002,7 @@ async function scanWorkload(
 		try {
 			let content: DocumentContent | LegacyDocumentContent;
 			try {
-				content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+				content = (await api.getContent(entry)) as DocumentContent | LegacyDocumentContent;
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during sync, skipping`, error);
 				unreadable.set(entry.id, `failed to read "${entry.visibleName}" during sync: ${errorText(error)}`);
@@ -2186,7 +2186,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
-			content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+			content = (await api.getContent(entry)) as DocumentContent | LegacyDocumentContent;
 		} catch (error) {
 			console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during sync, skipping`, error);
 			skipErrors.push(`failed to read "${entry.visibleName}" during sync: ${errorText(error)}`);
@@ -2257,7 +2257,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 		// Fetched once per doc, only if some unit actually needs it (a doc may open just to orphan rows).
 		let sourcePdf: Promise<Uint8Array> | null = null;
-		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry.id, entry.hash).then(validateSourcePdf));
+		const getSourcePdf = () => (sourcePdf ??= api.getPdf(entry).then(validateSourcePdf));
 
 		/**
 		 * What §2.3 matches a document on: the MD5 of the file the tablet holds, not of our render.
@@ -2272,7 +2272,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// The book behind a rendered EPUB, on the same terms: at most once per doc, and only when a
 		// digest has something whose wording is worth correcting (see `DigestSource.book`).
 		let book: Promise<EpubBook | null> | null = null;
-		const getBook = epubFile === null ? undefined : () => (book ??= api.raw.getHash(epubFile.id, epubFile.hash).then(readEpubBook));
+		const getBook = epubFile === null ? undefined : () => (book ??= api.raw.getHash(epubFile).then(readEpubBook));
 
 		/**
 		 * The `## Digest` body for one unit with document text, or "" when it could not be built. A
@@ -2743,7 +2743,7 @@ async function scanReTranscribe(
 		try {
 			let content: DocumentContent | LegacyDocumentContent;
 			try {
-				content = (await deps.api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+				content = (await deps.api.getContent(entry)) as DocumentContent | LegacyDocumentContent;
 			} catch (error) {
 				console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during re-transcribe, skipping`, error);
 				unreadable.set(docId, "");
@@ -2992,7 +2992,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 		let content: DocumentContent | LegacyDocumentContent;
 		try {
-			content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+			content = (await api.getContent(entry)) as DocumentContent | LegacyDocumentContent;
 		} catch (error) {
 			console.warn(`Tagged Sync: failed to read "${entry.visibleName}" during re-transcribe, skipping`, error);
 			continue;
@@ -3090,7 +3090,7 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	if (entry === undefined) return unchanged("not-on-device");
 	if (shouldStop()) return unchanged("stopped");
 
-	const content = (await api.getContent(entry.id, entry.hash)) as DocumentContent | LegacyDocumentContent;
+	const content = (await api.getContent(entry)) as DocumentContent | LegacyDocumentContent;
 	const pdfBacked = isPdfBacked(content);
 	const { pages: pageHashes, images } = await getDocumentFiles(api, entry.id, entry.hash);
 	const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);

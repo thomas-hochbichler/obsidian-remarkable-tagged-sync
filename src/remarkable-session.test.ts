@@ -1,4 +1,4 @@
-import type { Entries, RawEntry } from "rmapi-js";
+import type { Entries, ItemRef, RawEntry } from "rmapi-js";
 import { describe, expect, it, vi } from "vitest";
 import { openSession } from "./remarkable-session";
 
@@ -28,17 +28,20 @@ const METADATA = JSON.stringify({
 
 const entry = (id: string, hash: string): RawEntry => ({ hash, type: 0, id, subfiles: 0, size: 1 });
 
+/** rmapi-js 14 reads the device id out of the session token, so it has to be shaped like a JWT. */
+const SESSION_TOKEN = `header.${Buffer.from(JSON.stringify({ "device-id": "device-1" })).toString("base64url")}.signature`;
+
 describe("openSession", () => {
 	it("lists a notebook whose .content has only the six keys from issue #156", async () => {
-		const api = openSession("session-token");
+		const api = openSession(SESSION_TOKEN);
 		const raw = api.raw;
 		raw.getRootHash = vi.fn().mockResolvedValue(["root-hash", 1, 4]);
-		raw.getEntries = vi.fn(async (fileName: string): Promise<Entries> =>
-			fileName === "root.docSchema"
+		raw.getEntries = vi.fn(async ({ id }: ItemRef): Promise<Entries> =>
+			id === "root"
 				? { id: "root", size: 1, entries: [entry("doc-1", "doc-hash")] }
 				: { id: "doc-1", size: 2, entries: [entry("doc-1.metadata", "meta-hash"), entry("doc-1.content", "content-hash")] },
 		);
-		raw.getText = vi.fn(async (fileName: string) => (fileName.endsWith(".content") ? MINIMAL_CONTENT : METADATA));
+		raw.getText = vi.fn(async ({ id }: ItemRef) => (id.endsWith(".content") ? MINIMAL_CONTENT : METADATA));
 
 		const items = await api.listItems();
 

@@ -144,7 +144,7 @@ describe("the device as a SyncApi", () => {
 		const { device } = fakeDevice(NOTEBOOK);
 		const api = await openDeviceApi(device, NO_HASH_CACHE);
 
-		const bytes = await api.raw.getHash(`${DOC}/${PAGE}.rm`, "unused");
+		const bytes = await api.raw.getHash({ id: `${DOC}/${PAGE}.rm`, hash: "unused" });
 
 		expect(new TextDecoder().decode(bytes)).toBe("page bytes");
 	});
@@ -153,7 +153,7 @@ describe("the device as a SyncApi", () => {
 		const { device } = fakeDevice(NOTEBOOK);
 		const api = await openDeviceApi(device, NO_HASH_CACHE);
 
-		const { entries } = await api.raw.getEntries(`${DOC}.docSchema`, "unused");
+		const { entries } = await api.raw.getEntries({ id: DOC, hash: "unused" });
 
 		expect(entries.map((entry) => entry.id).sort()).toEqual([`${DOC}.content`, `${DOC}.metadata`, `${DOC}/${PAGE}.rm`]);
 	});
@@ -165,7 +165,7 @@ describe("reading a device that is still being written to", () => {
 		const api = await openDeviceApi(tablet.device, NO_HASH_CACHE);
 		tablet.tearOnce(`${DOC}/${PAGE}.rm`, "half a pa");
 
-		const bytes = await api.raw.getHash(`${DOC}/${PAGE}.rm`, "unused");
+		const bytes = await api.raw.getHash({ id: `${DOC}/${PAGE}.rm`, hash: "unused" });
 
 		// xochitl keeps writing while a sync reads and there is no way to lock it, so the guard is to
 		// notice: the bytes are hashed and compared against what the listing indexed them as.
@@ -180,7 +180,7 @@ describe("reading a device that is still being written to", () => {
 		// The engine skips this one document and the next sync picks it up, because the hash that moved
 		// is the same hash the gates read. The quiet version -- rendering the new bytes under the old
 		// page hash -- would be a page that looks synced and never updates again.
-		await expect(api.raw.getHash(`${DOC}/${PAGE}.rm`, "unused")).rejects.toThrow("changed on the device");
+		await expect(api.raw.getHash({ id: `${DOC}/${PAGE}.rm`, hash: "unused" })).rejects.toThrow("changed on the device");
 	});
 });
 
@@ -224,7 +224,7 @@ describe("hashes a vault can keep across a transport switch", () => {
 		const before = await openDeviceApi(tablet.device, NO_HASH_CACHE);
 		const [rootBefore] = await before.raw.getRootHash();
 		const [itemBefore] = await before.listItems();
-		const pageBefore = (await before.raw.getEntries(`${DOC}.docSchema`, "x")).entries.find((entry) =>
+		const pageBefore = (await before.raw.getEntries({ id: DOC, hash: "x" })).entries.find((entry) =>
 			entry.id.endsWith(".rm"),
 		);
 
@@ -233,7 +233,7 @@ describe("hashes a vault can keep across a transport switch", () => {
 		const after = await openDeviceApi(tablet.device, NO_HASH_CACHE);
 		const [rootAfter] = await after.raw.getRootHash();
 		const [itemAfter] = await after.listItems();
-		const pageAfter = (await after.raw.getEntries(`${DOC}.docSchema`, "x")).entries.find((entry) =>
+		const pageAfter = (await after.raw.getEntries({ id: DOC, hash: "x" })).entries.find((entry) =>
 			entry.id.endsWith(".rm"),
 		);
 
@@ -274,8 +274,8 @@ describe("what one session costs", () => {
 		const { device, read } = fakeDevice(NOTEBOOK);
 		const api = await openDeviceApi(device, NO_HASH_CACHE);
 
-		await api.getContent(DOC, "unused");
-		await api.getContent(DOC, "unused");
+		await api.getContent({ id: DOC, hash: "unused" });
+		await api.getContent({ id: DOC, hash: "unused" });
 		await api.listItems();
 
 		// The engine opens each candidate twice, and listItems has read the metadata before either.

@@ -1,4 +1,4 @@
-import type { Content, Entry } from "rmapi-js";
+import type { Content, Entry, ItemRef } from "rmapi-js";
 import { describe, expect, it, vi } from "vitest";
 import { formatLocalMinute } from "./frontmatter";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
@@ -68,7 +68,7 @@ function folderEntry(overrides: Partial<Entry> = {}): Entry {
 function fakeApi(entries: Entry[], contentById: Record<string, Partial<Content>>) {
 	return {
 		listItems: vi.fn(async () => entries),
-		getContent: vi.fn(async (id: string) => {
+		getContent: vi.fn(async ({ id }: ItemRef) => {
 			const content = contentById[id];
 			if (!content) throw new Error(`no content for ${id}`);
 			return content as Content;

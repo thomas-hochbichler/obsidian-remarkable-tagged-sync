@@ -135,7 +135,8 @@ export function formatLocalMinute(date: Date): string {
  * stores it as an epoch-milliseconds string; tolerating an ISO string as well costs one branch and
  * survives a format change without writing `Invalid Date` into anyone's vault.
  */
-export function deviceModified(lastModified: string): string | null {
+export function deviceModified(lastModified: string | undefined): string | null {
+	if (lastModified === undefined) return null;
 	const ms = /^\d+$/.test(lastModified) ? Number(lastModified) : Date.parse(lastModified);
 	return Number.isFinite(ms) ? formatLocalMinute(new Date(ms)) : null;
 }

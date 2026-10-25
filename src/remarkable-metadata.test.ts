@@ -77,10 +77,10 @@ describe("tolerateLegacyMetadata", () => {
 
 		tolerateLegacyMetadata(raw);
 
-		await expect(raw.getMetadata("doc-1.metadata", "hash-1")).resolves.toMatchObject({
+		await expect(raw.getMetadata({ id: "doc-1.metadata", hash: "hash-1" })).resolves.toMatchObject({
 			visibleName: "Meeting notes",
 		});
-		expect(raw.getText).toHaveBeenCalledWith("doc-1.metadata", "hash-1");
+		expect(raw.getText).toHaveBeenCalledWith({ id: "doc-1.metadata", hash: "hash-1" });
 	});
 });
 
@@ -110,10 +110,10 @@ describe("the assumption the patch rests on", () => {
 	});
 
 	it("is pinned to the version this assumption was checked against", () => {
-		// rmapi-js 11.1.2 was read by hand: `listItems` -> `#convertEntry` -> `this.raw.getMetadata`.
+		// rmapi-js 14.4.0 was read by hand: `listItems` -> `#convertEntry` -> `this.raw.getMetadata`.
 		// A major bump is where a rename would arrive, so it has to be looked at rather than absorbed.
 		const version = (JSON.parse(readFileSync(new URL("../node_modules/rmapi-js/package.json", import.meta.url), "utf8")) as { version: string }).version;
 
-		expect(version.split(".")[0]).toBe("11");
+		expect(version.split(".")[0]).toBe("14");
 	});
 });
