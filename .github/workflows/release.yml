@@ -41,7 +41,23 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      # `--ignore-scripts`, same as ci.yml: no install script of any dependency runs on the
+      # machine that builds the release asset.
+      - run: npm ci --ignore-scripts
+
+      # --- gate 1: dependency audit, whole tree ------------------------------------------------
+      #
+      # Stricter than ci.yml on purpose. The community store scans package-lock.json AT THE TAG,
+      # dev dependencies included, against the same advisory database, and computes the scorecard
+      # once per release -- it is never re-evaluated. 1.9.1 shipped two days before the zod
+      # advisory existed and shows a Warning for it until the next release replaces it. So a
+      # dev-only advisory that is harmless to users still costs a scorecard Warning for the
+      # lifetime of the release, and the only moment to prevent that is here. `moderate` because
+      # that is the lowest severity the store counts as a Warning.
+      #
+      # If this fails: fix the dependency on a branch, merge, then delete the tag and re-tag.
+      - name: Dependency audit
+        run: npm audit --audit-level=moderate
 
       # --- gate 0: private paths ---------------------------------------------------------------
       #

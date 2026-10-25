@@ -1,0 +1,40 @@
+# Version updates for the build tooling and the pinned actions. Security updates are a separate
+# mechanism (Settings -> Advanced Security -> Dependabot security updates, on) and are not
+# configured here: they open the moment an advisory lands, one PR per fix, never grouped, for
+# runtime and dev dependencies alike.
+#
+# The policy this file executes is docs/DEVELOPING.md, "Dependencies and security". In short:
+#   - the four runtime dependencies (bundled into main.js) get security updates ONLY. A version
+#     bump of rmapi-js or ssh2 touches every device and cloud read and is done by hand, with a
+#     real sync, never on a schedule.
+#   - dev dependencies arrive once a month as ONE grouped PR, minor and patch only. Majors
+#     (TypeScript 7, ESLint 10, Vitest 5, ...) are deliberate work: one PR each, when no feature
+#     branch is open. `allow.update-types` keeps them out of the monthly PR.
+#   - `allow` rather than `ignore` on purpose. The docs do not confirm that an `ignore` of
+#     semver-major spares a security fix that exists only in a major (rmapi-js 14 for zod was one),
+#     while `allow.update-types` is documented to restrict version updates only.
+#   - GitHub Actions are pinned by commit SHA with the tag in a trailing comment; Dependabot
+#     updates both together, which is why the comment must stay on the same line.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      timezone: "Europe/Vienna"
+    versioning-strategy: "increase"
+    allow:
+      - dependency-type: "development"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      timezone: "Europe/Vienna"

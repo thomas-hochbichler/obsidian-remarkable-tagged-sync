@@ -45,7 +45,28 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      # `--ignore-scripts`: five packages carry install scripts (esbuild, ssh2, cpu-features,
+      # core-js, fsevents) and none is needed for the build or the tests -- verified 2026-10-25,
+      # build and all 2965 tests green without them. An install script is the usual way a
+      # compromised package runs code on the machine that installs it, so the runner never runs
+      # one. npm 12 blocks them by default; this is the same posture, one version early.
+      - run: npm ci --ignore-scripts
+
+      # --- gate 1: dependency audit ------------------------------------------------------------
+      #
+      # Two runs against the GitHub Advisory Database, the same source Dependabot and the store's
+      # scorecard read. The first prints everything and never fails (`--audit-level=none`), so a
+      # dev-only finding is visible in the log without turning a feature branch red; Dependabot
+      # alerts cover that tree, and release.yml is where the full tree must be clean. The second is
+      # the gate: only what is reachable from the four runtime deps (29 of 457 packages), and only
+      # high or critical. A red run here means something shipped in main.js is affected -- read
+      # it, do not retry: an audit-endpoint outage also exits 1 (npm has no separate code for it).
+      - name: Dependency audit (report)
+        run: npm audit --audit-level=none
+        continue-on-error: true
+
+      - name: Dependency audit (runtime gate)
+        run: npm audit --omit=dev --audit-level=high
 
       # --- gate 0: private paths ---------------------------------------------------------------
       #

@@ -62,7 +62,8 @@ after a failure.
 
 | # | Gate | CI | Release |
 |---|---|---|---|
-| 1 | checkout, Node from `.nvmrc`, `npm ci` | ✅ | ✅ |
+| 1 | checkout, Node from `.nvmrc`, `npm ci --ignore-scripts` | ✅ | ✅ |
+| 1b | dependency audit — see *Dependencies and security* in `docs/DEVELOPING.md` | ✅ runtime deps, high+ | ✅ **whole tree, moderate+** |
 | 2 | git author email | ✅ | — |
 | 3 | version consistency across the four files, and the frozen state | ✅ | ✅ **plus tag == version** |
 | 4 | changelog | ✅ weaker — see below | ✅ hard |
@@ -76,6 +77,7 @@ after a failure.
 You can run any gate locally:
 
 ```bash
+npm audit --audit-level=moderate                 # the release gate; must be clean before you tag
 node scripts/release-checks.mjs version          # add --tag 1.0.6 to also check the tag
 node scripts/release-checks.mjs changelog --ci   # or --release 1.0.6
 node scripts/release-checks.mjs lint
