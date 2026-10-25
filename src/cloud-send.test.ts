@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Entry, SimpleEntry } from "rmapi-js";
+import type { Entry, ItemRef } from "rmapi-js";
 import { GENERATION_ATTEMPTS, namesInCloudFolder, sendToCloud, type CloudSendApi } from "./cloud-send";
 import type { SendDocument } from "./zotero-send";
 
@@ -19,8 +19,8 @@ function folder(overrides: Partial<Entry> = {}): Entry {
 function api(overrides: Partial<CloudSendApi> = {}): CloudSendApi {
 	return {
 		listItems: async () => [],
-		putFolder: async () => ({ id: "new-folder" }) as SimpleEntry,
-		putPdf: async () => ({ id: "doc-1" }) as SimpleEntry,
+		putFolder: async () => ({ id: "new-folder" }) as ItemRef,
+		putPdf: async () => ({ id: "doc-1" }) as ItemRef,
 		...overrides,
 	};
 }
@@ -28,7 +28,7 @@ function api(overrides: Partial<CloudSendApi> = {}): CloudSendApi {
 describe("the cloud's Zotero folder", () => {
 	it("is the one that is there, found by its name", async () => {
 		const putFolder = vi.fn();
-		const putPdf = vi.fn(async () => ({ id: "doc-1" }) as SimpleEntry);
+		const putPdf = vi.fn(async () => ({ id: "doc-1" }) as ItemRef);
 		await sendToCloud(api({ listItems: async () => [folder()], putFolder, putPdf }), document);
 
 		expect(putFolder).not.toHaveBeenCalled();
@@ -39,7 +39,7 @@ describe("the cloud's Zotero folder", () => {
 	it("is created where the account has none", async () => {
 		const putPdf = vi.fn(async (_name: string, _bytes: Uint8Array, opts?: { parent?: string }) => {
 			expect(opts).toMatchObject({ parent: "new-folder" });
-			return { id: "doc-1" } as SimpleEntry;
+			return { id: "doc-1" } as ItemRef;
 		});
 		await sendToCloud(api({ putPdf }), document);
 		expect(putPdf).toHaveBeenCalled();
@@ -49,7 +49,7 @@ describe("the cloud's Zotero folder", () => {
 	it("is never a nested folder and never a document of that name", async () => {
 		const nested = { ...folder({}), id: "f-2", parent: "other" } as Entry;
 		const named = { ...folder({}), id: "f-3", type: "DocumentType" } as Entry;
-		const putFolder = vi.fn(async () => ({ id: "new-folder" }) as SimpleEntry);
+		const putFolder = vi.fn(async () => ({ id: "new-folder" }) as ItemRef);
 		await sendToCloud(api({ listItems: async () => [nested, named], putFolder }), document);
 		expect(putFolder).toHaveBeenCalled();
 	});
@@ -58,7 +58,7 @@ describe("the cloud's Zotero folder", () => {
 		const parents: (string | undefined)[] = [];
 		const putPdf = vi.fn(async (_name: string, _bytes: Uint8Array, opts?: { parent?: string }) => {
 			parents.push(opts?.parent);
-			return { id: "doc-1" } as SimpleEntry;
+			return { id: "doc-1" } as ItemRef;
 		});
 		const two = [{ ...folder(), id: "f-9" } as Entry, { ...folder(), id: "f-2" } as Entry];
 		await sendToCloud(api({ listItems: async () => two, putPdf }), document);
@@ -96,7 +96,7 @@ describe("a generation that moved under the upload", () => {
 		let calls = 0;
 		const putPdf = vi.fn(async (_name: string, _bytes: Uint8Array, _opts?: { refresh?: boolean }) => {
 			if (++calls === 1) throw new GenerationError();
-			return { id: "doc-1" } as SimpleEntry;
+			return { id: "doc-1" } as ItemRef;
 		});
 
 		expect(await sendToCloud(api({ putPdf }), document)).toEqual({ docId: "doc-1" });
@@ -108,7 +108,7 @@ describe("a generation that moved under the upload", () => {
 		let calls = 0;
 		const putFolder = vi.fn(async () => {
 			if (++calls === 1) throw new GenerationError();
-			return { id: "new-folder" } as SimpleEntry;
+			return { id: "new-folder" } as ItemRef;
 		});
 		await sendToCloud(api({ putFolder }), document);
 		expect(putFolder).toHaveBeenCalledTimes(2);

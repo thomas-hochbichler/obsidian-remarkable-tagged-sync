@@ -37,7 +37,7 @@ describe("getDocumentFiles", () => {
 
 		await getDocumentFiles(api, "doc-1", "doc-hash-1");
 
-		expect(api.raw.getEntries).toHaveBeenCalledWith("doc-1.docSchema", "doc-hash-1");
+		expect(api.raw.getEntries).toHaveBeenCalledWith({ id: "doc-1", hash: "doc-hash-1" });
 	});
 
 	it("ignores non-.rm subfiles (content/metadata)", async () => {

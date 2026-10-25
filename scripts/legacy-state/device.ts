@@ -140,7 +140,7 @@ const PAGE_FILE_BYTES: Record<string, string> = {
 export function legacyDevice(): SyncApi {
 	return {
 		listItems: async () => ENTRIES as never,
-		getContent: async (id: string) => {
+		getContent: async ({ id }: { id: string }) => {
 			const content = CONTENT[id];
 			if (!content) throw new Error(`no content for ${id}`);
 			return content as never;
@@ -150,8 +150,7 @@ export function legacyDevice(): SyncApi {
 		},
 		raw: {
 			getRootHash: async () => [ROOT_HASH, 1, 4] as never,
-			getEntries: async (fileName: string) => {
-				const docId = fileName.replace(/\.docSchema$/, "");
+			getEntries: async ({ id: docId }: { id: string }) => {
 				const pages = PAGE_HASHES[docId] ?? {};
 				return {
 					entries: Object.entries(pages).map(([pageId, hash]) => ({
@@ -163,7 +162,7 @@ export function legacyDevice(): SyncApi {
 					})),
 				} as never;
 			},
-			getHash: async (fileName: string) => {
+			getHash: async ({ id: fileName }: { id: string }) => {
 				const fixture = PAGE_FILE_BYTES[fileName];
 				if (!fixture) throw new Error(`no page bytes for ${fileName}`);
 				return pageBytes(fixture) as never;

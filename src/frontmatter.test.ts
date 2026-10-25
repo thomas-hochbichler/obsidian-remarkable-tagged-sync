@@ -245,6 +245,12 @@ describe("value formatting", () => {
 		expect(deviceModified("soon")).toBeNull();
 	});
 
+	it("gives a document whose metadata carries no lastModified no modified key", () => {
+		// rmapi-js 12 made Metadata.lastModified optional; the plugin's own parse still requires it,
+		// so this is the type's contract rather than a case the cloud has shown.
+		expect(deviceModified(undefined)).toBeNull();
+	});
+
 	it("namespaces device tags the way Obsidian properties want them: no #, no spaces, deduped", () => {
 		expect(namespacedTags(["#work", "Projekt X", "work", "  "])).toEqual(["remarkable/work", "remarkable/Projekt-X"]);
 	});

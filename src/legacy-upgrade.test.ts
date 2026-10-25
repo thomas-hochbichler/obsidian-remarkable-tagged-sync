@@ -1,6 +1,7 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
+import type { ItemRef } from "rmapi-js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AttachmentStore } from "./attachment-writer";
 import type { NoteStore } from "./note-builder";
@@ -122,18 +123,18 @@ function withNewlyTaggedDocument(api: SyncApi): SyncApi {
 	return {
 		...api,
 		listItems: async () => [...(await api.listItems()), entry] as never,
-		getContent: async (id, hash) => (id === "doc-extra" ? (content as never) : api.getContent(id, hash)),
+		getContent: async (ref: ItemRef) => (ref.id === "doc-extra" ? (content as never) : api.getContent(ref)),
 		raw: {
 			...api.raw,
 			getRootHash: async () => ["root-legacy-state-plus-one-tag", 1, 4] as never,
-			getEntries: async (fileName, hash) =>
-				fileName === "doc-extra.docSchema"
+			getEntries: async (ref: ItemRef) =>
+				ref.id === "doc-extra"
 					? ({ entries: [{ id: "doc-extra/page-extra.rm", hash: "h-page-extra", type: 0 as const, subfiles: 0, size: 0 }] } as never)
-					: api.raw.getEntries(fileName, hash),
-			getHash: async (fileName, hash) =>
-				fileName === "doc-extra/page-extra.rm"
+					: api.raw.getEntries(ref),
+			getHash: async (ref: ItemRef) =>
+				ref.id === "doc-extra/page-extra.rm"
 					? (new Uint8Array(readFileSync(join(process.cwd(), "test-fixtures", "rmv6", "normal-a-stroke-2-layers.rm"))) as never)
-					: api.raw.getHash(fileName, hash),
+					: api.raw.getHash(ref),
 		},
 	};
 }

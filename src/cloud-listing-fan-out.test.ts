@@ -90,7 +90,8 @@ afterEach(() => {
 describe("listing a large account", () => {
 	it("survives a runtime that allows only so many requests at once", async () => {
 		fillAccount(DOCUMENTS_IN_THE_ACCOUNT);
-		const api = openSession("session-token");
+		// rmapi-js 14 reads the device id out of the session token, so it has to be shaped like a JWT.
+		const api = openSession(`header.${Buffer.from(JSON.stringify({ "device-id": "device-1" })).toString("base64url")}.signature`);
 
 		await expect(api.listItems()).resolves.toHaveLength(DOCUMENTS_IN_THE_ACCOUNT);
 		// Exactly the shim's bound, not merely under the runtime's: with 300 file lists queued at once

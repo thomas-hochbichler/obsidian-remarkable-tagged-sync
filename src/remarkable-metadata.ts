@@ -9,11 +9,12 @@ import type { Metadata, RawRemarkableApi } from "rmapi-js";
  * never reads those four fields.
  *
  * rmapi-js documents `getText` + `JSON.parse` as the way past its own validation, so `getMetadata`
- * is replaced here with a version that treats a null optional as absent. Still unfixed upstream as
- * of rmapi-js 12.0.0.
+ * is replaced here with a version that treats a null optional as absent. rmapi-js 12.0.2 accepts
+ * `null` for those four fields, but as of 14.4.0 its schema still requires `parent` (issue #69
+ * below), so the replacement stays.
  */
 export function tolerateLegacyMetadata(raw: RawRemarkableApi): void {
-	raw.getMetadata = async (fileName, hash) => parseMetadataText(await raw.getText(fileName, hash));
+	raw.getMetadata = async (ref) => parseMetadataText(await raw.getText(ref));
 }
 
 const DOCUMENT_TYPES = ["DocumentType", "CollectionType", "TemplateType"];

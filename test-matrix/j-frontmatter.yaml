@@ -83,6 +83,12 @@
       layer: unit
       file: src/frontmatter.test.ts
       test: "value formatting > namespaces device tags the way Obsidian properties want them: no #, no spaces, deduped"
+    - id: J1.13
+      scenario: Metadata carries no lastModified at all (optional since rmapi-js 12)
+      expect: No modified key, same as junk; the plugin's own metadata parse still requires the field, so this is the type's contract
+      layer: unit
+      file: src/frontmatter.test.ts
+      test: "value formatting > gives a document whose metadata carries no lastModified no modified key"
 
 - feature: J2
   name: The shared tags key -- merged, never owned

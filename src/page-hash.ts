@@ -30,7 +30,7 @@ const IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg"];
  * already in hand.
  */
 export async function getDocumentFiles(api: PageHashApi, docId: string, docHash: string): Promise<DocumentFiles> {
-	const { entries } = await api.raw.getEntries(`${docId}.docSchema`, docHash);
+	const { entries } = await api.raw.getEntries({ id: docId, hash: docHash });
 	const prefix = `${docId}/`;
 
 	const pages = new Map<string, string>();

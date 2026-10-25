@@ -12,7 +12,7 @@
  * caching, the entry index -- testable without a tablet in the room.
  */
 
-import type { Content, Entry, RawEntry } from "rmapi-js";
+import type { Content, Entry, ItemRef, RawEntry } from "rmapi-js";
 import type { SyncApi } from "./sync-engine";
 import { mapWithConcurrency } from "./concurrency";
 import { hashBytes, indexEntry, type Sync15Entry } from "./sync15-hash";
@@ -342,9 +342,9 @@ export async function openDeviceApi(
 			return listed.filter((item) => item !== null);
 		},
 
-		getContent: (id: string): Promise<Content> => contentOf(id),
+		getContent: ({ id }: ItemRef): Promise<Content> => contentOf(id),
 
-		getPdf: (id: string): Promise<Uint8Array> => readMember(id, `${id}.pdf`),
+		getPdf: ({ id }: ItemRef): Promise<Uint8Array> => readMember(id, `${id}.pdf`),
 
 		raw: {
 			getRootHash: async (): Promise<[string, number, 4]> => {
@@ -353,8 +353,7 @@ export async function openDeviceApi(
 				return [root.hash, 0, 4];
 			},
 
-			getEntries: async (fileName: string) => {
-				const docId = fileName.endsWith(".docSchema") ? fileName.slice(0, -".docSchema".length) : fileName;
+			getEntries: async ({ id: docId }: ItemRef) => {
 				const document = documents.get(docId);
 				if (document === undefined) throw new Error(`No document ${docId} on the device.`);
 				const entries: RawEntry[] = [...document.hashes].map(([id, hash]) => ({
@@ -367,7 +366,7 @@ export async function openDeviceApi(
 				return { entries, id: docId, size: document.entry.size };
 			},
 
-			getHash: async (fileName: string): Promise<Uint8Array> => {
+			getHash: async ({ id: fileName }: ItemRef): Promise<Uint8Array> => {
 				const docId = documentOf(fileName);
 				if (docId === null) throw new Error(`${fileName} is not a document file.`);
 				return await readMember(docId, fileName);

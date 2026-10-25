@@ -17,7 +17,7 @@ async function main() {
 	if (!entry) throw new Error(`no entry ${docId}`);
 	console.log(`visibleName: ${entry.visibleName}  hash: ${entry.hash}`);
 
-	const content = (await api.getContent(entry.id, entry.hash)) as Record<string, unknown>;
+	const content = (await api.getContent(entry)) as Record<string, unknown>;
 	console.log(`fileType: ${JSON.stringify(content.fileType)}  formatVersion: ${JSON.stringify(content.formatVersion)}`);
 	console.log(`legacy pages[]: ${Array.isArray(content.pages) ? (content.pages as string[]).length : "absent"}`);
 

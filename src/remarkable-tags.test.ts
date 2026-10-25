@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Content, Entry } from "rmapi-js";
+import type { Content, Entry, ItemRef } from "rmapi-js";
 import { collectTagNames, enumerateNotebookTags, folderPathOf } from "./remarkable-tags";
 
 function documentEntry(overrides: Partial<Entry> = {}): Entry {
@@ -49,7 +49,7 @@ function documentContent(overrides: Partial<Content> = {}): Content {
 function fakeApi(items: Entry[], contentById: Record<string, Content>) {
 	return {
 		listItems: vi.fn().mockResolvedValue(items),
-		getContent: vi.fn(async (id: string) => {
+		getContent: vi.fn(async ({ id }: ItemRef) => {
 			const content = contentById[id];
 			if (!content) throw new Error(`no content for ${id}`);
 			return content;

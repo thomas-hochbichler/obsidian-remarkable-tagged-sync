@@ -9,10 +9,10 @@ import type { Content, RawRemarkableApi } from "rmapi-js";
  *
  * The plugin reads five things from a `.content`: `fileType`, `tags`, `pageTags`, `cPages` and
  * `pages`. Only those are checked here; everything else passes through untouched. Still unfixed
- * upstream as of rmapi-js 14.2.0, whose schema requires the same six fields.
+ * upstream as of rmapi-js 14.4.0, whose schema requires the same six fields.
  */
 export function tolerateSlimContent(raw: RawRemarkableApi): void {
-	raw.getContent = async (fileName, hash) => parseContentText(await raw.getText(fileName, hash));
+	raw.getContent = async (ref) => parseContentText(await raw.getText(ref));
 }
 
 /** Parses a `.content` file, checking the shape of the fields this plugin reads and nothing more. */

@@ -34,9 +34,9 @@ describe("tolerateSlimContent", () => {
 		const raw = { getText: vi.fn().mockResolvedValue(JSON.stringify({ fileType: "pdf" })), getContent: vi.fn() } as unknown as RawRemarkableApi;
 
 		tolerateSlimContent(raw);
-		const content = await raw.getContent("doc-1.content", "hash-1");
+		const content = await raw.getContent({ id: "doc-1.content", hash: "hash-1" });
 
-		expect(raw.getText).toHaveBeenCalledWith("doc-1.content", "hash-1");
+		expect(raw.getText).toHaveBeenCalledWith({ id: "doc-1.content", hash: "hash-1" });
 		expect(content).toEqual({ fileType: "pdf" });
 	});
 });
