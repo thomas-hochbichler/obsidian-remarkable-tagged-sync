@@ -38,3 +38,8 @@ updates:
     schedule:
       interval: "monthly"
       timezone: "Europe/Vienna"
+    # One PR for all actions, like the dev dependencies. The first run without this group opened
+    # five PRs in one minute (#235-#239), one per action.
+    groups:
+      actions:
+        patterns: ["*"]
