@@ -709,6 +709,33 @@ describe("renderAnnotatedPdf", () => {
 		expect(width).toBeGreaterThan(2 * 900 * (72 / 226));
 	});
 
+	// Issue #247: a page added on the device can carry typed text, and with no ink on it the page was
+	// written out blank -- the text was neither drawn nor counted when the sheet was sized.
+	it("draws the typed text of a page with no source page, so a typed-only added page is not blank", async () => {
+		const typed: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: "typed", deleted: 0 }], styles: new Map() },
+		};
+
+		const { ops } = await decodePageContent(await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 1, annotations: typed }]));
+
+		expect(ops).toContain(drawnText("typed"));
+	});
+
+	it("sizes a page with no source page to typed text that runs past the screen", async () => {
+		const manyLines = Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n");
+		const typed: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: manyLines, deleted: 0 }], styles: new Map() },
+		};
+
+		const doc = await PDFDocument.load(await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 1, annotations: typed }]));
+
+		expect(doc.getPage(0).getHeight()).toBeGreaterThan(1872 * (72 / 226));
+	});
+
 	it("keeps the device canvas for a page with no source page and no ink to measure", async () => {
 		const bytes = await renderAnnotatedPdf(await makeSource(1), [
 			{ sourceIndex: 0, annotations: null },

@@ -1233,7 +1233,7 @@ describe("buildDigest on a page added on the device", () => {
 		expect(ocr).toHaveBeenCalledTimes(1);
 		expect(ocr.mock.calls[0][2]).toBe("added-page");
 		expect(result.markdown.match(/^> \[!handwritten\]/gm)).toHaveLength(1);
-		expect(result.markdown).toContain("[!handwritten] Handwritten page");
+		expect(result.markdown).toContain("[!handwritten] Your page");
 		expect(result.markdown).toContain("> first line\n> second line");
 	});
 
@@ -1278,6 +1278,51 @@ describe("buildDigest on a page added on the device", () => {
 
 		expect(result.markdown).toBe("");
 		expect(ocr).not.toHaveBeenCalled();
+	});
+
+	// Issue #247: text typed on an added page never reached the note -- the backend was handed the ink alone.
+	describe("with typed text on it", () => {
+		const TYPED: RmText = { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: "A typed paragraph\nwith two lines", deleted: 0 }], styles: new Map() };
+
+		function typedPage(scene: RmPage): DigestPageInput {
+			return { ...appendedPage(), scene: { ...scene, text: TYPED } };
+		}
+
+		it("hands the backend the page with its typed text, which it places among the handwriting", async () => {
+			const ocr = vi.fn().mockResolvedValue({ status: "ok", text: "handwriting\nA typed paragraph\nwith two lines", confidence: null });
+
+			const result = await build([typedPage(fixtureScene())], { ocrBackend: { id: "vision", metered: false, fingerprint: "test-backend", recognize: ocr } });
+
+			expect(ocr).toHaveBeenCalledTimes(1);
+			expect(ocr.mock.calls[0][0][0].text).toEqual(TYPED);
+			expect(result.markdown.match(/^> \[!handwritten\]/gm)).toHaveLength(1);
+			expect(result.markdown).toContain("> handwriting\n> A typed paragraph\n> with two lines");
+		});
+
+		it("reads a page with typed text and no ink without a transcription", async () => {
+			const ocr = vi.fn();
+
+			const result = await build([typedPage({ formatVersion: 6, layers: [] })], { ocrBackend: { id: "vision", metered: false, fingerprint: "test-backend", recognize: ocr } });
+
+			expect(ocr).not.toHaveBeenCalled();
+			expect(result.markdown).toContain("> A typed paragraph\n> with two lines");
+		});
+
+		it("keeps the typed text when the handwriting beside it could not be read", async () => {
+			const result = await build([typedPage(fixtureScene())], { ocrBackend: fakeOcr({ status: "failed", text: "", confidence: null }) });
+
+			expect(result.markdown).toContain("> A typed paragraph\n> with two lines");
+			expect(result.ocr).toBe("failed");
+		});
+
+		it("drops it with the switch off, typed text included", async () => {
+			const ocr = vi.fn();
+
+			const result = await build([typedPage({ formatVersion: 6, layers: [] })], { marginNotes: false, ocrBackend: { id: "vision", metered: false, fingerprint: "test-backend", recognize: ocr } });
+
+			expect(result.markdown).toBe("");
+			expect(ocr).not.toHaveBeenCalled();
+		});
 	});
 });
 

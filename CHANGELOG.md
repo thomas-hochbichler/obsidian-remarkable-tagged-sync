@@ -12,6 +12,23 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Text you typed on a page you added to a PDF reaches your note.** Until now only the handwriting
+  on such a page was transcribed, and a page with typed text alone stayed out of the note and came
+  out blank in the render. The typed lines now sit among the handwriting in the order they appear on
+  the page, and a page of typed text alone needs no transcription at all. The first sync after the
+  update renders your PDFs again, so pages you added earlier show their text too; with *Your notes
+  on PDFs* switched on, that reads their handwriting again once
+  ([#247](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/247)).
+
+### Changed
+
+- **The *Handwritten notes* switch is now called *Your notes on PDFs*.** It covers what you typed on
+  a page you added as well as what you wrote, so switched off, neither reaches the note. The callout
+  for a page you added is titled *Your page* instead of *Handwritten page*; its type stays
+  `[!handwritten]`, so your CSS keeps working. Your setting is kept.
+
 ## [1.9.2] - 2026-10-25
 
 ### Added

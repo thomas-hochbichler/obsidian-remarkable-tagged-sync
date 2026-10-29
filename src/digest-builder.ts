@@ -182,9 +182,9 @@ export const NOT_TRANSCRIBED = "Handwriting that could not be transcribed.";
 /**
  * The title of a page added on the device (F21). It says what the entry is -- a page of the reader's
  * own notes rather than a mark on someone else's text -- because that is the one thing about it a
- * reader cannot see from where it is printed.
+ * reader cannot see from where it is printed. Not "Handwritten page": it may be typed (issue #247).
  */
-const WHOLE_PAGE_TITLE = "Handwritten page";
+const WHOLE_PAGE_TITLE = "Your page";
 
 /**
  * Neutralises the markup a quoted passage can carry into the note. Every string that comes from the
