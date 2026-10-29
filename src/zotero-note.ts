@@ -49,6 +49,11 @@ export interface ZoteroNoteInfo {
 	/** The account's numeric user id, or null when the web connection is not configured -- then there is no web link. */
 	readonly webUserId: string | null;
 	readonly writeBack: ZoteroWriteBack;
+	/**
+	 * Why the pages added on the tablet are not in Zotero as notes, when the highlights went in and
+	 * they did not (Zotero spec §6): "this PDF has no parent item in Zotero". Absent otherwise.
+	 */
+	readonly addedPagesNotWritten?: string;
 	/** The vault's own note about this paper, as its link text -- see {@link findLiteratureNote}. */
 	readonly literatureNote: string | null;
 	/**
@@ -132,6 +137,7 @@ export function zoteroCalloutLine(info: ZoteroNoteInfo): string {
 	}
 	if (info.matchedByHash === true) parts.push("matched by file hash");
 	parts.push(writeBackPhrase(info.writeBack));
+	if (info.addedPagesNotWritten !== undefined) parts.push(`added pages not written back: ${info.addedPagesNotWritten}`);
 	if (info.literatureNote !== null) parts.push(`literature note: [[${info.literatureNote}]]`);
 	return `Zotero: ${parts.join(" · ")}`;
 }

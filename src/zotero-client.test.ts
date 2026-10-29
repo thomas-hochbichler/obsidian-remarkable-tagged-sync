@@ -176,6 +176,44 @@ describe("our own annotations", () => {
 	});
 });
 
+describe("notes for pages added on the tablet (#246)", () => {
+	const BODY = "<h1>Added page after p. 12</h1>\n<p>my words</p>";
+
+	it("creates a child note under the paper, tagged as ours", async () => {
+		const { api, calls } = connection(() => json({ success: { "0": "NOTE1" }, successful: { "0": { key: "NOTE1", data: { note: BODY } } } }));
+		await api.createNotes([{ parentKey: "ITEM1", note: BODY }], "user");
+		expect(calls[0]).toMatchObject({ method: "POST", path: "/items", body: [{ itemType: "note", parentItem: "ITEM1", note: BODY, tags: [{ tag: OWNERSHIP_TAG }] }] });
+		expect(calls[0].headers?.["Zotero-Write-Token"]).toMatch(/^\w{5,32}$/);
+	});
+
+	// What is remembered is what Zotero stored, not what was sent: the next sync compares against it,
+	// and a cleaner on the way in must not make our own note read as the user's edit (research 03 §3).
+	it("hands back the body as Zotero stored it, and says which ones it refused", async () => {
+		const { api } = connection(() =>
+			json({ success: { "0": "NOTE1" }, successful: { "0": { key: "NOTE1", data: { note: "<h1>stored</h1>" } } }, failed: { "1": { code: 400, message: "Parent item not found" } } }),
+		);
+		expect(await api.createNotes([{ parentKey: "ITEM1", note: BODY }, { parentKey: "GONE", note: BODY }], "user")).toEqual({
+			created: [{ key: "NOTE1", note: "<h1>stored</h1>" }, null],
+			failures: ["Parent item not found"],
+		});
+	});
+
+	it("reads only our notes under one paper", async () => {
+		const { api, calls } = connection(() =>
+			json([
+				{ data: { key: "NOTE1", version: 7, itemType: "note", parentItem: "ITEM1", note: BODY } },
+				{ data: { key: "TOP", version: 3, itemType: "note", note: "<p>standalone</p>" } },
+			]),
+		);
+		expect(await api.ownNotes("ITEM1", "user")).toEqual([{ key: "NOTE1", library: "user", source: "local", parentKey: "ITEM1", note: BODY, version: 7 }]);
+		expect(calls[0].path).toBe(`/items/ITEM1/children?itemType=note&tag=${OWNERSHIP_TAG}&limit=100&start=0`);
+	});
+
+	it("cannot say whether notes may be written where only the desktop app is connected", async () => {
+		expect(await createZoteroClient({ local: connection(() => json([])).api })?.notesAccess()).toBeNull();
+	});
+});
+
 describe("writing annotations", () => {
 	const highlight: NewAnnotation = {
 		type: "highlight",

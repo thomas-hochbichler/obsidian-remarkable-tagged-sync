@@ -4055,3 +4055,228 @@
       file: src/zotero-client.test.ts
       test: "the render as a Zotero attachment (Zotero spec §4.1) > reports a register that fails for any reason but a changed file"
 
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §2, §3 "created" rows, §6 point 1:
+# each page added on the tablet becomes a child note under the paper. First sync only (ticket 11);
+# refresh, trash and the user's edit are ticket 12's.
+- feature: Y34
+  name: Pages added on the tablet as Zotero notes (#246)
+  code: src/zotero-notes.ts
+  tier: pro
+  scenarios:
+    - id: Y34.1
+      scenario: "An added page with two lines of text, after p. 12, on its first sync"
+      expect: 'One create: `<h1>Added page after p. 12</h1>` then one `<p>` per line, joined with `\n`, under the paper'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > becomes one note under the paper, titled by the page it follows"
+    - id: Y34.2
+      scenario: "One added page before p. 1 and two in a row after p. 12"
+      expect: '"Added page before p. 1", "Added page 1 after p. 12", "Added page 2 after p. 12"'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > numbers two added pages in a row after the same page, and names one before the first page"
+    - id: Y34.3
+      scenario: "The page before it carries the PDF label xii"
+      expect: 'Titled "Added page after p. xii" -- the label the vault note shows (spec §10 P2)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > names the page by the label the vault note shows for it"
+    - id: Y34.4
+      scenario: "Text with `<`, `&`, a control character, blank lines and runs of whitespace"
+      expect: 'Escaped, control character gone, blank lines dropped, whitespace one space, nothing around the whole body -- what both connections store unchanged (ticket 08 #1)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes a body both connections store unchanged: escaped, no control characters, no outer whitespace"
+    - id: Y34.5
+      scenario: "An added page with no text on it"
+      expect: 'No note'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes nothing for a page with no text on it"
+    - id: Y34.6
+      scenario: "An added page whose handwriting could not be read this sync, typed text standing in"
+      expect: 'No note: the page is not covered (spec §10 P5)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes nothing for a page whose handwriting could not be read this sync"
+    - id: Y34.7
+      scenario: "A page of the PDF itself with a margin note"
+      expect: 'No note: that is an annotation'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > leaves the pages of the PDF itself to the annotations"
+    - id: Y34.8
+      scenario: "A page-scoped unit, and a unit that speaks for no added page"
+      expect: 'The page-scoped one writes its one page; the other writes nothing'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes only the one page a page-scoped unit speaks for, and nothing for a unit that speaks for none"
+    - id: Y34.9
+      scenario: "A page already recorded in the link's `notes`"
+      expect: 'Not created again (refreshing it is ticket 12)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > does not write a page again that it already has a record for"
+    - id: Y34.10
+      scenario: "No record, but the paper already has a note of ours under the same title (a 1.9.x save dropped `notes`)"
+      expect: 'Not created: never a second copy (adopting it is ticket 12)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > does not write a second note where the paper already has ours under the same title"
+    - id: Y34.11
+      scenario: "Creating a note"
+      expect: '`POST /items` with `itemType: note`, `parentItem`, the body and the `tagged-sync` tag, under a write token'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > creates a child note under the paper, tagged as ours"
+    - id: Y34.12
+      scenario: "Zotero stores a cleaned body for one note and refuses another"
+      expect: 'The stored body from `successful[i].data.note` comes back, the refused one is `null` with its reason'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > hands back the body as Zotero stored it, and says which ones it refused"
+    - id: Y34.13
+      scenario: "Reading our notes under a paper"
+      expect: '`/items/<paper>/children?itemType=note&tag=tagged-sync`; a row with no parent is left out'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > reads only our notes under one paper"
+    - id: Y34.14
+      scenario: "Only the desktop app is connected"
+      expect: 'Notes access is unknown (`null`), so nothing is gated on it'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > cannot say whether notes may be written where only the desktop app is connected"
+    - id: Y34.15
+      scenario: "`/keys/current` says `access.user.notes: true`"
+      expect: 'Notes access'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > knows whether the key may write notes when it allows notes"
+    - id: Y34.16
+      scenario: "`/keys/current` leaves `notes` out, as a key made without it does (ticket 08 #2)"
+      expect: 'No notes access'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > knows whether the key may write notes when it leaves notes out"
+    - id: Y34.17
+      scenario: "`/keys/current` carries no `access` at all"
+      expect: 'No notes access'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > knows whether the key may write notes when it says nothing about access"
+    - id: Y34.18
+      scenario: "A linked paper with one highlight and one added page, first sync"
+      expect: 'Highlight and note written; the link stores the note key, the paper and the body Zotero stored'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes each added page as a note under the paper and remembers the body Zotero stored"
+    - id: Y34.19
+      scenario: "The paper is in a group, the key has no notes access for the personal library"
+      expect: 'Notes go into the group (spec §10 P1); the notes-access gate is the personal library''s'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes the notes of a group's paper into the group"
+    - id: Y34.20
+      scenario: "A linked document with no added page"
+      expect: 'No notes listing, no notes-access read, no create'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > asks Zotero nothing about notes for a document with no added page"
+    - id: Y34.21
+      scenario: "*Your notes on PDFs* off"
+      expect: 'No note, no clause'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes nothing for a page while *Your notes on PDFs* is off"
+    - id: Y34.22
+      scenario: "The PDF has no parent item in Zotero"
+      expect: 'No note; highlights written; the line says `added pages not written back: this PDF has no parent item in Zotero` (ticket 09 #1)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes no note for a PDF with no parent item, says why, and still writes the highlights"
+    - id: Y34.23
+      scenario: "A zotero.org key without notes access, personal library"
+      expect: 'No note; the line says `the API key has no notes access`; a notice says to allow it for the same key (ticket 09 #2, spec §10 P3)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes no note with a zotero.org key that has no notes access, says why, and tells the user what to change"
+    - id: Y34.24
+      scenario: "One highlight lands, the note is refused"
+      expect: 'Line `1 of 2 highlights written back`; notice `1 of 2 highlights and notes written` (spec §10 P8)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > counts the notes with the highlights when not all of them landed"
+    - id: Y34.25
+      scenario: "Zotero stops answering between the highlights and the notes"
+      expect: 'Highlights kept and recorded; the notes get their own clause and notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > keeps the highlights it wrote when writing the notes fails, and says why in its own clause"
+    - id: Y34.26
+      scenario: "Free vault with an added page"
+      expect: 'No notes listing and no create'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes nothing for an added page in a free vault"
+    - id: Y34.27
+      scenario: "A PDF with pages added before p. 1, after p. 1 and two after p. 2"
+      expect: 'Each added page reaches the digest with its place: before 0; after 0; after 1, 1st and 2nd of the run'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > pages added on the tablet (#246) > tells the digest where each added page sits among the PDF's own pages"
+    - id: Y34.28
+      scenario: "A whole-document unit, and a page tag on an added page"
+      expect: 'The first speaks for every added page, the second for its one page by block id'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > pages added on the tablet (#246) > lets a whole-document unit speak for every added page, and a page tag for its one page"
+    - id: Y34.29
+      scenario: "*Your notes on PDFs* off, or the digest build threw"
+      expect: 'The unit speaks for no added page, so a missing entry never reads as a deleted page'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > pages added on the tablet (#246) > lets a unit speak for no added page when the switch is off or the digest failed"
+    - id: Y34.30
+      scenario: "An added page after a source page the PDF labels xii"
+      expect: 'The digest page carries `added: { after, "xii", nth }`'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > names the page it follows by the PDF's own label for it"
+    - id: Y34.31
+      scenario: "The PDF's text cannot be read for the neighbouring page"
+      expect: 'Its 1-based number, as the note''s own `p. N` falls back'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > names it by its number where the PDF has no label to give"
+    - id: Y34.32
+      scenario: "The backend fails on an added page that also carries typed text"
+      expect: 'The entry keeps the typed text and the page is marked unread; read fine, it is not'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > says when its handwriting could not be read, even where typed text stands in for it"
+    - id: Y34.33
+      scenario: "A link with note records, one deleted and user-edited, saved and read back"
+      expect: 'Read back exactly'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > reads back exactly what was stored"
+    - id: Y34.34
+      scenario: "A stored note record without a key"
+      expect: 'Dropped; the others kept'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > drops a note record that names no key, and keeps the rest"
+    - id: Y34.35
+      scenario: "A 1.10.0 save of a link carrying a field this build does not know"
+      expect: 'The field stays (ticket 09 #3)'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > keeps a field it does not know when it saves the link"
+    - id: Y34.36
+      scenario: "A link replaced by one to another attachment"
+      expect: 'None of the old link''s known fields (`matchedBy`, `notes`) carry over'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > does not carry a field it knows over from the link it replaces"
+

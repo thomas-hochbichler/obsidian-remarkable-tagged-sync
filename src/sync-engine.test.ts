@@ -13,7 +13,7 @@ import { encodeGrayscalePng } from "./png-encoder";
 import { parseRmV6, type RmLayer, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import { Platform } from "obsidian";
-import { NOT_TRANSCRIBED } from "./digest-builder";
+import { digestId, NOT_TRANSCRIBED } from "./digest-builder";
 import { md5Hex } from "./file-md5";
 import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
 import {
@@ -6213,6 +6213,63 @@ describe("the Zotero half of a sync (spec §3.4)", () => {
 
 		expect(deps.seen.map((unit) => unit.notePath)).toEqual(["Todo/Prompting — Page 2.md"]);
 		expect(await deps.noteStore.read("Todo/Prompting — Page 2.md")).toContain(`> ${LINE}`);
+	});
+
+	describe("pages added on the tablet (#246)", () => {
+		/** p0, p1 are the PDF's; one page added ahead of them, one after p0, two after p1. */
+		async function withAddedPages(rootHash: string, pageTags: { name: string; timestamp: number; pageId: string }[] = []) {
+			return fakeApi({
+				rootHash,
+				entries: [documentEntry({ fileType: "pdf", visibleName: "Prompting", tags: pageTags.length > 0 ? [] : [{ name: "sync", timestamp: 0 }] })],
+				contentById: {
+					"doc-1": documentContent({
+						fileType: "pdf",
+						pageCount: 2,
+						cPages: cPagesWith([{ id: "a0" }, { id: "p0", redir: 0 }, { id: "a1" }, { id: "p1", redir: 1 }, { id: "a2" }, { id: "a3" }]),
+						pageTags,
+					}),
+				},
+				sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+				pageHashesByDoc: { "doc-1": { p0: "anno-hash", a1: "anno-hash" } },
+			});
+		}
+
+		const placesGiven = () =>
+			Object.fromEntries(vi.mocked(buildDigest).mock.calls.at(-1)![1].pages.filter((page) => page.appended).map((page) => [page.pageId, page.place]));
+
+		// The title of each Zotero note says where its page sits: "Added page 2 after p. 2".
+		it("tells the digest where each added page sits among the PDF's own pages", async () => {
+			await runSync({ ...baseDeps(await withAddedPages("root-added-places"), { sync: "Target" }), ...fakePass() }, EMPTY_SYNC_INDEX);
+
+			expect(placesGiven()).toEqual({
+				a0: { relation: "before", sourceIndex: 0, nth: null },
+				a1: { relation: "after", sourceIndex: 0, nth: null },
+				a2: { relation: "after", sourceIndex: 1, nth: 1 },
+				a3: { relation: "after", sourceIndex: 1, nth: 2 },
+			});
+		});
+
+		it("lets a whole-document unit speak for every added page, and a page tag for its one page", async () => {
+			const whole = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-whole"), { sync: "Target" }), ...whole }, EMPTY_SYNC_INDEX);
+			const page = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-page", [{ name: "todo", timestamp: 0, pageId: "a1" }]), { todo: "Todo" }), ...page }, EMPTY_SYNC_INDEX);
+
+			expect(whole.seen.map((unit) => unit.addedPages)).toEqual(["document"]);
+			expect(page.seen.map((unit) => unit.addedPages)).toEqual([{ blockId: digestId("nt", "a1", "page") }]);
+		});
+
+		// With *Your notes on PDFs* off the digest reads no added page, and a failed build read none:
+		// either way, a missing entry says nothing about the page.
+		it("lets a unit speak for no added page when the switch is off or the digest failed", async () => {
+			const off = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-off"), { sync: "Target" }), marginNotes: false, ...off }, EMPTY_SYNC_INDEX);
+			vi.mocked(buildDigest).mockRejectedValueOnce(new Error("pdf.js went away"));
+			const failed = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-failed"), { sync: "Target" }), ...failed }, EMPTY_SYNC_INDEX);
+
+			expect([...off.seen, ...failed.seen].map((unit) => unit.addedPages)).toEqual(["none", "none"]);
+		});
 	});
 
 	it("says what the Zotero half could not do, in the run's report and in diagnostics", async () => {

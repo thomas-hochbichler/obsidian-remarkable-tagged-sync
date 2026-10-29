@@ -59,6 +59,23 @@ export interface LinkedAnnotation {
 	readonly userEdited?: readonly string[];
 }
 
+/**
+ * One page added on the tablet, as the child note it became under the paper (Zotero spec §2.2).
+ *
+ * The note has one field, so "did the user edit it?" is one comparison: the body as Zotero stored
+ * it against {@link LinkedNote.written}. `deleted` and `userEdited` are remembered for the same
+ * reason they are on {@link LinkedAnnotation}.
+ */
+export interface LinkedNote {
+	readonly key: string;
+	/** The paper it was written under. Stored because the link is by attachment, and the PDF can move to another paper. */
+	readonly parentKey: string;
+	/** The body as Zotero stored it: the create response's, or after a PATCH the body sent. */
+	readonly written: { readonly note: string };
+	readonly deleted?: true;
+	readonly userEdited?: true;
+}
+
 /** One reMarkable document's link to one Zotero attachment. */
 export interface ZoteroLink {
 	readonly attachmentKey: string;
@@ -94,7 +111,12 @@ export interface ZoteroLink {
 	readonly matchedBy?: "hash";
 	/** Block id (`hl-…` / `nt-…`) -> the annotation it became in Zotero. */
 	readonly annotations: Record<string, LinkedAnnotation>;
+	/** Block id (`nt-…`) of a page added on the tablet -> the note it became. Absent until one was written. */
+	readonly notes?: Record<string, LinkedNote>;
 }
+
+/** Every field this build reads into a {@link ZoteroLink}. Anything else on a stored link was written by a newer build. */
+const KNOWN_FIELDS = new Set(["attachmentKey", "library", "sentAt", "sentMd5", "seenAt", "goneAt", "matchedBy", "annotations", "notes", "declined"]);
 
 function asRecord(value: unknown): Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -146,6 +168,26 @@ function annotationsOf(value: unknown): Record<string, LinkedAnnotation> {
 	return annotations;
 }
 
+/** The note records of one link, keeping only the entries that name a key and a paper -- see {@link annotationsOf}. */
+function notesOf(value: unknown): Record<string, LinkedNote> {
+	const notes: Record<string, LinkedNote> = {};
+	for (const [blockId, entry] of Object.entries(asRecord(value))) {
+		const stored = asRecord(entry);
+		const key = asString(stored.key);
+		const parentKey = asString(stored.parentKey);
+		const note = asRecord(stored.written).note;
+		if (key === undefined || parentKey === undefined || typeof note !== "string") continue;
+		notes[blockId] = {
+			key,
+			parentKey,
+			written: { note },
+			...(stored.deleted === true ? { deleted: true as const } : {}),
+			...(stored.userEdited === true ? { userEdited: true as const } : {}),
+		};
+	}
+	return notes;
+}
+
 /** `"user"` or `{ group: <positive integer> }`; anything else is a library this build does not handle. */
 function libraryOf(value: unknown): ZoteroLibrary | undefined {
 	if (value === "user") return "user";
@@ -168,6 +210,7 @@ export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | n
 	// A library this build does not handle is not an error and not ours to repair: it stays in the
 	// file untouched, and this document simply reads as unlinked here.
 	if (attachmentKey === undefined || library === undefined) return null;
+	const notes = notesOf(stored.notes);
 	return {
 		attachmentKey,
 		library,
@@ -177,6 +220,7 @@ export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | n
 		...(asString(stored.goneAt) === undefined ? {} : { goneAt: asString(stored.goneAt) }),
 		...(stored.matchedBy === "hash" ? { matchedBy: "hash" as const } : {}),
 		annotations: annotationsOf(stored.annotations),
+		...(Object.keys(notes).length === 0 ? {} : { notes }),
 	};
 }
 
@@ -209,9 +253,14 @@ export function linkedDocumentIds(links: StoredZoteroLinks): string[] {
  * A copy rather than a mutation because `data.json` is handed around whole and written by whoever
  * saves next; the sync index learned that the hard way (`EMPTY_SYNC_INDEX` being shared). Entries
  * this build could not read are copied along untouched -- see the file header.
+ *
+ * So are the fields of this document's own entry that this build does not know: a newer build wrote
+ * them, and dropping them here would make it forget what it wrote into Zotero (Zotero spec §2.2). A
+ * field this build does know is the link's to say, so a replaced link carries none of the old one's.
  */
 export function withLink(links: StoredZoteroLinks, docId: string, link: ZoteroLink): StoredZoteroLinks {
-	return { ...links, [docId]: link };
+	const unknown = Object.fromEntries(Object.entries(asRecord(links[docId])).filter(([field]) => !KNOWN_FIELDS.has(field)));
+	return { ...links, [docId]: { ...unknown, ...link } };
 }
 
 /**

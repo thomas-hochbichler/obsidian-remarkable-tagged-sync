@@ -1324,6 +1324,36 @@ describe("buildDigest on a page added on the device", () => {
 			expect(ocr).not.toHaveBeenCalled();
 		});
 	});
+
+	// What its Zotero note is titled by (#246): the label the vault note shows for the neighbouring page.
+	describe("where it sits, for its Zotero note", () => {
+		const placed = (place: DigestPageInput["place"]): DigestPageInput => ({ ...appendedPage(), place });
+
+		it("names the page it follows by the PDF's own label for it", async () => {
+			const text = fakeTextDocument({ 11: { label: "xii", width: PAGE_WIDTH_PT, height: PAGE_HEIGHT_PT, lines: [] } });
+
+			const result = await build([placed({ relation: "after", sourceIndex: 11, nth: 2 })], { loadText: async () => text, ocrBackend: fakeOcr("text") });
+
+			expect(result.pages[0].added).toEqual({ relation: "after", label: "xii", nth: 2 });
+		});
+
+		// The same fallback the note's own "p. N" takes for a page with no text layer to carry a label.
+		it("names it by its number where the PDF has no label to give", async () => {
+			const result = await build([placed({ relation: "before", sourceIndex: 0, nth: null })], { ocrBackend: fakeOcr("text") });
+
+			expect(result.pages[0].added).toEqual({ relation: "before", label: "1", nth: null });
+		});
+
+		it("says when its handwriting could not be read, even where typed text stands in for it", async () => {
+			const scene = { ...fixtureScene(), text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: "typed", deleted: 0 }], styles: new Map() } as RmText };
+
+			const failed = await build([{ ...placed({ relation: "after", sourceIndex: 0, nth: null }), scene }], { ocrBackend: fakeOcr({ status: "failed", text: "", confidence: null }) });
+			const read = await build([{ ...placed({ relation: "after", sourceIndex: 0, nth: null }), scene }], { ocrBackend: fakeOcr("handwriting") });
+
+			expect(failed.pages[0].added?.unread).toBe(true);
+			expect(read.pages[0].added?.unread).toBeUndefined();
+		});
+	});
 });
 
 // A page whose text was typed rather than carried by a source PDF: an article the "Read on
