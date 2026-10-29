@@ -4633,3 +4633,205 @@
       file: src/zotero-notes.test.ts
       test: "an added-page note on a later sync (Zotero spec §3) > still sees an edit made inside the editor's wrapper"
 
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §4.1, §4.2, the first and the reason
+# rows of §4.3, §6 point 2: *Add the render to Zotero* in the sync (ticket 15). The user-action rows
+# of §4.3 and re-finding are ticket 16's.
+- feature: Y37
+  name: The render as a Zotero attachment, in the sync (#180)
+  code: src/zotero-render.ts
+  tier: pro
+  scenarios:
+    - id: Y37.1
+      scenario: "Switch on, a whole-document render, no record"
+      expect: 'Create under the paper'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > creates the attachment on the first whole-document sync"
+    - id: Y37.2
+      scenario: "A record whose MD5 differs from the render's"
+      expect: 'Replace, naming the recorded MD5'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > replaces the file when the render's MD5 differs from the one uploaded last, naming that MD5"
+    - id: Y37.3
+      scenario: "A record whose MD5 is the render's"
+      expect: '`unchanged`: nothing sent'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > sends nothing when the render is the one uploaded last"
+    - id: Y37.4
+      scenario: "A record without an MD5 (created, upload never landed)"
+      expect: 'Replace into that attachment, no second one'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > uploads into an attachment that was created but never got its file"
+    - id: Y37.5
+      scenario: "Switch off (or free vault), with or without a render, with or without zotero.org"
+      expect: '`none`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > does nothing while the switch is off, whatever else holds"
+    - id: Y37.6
+      scenario: "Page-scoped unit, no render added yet"
+      expect: '`render not added: tag the whole document`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > says to tag the whole document for a page-scoped unit with no render yet"
+    - id: Y37.7
+      scenario: "Page-scoped unit of a document whose document tag added the render"
+      expect: '`none`: the line links that render'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > leaves a page-scoped unit's line to the render the document tag already added"
+    - id: Y37.8
+      scenario: "Linked PDF in a group library"
+      expect: '`render not added: group library`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > adds nothing to a group library"
+    - id: Y37.9
+      scenario: "No zotero.org connection, with and without a record"
+      expect: '`render not added: needs a zotero.org connection` (§10 P6)'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > adds nothing without a zotero.org connection"
+    - id: Y37.10
+      scenario: "Standalone PDF (no parent item), no record"
+      expect: '`render not added: this PDF has no parent item in Zotero`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > adds nothing to a PDF with no parent item"
+    - id: Y37.11
+      scenario: "A stored render record with and without `md5`"
+      expect: 'Read back exactly as stored'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the render we added as an attachment (#180) > reads back exactly what was stored, with and without an uploaded MD5"
+    - id: Y37.12
+      scenario: "A stored render record without key or paper, or not an object"
+      expect: 'No `render` on the link'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the render we added as an attachment (#180) > drops a render record that names no key or no paper"
+    - id: Y37.13
+      scenario: "Line with an added-page clause, a render and a literature note"
+      expect: '`· added pages not written back: … · [render in Zotero](zotero://open-pdf/library/items/<key>) · literature note: …`'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > links the render in Zotero after the added-page clause"
+    - id: Y37.14
+      scenario: "Line with a render reason"
+      expect: '`· render not added: <reason> ·`'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > says why the render was not added, where it was not"
+    - id: Y37.15
+      scenario: "Line with nothing to say about a render"
+      expect: 'No mention of a render'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > says nothing about a render where there is none to speak of"
+    - id: Y37.16
+      scenario: "First whole-document sync with the switch on"
+      expect: 'Attachment `annotated_<name>.pdf` created under the paper, uploaded with `If-None-Match`, record saved, line links it'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > creates the attachment under the paper, uploads the render and links it from the line"
+    - id: Y37.17
+      scenario: "Two units of one render in one run (two document tags, or an unchanged re-sync)"
+      expect: 'One create, one upload; both lines link it'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > uploads once for two units of the same render"
+    - id: Y37.18
+      scenario: "Ink changed: the render's MD5 differs from the recorded one"
+      expect: 'Upload with `If-Match: <recorded md5>`, same key, new MD5 recorded'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > replaces the file when the render changed, naming the MD5 it replaces"
+    - id: Y37.19
+      scenario: "The paper's PDF has no filename in Zotero (linked file)"
+      expect: 'Named after the tablet document: `annotated_<visible name>.pdf`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > names the file after the document where the PDF has no filename in Zotero"
+    - id: Y37.20
+      scenario: "Vault whose one reader is zotero.org's"
+      expect: 'Line links the web reader URL of the render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > opens zotero.org's reader on the render in a vault without the desktop app"
+    - id: Y37.21
+      scenario: "Page-tag unit, switch on, no render yet"
+      expect: 'Nothing created; `render not added: tag the whole document`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says to tag the whole document on a page note, and uploads nothing"
+    - id: Y37.22
+      scenario: "Page-tag unit of a document with a render"
+      expect: 'Line links the render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > links a page note to the render its document tag added"
+    - id: Y37.23
+      scenario: "Switch on, desktop connection only"
+      expect: '`render not added: needs a zotero.org connection`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says why without a zotero.org connection"
+    - id: Y37.24
+      scenario: "Paper in a group library"
+      expect: 'Nothing created; `render not added: group library`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says why for a paper in a group library"
+    - id: Y37.25
+      scenario: "Standalone PDF"
+      expect: 'Nothing created; `render not added: this PDF has no parent item in Zotero`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says why for a PDF with no parent item"
+    - id: Y37.26
+      scenario: "Upload answers 413, then a later sync has room"
+      expect: '`render not added: your Zotero Storage is full` + notice; later the same attachment is filled, no second create'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says the Zotero Storage is full, and fills the same attachment once there is room"
+    - id: Y37.27
+      scenario: "Upload throws (zotero.org unreachable)"
+      expect: 'Highlights still written; `render not added: Zotero could not be reached` + notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > keeps the highlights and says why when the upload fails"
+    - id: Y37.28
+      scenario: "Replace answers `changed` (409/412)"
+      expect: 'Record unchanged (what it means is ticket 16''s)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > records nothing new when Zotero holds a file that is not ours"
+    - id: Y37.29
+      scenario: "*Write text to Zotero* off, render switch on"
+      expect: 'Render uploaded; line `writing text to Zotero is switched off · [render in Zotero](…)`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > uploads with Write text to Zotero switched off: that switch is not the render's"
+    - id: Y37.30
+      scenario: "Render switch off"
+      expect: 'Render not hashed, nothing created, line silent about a render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > neither hashes nor uploads while the switch is off, and says nothing about a render"
+    - id: Y37.31
+      tier: free
+      scenario: "Free vault (lapsed licence), switch on, render recorded, ink changed"
+      expect: 'Nothing uploaded; line still links the existing render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > uploads nothing from a free vault, and still links the render a Pro licence added"
+    - id: Y37.32
+      scenario: "PDF with a document tag and a page tag"
+      expect: 'The document unit carries the bytes written to the vault (and their MD5); the page unit carries none'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > hands the Zotero half the render it wrote to the vault, for a whole-document unit only"
+

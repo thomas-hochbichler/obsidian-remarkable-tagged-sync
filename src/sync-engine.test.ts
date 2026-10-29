@@ -6300,6 +6300,34 @@ describe("the Zotero half of a sync (spec §3.4)", () => {
 		});
 	});
 
+	// Zotero spec §4.1: the render in Zotero is byte for byte the vault's, and only a whole document's.
+	it("hands the Zotero half the render it wrote to the vault, for a whole-document unit only", async () => {
+		Platform.isDesktop = true;
+		const api = fakeApi({
+			rootHash: "root-zotero-render",
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Prompting", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: {
+				"doc-1": documentContent({
+					fileType: "pdf",
+					pageCount: 2,
+					cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]),
+					pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }],
+				}),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+		});
+		const deps = { ...baseDeps(api, { sync: "Target", todo: "Todo" }), ...fakePass() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const [whole, page] = deps.seen;
+		const written = new Uint8Array((deps.attachmentStore.writeBinary as ReturnType<typeof vi.fn>).mock.calls.find(([path]) => path === "tagged-sync/attachments/doc-1.pdf")![1] as ArrayBuffer);
+		expect(whole.render?.bytes).toEqual(written);
+		expect(whole.render?.md5()).toBe(md5Hex(written));
+		expect(page.render).toBeUndefined();
+	});
+
 	it("says what the Zotero half could not do, in the run's report and in diagnostics", async () => {
 		const api = await zoteroDocument("root-zotero-notice");
 		const notice = 'Zotero: "Prompting" was not written back — Zotero could not be reached. The next sync tries again.';

@@ -5,6 +5,8 @@ import {
 	type NewAnnotation,
 	type NewNote,
 	type NotesCreated,
+	type RenderFile,
+	type RenderUpload,
 	type ZoteroAnnotation,
 	type ZoteroAttachment,
 	ZoteroError,
@@ -12,10 +14,11 @@ import {
 	type ZoteroItem,
 	type ZoteroLibrary,
 	type ZoteroNote,
+	type ZoteroRenders,
 } from "./zotero-client";
 import type { StoredZoteroLinks, ZoteroLink } from "./zotero-links";
 import type { VaultNoteKeys } from "./zotero-note";
-import { createZoteroPass, LIBRARY_OFF, type ZoteroPassDeps, type ZoteroQuestion, type ZoteroUnit, ZOTERO_GONE_LINE, ZOTERO_LIBRARY_OFF_LINE, zoteroPartialNotice, zoteroSkipNotice, zoteroSkipReason } from "./zotero-sync";
+import { createZoteroPass, LIBRARY_OFF, type ZoteroPassDeps, type ZoteroQuestion, type ZoteroUnit, ZOTERO_GONE_LINE, ZOTERO_LIBRARY_OFF_LINE, zoteroPartialNotice, zoteroRenderNotice, zoteroSkipNotice, zoteroSkipReason, zoteroStorageFullNotice } from "./zotero-sync";
 
 const ATTACHMENT_KEY = "ATT1";
 const ITEM_KEY = "ITEM1";
@@ -69,6 +72,7 @@ function client(overrides: Partial<ZoteroClient> = {}): ZoteroClient {
 		ownAnnotations: async () => [],
 		createAnnotations: async (items): Promise<AnnotationsCreated> => ({ keys: items.map((_item, index) => `KEY${index}`), failures: [] }),
 		patchAnnotation: async () => "written",
+		renders: null,
 		...overrides,
 	} as ZoteroClient;
 }
@@ -97,6 +101,7 @@ function harness({ links: stored, ...overrides }: Partial<Omit<ZoteroPassDeps, "
 		},
 		mayWriteBack: true,
 		writeText: true,
+		addRender: false,
 		now: () => new Date("2026-09-11T09:00:00"),
 		...overrides,
 	};
@@ -738,5 +743,210 @@ describe("group libraries (ticket 26)", () => {
 		expect(parts).toEqual({ line: ZOTERO_LIBRARY_OFF_LINE, links: {}, keys: {}, notices: [zoteroSkipNotice("Best Practices für Prompting", LIBRARY_OFF)] });
 		expect(attachments).not.toHaveBeenCalled();
 		expect((saved()["doc-1"] as ZoteroLink).library).toEqual(GROUP);
+	});
+});
+
+describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
+	const BYTES = new Uint8Array([37, 80, 68, 70]);
+
+	/** A whole-document unit whose render hashes to `md5`, counting how often it is hashed. */
+	function whole(md5 = "md5-a"): ZoteroUnit & { hashed: () => number } {
+		let hashed = 0;
+		return {
+			...unit(),
+			render: {
+				bytes: BYTES,
+				md5: () => {
+					hashed++;
+					return md5;
+				},
+			},
+			hashed: () => hashed,
+		};
+	}
+
+	function renders(overrides: Partial<ZoteroRenders> = {}) {
+		return {
+			create: vi.fn(async (_parentKey: string, _filename: string) => "REN1"),
+			upload: vi.fn(async (_key: string, _file: RenderFile, _holds: string | null): Promise<RenderUpload> => "uploaded"),
+			state: vi.fn(async () => null),
+			...overrides,
+		};
+	}
+
+	const on = (r: ZoteroRenders, overrides: Partial<Omit<ZoteroPassDeps, "links">> & { links?: StoredZoteroLinks } = {}) =>
+		harness({ links: linked(), client: client({ renders: r }), addRender: true, ...overrides });
+
+	const renderOf = (links: StoredZoteroLinks) => (links["doc-1"] as ZoteroLink).render;
+	const RECORDED = { key: "REN1", parentKey: ITEM_KEY, md5: "md5-a" };
+
+	it("creates the attachment under the paper, uploads the render and links it from the line", async () => {
+		const r = renders();
+		const { deps, saved } = on(r);
+
+		const parts = await createZoteroPass(deps).run(whole());
+
+		expect(r.create).toHaveBeenCalledWith(ITEM_KEY, "annotated_prompting.pdf");
+		expect(r.upload).toHaveBeenCalledWith("REN1", { bytes: BYTES, md5: "md5-a", filename: "annotated_prompting.pdf" }, null);
+		expect(renderOf(saved())).toEqual(RECORDED);
+		expect(parts.line).toContain("· highlights written back 2026-09-11 · [render in Zotero](zotero://open-pdf/library/items/REN1)");
+	});
+
+	// Two document tags are two units of one document in one run; an unchanged document synced again
+	// is the same render. Either way one attachment, one upload.
+	it("uploads once for two units of the same render", async () => {
+		const r = renders();
+		const pass = createZoteroPass(on(r).deps);
+
+		await pass.run(whole());
+		const second = await pass.run(whole());
+
+		expect(r.create).toHaveBeenCalledTimes(1);
+		expect(r.upload).toHaveBeenCalledTimes(1);
+		expect(second.line).toContain("[render in Zotero](zotero://open-pdf/library/items/REN1)");
+	});
+
+	it("replaces the file when the render changed, naming the MD5 it replaces", async () => {
+		const r = renders();
+		const { deps, saved } = on(r, { links: linked({ render: RECORDED }) });
+
+		await createZoteroPass(deps).run(whole("md5-b"));
+
+		expect(r.create).not.toHaveBeenCalled();
+		expect(r.upload).toHaveBeenCalledWith("REN1", expect.objectContaining({ md5: "md5-b" }), "md5-a");
+		expect(renderOf(saved())).toEqual({ ...RECORDED, md5: "md5-b" });
+	});
+
+	it("names the file after the document where the PDF has no filename in Zotero", async () => {
+		const r = renders();
+		const { deps } = on(r, { client: client({ renders: r, attachments: async () => [attachment({ filename: null })] }) });
+
+		await createZoteroPass(deps).run(whole());
+
+		expect(r.create).toHaveBeenCalledWith(ITEM_KEY, "annotated_Best Practices für Prompting.pdf");
+	});
+
+	it("opens zotero.org's reader on the render in a vault without the desktop app", async () => {
+		const { deps } = on(renders(), { webReaderUser: async () => "vodaza36" });
+
+		const parts = await createZoteroPass(deps).run(whole());
+
+		expect(parts.line).toContain("[render in Zotero](https://www.zotero.org/vodaza36/items/ITEM1/attachment/REN1/reader)");
+	});
+
+	it("says to tag the whole document on a page note, and uploads nothing", async () => {
+		const r = renders();
+
+		const parts = await createZoteroPass(on(r).deps).run(unit());
+
+		expect(parts.line).toContain("· render not added: tag the whole document");
+		expect(r.create).not.toHaveBeenCalled();
+	});
+
+	it("links a page note to the render its document tag added", async () => {
+		const parts = await createZoteroPass(on(renders(), { links: linked({ render: RECORDED }) }).deps).run(unit());
+
+		expect(parts.line).toContain("[render in Zotero](zotero://open-pdf/library/items/REN1)");
+	});
+
+	it("says why without a zotero.org connection", async () => {
+		const { deps } = harness({ links: linked(), addRender: true });
+
+		const parts = await createZoteroPass(deps).run(whole());
+
+		expect(parts.line).toContain("· render not added: needs a zotero.org connection");
+	});
+
+	it("says why for a paper in a group library", async () => {
+		const GROUP = { group: 4711 };
+		const r = renders();
+		const { deps } = on(r, {
+			links: { "doc-1": { attachmentKey: ATTACHMENT_KEY, library: GROUP, annotations: {} } },
+			client: client({ renders: r, libraries: ["user", GROUP], attachments: async () => [attachment({ library: GROUP })], parentItem: async () => ({ ...ITEM, library: GROUP }) }),
+		});
+
+		const parts = await createZoteroPass(deps).run(whole());
+
+		expect(parts.line).toContain("· render not added: group library");
+		expect(r.create).not.toHaveBeenCalled();
+	});
+
+	it("says why for a PDF with no parent item", async () => {
+		const r = renders();
+		const { deps } = on(r, { client: client({ renders: r, attachments: async () => [attachment({ parentKey: null })] }) });
+
+		const parts = await createZoteroPass(deps).run(whole());
+
+		expect(parts.line).toContain("· render not added: this PDF has no parent item in Zotero");
+		expect(r.create).not.toHaveBeenCalled();
+	});
+
+	it("says the Zotero Storage is full, and fills the same attachment once there is room", async () => {
+		const upload = vi.fn(async (_key: string, _file: RenderFile, _holds: string | null): Promise<RenderUpload> => "quota");
+		const r = renders({ upload });
+		const { deps, saved } = on(r);
+
+		const full = await createZoteroPass(deps).run(whole());
+		upload.mockResolvedValue("uploaded");
+		await createZoteroPass(deps).run(whole());
+
+		expect(full.line).toContain("· render not added: your Zotero Storage is full");
+		expect(full.notices).toEqual([zoteroStorageFullNotice("Best Practices für Prompting")]);
+		expect(r.create).toHaveBeenCalledTimes(1);
+		expect(upload).toHaveBeenLastCalledWith("REN1", expect.anything(), null);
+		expect(renderOf(saved())).toEqual(RECORDED);
+	});
+
+	it("keeps the highlights and says why when the upload fails", async () => {
+		const r = renders({
+			upload: vi.fn(async (): Promise<RenderUpload> => {
+				throw new ZoteroError("unreachable", "offline");
+			}),
+		});
+
+		const parts = await createZoteroPass(on(r).deps).run(whole());
+
+		expect(parts.line).toContain("· highlights written back 2026-09-11 · render not added: Zotero could not be reached");
+		expect(parts.notices).toEqual([zoteroRenderNotice("Best Practices für Prompting", "Zotero could not be reached")]);
+	});
+
+	// A 409/412: what Zotero holds is not what we uploaded last. Ticket 16 decides what that means;
+	// here the record stays as it was.
+	it("records nothing new when Zotero holds a file that is not ours", async () => {
+		const r = renders({ upload: vi.fn(async (): Promise<RenderUpload> => "changed") });
+		const { deps, saved } = on(r, { links: linked({ render: RECORDED }) });
+
+		await createZoteroPass(deps).run(whole("md5-b"));
+
+		expect(renderOf(saved())).toEqual(RECORDED);
+	});
+
+	it("uploads with Write text to Zotero switched off: that switch is not the render's", async () => {
+		const r = renders();
+
+		const parts = await createZoteroPass(on(r, { writeText: false }).deps).run(whole());
+
+		expect(r.upload).toHaveBeenCalledTimes(1);
+		expect(parts.line).toContain("writing text to Zotero is switched off · [render in Zotero]");
+	});
+
+	it("neither hashes nor uploads while the switch is off, and says nothing about a render", async () => {
+		const r = renders();
+		const document = whole();
+
+		const parts = await createZoteroPass(on(r, { addRender: false }).deps).run(document);
+
+		expect(document.hashed()).toBe(0);
+		expect(r.create).not.toHaveBeenCalled();
+		expect(parts.line).not.toContain("render");
+	});
+
+	it("uploads nothing from a free vault, and still links the render a Pro licence added", async () => {
+		const r = renders();
+
+		const parts = await createZoteroPass(on(r, { mayWriteBack: false, links: linked({ render: RECORDED }) }).deps).run(whole("md5-b"));
+
+		expect(r.upload).not.toHaveBeenCalled();
+		expect(parts.line).toContain("[render in Zotero](zotero://open-pdf/library/items/REN1)");
 	});
 });

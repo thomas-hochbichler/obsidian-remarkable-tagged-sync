@@ -76,6 +76,14 @@ export interface LinkedNote {
 	readonly userEdited?: true;
 }
 
+/** The render we put under the paper as an attachment of its own (Zotero spec §4.2). */
+export interface LinkedRender {
+	readonly key: string;
+	readonly parentKey: string;
+	/** The MD5 we uploaded last. Absent while the attachment is created but has no file yet. */
+	readonly md5?: string;
+}
+
 /** One reMarkable document's link to one Zotero attachment. */
 export interface ZoteroLink {
 	readonly attachmentKey: string;
@@ -113,10 +121,12 @@ export interface ZoteroLink {
 	readonly annotations: Record<string, LinkedAnnotation>;
 	/** Block id (`nt-…`) of a page added on the tablet -> the note it became. Absent until one was written. */
 	readonly notes?: Record<string, LinkedNote>;
+	/** Absent until a render was added. */
+	readonly render?: LinkedRender;
 }
 
 /** Every field this build reads into a {@link ZoteroLink}. Anything else on a stored link was written by a newer build. */
-const KNOWN_FIELDS = new Set(["attachmentKey", "library", "sentAt", "sentMd5", "seenAt", "goneAt", "matchedBy", "annotations", "notes", "declined"]);
+const KNOWN_FIELDS = new Set(["attachmentKey", "library", "sentAt", "sentMd5", "seenAt", "goneAt", "matchedBy", "annotations", "notes", "render", "declined"]);
 
 function asRecord(value: unknown): Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -188,6 +198,16 @@ function notesOf(value: unknown): Record<string, LinkedNote> {
 	return notes;
 }
 
+/** The render record, or `undefined` when it names no key and no paper -- see {@link annotationsOf}. */
+function renderOf(value: unknown): LinkedRender | undefined {
+	const stored = asRecord(value);
+	const key = asString(stored.key);
+	const parentKey = asString(stored.parentKey);
+	if (key === undefined || parentKey === undefined) return undefined;
+	const md5 = asString(stored.md5);
+	return { key, parentKey, ...(md5 === undefined ? {} : { md5 }) };
+}
+
 /** `"user"` or `{ group: <positive integer> }`; anything else is a library this build does not handle. */
 function libraryOf(value: unknown): ZoteroLibrary | undefined {
 	if (value === "user") return "user";
@@ -211,6 +231,7 @@ export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | n
 	// file untouched, and this document simply reads as unlinked here.
 	if (attachmentKey === undefined || library === undefined) return null;
 	const notes = notesOf(stored.notes);
+	const render = renderOf(stored.render);
 	return {
 		attachmentKey,
 		library,
@@ -221,6 +242,7 @@ export function linkFor(links: StoredZoteroLinks, docId: string): ZoteroLink | n
 		...(stored.matchedBy === "hash" ? { matchedBy: "hash" as const } : {}),
 		annotations: annotationsOf(stored.annotations),
 		...(Object.keys(notes).length === 0 ? {} : { notes }),
+		...(render === undefined ? {} : { render }),
 	};
 }
 

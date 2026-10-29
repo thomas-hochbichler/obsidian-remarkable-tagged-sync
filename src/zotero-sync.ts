@@ -25,10 +25,11 @@
 
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import { type MatchEvidence, matchZoteroAttachment } from "./zotero-match";
-import { sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary, type ZoteroNote } from "./zotero-client";
+import { renderFilename, sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary, type ZoteroNote } from "./zotero-client";
 import { linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
-import { findLiteratureNote, formatLocalDate, type VaultNoteKeys, zoteroCalloutLine, zoteroDigestLinks, type ZoteroWriteBack } from "./zotero-note";
+import { findLiteratureNote, formatLocalDate, openRenderUrl, type VaultNoteKeys, webReaderUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo, type ZoteroWriteBack } from "./zotero-note";
 import { type AddedPagesScope, executeNotes, formerPapers, hasAddedText, hasLiveNotes, planNotes } from "./zotero-notes";
+import { NO_PARENT_ITEM, planRender, STORAGE_FULL } from "./zotero-render";
 import { executeWriteBack, planWriteBack } from "./zotero-writeback";
 
 /** What the engine knows about one written note, and this pass needs. */
@@ -46,6 +47,12 @@ export interface ZoteroUnit {
 	readonly addedPages?: AddedPagesScope;
 	/** This write recreates a note the user deleted by hand -- see `WriteBackInput.noteWasDeleted`. */
 	readonly noteWasDeleted?: boolean;
+	/**
+	 * The render exactly as written to the vault, for a whole-document unit only: a page-scoped one
+	 * carries none (Zotero spec §4.1). Its MD5 is a function because only *Add the render to Zotero*
+	 * ever asks for it.
+	 */
+	readonly render?: { readonly bytes: Uint8Array; md5(): string };
 	/**
 	 * MD5 of the source PDF the tablet holds, or `null` where there is none.
 	 *
@@ -141,6 +148,8 @@ export interface ZoteroPassDeps {
 	 * note, and leaves what is in Zotero as it is. Asked only where {@link mayWriteBack} is `true`.
 	 */
 	readonly writeText: boolean;
+	/** *Add the render to Zotero* (Zotero spec §4). Asked only where {@link mayWriteBack} is `true`; independent of {@link writeText}. */
+	readonly addRender: boolean;
 	now(): Date;
 }
 
@@ -193,13 +202,22 @@ export function zoteroPartialNotice(visibleName: string, written: number, total:
 	return `Zotero: ${written} of ${total} highlights and notes written for "${visibleName}", retry on next sync.`;
 }
 
-/** The clauses of the added-page skips that are not a Zotero failure (Zotero spec §3). */
-export const NO_PARENT_ITEM = "this PDF has no parent item in Zotero";
+/** The clause of the added-page skip that is not a Zotero failure (Zotero spec §3); the other, {@link NO_PARENT_ITEM}, the render shares. */
 export const NO_NOTES_ACCESS = "the API key has no notes access";
 
 /** The one skip the user fixes outside the plugin, and the key they already have is enough (ticket 09 #2). */
 export function zoteroNotesAccessNotice(visibleName: string): string {
 	return `Zotero: the pages you added to "${visibleName}" were not written back — your zotero.org API key has no notes access. Allow it for the same key under zotero.org → Settings → Security; no new key is needed.`;
+}
+
+/** A render upload that failed (Zotero spec §4.3); the highlights are not affected, so the notice says only this. */
+export function zoteroRenderNotice(visibleName: string, reason: string): string {
+	return `Zotero: the render of "${visibleName}" was not added — ${reason}. The next sync tries again.`;
+}
+
+/** zotero.org answered 413: nothing the next sync can fix by itself (§10 P6). */
+export function zoteroStorageFullNotice(visibleName: string): string {
+	return `Zotero: the render of "${visibleName}" was not added — your Zotero Storage at zotero.org is full. Free some space there, or switch off "Add the render to Zotero".`;
 }
 
 /** The line a note gets when the attachment it is linked to is not in the library any more (§2.3). */
@@ -362,6 +380,50 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		}
 	};
 
+	/**
+	 * The render as an attachment under the paper (Zotero spec §4), after the text went in and
+	 * whatever happened to it: *Write text to Zotero* does not govern the render. Its failures stay its
+	 * own, like the added pages': a clause on the line, a notice, and the next sync tries again.
+	 */
+	const addRender = async (unit: ZoteroUnit, attachment: ZoteroAttachment, link: ZoteroLink): Promise<{ link: ZoteroLink; render?: ZoteroNoteInfo["render"]; notices: string[] }> => {
+		// Only switched on is the render hashed: a few megabytes per whole-document sync otherwise for nothing.
+		const switchedOn = deps.mayWriteBack && deps.addRender;
+		const md5 = switchedOn ? (unit.render?.md5() ?? null) : null;
+		const plan = planRender({ switchedOn, md5, library: link.library, paperKey: attachment.parentKey, web: deps.client.renders !== null, recorded: link.render });
+		const done = async (): Promise<{ link: ZoteroLink; render?: ZoteroNoteInfo["render"]; notices: string[] }> => ({ link, ...(await renderLink(link)), notices: [] });
+		if (plan.kind === "not-added") return { link, render: { reason: plan.reason }, notices: [] };
+		if (plan.kind === "none" || plan.kind === "unchanged") return await done();
+		// The planner creates or replaces only with both in hand.
+		const renders = deps.client.renders!;
+		const file = { bytes: unit.render!.bytes, md5: md5!, filename: renderFilename(attachment.filename ?? unit.visibleName) };
+		const save = async (next: ZoteroLink): Promise<ZoteroLink> => {
+			await deps.saveLinks(withLink(deps.links(), unit.docId, next));
+			return next;
+		};
+		try {
+			const render = plan.kind === "create" ? { key: await renders.create(plan.parentKey, file.filename), parentKey: plan.parentKey } : plan.render;
+			// Recorded before the upload, so one that fails fills this attachment next time rather than
+			// leaving it empty beside a second one.
+			if (plan.kind === "create") link = await save({ ...link, render });
+			const outcome = await renders.upload(render.key, file, render.md5 ?? null);
+			if (outcome === "quota") return { link, render: { reason: STORAGE_FULL }, notices: [zoteroStorageFullNotice(unit.visibleName)] };
+			// `changed`: Zotero holds a file that is not the one we uploaded last. Left as it is; what to do
+			// about that is the user-action rows' (§4.3).
+			if (outcome !== "changed") link = await save({ ...link, render: { ...render, md5: file.md5 } });
+			return await done();
+		} catch (error) {
+			const reason = refusal(error, "user");
+			return { link, render: { reason }, notices: [zoteroRenderNotice(unit.visibleName, reason)] };
+		}
+	};
+
+	/** The line's link to a render that has a file: the desktop reader, or zotero.org's where that is the vault's one reader. */
+	const renderLink = async (link: ZoteroLink): Promise<{ render?: ZoteroNoteInfo["render"] }> => {
+		if (link.render?.md5 === undefined) return {};
+		const username = await readerUser();
+		return { render: { url: username === null ? openRenderUrl(link.render.key) : webReaderUrl({ username, itemKey: link.render.parentKey }, link.render.key, "user") } };
+	};
+
 	const runUnit = async (unit: ZoteroUnit): Promise<ZoteroNoteParts> => {
 		const found = await identify(unit);
 		if (found === null) return NOTHING;
@@ -407,11 +469,16 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			notices.push(zoteroSkipNotice(unit.visibleName, writeBack.reason));
 		}
 
+		const rendered = await addRender(unit, attachment, link);
+		link = rendered.link;
+		notices.push(...rendered.notices);
+
 		const line = zoteroCalloutLine({
 			item,
 			webUserId: await userId(),
 			writeBack,
 			...(addedPagesNotWritten === undefined ? {} : { addedPagesNotWritten }),
+			...(rendered.render === undefined ? {} : { render: rendered.render }),
 			literatureNote: findLiteratureNote(deps.vaultNotes(), item, new Set([unit.notePath])),
 			matchedByHash: found.link.matchedBy === "hash",
 		});

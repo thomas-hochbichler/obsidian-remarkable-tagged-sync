@@ -56,6 +56,8 @@ export interface ZoteroNoteInfo {
 	 * they did not (Zotero spec §6): "this PDF has no parent item in Zotero". Absent otherwise.
 	 */
 	readonly addedPagesNotWritten?: string;
+	/** The render in Zotero (Zotero spec §6): where it opens, or why it was not added. Absent: nothing to say. */
+	readonly render?: { readonly url: string } | { readonly reason: string };
 	/** The vault's own note about this paper, as its link text -- see {@link findLiteratureNote}. */
 	readonly literatureNote: string | null;
 	/**
@@ -141,6 +143,7 @@ export function zoteroCalloutLine(info: ZoteroNoteInfo): string {
 	if (info.matchedByHash === true) parts.push("matched by file hash");
 	parts.push(writeBackPhrase(info.writeBack));
 	if (info.addedPagesNotWritten !== undefined) parts.push(`added pages not written back: ${info.addedPagesNotWritten}`);
+	if (info.render !== undefined) parts.push("url" in info.render ? `[render in Zotero](${info.render.url})` : `render not added: ${info.render.reason}`);
 	if (info.literatureNote !== null) parts.push(`literature note: [[${info.literatureNote}]]`);
 	return `Zotero: ${parts.join(" · ")}`;
 }
@@ -177,6 +180,11 @@ export function findLiteratureNote(notes: readonly VaultNoteKeys[], item: Zotero
 	const byCitekey = item.citationKey === null ? [] : candidates.filter((note) => note.citekey === item.citationKey);
 	const matches = byKey.length > 0 ? byKey : byCitekey;
 	return matches.length === 0 ? null : [...matches].sort((a, b) => (a.path < b.path ? -1 : 1))[0].link;
+}
+
+/** Where Zotero's reader opens the render attachment: no page, no annotation. Personal library only (Zotero spec §4.1). */
+export function openRenderUrl(renderKey: string): string {
+	return `zotero://open-pdf/library/items/${renderKey}`;
 }
 
 /** Where Zotero's reader opens for one annotation. `page` is the physical sheet, 1-based; see the file header. */
