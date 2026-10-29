@@ -87,8 +87,8 @@ function writable(scope: AddedPagesScope, entry: AddedEntry): boolean {
 }
 
 /** The title out of a body we wrote, for telling one of ours apart from another under the same paper. */
-function titleOf(body: string): string | null {
-	return /^<h1>(.*?)<\/h1>/.exec(body)?.[1] ?? null;
+function titleOf(body: string): string | undefined {
+	return /^<h1>(.*?)<\/h1>/.exec(body)?.[1];
 }
 
 export interface PlannedNoteCreate {
@@ -163,7 +163,7 @@ export async function executeNotes(client: ZoteroClient, link: ZoteroLink, plan:
 		let written = 0;
 		plan.creates.forEach((create, index) => {
 			const landed = created[index];
-			if (landed === null || landed === undefined) return;
+			if (!landed) return;
 			notes[create.blockId] = { key: landed.key, parentKey: create.note.parentKey, written: { note: landed.note } };
 			written++;
 		});

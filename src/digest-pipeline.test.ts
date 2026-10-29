@@ -1353,6 +1353,24 @@ describe("buildDigest on a page added on the device", () => {
 			expect(failed.pages[0].added?.unread).toBe(true);
 			expect(read.pages[0].added?.unread).toBeUndefined();
 		});
+
+		it("says so too when the backend throws", async () => {
+			const result = await build([placed({ relation: "after", sourceIndex: 0, nth: null })], { ocrBackend: throwingOcr() });
+
+			expect(result.pages[0].added?.unread).toBe(true);
+			expect(result.warnings).toContainEqual(expect.stringContaining("added on the device and could not be transcribed"));
+		});
+
+		// No PDF to ask for a label: the pages of typed text are numbered.
+		it("names it by its number where the document is typed text", async () => {
+			const result = await buildDigest(deps({ ocrBackend: fakeOcr("text") }), {
+				source: { kind: "typed-text" },
+				embedPath: "attachments/doc.pdf",
+				pages: [placed({ relation: "after", sourceIndex: 2, nth: null })],
+			});
+
+			expect(result.pages[0].added).toEqual({ relation: "after", label: "3", nth: null });
+		});
 	});
 });
 

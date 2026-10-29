@@ -198,6 +198,11 @@ describe("notes for pages added on the tablet (#246)", () => {
 		});
 	});
 
+	it("remembers the body it sent where Zotero's answer leaves the stored one out", async () => {
+		const { api } = connection(() => json({ success: { "0": "NOTE1" } }));
+		expect((await api.createNotes([{ parentKey: "ITEM1", note: BODY }], "user")).created).toEqual([{ key: "NOTE1", note: BODY }]);
+	});
+
 	it("reads only our notes under one paper", async () => {
 		const { api, calls } = connection(() =>
 			json([
@@ -211,6 +216,19 @@ describe("notes for pages added on the tablet (#246)", () => {
 
 	it("cannot say whether notes may be written where only the desktop app is connected", async () => {
 		expect(await createZoteroClient({ local: connection(() => json([])).api })?.notesAccess()).toBeNull();
+		expect(await connection(() => json([])).api.notesAccess()).toBeNull();
+	});
+
+	// A note the desktop wrote is read over the web later (Zotero spec §10 P3).
+	it("takes zotero.org's answer even where the desktop app writes the notes", async () => {
+		const files = { path: async () => null, bytes: async () => null };
+		const web = createZoteroConnection("web", "zotero.org", stub(() => json([])).requester, files, async () => ({ id: 42, username: "me", notes: false }));
+		expect(await createZoteroClient({ local: connection(() => json([])).api, web })?.notesAccess()).toBe(false);
+	});
+
+	it("reads a note row that carries no key or version without failing on it", async () => {
+		const { api } = connection(() => json([{ data: { itemType: "note", parentItem: "ITEM1", note: BODY } }]));
+		expect(await api.ownNotes("ITEM1", "user")).toMatchObject([{ key: "", version: 0 }]);
 	});
 });
 
@@ -352,6 +370,14 @@ describe("two connections, one client", () => {
 		const client = createZoteroClient({ local: local.api, web: web.api });
 		expect(await client?.attachment("GONE", "user")).toBeNull();
 		expect(web.calls).toHaveLength(0);
+	});
+
+	it("reads and writes notes through the web when the desktop is not there", async () => {
+		const web = connection(() => json([]), "web");
+		const client = createZoteroClient({ local: downConnection("local"), web: web.api });
+		await client?.ownNotes("ITEM1", "user");
+		await client?.createNotes([{ parentKey: "ITEM1", note: "<h1>Added page after p. 1</h1>" }], "user");
+		expect(web.calls.map((call) => call.path.split("?")[0])).toEqual(["/items/ITEM1/children", "/items"]);
 	});
 
 	it("is absent altogether when nothing is configured", () => {

@@ -4279,4 +4279,58 @@
       layer: unit
       file: src/zotero-links.test.ts
       test: "the notes written for pages added on the tablet (#246) > does not carry a field it knows over from the link it replaces"
+    - id: Y34.37
+      scenario: "The backend throws on an added page"
+      expect: 'The page is marked unread and a warning names it'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > says so too when the backend throws"
+    - id: Y34.38
+      scenario: "An added page in a typed-text document"
+      expect: 'Named by the page number it follows'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > names it by its number where the document is typed text"
+    - id: Y34.39
+      scenario: "Zotero's create answer carries no stored body"
+      expect: 'The body sent is remembered'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > remembers the body it sent where Zotero's answer leaves the stored one out"
+    - id: Y34.40
+      scenario: "Notes access with both connections configured"
+      expect: 'zotero.org''s answer, never the desktop''s'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > takes zotero.org's answer even where the desktop app writes the notes"
+    - id: Y34.41
+      scenario: "A note row without key or version"
+      expect: 'Read with an empty key and version 0'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > reads a note row that carries no key or version without failing on it"
+    - id: Y34.42
+      scenario: "Desktop unreachable, zotero.org configured"
+      expect: 'Notes are read and created over zotero.org'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > reads and writes notes through the web when the desktop is not there"
+    - id: Y34.43
+      scenario: "A plan with nothing to create"
+      expect: 'No request to Zotero'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > asks Zotero nothing when there is nothing to write"
+    - id: Y34.44
+      scenario: "The library refuses writes (read-only)"
+      expect: 'Thrown, for the pass to name the library'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > gives up on a library that refuses writes, so the pass can name it"
+    - id: Y34.45
+      scenario: "Creating notes fails for any other reason"
+      expect: 'The failure is named, nothing is recorded'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > names any other failure and remembers nothing it cannot know landed"
 
