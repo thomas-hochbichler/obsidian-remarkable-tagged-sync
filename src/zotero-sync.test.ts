@@ -12,7 +12,7 @@ const MD5 = "0f0e3fbc4e2bd4bd16b2ab4a45f4e8a5";
 const ITEM: ZoteroItem = { key: ITEM_KEY, library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: ATTACHMENT_KEY, library: "user", parentKey: ITEM_KEY, filename: "prompting.pdf", md5: MD5, title: "Full Text PDF", ...overrides };
+	return { key: ATTACHMENT_KEY, library: "user", parentKey: ITEM_KEY, filename: "prompting.pdf", md5: MD5, title: "Full Text PDF", ours: false, ...overrides };
 }
 
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {

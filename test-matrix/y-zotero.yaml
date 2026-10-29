@@ -3926,3 +3926,120 @@
       file: src/zotero-writeback.test.ts
       test: "carrying out the plan > stops at a trash that fails, with the failure named"
 
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §4.1, §4.2 "Never a source": the
+# client half of the render as a Zotero attachment -- create, upload, replace, read back -- over
+# zotero.org only (ticket 14). When the sync uploads is ticket 15's.
+- feature: Y35
+  name: The render as a Zotero attachment, the client (#180)
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y35.1
+      scenario: "A paper's PDF called `Smith 2024.pdf`, and a name without the extension"
+      expect: '`annotated_Smith 2024.pdf`, `annotated_notes.pdf`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > names the file after the paper's own"
+    - id: Y35.2
+      scenario: "Creating the render attachment under a paper"
+      expect: 'One `POST /items` with a write token: `imported_file`, `application/pdf`, title "Annotated PDF", the filename, tag `tagged-sync`; answers the new key'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > creates a stored PDF under the paper, titled and tagged as ours"
+    - id: Y35.3
+      scenario: "Zotero refuses the create"
+      expect: "The throw carries Zotero's own sentence"
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > says why Zotero refused to create it"
+    - id: Y35.4
+      scenario: "First upload of a render"
+      expect: 'Authorise with `If-None-Match: *` (md5, filename, filesize, mtime in ms), prefix + bytes + suffix into file storage, register with the upload key; `uploaded`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > uploads a first file: authorise for a new file, put the bytes between prefix and suffix, register"
+    - id: Y35.5
+      scenario: "Replacing a render whose MD5 Zotero holds"
+      expect: '`If-Match: <md5>` on authorise and register'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > replaces a file under the MD5 Zotero holds, on both requests"
+    - id: Y35.6
+      scenario: "Authorise answers `{exists: 1}`"
+      expect: '`exists`; nothing put into file storage, nothing registered'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > sends nothing when Zotero already has these bytes"
+    - id: Y35.7
+      scenario: "A stale MD5: 412 or 409 on authorise, 412 on register"
+      expect: '`changed`, not an error'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reports a file that changed underneath, on authorise or on register"
+    - id: Y35.8
+      scenario: "413 on authorise: Zotero Storage full"
+      expect: '`quota`; nothing put into file storage'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reports a full Zotero Storage and puts nothing into it"
+    - id: Y35.9
+      scenario: "File storage answers anything but 201"
+      expect: 'A `server` failure; the upload is not registered'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > does not register a file the storage did not take"
+    - id: Y35.10
+      scenario: "403 on authorise"
+      expect: 'A `read-only` failure, never retried on the other connection'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reads a refused upload as the library's answer"
+    - id: Y35.11
+      scenario: "Reading a render: renamed, paper trashed, then itself trashed and standalone"
+      expect: 'Title, filename, paper, MD5 as Zotero has them; `trashed` when it or its paper is in the trash'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reads one render's state: names, paper, MD5, and whether it or its paper is in the trash"
+    - id: Y35.12
+      scenario: "Reading a render Zotero answers 404 for"
+      expect: '`null`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > answers nothing for a render Zotero no longer has"
+    - id: Y35.13
+      scenario: "The attachment listing with one attachment tagged `tagged-sync`"
+      expect: 'That one is marked `ours`, the other not'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > marks our renders in the attachment listing"
+    - id: Y35.14
+      scenario: "A client with the desktop only, and one with zotero.org too"
+      expect: 'No renders without zotero.org; with it, zotero.org''s'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > is there only where zotero.org is"
+    - id: Y35.15
+      scenario: "An upload over zotero.org"
+      expect: 'Authorise and register form-encoded under the user prefix; file storage gets the bytes with its own content type and no API key'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "the render's file (Zotero spec §4.1) > authorises form-encoded, puts the bytes into file storage without the key, registers"
+    - id: Y35.16
+      scenario: "File storage cannot be reached"
+      expect: 'An `unreachable` failure, like any zotero.org call'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "the render's file (Zotero spec §4.1) > reports file storage out of reach as unreachable, like any other zotero.org call"
+    - id: Y35.17
+      scenario: "A render of ours with the tablet's bytes or the tablet's name"
+      expect: 'Never matched; the paper''s own PDF beside it still is'
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > never matches a render of ours"
+    - id: Y35.18
+      scenario: "*Send* on a paper with its PDF and a render of ours"
+      expect: 'The PDF is used without asking; a paper with only the render has nothing to send'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "which PDF of an item is meant > never offers a render of ours"
+

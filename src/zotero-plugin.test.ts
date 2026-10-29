@@ -19,7 +19,7 @@ const FREE = entitlementOf(NO_LICENCE, new Date("2026-09-11T09:00:00.000Z"));
 const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Prompting", creator: "Smith", year: "2024", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ours: false, ...overrides };
 }
 
 function fakeClient(overrides: Partial<ZoteroClient> = {}): ZoteroClient {

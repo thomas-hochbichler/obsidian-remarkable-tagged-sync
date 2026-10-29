@@ -127,7 +127,8 @@ export type PdfChoice =
  */
 export function pdfChoice(attachments: readonly ZoteroAttachment[], item: ZoteroItem): PdfChoice {
 	// The item's own library as well as its key: a key is unique only within a library (ticket 26).
-	const mine = attachments.filter((attachment) => attachment.parentKey === item.key && sameLibrary(attachment.library, item.library));
+	// Never a render of ours (Zotero spec §4.2): it is the tablet's own ink, not a paper to send.
+	const mine = attachments.filter((attachment) => !attachment.ours && attachment.parentKey === item.key && sameLibrary(attachment.library, item.library));
 	if (mine.length === 0) return { kind: "none" };
 	if (mine.length === 1) return { kind: "use", attachment: mine[0] };
 	return { kind: "ask", options: mine };
