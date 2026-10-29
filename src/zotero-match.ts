@@ -97,9 +97,13 @@ export function matchZoteroAttachment({ link, declined, attachments, md5, visibl
 
 	if (declined) return { kind: "none" };
 
+	// A render we uploaded is never a source (Zotero spec §4.2): its name and bytes are ours, not the
+	// paper's, and linking to it would write the reader's highlights onto their own ink.
+	const sources = attachments.filter((candidate) => !candidate.ours);
+
 	// Identity. A linked file on the web connection has no `md5` at all, so `null === null` would
 	// match every one of them to a document whose bytes could not be read -- hence both guards.
-	const sameBytes = md5 === null ? [] : attachments.filter((candidate) => candidate.md5 !== null && candidate.md5 === md5);
+	const sameBytes = md5 === null ? [] : sources.filter((candidate) => candidate.md5 !== null && candidate.md5 === md5);
 	if (sameBytes.length === 1) return { kind: "link", attachment: sameBytes[0], evidence: "hash" };
 	// The same file attached to two items is a real library, not a corrupt one: a paper filed under
 	// two entries, or a duplicate the user has not merged. The bytes cannot say which entry they
@@ -108,7 +112,7 @@ export function matchZoteroAttachment({ link, declined, attachments, md5, visibl
 
 	// Resemblance, and treated as such: exactly one, and still asked. Two files called `paper.pdf` in
 	// one library say nothing at all, so they are not even offered.
-	const sameName = attachments.filter((candidate) => namesTheSameFile(candidate.filename, visibleName));
+	const sameName = sources.filter((candidate) => namesTheSameFile(candidate.filename, visibleName));
 	if (sameName.length === 1) return { kind: "ask", candidates: sameName, evidence: "filename" };
 
 	return { kind: "none" };

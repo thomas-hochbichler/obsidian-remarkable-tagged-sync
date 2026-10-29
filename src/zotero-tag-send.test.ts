@@ -17,7 +17,7 @@ const PAPER: ZoteroItem = { key: "ITEM1", library: "user", title: "Prompting", c
 const SECOND: ZoteroItem = { key: "ITEM2", library: "user", title: "Retrieval", creator: "Lee", year: "2025", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ours: false, ...overrides };
 }
 
 function fakeClient(overrides: Partial<ZoteroClient> = {}): ZoteroClient {

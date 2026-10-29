@@ -10,7 +10,7 @@ import { matchZoteroAttachment, type MatchInput } from "./zotero-match";
 const MD5 = "2de21c18668a0faba572b4c7f7ecd1f5";
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: MD5, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: MD5, title: "Full Text PDF", ours: false, ...overrides };
 }
 
 function link(overrides: Partial<ZoteroLink> = {}): ZoteroLink {
@@ -116,6 +116,14 @@ describe("a document that arrived some other way", () => {
 
 	it("leaves a document alone when there is nothing to go on", () => {
 		expect(match({ attachments: [] })).toEqual({ kind: "none" });
+	});
+
+	// Zotero spec §4.2: a render we uploaded is never a source, by bytes or by name.
+	it("never matches a render of ours", () => {
+		const render = attachment({ key: "REN1", filename: "annotated_paper.pdf", ours: true });
+		expect(match({ attachments: [render], md5: MD5 })).toEqual({ kind: "none" });
+		expect(match({ attachments: [render], visibleName: "annotated_paper.pdf" })).toEqual({ kind: "none" });
+		expect(match({ attachments: [attachment(), render], md5: MD5 })).toEqual({ kind: "link", attachment: attachment(), evidence: "hash" });
 	});
 });
 

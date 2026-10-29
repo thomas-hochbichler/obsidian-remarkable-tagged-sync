@@ -21,12 +21,13 @@ vi.stubGlobal("window", { open: () => undefined });
 const PRO = { key: "test-key", activationId: "act-1", validatedAt: new Date("2026-09-10T09:00:00.000Z").toISOString() };
 
 const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Prompting", creator: "Smith", year: "2024", citationKey: null };
-const ATTACHMENT: ZoteroAttachment = { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF" };
+const ATTACHMENT: ZoteroAttachment = { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ours: false };
 
 function fakeClient(): ZoteroClient {
 	return {
 		status: async () => ({ web: false, local: true, summary: "" }),
 		libraries: ["user"],
+		renders: null,
 		libraryName: () => "your library",
 		groups: async () => [],
 		libraryId: async () => null,

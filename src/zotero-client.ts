@@ -76,6 +76,11 @@ export interface ZoteroAttachment {
 	readonly filename: string | null;
 	readonly md5: string | null;
 	readonly title: string;
+	/**
+	 * Carries {@link OWNERSHIP_TAG}: a render we uploaded (Zotero spec §4.2). Never a source -- matching
+	 * and *Send* skip it, or the next sync would link a tablet document to its own render.
+	 */
+	readonly ours: boolean;
 }
 
 /** A bibliographic item, in the four fields the note and the picker need (spec §4). */
@@ -159,6 +164,55 @@ export interface AnnotationsCreated {
 
 /** A patch either wrote, or found the item changed underneath it -- which the caller reads as "the user edited it". */
 export type PatchOutcome = "written" | "conflict";
+
+/** The title a render attachment is created with (Zotero spec §4.1). A user's rename stays; it is never set again. */
+export const RENDER_TITLE = "Annotated PDF";
+
+/** `annotated_<name>.pdf`, from the paper's own PDF filename. */
+export function renderFilename(source: string): string {
+	return `annotated_${source.replace(/\.pdf$/i, "")}.pdf`;
+}
+
+/** The bytes to upload, with the MD5 the caller already has for the skip-unchanged check (spec §4.1). */
+export interface RenderFile {
+	readonly bytes: Uint8Array;
+	readonly md5: string;
+	readonly filename: string;
+}
+
+/**
+ * What one upload did. Each one the caller branches on (spec §4.3): `exists` sent nothing because
+ * Zotero holds these bytes already, `changed` is a 409/412 -- the file is not the one the caller
+ * named, read again next sync -- and `quota` is a 413, Zotero Storage full.
+ */
+export type RenderUpload = "uploaded" | "exists" | "changed" | "quota";
+
+/** One render attachment as it stands in Zotero now -- the planner's input for the user-action rows of §4.3. */
+export interface RenderState {
+	readonly key: string;
+	/** `null` once the user made it standalone. */
+	readonly parentKey: string | null;
+	readonly title: string;
+	readonly filename: string | null;
+	readonly md5: string | null;
+	/** In the trash, or under a paper that is: Zotero flags only the item that was trashed (ticket 08). */
+	readonly trashed: boolean;
+}
+
+/**
+ * The render as a Zotero attachment (#180), personal library only (spec §4.1).
+ *
+ * zotero.org only: the local API accepts a file replace and records it as synced, but Zotero never
+ * uploads it (ticket 08, forum discussion 134511). So only the web connection has one.
+ */
+export interface ZoteroRenders {
+	/** A stored, still empty PDF attachment under the paper, tagged as ours. Answers its key. */
+	create(parentKey: string, filename: string): Promise<string>;
+	/** Puts `file` into the attachment. `holds` is the MD5 Zotero holds for it, `null` for a first upload. */
+	upload(key: string, file: RenderFile, holds: string | null): Promise<RenderUpload>;
+	/** `null` when Zotero has no such item any more. */
+	state(key: string): Promise<RenderState | null>;
+}
 
 export interface ZoteroStatus {
 	readonly web: boolean;
@@ -246,6 +300,8 @@ export interface ZoteroConnection {
 	patchAnnotation(key: string, version: number, fields: AnnotationFields, library: ZoteroLibrary): Promise<PatchOutcome>;
 	/** Into Zotero's trash, never erased: `DELETE` on the local API is a permanent erase, and the trash is what makes this reversible (§3.3). */
 	trashAnnotation(key: string, version: number, library: ZoteroLibrary): Promise<PatchOutcome>;
+	/** zotero.org's alone -- see {@link ZoteroRenders}. */
+	readonly renders?: ZoteroRenders;
 }
 
 /**
@@ -253,7 +309,9 @@ export interface ZoteroConnection {
  * connection, with the listings widened over every enabled library -- and with the one call that
  * cannot be routed freely spelled out differently.
  */
-export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "attachments" | "search" | "itemsWithTag" | "patchAnnotation" | "trashAnnotation"> {
+export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "attachments" | "search" | "itemsWithTag" | "patchAnnotation" | "trashAnnotation" | "renders"> {
+	/** zotero.org's renders, or `null` without a zotero.org connection. Never falls back: the desktop has none. */
+	readonly renders: ZoteroRenders | null;
 	/**
 	 * Which connections answered, for the settings line. **Never rejects** -- it is built out of
 	 * {@link ZoteroConnection.probe}, and "nothing answered" is one of its answers rather than a
@@ -289,6 +347,8 @@ export interface ZoteroRequest {
 	/** Library-relative: `/items?itemType=attachment`. The connection puts the library's prefix in front. */
 	readonly path: string;
 	readonly body?: unknown;
+	/** Sent form-encoded in place of `body` -- the file-upload endpoint takes nothing else. zotero.org's requester only. */
+	readonly form?: Record<string, string>;
 	readonly headers?: Record<string, string>;
 }
 
@@ -424,6 +484,7 @@ function toAttachment(data: Json, library: ZoteroLibrary): ZoteroAttachment {
 		filename: asString(data.filename) ?? (path === null ? null : (path.split(/[/\\]/).pop() ?? null)),
 		md5: asString(data.md5),
 		title: typeof data.title === "string" ? data.title : "",
+		ours: Array.isArray(data.tags) && data.tags.some((tag) => asRecord(tag).tag === OWNERSHIP_TAG),
 	};
 }
 
@@ -682,6 +743,94 @@ export function createZoteroConnection(
 	}
 }
 
+/** Puts an upload's body into Zotero's file storage -- a URL outside the API, answered 201 when it took the bytes. */
+export type FileStore = (url: string, contentType: string, body: Uint8Array<ArrayBuffer>) => Promise<Response>;
+
+/**
+ * {@link ZoteroRenders} over a requester, in the sequence Zotero's file-upload doc gives and ticket
+ * 08 ran live: authorise → put into file storage → register. Both POSTs to `/file` carry the same
+ * precondition, `If-None-Match: *` for a first file, `If-Match: <md5>` to replace one.
+ */
+export function createZoteroRenders(request: ZoteroRequester, store: FileStore): ZoteroRenders {
+	const itemData = async (key: string): Promise<Json | null> => {
+		const response = await request({ library: "user", path: `/items/${key}` });
+		if (response.status === 404) return null;
+		return asRecord(asRecord(await readJson(response)).data);
+	};
+
+	return {
+		async create(parentKey, filename) {
+			const body = asRecord(
+				await readJson(
+					await request({
+						method: "POST",
+						library: "user",
+						path: "/items",
+						body: [
+							{
+								itemType: "attachment",
+								parentItem: parentKey,
+								linkMode: "imported_file",
+								title: RENDER_TITLE,
+								contentType: "application/pdf",
+								filename,
+								tags: [{ tag: OWNERSHIP_TAG }],
+							},
+						],
+						headers: { "Zotero-Write-Token": writeToken() },
+					}),
+					true,
+					"web",
+				),
+			);
+			const key = asString(asRecord(body.success)["0"]);
+			if (key !== null) return key;
+			throw new ZoteroError("server", asString(asRecord(asRecord(body.failed)["0"]).message) ?? "Zotero refused the render attachment without saying why.");
+		},
+		async upload(key, file, holds) {
+			const condition: Record<string, string> = holds === null ? { "If-None-Match": "*" } : { "If-Match": holds };
+			const post = async (form: Record<string, string>) => await request({ method: "POST", library: "user", path: `/items/${key}/file`, form, headers: condition });
+			const authorised = await post({ md5: file.md5, filename: file.filename, filesize: String(file.bytes.length), mtime: String(Date.now()) });
+			if (authorised.status === 409 || authorised.status === 412) return "changed";
+			if (authorised.status === 413) return "quota";
+			const slot = asRecord(await readJson(authorised, true, "web"));
+			if (slot.exists) return "exists";
+			const [url, contentType, prefix, suffix, uploadKey] = [slot.url, slot.contentType, slot.prefix, slot.suffix, slot.uploadKey].map((value) => (typeof value === "string" ? value : null));
+			if (url === null || contentType === null || prefix === null || suffix === null || uploadKey === null) {
+				throw new ZoteroError("server", "zotero.org authorised the upload without saying where to put it.");
+			}
+			const encoder = new TextEncoder();
+			const head = encoder.encode(prefix);
+			const tail = encoder.encode(suffix);
+			const body = new Uint8Array(head.length + file.bytes.length + tail.length);
+			body.set(head);
+			body.set(file.bytes, head.length);
+			body.set(tail, head.length + file.bytes.length);
+			const stored = await store(url, contentType, body);
+			if (stored.status !== 201) throw new ZoteroError("server", `Zotero's file storage answered ${stored.status}.`);
+			const registered = await post({ upload: uploadKey });
+			if (registered.status === 412) return "changed";
+			if (!registered.ok) throw await failureFor(registered, true, "web");
+			return "uploaded";
+		},
+		async state(key) {
+			const data = await itemData(key);
+			if (data === null) return null;
+			const parentKey = asString(data.parentItem);
+			// A paper erased for good takes its children with it, so a missing parent reads as trashed too.
+			const parent = parentKey === null ? null : await itemData(parentKey);
+			return {
+				key,
+				parentKey,
+				title: typeof data.title === "string" ? data.title : "",
+				filename: asString(data.filename),
+				md5: asString(data.md5),
+				trashed: Boolean(data.deleted) || (parentKey !== null && (parent === null || Boolean(parent.deleted))),
+			};
+		},
+	};
+}
+
 /**
  * The two connections as one.
  *
@@ -738,6 +887,7 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 
 	return {
 		libraries,
+		renders: web?.renders ?? null,
 		libraryName(library) {
 			if (library === "user") return "your library";
 			// The name the setting stored when the group was switched on; a link into a group that has
