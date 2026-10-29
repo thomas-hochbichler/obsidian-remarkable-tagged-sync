@@ -191,3 +191,36 @@
       layer: unit
       file: src/pdf-renderer.test.ts
       test: "renderAnnotatedPdf > draws the typed text of every added page, not only the first"
+
+- feature: D30
+  name: Render size and stable bytes (zotero map ticket 10)
+  code: src/pdf-renderer.ts
+  tier: free
+  scenarios:
+    - id: D30.1
+      scenario: Every page of a paper draws on the same font, rendered whole
+      expect: The render carries the font as often as the source does. Embedded page by page, a 10-page paper sharing 8 fonts came out with 80
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > a paper whose pages share a font and a picture > carries the shared font once, as the source does, not once per page"
+
+    - id: D30.2
+      scenario: Every page of a paper shows the same picture, rendered whole
+      expect: The render stays near the source's size. Copying the picture per page made it eight times larger
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > a paper whose pages share a font and a picture > stays near the source's size, where copying the picture per page made it eight times larger"
+
+    - id: D30.3
+      scenario: The same PDF pages are rendered twice, the clock moved on in between
+      expect: Both renders are byte-identical, so Zotero's MD5 tells a changed render from an unchanged one. pdf-lib stamped the time of the render into the file
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > renders the same pages to the same bytes, whatever the clock says"
+
+    - id: D30.4
+      scenario: The same notebook pages are rendered twice, the clock moved on in between
+      expect: Both renders are byte-identical
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderPagesToPdf > renders the same pages to the same bytes, whatever the clock says"

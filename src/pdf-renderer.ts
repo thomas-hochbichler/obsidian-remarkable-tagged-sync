@@ -572,6 +572,13 @@ export function notebookCanvas(pages: RmPage[]): DeviceCanvas {
 }
 
 /**
+ * Without the time of the render in it, so the same pages give the same bytes on every device and at
+ * every hour: the Zotero attachment is told apart by its MD5. pdf-lib's default stamps `ModDate` and
+ * `CreationDate` with the clock, which changed 5-6 bytes of a render made a second later.
+ */
+const UNDATED = { updateMetadata: false } as const;
+
+/**
  * Renders notebook pages to a PDF.
  *
  * `images` carries the bytes of the pictures the pages name (`RmImage.fileName`), which live in
@@ -585,7 +592,7 @@ export async function renderPagesToPdf(pages: RmPage[], images: ReadonlyMap<stri
 	if (pages.length === 0) throw new Error("renderPagesToPdf: no pages to render");
 
 	const canvas = notebookCanvas(pages);
-	const doc = await PDFDocument.create();
+	const doc = await PDFDocument.create(UNDATED);
 	const font = await doc.embedFont(StandardFonts.Helvetica);
 	const encodable = new Set(font.getCharacterSet());
 	for (const rmPage of pages) {
@@ -776,7 +783,7 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 
 	const device = resolveDeviceCanvas(pages.map((page) => page.annotations).filter((scene): scene is RmPage => scene !== null));
 	const src = await PDFDocument.load(sourcePdfBytes, LOAD_WITHOUT_PAUSES);
-	const out = await PDFDocument.create();
+	const out = await PDFDocument.create(UNDATED);
 	// Embedded only once a page needs it, so a document without typed text keeps the bytes it had.
 	let text: { font: PDFFont; encodable: Set<number> } | null = null;
 
@@ -788,8 +795,14 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 		if (index >= 0 && index < src.getPageCount()) await repairPagePaint(src, src.getPage(index));
 	}
 
+	// All in one copy, so what the pages share -- a paper's fonts, a logo on every page -- is copied
+	// once. Embedded page by page, each `embedPage` brought its own copy along: a 10-page paper sharing
+	// 8 fonts came out with 80, and ten times its size.
+	const inRange = [...new Set(pages.map((page) => page.sourceIndex))].filter((index) => index >= 0 && index < src.getPageCount());
+	const copied = new Map((await out.copyPages(src, inRange)).map((page, i) => [inRange[i], page]));
+
 	for (const { sourceIndex, annotations } of pages) {
-		const srcPage = sourceIndex >= 0 && sourceIndex < src.getPageCount() ? src.getPage(sourceIndex) : null;
+		const srcPage = copied.get(sourceIndex) ?? null;
 		// Only computed where there is no source page to measure against; `annotations` is what such a
 		// page is made of, so a null scene there leaves the device canvas as the last resort.
 		const ownCanvas = srcPage || !annotations ? device : inkCanvas(annotations, device);

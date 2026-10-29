@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream } from "pdf-lib";
-import { describe, expect, it } from "vitest";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts } from "pdf-lib";
+import { describe, expect, it, vi } from "vitest";
 import { notebookPageFrame, pageFrame, renderAnnotatedPdf, renderPagesToPdf, resolveDeviceCanvas, sceneRectToPdf, toPdfPoint } from "./pdf-renderer";
 import { encodeGrayscalePng } from "./png-encoder";
 import { parseRmV6, type RmPage, type RmStroke } from "./rm-parser";
@@ -226,6 +226,21 @@ describe("renderPagesToPdf", () => {
 			expect(ops).not.toMatch(/\/Image\S* Do/);
 			expect(ops).toContain(drawnText("typed"));
 		});
+	});
+
+	it("renders the same pages to the same bytes, whatever the clock says", async () => {
+		const pages = [loadFixturePage()];
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			vi.setSystemTime(new Date("2026-10-29T10:00:00Z"));
+			const first = await renderPagesToPdf(pages);
+			vi.setSystemTime(new Date("2027-03-01T18:30:05Z"));
+			const second = await renderPagesToPdf(pages);
+
+			expect(second).toEqual(first);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("renders a blank page (no layers) as a real, empty PDF page", async () => {
@@ -898,6 +913,70 @@ describe("renderAnnotatedPdf", () => {
 		const bytes = await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: null }]);
 		// The embedded source page shows up as a Form XObject in the output.
 		expect(new TextDecoder("latin1").decode(bytes)).toContain("/XObject");
+	});
+
+	describe("a paper whose pages share a font and a picture", () => {
+		// What a real paper looks like to the renderer: every page draws on the same font and the same
+		// logo, which the source stores once. Noise, so the picture does not compress away.
+		async function makeSharedSource(pageCount: number): Promise<Uint8Array> {
+			const doc = await PDFDocument.create();
+			const font = await doc.embedFont(StandardFonts.Helvetica);
+			let seed = 1;
+			const pixels = Uint8Array.from({ length: 200 * 200 }, () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) & 0xff);
+			const logo = await doc.embedPng(encodeGrayscalePng({ width: 200, height: 200, pixels }));
+			for (let i = 0; i < pageCount; i++) {
+				const page = doc.addPage([A4.width, A4.height]);
+				page.drawText(`Page ${i + 1}`, { x: 50, y: 700, size: 12, font });
+				page.drawImage(logo, { x: 50, y: 400, width: 200, height: 200 });
+			}
+			return doc.save();
+		}
+
+		const fontObjects = (doc: PDFDocument): number =>
+			doc.context.enumerateIndirectObjects().filter(([, object]) => object instanceof PDFDict && object.get(PDFName.of("Type")) === PDFName.of("Font")).length;
+
+		const wholePaper = (pageCount: number) => Array.from({ length: pageCount }, (_, sourceIndex) => ({ sourceIndex, annotations: null }));
+
+		it("carries the shared font once, as the source does, not once per page", async () => {
+			const source = await makeSharedSource(10);
+
+			const bytes = await renderAnnotatedPdf(source, wholePaper(10));
+
+			expect(fontObjects(await PDFDocument.load(bytes))).toBe(fontObjects(await PDFDocument.load(source)));
+		});
+
+		it("stays near the source's size, where copying the picture per page made it eight times larger", async () => {
+			const source = await makeSharedSource(10);
+
+			const bytes = await renderAnnotatedPdf(source, wholePaper(10));
+
+			// What is left is each page's own wrapper, a few hundred bytes -- large beside this fixture's
+			// 1 kB pages, small beside a real paper's.
+			expect(bytes.length).toBeLessThan(source.length * 2);
+		});
+	});
+
+	/**
+	 * Zotero is told a render changed by its MD5, so the same tablet state has to give the same file on
+	 * every device and at every hour. pdf-lib stamped the time of the render into it.
+	 */
+	it("renders the same pages to the same bytes, whatever the clock says", async () => {
+		const source = await makeSource(2);
+		const pages = [
+			{ sourceIndex: 0, annotations: pageWithStrokes([stroke({})]) },
+			{ sourceIndex: 1, annotations: null },
+		];
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			vi.setSystemTime(new Date("2026-10-29T10:00:00Z"));
+			const first = await renderAnnotatedPdf(source, pages);
+			vi.setSystemTime(new Date("2027-03-01T18:30:05Z"));
+			const second = await renderAnnotatedPdf(source, pages);
+
+			expect(second).toEqual(first);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("draws the annotation strokes over the page", async () => {
