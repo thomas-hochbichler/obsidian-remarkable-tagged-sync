@@ -610,6 +610,18 @@ describe("the render as a Zotero attachment (Zotero spec §4.1)", () => {
 	it("says why Zotero refused to create it", async () => {
 		const { api } = renders(() => json({ failed: { "0": { code: 400, message: "Parent item PAPER1 not found" } } }));
 		await expect(api.create("PAPER1", "annotated_paper.pdf")).rejects.toThrow("Parent item PAPER1 not found");
+		await expect(renders(() => json({ failed: {} })).api.create("PAPER1", "annotated_paper.pdf")).rejects.toThrow("without saying why");
+	});
+
+	it("does not upload into an authorisation that names no place to put the file", async () => {
+		const { api, puts } = renders(upload(json({ url: SLOT.url, contentType: SLOT.contentType })));
+		await expect(api.upload("REN1", FILE, null)).rejects.toMatchObject({ reason: "server" });
+		expect(puts).toEqual([]);
+	});
+
+	it("reports a register that fails for any reason but a changed file", async () => {
+		const { api } = renders((request) => (request.form?.upload === undefined ? json(SLOT) : new Response("Internal Server Error", { status: 500 })));
+		await expect(api.upload("REN1", FILE, null)).rejects.toMatchObject({ reason: "server" });
 	});
 
 	it("uploads a first file: authorise for a new file, put the bytes between prefix and suffix, register", async () => {
@@ -673,6 +685,8 @@ describe("the render as a Zotero attachment (Zotero spec §4.1)", () => {
 		expect(await api.state("REN1")).toMatchObject({ trashed: true });
 		items.REN1 = { ...(items.REN1 as object), deleted: 1, parentItem: undefined };
 		expect(await api.state("REN1")).toMatchObject({ parentKey: null, trashed: true });
+		items.REN1 = { key: "REN1" };
+		expect(await api.state("REN1")).toEqual({ key: "REN1", parentKey: null, title: "", filename: null, md5: null, trashed: false });
 	});
 
 	it("answers nothing for a render Zotero no longer has", async () => {

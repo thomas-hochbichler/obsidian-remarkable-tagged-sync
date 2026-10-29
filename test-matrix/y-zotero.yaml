@@ -4042,4 +4042,16 @@
       layer: unit
       file: src/zotero-send.test.ts
       test: "which PDF of an item is meant > never offers a render of ours"
+    - id: Y35.19
+      scenario: "Authorise answers 200 without an upload URL, prefix, suffix or key"
+      expect: 'A `server` failure; nothing put into file storage'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > does not upload into an authorisation that names no place to put the file"
+    - id: Y35.20
+      scenario: "Register answers 500"
+      expect: 'A `server` failure, not `changed`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reports a register that fails for any reason but a changed file"
 
