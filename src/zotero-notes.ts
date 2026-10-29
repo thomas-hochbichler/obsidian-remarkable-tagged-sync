@@ -95,6 +95,17 @@ function titleOf(body: string): string | undefined {
 	return /^<h1>(.*?)<\/h1>/.exec(body)?.[1];
 }
 
+/**
+ * A note's body without the container Zotero's note editor puts around it.
+ *
+ * The desktop editor saves a note as soon as it is shown, wrapped in `<div data-schema-version="9">`
+ * with a newline before the closing tag and the text untouched (device check 2026-10-29). Compared
+ * as it stands, merely looking at the note in Zotero would hand it to the user.
+ */
+function unwrapped(note: string): string {
+	return /^<div data-schema-version="\d+">([\s\S]*?)\n?<\/div>$/.exec(note)?.[1] ?? note;
+}
+
 export interface PlannedNoteCreate {
 	readonly blockId: string;
 	readonly note: NewNote;
@@ -171,8 +182,9 @@ function refOf({ key, version, source, library }: ZoteroNote): ZoteroNoteRef {
  * to what the tablet says and follows the PDF to its paper. A page whose handwriting could not be read
  * is neither refreshed nor trashed (P5).
  */
-export function planNotes({ pages, scope, paperKey, link, existing, noteWasDeleted = false }: NotesInput): NotesPlan {
+export function planNotes({ pages, scope, paperKey, link, existing: read, noteWasDeleted = false }: NotesInput): NotesPlan {
 	const entries = new Map(addedEntries(pages).map((entry) => [entry.blockId, entry]));
+	const existing = read.map((note) => ({ ...note, note: unwrapped(note.note) }));
 	const byKey = new Map(existing.map((note) => [note.key, note]));
 	const stored = link.notes ?? {};
 	// Never adopted twice, and never a note another record already holds.

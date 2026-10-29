@@ -139,6 +139,27 @@ describe("an added-page note on a later sync (Zotero spec §3)", () => {
 		expect(plan([addedPage("nt-aaaaaa", "  ")], { link: remembered(body("alt")), existing: [zoteroNote(body("alt"))] }).trashes).toHaveLength(1);
 	});
 
+	// Device check 2026-10-29: the desktop's note editor saved the note as soon as it was shown,
+	// wrapped in a schema container, text untouched. Looking at a note is not editing it.
+	const opened = (note: string) => `<div data-schema-version="9">${note}\n</div>`;
+
+	it("takes a note the desktop editor only wrapped for untouched: trashed, refreshed, adopted", () => {
+		const trash = plan([], { link: remembered(body("alt")), existing: [zoteroNote(opened(body("alt")))] });
+		const refresh = plan([addedPage("nt-aaaaaa", "neu")], { link: remembered(body("alt")), existing: [zoteroNote(opened(body("alt")))] });
+		const adopt = plan([addedPage("nt-aaaaaa", "alt")], { existing: [zoteroNote(opened(body("alt")))] });
+
+		expect(trash.trashes).toHaveLength(1);
+		expect(refresh.patches[0].fields).toEqual({ note: body("neu") });
+		expect(adopt).toMatchObject({ ...nothing, records: [{ record: { key: "NOTE1", written: { note: body("alt") } } }] });
+	});
+
+	it("still sees an edit made inside the editor's wrapper", () => {
+		const result = plan([], { link: remembered(body("alt")), existing: [zoteroNote(opened(`${body("alt")}\n<p>meins</p>`))] });
+
+		expect(result.trashes).toEqual([]);
+		expect(result.records[0].record.userEdited).toBe(true);
+	});
+
 	it("keeps the note of a deleted page that the user edited", () => {
 		const result = plan([], { link: remembered(body("alt")), existing: [zoteroNote(`${body("alt")}\n<p>meins</p>`)] });
 

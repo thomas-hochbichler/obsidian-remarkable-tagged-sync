@@ -4531,4 +4531,16 @@
       layer: unit
       file: src/zotero-sync.test.ts
       test: "pages added on the tablet (#246) > on a later sync (ticket 12) > says why when the former paper cannot be read, and changes no note"
+    - id: Y34.79
+      scenario: "Note only shown in the Zotero desktop app: body wrapped in `<div data-schema-version=\"9\">…\n</div>`, text untouched"
+      expect: 'Read as untouched: trashed for a deleted page, refreshed, adopted -- no PATCH just to unwrap'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > takes a note the desktop editor only wrapped for untouched: trashed, refreshed, adopted"
+    - id: Y34.80
+      scenario: "User edited the note in the desktop editor (wrapper + changed text)"
+      expect: 'Still the user''s: `userEdited`, not trashed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > still sees an edit made inside the editor's wrapper"
 
