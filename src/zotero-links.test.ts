@@ -163,6 +163,12 @@ describe("the render we added as an attachment (#180)", () => {
 		expect(linkFor({ [DOC]: { ...link, render: { key: "REND1", md5: "abc" } } }, DOC)?.render).toBeUndefined();
 		expect(linkFor({ [DOC]: { ...link, render: "REND1" } }, DOC)?.render).toBeUndefined();
 	});
+
+	it("reads back what the user did to it, and ignores a word it does not know", () => {
+		const theirs: ZoteroLink = { ...link, render: { key: "REND1", parentKey: "ITEM1", md5: "abc", theirs: "annotated" } };
+		expect(linkFor(withLink({}, DOC, theirs), DOC)).toEqual(theirs);
+		expect(linkFor({ [DOC]: { ...link, render: { key: "REND1", parentKey: "ITEM1", theirs: "renamed" } } }, DOC)?.render).toEqual({ key: "REND1", parentKey: "ITEM1" });
+	});
 });
 
 describe("a question the user closed", () => {

@@ -26,10 +26,10 @@
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import { type MatchEvidence, matchZoteroAttachment } from "./zotero-match";
 import { renderFilename, sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary, type ZoteroNote } from "./zotero-client";
-import { linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
+import { type LinkedRender, linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, openRenderUrl, type VaultNoteKeys, webReaderUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo, type ZoteroWriteBack } from "./zotero-note";
 import { type AddedPagesScope, executeNotes, formerPapers, hasAddedText, hasLiveNotes, planNotes } from "./zotero-notes";
-import { NO_PARENT_ITEM, planRender, STORAGE_FULL } from "./zotero-render";
+import { judgeRender, NO_PARENT_ITEM, planRender, STORAGE_FULL } from "./zotero-render";
 import { executeWriteBack, planWriteBack } from "./zotero-writeback";
 
 /** What the engine knows about one written note, and this pass needs. */
@@ -389,11 +389,19 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		// Only switched on is the render hashed: a few megabytes per whole-document sync otherwise for nothing.
 		const switchedOn = deps.mayWriteBack && deps.addRender;
 		const md5 = switchedOn ? (unit.render?.md5() ?? null) : null;
-		const plan = planRender({ switchedOn, md5, library: link.library, paperKey: attachment.parentKey, web: deps.client.renders !== null, recorded: link.render });
+		const plan = planRender({
+			switchedOn,
+			md5,
+			library: link.library,
+			paperKey: attachment.parentKey,
+			web: deps.client.renders !== null,
+			recorded: link.render,
+			noteWasDeleted: unit.noteWasDeleted,
+		});
 		const done = async (): Promise<{ link: ZoteroLink; render?: ZoteroNoteInfo["render"]; notices: string[] }> => ({ link, ...(await renderLink(link)), notices: [] });
 		if (plan.kind === "not-added") return { link, render: { reason: plan.reason }, notices: [] };
 		if (plan.kind === "none" || plan.kind === "unchanged") return await done();
-		// The planner creates or replaces only with both in hand.
+		// The planner finds, creates or checks only with both in hand.
 		const renders = deps.client.renders!;
 		const file = { bytes: unit.render!.bytes, md5: md5!, filename: renderFilename(attachment.filename ?? unit.visibleName) };
 		const save = async (next: ZoteroLink): Promise<ZoteroLink> => {
@@ -401,14 +409,32 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			return next;
 		};
 		try {
-			const render = plan.kind === "create" ? { key: await renders.create(plan.parentKey, file.filename), parentKey: plan.parentKey } : plan.render;
-			// Recorded before the upload, so one that fails fills this attachment next time rather than
-			// leaving it empty beside a second one.
-			if (plan.kind === "create") link = await save({ ...link, render });
-			const outcome = await renders.upload(render.key, file, render.md5 ?? null);
+			const found = plan.kind === "find" ? await renders.find(plan.parentKey) : null;
+			let render: LinkedRender;
+			let holds: string | null = null;
+			let filename = file.filename;
+			if (plan.kind === "check" || found !== null) {
+				render = plan.kind === "check" ? plan.render : { key: found!.key, parentKey: plan.parentKey };
+				const judged = judgeRender(file.md5, render, plan.kind === "check" ? await renders.state(render.key) : found);
+				if (judged.kind === "theirs") {
+					link = await save({ ...link, render: { ...render, theirs: judged.theirs } });
+					return await done();
+				}
+				if (judged.kind === "unchanged") {
+					link = await save({ ...link, render: { ...render, md5: file.md5 } });
+					return await done();
+				}
+				holds = judged.holds;
+				filename = judged.filename ?? filename;
+			} else {
+				render = { key: await renders.create(plan.parentKey, filename), parentKey: plan.parentKey };
+				// Recorded before the upload, so one that fails fills this attachment next time rather than
+				// leaving it empty beside a second one.
+				link = await save({ ...link, render });
+			}
+			const outcome = await renders.upload(render.key, { ...file, filename }, holds);
 			if (outcome === "quota") return { link, render: { reason: STORAGE_FULL }, notices: [zoteroStorageFullNotice(unit.visibleName)] };
-			// `changed`: Zotero holds a file that is not the one we uploaded last. Left as it is; what to do
-			// about that is the user-action rows' (§4.3).
+			// `changed`: the file changed between our read and the upload. Left as it is; the next sync reads it again.
 			if (outcome !== "changed") link = await save({ ...link, render: { ...render, md5: file.md5 } });
 			return await done();
 		} catch (error) {
@@ -417,11 +443,16 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		}
 	};
 
-	/** The line's link to a render that has a file: the desktop reader, or zotero.org's where that is the vault's one reader. */
+	/**
+	 * The line's link to a render that has a file: the desktop reader, or zotero.org's where that is the
+	 * vault's one reader. One the user made theirs is said so, file or not.
+	 */
 	const renderLink = async (link: ZoteroLink): Promise<{ render?: ZoteroNoteInfo["render"] }> => {
-		if (link.render?.md5 === undefined) return {};
+		const render = link.render;
+		if (render === undefined || (render.md5 === undefined && render.theirs === undefined)) return {};
 		const username = await readerUser();
-		return { render: { url: username === null ? openRenderUrl(link.render.key) : webReaderUrl({ username, itemKey: link.render.parentKey }, link.render.key, "user") } };
+		const url = username === null ? openRenderUrl(render.key) : webReaderUrl({ username, itemKey: render.parentKey }, render.key, "user");
+		return { render: { url, ...(render.theirs === undefined ? {} : { theirs: render.theirs }) } };
 	};
 
 	const runUnit = async (unit: ZoteroUnit): Promise<ZoteroNoteParts> => {

@@ -766,14 +766,41 @@ describe("the render as a Zotero attachment (Zotero spec §4.1)", () => {
 			REN1: { key: "REN1", parentItem: "PAPER1", title: "My copy", filename: "annotated_paper.pdf", md5: "abc", contentType: "application/pdf" },
 			PAPER1: { key: "PAPER1", itemType: "journalArticle" },
 		};
-		const { api } = renders((request) => json({ data: items[request.path.slice("/items/".length)] }));
-		expect(await api.state("REN1")).toEqual({ key: "REN1", parentKey: "PAPER1", title: "My copy", filename: "annotated_paper.pdf", md5: "abc", trashed: false });
+		const { api, calls } = renders((request) => (request.path.includes("/children") ? json([]) : json({ data: items[request.path.slice("/items/".length)] })));
+		expect(await api.state("REN1")).toEqual({ key: "REN1", parentKey: "PAPER1", title: "My copy", filename: "annotated_paper.pdf", md5: "abc", trashed: false, annotated: false });
 		items.PAPER1 = { key: "PAPER1", deleted: 1 };
 		expect(await api.state("REN1")).toMatchObject({ trashed: true });
 		items.REN1 = { ...(items.REN1 as object), deleted: 1, parentItem: undefined };
 		expect(await api.state("REN1")).toMatchObject({ parentKey: null, trashed: true });
 		items.REN1 = { key: "REN1" };
-		expect(await api.state("REN1")).toEqual({ key: "REN1", parentKey: null, title: "", filename: null, md5: null, trashed: false });
+		expect(await api.state("REN1")).toEqual({ key: "REN1", parentKey: null, title: "", filename: null, md5: null, trashed: false, annotated: false });
+		// A trashed render is not asked for its annotations: it is the user's either way.
+		expect(calls.filter((call) => call.path.includes("/children"))).toHaveLength(2);
+	});
+
+	it("tells the user's annotations on the render from ours", async () => {
+		const annotations = [{ key: "A1", data: { itemType: "annotation", tags: [{ tag: OWNERSHIP_TAG }] } }];
+		const { api, calls } = renders((request) => (request.path.includes("/children") ? json(annotations) : json({ data: { key: "REN1", md5: "abc" } })));
+		expect(await api.state("REN1")).toMatchObject({ annotated: false });
+		expect(calls[1].path).toMatch(/^\/items\/REN1\/children\?itemType=annotation&limit=/);
+		annotations.push({ key: "A2", data: { itemType: "annotation", tags: [] } });
+		expect(await api.state("REN1")).toMatchObject({ annotated: true });
+	});
+
+	it("re-finds the oldest render of ours under a paper, trashed ones included", async () => {
+		const rows = [
+			{ key: "NEWER", data: { contentType: "application/pdf", parentItem: "PAPER1", dateAdded: "2026-10-29T10:00:00Z", md5: "n" } },
+			{ key: "LINK", data: { contentType: "text/html", parentItem: "PAPER1", dateAdded: "2026-01-01T00:00:00Z" } },
+			{ key: "OLDER", data: { contentType: "application/pdf", parentItem: "PAPER1", dateAdded: "2026-10-28T10:00:00Z", md5: "o", deleted: 1 } },
+		];
+		const { api, calls } = renders((request) => (request.path.startsWith("/items/PAPER1/children") ? json(rows) : request.path.includes("/children") ? json([]) : json({ data: { key: "PAPER1" } })));
+		expect(await api.find("PAPER1")).toMatchObject({ key: "OLDER", parentKey: "PAPER1", md5: "o", trashed: true });
+		expect(calls[0].path).toMatch(/^\/items\/PAPER1\/children\?itemType=attachment&tag=tagged-sync&includeTrashed=1&limit=/);
+	});
+
+	it("re-finds nothing under a paper with no render of ours", async () => {
+		const { api } = renders(() => json([]));
+		expect(await api.find("PAPER1")).toBeNull();
 	});
 
 	it("answers nothing for a render Zotero no longer has", async () => {

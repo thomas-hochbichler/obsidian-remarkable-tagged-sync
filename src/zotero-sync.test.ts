@@ -6,6 +6,7 @@ import {
 	type NewNote,
 	type NotesCreated,
 	type RenderFile,
+	type RenderState,
 	type RenderUpload,
 	type ZoteroAnnotation,
 	type ZoteroAttachment,
@@ -765,11 +766,17 @@ describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
 		};
 	}
 
+	/** The render in Zotero as we left it: under the paper, holding what we uploaded last. */
+	function live(overrides: Partial<RenderState> = {}): RenderState {
+		return { key: "REN1", parentKey: ITEM_KEY, title: "Annotated PDF", filename: "annotated_prompting.pdf", md5: "md5-a", trashed: false, annotated: false, ...overrides };
+	}
+
 	function renders(overrides: Partial<ZoteroRenders> = {}) {
 		return {
 			create: vi.fn(async (_parentKey: string, _filename: string) => "REN1"),
 			upload: vi.fn(async (_key: string, _file: RenderFile, _holds: string | null): Promise<RenderUpload> => "uploaded"),
-			state: vi.fn(async () => null),
+			state: vi.fn(async (_key: string): Promise<RenderState | null> => live()),
+			find: vi.fn(async (_parentKey: string): Promise<RenderState | null> => null),
 			...overrides,
 		};
 	}
@@ -883,7 +890,8 @@ describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
 
 	it("says the Zotero Storage is full, and fills the same attachment once there is room", async () => {
 		const upload = vi.fn(async (_key: string, _file: RenderFile, _holds: string | null): Promise<RenderUpload> => "quota");
-		const r = renders({ upload });
+		// An attachment with no file yet may name none either: then it gets ours.
+		const r = renders({ upload, state: vi.fn(async () => live({ md5: null, filename: null })) });
 		const { deps, saved } = on(r);
 
 		const full = await createZoteroPass(deps).run(whole());
@@ -893,7 +901,7 @@ describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
 		expect(full.line).toContain("· render not added: your Zotero Storage is full");
 		expect(full.notices).toEqual([zoteroStorageFullNotice("Best Practices für Prompting")]);
 		expect(r.create).toHaveBeenCalledTimes(1);
-		expect(upload).toHaveBeenLastCalledWith("REN1", expect.anything(), null);
+		expect(upload).toHaveBeenLastCalledWith("REN1", expect.objectContaining({ filename: "annotated_prompting.pdf" }), null);
 		expect(renderOf(saved())).toEqual(RECORDED);
 	});
 
@@ -910,9 +918,8 @@ describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
 		expect(parts.notices).toEqual([zoteroRenderNotice("Best Practices für Prompting", "Zotero could not be reached")]);
 	});
 
-	// A 409/412: what Zotero holds is not what we uploaded last. Ticket 16 decides what that means;
-	// here the record stays as it was.
-	it("records nothing new when Zotero holds a file that is not ours", async () => {
+	// A 409/412 between the read and the upload: the next sync reads the attachment again.
+	it("records nothing new when the file changed underneath the upload", async () => {
 		const r = renders({ upload: vi.fn(async (): Promise<RenderUpload> => "changed") });
 		const { deps, saved } = on(r, { links: linked({ render: RECORDED }) });
 
@@ -948,5 +955,118 @@ describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
 
 		expect(r.upload).not.toHaveBeenCalled();
 		expect(parts.line).toContain("[render in Zotero](zotero://open-pdf/library/items/REN1)");
+	});
+
+	describe("what the user did to it in Zotero (ticket 16)", () => {
+		it("keeps the file name the user gave it when replacing the bytes", async () => {
+			const r = renders({ state: vi.fn(async () => live({ title: "My copy", filename: "mine.pdf" })) });
+
+			await createZoteroPass(on(r, { links: linked({ render: RECORDED }) }).deps).run(whole("md5-b"));
+
+			expect(r.upload).toHaveBeenCalledWith("REN1", { bytes: BYTES, md5: "md5-b", filename: "mine.pdf" }, "md5-a");
+		});
+
+		it("leaves a render with the user's annotations, says so, and stops asking", async () => {
+			const r = renders({ state: vi.fn(async () => live({ annotated: true })) });
+			const { deps, saved } = on(r, { links: linked({ render: RECORDED }) });
+
+			const parts = await createZoteroPass(deps).run(whole("md5-b"));
+			await createZoteroPass(deps).run(whole("md5-c"));
+
+			expect(r.upload).not.toHaveBeenCalled();
+			expect(r.state).toHaveBeenCalledTimes(1);
+			expect(renderOf(saved())).toEqual({ ...RECORDED, theirs: "annotated" });
+			expect(parts.line).toContain("· [render in Zotero](zotero://open-pdf/library/items/REN1) not updated: it has your annotations");
+		});
+
+		it("leaves a render whose file the user changed", async () => {
+			const r = renders({ state: vi.fn(async () => live({ md5: "rotated" })) });
+			const { deps, saved } = on(r, { links: linked({ render: RECORDED }) });
+
+			const parts = await createZoteroPass(deps).run(whole("md5-b"));
+
+			expect(r.upload).not.toHaveBeenCalled();
+			expect(renderOf(saved())).toEqual({ ...RECORDED, theirs: "changed" });
+			expect(parts.line).toContain("· [render in Zotero](zotero://open-pdf/library/items/REN1) not updated: you changed its file");
+		});
+
+		it("leaves a moved render where it is and puts no new one under the paper", async () => {
+			const r = renders({ state: vi.fn(async () => live({ parentKey: "OTHER" })) });
+			const { deps, saved } = on(r, { links: linked({ render: RECORDED }) });
+
+			const parts = await createZoteroPass(deps).run(whole("md5-b"));
+
+			expect(r.create).not.toHaveBeenCalled();
+			expect(renderOf(saved())).toEqual({ ...RECORDED, theirs: "moved" });
+			expect(parts.line).toContain("· render not updated: you moved it in Zotero");
+		});
+
+		it("never recreates a trashed render, and never trashes one itself", async () => {
+			const trashAnnotation = vi.fn();
+			const r = renders({ state: vi.fn(async () => null) });
+			const { deps, saved } = on(r, { links: linked({ render: RECORDED }), client: client({ renders: r, trashAnnotation }) });
+
+			const parts = await createZoteroPass(deps).run(whole("md5-b"));
+			await createZoteroPass(deps).run(whole("md5-c"));
+
+			expect(r.create).not.toHaveBeenCalled();
+			expect(r.upload).not.toHaveBeenCalled();
+			expect(trashAnnotation).not.toHaveBeenCalled();
+			expect(renderOf(saved())).toEqual({ ...RECORDED, theirs: "trashed" });
+			expect(parts.line).toContain("· render not added again: you deleted it in Zotero");
+		});
+
+		it("still says what the user did on a page note and with the switch off", async () => {
+			const links = linked({ render: { ...RECORDED, theirs: "trashed" } });
+
+			expect((await createZoteroPass(on(renders(), { links }).deps).run(unit())).line).toContain("render not added again: you deleted it in Zotero");
+			expect((await createZoteroPass(on(renders(), { links, addRender: false }).deps).run(whole())).line).toContain("render not added again: you deleted it in Zotero");
+		});
+
+		it("starts over with a new render once the vault note was deleted", async () => {
+			const r = renders({ create: vi.fn(async () => "REN2") });
+			const { deps, saved } = on(r, { links: linked({ render: { ...RECORDED, theirs: "trashed" } }) });
+
+			const parts = await createZoteroPass(deps).run({ ...whole("md5-b"), noteWasDeleted: true });
+
+			expect(r.find).not.toHaveBeenCalled();
+			expect(r.upload).toHaveBeenCalledWith("REN2", expect.anything(), null);
+			expect(renderOf(saved())).toEqual({ key: "REN2", parentKey: ITEM_KEY, md5: "md5-b" });
+			expect(parts.line).toContain("· [render in Zotero](zotero://open-pdf/library/items/REN2)");
+		});
+
+		it("re-finds its render under the paper when data.json lost the record, and creates none", async () => {
+			const r = renders({ find: vi.fn(async () => live({ key: "REN9", md5: "older" })) });
+			const { deps, saved } = on(r);
+
+			await createZoteroPass(deps).run(whole("md5-b"));
+
+			expect(r.find).toHaveBeenCalledWith(ITEM_KEY);
+			expect(r.create).not.toHaveBeenCalled();
+			expect(r.upload).toHaveBeenCalledWith("REN9", expect.objectContaining({ md5: "md5-b" }), "older");
+			expect(renderOf(saved())).toEqual({ key: "REN9", parentKey: ITEM_KEY, md5: "md5-b" });
+		});
+
+		it("leaves a re-found render the user trashed in the trash", async () => {
+			const r = renders({ find: vi.fn(async () => live({ key: "REN9", trashed: true })) });
+			const { deps, saved } = on(r);
+
+			await createZoteroPass(deps).run(whole());
+
+			expect(r.create).not.toHaveBeenCalled();
+			expect(r.upload).not.toHaveBeenCalled();
+			expect(renderOf(saved())).toEqual({ key: "REN9", parentKey: ITEM_KEY, theirs: "trashed" });
+		});
+
+		it("records a re-found render that already holds these bytes without sending them", async () => {
+			const r = renders({ find: vi.fn(async () => live({ key: "REN9" })) });
+			const { deps, saved } = on(r);
+
+			const parts = await createZoteroPass(deps).run(whole());
+
+			expect(r.upload).not.toHaveBeenCalled();
+			expect(renderOf(saved())).toEqual({ key: "REN9", parentKey: ITEM_KEY, md5: "md5-a" });
+			expect(parts.line).toContain("[render in Zotero](zotero://open-pdf/library/items/REN9)");
+		});
 	});
 });

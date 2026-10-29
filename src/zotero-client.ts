@@ -237,6 +237,8 @@ export interface RenderState {
 	readonly md5: string | null;
 	/** In the trash, or under a paper that is: Zotero flags only the item that was trashed (ticket 08). */
 	readonly trashed: boolean;
+	/** Carries annotations we did not write: the user's, which an inserted page would shift (Zotero spec §4.3). Not asked of a trashed one. */
+	readonly annotated: boolean;
 }
 
 /**
@@ -252,6 +254,11 @@ export interface ZoteroRenders {
 	upload(key: string, file: RenderFile, holds: string | null): Promise<RenderUpload>;
 	/** `null` when Zotero has no such item any more. */
 	state(key: string): Promise<RenderState | null>;
+	/**
+	 * Ours under this paper when `data.json` lost the record (Zotero spec §4.2): the PDF child tagged
+	 * as ours, whatever its name; of several the oldest; a trashed one too, so it stays trashed.
+	 */
+	find(parentKey: string): Promise<RenderState | null>;
 }
 
 export interface ZoteroStatus {
@@ -534,6 +541,10 @@ function isUsablePdf(data: Json): boolean {
 	return data.contentType === "application/pdf" && !data.deleted;
 }
 
+function carriesOwnershipTag(data: Json): boolean {
+	return Array.isArray(data.tags) && data.tags.some((tag) => asRecord(tag).tag === OWNERSHIP_TAG);
+}
+
 function toAttachment(data: Json, library: ZoteroLibrary): ZoteroAttachment {
 	// A linked file has `path` instead of `filename`, and the path may carry a `attachments:` prefix
 	// or be absolute. Only the last segment is ever compared against a tablet document name (§2.3).
@@ -546,7 +557,7 @@ function toAttachment(data: Json, library: ZoteroLibrary): ZoteroAttachment {
 		filename: asString(data.filename) ?? (path === null ? null : (path.split(/[/\\]/).pop() ?? null)),
 		md5: asString(data.md5),
 		title: typeof data.title === "string" ? data.title : "",
-		ours: Array.isArray(data.tags) && data.tags.some((tag) => asRecord(tag).tag === OWNERSHIP_TAG),
+		ours: carriesOwnershipTag(data),
 	};
 }
 
@@ -903,20 +914,37 @@ export function createZoteroRenders(request: ZoteroRequester, store: FileStore):
 		},
 		async state(key) {
 			const data = await itemData(key);
-			if (data === null) return null;
-			const parentKey = asString(data.parentItem);
-			// A paper erased for good takes its children with it, so a missing parent reads as trashed too.
-			const parent = parentKey === null ? null : await itemData(parentKey);
-			return {
-				key,
-				parentKey,
-				title: typeof data.title === "string" ? data.title : "",
-				filename: asString(data.filename),
-				md5: asString(data.md5),
-				trashed: Boolean(data.deleted) || (parentKey !== null && (parent === null || Boolean(parent.deleted))),
-			};
+			return data === null ? null : await stateOf(key, data);
+		},
+		async find(parentKey) {
+			// Trashed ones are listed only on request (ticket 16 live check), and one the user trashed has
+			// to be found, or the next sync would put a second render beside it.
+			const rows = await listAll(request, "user", `/items/${parentKey}/children?itemType=attachment&tag=${encodeURIComponent(OWNERSHIP_TAG)}&includeTrashed=1`);
+			const oldest = rows
+				.map((row) => ({ key: asString(row.key), data: asRecord(row.data) }))
+				.filter((row): row is { key: string; data: Json } => row.key !== null && row.data.contentType === "application/pdf")
+				.sort((a, b) => String(a.data.dateAdded).localeCompare(String(b.data.dateAdded)))[0];
+			return oldest === undefined ? null : await stateOf(oldest.key, oldest.data);
 		},
 	};
+
+	async function stateOf(key: string, data: Json): Promise<RenderState> {
+		const parentKey = asString(data.parentItem);
+		// A paper erased for good takes its children with it, so a missing parent reads as trashed too.
+		const parent = parentKey === null ? null : await itemData(parentKey);
+		const trashed = Boolean(data.deleted) || (parentKey !== null && (parent === null || Boolean(parent.deleted)));
+		return {
+			key,
+			parentKey,
+			title: typeof data.title === "string" ? data.title : "",
+			filename: asString(data.filename),
+			md5: asString(data.md5),
+			trashed,
+			// `/children` lists a render's annotations over zotero.org (ticket 16 live check); the tag
+			// filter cannot be negated there, so ours are told apart here.
+			annotated: !trashed && (await listAll(request, "user", `/items/${key}/children?itemType=annotation`)).some((row) => !carriesOwnershipTag(asRecord(row.data))),
+		};
+	}
 }
 
 /**

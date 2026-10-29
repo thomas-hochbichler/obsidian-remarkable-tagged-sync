@@ -82,7 +82,14 @@ export interface LinkedRender {
 	readonly parentKey: string;
 	/** The MD5 we uploaded last. Absent while the attachment is created but has no file yet. */
 	readonly md5?: string;
+	/** What the user did to it in Zotero (Zotero spec §4.3). Set once; from then on it is never replaced again. */
+	readonly theirs?: RenderTheirs;
 }
+
+/** Changed file, annotations of their own, moved away, trashed or erased. */
+export type RenderTheirs = "changed" | "annotated" | "moved" | "trashed";
+
+const THEIRS: readonly string[] = ["changed", "annotated", "moved", "trashed"] satisfies RenderTheirs[];
 
 /** One reMarkable document's link to one Zotero attachment. */
 export interface ZoteroLink {
@@ -205,7 +212,8 @@ function renderOf(value: unknown): LinkedRender | undefined {
 	const parentKey = asString(stored.parentKey);
 	if (key === undefined || parentKey === undefined) return undefined;
 	const md5 = asString(stored.md5);
-	return { key, parentKey, ...(md5 === undefined ? {} : { md5 }) };
+	const theirs = THEIRS.includes(stored.theirs as string) ? (stored.theirs as RenderTheirs) : undefined;
+	return { key, parentKey, ...(md5 === undefined ? {} : { md5 }), ...(theirs === undefined ? {} : { theirs }) };
 }
 
 /** `"user"` or `{ group: <positive integer> }`; anything else is a library this build does not handle. */
