@@ -109,6 +109,7 @@ export function zoteroPassFor(host: ZoteroHost, interactive: boolean): ZoteroPas
 		ask: interactive ? (question) => askWhichAttachment(host.app, question) : undefined,
 		// Spec §5: the free half links and names the paper; only Pro writes into the library.
 		mayWriteBack: zoteroProAllowed(host.entitlement()),
+		writeText: host.data.zotero.writeText,
 		now: () => host.now(),
 	});
 }

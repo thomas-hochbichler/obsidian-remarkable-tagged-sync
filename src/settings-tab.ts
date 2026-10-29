@@ -7,6 +7,7 @@ import {
 	PluginSettingTab,
 	Setting,
 	TFolder,
+	type ToggleComponent,
 } from "obsidian";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { isMeteredProvider } from "./auto-sync";
@@ -33,8 +34,9 @@ import { planTagRouting } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
-import { zoteroProAllowed } from "./zotero-settings";
+import { webConfigured, zoteroProAllowed, type ZoteroSettings } from "./zotero-settings";
 import type { ZoteroGroup } from "./zotero-client";
+import { linkedDocumentIds } from "./zotero-links";
 import { visionRunStats } from "./vision-ocr-backend";
 
 /**
@@ -551,21 +553,17 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	/**
 	 * Zotero: the two connections, and what is connected right now (spec §2.1).
 	 *
-	 * Four headings: *Zotero* with the connection line, then one heading per connection -- *Zotero
-	 * cloud* with its switch and key, *Zotero local* with its switch -- then *Zotero on the tablet* for
-	 * the sending rows. Each connection has a switch (asked for in the desk test of 2026-09-13): whether
-	 * anything goes over the internet is then one visible thing, not "is the key field empty". The key
-	 * row is shown only while the cloud switch is on.
+	 * *Zotero* with the connection line, then one heading per connection -- *Zotero cloud* with its
+	 * switch and key, *Zotero local* with its switch -- then *Zotero libraries*, *Into Zotero* (see
+	 * {@link renderIntoZotero}) and *Zotero on the tablet* for the sending rows. Each connection has a
+	 * switch (asked for in the desk test of 2026-09-13): whether anything goes over the internet is then
+	 * one visible thing, not "is the key field empty". The key row is shown only while the cloud switch
+	 * is on.
 	 *
-	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (spec §5). The two Pro
-	 * rows -- the desktop app and Send over SSH -- are shown disabled with "(Pro)", the same rule as
-	 * the transport dropdown and the frontmatter toggle above: a feature a free user cannot see is one
-	 * they cannot decide to buy. Write-back has no switch; the connection sentence says whose it is.
-	 *
-	 * The privacy sentence sits here rather than in the README alone, beside the setting it is about
-	 * (spec §1.2): ink never leaves the machine, and with write-back on, the *transcribed text* of a
-	 * margin note reaches the user's own Zotero library. That is a change to what leaves the machine,
-	 * so it is said where the switch is.
+	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (spec §5). The Pro rows
+	 * -- the desktop app, the two *Into Zotero* switches and Send over SSH -- are shown disabled with
+	 * "(Pro)", the same rule as the transport dropdown and the frontmatter toggle above: a feature a free
+	 * user cannot see is one they cannot decide to buy.
 	 */
 	private renderZotero(containerEl: HTMLElement): void {
 		const pro = zoteroProAllowed(this.plugin.entitlement());
@@ -610,13 +608,16 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		};
 		refreshStatus();
 		const recheck = debounce(refreshStatus, 600, true);
+		// The render switch below needs zotero.org, and the two rows that set it up come first: they
+		// update that row in place, set once it is drawn.
+		let renderNeedsWeb = (): void => {};
 
 		new Setting(containerEl).setName("Zotero cloud").setHeading();
 
 		const cloud = new Setting(containerEl)
 			.setName("Use zotero.org")
 			.setDesc(
-				"Your library is read over the internet, at zotero.org, and with write-back your highlights are written there. " +
+				"Your library is read over the internet, at zotero.org, and with write-back your highlights and notes are written there, and the render if you add it. " +
 					"Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.",
 			);
 
@@ -632,6 +633,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, apiKey: value === "" ? null : value };
 					persist();
 					recheck();
+					renderNeedsWeb();
 				});
 			});
 		// The key row belongs to the switch: shown while it is on, hidden -- not removed -- while it is
@@ -646,6 +648,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				keyRow.settingEl.toggle(value);
 				// The status line is now about a different set of connections.
 				refreshStatus();
+				renderNeedsWeb();
 			});
 		});
 
@@ -668,6 +671,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			});
 
 		this.renderZoteroLibraries(containerEl, pro);
+		renderNeedsWeb = this.renderIntoZotero(containerEl, pro);
 
 		new Setting(containerEl).setName("Zotero on the tablet").setHeading();
 
@@ -713,13 +717,67 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					await this.plugin.saveData(this.plugin.data);
 				});
 			});
+	}
+
+	/**
+	 * *Into Zotero* (Zotero spec §1, words from ticket 05): what this vault writes into Zotero, apart
+	 * from the connections that carry it -- the text, the render, and the privacy sentence about both.
+	 * The render is not write-back (the glossary's write-back is text), so the heading says neither.
+	 *
+	 * Pro rows shown shut to a free vault, like the desktop-app switch. The render reaches Zotero over
+	 * zotero.org only (ticket 04 #1), so its switch is shut without that connection and says so; the
+	 * returned function re-reads that whenever the cloud rows above change.
+	 *
+	 * Switching either one on makes the Zotero-linked documents due once (§10 P7): nothing changed on
+	 * the tablet, and without it the switch would wait for a change before anything reached Zotero.
+	 */
+	private renderIntoZotero(containerEl: HTMLElement, pro: boolean): () => void {
+		new Setting(containerEl).setName("Into Zotero").setHeading();
+
+		const save = async (change: Partial<ZoteroSettings>, on: boolean): Promise<void> => {
+			this.plugin.data.zotero = { ...this.plugin.data.zotero, ...change };
+			if (on) this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex, linkedDocumentIds(this.plugin.data.zoteroLinks));
+			await this.plugin.saveData(this.plugin.data);
+		};
+
+		new Setting(containerEl)
+			.setName(pro ? "Write text to Zotero" : "Write text to Zotero (Pro)")
+			.setDesc(
+				"Your tablet highlights become Zotero annotations, with your margin notes as their comments, and each page you added to a PDF " +
+					"becomes a note under the paper. Everything carries the tag tagged-sync. Switched off, nothing new is written and what is " +
+					"already in Zotero stays; filter by the tag in Zotero to remove it.",
+			)
+			.addToggle((toggle) => {
+				toggle.setValue(this.plugin.data.zotero.writeText).setDisabled(!pro);
+				toggle.onChange((value) => save({ writeText: value }, value));
+			});
+
+		const renderDesc =
+			'Uploads the PDF as it looks on your tablet, ink and all and searchable, to Zotero Storage as an attachment "Annotated PDF" ' +
+			"under the paper. Your handwriting then leaves this machine for zotero.org and counts against your storage there. Only " +
+			"documents tagged as a whole, in your personal library. If your Zotero files sync over WebDAV, leave this off.";
+		let renderToggle: ToggleComponent | undefined;
+		const renderRow = new Setting(containerEl)
+			.setName(pro ? "Add the render to Zotero" : "Add the render to Zotero (Pro)")
+			.addToggle((toggle) => {
+				renderToggle = toggle.setValue(this.plugin.data.zotero.addRender);
+				toggle.onChange((value) => save({ addRender: value }, value));
+			});
+		const needsWeb = (): void => {
+			const web = webConfigured(this.plugin.data.zotero);
+			renderRow.setDesc(web ? renderDesc : `Needs a zotero.org connection. ${renderDesc}`);
+			renderToggle?.setDisabled(!pro || !web);
+		};
+		needsWeb();
 
 		new Setting(containerEl)
 			.setName("What leaves your machine")
 			.setDesc(
-				"Your handwriting never does. With write-back (Tagged Sync Pro), the transcribed text of your margin notes is written into " +
-					"your own Zotero library -- and to zotero.org, if that is the connection carrying it.",
+				"Your handwriting never does, unless you switch on Add the render to Zotero. With Write text to Zotero, the text of your " +
+					"highlights, margin notes and added pages is written into your own Zotero library -- and to zotero.org, if that is the " +
+					"connection carrying it.",
 			);
+		return needsWeb;
 	}
 
 	/** What `client.groups()` last answered while this tab was open, or `null` before it has. See {@link renderZoteroLibraries}. */

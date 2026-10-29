@@ -68,6 +68,17 @@ export interface ZoteroSettings {
 	 * the client factory hands a free vault the personal library alone, whatever stands here.
 	 */
 	groups: ZoteroGroup[];
+	/**
+	 * *Write text to Zotero* (Zotero spec §5): annotations and added-page notes. On by default, so a
+	 * 1.9.x `data.json` without the key keeps writing as before. Off, nothing is created, patched or
+	 * trashed, and what is already in Zotero stays. **Pro**, like all write-back.
+	 */
+	writeText: boolean;
+	/**
+	 * *Add the render to Zotero* (Zotero spec §4): opt-in, because it is the one setting that sends
+	 * the ink off this machine. Over zotero.org only. **Pro.**
+	 */
+	addRender: boolean;
 }
 
 export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
@@ -79,6 +90,8 @@ export const DEFAULT_ZOTERO_SETTINGS: ZoteroSettings = {
 	sendOverSsh: false,
 	sendTag: DEFAULT_SEND_TAG,
 	groups: [],
+	writeText: true,
+	addRender: false,
 };
 
 /**

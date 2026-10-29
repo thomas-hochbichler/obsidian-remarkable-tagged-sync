@@ -782,7 +782,7 @@
 
     - id: Y9.7
       scenario: A vault that has never been near Zotero
-      expect: Every Zotero setting off. "The free plugin is unchanged" (§5) has to be true of a fresh install, not only of a free one
+      expect: Every Zotero connection off, and no render. "The free plugin is unchanged" (§5) has to be true of a fresh install, not only of a free one. *Write text to Zotero* is on, so a 1.9.x install keeps writing; with no connection it reaches nothing
       layer: unit
       file: src/zotero-settings.test.ts
       test: "what counts as set up > starts switched off entirely"
@@ -859,10 +859,10 @@
     - id: Y10.3
       tier: pro
       scenario: The privacy sentence
-      expect: Beside the switch it is about, for every vault, naming write-back as the Pro half. Write-back is the one thing in this plugin that sends transcribed text anywhere (§1.2); a free vault's Zotero runs too, so the sentence has to be true there as well
+      expect: Under *Into Zotero*, after the two switches it is about, in ticket 05 #6's words -- handwriting stays unless *Add the render to Zotero* is on; with *Write text to Zotero* the text of highlights, margin notes and added pages goes into the user's own library (§1.2, Zotero spec §1)
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > says what leaves the machine, where the switch is"
+      test: "the Zotero section > says what leaves the machine, under the two switches it is about"
 
     - id: Y10.4
       tier: pro
@@ -3925,6 +3925,95 @@
       layer: unit
       file: src/zotero-writeback.test.ts
       test: "carrying out the plan > stops at a trash that fails, with the failure named"
+
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §1, §5, §10 P7/P8: the *Into Zotero*
+# settings section and the *Write text to Zotero* switch (ticket 13). What *Add the render to Zotero*
+# does in a sync is ticket 15's; here only its row.
+- feature: Y36
+  name: Into Zotero -- Write text to Zotero and the render switch (#180)
+  code: src/settings-tab.ts
+  tier: pro
+  scenarios:
+    - id: Y36.1
+      scenario: "A Pro vault with zotero.org opens the Zotero settings"
+      expect: '*Into Zotero* holds *Write text to Zotero* (on), *Add the render to Zotero* (off), both open, with ticket 05''s words; *Use zotero.org* names notes and the render'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > writes text and adds no render until told otherwise, in the words of ticket 05"
+    - id: Y36.2
+      tier: free
+      scenario: "A free vault opens the Zotero settings"
+      expect: 'Both switches shown shut, named "… (Pro)"'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > shows both switches shut to a free vault, as Pro rows"
+    - id: Y36.3
+      scenario: "Desktop app only, then zotero.org switched on and a key typed"
+      expect: 'The render switch is shut and its description starts "Needs a zotero.org connection."; it opens in place once zotero.org is configured. The text switch works over the desktop app'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > shuts the render switch without a zotero.org connection and says why, and opens it once there is one"
+    - id: Y36.4
+      scenario: "*Write text to Zotero* or *Add the render to Zotero* switched on"
+      expect: 'Saved, and every sync-index row of a Zotero-linked document loses its render version; unlinked documents keep theirs (§10 P7)'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > makes the Zotero-linked documents due once when Write text to Zotero is switched on"
+    - id: Y36.5
+      scenario: "*Add the render to Zotero* switched on"
+      expect: 'Same as Y36.4'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > makes the Zotero-linked documents due once when Add the render to Zotero is switched on"
+    - id: Y36.6
+      scenario: "A Zotero switch turned off"
+      expect: 'Saved; no document made due -- nothing is written while it is off'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > leaves every document as it is when a switch goes off"
+    - id: Y36.7
+      scenario: "Invalidating renders for named documents"
+      expect: 'Every active row of those documents (page rows too) loses its render version; other rows keep theirs'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "invalidateRenders > makes only the named documents stale when given some -- every row of each, page rows included"
+    - id: Y36.8
+      scenario: "Sync after a Zotero switch made a linked, unchanged document due"
+      expect: 'That sync rewrites the note once; the next one skips it again'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > annotation digest > rewrites a Zotero-linked document once after a Zotero switch is turned on, then skips it again"
+    - id: Y36.9
+      scenario: "Switch on; a new highlight to create and a gone added page's note to trash (control for Y36.10)"
+      expect: 'One create, one trash'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > writes the pending highlight and trashes the gone page's note while on"
+    - id: Y36.10
+      scenario: "Same document with *Write text to Zotero* off"
+      expect: 'No create, patch or trash of an annotation or note; link map unchanged; line ends `writing text to Zotero is switched off` (§10 P8); no notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > sends no write for them while off, leaves the stored link alone, and says the switch is off"
+    - id: Y36.11
+      scenario: "A highlight written before the switch went off"
+      expect: 'Its in-Zotero link stays on the quote: the annotation is still there'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > keeps the in-Zotero link of a highlight written before it was switched off"
+    - id: Y36.12
+      tier: free
+      scenario: "A free vault with *Write text to Zotero* off"
+      expect: 'The line keeps the Pro sentence -- the switch is shut there, so it is not the reason'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > still says a free vault's highlights are Pro"
+    - id: Y36.13
+      scenario: "A 1.9.x data.json whose Zotero block has neither switch"
+      expect: '`writeText` on, `addRender` off, the rest kept (Zotero spec §1)'
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > keeps a 1.9.x Zotero block writing text and adding no render"
 
 # Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §4.1, §4.2 "Never a source": the
 # client half of the render as a Zotero attachment -- create, upload, replace, read back -- over

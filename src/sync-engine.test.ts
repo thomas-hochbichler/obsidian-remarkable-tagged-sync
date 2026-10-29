@@ -2421,6 +2421,19 @@ describe("runSync", () => {
 			expect(imagesWritten(again.attachmentStore)).toEqual([]);
 		});
 
+		// Zotero spec §10 P7: switching *Write text to Zotero* or *Add the render to Zotero* on makes the
+		// Zotero-linked documents due once, so the Zotero pass runs for them without a change on the tablet.
+		it("rewrites a Zotero-linked document once after a Zotero switch is turned on, then skips it again", async () => {
+			const api = await annotatedPdf("root-zotero-on");
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const due = await runSync(deps, invalidateRenders(first.index, ["doc-1"]));
+			const settled = await runSync(deps, due.index);
+
+			expect([first.notesWritten, due.notesWritten, settled.notesWritten]).toEqual([1, 1, 0]);
+		});
+
 		/** F15/F16, acceptance 3: the digest is regenerated wholesale every sync, so an unchanged document has to come out identical -- otherwise every sync would rewrite every note. */
 		it("re-syncing an unchanged document writes the same note", async () => {
 			const api = await annotatedPdf("root-twice");
@@ -5124,6 +5137,21 @@ describe("invalidateRenders", () => {
 		const index: SyncIndex = { rootHash: "root-1", rows: { "doc-2::sync": orphan } };
 
 		expect(invalidateRenders(index).rows["doc-2::sync"].renderVersion).toBe(RENDER_VERSION);
+	});
+
+	it("makes only the named documents stale when given some -- every row of each, page rows included", () => {
+		const index: SyncIndex = {
+			rootHash: "root-1",
+			rows: {
+				"doc-1::sync": row(),
+				"doc-1::p3::sync": row({ syncKey: "doc-1::p3::sync", pageId: "p3", notePath: "Target/My Notebook p3.md" }),
+				"doc-2::sync": row({ syncKey: "doc-2::sync", docId: "doc-2", notePath: "Target/Other.md" }),
+			},
+		};
+
+		const result = invalidateRenders(index, ["doc-1"]);
+
+		expect(Object.values(result.rows).map((each) => each.renderVersion)).toEqual([undefined, undefined, RENDER_VERSION]);
 	});
 
 	it("keeps every other field, so nothing but the render gate moves", () => {

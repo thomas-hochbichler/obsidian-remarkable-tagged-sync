@@ -40,7 +40,9 @@ export type ZoteroWriteBack =
 	  }
 	| { readonly kind: "not-written"; readonly reason: string }
 	/** Write-back is Pro (spec §5) and this vault has the free half: nothing was tried. */
-	| { readonly kind: "free" };
+	| { readonly kind: "free" }
+	/** *Write text to Zotero* is off (Zotero spec §5): nothing was tried, what is there stays. */
+	| { readonly kind: "off" };
 
 /** Everything the callout line needs. Assembled by the caller, because each part comes from elsewhere. */
 export interface ZoteroNoteInfo {
@@ -114,6 +116,7 @@ export function itemLabel(item: ZoteroItem): string {
  */
 function writeBackPhrase(writeBack: ZoteroWriteBack): string {
 	if (writeBack.kind === "free") return "highlights stay in the vault — writing them into Zotero is Tagged Sync Pro";
+	if (writeBack.kind === "off") return "writing text to Zotero is switched off";
 	if (writeBack.kind === "not-written") return `not written back: ${writeBack.reason}`;
 	const count = writeBack.written < writeBack.total ? `${writeBack.written} of ${writeBack.total} ` : "";
 	return `${count}highlights written back ${writeBack.date}`;
