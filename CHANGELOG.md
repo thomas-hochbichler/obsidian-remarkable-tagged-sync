@@ -12,6 +12,13 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Pages you added to a PDF become notes in Zotero** (Pro). Each page you inserted on the tablet
+  arrives under the paper as a note titled *Added page after p. 12*, with what you wrote and typed on
+  it. Your zotero.org key needs notes access
+  ([#246](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/246)).
+
 ### Fixed
 
 - **Text you typed on a page you added to a PDF reaches your note.** Until now only the handwriting

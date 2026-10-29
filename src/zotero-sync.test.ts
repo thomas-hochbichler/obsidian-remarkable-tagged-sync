@@ -1,6 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DigestHighlight, DigestPage } from "./digest-builder";
-import { type AnnotationsCreated, type NewAnnotation, type ZoteroAnnotation, type ZoteroAttachment, ZoteroError, type ZoteroClient, type ZoteroItem, type ZoteroLibrary } from "./zotero-client";
+import {
+	type AnnotationsCreated,
+	type NewAnnotation,
+	type NewNote,
+	type NotesCreated,
+	type ZoteroAnnotation,
+	type ZoteroAttachment,
+	ZoteroError,
+	type ZoteroClient,
+	type ZoteroItem,
+	type ZoteroLibrary,
+	type ZoteroNote,
+} from "./zotero-client";
 import type { StoredZoteroLinks, ZoteroLink } from "./zotero-links";
 import type { VaultNoteKeys } from "./zotero-note";
 import { createZoteroPass, LIBRARY_OFF, type ZoteroPassDeps, type ZoteroQuestion, type ZoteroUnit, ZOTERO_GONE_LINE, ZOTERO_LIBRARY_OFF_LINE, zoteroPartialNotice, zoteroSkipNotice, zoteroSkipReason } from "./zotero-sync";
@@ -310,7 +322,7 @@ describe("when Zotero says no", () => {
 
 		const parts = await createZoteroPass(deps).run(unit());
 
-		expect(parts.notices).toEqual(['Zotero: 0 of 1 highlights written for "Best Practices für Prompting", retry on next sync.']);
+		expect(parts.notices).toEqual(['Zotero: 0 of 1 highlights and notes written for "Best Practices für Prompting", retry on next sync.']);
 		expect(parts.line).toContain("0 of 1 highlights written back 2026-09-11");
 	});
 
@@ -340,6 +352,140 @@ describe("when Zotero says no", () => {
 	});
 });
 
+describe("pages added on the tablet (#246)", () => {
+	const BLOCK = "nt-4c8a17";
+	const BODY = "<h1>Added page after p. 12</h1>\n<p>Meine Gedanken</p>";
+
+	function addedPage(text = "Meine Gedanken"): DigestPage {
+		return {
+			pageLabel: null,
+			embedPage: 13,
+			source: null,
+			highlights: [],
+			notes: [{ id: BLOCK, anchor: { kind: "page" }, text, region: null, rect: null, top: 0, wholePage: true, section: null }],
+			added: { relation: "after", label: "12", nth: null },
+		};
+	}
+
+	const withAdded = (overrides: Partial<ZoteroUnit> = {}) => unit({ pages: [page(), addedPage()], addedPages: "document", ...overrides });
+
+	/** Records the notes it is asked to create, and stores each body as sent. */
+	function notesClient(overrides: Partial<ZoteroClient> = {}) {
+		const createNotes = vi.fn(async (items: NewNote[], _library: ZoteroLibrary): Promise<NotesCreated> => ({
+			created: items.map((item, index) => ({ key: `NOTE${index}`, note: item.note })),
+			failures: [],
+		}));
+		const ownNotes = vi.fn(async (): Promise<ZoteroNote[]> => []);
+		return { createNotes, ownNotes, client: client({ createNotes, ownNotes, notesAccess: async () => true, ...overrides }) };
+	}
+
+	it("writes each added page as a note under the paper and remembers the body Zotero stored", async () => {
+		const { createNotes, ownNotes, client: zotero } = notesClient();
+		const { deps, saved } = harness({ links: linked(), client: zotero });
+
+		const parts = await createZoteroPass(deps).run(withAdded());
+
+		expect(ownNotes).toHaveBeenCalledWith(ITEM_KEY, "user");
+		expect(createNotes).toHaveBeenCalledWith([{ parentKey: ITEM_KEY, note: BODY }], "user");
+		expect((saved()["doc-1"] as ZoteroLink).notes).toEqual({ [BLOCK]: { key: "NOTE0", parentKey: ITEM_KEY, written: { note: BODY } } });
+		expect((saved()["doc-1"] as ZoteroLink).annotations["hl-9f21c4"].key).toBe("KEY0");
+		expect(parts.line).toContain("· highlights written back 2026-09-11");
+		expect(parts.notices).toEqual([]);
+	});
+
+	it("writes the notes of a group's paper into the group", async () => {
+		const GROUP = { group: 4711 };
+		const { createNotes, client: zotero } = notesClient({
+			libraries: ["user", GROUP],
+			attachments: async () => [attachment({ library: GROUP })],
+			notesAccess: async () => false,
+		});
+		const { deps } = harness({ links: { "doc-1": { attachmentKey: ATTACHMENT_KEY, library: GROUP, annotations: {} } }, client: zotero });
+
+		await createZoteroPass(deps).run(withAdded());
+
+		expect(createNotes.mock.calls[0][1]).toEqual(GROUP);
+	});
+
+	it("asks Zotero nothing about notes for a document with no added page", async () => {
+		const { createNotes, ownNotes, client: zotero } = notesClient();
+		const notesAccess = vi.fn(async () => true);
+		const { deps } = harness({ links: linked(), client: { ...zotero, notesAccess } });
+
+		await createZoteroPass(deps).run(unit({ addedPages: "document" }));
+
+		expect([ownNotes, createNotes, notesAccess].map((call) => call.mock.calls.length)).toEqual([0, 0, 0]);
+	});
+
+	it("writes nothing for a page while *Your notes on PDFs* is off", async () => {
+		const { createNotes, client: zotero } = notesClient();
+		const { deps } = harness({ links: linked(), client: zotero });
+
+		const parts = await createZoteroPass(deps).run(withAdded({ addedPages: "none" }));
+
+		expect(createNotes).not.toHaveBeenCalled();
+		expect(parts.line).not.toContain("added pages");
+	});
+
+	it("writes no note for a PDF with no parent item, says why, and still writes the highlights", async () => {
+		const { createNotes, client: zotero } = notesClient({ attachments: async () => [attachment({ parentKey: null })] });
+		const { deps, saved } = harness({ links: linked(), client: zotero });
+
+		const parts = await createZoteroPass(deps).run(withAdded());
+
+		expect(createNotes).not.toHaveBeenCalled();
+		expect(parts.line).toContain("highlights written back 2026-09-11 · added pages not written back: this PDF has no parent item in Zotero");
+		expect((saved()["doc-1"] as ZoteroLink).annotations["hl-9f21c4"].key).toBe("KEY0");
+	});
+
+	it("writes no note with a zotero.org key that has no notes access, says why, and tells the user what to change", async () => {
+		const { createNotes, client: zotero } = notesClient({ notesAccess: async () => false });
+		const { deps } = harness({ links: linked(), client: zotero });
+
+		const parts = await createZoteroPass(deps).run(withAdded());
+
+		expect(createNotes).not.toHaveBeenCalled();
+		expect(parts.line).toContain("· added pages not written back: the API key has no notes access");
+		expect(parts.notices).toEqual([
+			'Zotero: the pages you added to "Best Practices für Prompting" were not written back — your zotero.org API key has no notes access. Allow it for the same key under zotero.org → Settings → Security; no new key is needed.',
+		]);
+	});
+
+	it("counts the notes with the highlights when not all of them landed", async () => {
+		const { client: zotero } = notesClient({ createNotes: async () => ({ created: [null], failures: ["Parent item not found"] }) });
+		const { deps } = harness({ links: linked(), client: zotero });
+
+		const parts = await createZoteroPass(deps).run(withAdded());
+
+		expect(parts.line).toContain("1 of 2 highlights written back 2026-09-11");
+		expect(parts.notices).toEqual(['Zotero: 1 of 2 highlights and notes written for "Best Practices für Prompting", retry on next sync.']);
+	});
+
+	it("keeps the highlights it wrote when writing the notes fails, and says why in its own clause", async () => {
+		const { client: zotero } = notesClient({
+			ownNotes: async () => {
+				throw new ZoteroError("unreachable", "Zotero did not answer.");
+			},
+		});
+		const { deps, saved } = harness({ links: linked(), client: zotero });
+
+		const parts = await createZoteroPass(deps).run(withAdded());
+
+		expect(parts.line).toContain("highlights written back 2026-09-11 · added pages not written back: Zotero could not be reached");
+		expect(parts.notices).toEqual([zoteroSkipNotice("Best Practices für Prompting", "Zotero could not be reached")]);
+		expect((saved()["doc-1"] as ZoteroLink).annotations["hl-9f21c4"].key).toBe("KEY0");
+	});
+
+	it("writes nothing for an added page in a free vault", async () => {
+		const { createNotes, ownNotes, client: zotero } = notesClient();
+		const { deps } = harness({ links: linked(), client: zotero, mayWriteBack: false });
+
+		await createZoteroPass(deps).run(withAdded());
+
+		expect([ownNotes, createNotes].map((call) => call.mock.calls.length)).toEqual([0, 0]);
+	});
+});
+
 describe("what a failure is called", () => {
 	it("has a sentence for every way Zotero can say no", () => {
 		const reasons = (["unreachable", "not-enabled", "denied", "unauthorized", "rate-limited", "not-found", "read-only", "server"] as const).map((reason) =>
@@ -356,7 +502,7 @@ describe("what a failure is called", () => {
 
 	it("names the document in both sentences the run raises", () => {
 		expect(zoteroSkipNotice("Paper", "Zotero could not be reached")).toContain('"Paper"');
-		expect(zoteroPartialNotice("Paper", 3, 7)).toBe('Zotero: 3 of 7 highlights written for "Paper", retry on next sync.');
+		expect(zoteroPartialNotice("Paper", 3, 7)).toBe('Zotero: 3 of 7 highlights and notes written for "Paper", retry on next sync.');
 	});
 });
 

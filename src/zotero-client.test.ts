@@ -176,6 +176,62 @@ describe("our own annotations", () => {
 	});
 });
 
+describe("notes for pages added on the tablet (#246)", () => {
+	const BODY = "<h1>Added page after p. 12</h1>\n<p>my words</p>";
+
+	it("creates a child note under the paper, tagged as ours", async () => {
+		const { api, calls } = connection(() => json({ success: { "0": "NOTE1" }, successful: { "0": { key: "NOTE1", data: { note: BODY } } } }));
+		await api.createNotes([{ parentKey: "ITEM1", note: BODY }], "user");
+		expect(calls[0]).toMatchObject({ method: "POST", path: "/items", body: [{ itemType: "note", parentItem: "ITEM1", note: BODY, tags: [{ tag: OWNERSHIP_TAG }] }] });
+		expect(calls[0].headers?.["Zotero-Write-Token"]).toMatch(/^\w{5,32}$/);
+	});
+
+	// What is remembered is what Zotero stored, not what was sent: the next sync compares against it,
+	// and a cleaner on the way in must not make our own note read as the user's edit (research 03 §3).
+	it("hands back the body as Zotero stored it, and says which ones it refused", async () => {
+		const { api } = connection(() =>
+			json({ success: { "0": "NOTE1" }, successful: { "0": { key: "NOTE1", data: { note: "<h1>stored</h1>" } } }, failed: { "1": { code: 400, message: "Parent item not found" } } }),
+		);
+		expect(await api.createNotes([{ parentKey: "ITEM1", note: BODY }, { parentKey: "GONE", note: BODY }], "user")).toEqual({
+			created: [{ key: "NOTE1", note: "<h1>stored</h1>" }, null],
+			failures: ["Parent item not found"],
+		});
+	});
+
+	it("remembers the body it sent where Zotero's answer leaves the stored one out", async () => {
+		const { api } = connection(() => json({ success: { "0": "NOTE1" } }));
+		expect((await api.createNotes([{ parentKey: "ITEM1", note: BODY }], "user")).created).toEqual([{ key: "NOTE1", note: BODY }]);
+	});
+
+	it("reads only our notes under one paper", async () => {
+		const { api, calls } = connection(() =>
+			json([
+				{ data: { key: "NOTE1", version: 7, itemType: "note", parentItem: "ITEM1", note: BODY } },
+				{ data: { key: "TOP", version: 3, itemType: "note", note: "<p>standalone</p>" } },
+			]),
+		);
+		expect(await api.ownNotes("ITEM1", "user")).toEqual([{ key: "NOTE1", library: "user", source: "local", parentKey: "ITEM1", note: BODY, version: 7 }]);
+		expect(calls[0].path).toBe(`/items/ITEM1/children?itemType=note&tag=${OWNERSHIP_TAG}&limit=100&start=0`);
+	});
+
+	it("cannot say whether notes may be written where only the desktop app is connected", async () => {
+		expect(await createZoteroClient({ local: connection(() => json([])).api })?.notesAccess()).toBeNull();
+		expect(await connection(() => json([])).api.notesAccess()).toBeNull();
+	});
+
+	// A note the desktop wrote is read over the web later (Zotero spec §10 P3).
+	it("takes zotero.org's answer even where the desktop app writes the notes", async () => {
+		const files = { path: async () => null, bytes: async () => null };
+		const web = createZoteroConnection("web", "zotero.org", stub(() => json([])).requester, files, async () => ({ id: 42, username: "me", notes: false }));
+		expect(await createZoteroClient({ local: connection(() => json([])).api, web })?.notesAccess()).toBe(false);
+	});
+
+	it("reads a note row that carries no key or version without failing on it", async () => {
+		const { api } = connection(() => json([{ data: { itemType: "note", parentItem: "ITEM1", note: BODY } }]));
+		expect(await api.ownNotes("ITEM1", "user")).toMatchObject([{ key: "", version: 0 }]);
+	});
+});
+
 describe("writing annotations", () => {
 	const highlight: NewAnnotation = {
 		type: "highlight",
@@ -314,6 +370,14 @@ describe("two connections, one client", () => {
 		const client = createZoteroClient({ local: local.api, web: web.api });
 		expect(await client?.attachment("GONE", "user")).toBeNull();
 		expect(web.calls).toHaveLength(0);
+	});
+
+	it("reads and writes notes through the web when the desktop is not there", async () => {
+		const web = connection(() => json([]), "web");
+		const client = createZoteroClient({ local: downConnection("local"), web: web.api });
+		await client?.ownNotes("ITEM1", "user");
+		await client?.createNotes([{ parentKey: "ITEM1", note: "<h1>Added page after p. 1</h1>" }], "user");
+		expect(web.calls.map((call) => call.path.split("?")[0])).toEqual(["/items/ITEM1/children", "/items"]);
 	});
 
 	it("is absent altogether when nothing is configured", () => {

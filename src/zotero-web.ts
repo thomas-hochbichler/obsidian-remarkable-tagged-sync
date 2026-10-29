@@ -112,9 +112,10 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obs
 		const response = await request(`${ZOTERO_API}/keys/current`, { headers: headers(false) }, ZOTERO_WEB_TIMEOUT_MS);
 		if (response.status === 401 || response.status === 403) throw new ZoteroError("unauthorized", "Zotero rejected the API key.");
 		if (!response.ok) throw new ZoteroError("server", `zotero.org answered ${response.status} when asked whose key this is.`);
-		const body = (await response.json()) as { userID?: unknown; username?: unknown };
+		const body = (await response.json()) as { userID?: unknown; username?: unknown; access?: { user?: { notes?: unknown } } };
 		if (typeof body.userID !== "number") return null;
-		return { id: body.userID, username: typeof body.username === "string" ? body.username : null };
+		// `=== true`: a key made without notes access leaves the field out rather than saying false (ticket 08 #2).
+		return { id: body.userID, username: typeof body.username === "string" ? body.username : null, notes: body.access?.user?.notes === true };
 	};
 
 	const whose = async (): Promise<ZoteroAccount | null> => {

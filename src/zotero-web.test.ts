@@ -67,6 +67,16 @@ describe("talking to zotero.org", () => {
 		expect(await createZoteroWebConnection(KEY, impl, sleep).username()).toBeNull();
 	});
 
+	// A key made without "notes access" carries no `notes` field at all, not `notes: false` (ticket 08 #2).
+	it.each([
+		["allows notes", { user: { library: true, notes: true, write: true } }, true],
+		["leaves notes out", { user: { library: true, write: true } }, false],
+		["says nothing about access", undefined, false],
+	])("knows whether the key may write notes when it %s", async (_case, access, expected) => {
+		const { impl } = stubFetch(json({ userID: 1597773, username: "someone", access }));
+		expect(await createZoteroWebConnection(KEY, impl, sleep).notesAccess()).toBe(expected);
+	});
+
 	it("names no library for a key whose account has no id", async () => {
 		const { impl } = stubFetch(json({}));
 		expect(await createZoteroWebConnection(KEY, impl, sleep).libraryId()).toBeNull();

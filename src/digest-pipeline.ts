@@ -11,7 +11,7 @@
 
 import { chapterName } from "./chapter-names";
 import { resolveAnchor, type DigestAnchor } from "./digest-anchoring";
-import { digestId, renderDigest, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
+import { digestId, renderDigest, type AddedPage, type DigestHighlight, type DigestNote, type DigestPage, type NoteRegion } from "./digest-builder";
 import type { EpubBook } from "./epub-text";
 import { findInkMarks, findMarkerMarks, type InkMark, readsAsMark } from "./ink-marks";
 import { clusterStrokes, type StrokeCluster, type TextColumn } from "./margin-notes";
@@ -70,6 +70,12 @@ export interface DigestPageInput {
 	 * document would then read as added on the device.
 	 */
 	appended?: boolean;
+	/**
+	 * Where an appended page sits among the document's own pages, by source page index -- worked out
+	 * from the whole page order, which a page-scoped unit is not given. The digest turns the index into
+	 * the label the note shows for that page (`DigestPage.added`).
+	 */
+	place?: { relation: "after" | "before"; sourceIndex: number; nth: number | null };
 }
 
 export interface DigestBuild {
@@ -730,33 +736,40 @@ function pageLines(text: string): string {
  * of. What makes it checkable is the embed, which shows the page whole (`inkCanvas` in
  * `pdf-renderer.ts`).
  */
-async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink: RmStroke[]): Promise<DigestNote & { section: string | null }> {
+async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink: RmStroke[]): Promise<{ entry: DigestNote & { section: string | null }; unread: boolean }> {
 	// Typed text is exact already, so a page that carries nothing else needs no transcription at all --
 	// and it stands in for the page when the handwriting beside it could not be read (issue #247).
 	const typed = pageLines(page.scene?.text ? layoutText(page.scene.text).lines.map((line) => line.text).join("\n") : "");
 	let text = typed;
+	// The handwriting was there and was not read: what the entry says is less than what the page says.
+	let unread = false;
 	if (ink.length > 0) {
 		try {
 			// Handed over with its typed text, which every backend places among the ink by height, as on
 			// a notebook page (`splitAtTypedText`, Vision's `insertTypedText`).
 			const result = await transcribe(state, { ...clusterScene(ink, page.scene?.formatVersion ?? 0), text: page.scene?.text }, "added-page");
 			text = pageLines(result.text) || typed;
+			unread = result.status === "failed" || result.status === "unavailable";
 		} catch (error) {
 			state.ocrStatuses.push("failed");
 			state.warnings.push(`Page ${page.embedPage}: this page was added on the device and could not be transcribed (${describeError(error)}).`);
+			unread = true;
 		}
 	}
 	return {
-		// The entry *is* the page, so the page is its identity -- stable across re-syncs without
-		// depending on which stroke happens to carry the smallest CRDT id.
-		id: digestId("nt", page.pageId, "page"),
-		anchor: { kind: "page" },
-		text,
-		region: null,
-		rect: null,
-		top: 0,
-		wholePage: true,
-		section: null,
+		entry: {
+			// The entry *is* the page, so the page is its identity -- stable across re-syncs without
+			// depending on which stroke happens to carry the smallest CRDT id.
+			id: digestId("nt", page.pageId, "page"),
+			anchor: { kind: "page" },
+			text,
+			region: null,
+			rect: null,
+			top: 0,
+			wholePage: true,
+			section: null,
+		},
+		unread,
 	};
 }
 
@@ -775,7 +788,7 @@ function pageLabelOf(page: DigestPageInput, geometry: PageGeometry): string | nu
 	return geometry.pageText?.label ?? String(page.sourceIndex + 1);
 }
 
-async function buildPage(state: BuildState, page: DigestPageInput, geometry: PageGeometry): Promise<DigestPage | null> {
+async function buildPage(state: BuildState, page: DigestPageInput, geometry: PageGeometry, labelOf: (sourceIndex: number) => Promise<string>): Promise<DigestPage | null> {
 	const placed = buildHighlights(page, geometry);
 	const ink = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => !isHighlighterOrShader(stroke.penType));
 
@@ -784,10 +797,13 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	// transcript with the setting off -- the leak ticket 12 closed. Typed text goes with it (issue #247).
 	if (page.appended) {
 		if (!state.deps.marginNotes || (ink.length === 0 && !hasTypedText(page.scene))) return null;
-		const transcript = await buildPageTranscript(state, page, ink);
+		const { entry, unread } = await buildPageTranscript(state, page, ink);
+		// Ahead of page 1 where the caller could not say: a document whose own pages are all gone.
+		const place = page.place ?? { relation: "before", sourceIndex: 0, nth: null };
+		const added: AddedPage = { relation: place.relation, label: await labelOf(place.sourceIndex), nth: place.nth, ...(unread ? { unread: true as const } : {}) };
 		// A page added on the device is not a page of the source document, so nothing on it can be
-		// placed there -- which is also why write-back skips it (Zotero spec §3.1).
-		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, source: null, highlights: [], notes: [transcript] };
+		// placed there -- which is why write-back makes it a note of its own (Zotero spec §2).
+		return { pageLabel: pageLabelOf(page, geometry), embedPage: page.embedPage, source: null, highlights: [], notes: [entry], added };
 	}
 
 	// Before the clustering, so a mark never joins the note beside it: `HORIZONTAL_TOLERANCE` is three
@@ -912,6 +928,8 @@ interface PageGeometrySource {
 	/** Every heading in the document, before ordering. */
 	headings: PdfHeading[];
 	read(page: DigestPageInput): Promise<{ frame: DeviceCanvas; pageText: PdfPageText | null; fit: PageFit | null }>;
+	/** What the note calls a page of the document, `pageLabelOf`'s rule for a page it may never have read: its label, else its 1-based number. */
+	label(sourceIndex: number): Promise<string>;
 }
 
 /** The source PDF's text layer, read through pdf.js -- the original path, unchanged. */
@@ -950,6 +968,9 @@ async function pdfTextSource(bytes: Uint8Array, device: DeviceCanvas, state: Bui
 				fit: pageText ? annotatedPageFit(page.scene, frame) : null,
 			};
 		},
+		// Read quietly: the page is a neighbour, not one of this digest's, and a page the reader never
+		// marked has nothing to report (see `readPageText`).
+		label: async (sourceIndex) => (await document?.page(sourceIndex).catch(() => null))?.label ?? String(sourceIndex + 1),
 	};
 }
 
@@ -974,6 +995,8 @@ function typedTextSource(pages: DigestPageInput[], device: DeviceCanvas): PageGe
 				fit: pageText ? { box: { x: 0, y: 0, width: frame.widthPt, height: frame.heightPt }, scale: 1, dx: 0, dy: 0 } : null,
 			};
 		},
+		// A notebook has no pages added to a PDF; its pages are numbered.
+		label: async (sourceIndex) => String(sourceIndex + 1),
 	};
 }
 
@@ -1027,7 +1050,7 @@ export async function buildDigest(
 			// tolerance downstream. `bodyLineSpacing` takes the lower quartile instead, the smallest gap
 			// a run of outliers cannot move.
 			lineHeightPt: (pageText ? bodyLineSpacing(pageText.lines) : null) ?? FALLBACK_LINE_HEIGHT_PT,
-		});
+		}, (sourceIndex) => text.label(sourceIndex));
 		if (built) digestPages.push(built);
 		// Every page, including one that produced no digest entry at all: the bar counts the pages the
 		// unit went through, and an unannotated page still cost a look.

@@ -43,6 +43,9 @@ function fakeClient(): ZoteroClient {
 		createAnnotations: async () => ({ keys: [], failures: [] }),
 		patchAnnotation: async () => "written",
 		trashAnnotation: async () => "written",
+		notesAccess: async () => null,
+		ownNotes: async () => [],
+		createNotes: async () => ({ created: [], failures: [] }),
 	} as ZoteroClient;
 }
 

@@ -28,6 +28,7 @@ import { type MatchEvidence, matchZoteroAttachment } from "./zotero-match";
 import { sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary } from "./zotero-client";
 import { linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, type VaultNoteKeys, zoteroCalloutLine, zoteroDigestLinks, type ZoteroWriteBack } from "./zotero-note";
+import { type AddedPagesScope, executeNotes, hasAddedText, planNotes } from "./zotero-notes";
 import { executeWriteBack, planWriteBack } from "./zotero-writeback";
 
 /** What the engine knows about one written note, and this pass needs. */
@@ -41,6 +42,8 @@ export interface ZoteroUnit {
 	readonly pages: readonly DigestPage[];
 	/** The source page indexes the digest was given -- see `WriteBackInput.covered`. */
 	readonly covered: readonly number[];
+	/** The pages added on the tablet this unit speaks for -- see {@link AddedPagesScope}. Absent: none. */
+	readonly addedPages?: AddedPagesScope;
 	/** This write recreates a note the user deleted by hand -- see `WriteBackInput.noteWasDeleted`. */
 	readonly noteWasDeleted?: boolean;
 	/**
@@ -180,9 +183,18 @@ export function zoteroSkipNotice(visibleName: string, reason: string): string {
 	return `Zotero: "${visibleName}" was not written back — ${reason}. The next sync tries again.`;
 }
 
-/** §3.4.3, in the spec's own words, with the document named: several of these in one run are otherwise unreadable. */
+/** §3.4.3, in the spec's own words, with the document named: several of these in one run are otherwise unreadable. Notes count with the highlights (Zotero spec §6). */
 export function zoteroPartialNotice(visibleName: string, written: number, total: number): string {
-	return `Zotero: ${written} of ${total} highlights written for "${visibleName}", retry on next sync.`;
+	return `Zotero: ${written} of ${total} highlights and notes written for "${visibleName}", retry on next sync.`;
+}
+
+/** The clauses of the added-page skips that are not a Zotero failure (Zotero spec §3). */
+export const NO_PARENT_ITEM = "this PDF has no parent item in Zotero";
+export const NO_NOTES_ACCESS = "the API key has no notes access";
+
+/** The one skip the user fixes outside the plugin, and the key they already have is enough (ticket 09 #2). */
+export function zoteroNotesAccessNotice(visibleName: string): string {
+	return `Zotero: the pages you added to "${visibleName}" were not written back — your zotero.org API key has no notes access. Allow it for the same key under zotero.org → Settings → Security; no new key is needed.`;
 }
 
 /** The line a note gets when the attachment it is linked to is not in the library any more (§2.3). */
@@ -285,6 +297,48 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		return link;
 	};
 
+	/**
+	 * A failed write, in the note's words. A refused one names the library it was refused by (ticket
+	 * 26): "no write access to Lab reading group" is something to act on, "to the library" is not.
+	 */
+	const refusal = (error: unknown, library: ZoteroLibrary): string =>
+		error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(library), error.connection) : zoteroSkipReason(error);
+
+	/**
+	 * The pages added on the tablet, as notes under the paper (Zotero spec §2), after the highlights
+	 * went in. Its own failures stay its own: the highlights are written whatever happens here, and
+	 * the note says in a clause of its own why the added pages are not (§6).
+	 *
+	 * Nothing at all is asked of Zotero for a document with no added page to write -- which is almost
+	 * every document, so this costs them nothing.
+	 */
+	const writeAddedPages = async (
+		unit: ZoteroUnit,
+		attachment: ZoteroAttachment,
+		link: ZoteroLink,
+	): Promise<{ link: ZoteroLink; written: number; total: number; reason?: string; notices: string[] }> => {
+		const nothing = { link, written: 0, total: 0, notices: [] };
+		const scope = unit.addedPages ?? "none";
+		if (!hasAddedText(unit.pages, scope)) return nothing;
+		// Zotero hangs notes on papers only. Re-read every sync, so *Create Parent Item* heals it (ticket 09 #1).
+		const paperKey = attachment.parentKey;
+		if (paperKey === null) return { ...nothing, reason: NO_PARENT_ITEM };
+		try {
+			// Only the personal library: an all-groups key reads a group's notes anyway (ticket 09 #2).
+			if (link.library === "user" && (await deps.client.notesAccess()) === false) {
+				return { ...nothing, reason: NO_NOTES_ACCESS, notices: [zoteroNotesAccessNotice(unit.visibleName)] };
+			}
+			const existing = await deps.client.ownNotes(paperKey, link.library);
+			const result = await executeNotes(deps.client, link, planNotes({ pages: unit.pages, scope, paperKey, link, existing }));
+			const next: ZoteroLink = Object.keys(result.notes).length === 0 ? link : { ...link, notes: result.notes };
+			await deps.saveLinks(withLink(deps.links(), unit.docId, next));
+			return { link: next, written: result.written, total: result.total, notices: [] };
+		} catch (error) {
+			const reason = refusal(error, link.library);
+			return { ...nothing, reason, notices: [zoteroSkipNotice(unit.visibleName, reason)] };
+		}
+	};
+
 	const runUnit = async (unit: ZoteroUnit): Promise<ZoteroNoteParts> => {
 		const found = await identify(unit);
 		if (found === null) return NOTHING;
@@ -302,6 +356,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		// and says in one clause why its marks are not in the library yet (§3.4.2, §4).
 		let link = found.link;
 		let writeBack: ZoteroWriteBack;
+		let addedPagesNotWritten: string | undefined;
 		if (!deps.mayWriteBack) {
 			// The free half (§5): nothing is asked of Zotero here, not even the listing of our own
 			// annotations -- a free vault makes no write-shaped request at all.
@@ -312,21 +367,24 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			const result = await executeWriteBack(deps.client, link, plan);
 			link = { ...link, annotations: result.annotations };
 			await deps.saveLinks(withLink(deps.links(), unit.docId, link));
-			writeBack = { kind: "written", date: formatLocalDate(deps.now()), written: result.written, total: result.total };
-			if (result.written < result.total) notices.push(zoteroPartialNotice(unit.visibleName, result.written, result.total));
+			const added = await writeAddedPages(unit, attachment, link);
+			link = added.link;
+			addedPagesNotWritten = added.reason;
+			notices.push(...added.notices);
+			const written = result.written + added.written;
+			const total = result.total + added.total;
+			writeBack = { kind: "written", date: formatLocalDate(deps.now()), written, total };
+			if (written < total) notices.push(zoteroPartialNotice(unit.visibleName, written, total));
 		} catch (error) {
-			// A refused write names the library it was refused by (ticket 26): "no write access to
-			// Lab reading group" is something to act on, "to the library" is not.
-			const reason =
-				error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(attachment.library), error.connection) : zoteroSkipReason(error);
-			writeBack = { kind: "not-written", reason };
-			notices.push(zoteroSkipNotice(unit.visibleName, reason));
+			writeBack = { kind: "not-written", reason: refusal(error, attachment.library) };
+			notices.push(zoteroSkipNotice(unit.visibleName, writeBack.reason));
 		}
 
 		const line = zoteroCalloutLine({
 			item,
 			webUserId: await userId(),
 			writeBack,
+			...(addedPagesNotWritten === undefined ? {} : { addedPagesNotWritten }),
 			literatureNote: findLiteratureNote(deps.vaultNotes(), item, new Set([unit.notePath])),
 			matchedByHash: found.link.matchedBy === "hash",
 		});
