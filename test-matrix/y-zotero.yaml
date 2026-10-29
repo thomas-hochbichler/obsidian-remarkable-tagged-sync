@@ -4112,17 +4112,17 @@
       file: src/zotero-notes.test.ts
       test: "the first sync of a page added on the tablet > writes only the one page a page-scoped unit speaks for, and nothing for a unit that speaks for none"
     - id: Y34.9
-      scenario: "A page already recorded in the link's `notes`"
-      expect: 'Not created again (refreshing it is ticket 12)'
+      scenario: "A recorded page whose text changed on the tablet, note untouched in Zotero"
+      expect: 'Not created again: one PATCH of the body under the version read, the record keeps the body sent'
       layer: unit
       file: src/zotero-notes.test.ts
-      test: "the first sync of a page added on the tablet > does not write a page again that it already has a record for"
+      test: "an added-page note on a later sync (Zotero spec §3) > refreshes the body under the version read when the text changed on the tablet"
     - id: Y34.10
       scenario: "No record, but the paper already has a note of ours under the same title (a 1.9.x save dropped `notes`)"
-      expect: 'Not created: never a second copy (adopting it is ticket 12)'
+      expect: 'Not created: adopted and refreshed by one PATCH, never a second copy'
       layer: unit
       file: src/zotero-notes.test.ts
-      test: "the first sync of a page added on the tablet > does not write a second note where the paper already has ours under the same title"
+      test: "an added-page note on a later sync (Zotero spec §3) > adopts our note under the paper with the exact title this sync writes, and refreshes it"
     - id: Y34.11
       scenario: "Creating a note"
       expect: '`POST /items` with `itemType: note`, `parentItem`, the body and the `tagged-sync` tag, under a write token'
@@ -4333,4 +4333,214 @@
       layer: unit
       file: src/zotero-notes.test.ts
       test: "carrying out the plan > names any other failure and remembers nothing it cannot know landed"
+    - id: Y34.46
+      scenario: "A recorded page that reads as it did, note untouched"
+      expect: 'No request'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > asks nothing of Zotero when the page reads as it did"
+    - id: Y34.47
+      scenario: "An added page moved on the tablet (now the second after p. 14)"
+      expect: 'Retitled by a body PATCH: `Added page 2 after p. 14`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > retitles a page moved on the tablet"
+    - id: Y34.48
+      scenario: "The user edited the note in Zotero (body ≠ `written.note`)"
+      expect: 'No request; record gains `userEdited`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > never writes a note again that the user edited in Zotero, and remembers that it is theirs"
+    - id: Y34.49
+      scenario: "A record marked `userEdited`, the page changed on the tablet"
+      expect: 'Nothing written, nothing recorded'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > leaves a note it remembers as the user's alone, whatever the tablet says"
+    - id: Y34.50
+      scenario: "Page deleted on the tablet, whole-document unit, note untouched"
+      expect: 'Note trashed (`deleted: true` under the version read), record kept as `deleted`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > trashes the note of a page deleted on the tablet while it reads as we wrote it"
+    - id: Y34.51
+      scenario: "All text on an added page erased on the tablet"
+      expect: 'Treated as deleted: note trashed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > trashes the note of a page whose text was erased on the tablet"
+    - id: Y34.52
+      scenario: "Page deleted on the tablet, note edited by the user"
+      expect: 'Not trashed; record gains `userEdited`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > keeps the note of a deleted page that the user edited"
+    - id: Y34.53
+      scenario: "Page-scoped unit for another added page; a recorded page is missing from its digest"
+      expect: 'Not trashed: the unit does not speak for it'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > trashes only for a page the unit speaks for"
+    - id: Y34.54
+      scenario: "A recorded page whose handwriting could not be read this sync (P5)"
+      expect: 'Neither refreshed nor trashed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > neither refreshes nor trashes a page whose handwriting could not be read this sync (P5)"
+    - id: Y34.55
+      scenario: "The user trashed or erased the note (missing from the tag listing)"
+      expect: 'Record marked `deleted`, never created again, also when the text changes later'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > records a note the user trashed or erased as deleted and never writes it again"
+    - id: Y34.56
+      scenario: "Page deleted on the tablet and the note already gone from Zotero"
+      expect: 'Record marked `deleted`, no trash request'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > records a deleted page's note that is gone from Zotero as deleted, with nothing to trash"
+    - id: Y34.57
+      scenario: "Note removed in Zotero, then the vault note deleted by hand (`noteWasDeleted`)"
+      expect: 'Created again like a new page'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > writes a removed note again once the user deleted the vault note as well"
+    - id: Y34.58
+      scenario: "No record; our notes under the paper carry another title, or one another record holds"
+      expect: 'Not adopted: created'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > adopts no note under another title, and none another record already holds"
+    - id: Y34.59
+      scenario: "PDF moved under another paper in Zotero, note untouched"
+      expect: 'One PATCH `{parentItem}` (with the body when it changed), record `parentKey` updated; also for a page the unit does not speak for'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > moves an untouched note after the PDF to its new paper, together with a refresh"
+    - id: Y34.60
+      scenario: "PDF moved, note edited by the user"
+      expect: 'Stays under the old paper'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > leaves a note the user edited where it is when the PDF moves"
+    - id: Y34.61
+      scenario: "*Your notes on PDFs* off (scope `none`) with a recorded note under an old paper"
+      expect: 'Plan is empty: nothing created, patched, trashed or recorded'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > creates, patches and trashes nothing while *Your notes on PDFs* is off"
+    - id: Y34.62
+      scenario: "Executing a trash and a refresh"
+      expect: 'Trash routed by the note''s source and version; records stored as they landed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > trashes and refreshes, and remembers each as it landed"
+    - id: Y34.63
+      scenario: "Our body PATCH answers 412"
+      expect: 'Record gains `userEdited`, nothing counted as written'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > hands a note over to the user when the refresh comes back 412"
+    - id: Y34.64
+      scenario: "Our trash answers 412"
+      expect: 'Nothing recorded; the next sync sees the edit'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > remembers nothing new when the trash comes back 412, so the next sync sees the edit"
+    - id: Y34.65
+      scenario: "A plan with record-only changes"
+      expect: 'Stored without a request'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > stores the records that change without a request"
+    - id: Y34.66
+      scenario: "A refresh refused by a read-only library; a trash failing for another reason"
+      expect: 'Read-only thrown for the pass; other failure named, counted 0 of 1'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > gives up on a library that refuses a refresh, and counts what landed before any other failure"
+    - id: Y34.67
+      scenario: "Sync: the only added page deleted on the tablet, nothing left to write"
+      expect: 'Notes read anyway; note trashed, record `deleted`, no notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > trashes the note of the one added page deleted on the tablet, though nothing is left to write"
+    - id: Y34.68
+      scenario: "Sync with *Your notes on PDFs* off and a live note recorded"
+      expect: 'No notes request at all'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > leaves the notes alone while *Your notes on PDFs* is off, and asks Zotero nothing about them"
+    - id: Y34.69
+      scenario: "Paper in Zotero's trash (P4)"
+      expect: 'Notes frozen: nothing read or written, no clause'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > freezes the notes while the paper is in Zotero's trash (P4)"
+    - id: Y34.70
+      scenario: "Sync after the PDF moved to another paper"
+      expect: 'Notes read under the new and the former paper; ours moved by `PATCH {parentItem}`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > reads the paper the PDF hung under before, and moves our note from there"
+    - id: Y34.71
+      scenario: "The former paper answers 404"
+      expect: 'Read as no notes there: record `deleted`, nothing created, no notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > takes a former paper that is gone for one with no notes of ours left"
+    - id: Y34.72
+      scenario: "Sync with `noteWasDeleted` and a `deleted` note record"
+      expect: 'Note created again'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > writes a removed note again when the vault note was deleted as well"
+    - id: Y34.73
+      scenario: "Sync of a document whose only note record is the user's, nothing to write"
+      expect: 'No notes request'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > asks nothing about a document whose notes are all the user's or gone"
+    - id: Y34.74
+      scenario: "Patching a note over the wire"
+      expect: '`PATCH /items/<key>` with `note` and/or `parentItem` only, `If-Unmodified-Since-Version` the version read'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > patches a note's body and paper under the version it read, and only what it was given"
+    - id: Y34.75
+      scenario: "A note PATCH answers 412; a client with both connections"
+      expect: '`conflict`; the PATCH goes only to the connection that read the note'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > reports the user's edit as a conflict, and sends a note's patch to the connection that read it"
+    - id: Y34.76
+      scenario: "Reading a paper that is in Zotero's trash"
+      expect: 'The item carries `trashed: true`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > says when a paper is in the trash"
+    - id: Y34.77
+      scenario: "An adopted note (no earlier record) whose refresh answers 412"
+      expect: 'Recorded as the user''s, with the key adopted'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > hands an adopted note over to the user on a 412, with no earlier record to keep"
+    - id: Y34.78
+      scenario: "The former paper's listing fails for a reason other than 404"
+      expect: 'Clause on the Zotero line, note records unchanged'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > says why when the former paper cannot be read, and changes no note"
+    - id: Y34.79
+      scenario: "Note only shown in the Zotero desktop app: body wrapped in `<div data-schema-version=\"9\">…\n</div>`, text untouched"
+      expect: 'Read as untouched: trashed for a deleted page, refreshed, adopted -- no PATCH just to unwrap'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > takes a note the desktop editor only wrapped for untouched: trashed, refreshed, adopted"
+    - id: Y34.80
+      scenario: "User edited the note in the desktop editor (wrapper + changed text)"
+      expect: 'Still the user''s: `userEdited`, not trashed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > still sees an edit made inside the editor's wrapper"
 

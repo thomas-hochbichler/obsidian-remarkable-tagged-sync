@@ -25,10 +25,10 @@
 
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import { type MatchEvidence, matchZoteroAttachment } from "./zotero-match";
-import { sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary } from "./zotero-client";
+import { sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary, type ZoteroNote } from "./zotero-client";
 import { linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, type VaultNoteKeys, zoteroCalloutLine, zoteroDigestLinks, type ZoteroWriteBack } from "./zotero-note";
-import { type AddedPagesScope, executeNotes, hasAddedText, planNotes } from "./zotero-notes";
+import { type AddedPagesScope, executeNotes, formerPapers, hasAddedText, hasLiveNotes, planNotes } from "./zotero-notes";
 import { executeWriteBack, planWriteBack } from "./zotero-writeback";
 
 /** What the engine knows about one written note, and this pass needs. */
@@ -309,27 +309,45 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 	 * went in. Its own failures stay its own: the highlights are written whatever happens here, and
 	 * the note says in a clause of its own why the added pages are not (§6).
 	 *
-	 * Nothing at all is asked of Zotero for a document with no added page to write -- which is almost
-	 * every document, so this costs them nothing.
+	 * Nothing at all is asked of Zotero for a document with no added page to write and no note of ours
+	 * to keep up -- which is almost every document, so this costs them nothing. A unit that speaks for
+	 * no added page (*Your notes on PDFs* off, a failed build) touches nothing; the next one that does
+	 * reconciles (Zotero spec §3).
 	 */
+	/** Our notes under a paper that may be gone: erased with its children, they are simply not there. */
+	const notesUnder = async (paperKey: string, library: ZoteroLibrary): Promise<ZoteroNote[]> => {
+		try {
+			return await deps.client.ownNotes(paperKey, library);
+		} catch (error) {
+			if (error instanceof ZoteroError && error.reason === "not-found") return [];
+			throw error;
+		}
+	};
+
 	const writeAddedPages = async (
 		unit: ZoteroUnit,
 		attachment: ZoteroAttachment,
+		item: ZoteroItem,
 		link: ZoteroLink,
 	): Promise<{ link: ZoteroLink; written: number; total: number; reason?: string; notices: string[] }> => {
 		const nothing = { link, written: 0, total: 0, notices: [] };
 		const scope = unit.addedPages ?? "none";
-		if (!hasAddedText(unit.pages, scope)) return nothing;
+		if (scope === "none" || (!hasAddedText(unit.pages, scope) && !hasLiveNotes(link))) return nothing;
 		// Zotero hangs notes on papers only. Re-read every sync, so *Create Parent Item* heals it (ticket 09 #1).
 		const paperKey = attachment.parentKey;
 		if (paperKey === null) return { ...nothing, reason: NO_PARENT_ITEM };
+		// Frozen while the paper is in Zotero's trash, and carried on once it is restored (§10 P4).
+		if (item.trashed) return nothing;
 		try {
 			// Only the personal library: an all-groups key reads a group's notes anyway (ticket 09 #2).
 			if (link.library === "user" && (await deps.client.notesAccess()) === false) {
 				return { ...nothing, reason: NO_NOTES_ACCESS, notices: [zoteroNotesAccessNotice(unit.visibleName)] };
 			}
 			const existing = await deps.client.ownNotes(paperKey, link.library);
-			const result = await executeNotes(deps.client, link, planNotes({ pages: unit.pages, scope, paperKey, link, existing }));
+			// Where the PDF hung before it was moved: our notes there follow it (ticket 09 #4).
+			for (const former of formerPapers(link, paperKey)) existing.push(...(await notesUnder(former, link.library)));
+			const plan = planNotes({ pages: unit.pages, scope, paperKey, link, existing, noteWasDeleted: unit.noteWasDeleted });
+			const result = await executeNotes(deps.client, link, plan);
 			const next: ZoteroLink = Object.keys(result.notes).length === 0 ? link : { ...link, notes: result.notes };
 			await deps.saveLinks(withLink(deps.links(), unit.docId, next));
 			return { link: next, written: result.written, total: result.total, notices: [] };
@@ -367,7 +385,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			const result = await executeWriteBack(deps.client, link, plan);
 			link = { ...link, annotations: result.annotations };
 			await deps.saveLinks(withLink(deps.links(), unit.docId, link));
-			const added = await writeAddedPages(unit, attachment, link);
+			const added = await writeAddedPages(unit, attachment, item, link);
 			link = added.link;
 			addedPagesNotWritten = added.reason;
 			notices.push(...added.notices);

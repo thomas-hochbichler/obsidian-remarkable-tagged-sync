@@ -230,6 +230,29 @@ describe("notes for pages added on the tablet (#246)", () => {
 		const { api } = connection(() => json([{ data: { itemType: "note", parentItem: "ITEM1", note: BODY } }]));
 		expect(await api.ownNotes("ITEM1", "user")).toMatchObject([{ key: "", version: 0 }]);
 	});
+
+	// A refresh and a move after the PDF are one PATCH under the version read (Zotero spec §3).
+	it("patches a note's body and paper under the version it read, and only what it was given", async () => {
+		const { api, calls } = connection(() => new Response(null, { status: 204 }));
+		expect(await api.patchNote("NOTE1", 7, { note: BODY, parentKey: "ITEM2" }, "user")).toBe("written");
+		await api.patchNote("NOTE1", 8, { parentKey: "ITEM2" }, "user");
+		expect(calls.map((call) => call.body)).toEqual([{ note: BODY, parentItem: "ITEM2" }, { parentItem: "ITEM2" }]);
+		expect(calls[0]).toMatchObject({ method: "PATCH", path: "/items/NOTE1", headers: { "If-Unmodified-Since-Version": "7" } });
+	});
+
+	it("reports the user's edit as a conflict, and sends a note's patch to the connection that read it", async () => {
+		expect(await connection(() => new Response(null, { status: 412 })).api.patchNote("NOTE1", 7, { note: BODY }, "user")).toBe("conflict");
+		const local = connection(() => new Response(null, { status: 204 }), "local");
+		const web = connection(() => new Response(null, { status: 204 }), "web");
+		await createZoteroClient({ local: local.api, web: web.api })?.patchNote({ key: "NOTE1", version: 9, source: "web", library: "user" }, { note: BODY });
+		expect([local.calls.length, web.calls.length]).toEqual([0, 1]);
+	});
+
+	// Ticket 08: a trashed paper leaves its children unflagged, so only the paper says it.
+	it("says when a paper is in the trash", async () => {
+		const { api } = connection(() => json({ data: { key: "ITEM1", itemType: "journalArticle", title: "T", deleted: 1 } }));
+		expect(await api.parentItem("ITEM1", "user")).toMatchObject({ key: "ITEM1", trashed: true });
+	});
 });
 
 describe("writing annotations", () => {

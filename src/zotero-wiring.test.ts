@@ -46,6 +46,7 @@ function fakeClient(): ZoteroClient {
 		notesAccess: async () => null,
 		ownNotes: async () => [],
 		createNotes: async () => ({ created: [], failures: [] }),
+		patchNote: async () => "written",
 	} as ZoteroClient;
 }
 
