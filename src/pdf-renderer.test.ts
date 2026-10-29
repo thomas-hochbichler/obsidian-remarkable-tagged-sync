@@ -75,9 +75,9 @@ function filledRects(ops: string): { x: number; y: number; width: number; height
 }
 
 /** Decodes a rendered PDF's page content stream(s) into their raw operator text, and the page's /ExtGState resources, for asserting on color/opacity/blend-mode/draw-order. */
-async function decodePageContent(bytes: Uint8Array): Promise<{ ops: string; extGStates: Record<string, { ca?: number; bm?: string }> }> {
+async function decodePageContent(bytes: Uint8Array, pageIndex = 0): Promise<{ ops: string; extGStates: Record<string, { ca?: number; bm?: string }> }> {
 	const doc = await PDFDocument.load(bytes);
-	const page = doc.getPage(0);
+	const page = doc.getPage(pageIndex);
 	const contentsRef = page.node.Contents();
 	const refs = contentsRef instanceof PDFArray ? contentsRef.asArray() : [contentsRef];
 	const ops = refs
@@ -734,6 +734,34 @@ describe("renderAnnotatedPdf", () => {
 		const doc = await PDFDocument.load(await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 1, annotations: typed }]));
 
 		expect(doc.getPage(0).getHeight()).toBeGreaterThan(1872 * (72 / 226));
+	});
+
+	it("does not grow a page with no source page for blank lines typed below its text", async () => {
+		const typed: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text: `typed${"\n".repeat(60)}`, deleted: 0 }], styles: new Map() },
+		};
+
+		const doc = await PDFDocument.load(await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 1, annotations: typed }]));
+
+		expect(doc.getPage(0).getHeight()).toBeCloseTo(1872 * (72 / 226), 1);
+	});
+
+	it("draws the typed text of every added page, not only the first", async () => {
+		const typedPage = (text: string): RmPage => ({
+			formatVersion: 6,
+			layers: [],
+			text: { posX: -468, posY: 234, width: 936, runs: [{ id: "1:10", text, deleted: 0 }], styles: new Map() },
+		});
+
+		const bytes = await renderAnnotatedPdf(await makeSource(1), [
+			{ sourceIndex: 1, annotations: typedPage("first") },
+			{ sourceIndex: 2, annotations: typedPage("second") },
+		]);
+
+		expect((await decodePageContent(bytes, 0)).ops).toContain(drawnText("first"));
+		expect((await decodePageContent(bytes, 1)).ops).toContain(drawnText("second"));
 	});
 
 	it("keeps the device canvas for a page with no source page and no ink to measure", async () => {

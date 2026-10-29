@@ -177,3 +177,17 @@
       layer: unit
       file: src/pdf-renderer.test.ts
       test: "renderAnnotatedPdf > sizes a page with no source page to typed text that runs past the screen"
+
+    - id: D29.7
+      scenario: An added page ends in blank lines, the Enter key held down below the text
+      expect: The sheet stays screen height. Blank lines are paragraph breaks with nothing to show, and counted they would add empty paper
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > does not grow a page with no source page for blank lines typed below its text"
+
+    - id: D29.8
+      scenario: Two pages added to one PDF each carry typed text
+      expect: Both pages draw their text. The font is embedded once, on the first page that needs it, and reused
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > draws the typed text of every added page, not only the first"
