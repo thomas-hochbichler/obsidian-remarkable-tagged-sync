@@ -1381,6 +1381,9 @@ async function writeUnit(
 			addedPages: unit.addedPages,
 			noteWasDeleted,
 			md5: () => unit.md5(),
+			// The bytes just written, so Zotero gets the vault's render exactly (Zotero spec §4.1); a page
+			// tag's one-page render is never uploaded.
+			...(params.pageId === null ? { render: { bytes: pdfBytes, md5: () => md5Hex(pdfBytes) } } : {}),
 		});
 		// Rewritten only where there is something to add. A vault with no Zotero, a document that is
 		// not linked and a licence that lapsed all arrive here with nothing, and the note keeps the

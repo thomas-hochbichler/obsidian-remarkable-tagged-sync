@@ -140,14 +140,28 @@ describe("the notes written for pages added on the tablet (#246)", () => {
 	// A newer build may store a field this one does not know. Saving the link must not take it out,
 	// or that build loses what it remembered the next time this one writes back (ticket 09 #3).
 	it("keeps a field it does not know when it saves the link", () => {
-		const stored = { [DOC]: { ...link, render: { key: "REND1", md5: "abc" } } };
+		const stored = { [DOC]: { ...link, figures: { key: "FIG1", md5: "abc" } } };
 		const saved = withLink(stored, DOC, linkFor(stored, DOC)!);
-		expect((saved[DOC] as Record<string, unknown>).render).toEqual({ key: "REND1", md5: "abc" });
+		expect((saved[DOC] as Record<string, unknown>).figures).toEqual({ key: "FIG1", md5: "abc" });
 	});
 
 	it("does not carry a field it knows over from the link it replaces", () => {
 		const replaced = withLink(withLink({}, DOC, { ...link, matchedBy: "hash", notes: { "nt-4c8a17": note } }), DOC, { attachmentKey: "OTHER", library: "user", annotations: {} });
 		expect(replaced[DOC]).toEqual({ attachmentKey: "OTHER", library: "user", annotations: {} });
+	});
+});
+
+describe("the render we added as an attachment (#180)", () => {
+	it("reads back exactly what was stored, with and without an uploaded MD5", () => {
+		const uploaded: ZoteroLink = { ...link, render: { key: "REND1", parentKey: "ITEM1", md5: "abc" } };
+		const created: ZoteroLink = { ...link, render: { key: "REND1", parentKey: "ITEM1" } };
+		expect(linkFor(withLink({}, DOC, uploaded), DOC)).toEqual(uploaded);
+		expect(linkFor(withLink({}, DOC, created), DOC)).toEqual(created);
+	});
+
+	it("drops a render record that names no key or no paper", () => {
+		expect(linkFor({ [DOC]: { ...link, render: { key: "REND1", md5: "abc" } } }, DOC)?.render).toBeUndefined();
+		expect(linkFor({ [DOC]: { ...link, render: "REND1" } }, DOC)?.render).toBeUndefined();
 	});
 });
 
