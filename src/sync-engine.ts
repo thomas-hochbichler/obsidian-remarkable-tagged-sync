@@ -1610,12 +1610,15 @@ function ocrRetryDue(row: SyncIndexRow, retryKey: string | null, now: string, ma
  * `RENDER_VERSION` cannot express: that is a constant, bumped for code changes, and it has no way to
  * say "this vault's output rule changed". Without this the toggle would sit there doing nothing until
  * the device happened to change, which reads as a broken switch.
+ *
+ * `docIds` limits it to those documents: a Zotero switch turned on concerns the Zotero-linked ones
+ * only (Zotero spec §10 P7), and the Zotero pass runs only for a document that is written.
  */
-export function invalidateRenders(index: SyncIndex): SyncIndex {
+export function invalidateRenders(index: SyncIndex, docIds?: readonly string[]): SyncIndex {
 	const rows: Record<string, SyncIndexRow> = {};
 	for (const [key, row] of Object.entries(index.rows)) {
 		const { renderVersion: _dropped, ...withoutVersion } = row;
-		rows[key] = row.status === "active" ? withoutVersion : row;
+		rows[key] = row.status === "active" && (docIds === undefined || docIds.includes(row.docId)) ? withoutVersion : row;
 	}
 	return { ...index, rows };
 }

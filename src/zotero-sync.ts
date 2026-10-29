@@ -136,6 +136,11 @@ export interface ZoteroPassDeps {
 	 * licence is re-asked per run, not per document.
 	 */
 	readonly mayWriteBack: boolean;
+	/**
+	 * *Write text to Zotero* (Zotero spec §5): `false` creates, patches and trashes no annotation and no
+	 * note, and leaves what is in Zotero as it is. Asked only where {@link mayWriteBack} is `true`.
+	 */
+	readonly writeText: boolean;
 	now(): Date;
 }
 
@@ -379,6 +384,10 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			// The free half (§5): nothing is asked of Zotero here, not even the listing of our own
 			// annotations -- a free vault makes no write-shaped request at all.
 			writeBack = { kind: "free" };
+		} else if (!deps.writeText) {
+			// Switched off: not even our own annotations are listed. Switched on again, the next sync of
+			// this document reconciles (§10 P7 makes sure there is one).
+			writeBack = { kind: "off" };
 		} else try {
 			const existing = await deps.client.ownAnnotations(attachment.key, attachment.library);
 			const plan = planWriteBack({ pages: [...unit.pages], covered: unit.covered, attachmentKey: attachment.key, link, existing, noteWasDeleted: unit.noteWasDeleted });

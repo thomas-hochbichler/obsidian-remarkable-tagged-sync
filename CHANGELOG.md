@@ -19,6 +19,8 @@ workflow publishes the section as the GitHub release body. See
   it. Edit it in Zotero and your version wins; delete the page on the tablet and the note goes to
   Zotero's trash. Your zotero.org key needs notes access
   ([#246](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/246)).
+- ***Write text to Zotero*** switches off everything Tagged Sync writes into Zotero as text. What is
+  already there stays.
 
 ### Fixed
 

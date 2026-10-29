@@ -96,6 +96,7 @@ function harness({ links: stored, ...overrides }: Partial<Omit<ZoteroPassDeps, "
 			return question.candidates[0].attachment;
 		},
 		mayWriteBack: true,
+		writeText: true,
 		now: () => new Date("2026-09-11T09:00:00"),
 		...overrides,
 	};
@@ -299,6 +300,67 @@ describe("in a vault that has the free half", () => {
 		expect(ownAnnotations).not.toHaveBeenCalled();
 		expect(createAnnotations).not.toHaveBeenCalled();
 		expect((saved()["doc-1"] as ZoteroLink).annotations).toEqual({});
+	});
+});
+
+describe("with *Write text to Zotero* off", () => {
+	// Zotero spec §5: nothing created, patched or trashed -- highlights and added pages alike -- and
+	// what is already in Zotero stays, links included.
+	// A new highlight to create and the note of a page deleted on the tablet to trash: with the switch
+	// on, both are written -- which is what makes "nothing sent" with it off mean something.
+	const GONE_BODY = "<h1>Added page after p. 3</h1>";
+	const pending = () => {
+		const writes = {
+			createAnnotations: vi.fn(async (): Promise<AnnotationsCreated> => ({ keys: ["NEW1"], failures: [] })),
+			patchAnnotation: vi.fn(async () => "written" as const),
+			trashAnnotation: vi.fn(async () => "written" as const),
+			createNotes: vi.fn(async (): Promise<NotesCreated> => ({ created: [], failures: [] })),
+			patchNote: vi.fn(async () => "written" as const),
+		};
+		const ownNotes = async (): Promise<ZoteroNote[]> => [{ key: "NOTE1", library: "user", source: "web", parentKey: ITEM_KEY, note: GONE_BODY, version: 3 }];
+		const stored = linked({ notes: { "nt-gone": { key: "NOTE1", parentKey: ITEM_KEY, written: { note: GONE_BODY } } } });
+		return { writes, stored, zotero: client({ ...writes, ownNotes, notesAccess: async () => true }) };
+	};
+	const callCounts = (writes: Record<string, { mock: { calls: unknown[] } }>) => Object.values(writes).map((call) => call.mock.calls.length);
+
+	it("writes the pending highlight and trashes the gone page's note while on", async () => {
+		const { writes, stored, zotero } = pending();
+		const { deps } = harness({ links: stored, client: zotero });
+
+		await createZoteroPass(deps).run(unit({ addedPages: "document" }));
+
+		expect(callCounts(writes)).toEqual([1, 0, 1, 0, 0]);
+	});
+
+	it("sends no write for them while off, leaves the stored link alone, and says the switch is off", async () => {
+		const { writes, stored, zotero } = pending();
+		const { deps, saved } = harness({ links: stored, client: zotero, writeText: false });
+
+		const parts = await createZoteroPass(deps).run(unit({ addedPages: "document" }));
+
+		expect(callCounts(writes)).toEqual([0, 0, 0, 0, 0]);
+		expect(parts.line).toBe(
+			"Zotero: [Smith 2024 · Best Practices für Prompting](zotero://select/library/items/ITEM1)" +
+				" · [web library](https://www.zotero.org/users/1234567/items/ITEM1) · writing text to Zotero is switched off",
+		);
+		expect(parts.notices).toEqual([]);
+		expect(saved()).toEqual(stored);
+	});
+
+	it("keeps the in-Zotero link of a highlight written before it was switched off", async () => {
+		const { deps } = harness({ links: linked({ annotations: { "hl-9f21c4": { key: "OLD1", written: {} } } }), writeText: false });
+
+		const parts = await createZoteroPass(deps).run(unit());
+
+		expect(parts.links).toEqual({ "hl-9f21c4": "zotero://open-pdf/library/items/ATT1?page=2&annotation=OLD1" });
+	});
+
+	it("still says a free vault's highlights are Pro", async () => {
+		const { deps } = harness({ links: linked(), mayWriteBack: false, writeText: false });
+
+		const parts = await createZoteroPass(deps).run(unit());
+
+		expect(parts.line).toContain("highlights stay in the vault — writing them into Zotero is Tagged Sync Pro");
 	});
 });
 
