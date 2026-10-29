@@ -16,7 +16,8 @@ workflow publishes the section as the GitHub release body. See
 
 - **Pages you added to a PDF become notes in Zotero** (Pro). Each page you inserted on the tablet
   arrives under the paper as a note titled *Added page after p. 12*, with what you wrote and typed on
-  it. Your zotero.org key needs notes access
+  it. Edit it in Zotero and your version wins; delete the page on the tablet and the note goes to
+  Zotero's trash. Your zotero.org key needs notes access
   ([#246](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/246)).
 
 ### Fixed

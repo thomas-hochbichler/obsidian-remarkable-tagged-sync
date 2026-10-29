@@ -93,6 +93,8 @@ export interface ZoteroItem {
 	readonly year: string | null;
 	/** Only when Zotero has one. Never invented, and never written back (spec §4). */
 	readonly citationKey: string | null;
+	/** In Zotero's trash. Its children are not flagged with it (ticket 08), so this is the only place it shows. */
+	readonly trashed?: true;
 }
 
 /** One of *our* annotations, as it stands in Zotero now -- the input to "did the user edit it?" (§3.3). */
@@ -178,10 +180,19 @@ export interface ZoteroNote {
 	readonly version: number;
 }
 
+/** What a patch needs to know about the note it is changing -- see {@link ZoteroAnnotationRef}. */
+export type ZoteroNoteRef = Pick<ZoteroNote, "key" | "version" | "source" | "library">;
+
 /** A child note to create: the paper it goes under, and its HTML body. */
 export interface NewNote {
 	readonly parentKey: string;
 	readonly note: string;
+}
+
+/** What a refresh of one of our notes may change: the body, and the paper it hangs under (Zotero spec §3). */
+export interface NoteFields {
+	readonly note?: string;
+	readonly parentKey?: string;
 }
 
 /** What one create of notes did, by the position the caller sent -- see {@link AnnotationsCreated}. */
@@ -338,12 +349,17 @@ export interface ZoteroConnection {
 	/** All into one library: a batch is one attachment's annotations, and an attachment is in one library. */
 	createAnnotations(items: NewAnnotation[], library: ZoteroLibrary): Promise<AnnotationsCreated>;
 	patchAnnotation(key: string, version: number, fields: AnnotationFields, library: ZoteroLibrary): Promise<PatchOutcome>;
-	/** Into Zotero's trash, never erased: `DELETE` on the local API is a permanent erase, and the trash is what makes this reversible (§3.3). */
+	/**
+	 * Into Zotero's trash, never erased: `DELETE` on the local API is a permanent erase, and the trash is
+	 * what makes this reversible (§3.3). Any item by key -- our notes go the same way (Zotero spec §3).
+	 */
 	trashAnnotation(key: string, version: number, library: ZoteroLibrary): Promise<PatchOutcome>;
 	/** Our own notes under one paper, read by the ownership tag. Trashed ones are left out, as a listing leaves them. */
 	ownNotes(parentKey: string, library: ZoteroLibrary): Promise<ZoteroNote[]>;
 	/** Child notes, all into one library, batched like {@link ZoteroConnection.createAnnotations}. */
 	createNotes(items: NewNote[], library: ZoteroLibrary): Promise<NotesCreated>;
+	/** Under the version read, like {@link ZoteroConnection.patchAnnotation}: a 412 is the user's edit. */
+	patchNote(key: string, version: number, fields: NoteFields, library: ZoteroLibrary): Promise<PatchOutcome>;
 	/** zotero.org's alone -- see {@link ZoteroRenders}. */
 	readonly renders?: ZoteroRenders;
 }
@@ -353,7 +369,7 @@ export interface ZoteroConnection {
  * connection, with the listings widened over every enabled library -- and with the one call that
  * cannot be routed freely spelled out differently.
  */
-export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "attachments" | "search" | "itemsWithTag" | "patchAnnotation" | "trashAnnotation" | "renders"> {
+export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "attachments" | "search" | "itemsWithTag" | "patchAnnotation" | "trashAnnotation" | "patchNote" | "renders"> {
 	/** zotero.org's renders, or `null` without a zotero.org connection. Never falls back: the desktop has none. */
 	readonly renders: ZoteroRenders | null;
 	/**
@@ -378,8 +394,10 @@ export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "p
 	itemsWithTag(tag: string): Promise<ZoteroItem[]>;
 	/** Goes to the connection the annotation was read from, or fails. Never to the other one -- see {@link ZoteroAnnotation.version}. */
 	patchAnnotation(annotation: ZoteroAnnotationRef, fields: AnnotationFields): Promise<PatchOutcome>;
+	/** Same routing as {@link ZoteroClient.patchAnnotation}, for the same reason. A note is trashed through it too. */
+	trashAnnotation(annotation: ZoteroAnnotationRef | ZoteroNoteRef): Promise<PatchOutcome>;
 	/** Same routing as {@link ZoteroClient.patchAnnotation}, for the same reason. */
-	trashAnnotation(annotation: ZoteroAnnotationRef): Promise<PatchOutcome>;
+	patchNote(note: ZoteroNoteRef, fields: NoteFields): Promise<PatchOutcome>;
 }
 
 // --- The wire, written once ------------------------------------------------------------------
@@ -560,6 +578,7 @@ function toItem(data: Json, library: ZoteroLibrary): ZoteroItem {
 		// the first four-digit run and nothing is inferred where there is none.
 		year: /\b(\d{4})\b/.exec(asString(data.date) ?? "")?.[1] ?? null,
 		citationKey: citationKeyOf(data),
+		...(data.deleted ? { trashed: true as const } : {}),
 	};
 }
 
@@ -762,6 +781,8 @@ export function createZoteroConnection(
 			// next sync compares against has to be what is there (research 03 §3).
 			return { created: created.map((item, index) => (item === null ? null : { key: item.key, note: typeof item.data.note === "string" ? item.data.note : items[index].note })), failures };
 		},
+		patchNote: (key, version, fields, library) =>
+			patchUnderVersion(key, version, { ...(fields.note === undefined ? {} : { note: fields.note }), ...(fields.parentKey === undefined ? {} : { parentItem: fields.parentKey }) }, library),
 	};
 
 	/**
@@ -1014,9 +1035,10 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 		ownNotes: (parentKey, library) => call((connection) => connection.ownNotes(parentKey, library)),
 		// Not falling back mid-batch, for the reason `createAnnotations` gives.
 		createNotes: (items, library) => call((connection) => connection.createNotes(items, library)),
+		patchNote: async (note, fields) => await sourceOf(note).patchNote(note.key, note.version, fields, note.library),
 	};
 
-	function sourceOf(annotation: ZoteroAnnotationRef): ZoteroConnection {
+	function sourceOf(annotation: Pick<ZoteroAnnotationRef, "source">): ZoteroConnection {
 		const connection = order.find((candidate) => candidate.id === annotation.source);
 		if (connection === undefined) {
 			throw new ZoteroError("unreachable", `That annotation was read from ${annotation.source === "local" ? "the Zotero desktop app" : "zotero.org"}, which is not connected now.`);

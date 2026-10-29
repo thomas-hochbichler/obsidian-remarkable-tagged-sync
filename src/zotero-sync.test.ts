@@ -484,6 +484,102 @@ describe("pages added on the tablet (#246)", () => {
 
 		expect([ownNotes, createNotes].map((call) => call.mock.calls.length)).toEqual([0, 0]);
 	});
+
+	describe("on a later sync (ticket 12)", () => {
+		const NOTE: ZoteroNote = { key: "NOTE1", library: "user", source: "web", parentKey: ITEM_KEY, note: BODY, version: 3 };
+		const withNote = (parentKey = ITEM_KEY, extra: object = {}) => linked({ notes: { [BLOCK]: { key: "NOTE1", parentKey, written: { note: BODY }, ...extra } } });
+
+		it("trashes the note of the one added page deleted on the tablet, though nothing is left to write", async () => {
+			const trashAnnotation = vi.fn(async () => "written" as const);
+			const { client: zotero } = notesClient({ ownNotes: async () => [NOTE], trashAnnotation });
+			const { deps, saved } = harness({ links: withNote(), client: zotero });
+
+			const parts = await createZoteroPass(deps).run(unit({ addedPages: "document" }));
+
+			expect(trashAnnotation).toHaveBeenCalledWith({ key: "NOTE1", version: 3, source: "web", library: "user" });
+			expect((saved()["doc-1"] as ZoteroLink).notes?.[BLOCK].deleted).toBe(true);
+			expect(parts.notices).toEqual([]);
+		});
+
+		it("leaves the notes alone while *Your notes on PDFs* is off, and asks Zotero nothing about them", async () => {
+			const { ownNotes, client: zotero } = notesClient();
+			const { deps } = harness({ links: withNote(), client: zotero });
+
+			await createZoteroPass(deps).run(unit({ addedPages: "none" }));
+
+			expect(ownNotes).not.toHaveBeenCalled();
+		});
+
+		it("freezes the notes while the paper is in Zotero's trash (P4)", async () => {
+			const { ownNotes, client: zotero } = notesClient({ parentItem: async () => ({ ...ITEM, trashed: true }) });
+			const { deps } = harness({ links: withNote(), client: zotero });
+
+			const parts = await createZoteroPass(deps).run(unit({ addedPages: "document" }));
+
+			expect(ownNotes).not.toHaveBeenCalled();
+			expect(parts.line).not.toContain("added pages");
+		});
+
+		it("reads the paper the PDF hung under before, and moves our note from there", async () => {
+			const patchNote = vi.fn(async () => "written" as const);
+			const ownNotes = vi.fn(async (paperKey: string): Promise<ZoteroNote[]> => (paperKey === "OLDPAPER" ? [{ ...NOTE, parentKey: "OLDPAPER" }] : []));
+			const { client: zotero } = notesClient({ ownNotes, patchNote });
+			const { deps, saved } = harness({ links: withNote("OLDPAPER"), client: zotero });
+
+			await createZoteroPass(deps).run(withAdded());
+
+			expect(ownNotes.mock.calls.map((call) => call[0])).toEqual([ITEM_KEY, "OLDPAPER"]);
+			expect(patchNote).toHaveBeenCalledWith({ key: "NOTE1", version: 3, source: "web", library: "user" }, { parentKey: ITEM_KEY });
+			expect((saved()["doc-1"] as ZoteroLink).notes?.[BLOCK].parentKey).toBe(ITEM_KEY);
+		});
+
+		it("takes a former paper that is gone for one with no notes of ours left", async () => {
+			const ownNotes = vi.fn(async (paperKey: string): Promise<ZoteroNote[]> => {
+				if (paperKey === "OLDPAPER") throw new ZoteroError("not-found", "gone");
+				return [];
+			});
+			const { createNotes, client: zotero } = notesClient({ ownNotes });
+			const { deps, saved } = harness({ links: withNote("OLDPAPER"), client: zotero });
+
+			const parts = await createZoteroPass(deps).run(withAdded());
+
+			expect((saved()["doc-1"] as ZoteroLink).notes?.[BLOCK].deleted).toBe(true);
+			expect(createNotes).not.toHaveBeenCalled();
+			expect(parts.notices).toEqual([]);
+		});
+
+		it("says why when the former paper cannot be read, and changes no note", async () => {
+			const ownNotes = vi.fn(async (paperKey: string): Promise<ZoteroNote[]> => {
+				if (paperKey === "OLDPAPER") throw new ZoteroError("unreachable", "Zotero did not answer.");
+				return [];
+			});
+			const { client: zotero } = notesClient({ ownNotes });
+			const { deps, saved } = harness({ links: withNote("OLDPAPER"), client: zotero });
+
+			const parts = await createZoteroPass(deps).run(withAdded());
+
+			expect(parts.line).toContain("added pages not written back: Zotero could not be reached");
+			expect((saved()["doc-1"] as ZoteroLink).notes?.[BLOCK]).toEqual({ key: "NOTE1", parentKey: "OLDPAPER", written: { note: BODY } });
+		});
+
+		it("writes a removed note again when the vault note was deleted as well", async () => {
+			const { createNotes, client: zotero } = notesClient();
+			const { deps } = harness({ links: withNote(ITEM_KEY, { deleted: true }), client: zotero });
+
+			await createZoteroPass(deps).run(withAdded({ noteWasDeleted: true }));
+
+			expect(createNotes).toHaveBeenCalledWith([{ parentKey: ITEM_KEY, note: BODY }], "user");
+		});
+
+		it("asks nothing about a document whose notes are all the user's or gone", async () => {
+			const { ownNotes, client: zotero } = notesClient();
+			const { deps } = harness({ links: withNote(ITEM_KEY, { userEdited: true }), client: zotero });
+
+			await createZoteroPass(deps).run(unit({ addedPages: "document" }));
+
+			expect(ownNotes).not.toHaveBeenCalled();
+		});
+	});
 });
 
 describe("what a failure is called", () => {
