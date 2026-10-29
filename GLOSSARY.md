@@ -18,12 +18,18 @@ the person using it lives in [README.md](README.md).
 - **Send** — the Obsidian command that puts a Zotero PDF onto the tablet, already tagged for sync.
   Send only ever *adds* a file: nothing on the tablet is changed, deleted, moved, renamed or
   re-tagged, and a second Send never overwrites the first.
-- **Write-back** — the highlights and margin notes of a Zotero-linked document becoming native
-  Zotero annotations in the user's own library. Add-and-refresh only: a field the user edited in
-  Zotero wins, and is never overwritten again.
+- **Added page** — a page inserted into a PDF on the tablet. It is part of the document but not of
+  the source PDF, so it has no page number there and nothing on it sits at a place in the source.
+  A separate notebook is not an added page, whatever it was written about.
+- **Write-back** — what you wrote on a Zotero-linked document reaching the user's own Zotero
+  library as text: highlights and margin notes as native Zotero annotations on the PDF, added pages
+  as Zotero notes under the paper. Add-and-refresh only: a field the user edited in Zotero wins,
+  and is never overwritten again.
 - **Render** — the PDF of a synced document that the plugin writes into the vault and embeds at
   the top of its note: the pages with everything you wrote and drew on them. The render is not the
-  transcript, and not the source PDF on the tablet.
+  transcript, and not the source PDF on the tablet. Users call it the *annotated* or *flattened
+  PDF*; this repo says render. A render can also sit in Zotero, as a second attachment beside the
+  paper's source PDF; it is never a source itself.
 - **Text layer** — the transcript, laid over the handwriting in the render as invisible text, each
   word on the word it transcribes. It changes nothing you can see on the page; it only gives
   search something to find. The words are the transcript's words, so the layer and the note say

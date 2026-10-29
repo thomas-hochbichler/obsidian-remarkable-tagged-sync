@@ -594,7 +594,7 @@ describe("vault output", () => {
 		const { plugin, tab } = await tabWith({
 			syncIndex: { rows: { a: { notePath: "a.md", status: "active", renderVersion: 7 } } },
 		});
-		const switchRow = toggle(draw(tab), "Handwritten notes");
+		const switchRow = toggle(draw(tab), "Your notes on PDFs");
 		expect(switchRow.value).toBe(false);
 
 		switchRow.toggle(true);

@@ -504,15 +504,13 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					});
 			});
 
-		// Off by default (F20). The description says what it does and what it costs -- a transcription
-		// per note -- and settles the question the old wording answered wrongly: nothing is written to
-		// the vault, because the handwriting is drawn out of the PDF that is already there.
+		// Off by default (F20). Named for what the reader put on a PDF rather than for handwriting alone:
+		// since issue #247 it governs the text typed on a page added to a PDF as well (zotero map ticket 01).
 		new Setting(containerEl)
-			.setName("Handwritten notes")
+			.setName("Your notes on PDFs")
 			.setDesc(
-				"Include handwritten margin notes in the digest of annotated PDFs. Each note is transcribed where a " +
-					"transcription backend can run, and every entry can show the handwriting itself, drawn from the " +
-					"embedded PDF when you ask for it. No images are added to your vault.",
+				"What you wrote or typed on an annotated PDF, beside the text or on a page you added. Handwriting is " +
+					"transcribed where a transcription backend can run.",
 			)
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.data.marginNotes).onChange(async (value) => {

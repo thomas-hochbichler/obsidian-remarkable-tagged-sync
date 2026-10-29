@@ -675,8 +675,8 @@ each other anyway.
 
 ### The notes you write in the margin
 
-**Switch them on under Settings → Handwritten notes, and what you wrote beside the text arrives with
-what you marked.** They are off until you say otherwise: transcribing handwriting is work your
+**Switch them on under Settings → Your notes on PDFs (called *Handwritten notes* before 1.10.0), and
+what you wrote or typed beside the text, or on a page you added, arrives with what you marked.** They are off until you say otherwise: transcribing handwriting is work your
 machine does per note, and it needs a transcription backend — the same one a handwritten notebook
 uses.
 

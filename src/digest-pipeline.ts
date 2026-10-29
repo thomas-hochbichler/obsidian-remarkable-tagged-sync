@@ -29,7 +29,8 @@ import {
 	type PageFit,
 	type PdfRect,
 } from "./pdf-renderer";
-import { sceneHeadings, sceneTextPage } from "./scene-text";
+import { hasTypedText, sceneHeadings, sceneTextPage } from "./scene-text";
+import { layoutText } from "./text-layout";
 import { bodyLineSpacing, loadPdfText, paragraphBounds, quoteForRects, readingIndex, type PdfHeading, type PdfPageText, type PdfTextDocument } from "./pdf-text";
 import { pushUnique } from "./push-unique";
 import { correctQuote } from "./quote-correction";
@@ -708,6 +709,15 @@ function sectionFields(heading: SectionHeading | null, geometry: PageGeometry): 
 }
 
 /**
+ * A page's text line by line, trimmed and without blank lines. Newlines survive here where a margin
+ * note collapses them: the page's line structure is most of what a page of notes says, and
+ * `renderNote` gives every line its own callout prefix.
+ */
+function pageLines(text: string): string {
+	return text.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trim()).filter((line) => line !== "").join("\n");
+}
+
+/**
  * The single entry a page added on the device produces: the whole page transcribed in one pass (F21).
  *
  * None of the margin-note machinery means anything here. There is no source page under the ink, so
@@ -721,15 +731,20 @@ function sectionFields(heading: SectionHeading | null, geometry: PageGeometry): 
  * `pdf-renderer.ts`).
  */
 async function buildPageTranscript(state: BuildState, page: DigestPageInput, ink: RmStroke[]): Promise<DigestNote & { section: string | null }> {
-	let text = "";
-	try {
-		const result = await transcribe(state, clusterScene(ink, page.scene?.formatVersion ?? 0), "added-page");
-		// Newlines survive here where a margin note collapses them: the page's line structure is most of
-		// what a page of notes says, and `renderNote` gives every line its own callout prefix.
-		text = result.text.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trim()).filter((line) => line !== "").join("\n");
-	} catch (error) {
-		state.ocrStatuses.push("failed");
-		state.warnings.push(`Page ${page.embedPage}: this page was added on the device and could not be transcribed (${describeError(error)}).`);
+	// Typed text is exact already, so a page that carries nothing else needs no transcription at all --
+	// and it stands in for the page when the handwriting beside it could not be read (issue #247).
+	const typed = pageLines(page.scene?.text ? layoutText(page.scene.text).lines.map((line) => line.text).join("\n") : "");
+	let text = typed;
+	if (ink.length > 0) {
+		try {
+			// Handed over with its typed text, which every backend places among the ink by height, as on
+			// a notebook page (`splitAtTypedText`, Vision's `insertTypedText`).
+			const result = await transcribe(state, { ...clusterScene(ink, page.scene?.formatVersion ?? 0), text: page.scene?.text }, "added-page");
+			text = pageLines(result.text) || typed;
+		} catch (error) {
+			state.ocrStatuses.push("failed");
+			state.warnings.push(`Page ${page.embedPage}: this page was added on the device and could not be transcribed (${describeError(error)}).`);
+		}
 	}
 	return {
 		// The entry *is* the page, so the page is its identity -- stable across re-syncs without
@@ -764,11 +779,11 @@ async function buildPage(state: BuildState, page: DigestPageInput, geometry: Pag
 	const placed = buildHighlights(page, geometry);
 	const ink = (page.scene?.layers ?? []).flatMap((layer) => layer.strokes).filter((stroke) => !isHighlighterOrShader(stroke.penType));
 
-	// F21, and gated by F20 exactly as the margin notes are: this is handwriting transcription, which is
-	// what the setting governs, and leaving it ungated would put the handwriting back in the note as a
-	// flat transcript with the setting off -- the leak ticket 12 closed.
+	// F21, and gated by F20 exactly as the margin notes are: the setting governs what the reader wrote or
+	// typed on a PDF, and leaving it ungated would put the handwriting back in the note as a flat
+	// transcript with the setting off -- the leak ticket 12 closed. Typed text goes with it (issue #247).
 	if (page.appended) {
-		if (!state.deps.marginNotes || ink.length === 0) return null;
+		if (!state.deps.marginNotes || (ink.length === 0 && !hasTypedText(page.scene))) return null;
 		const transcript = await buildPageTranscript(state, page, ink);
 		// A page added on the device is not a page of the source document, so nothing on it can be
 		// placed there -- which is also why write-back skips it (Zotero spec §3.1).

@@ -130,3 +130,64 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "runSync > orphans every tag that dropped out, not just the first, when two go and two arrive"
+
+- feature: D29
+  name: Typed text on a page added to a PDF (issue #247)
+  code: src/digest-pipeline.ts, src/pdf-renderer.ts
+  tier: free
+  scenarios:
+    - id: D29.1
+      scenario: A page added to a PDF on the tablet carries handwriting and a typed paragraph
+      expect: One entry. The backend is handed the page with its typed text and places it among the ink, as on a notebook page. Before, it was handed the ink alone and the typed words never reached the note
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > with typed text on it > hands the backend the page with its typed text, which it places among the handwriting"
+
+    - id: D29.2
+      scenario: An added page carries typed text and no ink at all
+      expect: An entry with the typed lines, and no transcription request. Typed text is exact already; such a page used to produce no entry
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > with typed text on it > reads a page with typed text and no ink without a transcription"
+
+    - id: D29.3
+      scenario: The handwriting beside the typed text could not be read -- a server down, a model refusing
+      expect: The entry holds the typed lines, and the failure is still reported. An empty entry would lose words that never needed reading
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > with typed text on it > keeps the typed text when the handwriting beside it could not be read"
+
+    - id: D29.4
+      scenario: '*Your notes on PDFs* is off and an added page carries typed text alone'
+      expect: No entry and no request. The switch covers what was typed as well as what was written (zotero map ticket 01, item 7)
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > with typed text on it > drops it with the switch off, typed text included"
+
+    - id: D29.5
+      scenario: An added page carries typed text and no ink, rendered into the annotated PDF
+      expect: The typed lines are drawn. The page used to be written out blank
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > draws the typed text of a page with no source page, so a typed-only added page is not blank"
+
+    - id: D29.6
+      scenario: The typed text on an added page runs past the bottom of the screen
+      expect: The sheet grows to hold it, as it grows for ink. Sized by strokes alone, the text below the screen was cut off
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > sizes a page with no source page to typed text that runs past the screen"
+
+    - id: D29.7
+      scenario: An added page ends in blank lines, the Enter key held down below the text
+      expect: The sheet stays screen height. Blank lines are paragraph breaks with nothing to show, and counted they would add empty paper
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > does not grow a page with no source page for blank lines typed below its text"
+
+    - id: D29.8
+      scenario: Two pages added to one PDF each carry typed text
+      expect: Both pages draw their text. The font is embedded once, on the first page that needs it, and reused
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > draws the typed text of every added page, not only the first"
