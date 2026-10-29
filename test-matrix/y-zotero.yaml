@@ -4532,10 +4532,10 @@
       test: "carrying out the plan > hands a note over to the user when the refresh comes back 412"
     - id: Y34.64
       scenario: "Our trash answers 412"
-      expect: 'Nothing recorded; the next sync sees the edit'
+      expect: 'Record gains `userEdited`, nothing counted as written: the edit may be a tag, which the next sync could not see in the body'
       layer: unit
       file: src/zotero-notes.test.ts
-      test: "carrying out the plan > remembers nothing new when the trash comes back 412, so the next sync sees the edit"
+      test: "carrying out the plan > hands a note over to the user when the trash comes back 412, instead of trashing it next time"
     - id: Y34.65
       scenario: "A plan with record-only changes"
       expect: 'Stored without a request'

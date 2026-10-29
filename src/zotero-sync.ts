@@ -327,16 +327,6 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 	const refusal = (error: unknown, library: ZoteroLibrary): string =>
 		error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(library), error.connection) : zoteroSkipReason(error);
 
-	/**
-	 * The pages added on the tablet, as notes under the paper (Zotero spec §2), after the highlights
-	 * went in. Its own failures stay its own: the highlights are written whatever happens here, and
-	 * the note says in a clause of its own why the added pages are not (§6).
-	 *
-	 * Nothing at all is asked of Zotero for a document with no added page to write and no note of ours
-	 * to keep up -- which is almost every document, so this costs them nothing. A unit that speaks for
-	 * no added page (*Your notes on PDFs* off, a failed build) touches nothing; the next one that does
-	 * reconciles (Zotero spec §3).
-	 */
 	/** Our notes under a paper that may be gone: erased with its children, they are simply not there. */
 	const notesUnder = async (paperKey: string, library: ZoteroLibrary): Promise<ZoteroNote[]> => {
 		try {
@@ -347,6 +337,16 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		}
 	};
 
+	/**
+	 * The pages added on the tablet, as notes under the paper (Zotero spec §2), after the highlights
+	 * went in. Its own failures stay its own: the highlights are written whatever happens here, and
+	 * the note says in a clause of its own why the added pages are not (§6).
+	 *
+	 * Nothing at all is asked of Zotero for a document with no added page to write and no note of ours
+	 * to keep up -- which is almost every document, so this costs them nothing. A unit that speaks for
+	 * no added page (*Your notes on PDFs* off, a failed build) touches nothing; the next one that does
+	 * reconciles (Zotero spec §3).
+	 */
 	const writeAddedPages = async (
 		unit: ZoteroUnit,
 		attachment: ZoteroAttachment,

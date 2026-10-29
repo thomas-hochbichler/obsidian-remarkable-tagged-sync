@@ -43,6 +43,8 @@ workflow publishes the section as the GitHub release body. See
   a page you added as well as what you wrote, so switched off, neither reaches the note. The callout
   for a page you added is titled *Your page* instead of *Handwritten page*; its type stays
   `[!handwritten]`, so your CSS keeps working. Your setting is kept.
+- **Renders are smaller and the same on every device.** A PDF with many pages no longer carries its
+  fonts once per page, and the same tablet state gives the same file byte for byte.
 
 ## [1.9.2] - 2026-10-25
 

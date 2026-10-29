@@ -34,7 +34,7 @@ import { planTagRouting } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
-import { webConfigured, zoteroProAllowed, type ZoteroSettings } from "./zotero-settings";
+import { webConfigured, zoteroProAllowed } from "./zotero-settings";
 import type { ZoteroGroup } from "./zotero-client";
 import { linkedDocumentIds } from "./zotero-links";
 import { visionRunStats } from "./vision-ocr-backend";
@@ -734,8 +734,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private renderIntoZotero(containerEl: HTMLElement, pro: boolean): () => void {
 		new Setting(containerEl).setName("Into Zotero").setHeading();
 
-		const save = async (change: Partial<ZoteroSettings>, on: boolean): Promise<void> => {
-			this.plugin.data.zotero = { ...this.plugin.data.zotero, ...change };
+		const save = async (key: "writeText" | "addRender", on: boolean): Promise<void> => {
+			this.plugin.data.zotero = { ...this.plugin.data.zotero, [key]: on };
 			if (on) this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex, linkedDocumentIds(this.plugin.data.zoteroLinks));
 			await this.plugin.saveData(this.plugin.data);
 		};
@@ -749,7 +749,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			)
 			.addToggle((toggle) => {
 				toggle.setValue(this.plugin.data.zotero.writeText).setDisabled(!pro);
-				toggle.onChange((value) => save({ writeText: value }, value));
+				toggle.onChange((value) => save("writeText", value));
 			});
 
 		const renderDesc =
@@ -761,7 +761,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			.setName(pro ? "Add the render to Zotero" : "Add the render to Zotero (Pro)")
 			.addToggle((toggle) => {
 				renderToggle = toggle.setValue(this.plugin.data.zotero.addRender);
-				toggle.onChange((value) => save({ addRender: value }, value));
+				toggle.onChange((value) => save("addRender", value));
 			});
 		const needsWeb = (): void => {
 			const web = webConfigured(this.plugin.data.zotero);

@@ -156,15 +156,18 @@ export function hasAddedText(pages: readonly DigestPage[], scope: AddedPagesScop
 	return addedEntries(pages).some((entry) => writable(scope, entry));
 }
 
-/** Does the link hold a note of ours that a sync may still refresh, move or trash? */
+/** A note of ours that a sync may still refresh, move or trash: not trashed, not the user's. */
+const live = (record: LinkedNote): boolean => record.deleted !== true && record.userEdited !== true;
+
+/** Does the link hold a live note? */
 export function hasLiveNotes(link: ZoteroLink): boolean {
-	return Object.values(link.notes ?? {}).some((record) => record.deleted !== true && record.userEdited !== true);
+	return Object.values(link.notes ?? {}).some(live);
 }
 
 /** The papers our live notes hang under, other than `paperKey`: where they were before the PDF moved. */
 export function formerPapers(link: ZoteroLink, paperKey: string): string[] {
-	const live = Object.values(link.notes ?? {}).filter((record) => record.deleted !== true && record.userEdited !== true);
-	return [...new Set(live.map((record) => record.parentKey))].filter((key) => key !== paperKey);
+	const papers = Object.values(link.notes ?? {}).filter(live).map((record) => record.parentKey);
+	return [...new Set(papers)].filter((key) => key !== paperKey);
 }
 
 function refOf({ key, version, source, library }: ZoteroNote): ZoteroNoteRef {
@@ -276,9 +279,13 @@ export async function executeNotes(client: ZoteroClient, link: ZoteroLink, plan:
 
 	for (const trash of plan.trashes) {
 		try {
-			// A conflict is the user editing it since we read it: nothing is recorded, and the next sync
-			// sees the edit for what it is.
-			if ((await client.trashAnnotation(trash.note)) === "conflict") continue;
+			if ((await client.trashAnnotation(trash.note)) === "conflict") {
+				// Edited in Zotero between our read and our write: theirs from now on (Zotero spec §3). The
+				// edit need not be in the body -- a tag or relation changes the version too -- so the next
+				// sync's body comparison could not be trusted to see it.
+				notes[trash.blockId] = { ...(link.notes?.[trash.blockId] ?? trash.record), userEdited: true };
+				continue;
+			}
 			notes[trash.blockId] = trash.record;
 			written++;
 		} catch (error) {
