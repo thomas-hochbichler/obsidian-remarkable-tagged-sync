@@ -289,12 +289,13 @@ describe("carrying out the plan", () => {
 		expect(result.notes["nt-aaaaaa"]).toEqual({ key: "NOTE1", parentKey: "ITEM1", written: { note: body("neu") }, userEdited: true });
 	});
 
-	it("remembers nothing new when the trash comes back 412, so the next sync sees the edit", async () => {
+	it("hands a note over to the user when the trash comes back 412, instead of trashing it next time", async () => {
 		const trash = plan([], { link: remembered(body("alt")), existing: [zoteroNote(body("alt"))] });
 
 		const result = await executeNotes(writer("conflict", "written"), remembered(body("alt")), trash);
 
-		expect(result.notes).toEqual(remembered(body("alt")).notes);
+		expect(result).toMatchObject({ written: 0, total: 1 });
+		expect(result.notes["nt-aaaaaa"]).toEqual({ key: "NOTE1", parentKey: "ITEM1", written: { note: body("alt") }, userEdited: true });
 	});
 
 	it("stores the records that change without a request", async () => {

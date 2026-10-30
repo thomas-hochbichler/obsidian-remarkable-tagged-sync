@@ -26,10 +26,10 @@
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import { type MatchEvidence, matchZoteroAttachment } from "./zotero-match";
 import { renderFilename, sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary, type ZoteroNote } from "./zotero-client";
-import { linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
+import { type LinkedRender, linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, openRenderUrl, type VaultNoteKeys, webReaderUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo, type ZoteroWriteBack } from "./zotero-note";
 import { type AddedPagesScope, executeNotes, formerPapers, hasAddedText, hasLiveNotes, planNotes } from "./zotero-notes";
-import { NO_PARENT_ITEM, planRender, STORAGE_FULL } from "./zotero-render";
+import { judgeRender, NO_PARENT_ITEM, planRender, STORAGE_FULL } from "./zotero-render";
 import { executeWriteBack, planWriteBack } from "./zotero-writeback";
 
 /** What the engine knows about one written note, and this pass needs. */
@@ -327,16 +327,6 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 	const refusal = (error: unknown, library: ZoteroLibrary): string =>
 		error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(library), error.connection) : zoteroSkipReason(error);
 
-	/**
-	 * The pages added on the tablet, as notes under the paper (Zotero spec §2), after the highlights
-	 * went in. Its own failures stay its own: the highlights are written whatever happens here, and
-	 * the note says in a clause of its own why the added pages are not (§6).
-	 *
-	 * Nothing at all is asked of Zotero for a document with no added page to write and no note of ours
-	 * to keep up -- which is almost every document, so this costs them nothing. A unit that speaks for
-	 * no added page (*Your notes on PDFs* off, a failed build) touches nothing; the next one that does
-	 * reconciles (Zotero spec §3).
-	 */
 	/** Our notes under a paper that may be gone: erased with its children, they are simply not there. */
 	const notesUnder = async (paperKey: string, library: ZoteroLibrary): Promise<ZoteroNote[]> => {
 		try {
@@ -347,6 +337,16 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		}
 	};
 
+	/**
+	 * The pages added on the tablet, as notes under the paper (Zotero spec §2), after the highlights
+	 * went in. Its own failures stay its own: the highlights are written whatever happens here, and
+	 * the note says in a clause of its own why the added pages are not (§6).
+	 *
+	 * Nothing at all is asked of Zotero for a document with no added page to write and no note of ours
+	 * to keep up -- which is almost every document, so this costs them nothing. A unit that speaks for
+	 * no added page (*Your notes on PDFs* off, a failed build) touches nothing; the next one that does
+	 * reconciles (Zotero spec §3).
+	 */
 	const writeAddedPages = async (
 		unit: ZoteroUnit,
 		attachment: ZoteroAttachment,
@@ -389,11 +389,19 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		// Only switched on is the render hashed: a few megabytes per whole-document sync otherwise for nothing.
 		const switchedOn = deps.mayWriteBack && deps.addRender;
 		const md5 = switchedOn ? (unit.render?.md5() ?? null) : null;
-		const plan = planRender({ switchedOn, md5, library: link.library, paperKey: attachment.parentKey, web: deps.client.renders !== null, recorded: link.render });
+		const plan = planRender({
+			switchedOn,
+			md5,
+			library: link.library,
+			paperKey: attachment.parentKey,
+			web: deps.client.renders !== null,
+			recorded: link.render,
+			noteWasDeleted: unit.noteWasDeleted,
+		});
 		const done = async (): Promise<{ link: ZoteroLink; render?: ZoteroNoteInfo["render"]; notices: string[] }> => ({ link, ...(await renderLink(link)), notices: [] });
 		if (plan.kind === "not-added") return { link, render: { reason: plan.reason }, notices: [] };
 		if (plan.kind === "none" || plan.kind === "unchanged") return await done();
-		// The planner creates or replaces only with both in hand.
+		// The planner finds, creates or checks only with both in hand.
 		const renders = deps.client.renders!;
 		const file = { bytes: unit.render!.bytes, md5: md5!, filename: renderFilename(attachment.filename ?? unit.visibleName) };
 		const save = async (next: ZoteroLink): Promise<ZoteroLink> => {
@@ -401,14 +409,40 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			return next;
 		};
 		try {
-			const render = plan.kind === "create" ? { key: await renders.create(plan.parentKey, file.filename), parentKey: plan.parentKey } : plan.render;
-			// Recorded before the upload, so one that fails fills this attachment next time rather than
-			// leaving it empty beside a second one.
-			if (plan.kind === "create") link = await save({ ...link, render });
-			const outcome = await renders.upload(render.key, file, render.md5 ?? null);
+			const found = plan.kind === "find" ? await renders.find(plan.parentKey) : null;
+			const parentKey = plan.kind === "find" ? plan.parentKey : plan.render.parentKey;
+			let render: LinkedRender | null = null;
+			let holds: string | null = null;
+			let filename = file.filename;
+			if (plan.kind === "check" || found !== null) {
+				const known = plan.kind === "check" ? plan.render : { key: found!.key, parentKey };
+				const judged = judgeRender(file.md5, known, plan.kind === "check" ? await renders.state(known.key) : found);
+				if (judged.kind === "theirs") {
+					// Deleting the vault note is the user's "start over" (§4.3): a render of theirs that is no
+					// longer under the paper is left where it is and a new one made. One still there stays theirs.
+					const gone = judged.theirs === "trashed" || judged.theirs === "moved";
+					if (!(unit.noteWasDeleted === true && gone)) {
+						link = await save({ ...link, render: { ...known, theirs: judged.theirs } });
+						return await done();
+					}
+				} else if (judged.kind === "unchanged") {
+					link = await save({ ...link, render: { ...known, md5: file.md5 } });
+					return await done();
+				} else {
+					render = known;
+					holds = judged.holds;
+					filename = judged.filename ?? filename;
+				}
+			}
+			if (render === null) {
+				render = { key: await renders.create(parentKey, filename), parentKey };
+				// Recorded before the upload, so one that fails fills this attachment next time rather than
+				// leaving it empty beside a second one.
+				link = await save({ ...link, render });
+			}
+			const outcome = await renders.upload(render.key, { ...file, filename }, holds);
 			if (outcome === "quota") return { link, render: { reason: STORAGE_FULL }, notices: [zoteroStorageFullNotice(unit.visibleName)] };
-			// `changed`: Zotero holds a file that is not the one we uploaded last. Left as it is; what to do
-			// about that is the user-action rows' (§4.3).
+			// `changed`: the file changed between our read and the upload. Left as it is; the next sync reads it again.
 			if (outcome !== "changed") link = await save({ ...link, render: { ...render, md5: file.md5 } });
 			return await done();
 		} catch (error) {
@@ -417,11 +451,16 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		}
 	};
 
-	/** The line's link to a render that has a file: the desktop reader, or zotero.org's where that is the vault's one reader. */
+	/**
+	 * The line's link to a render that has a file: the desktop reader, or zotero.org's where that is the
+	 * vault's one reader. One the user made theirs is said so, file or not.
+	 */
 	const renderLink = async (link: ZoteroLink): Promise<{ render?: ZoteroNoteInfo["render"] }> => {
-		if (link.render?.md5 === undefined) return {};
+		const render = link.render;
+		if (render === undefined || (render.md5 === undefined && render.theirs === undefined)) return {};
 		const username = await readerUser();
-		return { render: { url: username === null ? openRenderUrl(link.render.key) : webReaderUrl({ username, itemKey: link.render.parentKey }, link.render.key, "user") } };
+		const url = username === null ? openRenderUrl(render.key) : webReaderUrl({ username, itemKey: render.parentKey }, render.key, "user");
+		return { render: { url, ...(render.theirs === undefined ? {} : { theirs: render.theirs }) } };
 	};
 
 	const runUnit = async (unit: ZoteroUnit): Promise<ZoteroNoteParts> => {

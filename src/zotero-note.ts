@@ -19,7 +19,7 @@
 
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import type { ZoteroItem, ZoteroLibrary } from "./zotero-client";
-import type { ZoteroLink } from "./zotero-links";
+import type { RenderTheirs, ZoteroLink } from "./zotero-links";
 
 /**
  * The library half of a `zotero://` URL: `library` for the personal one, `groups/<id>` for a group
@@ -56,8 +56,11 @@ export interface ZoteroNoteInfo {
 	 * they did not (Zotero spec §6): "this PDF has no parent item in Zotero". Absent otherwise.
 	 */
 	readonly addedPagesNotWritten?: string;
-	/** The render in Zotero (Zotero spec §6): where it opens, or why it was not added. Absent: nothing to say. */
-	readonly render?: { readonly url: string } | { readonly reason: string };
+	/**
+	 * The render in Zotero (Zotero spec §6): where it opens, or why it was not added, or what the user
+	 * did to it that stops it being updated (§4.3). Absent: nothing to say.
+	 */
+	readonly render?: { readonly url: string; readonly theirs?: RenderTheirs } | { readonly reason: string };
 	/** The vault's own note about this paper, as its link text -- see {@link findLiteratureNote}. */
 	readonly literatureNote: string | null;
 	/**
@@ -125,6 +128,19 @@ function writeBackPhrase(writeBack: ZoteroWriteBack): string {
 }
 
 /**
+ * The render clause. One the user made theirs says why it stays as it is, so a render that stopped
+ * following the tablet does not pass for a current one (ticket 16).
+ */
+function renderPhrase(url: string, theirs: RenderTheirs | undefined): string {
+	const link = `[render in Zotero](${url})`;
+	if (theirs === "changed") return `${link} not updated: you changed its file`;
+	if (theirs === "annotated") return `${link} not updated: it has your annotations`;
+	if (theirs === "moved") return "render not updated: you moved it in Zotero";
+	if (theirs === "trashed") return "render not added again: you deleted it in Zotero";
+	return link;
+}
+
+/**
  * The `Zotero: …` line of the ownership callout (without the callout's own `> `, which is
  * `note-builder.ts`'s).
  *
@@ -143,7 +159,7 @@ export function zoteroCalloutLine(info: ZoteroNoteInfo): string {
 	if (info.matchedByHash === true) parts.push("matched by file hash");
 	parts.push(writeBackPhrase(info.writeBack));
 	if (info.addedPagesNotWritten !== undefined) parts.push(`added pages not written back: ${info.addedPagesNotWritten}`);
-	if (info.render !== undefined) parts.push("url" in info.render ? `[render in Zotero](${info.render.url})` : `render not added: ${info.render.reason}`);
+	if (info.render !== undefined) parts.push("url" in info.render ? renderPhrase(info.render.url, info.render.theirs) : `render not added: ${info.render.reason}`);
 	if (info.literatureNote !== null) parts.push(`literature note: [[${info.literatureNote}]]`);
 	return `Zotero: ${parts.join(" · ")}`;
 }
