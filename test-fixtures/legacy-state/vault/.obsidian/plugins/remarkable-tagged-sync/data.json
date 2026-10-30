@@ -19,12 +19,12 @@
 				"notePath": "Inbox/Field Notes.md",
 				"status": "active",
 				"syncedAt": "2026-01-01T00:00:00.000Z",
-				"renderVersion": 32,
+				"renderVersion": 33,
 				"blockHash": "7e2fef62",
 				"highlightCount": 0,
 				"transcribedPages": [],
 				"transcribedWith": "82639f08",
-				"noteId": "607fc807-18fd-45ae-85f7-e3413557c9cd",
+				"noteId": "5f222cc8-6a24-41e3-acfd-d9a1eb0fa270",
 				"folder": "Inbox"
 			},
 			"doc-notes:work": {
@@ -37,12 +37,12 @@
 				"notePath": "Work/Notes/Field Notes.md",
 				"status": "active",
 				"syncedAt": "2026-01-01T00:00:00.000Z",
-				"renderVersion": 32,
+				"renderVersion": 33,
 				"blockHash": "7e2fef62",
 				"highlightCount": 0,
 				"transcribedPages": [],
 				"transcribedWith": "82639f08",
-				"noteId": "f72fbb9b-7a1c-4585-82d3-d236a0c8f154",
+				"noteId": "7c048780-1011-43d2-ad4f-79e01465fabb",
 				"folder": "Work/Notes"
 			},
 			"doc-paper:read": {
@@ -55,10 +55,10 @@
 				"notePath": "Reading/Reading List.md",
 				"status": "active",
 				"syncedAt": "2026-01-01T00:00:00.000Z",
-				"renderVersion": 32,
+				"renderVersion": 33,
 				"blockHash": "94bed6a5",
 				"highlightCount": 0,
-				"noteId": "863d0760-063e-4474-8cf3-3471d25504b8",
+				"noteId": "e6b8a561-e92c-40ff-b462-b16ffaa10f53",
 				"folder": "Reading"
 			}
 		}
