@@ -290,10 +290,21 @@ export function evaluateBackend(
 	return { status: worst, reason, pages: measurements, medianCer };
 }
 
-/** Part status is the worst backend status; the detail keeps every backend visible. */
+/**
+ * Part status: the worst *measured* backend; `unknown` only when no backend measured at all.
+ *
+ * It used to be the worst of every backend, which was a sound gate while three backends ran and a
+ * trap at eight: one provider's 429 held the whole part `unknown` for four nights (2026-10-26 to
+ * 10-29) while seven backends measured cleanly, and the release gate refused 1.10.0 for a
+ * measurement that had in fact arrived. The baseline (`scripts/ocr-baseline.mjs`) already read per
+ * backend for the same reason; the part now follows the same rule. A backend that did not measure
+ * stays visible in the detail with its reason -- it is one sample fewer, not a night lost.
+ */
 export function mergeBackendStatuses(runs: Record<string, BackendRun>): BackendStatus {
-	const order: BackendStatus[] = ["pass", "degraded", "unknown", "catastrophe"];
-	return Object.values(runs).reduce<BackendStatus>(
+	const order: BackendStatus[] = ["pass", "degraded", "catastrophe"];
+	const measured = Object.values(runs).filter((run) => run.status !== "unknown");
+	if (measured.length === 0) return "unknown";
+	return measured.reduce<BackendStatus>(
 		(worst, run) => (order.indexOf(run.status) > order.indexOf(worst) ? run.status : worst),
 		"pass",
 	);

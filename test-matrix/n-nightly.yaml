@@ -249,11 +249,18 @@
       test: "evaluating a backend's night (§5.3) > a uniform doubling that trips no single page is caught by the median rule"
 
     - id: N4.11
-      scenario: Four backends with mixed nights
-      expect: The part carries the worst backend's status; pass only when every backend passed
+      scenario: Backends with mixed nights, one of them unknown (a 429, a dead provider)
+      expect: The part carries the worst measured backend's status; the unknown one is one sample fewer, not a night lost
       layer: unit
       file: tests/support/nightly/ocr.test.ts
-      test: "merging backend statuses into the part > the part carries the worst backend, and pass only when every backend passed"
+      test: "merging backend statuses into the part > the part carries the worst measured backend; one unknown backend is one sample fewer, not a night lost"
+
+    - id: N4.12
+      scenario: No backend measured (every one unknown, or none ran)
+      expect: The part is unknown
+      layer: unit
+      file: tests/support/nightly/ocr.test.ts
+      test: "merging backend statuses into the part > the part is unknown only when no backend measured at all"
 
 - feature: N5
   name: The verdict merge

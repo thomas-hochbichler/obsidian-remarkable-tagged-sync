@@ -119,11 +119,18 @@ describe("evaluating a backend's night (§5.3)", () => {
 });
 
 describe("merging backend statuses into the part", () => {
-	it("the part carries the worst backend, and pass only when every backend passed", () => {
+	it("the part carries the worst measured backend; one unknown backend is one sample fewer, not a night lost", () => {
 		const pass = { status: "pass" as const, pages: {}, medianCer: 0 };
 		expect(mergeBackendStatuses({ a: pass, b: pass })).toBe("pass");
-		expect(mergeBackendStatuses({ a: pass, b: { ...pass, status: "unknown" } })).toBe("unknown");
+		expect(mergeBackendStatuses({ a: pass, b: { ...pass, status: "unknown" } })).toBe("pass");
+		expect(mergeBackendStatuses({ a: { ...pass, status: "degraded" }, b: { ...pass, status: "unknown" } })).toBe("degraded");
 		expect(mergeBackendStatuses({ a: { ...pass, status: "catastrophe" }, b: { ...pass, status: "unknown" } })).toBe("catastrophe");
+	});
+
+	it("the part is unknown only when no backend measured at all", () => {
+		const unknown = { status: "unknown" as const, pages: {}, medianCer: null };
+		expect(mergeBackendStatuses({ a: unknown, b: unknown })).toBe("unknown");
+		expect(mergeBackendStatuses({})).toBe("unknown");
 	});
 });
 
