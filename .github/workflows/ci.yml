@@ -158,6 +158,16 @@ jobs:
       - name: Version gate
         run: node scripts/release-checks.mjs version
 
+      # --- gate 2b: the nightly verdict, on a release commit only ------------------------------
+      #
+      # release.yml runs this gate on the tag. Running it here too stops a release PR in a minute
+      # instead of the tag an hour later -- 1.10.0 spent two tags on a verdict that had been red
+      # for four nights. The script decides what a release commit is (the manifest version has its
+      # changelog section and no tag yet) and skips everywhere else, so a stale verdict never turns
+      # `main` red on its own.
+      - name: Nightly verdict (release commit only)
+        run: node scripts/release-checks.mjs nightly --if-release
+
       # --- gate 3: changelog (weak on purpose) -------------------------------------------------
       #
       # Only checks that the file parses and `## [Unreleased]` exists. It must NOT demand a section

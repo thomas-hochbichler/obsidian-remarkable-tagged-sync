@@ -10,7 +10,8 @@
 //   node scripts/release-checks.mjs coverage [--write]      # needs a coverage run first
 //   node scripts/release-checks.mjs badges                  # same run, writes the shields files
 //   node scripts/release-checks.mjs disabled
-//   node scripts/release-checks.mjs nightly
+//   node scripts/release-checks.mjs nightly [--if-release]   # ci.yml: only on a release commit
+//   node scripts/release-checks.mjs tag <version>           # before `git tag`: every gate the tag will meet
 //   node scripts/release-checks.mjs ocr-baseline [--write] [--accept <key> --because "<why>"]
 //   node scripts/release-checks.mjs perf-baseline [--write] [--accept <metric> --because "<why>"]
 //
@@ -489,9 +490,10 @@ function disabledTests() {
 // from the day it lands is the failure this rollout was ordered to avoid, so it waited until real
 // verdicts were being committed and the floors had been revised against their spread.
 //
-// It also never runs in ci.yml -- a stale verdict would turn `main` red for a reason no commit
-// caused -- and never on a beta, because a beta is very often the fix for whatever made the
-// nightly red.
+// In ci.yml it runs on a release commit only (`--if-release`, below): a stale verdict must not
+// turn `main` red for a reason no commit caused, but a release PR that is going to fail on the tag
+// should fail on the PR -- 1.10.0 spent two tags finding out. Never on a beta, because a beta is
+// very often the fix for whatever made the nightly red.
 
 function nightlyGate() {
 	let verdict = null;
@@ -509,6 +511,56 @@ function nightlyGate() {
 	for (const n of notes) ok(n);
 	for (const f of found) fail(f);
 	finish("nightly verdict");
+}
+
+// A release commit is one whose manifest version has its changelog section and no tag yet. After
+// the tag, `main` carries both forever, and that is exactly where the gate must stay out.
+function isReleaseCommit() {
+	const v = readJson("manifest.json").version;
+	const sections = readChangelog() ?? [];
+	if (!sections.some((s) => s.name === v)) return { release: false, why: `no "## [${v}]" section in ${CHANGELOG}` };
+	const tagged = execFileSync("git", ["ls-remote", "--tags", "origin", v], { encoding: "utf8" }).trim() !== "";
+	if (tagged) return { release: false, why: `tag ${v} already exists on origin` };
+	return { release: true, why: `"## [${v}]" present, no tag ${v} on origin` };
+}
+
+// --- the tag pre-check --------------------------------------------------------------------------
+//
+// Step 6 of docs/RELEASING.md, before `git tag`: every gate release.yml will run on the tag's tree,
+// plus the two things only the tag can get wrong and no workflow can report. A tag on a commit whose
+// message carries a skip marker starts no workflow at all -- GitHub skips every one for that push,
+// and the nightly's verdict commit carries one -- and a tag on a commit that is not `origin/main`
+// points at something that is not on `main`. 1.10.0 needed three tags for exactly these reasons.
+
+const SKIP_MARKERS = ["[skip ci]", "[ci skip]", "[no ci]", "[skip actions]", "[actions skip]"];
+const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
+
+function tagPrecheck(version) {
+	if (!version) {
+		console.error("tag: pass the version, e.g. `tag 1.0.6`");
+		process.exit(2);
+	}
+	versionGate(version);
+	changelogRelease(version);
+	nightlyGate();
+
+	console.log("\ntag pre-check: HEAD\n");
+	const message = git("log", "-1", "--format=%B");
+	const marker = SKIP_MARKERS.find((m) => message.includes(m));
+	if (marker) fail(`HEAD's commit message carries \`${marker}\` -- GitHub starts no workflow for a tag pushed on it; merge one ordinary commit and tag that`);
+	else ok("HEAD's commit message carries no skip marker");
+
+	git("fetch", "--quiet", "origin", "main");
+	const head = git("rev-parse", "HEAD");
+	const main = git("rev-parse", "FETCH_HEAD");
+	if (head === main) ok(`HEAD is origin/main (${head.slice(0, 7)})`);
+	else fail(`HEAD ${head.slice(0, 7)} is not origin/main ${main.slice(0, 7)} -- \`git switch main && git pull --ff-only\``);
+
+	if (git("tag", "-l", version)) fail(`tag ${version} already exists locally -- a failed run's tag? see "When a release run fails" in docs/RELEASING.md`);
+	else ok(`no local tag ${version}`);
+
+	finish("tag pre-check");
+	console.log(`\nready: git tag ${version} && git push origin ${version}`);
 }
 
 // --- the OCR baseline ---------------------------------------------------------------------------
@@ -664,7 +716,18 @@ switch (command) {
 		disabledTests();
 		break;
 	case "nightly":
+		if (rest.includes("--if-release")) {
+			const r = isReleaseCommit();
+			if (!r.release) {
+				console.log(`nightly verdict: skipped, not a release commit (${r.why})`);
+				break;
+			}
+			console.log(`release commit: ${r.why}\n`);
+		}
 		nightlyGate();
+		break;
+	case "tag":
+		tagPrecheck(rest[0]);
 		break;
 	case "ocr-baseline":
 		ocrBaseline(rest.includes("--write"), flag("--accept") === undefined ? [] : [flag("--accept")], flag("--because") ?? "");
@@ -673,6 +736,6 @@ switch (command) {
 		perfBaseline(rest.includes("--write"), flag("--accept") === undefined ? [] : [flag("--accept")], flag("--because") ?? "");
 		break;
 	default:
-		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly|ocr-baseline|perf-baseline> [...]");
+		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly|tag|ocr-baseline|perf-baseline> [...]");
 		process.exit(2);
 }
