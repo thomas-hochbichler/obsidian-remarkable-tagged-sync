@@ -14,6 +14,7 @@ interface Call {
 	url: string;
 	headers: Record<string, string>;
 	method: string;
+	body?: BodyInit | null;
 }
 
 /** Answers each request in turn, and records what was asked. */
@@ -24,7 +25,7 @@ function stubFetch(...responses: Response[]) {
 		new Headers(init?.headers).forEach((value, name) => {
 			headers[name] = value;
 		});
-		calls.push({ url: String(input), headers, method: init?.method ?? "GET" });
+		calls.push({ url: String(input), headers, method: init?.method ?? "GET", body: init?.body });
 		const next = responses.shift();
 		if (next === undefined) throw new Error(`unexpected extra request to ${String(input)}`);
 		return next;
@@ -64,6 +65,16 @@ describe("talking to zotero.org", () => {
 	it("has no username for a key whose account does not say one", async () => {
 		const { impl } = stubFetch(json({ userID: 1597773 }));
 		expect(await createZoteroWebConnection(KEY, impl, sleep).username()).toBeNull();
+	});
+
+	// A key made without "notes access" carries no `notes` field at all, not `notes: false` (ticket 08 #2).
+	it.each([
+		["allows notes", { user: { library: true, notes: true, write: true } }, true],
+		["leaves notes out", { user: { library: true, write: true } }, false],
+		["says nothing about access", undefined, false],
+	])("knows whether the key may write notes when it %s", async (_case, access, expected) => {
+		const { impl } = stubFetch(json({ userID: 1597773, username: "someone", access }));
+		expect(await createZoteroWebConnection(KEY, impl, sleep).notesAccess()).toBe(expected);
 	});
 
 	it("names no library for a key whose account has no id", async () => {
@@ -153,6 +164,40 @@ describe("the PDF itself", () => {
 	it("knows no path on disk, which is what the desktop connection is for", async () => {
 		const { impl } = stubFetch();
 		expect(await createZoteroWebConnection(KEY, impl, sleep).filePath("ATT1", "user")).toBeNull();
+	});
+});
+
+describe("the render's file (Zotero spec §4.1)", () => {
+	const FILE = { bytes: new Uint8Array([1, 2, 3]), md5: "5289df737df57326fcdd22597afb1fac", filename: "annotated_paper.pdf" };
+	const STORAGE = "https://zoterofilestorage.s3.amazonaws.com/";
+
+	it("authorises form-encoded, puts the bytes into file storage without the key, registers", async () => {
+		const { impl, calls } = stubFetch(
+			whoami(),
+			json({ url: STORAGE, contentType: "multipart/form-data; boundary=B", prefix: "<", suffix: ">", uploadKey: "UK1" }),
+			new Response(null, { status: 201 }),
+			new Response(null, { status: 204 }),
+		);
+		const renders = createZoteroWebConnection(KEY, impl, sleep).renders;
+		expect(await renders?.upload("REN1", FILE, null)).toBe("uploaded");
+		const [, authorise, put, register] = calls;
+		expect(authorise).toMatchObject({ url: "https://api.zotero.org/users/1597773/items/REN1/file", method: "POST" });
+		expect(authorise.headers["content-type"]).toBe("application/x-www-form-urlencoded");
+		expect(authorise.headers["if-none-match"]).toBe("*");
+		expect(new URLSearchParams(authorise.body as string).get("md5")).toBe(FILE.md5);
+		expect(put).toMatchObject({ url: STORAGE, method: "POST", body: new Uint8Array([60, 1, 2, 3, 62]) });
+		expect(put.headers).toEqual({ "content-type": "multipart/form-data; boundary=B" });
+		expect(register.body).toBe("upload=UK1");
+	});
+
+	it("reports file storage out of reach as unreachable, like any other zotero.org call", async () => {
+		let calls = 0;
+		const impl = (async () => {
+			calls++;
+			if (calls === 3) throw new TypeError("fetch failed");
+			return calls === 1 ? whoami() : json({ url: STORAGE, contentType: "x", prefix: "", suffix: "", uploadKey: "UK1" });
+		}) as unknown as typeof fetch;
+		await expect(createZoteroWebConnection(KEY, impl, sleep).renders?.upload("REN1", FILE, null)).rejects.toMatchObject({ reason: "unreachable" });
 	});
 });
 

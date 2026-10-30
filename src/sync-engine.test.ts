@@ -13,7 +13,7 @@ import { encodeGrayscalePng } from "./png-encoder";
 import { parseRmV6, type RmLayer, type RmPage } from "./rm-parser";
 import { isDocumentText } from "./scene-text";
 import { Platform } from "obsidian";
-import { NOT_TRANSCRIBED } from "./digest-builder";
+import { digestId, NOT_TRANSCRIBED } from "./digest-builder";
 import { md5Hex } from "./file-md5";
 import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
 import {
@@ -2419,6 +2419,19 @@ describe("runSync", () => {
 			// a file in the vault to clean up after them.
 			expect(again.noteStore.write.mock.calls.at(-1)![1] as string).not.toContain("[!handwritten]");
 			expect(imagesWritten(again.attachmentStore)).toEqual([]);
+		});
+
+		// Zotero spec §10 P7: switching *Write text to Zotero* or *Add the render to Zotero* on makes the
+		// Zotero-linked documents due once, so the Zotero pass runs for them without a change on the tablet.
+		it("rewrites a Zotero-linked document once after a Zotero switch is turned on, then skips it again", async () => {
+			const api = await annotatedPdf("root-zotero-on");
+			const deps = { ...baseDeps(api, { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+			const first = await runSync(deps, EMPTY_SYNC_INDEX);
+
+			const due = await runSync(deps, invalidateRenders(first.index, ["doc-1"]));
+			const settled = await runSync(deps, due.index);
+
+			expect([first.notesWritten, due.notesWritten, settled.notesWritten]).toEqual([1, 1, 0]);
 		});
 
 		/** F15/F16, acceptance 3: the digest is regenerated wholesale every sync, so an unchanged document has to come out identical -- otherwise every sync would rewrite every note. */
@@ -5126,6 +5139,21 @@ describe("invalidateRenders", () => {
 		expect(invalidateRenders(index).rows["doc-2::sync"].renderVersion).toBe(RENDER_VERSION);
 	});
 
+	it("makes only the named documents stale when given some -- every row of each, page rows included", () => {
+		const index: SyncIndex = {
+			rootHash: "root-1",
+			rows: {
+				"doc-1::sync": row(),
+				"doc-1::p3::sync": row({ syncKey: "doc-1::p3::sync", pageId: "p3", notePath: "Target/My Notebook p3.md" }),
+				"doc-2::sync": row({ syncKey: "doc-2::sync", docId: "doc-2", notePath: "Target/Other.md" }),
+			},
+		};
+
+		const result = invalidateRenders(index, ["doc-1"]);
+
+		expect(Object.values(result.rows).map((each) => each.renderVersion)).toEqual([undefined, undefined, RENDER_VERSION]);
+	});
+
 	it("keeps every other field, so nothing but the render gate moves", () => {
 		const index: SyncIndex = { rootHash: "root-1", mappings: "fingerprint", rows: { "doc-1::sync": row({ blockHash: "abcd1234" }) } };
 
@@ -6213,6 +6241,91 @@ describe("the Zotero half of a sync (spec §3.4)", () => {
 
 		expect(deps.seen.map((unit) => unit.notePath)).toEqual(["Todo/Prompting — Page 2.md"]);
 		expect(await deps.noteStore.read("Todo/Prompting — Page 2.md")).toContain(`> ${LINE}`);
+	});
+
+	describe("pages added on the tablet (#246)", () => {
+		/** p0, p1 are the PDF's; one page added ahead of them, one after p0, two after p1. */
+		async function withAddedPages(rootHash: string, pageTags: { name: string; timestamp: number; pageId: string }[] = []) {
+			return fakeApi({
+				rootHash,
+				entries: [documentEntry({ fileType: "pdf", visibleName: "Prompting", tags: pageTags.length > 0 ? [] : [{ name: "sync", timestamp: 0 }] })],
+				contentById: {
+					"doc-1": documentContent({
+						fileType: "pdf",
+						pageCount: 2,
+						cPages: cPagesWith([{ id: "a0" }, { id: "p0", redir: 0 }, { id: "a1" }, { id: "p1", redir: 1 }, { id: "a2" }, { id: "a3" }]),
+						pageTags,
+					}),
+				},
+				sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+				pageHashesByDoc: { "doc-1": { p0: "anno-hash", a1: "anno-hash" } },
+			});
+		}
+
+		const placesGiven = () =>
+			Object.fromEntries(vi.mocked(buildDigest).mock.calls.at(-1)![1].pages.filter((page) => page.appended).map((page) => [page.pageId, page.place]));
+
+		// The title of each Zotero note says where its page sits: "Added page 2 after p. 2".
+		it("tells the digest where each added page sits among the PDF's own pages", async () => {
+			await runSync({ ...baseDeps(await withAddedPages("root-added-places"), { sync: "Target" }), ...fakePass() }, EMPTY_SYNC_INDEX);
+
+			expect(placesGiven()).toEqual({
+				a0: { relation: "before", sourceIndex: 0, nth: null },
+				a1: { relation: "after", sourceIndex: 0, nth: null },
+				a2: { relation: "after", sourceIndex: 1, nth: 1 },
+				a3: { relation: "after", sourceIndex: 1, nth: 2 },
+			});
+		});
+
+		it("lets a whole-document unit speak for every added page, and a page tag for its one page", async () => {
+			const whole = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-whole"), { sync: "Target" }), ...whole }, EMPTY_SYNC_INDEX);
+			const page = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-page", [{ name: "todo", timestamp: 0, pageId: "a1" }]), { todo: "Todo" }), ...page }, EMPTY_SYNC_INDEX);
+
+			expect(whole.seen.map((unit) => unit.addedPages)).toEqual(["document"]);
+			expect(page.seen.map((unit) => unit.addedPages)).toEqual([{ blockId: digestId("nt", "a1", "page") }]);
+		});
+
+		// With *Your notes on PDFs* off the digest reads no added page, and a failed build read none:
+		// either way, a missing entry says nothing about the page.
+		it("lets a unit speak for no added page when the switch is off or the digest failed", async () => {
+			const off = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-off"), { sync: "Target" }), marginNotes: false, ...off }, EMPTY_SYNC_INDEX);
+			vi.mocked(buildDigest).mockRejectedValueOnce(new Error("pdf.js went away"));
+			const failed = fakePass();
+			await runSync({ ...baseDeps(await withAddedPages("root-added-failed"), { sync: "Target" }), ...failed }, EMPTY_SYNC_INDEX);
+
+			expect([...off.seen, ...failed.seen].map((unit) => unit.addedPages)).toEqual(["none", "none"]);
+		});
+	});
+
+	// Zotero spec §4.1: the render in Zotero is byte for byte the vault's, and only a whole document's.
+	it("hands the Zotero half the render it wrote to the vault, for a whole-document unit only", async () => {
+		Platform.isDesktop = true;
+		const api = fakeApi({
+			rootHash: "root-zotero-render",
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Prompting", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: {
+				"doc-1": documentContent({
+					fileType: "pdf",
+					pageCount: 2,
+					cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]),
+					pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }],
+				}),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+		});
+		const deps = { ...baseDeps(api, { sync: "Target", todo: "Todo" }), ...fakePass() };
+
+		await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const [whole, page] = deps.seen;
+		const written = new Uint8Array((deps.attachmentStore.writeBinary as ReturnType<typeof vi.fn>).mock.calls.find(([path]) => path === "tagged-sync/attachments/doc-1.pdf")![1] as ArrayBuffer);
+		expect(whole.render?.bytes).toEqual(written);
+		expect(whole.render?.md5()).toBe(md5Hex(written));
+		expect(page.render).toBeUndefined();
 	});
 
 	it("says what the Zotero half could not do, in the run's report and in diagnostics", async () => {

@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createZoteroClient,
 	createZoteroConnection,
+	createZoteroRenders,
 	OWNERSHIP_TAG,
+	renderFilename,
 	ZoteroError,
 	type NewAnnotation,
 	type ZoteroConnection,
@@ -174,6 +176,85 @@ describe("our own annotations", () => {
 	});
 });
 
+describe("notes for pages added on the tablet (#246)", () => {
+	const BODY = "<h1>Added page after p. 12</h1>\n<p>my words</p>";
+
+	it("creates a child note under the paper, tagged as ours", async () => {
+		const { api, calls } = connection(() => json({ success: { "0": "NOTE1" }, successful: { "0": { key: "NOTE1", data: { note: BODY } } } }));
+		await api.createNotes([{ parentKey: "ITEM1", note: BODY }], "user");
+		expect(calls[0]).toMatchObject({ method: "POST", path: "/items", body: [{ itemType: "note", parentItem: "ITEM1", note: BODY, tags: [{ tag: OWNERSHIP_TAG }] }] });
+		expect(calls[0].headers?.["Zotero-Write-Token"]).toMatch(/^\w{5,32}$/);
+	});
+
+	// What is remembered is what Zotero stored, not what was sent: the next sync compares against it,
+	// and a cleaner on the way in must not make our own note read as the user's edit (research 03 §3).
+	it("hands back the body as Zotero stored it, and says which ones it refused", async () => {
+		const { api } = connection(() =>
+			json({ success: { "0": "NOTE1" }, successful: { "0": { key: "NOTE1", data: { note: "<h1>stored</h1>" } } }, failed: { "1": { code: 400, message: "Parent item not found" } } }),
+		);
+		expect(await api.createNotes([{ parentKey: "ITEM1", note: BODY }, { parentKey: "GONE", note: BODY }], "user")).toEqual({
+			created: [{ key: "NOTE1", note: "<h1>stored</h1>" }, null],
+			failures: ["Parent item not found"],
+		});
+	});
+
+	it("remembers the body it sent where Zotero's answer leaves the stored one out", async () => {
+		const { api } = connection(() => json({ success: { "0": "NOTE1" } }));
+		expect((await api.createNotes([{ parentKey: "ITEM1", note: BODY }], "user")).created).toEqual([{ key: "NOTE1", note: BODY }]);
+	});
+
+	it("reads only our notes under one paper", async () => {
+		const { api, calls } = connection(() =>
+			json([
+				{ data: { key: "NOTE1", version: 7, itemType: "note", parentItem: "ITEM1", note: BODY } },
+				{ data: { key: "TOP", version: 3, itemType: "note", note: "<p>standalone</p>" } },
+			]),
+		);
+		expect(await api.ownNotes("ITEM1", "user")).toEqual([{ key: "NOTE1", library: "user", source: "local", parentKey: "ITEM1", note: BODY, version: 7 }]);
+		expect(calls[0].path).toBe(`/items/ITEM1/children?itemType=note&tag=${OWNERSHIP_TAG}&limit=100&start=0`);
+	});
+
+	it("cannot say whether notes may be written where only the desktop app is connected", async () => {
+		expect(await createZoteroClient({ local: connection(() => json([])).api })?.notesAccess()).toBeNull();
+		expect(await connection(() => json([])).api.notesAccess()).toBeNull();
+	});
+
+	// A note the desktop wrote is read over the web later (Zotero spec §10 P3).
+	it("takes zotero.org's answer even where the desktop app writes the notes", async () => {
+		const files = { path: async () => null, bytes: async () => null };
+		const web = createZoteroConnection("web", "zotero.org", stub(() => json([])).requester, files, async () => ({ id: 42, username: "me", notes: false }));
+		expect(await createZoteroClient({ local: connection(() => json([])).api, web })?.notesAccess()).toBe(false);
+	});
+
+	it("reads a note row that carries no key or version without failing on it", async () => {
+		const { api } = connection(() => json([{ data: { itemType: "note", parentItem: "ITEM1", note: BODY } }]));
+		expect(await api.ownNotes("ITEM1", "user")).toMatchObject([{ key: "", version: 0 }]);
+	});
+
+	// A refresh and a move after the PDF are one PATCH under the version read (Zotero spec §3).
+	it("patches a note's body and paper under the version it read, and only what it was given", async () => {
+		const { api, calls } = connection(() => new Response(null, { status: 204 }));
+		expect(await api.patchNote("NOTE1", 7, { note: BODY, parentKey: "ITEM2" }, "user")).toBe("written");
+		await api.patchNote("NOTE1", 8, { parentKey: "ITEM2" }, "user");
+		expect(calls.map((call) => call.body)).toEqual([{ note: BODY, parentItem: "ITEM2" }, { parentItem: "ITEM2" }]);
+		expect(calls[0]).toMatchObject({ method: "PATCH", path: "/items/NOTE1", headers: { "If-Unmodified-Since-Version": "7" } });
+	});
+
+	it("reports the user's edit as a conflict, and sends a note's patch to the connection that read it", async () => {
+		expect(await connection(() => new Response(null, { status: 412 })).api.patchNote("NOTE1", 7, { note: BODY }, "user")).toBe("conflict");
+		const local = connection(() => new Response(null, { status: 204 }), "local");
+		const web = connection(() => new Response(null, { status: 204 }), "web");
+		await createZoteroClient({ local: local.api, web: web.api })?.patchNote({ key: "NOTE1", version: 9, source: "web", library: "user" }, { note: BODY });
+		expect([local.calls.length, web.calls.length]).toEqual([0, 1]);
+	});
+
+	// Ticket 08: a trashed paper leaves its children unflagged, so only the paper says it.
+	it("says when a paper is in the trash", async () => {
+		const { api } = connection(() => json({ data: { key: "ITEM1", itemType: "journalArticle", title: "T", deleted: 1 } }));
+		expect(await api.parentItem("ITEM1", "user")).toMatchObject({ key: "ITEM1", trashed: true });
+	});
+});
+
 describe("writing annotations", () => {
 	const highlight: NewAnnotation = {
 		type: "highlight",
@@ -312,6 +393,14 @@ describe("two connections, one client", () => {
 		const client = createZoteroClient({ local: local.api, web: web.api });
 		expect(await client?.attachment("GONE", "user")).toBeNull();
 		expect(web.calls).toHaveLength(0);
+	});
+
+	it("reads and writes notes through the web when the desktop is not there", async () => {
+		const web = connection(() => json([]), "web");
+		const client = createZoteroClient({ local: downConnection("local"), web: web.api });
+		await client?.ownNotes("ITEM1", "user");
+		await client?.createNotes([{ parentKey: "ITEM1", note: "<h1>Added page after p. 1</h1>" }], "user");
+		expect(web.calls.map((call) => call.path.split("?")[0])).toEqual(["/items/ITEM1/children", "/items"]);
 	});
 
 	it("is absent altogether when nothing is configured", () => {
@@ -561,5 +650,176 @@ describe("group libraries (ticket 26)", () => {
 	it("refuses to patch an annotation read from a connection that is no longer set up", async () => {
 		const client = createZoteroClient({ local: connection(() => json([])).api });
 		await expect(client?.patchAnnotation({ key: "ANN1", version: 1, source: "web", library: "user" }, { comment: "x" })).rejects.toMatchObject({ reason: "unreachable" });
+	});
+});
+
+describe("the render as a Zotero attachment (Zotero spec §4.1)", () => {
+	const FILE = { bytes: new Uint8Array([1, 2, 3]), md5: "5289df737df57326fcdd22597afb1fac", filename: "annotated_paper.pdf" };
+	const SLOT = { url: "https://zoterofilestorage.s3.amazonaws.com/", contentType: "multipart/form-data; boundary=B", prefix: "<", suffix: ">", uploadKey: "UK1" };
+
+	/** The renders over a canned handler, with what was put into file storage recorded. */
+	function renders(handler: (request: ZoteroRequest) => Response | Promise<Response>, stored: Response = new Response(null, { status: 201 })) {
+		const { requester, calls } = stub(handler);
+		const puts: { url: string; contentType: string; body: Uint8Array }[] = [];
+		const api = createZoteroRenders(requester, async (url, contentType, body) => {
+			puts.push({ url, contentType, body });
+			return stored;
+		});
+		return { api, calls, puts };
+	}
+
+	/** Authorise answers `first`; registering answers 204. */
+	const upload = (first: Response) => (request: ZoteroRequest) => (request.form?.upload === undefined ? first : new Response(null, { status: 204 }));
+
+	it("names the file after the paper's own", () => {
+		expect(renderFilename("Smith 2024.pdf")).toBe("annotated_Smith 2024.pdf");
+		expect(renderFilename("notes")).toBe("annotated_notes.pdf");
+	});
+
+	it("creates a stored PDF under the paper, titled and tagged as ours", async () => {
+		const { api, calls } = renders(() => json({ success: { "0": "REN1" } }));
+		expect(await api.create("PAPER1", "annotated_paper.pdf")).toBe("REN1");
+		expect(calls[0]).toMatchObject({ method: "POST", library: "user", path: "/items" });
+		expect(calls[0].body).toEqual([
+			{
+				itemType: "attachment",
+				parentItem: "PAPER1",
+				linkMode: "imported_file",
+				title: "Annotated PDF",
+				contentType: "application/pdf",
+				filename: "annotated_paper.pdf",
+				tags: [{ tag: OWNERSHIP_TAG }],
+			},
+		]);
+		expect(calls[0].headers?.["Zotero-Write-Token"]).toMatch(/^\w{5,32}$/);
+	});
+
+	it("says why Zotero refused to create it", async () => {
+		const { api } = renders(() => json({ failed: { "0": { code: 400, message: "Parent item PAPER1 not found" } } }));
+		await expect(api.create("PAPER1", "annotated_paper.pdf")).rejects.toThrow("Parent item PAPER1 not found");
+		await expect(renders(() => json({ failed: {} })).api.create("PAPER1", "annotated_paper.pdf")).rejects.toThrow("without saying why");
+	});
+
+	it("does not upload into an authorisation that names no place to put the file", async () => {
+		const { api, puts } = renders(upload(json({ url: SLOT.url, contentType: SLOT.contentType })));
+		await expect(api.upload("REN1", FILE, null)).rejects.toMatchObject({ reason: "server" });
+		expect(puts).toEqual([]);
+	});
+
+	it("reports a register that fails for any reason but a changed file", async () => {
+		const { api } = renders((request) => (request.form?.upload === undefined ? json(SLOT) : new Response("Internal Server Error", { status: 500 })));
+		await expect(api.upload("REN1", FILE, null)).rejects.toMatchObject({ reason: "server" });
+	});
+
+	it("uploads a first file: authorise for a new file, put the bytes between prefix and suffix, register", async () => {
+		const { api, calls, puts } = renders(upload(json(SLOT)));
+		expect(await api.upload("REN1", FILE, null)).toBe("uploaded");
+		expect(calls[0]).toMatchObject({ method: "POST", library: "user", path: "/items/REN1/file", headers: { "If-None-Match": "*" } });
+		expect(calls[0].form).toMatchObject({ md5: FILE.md5, filename: "annotated_paper.pdf", filesize: "3" });
+		expect(Number(calls[0].form?.mtime)).toBeGreaterThan(1_000_000_000_000);
+		expect(puts).toEqual([{ url: SLOT.url, contentType: SLOT.contentType, body: new Uint8Array([60, 1, 2, 3, 62]) }]);
+		expect(calls[1]).toMatchObject({ method: "POST", path: "/items/REN1/file", form: { upload: "UK1" }, headers: { "If-None-Match": "*" } });
+	});
+
+	it("replaces a file under the MD5 Zotero holds, on both requests", async () => {
+		const { api, calls } = renders(upload(json(SLOT)));
+		expect(await api.upload("REN1", FILE, "0123456789abcdef0123456789abcdef")).toBe("uploaded");
+		expect(calls.map((call) => call.headers)).toEqual([{ "If-Match": "0123456789abcdef0123456789abcdef" }, { "If-Match": "0123456789abcdef0123456789abcdef" }]);
+	});
+
+	it("sends nothing when Zotero already has these bytes", async () => {
+		const { api, calls, puts } = renders(upload(json({ exists: 1 })));
+		expect(await api.upload("REN1", FILE, FILE.md5)).toBe("exists");
+		expect(calls).toHaveLength(1);
+		expect(puts).toEqual([]);
+	});
+
+	// Live in ticket 08: a stale `If-Match` is "412 ETag does not match current version of file".
+	it("reports a file that changed underneath, on authorise or on register", async () => {
+		expect(await renders(upload(new Response("ETag does not match current version of file", { status: 412 }))).api.upload("REN1", FILE, "stale")).toBe("changed");
+		expect(await renders(upload(new Response("conflict", { status: 409 }))).api.upload("REN1", FILE, "stale")).toBe("changed");
+		const late = renders((request) => (request.form?.upload === undefined ? json(SLOT) : new Response(null, { status: 412 })));
+		expect(await late.api.upload("REN1", FILE, "stale")).toBe("changed");
+	});
+
+	// Zotero's file-upload doc: "413 Request Entity Too Large -- The upload would exceed the storage
+	// quota of the library owner." No body or header to read; the status is the whole answer.
+	it("reports a full Zotero Storage and puts nothing into it", async () => {
+		const { api, puts } = renders(upload(new Response(null, { status: 413 })));
+		expect(await api.upload("REN1", FILE, null)).toBe("quota");
+		expect(puts).toEqual([]);
+	});
+
+	it("does not register a file the storage did not take", async () => {
+		const { api, calls } = renders(upload(json(SLOT)), new Response("SlowDown", { status: 500 }));
+		await expect(api.upload("REN1", FILE, null)).rejects.toMatchObject({ reason: "server" });
+		expect(calls).toHaveLength(1);
+	});
+
+	it("reads a refused upload as the library's answer", async () => {
+		const { api } = renders(upload(new Response("File editing denied", { status: 403 })));
+		await expect(api.upload("REN1", FILE, null)).rejects.toMatchObject({ reason: "read-only" });
+	});
+
+	it("reads one render's state: names, paper, MD5, and whether it or its paper is in the trash", async () => {
+		const items: Record<string, unknown> = {
+			REN1: { key: "REN1", parentItem: "PAPER1", title: "My copy", filename: "annotated_paper.pdf", md5: "abc", contentType: "application/pdf" },
+			PAPER1: { key: "PAPER1", itemType: "journalArticle" },
+		};
+		const { api, calls } = renders((request) => (request.path.includes("/children") ? json([]) : json({ data: items[request.path.slice("/items/".length)] })));
+		expect(await api.state("REN1")).toEqual({ key: "REN1", parentKey: "PAPER1", title: "My copy", filename: "annotated_paper.pdf", md5: "abc", trashed: false, annotated: false });
+		items.PAPER1 = { key: "PAPER1", deleted: 1 };
+		expect(await api.state("REN1")).toMatchObject({ trashed: true });
+		items.REN1 = { ...(items.REN1 as object), deleted: 1, parentItem: undefined };
+		expect(await api.state("REN1")).toMatchObject({ parentKey: null, trashed: true });
+		items.REN1 = { key: "REN1" };
+		expect(await api.state("REN1")).toEqual({ key: "REN1", parentKey: null, title: "", filename: null, md5: null, trashed: false, annotated: false });
+		// A trashed render is not asked for its annotations: it is the user's either way.
+		expect(calls.filter((call) => call.path.includes("/children"))).toHaveLength(2);
+	});
+
+	it("tells the user's annotations on the render from ours", async () => {
+		const annotations = [{ key: "A1", data: { itemType: "annotation", tags: [{ tag: OWNERSHIP_TAG }] } }];
+		const { api, calls } = renders((request) => (request.path.includes("/children") ? json(annotations) : json({ data: { key: "REN1", md5: "abc" } })));
+		expect(await api.state("REN1")).toMatchObject({ annotated: false });
+		expect(calls[1].path).toMatch(/^\/items\/REN1\/children\?itemType=annotation&limit=/);
+		annotations.push({ key: "A2", data: { itemType: "annotation", tags: [] } });
+		expect(await api.state("REN1")).toMatchObject({ annotated: true });
+	});
+
+	it("re-finds the oldest render of ours under a paper, trashed ones included", async () => {
+		const rows = [
+			{ key: "NEWER", data: { contentType: "application/pdf", parentItem: "PAPER1", dateAdded: "2026-10-29T10:00:00Z", md5: "n" } },
+			{ key: "LINK", data: { contentType: "text/html", parentItem: "PAPER1", dateAdded: "2026-01-01T00:00:00Z" } },
+			{ key: "OLDER", data: { contentType: "application/pdf", parentItem: "PAPER1", dateAdded: "2026-10-28T10:00:00Z", md5: "o", deleted: 1 } },
+		];
+		const { api, calls } = renders((request) => (request.path.startsWith("/items/PAPER1/children") ? json(rows) : request.path.includes("/children") ? json([]) : json({ data: { key: "PAPER1" } })));
+		expect(await api.find("PAPER1")).toMatchObject({ key: "OLDER", parentKey: "PAPER1", md5: "o", trashed: true });
+		expect(calls[0].path).toMatch(/^\/items\/PAPER1\/children\?itemType=attachment&tag=tagged-sync&includeTrashed=1&limit=/);
+	});
+
+	it("re-finds nothing under a paper with no render of ours", async () => {
+		const { api } = renders(() => json([]));
+		expect(await api.find("PAPER1")).toBeNull();
+	});
+
+	it("answers nothing for a render Zotero no longer has", async () => {
+		const { api } = renders(() => json({ error: "Not found" }, 404));
+		expect(await api.state("REN1")).toBeNull();
+	});
+
+	it("marks our renders in the attachment listing", async () => {
+		const { api } = connection(() => json([attachmentRow({ key: "PDF" }), attachmentRow({ key: "REN1", tags: [{ tag: "to-read" }, { tag: OWNERSHIP_TAG }] })]));
+		expect((await api.attachments("user")).map((attachment) => [attachment.key, attachment.ours])).toEqual([
+			["PDF", false],
+			["REN1", true],
+		]);
+	});
+
+	it("is there only where zotero.org is", () => {
+		const local = connection(() => json([])).api;
+		const web = { ...connection(() => json([]), "web").api, renders: renders(() => json([])).api };
+		expect(createZoteroClient({ local })?.renders).toBeNull();
+		expect(createZoteroClient({ local, web })?.renders).toBe(web.renders);
 	});
 });

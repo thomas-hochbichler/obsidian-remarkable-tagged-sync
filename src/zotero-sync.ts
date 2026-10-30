@@ -25,9 +25,11 @@
 
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import { type MatchEvidence, matchZoteroAttachment } from "./zotero-match";
-import { sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary } from "./zotero-client";
-import { linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
-import { findLiteratureNote, formatLocalDate, type VaultNoteKeys, zoteroCalloutLine, zoteroDigestLinks, type ZoteroWriteBack } from "./zotero-note";
+import { renderFilename, sameLibrary, type ZoteroAttachment, type ZoteroClient, ZoteroError, type ZoteroFailure, type ZoteroItem, type ZoteroLibrary, type ZoteroNote } from "./zotero-client";
+import { type LinkedRender, linkFor, type StoredZoteroLinks, wasDeclined, withDeclinedLink, withLink, type ZoteroLink } from "./zotero-links";
+import { findLiteratureNote, formatLocalDate, openRenderUrl, type VaultNoteKeys, webReaderUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo, type ZoteroWriteBack } from "./zotero-note";
+import { type AddedPagesScope, executeNotes, formerPapers, hasAddedText, hasLiveNotes, planNotes } from "./zotero-notes";
+import { judgeRender, NO_PARENT_ITEM, planRender, STORAGE_FULL } from "./zotero-render";
 import { executeWriteBack, planWriteBack } from "./zotero-writeback";
 
 /** What the engine knows about one written note, and this pass needs. */
@@ -41,8 +43,16 @@ export interface ZoteroUnit {
 	readonly pages: readonly DigestPage[];
 	/** The source page indexes the digest was given -- see `WriteBackInput.covered`. */
 	readonly covered: readonly number[];
+	/** The pages added on the tablet this unit speaks for -- see {@link AddedPagesScope}. Absent: none. */
+	readonly addedPages?: AddedPagesScope;
 	/** This write recreates a note the user deleted by hand -- see `WriteBackInput.noteWasDeleted`. */
 	readonly noteWasDeleted?: boolean;
+	/**
+	 * The render exactly as written to the vault, for a whole-document unit only: a page-scoped one
+	 * carries none (Zotero spec §4.1). Its MD5 is a function because only *Add the render to Zotero*
+	 * ever asks for it.
+	 */
+	readonly render?: { readonly bytes: Uint8Array; md5(): string };
 	/**
 	 * MD5 of the source PDF the tablet holds, or `null` where there is none.
 	 *
@@ -133,6 +143,13 @@ export interface ZoteroPassDeps {
 	 * licence is re-asked per run, not per document.
 	 */
 	readonly mayWriteBack: boolean;
+	/**
+	 * *Write text to Zotero* (Zotero spec §5): `false` creates, patches and trashes no annotation and no
+	 * note, and leaves what is in Zotero as it is. Asked only where {@link mayWriteBack} is `true`.
+	 */
+	readonly writeText: boolean;
+	/** *Add the render to Zotero* (Zotero spec §4). Asked only where {@link mayWriteBack} is `true`; independent of {@link writeText}. */
+	readonly addRender: boolean;
 	now(): Date;
 }
 
@@ -180,9 +197,27 @@ export function zoteroSkipNotice(visibleName: string, reason: string): string {
 	return `Zotero: "${visibleName}" was not written back — ${reason}. The next sync tries again.`;
 }
 
-/** §3.4.3, in the spec's own words, with the document named: several of these in one run are otherwise unreadable. */
+/** §3.4.3, in the spec's own words, with the document named: several of these in one run are otherwise unreadable. Notes count with the highlights (Zotero spec §6). */
 export function zoteroPartialNotice(visibleName: string, written: number, total: number): string {
-	return `Zotero: ${written} of ${total} highlights written for "${visibleName}", retry on next sync.`;
+	return `Zotero: ${written} of ${total} highlights and notes written for "${visibleName}", retry on next sync.`;
+}
+
+/** The clause of the added-page skip that is not a Zotero failure (Zotero spec §3); the other, {@link NO_PARENT_ITEM}, the render shares. */
+export const NO_NOTES_ACCESS = "the API key has no notes access";
+
+/** The one skip the user fixes outside the plugin, and the key they already have is enough (ticket 09 #2). */
+export function zoteroNotesAccessNotice(visibleName: string): string {
+	return `Zotero: the pages you added to "${visibleName}" were not written back — your zotero.org API key has no notes access. Allow it for the same key under zotero.org → Settings → Security; no new key is needed.`;
+}
+
+/** A render upload that failed (Zotero spec §4.3); the highlights are not affected, so the notice says only this. */
+export function zoteroRenderNotice(visibleName: string, reason: string): string {
+	return `Zotero: the render of "${visibleName}" was not added — ${reason}. The next sync tries again.`;
+}
+
+/** zotero.org answered 413: nothing the next sync can fix by itself (§10 P6). */
+export function zoteroStorageFullNotice(visibleName: string): string {
+	return `Zotero: the render of "${visibleName}" was not added — your Zotero Storage at zotero.org is full. Free some space there, or switch off "Add the render to Zotero".`;
 }
 
 /** The line a note gets when the attachment it is linked to is not in the library any more (§2.3). */
@@ -285,6 +320,149 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		return link;
 	};
 
+	/**
+	 * A failed write, in the note's words. A refused one names the library it was refused by (ticket
+	 * 26): "no write access to Lab reading group" is something to act on, "to the library" is not.
+	 */
+	const refusal = (error: unknown, library: ZoteroLibrary): string =>
+		error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(library), error.connection) : zoteroSkipReason(error);
+
+	/** Our notes under a paper that may be gone: erased with its children, they are simply not there. */
+	const notesUnder = async (paperKey: string, library: ZoteroLibrary): Promise<ZoteroNote[]> => {
+		try {
+			return await deps.client.ownNotes(paperKey, library);
+		} catch (error) {
+			if (error instanceof ZoteroError && error.reason === "not-found") return [];
+			throw error;
+		}
+	};
+
+	/**
+	 * The pages added on the tablet, as notes under the paper (Zotero spec §2), after the highlights
+	 * went in. Its own failures stay its own: the highlights are written whatever happens here, and
+	 * the note says in a clause of its own why the added pages are not (§6).
+	 *
+	 * Nothing at all is asked of Zotero for a document with no added page to write and no note of ours
+	 * to keep up -- which is almost every document, so this costs them nothing. A unit that speaks for
+	 * no added page (*Your notes on PDFs* off, a failed build) touches nothing; the next one that does
+	 * reconciles (Zotero spec §3).
+	 */
+	const writeAddedPages = async (
+		unit: ZoteroUnit,
+		attachment: ZoteroAttachment,
+		item: ZoteroItem,
+		link: ZoteroLink,
+	): Promise<{ link: ZoteroLink; written: number; total: number; reason?: string; notices: string[] }> => {
+		const nothing = { link, written: 0, total: 0, notices: [] };
+		const scope = unit.addedPages ?? "none";
+		if (scope === "none" || (!hasAddedText(unit.pages, scope) && !hasLiveNotes(link))) return nothing;
+		// Zotero hangs notes on papers only. Re-read every sync, so *Create Parent Item* heals it (ticket 09 #1).
+		const paperKey = attachment.parentKey;
+		if (paperKey === null) return { ...nothing, reason: NO_PARENT_ITEM };
+		// Frozen while the paper is in Zotero's trash, and carried on once it is restored (§10 P4).
+		if (item.trashed) return nothing;
+		try {
+			// Only the personal library: an all-groups key reads a group's notes anyway (ticket 09 #2).
+			if (link.library === "user" && (await deps.client.notesAccess()) === false) {
+				return { ...nothing, reason: NO_NOTES_ACCESS, notices: [zoteroNotesAccessNotice(unit.visibleName)] };
+			}
+			const existing = await deps.client.ownNotes(paperKey, link.library);
+			// Where the PDF hung before it was moved: our notes there follow it (ticket 09 #4).
+			for (const former of formerPapers(link, paperKey)) existing.push(...(await notesUnder(former, link.library)));
+			const plan = planNotes({ pages: unit.pages, scope, paperKey, link, existing, noteWasDeleted: unit.noteWasDeleted });
+			const result = await executeNotes(deps.client, link, plan);
+			const next: ZoteroLink = Object.keys(result.notes).length === 0 ? link : { ...link, notes: result.notes };
+			await deps.saveLinks(withLink(deps.links(), unit.docId, next));
+			return { link: next, written: result.written, total: result.total, notices: [] };
+		} catch (error) {
+			const reason = refusal(error, link.library);
+			return { ...nothing, reason, notices: [zoteroSkipNotice(unit.visibleName, reason)] };
+		}
+	};
+
+	/**
+	 * The render as an attachment under the paper (Zotero spec §4), after the text went in and
+	 * whatever happened to it: *Write text to Zotero* does not govern the render. Its failures stay its
+	 * own, like the added pages': a clause on the line, a notice, and the next sync tries again.
+	 */
+	const addRender = async (unit: ZoteroUnit, attachment: ZoteroAttachment, link: ZoteroLink): Promise<{ link: ZoteroLink; render?: ZoteroNoteInfo["render"]; notices: string[] }> => {
+		// Only switched on is the render hashed: a few megabytes per whole-document sync otherwise for nothing.
+		const switchedOn = deps.mayWriteBack && deps.addRender;
+		const md5 = switchedOn ? (unit.render?.md5() ?? null) : null;
+		const plan = planRender({
+			switchedOn,
+			md5,
+			library: link.library,
+			paperKey: attachment.parentKey,
+			web: deps.client.renders !== null,
+			recorded: link.render,
+			noteWasDeleted: unit.noteWasDeleted,
+		});
+		const done = async (): Promise<{ link: ZoteroLink; render?: ZoteroNoteInfo["render"]; notices: string[] }> => ({ link, ...(await renderLink(link)), notices: [] });
+		if (plan.kind === "not-added") return { link, render: { reason: plan.reason }, notices: [] };
+		if (plan.kind === "none" || plan.kind === "unchanged") return await done();
+		// The planner finds, creates or checks only with both in hand.
+		const renders = deps.client.renders!;
+		const file = { bytes: unit.render!.bytes, md5: md5!, filename: renderFilename(attachment.filename ?? unit.visibleName) };
+		const save = async (next: ZoteroLink): Promise<ZoteroLink> => {
+			await deps.saveLinks(withLink(deps.links(), unit.docId, next));
+			return next;
+		};
+		try {
+			const found = plan.kind === "find" ? await renders.find(plan.parentKey) : null;
+			const parentKey = plan.kind === "find" ? plan.parentKey : plan.render.parentKey;
+			let render: LinkedRender | null = null;
+			let holds: string | null = null;
+			let filename = file.filename;
+			if (plan.kind === "check" || found !== null) {
+				const known = plan.kind === "check" ? plan.render : { key: found!.key, parentKey };
+				const judged = judgeRender(file.md5, known, plan.kind === "check" ? await renders.state(known.key) : found);
+				if (judged.kind === "theirs") {
+					// Deleting the vault note is the user's "start over" (§4.3): a render of theirs that is no
+					// longer under the paper is left where it is and a new one made. One still there stays theirs.
+					const gone = judged.theirs === "trashed" || judged.theirs === "moved";
+					if (!(unit.noteWasDeleted === true && gone)) {
+						link = await save({ ...link, render: { ...known, theirs: judged.theirs } });
+						return await done();
+					}
+				} else if (judged.kind === "unchanged") {
+					link = await save({ ...link, render: { ...known, md5: file.md5 } });
+					return await done();
+				} else {
+					render = known;
+					holds = judged.holds;
+					filename = judged.filename ?? filename;
+				}
+			}
+			if (render === null) {
+				render = { key: await renders.create(parentKey, filename), parentKey };
+				// Recorded before the upload, so one that fails fills this attachment next time rather than
+				// leaving it empty beside a second one.
+				link = await save({ ...link, render });
+			}
+			const outcome = await renders.upload(render.key, { ...file, filename }, holds);
+			if (outcome === "quota") return { link, render: { reason: STORAGE_FULL }, notices: [zoteroStorageFullNotice(unit.visibleName)] };
+			// `changed`: the file changed between our read and the upload. Left as it is; the next sync reads it again.
+			if (outcome !== "changed") link = await save({ ...link, render: { ...render, md5: file.md5 } });
+			return await done();
+		} catch (error) {
+			const reason = refusal(error, "user");
+			return { link, render: { reason }, notices: [zoteroRenderNotice(unit.visibleName, reason)] };
+		}
+	};
+
+	/**
+	 * The line's link to a render that has a file: the desktop reader, or zotero.org's where that is the
+	 * vault's one reader. One the user made theirs is said so, file or not.
+	 */
+	const renderLink = async (link: ZoteroLink): Promise<{ render?: ZoteroNoteInfo["render"] }> => {
+		const render = link.render;
+		if (render === undefined || (render.md5 === undefined && render.theirs === undefined)) return {};
+		const username = await readerUser();
+		const url = username === null ? openRenderUrl(render.key) : webReaderUrl({ username, itemKey: render.parentKey }, render.key, "user");
+		return { render: { url, ...(render.theirs === undefined ? {} : { theirs: render.theirs }) } };
+	};
+
 	const runUnit = async (unit: ZoteroUnit): Promise<ZoteroNoteParts> => {
 		const found = await identify(unit);
 		if (found === null) return NOTHING;
@@ -302,31 +480,44 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		// and says in one clause why its marks are not in the library yet (§3.4.2, §4).
 		let link = found.link;
 		let writeBack: ZoteroWriteBack;
+		let addedPagesNotWritten: string | undefined;
 		if (!deps.mayWriteBack) {
 			// The free half (§5): nothing is asked of Zotero here, not even the listing of our own
 			// annotations -- a free vault makes no write-shaped request at all.
 			writeBack = { kind: "free" };
+		} else if (!deps.writeText) {
+			// Switched off: not even our own annotations are listed. Switched on again, the next sync of
+			// this document reconciles (§10 P7 makes sure there is one).
+			writeBack = { kind: "off" };
 		} else try {
 			const existing = await deps.client.ownAnnotations(attachment.key, attachment.library);
 			const plan = planWriteBack({ pages: [...unit.pages], covered: unit.covered, attachmentKey: attachment.key, link, existing, noteWasDeleted: unit.noteWasDeleted });
 			const result = await executeWriteBack(deps.client, link, plan);
 			link = { ...link, annotations: result.annotations };
 			await deps.saveLinks(withLink(deps.links(), unit.docId, link));
-			writeBack = { kind: "written", date: formatLocalDate(deps.now()), written: result.written, total: result.total };
-			if (result.written < result.total) notices.push(zoteroPartialNotice(unit.visibleName, result.written, result.total));
+			const added = await writeAddedPages(unit, attachment, item, link);
+			link = added.link;
+			addedPagesNotWritten = added.reason;
+			notices.push(...added.notices);
+			const written = result.written + added.written;
+			const total = result.total + added.total;
+			writeBack = { kind: "written", date: formatLocalDate(deps.now()), written, total };
+			if (written < total) notices.push(zoteroPartialNotice(unit.visibleName, written, total));
 		} catch (error) {
-			// A refused write names the library it was refused by (ticket 26): "no write access to
-			// Lab reading group" is something to act on, "to the library" is not.
-			const reason =
-				error instanceof ZoteroError && error.reason === "read-only" ? noWriteAccess(deps.client.libraryName(attachment.library), error.connection) : zoteroSkipReason(error);
-			writeBack = { kind: "not-written", reason };
-			notices.push(zoteroSkipNotice(unit.visibleName, reason));
+			writeBack = { kind: "not-written", reason: refusal(error, attachment.library) };
+			notices.push(zoteroSkipNotice(unit.visibleName, writeBack.reason));
 		}
+
+		const rendered = await addRender(unit, attachment, link);
+		link = rendered.link;
+		notices.push(...rendered.notices);
 
 		const line = zoteroCalloutLine({
 			item,
 			webUserId: await userId(),
 			writeBack,
+			...(addedPagesNotWritten === undefined ? {} : { addedPagesNotWritten }),
+			...(rendered.render === undefined ? {} : { render: rendered.render }),
 			literatureNote: findLiteratureNote(deps.vaultNotes(), item, new Set([unit.notePath])),
 			matchedByHash: found.link.matchedBy === "hash",
 		});

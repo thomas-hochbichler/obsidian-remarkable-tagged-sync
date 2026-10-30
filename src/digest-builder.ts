@@ -148,6 +148,26 @@ export interface DigestPage {
 	highlights: DigestHighlight[];
 	/** Notes not nested under a highlight, each with its own `section` (and its page) and, where the page has a text layer, its reading `order`. */
 	notes: (DigestNote & { section: string | null; sectionPage?: number; order?: number })[];
+	/** Only on a page added on the device: where it sits, and whether it was read. See {@link AddedPage}. */
+	added?: AddedPage;
+}
+
+/**
+ * Where a page added on the device sits among the document's own pages, which is what its Zotero
+ * note is titled by: "Added page 2 after p. 12" (Zotero spec §2.1). Nothing in the vault note uses it.
+ */
+export interface AddedPage {
+	/** `before` only ahead of the document's first page; everywhere else it follows one. */
+	relation: "after" | "before";
+	/** The label the vault note shows for that page of the document: its printed label, else its 1-based number. */
+	label: string;
+	/** Its place in a run of several added pages there, 1-based; null for one on its own. */
+	nth: number | null;
+	/**
+	 * Its handwriting could not be read this sync, so what the entry says is not what the page says.
+	 * Nothing is written into Zotero for it, and nothing is taken out (Zotero spec §10 P5).
+	 */
+	unread?: true;
 }
 
 /**
@@ -182,9 +202,9 @@ export const NOT_TRANSCRIBED = "Handwriting that could not be transcribed.";
 /**
  * The title of a page added on the device (F21). It says what the entry is -- a page of the reader's
  * own notes rather than a mark on someone else's text -- because that is the one thing about it a
- * reader cannot see from where it is printed.
+ * reader cannot see from where it is printed. Not "Handwritten page": it may be typed (issue #247).
  */
-const WHOLE_PAGE_TITLE = "Handwritten page";
+const WHOLE_PAGE_TITLE = "Your page";
 
 /**
  * Neutralises the markup a quoted passage can carry into the note. Every string that comes from the

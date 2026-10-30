@@ -76,6 +76,11 @@ export interface ZoteroAttachment {
 	readonly filename: string | null;
 	readonly md5: string | null;
 	readonly title: string;
+	/**
+	 * Carries {@link OWNERSHIP_TAG}: a render we uploaded (Zotero spec §4.2). Never a source -- matching
+	 * and *Send* skip it, or the next sync would link a tablet document to its own render.
+	 */
+	readonly ours: boolean;
 }
 
 /** A bibliographic item, in the four fields the note and the picker need (spec §4). */
@@ -88,6 +93,8 @@ export interface ZoteroItem {
 	readonly year: string | null;
 	/** Only when Zotero has one. Never invented, and never written back (spec §4). */
 	readonly citationKey: string | null;
+	/** In Zotero's trash. Its children are not flagged with it (ticket 08), so this is the only place it shows. */
+	readonly trashed?: true;
 }
 
 /** One of *our* annotations, as it stands in Zotero now -- the input to "did the user edit it?" (§3.3). */
@@ -157,8 +164,102 @@ export interface AnnotationsCreated {
 	readonly failures: string[];
 }
 
+/**
+ * One of *our* child notes under a paper, as it stands in Zotero now (Zotero spec §2) -- the input to
+ * "did the user edit it?", which for a note is one comparison of {@link ZoteroNote.note}.
+ */
+export interface ZoteroNote {
+	readonly key: string;
+	readonly library: ZoteroLibrary;
+	/** Which connection read it -- see {@link ZoteroAnnotation.source}. */
+	readonly source: "local" | "web";
+	readonly parentKey: string;
+	/** The body as Zotero holds it. */
+	readonly note: string;
+	/** This connection's version of the item -- see the warning on {@link ZoteroAnnotation.version}. */
+	readonly version: number;
+}
+
+/** What a patch needs to know about the note it is changing -- see {@link ZoteroAnnotationRef}. */
+export type ZoteroNoteRef = Pick<ZoteroNote, "key" | "version" | "source" | "library">;
+
+/** A child note to create: the paper it goes under, and its HTML body. */
+export interface NewNote {
+	readonly parentKey: string;
+	readonly note: string;
+}
+
+/** What a refresh of one of our notes may change: the body, and the paper it hangs under (Zotero spec §3). */
+export interface NoteFields {
+	readonly note?: string;
+	readonly parentKey?: string;
+}
+
+/** What one create of notes did, by the position the caller sent -- see {@link AnnotationsCreated}. */
+export interface NotesCreated {
+	/** `created[i]` is the new note's key and its body as Zotero stored it, or `null` where that one failed. */
+	readonly created: ({ readonly key: string; readonly note: string } | null)[];
+	readonly failures: string[];
+}
+
 /** A patch either wrote, or found the item changed underneath it -- which the caller reads as "the user edited it". */
 export type PatchOutcome = "written" | "conflict";
+
+/** The title a render attachment is created with (Zotero spec §4.1). A user's rename stays; it is never set again. */
+export const RENDER_TITLE = "Annotated PDF";
+
+/** `annotated_<name>.pdf`, from the paper's own PDF filename. */
+export function renderFilename(source: string): string {
+	return `annotated_${source.replace(/\.pdf$/i, "")}.pdf`;
+}
+
+/** The bytes to upload, with the MD5 the caller already has for the skip-unchanged check (spec §4.1). */
+export interface RenderFile {
+	readonly bytes: Uint8Array;
+	readonly md5: string;
+	readonly filename: string;
+}
+
+/**
+ * What one upload did. Each one the caller branches on (spec §4.3): `exists` sent nothing because
+ * Zotero holds these bytes already, `changed` is a 409/412 -- the file is not the one the caller
+ * named, read again next sync -- and `quota` is a 413, Zotero Storage full.
+ */
+export type RenderUpload = "uploaded" | "exists" | "changed" | "quota";
+
+/** One render attachment as it stands in Zotero now -- the planner's input for the user-action rows of §4.3. */
+export interface RenderState {
+	readonly key: string;
+	/** `null` once the user made it standalone. */
+	readonly parentKey: string | null;
+	readonly title: string;
+	readonly filename: string | null;
+	readonly md5: string | null;
+	/** In the trash, or under a paper that is: Zotero flags only the item that was trashed (ticket 08). */
+	readonly trashed: boolean;
+	/** Carries annotations we did not write: the user's, which an inserted page would shift (Zotero spec §4.3). Not asked of a trashed one. */
+	readonly annotated: boolean;
+}
+
+/**
+ * The render as a Zotero attachment (#180), personal library only (spec §4.1).
+ *
+ * zotero.org only: the local API accepts a file replace and records it as synced, but Zotero never
+ * uploads it (ticket 08, forum discussion 134511). So only the web connection has one.
+ */
+export interface ZoteroRenders {
+	/** A stored, still empty PDF attachment under the paper, tagged as ours. Answers its key. */
+	create(parentKey: string, filename: string): Promise<string>;
+	/** Puts `file` into the attachment. `holds` is the MD5 Zotero holds for it, `null` for a first upload. */
+	upload(key: string, file: RenderFile, holds: string | null): Promise<RenderUpload>;
+	/** `null` when Zotero has no such item any more. */
+	state(key: string): Promise<RenderState | null>;
+	/**
+	 * Ours under this paper when `data.json` lost the record (Zotero spec §4.2): the PDF child tagged
+	 * as ours, whatever its name; of several the oldest; a trashed one too, so it stays trashed.
+	 */
+	find(parentKey: string): Promise<RenderState | null>;
+}
 
 export interface ZoteroStatus {
 	readonly web: boolean;
@@ -211,6 +312,8 @@ export class ZoteroError extends Error {
 export interface ZoteroAccount {
 	readonly id: number;
 	readonly username: string | null;
+	/** Whether a zotero.org key may read and write notes in the personal library. Only zotero.org says; absent from the desktop app. */
+	readonly notes?: boolean;
 }
 
 /** One way into the library. Both connections implement it; {@link createZoteroClient} picks between them. */
@@ -224,6 +327,15 @@ export interface ZoteroConnection {
 	libraryId(): Promise<number | null>;
 	/** The account's zotero.org username, which its web reader URLs hang under. Only zotero.org knows it. */
 	username(): Promise<string | null>;
+	/**
+	 * May this key write notes into the personal library? `null` where the connection cannot say --
+	 * the desktop app, which writes whatever the user may.
+	 *
+	 * Asked because zotero.org takes a note from a key without notes access and then hides it from
+	 * that same key: every later read answers 404, and the note would look trashed by the user and
+	 * never be refreshed again (ticket 08 #2).
+	 */
+	notesAccess(): Promise<boolean | null>;
 	/** The group libraries this connection can see (ticket 26). Membership only: whether it may *write* into one is answered by the write. */
 	groups(): Promise<ZoteroGroup[]>;
 	/** Every PDF attachment in one library. The matcher's whole input (§2.3), library by library. */
@@ -244,8 +356,19 @@ export interface ZoteroConnection {
 	/** All into one library: a batch is one attachment's annotations, and an attachment is in one library. */
 	createAnnotations(items: NewAnnotation[], library: ZoteroLibrary): Promise<AnnotationsCreated>;
 	patchAnnotation(key: string, version: number, fields: AnnotationFields, library: ZoteroLibrary): Promise<PatchOutcome>;
-	/** Into Zotero's trash, never erased: `DELETE` on the local API is a permanent erase, and the trash is what makes this reversible (§3.3). */
+	/**
+	 * Into Zotero's trash, never erased: `DELETE` on the local API is a permanent erase, and the trash is
+	 * what makes this reversible (§3.3). Any item by key -- our notes go the same way (Zotero spec §3).
+	 */
 	trashAnnotation(key: string, version: number, library: ZoteroLibrary): Promise<PatchOutcome>;
+	/** Our own notes under one paper, read by the ownership tag. Trashed ones are left out, as a listing leaves them. */
+	ownNotes(parentKey: string, library: ZoteroLibrary): Promise<ZoteroNote[]>;
+	/** Child notes, all into one library, batched like {@link ZoteroConnection.createAnnotations}. */
+	createNotes(items: NewNote[], library: ZoteroLibrary): Promise<NotesCreated>;
+	/** Under the version read, like {@link ZoteroConnection.patchAnnotation}: a 412 is the user's edit. */
+	patchNote(key: string, version: number, fields: NoteFields, library: ZoteroLibrary): Promise<PatchOutcome>;
+	/** zotero.org's alone -- see {@link ZoteroRenders}. */
+	readonly renders?: ZoteroRenders;
 }
 
 /**
@@ -253,7 +376,9 @@ export interface ZoteroConnection {
  * connection, with the listings widened over every enabled library -- and with the one call that
  * cannot be routed freely spelled out differently.
  */
-export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "attachments" | "search" | "itemsWithTag" | "patchAnnotation" | "trashAnnotation"> {
+export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "probe" | "attachments" | "search" | "itemsWithTag" | "patchAnnotation" | "trashAnnotation" | "patchNote" | "renders"> {
+	/** zotero.org's renders, or `null` without a zotero.org connection. Never falls back: the desktop has none. */
+	readonly renders: ZoteroRenders | null;
 	/**
 	 * Which connections answered, for the settings line. **Never rejects** -- it is built out of
 	 * {@link ZoteroConnection.probe}, and "nothing answered" is one of its answers rather than a
@@ -276,8 +401,10 @@ export interface ZoteroClient extends Omit<ZoteroConnection, "id" | "label" | "p
 	itemsWithTag(tag: string): Promise<ZoteroItem[]>;
 	/** Goes to the connection the annotation was read from, or fails. Never to the other one -- see {@link ZoteroAnnotation.version}. */
 	patchAnnotation(annotation: ZoteroAnnotationRef, fields: AnnotationFields): Promise<PatchOutcome>;
+	/** Same routing as {@link ZoteroClient.patchAnnotation}, for the same reason. A note is trashed through it too. */
+	trashAnnotation(annotation: ZoteroAnnotationRef | ZoteroNoteRef): Promise<PatchOutcome>;
 	/** Same routing as {@link ZoteroClient.patchAnnotation}, for the same reason. */
-	trashAnnotation(annotation: ZoteroAnnotationRef): Promise<PatchOutcome>;
+	patchNote(note: ZoteroNoteRef, fields: NoteFields): Promise<PatchOutcome>;
 }
 
 // --- The wire, written once ------------------------------------------------------------------
@@ -289,6 +416,8 @@ export interface ZoteroRequest {
 	/** Library-relative: `/items?itemType=attachment`. The connection puts the library's prefix in front. */
 	readonly path: string;
 	readonly body?: unknown;
+	/** Sent form-encoded in place of `body` -- the file-upload endpoint takes nothing else. zotero.org's requester only. */
+	readonly form?: Record<string, string>;
 	readonly headers?: Record<string, string>;
 }
 
@@ -412,6 +541,10 @@ function isUsablePdf(data: Json): boolean {
 	return data.contentType === "application/pdf" && !data.deleted;
 }
 
+function carriesOwnershipTag(data: Json): boolean {
+	return Array.isArray(data.tags) && data.tags.some((tag) => asRecord(tag).tag === OWNERSHIP_TAG);
+}
+
 function toAttachment(data: Json, library: ZoteroLibrary): ZoteroAttachment {
 	// A linked file has `path` instead of `filename`, and the path may carry a `attachments:` prefix
 	// or be absolute. Only the last segment is ever compared against a tablet document name (§2.3).
@@ -424,6 +557,7 @@ function toAttachment(data: Json, library: ZoteroLibrary): ZoteroAttachment {
 		filename: asString(data.filename) ?? (path === null ? null : (path.split(/[/\\]/).pop() ?? null)),
 		md5: asString(data.md5),
 		title: typeof data.title === "string" ? data.title : "",
+		ours: carriesOwnershipTag(data),
 	};
 }
 
@@ -455,6 +589,7 @@ function toItem(data: Json, library: ZoteroLibrary): ZoteroItem {
 		// the first four-digit run and nothing is inferred where there is none.
 		year: /\b(\d{4})\b/.exec(asString(data.date) ?? "")?.[1] ?? null,
 		citationKey: citationKeyOf(data),
+		...(data.deleted ? { trashed: true as const } : {}),
 	};
 }
 
@@ -490,6 +625,12 @@ function toAnnotation(data: Json, source: "local" | "web", library: ZoteroLibrar
 		position,
 		version: typeof data.version === "number" ? data.version : 0,
 	};
+}
+
+function toNote(data: Json, source: "local" | "web", library: ZoteroLibrary): ZoteroNote | null {
+	const parentKey = asString(data.parentItem);
+	if (parentKey === null || typeof data.note !== "string") return null;
+	return { key: asString(data.key) ?? "", library, source, parentKey, note: data.note, version: typeof data.version === "number" ? data.version : 0 };
 }
 
 /**
@@ -629,41 +770,60 @@ export function createZoteroConnection(
 				.filter((annotation): annotation is ZoteroAnnotation => annotation !== null && annotation.parentKey === parentKey);
 		},
 		async createAnnotations(items, library) {
-			const keys: (string | null)[] = [];
-			const failures: string[] = [];
-			// Chunked here rather than by the caller: "at most 50 per request" is a fact about Zotero's
-			// write endpoint, and the caller that knows it is the caller that would forget it.
-			for (let offset = 0; offset < items.length; offset += MAX_BATCH) {
-				const batch = items.slice(offset, offset + MAX_BATCH);
-				const body = await readJson(
-					await request({
-						method: "POST",
-						library,
-						path: "/items",
-						body: batch.map(annotationBody),
-						headers: { "Zotero-Write-Token": writeToken() },
-					}),
-					true,
-					id,
-				);
-				const success = asRecord(asRecord(body).success);
-				const failed = asRecord(asRecord(body).failed);
-				batch.forEach((_item, index) => {
-					const key = asString(success[String(index)]);
-					keys.push(key);
-					if (key === null) {
-						const reason = asString(asRecord(failed[String(index)]).message) ?? "Zotero refused it without saying why";
-						failures.push(reason);
-					}
-				});
-			}
-			return { keys, failures };
+			const { created, failures } = await createItems(items.map(annotationBody), library);
+			return { keys: created.map((item) => item?.key ?? null), failures };
 		},
 		patchAnnotation: (key, version, fields, library) => patchUnderVersion(key, version, patchBody(fields), library),
 		// `deleted: true` is how both APIs move an item to the trash; the same precondition guards it,
 		// because an annotation the user touched since we read it is theirs to keep (§3.3).
 		trashAnnotation: (key, version, library) => patchUnderVersion(key, version, { deleted: true }, library),
+		notesAccess: async () => (await accountOf())?.notes ?? null,
+		async ownNotes(parentKey, library) {
+			// `/children` answers notes on both connections (ticket 08); it is annotations it leaves out.
+			const rows = await listAll(request, library, `/items/${parentKey}/children?itemType=note&tag=${encodeURIComponent(OWNERSHIP_TAG)}`);
+			return rows.map((row) => toNote(asRecord(row.data), id, library)).filter((note): note is ZoteroNote => note !== null && note.parentKey === parentKey);
+		},
+		async createNotes(items, library) {
+			const { created, failures } = await createItems(
+				items.map((item) => ({ itemType: "note", parentItem: item.parentKey, note: item.note, tags: [{ tag: OWNERSHIP_TAG }] })),
+				library,
+			);
+			// The body Zotero stored, falling back to the one sent where the answer leaves it out: what the
+			// next sync compares against has to be what is there (research 03 §3).
+			return { created: created.map((item, index) => (item === null ? null : { key: item.key, note: typeof item.data.note === "string" ? item.data.note : items[index].note })), failures };
+		},
+		patchNote: (key, version, fields, library) =>
+			patchUnderVersion(key, version, { ...(fields.note === undefined ? {} : { note: fields.note }), ...(fields.parentKey === undefined ? {} : { parentItem: fields.parentKey }) }, library),
 	};
+
+	/**
+	 * One `POST /items` per batch, and what came back by the position sent: the new key and the
+	 * stored item's data, or `null` with a sentence for one Zotero refused.
+	 *
+	 * Chunked here rather than by the caller: "at most 50 per request" is a fact about Zotero's write
+	 * endpoint, and the caller that knows it is the caller that would forget it.
+	 */
+	async function createItems(bodies: Json[], library: ZoteroLibrary): Promise<{ created: ({ key: string; data: Json } | null)[]; failures: string[] }> {
+		const created: ({ key: string; data: Json } | null)[] = [];
+		const failures: string[] = [];
+		for (let offset = 0; offset < bodies.length; offset += MAX_BATCH) {
+			const batch = bodies.slice(offset, offset + MAX_BATCH);
+			const body = await readJson(
+				await request({ method: "POST", library, path: "/items", body: batch, headers: { "Zotero-Write-Token": writeToken() } }),
+				true,
+				id,
+			);
+			const success = asRecord(asRecord(body).success);
+			const successful = asRecord(asRecord(body).successful);
+			const failed = asRecord(asRecord(body).failed);
+			batch.forEach((_item, index) => {
+				const key = asString(success[String(index)]);
+				created.push(key === null ? null : { key, data: asRecord(asRecord(successful[String(index)]).data) });
+				if (key === null) failures.push(asString(asRecord(failed[String(index)]).message) ?? "Zotero refused it without saying why");
+			});
+		}
+		return { created, failures };
+	}
 
 	async function patchUnderVersion(key: string, version: number, body: Json, library: ZoteroLibrary): Promise<PatchOutcome> {
 		const response = await request({
@@ -679,6 +839,111 @@ export function createZoteroConnection(
 		if (response.status === 412) return "conflict";
 		if (!response.ok) throw await failureFor(response, true, id);
 		return "written";
+	}
+}
+
+/** Puts an upload's body into Zotero's file storage -- a URL outside the API, answered 201 when it took the bytes. */
+export type FileStore = (url: string, contentType: string, body: Uint8Array<ArrayBuffer>) => Promise<Response>;
+
+/**
+ * {@link ZoteroRenders} over a requester, in the sequence Zotero's file-upload doc gives and ticket
+ * 08 ran live: authorise → put into file storage → register. Both POSTs to `/file` carry the same
+ * precondition, `If-None-Match: *` for a first file, `If-Match: <md5>` to replace one.
+ */
+export function createZoteroRenders(request: ZoteroRequester, store: FileStore): ZoteroRenders {
+	const itemData = async (key: string): Promise<Json | null> => {
+		const response = await request({ library: "user", path: `/items/${key}` });
+		if (response.status === 404) return null;
+		return asRecord(asRecord(await readJson(response)).data);
+	};
+
+	return {
+		async create(parentKey, filename) {
+			const body = asRecord(
+				await readJson(
+					await request({
+						method: "POST",
+						library: "user",
+						path: "/items",
+						body: [
+							{
+								itemType: "attachment",
+								parentItem: parentKey,
+								linkMode: "imported_file",
+								title: RENDER_TITLE,
+								contentType: "application/pdf",
+								filename,
+								tags: [{ tag: OWNERSHIP_TAG }],
+							},
+						],
+						headers: { "Zotero-Write-Token": writeToken() },
+					}),
+					true,
+					"web",
+				),
+			);
+			const key = asString(asRecord(body.success)["0"]);
+			if (key !== null) return key;
+			throw new ZoteroError("server", asString(asRecord(asRecord(body.failed)["0"]).message) ?? "Zotero refused the render attachment without saying why.");
+		},
+		async upload(key, file, holds) {
+			const condition: Record<string, string> = holds === null ? { "If-None-Match": "*" } : { "If-Match": holds };
+			const post = async (form: Record<string, string>) => await request({ method: "POST", library: "user", path: `/items/${key}/file`, form, headers: condition });
+			const authorised = await post({ md5: file.md5, filename: file.filename, filesize: String(file.bytes.length), mtime: String(Date.now()) });
+			if (authorised.status === 409 || authorised.status === 412) return "changed";
+			if (authorised.status === 413) return "quota";
+			const slot = asRecord(await readJson(authorised, true, "web"));
+			if (slot.exists) return "exists";
+			const [url, contentType, prefix, suffix, uploadKey] = [slot.url, slot.contentType, slot.prefix, slot.suffix, slot.uploadKey].map((value) => (typeof value === "string" ? value : null));
+			if (url === null || contentType === null || prefix === null || suffix === null || uploadKey === null) {
+				throw new ZoteroError("server", "zotero.org authorised the upload without saying where to put it.");
+			}
+			const encoder = new TextEncoder();
+			const head = encoder.encode(prefix);
+			const tail = encoder.encode(suffix);
+			const body = new Uint8Array(head.length + file.bytes.length + tail.length);
+			body.set(head);
+			body.set(file.bytes, head.length);
+			body.set(tail, head.length + file.bytes.length);
+			const stored = await store(url, contentType, body);
+			if (stored.status !== 201) throw new ZoteroError("server", `Zotero's file storage answered ${stored.status}.`);
+			const registered = await post({ upload: uploadKey });
+			if (registered.status === 412) return "changed";
+			if (!registered.ok) throw await failureFor(registered, true, "web");
+			return "uploaded";
+		},
+		async state(key) {
+			const data = await itemData(key);
+			return data === null ? null : await stateOf(key, data);
+		},
+		async find(parentKey) {
+			// Trashed ones are listed only on request (ticket 16 live check), and one the user trashed has
+			// to be found, or the next sync would put a second render beside it.
+			const rows = await listAll(request, "user", `/items/${parentKey}/children?itemType=attachment&tag=${encodeURIComponent(OWNERSHIP_TAG)}&includeTrashed=1`);
+			const oldest = rows
+				.map((row) => ({ key: asString(row.key), data: asRecord(row.data) }))
+				.filter((row): row is { key: string; data: Json } => row.key !== null && row.data.contentType === "application/pdf")
+				.sort((a, b) => String(a.data.dateAdded).localeCompare(String(b.data.dateAdded)))[0];
+			return oldest === undefined ? null : await stateOf(oldest.key, oldest.data);
+		},
+	};
+
+	async function stateOf(key: string, data: Json): Promise<RenderState> {
+		const parentKey = asString(data.parentItem);
+		// A paper erased for good takes its children with it, so a missing parent reads as trashed too.
+		const parent = parentKey === null ? null : await itemData(parentKey);
+		const trashed = Boolean(data.deleted) || (parentKey !== null && (parent === null || Boolean(parent.deleted)));
+		return {
+			key,
+			parentKey,
+			title: typeof data.title === "string" ? data.title : "",
+			filename: asString(data.filename),
+			md5: asString(data.md5),
+			trashed,
+			// `/children` lists a render's annotations over zotero.org (ticket 16 live check); the tag
+			// filter cannot be negated there, so ours are told apart here.
+			annotated: !trashed && (await listAll(request, "user", `/items/${key}/children?itemType=annotation`)).some((row) => !carriesOwnershipTag(asRecord(row.data))),
+		};
 	}
 }
 
@@ -738,6 +1003,7 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 
 	return {
 		libraries,
+		renders: web?.renders ?? null,
 		libraryName(library) {
 			if (library === "user") return "your library";
 			// The name the setting stored when the group was switched on; a link into a group that has
@@ -791,9 +1057,16 @@ export function createZoteroClient(connections: { local?: ZoteroConnection; web?
 		 */
 		patchAnnotation: async (annotation, fields) => await sourceOf(annotation).patchAnnotation(annotation.key, annotation.version, fields, annotation.library),
 		trashAnnotation: async (annotation) => await sourceOf(annotation).trashAnnotation(annotation.key, annotation.version, annotation.library),
+		// zotero.org's answer whichever connection writes: a note the desktop wrote is read over the web
+		// later, and a key that cannot see it would take it for trashed (Zotero spec §10 P3).
+		notesAccess: async () => (web === undefined ? null : await web.notesAccess()),
+		ownNotes: (parentKey, library) => call((connection) => connection.ownNotes(parentKey, library)),
+		// Not falling back mid-batch, for the reason `createAnnotations` gives.
+		createNotes: (items, library) => call((connection) => connection.createNotes(items, library)),
+		patchNote: async (note, fields) => await sourceOf(note).patchNote(note.key, note.version, fields, note.library),
 	};
 
-	function sourceOf(annotation: ZoteroAnnotationRef): ZoteroConnection {
+	function sourceOf(annotation: Pick<ZoteroAnnotationRef, "source">): ZoteroConnection {
 		const connection = order.find((candidate) => candidate.id === annotation.source);
 		if (connection === undefined) {
 			throw new ZoteroError("unreachable", `That annotation was read from ${annotation.source === "local" ? "the Zotero desktop app" : "zotero.org"}, which is not connected now.`);

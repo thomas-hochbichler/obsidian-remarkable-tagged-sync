@@ -8,7 +8,7 @@ const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices
 const OTHER: ZoteroItem = { key: "ITEM2", library: "user", title: "Etwas anderes", creator: null, year: null, citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ours: false, ...overrides };
 }
 
 function question(overrides: Partial<ZoteroQuestion> = {}): ZoteroQuestion {

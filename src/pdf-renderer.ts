@@ -18,7 +18,7 @@ import { HEADING_TEXT_SIZE_PX, PLAIN_TEXT_SIZE_PX, TEXT_LEFT_PADDING_PX } from "
 import { repairPagePaint } from "./pdf-paint-repair";
 import { LOAD_WITHOUT_PAUSES, SAVE_WITHOUT_PAUSES } from "./pdf-source";
 import type { RmHighlight, RmPage, RmRect, RmStroke } from "./rm-parser";
-import { faceOf, layoutText, LIST_MARKER_OFFSET_PX } from "./text-layout";
+import { faceOf, type LaidOutLine, layoutText, LIST_MARKER_OFFSET_PX } from "./text-layout";
 
 /** `LineJoinStyle.Round` in PDF's numbering; pdf-lib exports the cap styles but not the join ones. */
 const ROUND_LINE_JOIN = 1;
@@ -495,11 +495,15 @@ function contentBottomPx(rmPage: RmPage, limitPx: number): number | null {
 	if (rmPage.text) {
 		for (const line of layoutText(rmPage.text).lines) {
 			if (line.text === "" || line.yPx > limitPx) continue;
-			// A baseline is not the bottom of the line: the descenders below it are part of the text.
-			bottom = Math.max(bottom, line.yPx + (faceOf(line.style) === "heading" ? HEADING_TEXT_SIZE_PX : PLAIN_TEXT_SIZE_PX) * TEXT_DESCENT);
+			bottom = Math.max(bottom, lineBottomPx(line));
 		}
 	}
 	return bottom > Number.NEGATIVE_INFINITY ? bottom : null;
+}
+
+/** A baseline is not the bottom of the line: the descenders below it are part of the text. */
+function lineBottomPx(line: LaidOutLine): number {
+	return line.yPx + (faceOf(line.style) === "heading" ? HEADING_TEXT_SIZE_PX : PLAIN_TEXT_SIZE_PX) * TEXT_DESCENT;
 }
 
 /** Helvetica's descender, as a fraction of the em -- how far a `g` reaches below its baseline. */
@@ -568,6 +572,13 @@ export function notebookCanvas(pages: RmPage[]): DeviceCanvas {
 }
 
 /**
+ * Without the time of the render in it, so the same pages give the same bytes on every device and at
+ * every hour: the Zotero attachment is told apart by its MD5. pdf-lib's default stamps `ModDate` and
+ * `CreationDate` with the clock, which changed 5-6 bytes of a render made a second later.
+ */
+const UNDATED = { updateMetadata: false } as const;
+
+/**
  * Renders notebook pages to a PDF.
  *
  * `images` carries the bytes of the pictures the pages name (`RmImage.fileName`), which live in
@@ -581,7 +592,7 @@ export async function renderPagesToPdf(pages: RmPage[], images: ReadonlyMap<stri
 	if (pages.length === 0) throw new Error("renderPagesToPdf: no pages to render");
 
 	const canvas = notebookCanvas(pages);
-	const doc = await PDFDocument.create();
+	const doc = await PDFDocument.create(UNDATED);
 	const font = await doc.embedFont(StandardFonts.Helvetica);
 	const encodable = new Set(font.getCharacterSet());
 	for (const rmPage of pages) {
@@ -653,6 +664,11 @@ function inkCanvas(scene: RmPage, device: DeviceCanvas): DeviceCanvas {
 				reachY = Math.max(reachY, point.y);
 			}
 		}
+	}
+	// Typed text counts as ink does (issue #247): a page carrying only text had nothing to size it.
+	if (scene.text) {
+		reachX = Math.max(reachX, Math.abs(scene.text.posX), Math.abs(scene.text.posX + scene.text.width));
+		for (const line of layoutText(scene.text).lines) if (line.text !== "") reachY = Math.max(reachY, lineBottomPx(line));
 	}
 	// A stroke is drawn centred on its path, so half a generous nib clears the outermost one.
 	const margin = MAX_INK_MARGIN_PX;
@@ -759,7 +775,7 @@ export function annotatedPageFit(scene: RmPage | null, frame: DeviceCanvas): Pag
  * its own size with the handwritten annotation scene drawn on top, placed in the page's own frame
  * (see `pageFrame`) so every stroke lands on the words it marks -- shrunk to fit the sheet wherever
  * the ink runs off the paper (see `annotatedPageFit`). A page with no matching source page -- one added on
- * the device behind the PDF -- becomes an annotations-only page sized to its own ink (see
+ * the device behind the PDF -- becomes an annotations-only page sized to its own ink and typed text (see
  * `inkCanvas`) rather than failing the whole document.
  */
 export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: AnnotatedPdfPage[]): Promise<Uint8Array> {
@@ -767,7 +783,9 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 
 	const device = resolveDeviceCanvas(pages.map((page) => page.annotations).filter((scene): scene is RmPage => scene !== null));
 	const src = await PDFDocument.load(sourcePdfBytes, LOAD_WITHOUT_PAUSES);
-	const out = await PDFDocument.create();
+	const out = await PDFDocument.create(UNDATED);
+	// Embedded only once a page needs it, so a document without typed text keeps the bytes it had.
+	let text: { font: PDFFont; encodable: Set<number> } | null = null;
 
 	// Before anything is copied out of it: a page the device rendered from an EPUB can carry a colour
 	// operator with no colour, which leaves its text white on white in the reader Obsidian embeds a
@@ -777,8 +795,14 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 		if (index >= 0 && index < src.getPageCount()) await repairPagePaint(src, src.getPage(index));
 	}
 
+	// All in one copy, so what the pages share -- a paper's fonts, a logo on every page -- is copied
+	// once. Embedded page by page, each `embedPage` brought its own copy along: a 10-page paper sharing
+	// 8 fonts came out with 80, and ten times its size.
+	const inRange = [...new Set(pages.map((page) => page.sourceIndex))].filter((index) => index >= 0 && index < src.getPageCount());
+	const copied = new Map((await out.copyPages(src, inRange)).map((page, i) => [inRange[i], page]));
+
 	for (const { sourceIndex, annotations } of pages) {
-		const srcPage = sourceIndex >= 0 && sourceIndex < src.getPageCount() ? src.getPage(sourceIndex) : null;
+		const srcPage = copied.get(sourceIndex) ?? null;
 		// Only computed where there is no source page to measure against; `annotations` is what such a
 		// page is made of, so a null scene there leaves the device canvas as the last resort.
 		const ownCanvas = srcPage || !annotations ? device : inkCanvas(annotations, device);
@@ -798,6 +822,15 @@ export async function renderAnnotatedPdf(sourcePdfBytes: Uint8Array, pages: Anno
 				// embedded; keep the annotations rather than failing the whole document over one page.
 				console.warn(`Tagged Sync: couldn't embed source page ${sourceIndex}, keeping its annotations only`, error);
 			}
+		}
+		// Under the ink, as on a notebook page. Only a page added on the device: it is a notebook page,
+		// and the one place a PDF's typed text has been seen (issue #247).
+		if (!srcPage && annotations?.text) {
+			if (text === null) {
+				const font = await out.embedFont(StandardFonts.Helvetica);
+				text = { font, encodable: new Set(font.getCharacterSet()) };
+			}
+			drawPageText(outPage, annotations, frame, text.font, text.encodable);
 		}
 		if (annotations) drawPageStrokes(outPage, annotations, frame);
 		if (scale !== 1) outPage.pushOperators(popGraphicsState());

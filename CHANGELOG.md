@@ -12,6 +12,42 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Pages you added to a PDF become notes in Zotero** (Pro). Each page you inserted on the tablet
+  arrives under the paper as a note titled *Added page after p. 12*, with what you wrote and typed on
+  it. Edit it in Zotero and your version wins; delete the page on the tablet and the note goes to
+  Zotero's trash. Your zotero.org key needs notes access
+  ([#246](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/246)).
+- **The render in Zotero** (Pro, off until you switch it on). *Add the render to Zotero* uploads the
+  PDF as it looks on your tablet, ink and all and searchable, as a second attachment *Annotated PDF*
+  under the paper, and keeps it current. It goes to your Zotero Storage at zotero.org; only documents
+  tagged as a whole, only your personal library. Rename it, and your name stays; annotate it in
+  Zotero, and it is never replaced again; trash it, and it is not recreated. Beside cloud
+  transcription, this is the one setting that sends your handwriting off your machine
+  ([#180](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/180)).
+- ***Write text to Zotero*** switches off everything Tagged Sync writes into Zotero as text. What is
+  already there stays.
+
+### Fixed
+
+- **Text you typed on a page you added to a PDF reaches your note.** Until now only the handwriting
+  on such a page was transcribed, and a page with typed text alone stayed out of the note and came
+  out blank in the render. The typed lines now sit among the handwriting in the order they appear on
+  the page, and a page of typed text alone needs no transcription at all. The first sync after the
+  update renders your PDFs again, so pages you added earlier show their text too; with *Your notes
+  on PDFs* switched on, that reads their handwriting again once
+  ([#247](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/247)).
+
+### Changed
+
+- **The *Handwritten notes* switch is now called *Your notes on PDFs*.** It covers what you typed on
+  a page you added as well as what you wrote, so switched off, neither reaches the note. The callout
+  for a page you added is titled *Your page* instead of *Handwritten page*; its type stays
+  `[!handwritten]`, so your CSS keeps working. Your setting is kept.
+- **Renders are smaller and the same on every device.** A PDF with many pages no longer carries its
+  fonts once per page, and the same tablet state gives the same file byte for byte.
+
 ## [1.9.2] - 2026-10-25
 
 ### Added

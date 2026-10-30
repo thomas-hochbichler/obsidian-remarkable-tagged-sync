@@ -19,7 +19,7 @@
 
 import type { DigestPage, ZoteroDigestLinks } from "./digest-builder";
 import type { ZoteroItem, ZoteroLibrary } from "./zotero-client";
-import type { ZoteroLink } from "./zotero-links";
+import type { RenderTheirs, ZoteroLink } from "./zotero-links";
 
 /**
  * The library half of a `zotero://` URL: `library` for the personal one, `groups/<id>` for a group
@@ -40,7 +40,9 @@ export type ZoteroWriteBack =
 	  }
 	| { readonly kind: "not-written"; readonly reason: string }
 	/** Write-back is Pro (spec §5) and this vault has the free half: nothing was tried. */
-	| { readonly kind: "free" };
+	| { readonly kind: "free" }
+	/** *Write text to Zotero* is off (Zotero spec §5): nothing was tried, what is there stays. */
+	| { readonly kind: "off" };
 
 /** Everything the callout line needs. Assembled by the caller, because each part comes from elsewhere. */
 export interface ZoteroNoteInfo {
@@ -49,6 +51,16 @@ export interface ZoteroNoteInfo {
 	/** The account's numeric user id, or null when the web connection is not configured -- then there is no web link. */
 	readonly webUserId: string | null;
 	readonly writeBack: ZoteroWriteBack;
+	/**
+	 * Why the pages added on the tablet are not in Zotero as notes, when the highlights went in and
+	 * they did not (Zotero spec §6): "this PDF has no parent item in Zotero". Absent otherwise.
+	 */
+	readonly addedPagesNotWritten?: string;
+	/**
+	 * The render in Zotero (Zotero spec §6): where it opens, or why it was not added, or what the user
+	 * did to it that stops it being updated (§4.3). Absent: nothing to say.
+	 */
+	readonly render?: { readonly url: string; readonly theirs?: RenderTheirs } | { readonly reason: string };
 	/** The vault's own note about this paper, as its link text -- see {@link findLiteratureNote}. */
 	readonly literatureNote: string | null;
 	/**
@@ -109,9 +121,23 @@ export function itemLabel(item: ZoteroItem): string {
  */
 function writeBackPhrase(writeBack: ZoteroWriteBack): string {
 	if (writeBack.kind === "free") return "highlights stay in the vault — writing them into Zotero is Tagged Sync Pro";
+	if (writeBack.kind === "off") return "writing text to Zotero is switched off";
 	if (writeBack.kind === "not-written") return `not written back: ${writeBack.reason}`;
 	const count = writeBack.written < writeBack.total ? `${writeBack.written} of ${writeBack.total} ` : "";
 	return `${count}highlights written back ${writeBack.date}`;
+}
+
+/**
+ * The render clause. One the user made theirs says why it stays as it is, so a render that stopped
+ * following the tablet does not pass for a current one (ticket 16).
+ */
+function renderPhrase(url: string, theirs: RenderTheirs | undefined): string {
+	const link = `[render in Zotero](${url})`;
+	if (theirs === "changed") return `${link} not updated: you changed its file`;
+	if (theirs === "annotated") return `${link} not updated: it has your annotations`;
+	if (theirs === "moved") return "render not updated: you moved it in Zotero";
+	if (theirs === "trashed") return "render not added again: you deleted it in Zotero";
+	return link;
 }
 
 /**
@@ -132,6 +158,8 @@ export function zoteroCalloutLine(info: ZoteroNoteInfo): string {
 	}
 	if (info.matchedByHash === true) parts.push("matched by file hash");
 	parts.push(writeBackPhrase(info.writeBack));
+	if (info.addedPagesNotWritten !== undefined) parts.push(`added pages not written back: ${info.addedPagesNotWritten}`);
+	if (info.render !== undefined) parts.push("url" in info.render ? renderPhrase(info.render.url, info.render.theirs) : `render not added: ${info.render.reason}`);
 	if (info.literatureNote !== null) parts.push(`literature note: [[${info.literatureNote}]]`);
 	return `Zotero: ${parts.join(" · ")}`;
 }
@@ -168,6 +196,11 @@ export function findLiteratureNote(notes: readonly VaultNoteKeys[], item: Zotero
 	const byCitekey = item.citationKey === null ? [] : candidates.filter((note) => note.citekey === item.citationKey);
 	const matches = byKey.length > 0 ? byKey : byCitekey;
 	return matches.length === 0 ? null : [...matches].sort((a, b) => (a.path < b.path ? -1 : 1))[0].link;
+}
+
+/** Where Zotero's reader opens the render attachment: no page, no annotation. Personal library only (Zotero spec §4.1). */
+export function openRenderUrl(renderKey: string): string {
+	return `zotero://open-pdf/library/items/${renderKey}`;
 }
 
 /** Where Zotero's reader opens for one annotation. `page` is the physical sheet, 1-based; see the file header. */

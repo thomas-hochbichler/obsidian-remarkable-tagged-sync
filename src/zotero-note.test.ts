@@ -85,6 +85,21 @@ describe("the Zotero line of the ownership callout", () => {
 	it("says nothing about a literature note where the vault has none", () => {
 		expect(zoteroCalloutLine(info({ literatureNote: null }))).not.toContain("literature note");
 	});
+
+	// Zotero spec §6: the added-page clause first, then the render part, then the literature note.
+	it("links the render in Zotero after the added-page clause", () => {
+		expect(zoteroCalloutLine(info({ addedPagesNotWritten: "this PDF has no parent item in Zotero", render: { url: "zotero://open-pdf/library/items/REN1" } }))).toContain(
+			"· added pages not written back: this PDF has no parent item in Zotero · [render in Zotero](zotero://open-pdf/library/items/REN1) · literature note:",
+		);
+	});
+
+	it("says why the render was not added, where it was not", () => {
+		expect(zoteroCalloutLine(info({ render: { reason: "tag the whole document" } }))).toContain("· render not added: tag the whole document ·");
+	});
+
+	it("says nothing about a render where there is none to speak of", () => {
+		expect(zoteroCalloutLine(info())).not.toContain("render");
+	});
 });
 
 describe("the vault's own note about the paper", () => {

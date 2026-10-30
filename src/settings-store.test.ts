@@ -110,7 +110,7 @@ describe("migrateSettings", () => {
 			fallbackTransport: "cloud",
 			ssh: { host: "192.168.1.9", port: 22, privateKey: "PEM", hostKeyFingerprint: "SHA256:abc" },
 			sshHashes: { "doc.content|12|1000": "a".repeat(64) },
-			zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: true, localKeys: { "1PUT74VpHXuE": "0".repeat(32) }, folder: "Papers", sendOverSsh: true, sendTag: "lesen", groups: [] },
+			zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: true, localKeys: { "1PUT74VpHXuE": "0".repeat(32) }, folder: "Papers", sendOverSsh: true, sendTag: "lesen", groups: [], writeText: false, addRender: true },
 			zoteroLinks: { "576dc0a6-323b-468e-bd69-a2ae6c25dbb9": { attachmentKey: "5IDIN5M2", library: "user", annotations: {} } },
 			tagFolderMap: { "#work": "Work" },
 			syncIndex: { version: 4, rows: { "doc/1": { note: "Work/One.md" } } },
@@ -140,6 +140,12 @@ describe("migrateSettings", () => {
 
 		const explicit = migrateSettings({ primaryTransport: "ssh", fallbackTransport: "ssh" }, ENV);
 		expect(explicit.fallbackTransport).toBeNull();
+	});
+
+	it("keeps a 1.9.x Zotero block writing text and adding no render", () => {
+		// Zotero spec §1: the two switches are new in 1.10.0, and their defaults are today's behaviour.
+		const zotero = migrateSettings({ zotero: { useWeb: true, apiKey: "k", sendTag: "lesen" } }, ENV).zotero;
+		expect([zotero.writeText, zotero.addRender, zotero.sendTag]).toEqual([true, false, "lesen"]);
 	});
 
 	it("honours a marginNotes: true written by a 1.1.0 beta", () => {

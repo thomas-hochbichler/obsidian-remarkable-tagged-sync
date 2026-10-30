@@ -124,6 +124,53 @@ describe("changing the map", () => {
 	});
 });
 
+describe("the notes written for pages added on the tablet (#246)", () => {
+	const note = { key: "NOTE1", parentKey: "ITEM1", written: { note: "<h1>Added page after p. 12</h1>\n<p>my own words</p>" } };
+
+	it("reads back exactly what was stored", () => {
+		const withNotes: ZoteroLink = { ...link, notes: { "nt-4c8a17": note, "nt-77aa01": { ...note, key: "NOTE2", deleted: true, userEdited: true } } };
+		expect(linkFor(withLink({}, DOC, withNotes), DOC)).toEqual(withNotes);
+	});
+
+	it("drops a note record that names no key, and keeps the rest", () => {
+		const stored = { [DOC]: { ...link, notes: { "nt-4c8a17": note, "nt-broken": { parentKey: "ITEM1" } } } };
+		expect(linkFor(stored, DOC)?.notes).toEqual({ "nt-4c8a17": note });
+	});
+
+	// A newer build may store a field this one does not know. Saving the link must not take it out,
+	// or that build loses what it remembered the next time this one writes back (ticket 09 #3).
+	it("keeps a field it does not know when it saves the link", () => {
+		const stored = { [DOC]: { ...link, figures: { key: "FIG1", md5: "abc" } } };
+		const saved = withLink(stored, DOC, linkFor(stored, DOC)!);
+		expect((saved[DOC] as Record<string, unknown>).figures).toEqual({ key: "FIG1", md5: "abc" });
+	});
+
+	it("does not carry a field it knows over from the link it replaces", () => {
+		const replaced = withLink(withLink({}, DOC, { ...link, matchedBy: "hash", notes: { "nt-4c8a17": note } }), DOC, { attachmentKey: "OTHER", library: "user", annotations: {} });
+		expect(replaced[DOC]).toEqual({ attachmentKey: "OTHER", library: "user", annotations: {} });
+	});
+});
+
+describe("the render we added as an attachment (#180)", () => {
+	it("reads back exactly what was stored, with and without an uploaded MD5", () => {
+		const uploaded: ZoteroLink = { ...link, render: { key: "REND1", parentKey: "ITEM1", md5: "abc" } };
+		const created: ZoteroLink = { ...link, render: { key: "REND1", parentKey: "ITEM1" } };
+		expect(linkFor(withLink({}, DOC, uploaded), DOC)).toEqual(uploaded);
+		expect(linkFor(withLink({}, DOC, created), DOC)).toEqual(created);
+	});
+
+	it("drops a render record that names no key or no paper", () => {
+		expect(linkFor({ [DOC]: { ...link, render: { key: "REND1", md5: "abc" } } }, DOC)?.render).toBeUndefined();
+		expect(linkFor({ [DOC]: { ...link, render: "REND1" } }, DOC)?.render).toBeUndefined();
+	});
+
+	it("reads back what the user did to it, and ignores a word it does not know", () => {
+		const theirs: ZoteroLink = { ...link, render: { key: "REND1", parentKey: "ITEM1", md5: "abc", theirs: "annotated" } };
+		expect(linkFor(withLink({}, DOC, theirs), DOC)).toEqual(theirs);
+		expect(linkFor({ [DOC]: { ...link, render: { key: "REND1", parentKey: "ITEM1", theirs: "renamed" } } }, DOC)?.render).toEqual({ key: "REND1", parentKey: "ITEM1" });
+	});
+});
+
 describe("a question the user closed", () => {
 	// Without a record of the asking, a duplicate file hash opens the same picker on every single
 	// sync -- for somebody who has already decided this document is not a Zotero paper.

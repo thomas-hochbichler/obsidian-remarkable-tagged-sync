@@ -3,7 +3,8 @@ import { attachmentPath, DEFAULT_ATTACHMENTS_FOLDER, type AttachmentStore, write
 import { md5Hex } from "./file-md5";
 import { pushUnique } from "./push-unique";
 import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipeline";
-import { type DigestPage, NOT_TRANSCRIBED, renderDigest } from "./digest-builder";
+import { type DigestPage, digestId, NOT_TRANSCRIBED, renderDigest } from "./digest-builder";
+import type { AddedPagesScope } from "./zotero-notes";
 import type { ZoteroNoteParts, ZoteroPass } from "./zotero-sync";
 import {
 	blockHashOf,
@@ -112,7 +113,9 @@ export type SyncRowStatus = "active" | "orphaned";
  * printing a parenthetical twice, once behind a stranded closing quote -- and a margin note's clip
  * now spans the paragraph the ink sits beside, so the picture carries the context the note is about;
  * version 32 lays the transcript over the handwriting as invisible text on a Mac, which a note synced
- * before it has no way to grow on its own -- the transcript is kept, only the PDF is written again.
+ * before it has no way to grow on its own -- the transcript is kept, only the PDF is written again;
+ * version 33 draws the text typed on a page added to a PDF and sizes that page by it, which had been
+ * written out blank when it carried no ink (issue #247).
  *
  * Not bumped for a change in how the note *reads* (decided 2026-09-13, when the digest gained the
  * marker's colour): a bump re-renders every note, and on the way re-transcribes typed-text pages and
@@ -124,7 +127,7 @@ export type SyncRowStatus = "active" | "orphaned";
  * on a Mac -- `docs/ocr-local/` figures are bound to the render version they were measured at, and
  * each feeds its model's settings card.
  */
-export const RENDER_VERSION = 32;
+export const RENDER_VERSION = 33;
 
 /** One row per produced note (spec §7 / ticket 11). */
 export interface SyncIndexRow {
@@ -616,6 +619,33 @@ function orderedPages(doc: DocumentContent | LegacyDocumentContent, liveIds: Rea
 }
 
 /**
+ * Where each page added on the device sits among the document's own pages: after the source page
+ * before it, numbered within a run of several there, or before the first one (Zotero spec §2.1).
+ * A document with no page of its own left puts them all before page 1.
+ */
+function addedPagePlaces(docPages: readonly DocPageRef[]): Map<string, NonNullable<DigestPageInput["place"]>> {
+	const places = new Map<string, NonNullable<DigestPageInput["place"]>>();
+	const firstSource = docPages.find((page) => !page.appended)?.sourceIndex ?? 0;
+	let run: string[] = [];
+	let after: number | null = null;
+	const close = () => {
+		run.forEach((id, index) =>
+			places.set(id, { relation: after === null ? "before" : "after", sourceIndex: after ?? firstSource, nth: run.length > 1 ? index + 1 : null }),
+		);
+		run = [];
+	};
+	for (const page of docPages) {
+		if (page.appended) run.push(page.id);
+		else {
+			close();
+			after = page.sourceIndex;
+		}
+	}
+	close();
+	return places;
+}
+
+/**
  * The page ids of `doc` as far as its *content* can tell, or null when the document's file listing
  * is needed to answer it.
  *
@@ -1030,6 +1060,8 @@ interface UnitParams {
 		readonly pages: readonly DigestPage[];
 		/** The source page indexes the digest was given. Only on those may it say what the reader erased. */
 		readonly covered: readonly number[];
+		/** The pages added on the device the digest was given -- `covered`'s twin for them, which all share one source index. */
+		readonly addedPages: AddedPagesScope;
 		/** MD5 of the source PDF the tablet holds -- what §2.3 matches on. Read only when something asks. */
 		md5(): Promise<string | null>;
 	};
@@ -1340,7 +1372,19 @@ async function writeUnit(
 	let withZotero = fields;
 	if (params.zotero !== undefined && deps.zotero !== undefined) {
 		const unit = params.zotero;
-		zotero = await deps.zotero.run({ docId: params.docId, visibleName: params.source, notePath, pages: unit.pages, covered: unit.covered, noteWasDeleted, md5: () => unit.md5() });
+		zotero = await deps.zotero.run({
+			docId: params.docId,
+			visibleName: params.source,
+			notePath,
+			pages: unit.pages,
+			covered: unit.covered,
+			addedPages: unit.addedPages,
+			noteWasDeleted,
+			md5: () => unit.md5(),
+			// The bytes just written, so Zotero gets the vault's render exactly (Zotero spec §4.1); a page
+			// tag's one-page render is never uploaded.
+			...(params.pageId === null ? { render: { bytes: pdfBytes, md5: () => md5Hex(pdfBytes) } } : {}),
+		});
 		// Rewritten only where there is something to add. A vault with no Zotero, a document that is
 		// not linked and a licence that lapsed all arrive here with nothing, and the note keeps the
 		// one write it already had.
@@ -1569,12 +1613,15 @@ function ocrRetryDue(row: SyncIndexRow, retryKey: string | null, now: string, ma
  * `RENDER_VERSION` cannot express: that is a constant, bumped for code changes, and it has no way to
  * say "this vault's output rule changed". Without this the toggle would sit there doing nothing until
  * the device happened to change, which reads as a broken switch.
+ *
+ * `docIds` limits it to those documents: a Zotero switch turned on concerns the Zotero-linked ones
+ * only (Zotero spec §10 P7), and the Zotero pass runs only for a document that is written.
  */
-export function invalidateRenders(index: SyncIndex): SyncIndex {
+export function invalidateRenders(index: SyncIndex, docIds?: readonly string[]): SyncIndex {
 	const rows: Record<string, SyncIndexRow> = {};
 	for (const [key, row] of Object.entries(index.rows)) {
 		const { renderVersion: _dropped, ...withoutVersion } = row;
-		rows[key] = row.status === "active" ? withoutVersion : row;
+		rows[key] = row.status === "active" && (docIds === undefined || docIds.includes(row.docId)) ? withoutVersion : row;
 	}
 	return { ...index, rows };
 }
@@ -2239,6 +2286,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		}
 		const pageOrder = docPages.map((page) => page.id);
 		const pageRefById = new Map(docPages.map((page) => [page.id, page]));
+		const places = addedPagePlaces(docPages);
 
 		// Defined here rather than beside `frontmatterBase`, because the page keys are per *unit* and
 		// need `docPages`: a notebook-tag note covers every live page, a page-tag note exactly one, and
@@ -2354,6 +2402,15 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		const coveredPages = (input: DigestPageInput[] | null, digest: { failed?: true }): number[] =>
 			input === null || digest.failed ? [] : input.map((page) => page.sourceIndex);
 
+		// The added pages a digest spoke for, on the same terms (Zotero spec §2.1): a whole-document unit
+		// all of them, a page tag its one page, and none where the digest read none -- a failed build, or
+		// *Your notes on PDFs* off, which keeps every added page out of the digest.
+		const coveredAdded = (pageId: string | null, digest: { failed?: true }): AddedPagesScope => {
+			if (digest.failed || !(deps.marginNotes ?? false)) return "none";
+			if (pageId === null) return "document";
+			return pageRefById.get(pageId)?.appended ? { blockId: digestId("nt", pageId, "page") } : "none";
+		};
+
 		// A tagged page's change-detection hash: its own `.rm` hash for handwritten pages, else the
 		// whole-doc hash -- for a PDF page (no `.rm`) or a blank page (never drawn), the page changes
 		// exactly when the document does.
@@ -2386,7 +2443,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					pdfBytes = await renderAnnotatedPdf(await getSourcePdf(), composite);
 					ocrPages = annotationOcrPages(composite);
 					highlights = collectHighlights(composite.map((page, i) => ({ pageLabel: i + 1, embedPage: i + 1, highlights: page.annotations?.highlights ?? [] })));
-					digestPages = composite.map((page, i) => ({ pageId: docPages[i].id, sourceIndex: page.sourceIndex, embedPage: i + 1, scene: page.annotations, appended: docPages[i].appended }));
+					digestPages = composite.map((page, i) => ({
+						pageId: docPages[i].id,
+						sourceIndex: page.sourceIndex,
+						embedPage: i + 1,
+						scene: page.annotations,
+						appended: docPages[i].appended,
+						place: places.get(docPages[i].id),
+					}));
 				} else {
 					const scenes = await Promise.all(pageOrder.map((pageId) => renderPage(api, entry.id, pageId, pageHashes.get(pageId))));
 					ocrPages = notebookOcrPages(scenes, pageOrder);
@@ -2460,7 +2524,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					frontmatter: unitFrontmatter(tag, null),
 					previous: unit.writtenRow,
 					onPage: bar.page,
-					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, covered: coveredPages(digestPages, digest), md5: zoteroMd5 },
+					zotero:
+						zoteroMd5 === undefined
+							? undefined
+							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(null, digest), md5: zoteroMd5 },
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2533,7 +2600,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					// A single-page embed, so the `#page=` anchor is 1 -- the same ordinals `collectHighlights` gets.
 					ocrPages = [{ scene: composite[0]?.annotations ?? null, pageLabel: pageIndex, embedPage: 1 }];
 					highlights = collectHighlights([{ pageLabel: pageIndex, embedPage: 1, highlights: composite[0]?.annotations?.highlights ?? [] }]);
-					digestPages = composite.map((page) => ({ pageId: unit.pageId, sourceIndex: page.sourceIndex, embedPage: 1, scene: page.annotations, appended: pageRef.appended }));
+					digestPages = composite.map((page) => ({
+						pageId: unit.pageId,
+						sourceIndex: page.sourceIndex,
+						embedPage: 1,
+						scene: page.annotations,
+						appended: pageRef.appended,
+						place: places.get(unit.pageId),
+					}));
 				} else {
 					const scenes = [await renderPage(api, entry.id, unit.pageId, pageHashes.get(unit.pageId))];
 					ocrPages = [{ scene: scenes[0], pageLabel: pageIndex, embedPage: 1 }];
@@ -2582,7 +2656,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 					previous: unit.writtenRow,
 					onPage: bar.page,
 					// One page of the document: what this digest lacks may be on the pages it was not given.
-					zotero: zoteroMd5 === undefined ? undefined : { pages: digest.pages, covered: coveredPages(digestPages, digest), md5: zoteroMd5 },
+					zotero:
+						zoteroMd5 === undefined
+							? undefined
+							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(unit.pageId, digest), md5: zoteroMd5 },
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);

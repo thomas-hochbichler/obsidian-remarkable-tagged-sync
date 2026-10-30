@@ -782,7 +782,7 @@
 
     - id: Y9.7
       scenario: A vault that has never been near Zotero
-      expect: Every Zotero setting off. "The free plugin is unchanged" (§5) has to be true of a fresh install, not only of a free one
+      expect: Every Zotero connection off, and no render. "The free plugin is unchanged" (§5) has to be true of a fresh install, not only of a free one. *Write text to Zotero* is on, so a 1.9.x install keeps writing; with no connection it reaches nothing
       layer: unit
       file: src/zotero-settings.test.ts
       test: "what counts as set up > starts switched off entirely"
@@ -859,10 +859,10 @@
     - id: Y10.3
       tier: pro
       scenario: The privacy sentence
-      expect: Beside the switch it is about, for every vault, naming write-back as the Pro half. Write-back is the one thing in this plugin that sends transcribed text anywhere (§1.2); a free vault's Zotero runs too, so the sentence has to be true there as well
+      expect: Under *Into Zotero*, after the two switches it is about, in ticket 05 #6's words -- handwriting stays unless *Add the render to Zotero* is on; with *Write text to Zotero* the text of highlights, margin notes and added pages goes into the user's own library (§1.2, Zotero spec §1)
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > says what leaves the machine, where the switch is"
+      test: "the Zotero section > says what leaves the machine, under the two switches it is about"
 
     - id: Y10.4
       tier: pro
@@ -3925,4 +3925,1087 @@
       layer: unit
       file: src/zotero-writeback.test.ts
       test: "carrying out the plan > stops at a trash that fails, with the failure named"
+
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §1, §5, §10 P7/P8: the *Into Zotero*
+# settings section and the *Write text to Zotero* switch (ticket 13). What *Add the render to Zotero*
+# does in a sync is ticket 15's; here only its row.
+- feature: Y36
+  name: Into Zotero -- Write text to Zotero and the render switch (#180)
+  code: src/settings-tab.ts
+  tier: pro
+  scenarios:
+    - id: Y36.1
+      scenario: "A Pro vault with zotero.org opens the Zotero settings"
+      expect: '*Into Zotero* holds *Write text to Zotero* (on), *Add the render to Zotero* (off), both open, with ticket 05''s words; *Use zotero.org* names notes and the render'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > writes text and adds no render until told otherwise, in the words of ticket 05"
+    - id: Y36.2
+      tier: free
+      scenario: "A free vault opens the Zotero settings"
+      expect: 'Both switches shown shut, named "… (Pro)"'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > shows both switches shut to a free vault, as Pro rows"
+    - id: Y36.3
+      scenario: "Desktop app only, then zotero.org switched on and a key typed"
+      expect: 'The render switch is shut and its description starts "Needs a zotero.org connection."; it opens in place once zotero.org is configured. The text switch works over the desktop app'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > shuts the render switch without a zotero.org connection and says why, and opens it once there is one"
+    - id: Y36.4
+      scenario: "*Write text to Zotero* or *Add the render to Zotero* switched on"
+      expect: 'Saved, and every sync-index row of a Zotero-linked document loses its render version; unlinked documents keep theirs (§10 P7)'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > makes the Zotero-linked documents due once when Write text to Zotero is switched on"
+    - id: Y36.5
+      scenario: "*Add the render to Zotero* switched on"
+      expect: 'Same as Y36.4'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > makes the Zotero-linked documents due once when Add the render to Zotero is switched on"
+    - id: Y36.6
+      scenario: "A Zotero switch turned off"
+      expect: 'Saved; no document made due -- nothing is written while it is off'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > leaves every document as it is when a switch goes off"
+    - id: Y36.7
+      scenario: "Invalidating renders for named documents"
+      expect: 'Every active row of those documents (page rows too) loses its render version; other rows keep theirs'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "invalidateRenders > makes only the named documents stale when given some -- every row of each, page rows included"
+    - id: Y36.8
+      scenario: "Sync after a Zotero switch made a linked, unchanged document due"
+      expect: 'That sync rewrites the note once; the next one skips it again'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "runSync > annotation digest > rewrites a Zotero-linked document once after a Zotero switch is turned on, then skips it again"
+    - id: Y36.9
+      scenario: "Switch on; a new highlight to create and a gone added page's note to trash (control for Y36.10)"
+      expect: 'One create, one trash'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > writes the pending highlight and trashes the gone page's note while on"
+    - id: Y36.10
+      scenario: "Same document with *Write text to Zotero* off"
+      expect: 'No create, patch or trash of an annotation or note; link map unchanged; line ends `writing text to Zotero is switched off` (§10 P8); no notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > sends no write for them while off, leaves the stored link alone, and says the switch is off"
+    - id: Y36.11
+      scenario: "A highlight written before the switch went off"
+      expect: 'Its in-Zotero link stays on the quote: the annotation is still there'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > keeps the in-Zotero link of a highlight written before it was switched off"
+    - id: Y36.12
+      tier: free
+      scenario: "A free vault with *Write text to Zotero* off"
+      expect: 'The line keeps the Pro sentence -- the switch is shut there, so it is not the reason'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "with *Write text to Zotero* off > still says a free vault's highlights are Pro"
+    - id: Y36.13
+      scenario: "A 1.9.x data.json whose Zotero block has neither switch"
+      expect: '`writeText` on, `addRender` off, the rest kept (Zotero spec §1)'
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > keeps a 1.9.x Zotero block writing text and adding no render"
+
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §4.1, §4.2 "Never a source": the
+# client half of the render as a Zotero attachment -- create, upload, replace, read back -- over
+# zotero.org only (ticket 14). When the sync uploads is ticket 15's.
+- feature: Y35
+  name: The render as a Zotero attachment, the client (#180)
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: Y35.1
+      scenario: "A paper's PDF called `Smith 2024.pdf`, and a name without the extension"
+      expect: '`annotated_Smith 2024.pdf`, `annotated_notes.pdf`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > names the file after the paper's own"
+    - id: Y35.2
+      scenario: "Creating the render attachment under a paper"
+      expect: 'One `POST /items` with a write token: `imported_file`, `application/pdf`, title "Annotated PDF", the filename, tag `tagged-sync`; answers the new key'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > creates a stored PDF under the paper, titled and tagged as ours"
+    - id: Y35.3
+      scenario: "Zotero refuses the create"
+      expect: "The throw carries Zotero's own sentence"
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > says why Zotero refused to create it"
+    - id: Y35.4
+      scenario: "First upload of a render"
+      expect: 'Authorise with `If-None-Match: *` (md5, filename, filesize, mtime in ms), prefix + bytes + suffix into file storage, register with the upload key; `uploaded`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > uploads a first file: authorise for a new file, put the bytes between prefix and suffix, register"
+    - id: Y35.5
+      scenario: "Replacing a render whose MD5 Zotero holds"
+      expect: '`If-Match: <md5>` on authorise and register'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > replaces a file under the MD5 Zotero holds, on both requests"
+    - id: Y35.6
+      scenario: "Authorise answers `{exists: 1}`"
+      expect: '`exists`; nothing put into file storage, nothing registered'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > sends nothing when Zotero already has these bytes"
+    - id: Y35.7
+      scenario: "A stale MD5: 412 or 409 on authorise, 412 on register"
+      expect: '`changed`, not an error'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reports a file that changed underneath, on authorise or on register"
+    - id: Y35.8
+      scenario: "413 on authorise: Zotero Storage full"
+      expect: '`quota`; nothing put into file storage'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reports a full Zotero Storage and puts nothing into it"
+    - id: Y35.9
+      scenario: "File storage answers anything but 201"
+      expect: 'A `server` failure; the upload is not registered'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > does not register a file the storage did not take"
+    - id: Y35.10
+      scenario: "403 on authorise"
+      expect: 'A `read-only` failure, never retried on the other connection'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reads a refused upload as the library's answer"
+    - id: Y35.11
+      scenario: "Reading a render: renamed, paper trashed, then itself trashed and standalone"
+      expect: 'Title, filename, paper, MD5 as Zotero has them; `trashed` when it or its paper is in the trash'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reads one render's state: names, paper, MD5, and whether it or its paper is in the trash"
+    - id: Y35.12
+      scenario: "Reading a render Zotero answers 404 for"
+      expect: '`null`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > answers nothing for a render Zotero no longer has"
+    - id: Y35.13
+      scenario: "The attachment listing with one attachment tagged `tagged-sync`"
+      expect: 'That one is marked `ours`, the other not'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > marks our renders in the attachment listing"
+    - id: Y35.14
+      scenario: "A client with the desktop only, and one with zotero.org too"
+      expect: 'No renders without zotero.org; with it, zotero.org''s'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > is there only where zotero.org is"
+    - id: Y35.15
+      scenario: "An upload over zotero.org"
+      expect: 'Authorise and register form-encoded under the user prefix; file storage gets the bytes with its own content type and no API key'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "the render's file (Zotero spec §4.1) > authorises form-encoded, puts the bytes into file storage without the key, registers"
+    - id: Y35.16
+      scenario: "File storage cannot be reached"
+      expect: 'An `unreachable` failure, like any zotero.org call'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "the render's file (Zotero spec §4.1) > reports file storage out of reach as unreachable, like any other zotero.org call"
+    - id: Y35.17
+      scenario: "A render of ours with the tablet's bytes or the tablet's name"
+      expect: 'Never matched; the paper''s own PDF beside it still is'
+      layer: unit
+      file: src/zotero-match.test.ts
+      test: "a document that arrived some other way > never matches a render of ours"
+    - id: Y35.18
+      scenario: "*Send* on a paper with its PDF and a render of ours"
+      expect: 'The PDF is used without asking; a paper with only the render has nothing to send'
+      layer: unit
+      file: src/zotero-send.test.ts
+      test: "which PDF of an item is meant > never offers a render of ours"
+    - id: Y35.19
+      scenario: "Authorise answers 200 without an upload URL, prefix, suffix or key"
+      expect: 'A `server` failure; nothing put into file storage'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > does not upload into an authorisation that names no place to put the file"
+    - id: Y35.20
+      scenario: "Register answers 500"
+      expect: 'A `server` failure, not `changed`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > reports a register that fails for any reason but a changed file"
+
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §2, §3 "created" rows, §6 point 1:
+# each page added on the tablet becomes a child note under the paper. First sync only (ticket 11);
+# refresh, trash and the user's edit are ticket 12's.
+- feature: Y34
+  name: Pages added on the tablet as Zotero notes (#246)
+  code: src/zotero-notes.ts
+  tier: pro
+  scenarios:
+    - id: Y34.1
+      scenario: "An added page with two lines of text, after p. 12, on its first sync"
+      expect: 'One create: `<h1>Added page after p. 12</h1>` then one `<p>` per line, joined with `\n`, under the paper'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > becomes one note under the paper, titled by the page it follows"
+    - id: Y34.2
+      scenario: "One added page before p. 1 and two in a row after p. 12"
+      expect: '"Added page before p. 1", "Added page 1 after p. 12", "Added page 2 after p. 12"'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > numbers two added pages in a row after the same page, and names one before the first page"
+    - id: Y34.3
+      scenario: "The page before it carries the PDF label xii"
+      expect: 'Titled "Added page after p. xii" -- the label the vault note shows (spec §10 P2)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > names the page by the label the vault note shows for it"
+    - id: Y34.4
+      scenario: "Text with `<`, `&`, a control character, blank lines and runs of whitespace"
+      expect: 'Escaped, control character gone, blank lines dropped, whitespace one space, nothing around the whole body -- what both connections store unchanged (ticket 08 #1)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes a body both connections store unchanged: escaped, no control characters, no outer whitespace"
+    - id: Y34.5
+      scenario: "An added page with no text on it"
+      expect: 'No note'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes nothing for a page with no text on it"
+    - id: Y34.6
+      scenario: "An added page whose handwriting could not be read this sync, typed text standing in"
+      expect: 'No note: the page is not covered (spec §10 P5)'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes nothing for a page whose handwriting could not be read this sync"
+    - id: Y34.7
+      scenario: "A page of the PDF itself with a margin note"
+      expect: 'No note: that is an annotation'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > leaves the pages of the PDF itself to the annotations"
+    - id: Y34.8
+      scenario: "A page-scoped unit, and a unit that speaks for no added page"
+      expect: 'The page-scoped one writes its one page; the other writes nothing'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "the first sync of a page added on the tablet > writes only the one page a page-scoped unit speaks for, and nothing for a unit that speaks for none"
+    - id: Y34.9
+      scenario: "A recorded page whose text changed on the tablet, note untouched in Zotero"
+      expect: 'Not created again: one PATCH of the body under the version read, the record keeps the body sent'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > refreshes the body under the version read when the text changed on the tablet"
+    - id: Y34.10
+      scenario: "No record, but the paper already has a note of ours under the same title (a 1.9.x save dropped `notes`)"
+      expect: 'Not created: adopted and refreshed by one PATCH, never a second copy'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > adopts our note under the paper with the exact title this sync writes, and refreshes it"
+    - id: Y34.11
+      scenario: "Creating a note"
+      expect: '`POST /items` with `itemType: note`, `parentItem`, the body and the `tagged-sync` tag, under a write token'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > creates a child note under the paper, tagged as ours"
+    - id: Y34.12
+      scenario: "Zotero stores a cleaned body for one note and refuses another"
+      expect: 'The stored body from `successful[i].data.note` comes back, the refused one is `null` with its reason'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > hands back the body as Zotero stored it, and says which ones it refused"
+    - id: Y34.13
+      scenario: "Reading our notes under a paper"
+      expect: '`/items/<paper>/children?itemType=note&tag=tagged-sync`; a row with no parent is left out'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > reads only our notes under one paper"
+    - id: Y34.14
+      scenario: "Only the desktop app is connected"
+      expect: 'Notes access is unknown (`null`), so nothing is gated on it'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > cannot say whether notes may be written where only the desktop app is connected"
+    - id: Y34.15
+      scenario: "`/keys/current` says `access.user.notes: true`"
+      expect: 'Notes access'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > knows whether the key may write notes when it allows notes"
+    - id: Y34.16
+      scenario: "`/keys/current` leaves `notes` out, as a key made without it does (ticket 08 #2)"
+      expect: 'No notes access'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > knows whether the key may write notes when it leaves notes out"
+    - id: Y34.17
+      scenario: "`/keys/current` carries no `access` at all"
+      expect: 'No notes access'
+      layer: unit
+      file: src/zotero-web.test.ts
+      test: "talking to zotero.org > knows whether the key may write notes when it says nothing about access"
+    - id: Y34.18
+      scenario: "A linked paper with one highlight and one added page, first sync"
+      expect: 'Highlight and note written; the link stores the note key, the paper and the body Zotero stored'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes each added page as a note under the paper and remembers the body Zotero stored"
+    - id: Y34.19
+      scenario: "The paper is in a group, the key has no notes access for the personal library"
+      expect: 'Notes go into the group (spec §10 P1); the notes-access gate is the personal library''s'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes the notes of a group's paper into the group"
+    - id: Y34.20
+      scenario: "A linked document with no added page"
+      expect: 'No notes listing, no notes-access read, no create'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > asks Zotero nothing about notes for a document with no added page"
+    - id: Y34.21
+      scenario: "*Your notes on PDFs* off"
+      expect: 'No note, no clause'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes nothing for a page while *Your notes on PDFs* is off"
+    - id: Y34.22
+      scenario: "The PDF has no parent item in Zotero"
+      expect: 'No note; highlights written; the line says `added pages not written back: this PDF has no parent item in Zotero` (ticket 09 #1)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes no note for a PDF with no parent item, says why, and still writes the highlights"
+    - id: Y34.23
+      scenario: "A zotero.org key without notes access, personal library"
+      expect: 'No note; the line says `the API key has no notes access`; a notice says to allow it for the same key (ticket 09 #2, spec §10 P3)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes no note with a zotero.org key that has no notes access, says why, and tells the user what to change"
+    - id: Y34.24
+      scenario: "One highlight lands, the note is refused"
+      expect: 'Line `1 of 2 highlights written back`; notice `1 of 2 highlights and notes written` (spec §10 P8)'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > counts the notes with the highlights when not all of them landed"
+    - id: Y34.25
+      scenario: "Zotero stops answering between the highlights and the notes"
+      expect: 'Highlights kept and recorded; the notes get their own clause and notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > keeps the highlights it wrote when writing the notes fails, and says why in its own clause"
+    - id: Y34.26
+      scenario: "Free vault with an added page"
+      expect: 'No notes listing and no create'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > writes nothing for an added page in a free vault"
+    - id: Y34.27
+      scenario: "A PDF with pages added before p. 1, after p. 1 and two after p. 2"
+      expect: 'Each added page reaches the digest with its place: before 0; after 0; after 1, 1st and 2nd of the run'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > pages added on the tablet (#246) > tells the digest where each added page sits among the PDF's own pages"
+    - id: Y34.28
+      scenario: "A whole-document unit, and a page tag on an added page"
+      expect: 'The first speaks for every added page, the second for its one page by block id'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > pages added on the tablet (#246) > lets a whole-document unit speak for every added page, and a page tag for its one page"
+    - id: Y34.29
+      scenario: "*Your notes on PDFs* off, or the digest build threw"
+      expect: 'The unit speaks for no added page, so a missing entry never reads as a deleted page'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > pages added on the tablet (#246) > lets a unit speak for no added page when the switch is off or the digest failed"
+    - id: Y34.30
+      scenario: "An added page after a source page the PDF labels xii"
+      expect: 'The digest page carries `added: { after, "xii", nth }`'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > names the page it follows by the PDF's own label for it"
+    - id: Y34.31
+      scenario: "The PDF's text cannot be read for the neighbouring page"
+      expect: 'Its 1-based number, as the note''s own `p. N` falls back'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > names it by its number where the PDF has no label to give"
+    - id: Y34.32
+      scenario: "The backend fails on an added page that also carries typed text"
+      expect: 'The entry keeps the typed text and the page is marked unread; read fine, it is not'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > says when its handwriting could not be read, even where typed text stands in for it"
+    - id: Y34.33
+      scenario: "A link with note records, one deleted and user-edited, saved and read back"
+      expect: 'Read back exactly'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > reads back exactly what was stored"
+    - id: Y34.34
+      scenario: "A stored note record without a key"
+      expect: 'Dropped; the others kept'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > drops a note record that names no key, and keeps the rest"
+    - id: Y34.35
+      scenario: "A 1.10.0 save of a link carrying a field this build does not know"
+      expect: 'The field stays (ticket 09 #3)'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > keeps a field it does not know when it saves the link"
+    - id: Y34.36
+      scenario: "A link replaced by one to another attachment"
+      expect: 'None of the old link''s known fields (`matchedBy`, `notes`) carry over'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the notes written for pages added on the tablet (#246) > does not carry a field it knows over from the link it replaces"
+    - id: Y34.37
+      scenario: "The backend throws on an added page"
+      expect: 'The page is marked unread and a warning names it'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > says so too when the backend throws"
+    - id: Y34.38
+      scenario: "An added page in a typed-text document"
+      expect: 'Named by the page number it follows'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest on a page added on the device > where it sits, for its Zotero note > names it by its number where the document is typed text"
+    - id: Y34.39
+      scenario: "Zotero's create answer carries no stored body"
+      expect: 'The body sent is remembered'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > remembers the body it sent where Zotero's answer leaves the stored one out"
+    - id: Y34.40
+      scenario: "Notes access with both connections configured"
+      expect: 'zotero.org''s answer, never the desktop''s'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > takes zotero.org's answer even where the desktop app writes the notes"
+    - id: Y34.41
+      scenario: "A note row without key or version"
+      expect: 'Read with an empty key and version 0'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > reads a note row that carries no key or version without failing on it"
+    - id: Y34.42
+      scenario: "Desktop unreachable, zotero.org configured"
+      expect: 'Notes are read and created over zotero.org'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "two connections, one client > reads and writes notes through the web when the desktop is not there"
+    - id: Y34.43
+      scenario: "A plan with nothing to create"
+      expect: 'No request to Zotero'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > asks Zotero nothing when there is nothing to write"
+    - id: Y34.44
+      scenario: "The library refuses writes (read-only)"
+      expect: 'Thrown, for the pass to name the library'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > gives up on a library that refuses writes, so the pass can name it"
+    - id: Y34.45
+      scenario: "Creating notes fails for any other reason"
+      expect: 'The failure is named, nothing is recorded'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > names any other failure and remembers nothing it cannot know landed"
+    - id: Y34.46
+      scenario: "A recorded page that reads as it did, note untouched"
+      expect: 'No request'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > asks nothing of Zotero when the page reads as it did"
+    - id: Y34.47
+      scenario: "An added page moved on the tablet (now the second after p. 14)"
+      expect: 'Retitled by a body PATCH: `Added page 2 after p. 14`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > retitles a page moved on the tablet"
+    - id: Y34.48
+      scenario: "The user edited the note in Zotero (body ≠ `written.note`)"
+      expect: 'No request; record gains `userEdited`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > never writes a note again that the user edited in Zotero, and remembers that it is theirs"
+    - id: Y34.49
+      scenario: "A record marked `userEdited`, the page changed on the tablet"
+      expect: 'Nothing written, nothing recorded'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > leaves a note it remembers as the user's alone, whatever the tablet says"
+    - id: Y34.50
+      scenario: "Page deleted on the tablet, whole-document unit, note untouched"
+      expect: 'Note trashed (`deleted: true` under the version read), record kept as `deleted`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > trashes the note of a page deleted on the tablet while it reads as we wrote it"
+    - id: Y34.51
+      scenario: "All text on an added page erased on the tablet"
+      expect: 'Treated as deleted: note trashed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > trashes the note of a page whose text was erased on the tablet"
+    - id: Y34.52
+      scenario: "Page deleted on the tablet, note edited by the user"
+      expect: 'Not trashed; record gains `userEdited`'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > keeps the note of a deleted page that the user edited"
+    - id: Y34.53
+      scenario: "Page-scoped unit for another added page; a recorded page is missing from its digest"
+      expect: 'Not trashed: the unit does not speak for it'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > trashes only for a page the unit speaks for"
+    - id: Y34.54
+      scenario: "A recorded page whose handwriting could not be read this sync (P5)"
+      expect: 'Neither refreshed nor trashed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > neither refreshes nor trashes a page whose handwriting could not be read this sync (P5)"
+    - id: Y34.55
+      scenario: "The user trashed or erased the note (missing from the tag listing)"
+      expect: 'Record marked `deleted`, never created again, also when the text changes later'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > records a note the user trashed or erased as deleted and never writes it again"
+    - id: Y34.56
+      scenario: "Page deleted on the tablet and the note already gone from Zotero"
+      expect: 'Record marked `deleted`, no trash request'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > records a deleted page's note that is gone from Zotero as deleted, with nothing to trash"
+    - id: Y34.57
+      scenario: "Note removed in Zotero, then the vault note deleted by hand (`noteWasDeleted`)"
+      expect: 'Created again like a new page'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > writes a removed note again once the user deleted the vault note as well"
+    - id: Y34.58
+      scenario: "No record; our notes under the paper carry another title, or one another record holds"
+      expect: 'Not adopted: created'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > adopts no note under another title, and none another record already holds"
+    - id: Y34.59
+      scenario: "PDF moved under another paper in Zotero, note untouched"
+      expect: 'One PATCH `{parentItem}` (with the body when it changed), record `parentKey` updated; also for a page the unit does not speak for'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > moves an untouched note after the PDF to its new paper, together with a refresh"
+    - id: Y34.60
+      scenario: "PDF moved, note edited by the user"
+      expect: 'Stays under the old paper'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > leaves a note the user edited where it is when the PDF moves"
+    - id: Y34.61
+      scenario: "*Your notes on PDFs* off (scope `none`) with a recorded note under an old paper"
+      expect: 'Plan is empty: nothing created, patched, trashed or recorded'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > creates, patches and trashes nothing while *Your notes on PDFs* is off"
+    - id: Y34.62
+      scenario: "Executing a trash and a refresh"
+      expect: 'Trash routed by the note''s source and version; records stored as they landed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > trashes and refreshes, and remembers each as it landed"
+    - id: Y34.63
+      scenario: "Our body PATCH answers 412"
+      expect: 'Record gains `userEdited`, nothing counted as written'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > hands a note over to the user when the refresh comes back 412"
+    - id: Y34.64
+      scenario: "Our trash answers 412"
+      expect: 'Record gains `userEdited`, nothing counted as written: the edit may be a tag, which the next sync could not see in the body'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > hands a note over to the user when the trash comes back 412, instead of trashing it next time"
+    - id: Y34.65
+      scenario: "A plan with record-only changes"
+      expect: 'Stored without a request'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > stores the records that change without a request"
+    - id: Y34.66
+      scenario: "A refresh refused by a read-only library; a trash failing for another reason"
+      expect: 'Read-only thrown for the pass; other failure named, counted 0 of 1'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > gives up on a library that refuses a refresh, and counts what landed before any other failure"
+    - id: Y34.67
+      scenario: "Sync: the only added page deleted on the tablet, nothing left to write"
+      expect: 'Notes read anyway; note trashed, record `deleted`, no notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > trashes the note of the one added page deleted on the tablet, though nothing is left to write"
+    - id: Y34.68
+      scenario: "Sync with *Your notes on PDFs* off and a live note recorded"
+      expect: 'No notes request at all'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > leaves the notes alone while *Your notes on PDFs* is off, and asks Zotero nothing about them"
+    - id: Y34.69
+      scenario: "Paper in Zotero's trash (P4)"
+      expect: 'Notes frozen: nothing read or written, no clause'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > freezes the notes while the paper is in Zotero's trash (P4)"
+    - id: Y34.70
+      scenario: "Sync after the PDF moved to another paper"
+      expect: 'Notes read under the new and the former paper; ours moved by `PATCH {parentItem}`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > reads the paper the PDF hung under before, and moves our note from there"
+    - id: Y34.71
+      scenario: "The former paper answers 404"
+      expect: 'Read as no notes there: record `deleted`, nothing created, no notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > takes a former paper that is gone for one with no notes of ours left"
+    - id: Y34.72
+      scenario: "Sync with `noteWasDeleted` and a `deleted` note record"
+      expect: 'Note created again'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > writes a removed note again when the vault note was deleted as well"
+    - id: Y34.73
+      scenario: "Sync of a document whose only note record is the user's, nothing to write"
+      expect: 'No notes request'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > asks nothing about a document whose notes are all the user's or gone"
+    - id: Y34.74
+      scenario: "Patching a note over the wire"
+      expect: '`PATCH /items/<key>` with `note` and/or `parentItem` only, `If-Unmodified-Since-Version` the version read'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > patches a note's body and paper under the version it read, and only what it was given"
+    - id: Y34.75
+      scenario: "A note PATCH answers 412; a client with both connections"
+      expect: '`conflict`; the PATCH goes only to the connection that read the note'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > reports the user's edit as a conflict, and sends a note's patch to the connection that read it"
+    - id: Y34.76
+      scenario: "Reading a paper that is in Zotero's trash"
+      expect: 'The item carries `trashed: true`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "notes for pages added on the tablet (#246) > says when a paper is in the trash"
+    - id: Y34.77
+      scenario: "An adopted note (no earlier record) whose refresh answers 412"
+      expect: 'Recorded as the user''s, with the key adopted'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "carrying out the plan > hands an adopted note over to the user on a 412, with no earlier record to keep"
+    - id: Y34.78
+      scenario: "The former paper's listing fails for a reason other than 404"
+      expect: 'Clause on the Zotero line, note records unchanged'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "pages added on the tablet (#246) > on a later sync (ticket 12) > says why when the former paper cannot be read, and changes no note"
+    - id: Y34.79
+      scenario: "Note only shown in the Zotero desktop app: body wrapped in `<div data-schema-version=\"9\">…\n</div>`, text untouched"
+      expect: 'Read as untouched: trashed for a deleted page, refreshed, adopted -- no PATCH just to unwrap'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > takes a note the desktop editor only wrapped for untouched: trashed, refreshed, adopted"
+    - id: Y34.80
+      scenario: "User edited the note in the desktop editor (wrapper + changed text)"
+      expect: 'Still the user''s: `userEdited`, not trashed'
+      layer: unit
+      file: src/zotero-notes.test.ts
+      test: "an added-page note on a later sync (Zotero spec §3) > still sees an edit made inside the editor's wrapper"
+
+# Zotero spec `.scratch/zotero-render-and-added-pages/spec.md` §4.1, §4.2, the first and the reason
+# rows of §4.3, §6 point 2: *Add the render to Zotero* in the sync (ticket 15). The user-action rows
+# of §4.3 and re-finding are ticket 16's.
+- feature: Y37
+  name: The render as a Zotero attachment, in the sync (#180)
+  code: src/zotero-render.ts
+  tier: pro
+  scenarios:
+    - id: Y37.1
+      scenario: "Switch on, a whole-document render, no record"
+      expect: 'Look for one of ours under the paper (Y38), create only if there is none'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > looks for one of ours under the paper on the first whole-document sync"
+    - id: Y37.2
+      scenario: "A record whose MD5 differs from the render's"
+      expect: 'Check the attachment, then replace (Y38)'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > checks the attachment when the render's MD5 differs from the one uploaded last"
+    - id: Y37.3
+      scenario: "A record whose MD5 is the render's"
+      expect: '`unchanged`: nothing sent'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > sends nothing when the render is the one uploaded last"
+    - id: Y37.4
+      scenario: "A record without an MD5 (created, upload never landed)"
+      expect: 'Check that attachment, no second one'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > checks an attachment that was created but never got its file"
+    - id: Y37.5
+      scenario: "Switch off (or free vault), with or without a render, with or without zotero.org"
+      expect: '`none`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > does nothing while the switch is off, whatever else holds"
+    - id: Y37.6
+      scenario: "Page-scoped unit, no render added yet"
+      expect: '`render not added: tag the whole document`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > says to tag the whole document for a page-scoped unit with no render yet"
+    - id: Y37.7
+      scenario: "Page-scoped unit of a document whose document tag added the render"
+      expect: '`none`: the line links that render'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > leaves a page-scoped unit's line to the render the document tag already added"
+    - id: Y37.8
+      scenario: "Linked PDF in a group library"
+      expect: '`render not added: group library`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > adds nothing to a group library"
+    - id: Y37.9
+      scenario: "No zotero.org connection, with and without a record"
+      expect: '`render not added: needs a zotero.org connection` (§10 P6)'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > adds nothing without a zotero.org connection"
+    - id: Y37.10
+      scenario: "Standalone PDF (no parent item), no record"
+      expect: '`render not added: this PDF has no parent item in Zotero`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > adds nothing to a PDF with no parent item"
+    - id: Y37.11
+      scenario: "A stored render record with and without `md5`"
+      expect: 'Read back exactly as stored'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the render we added as an attachment (#180) > reads back exactly what was stored, with and without an uploaded MD5"
+    - id: Y37.12
+      scenario: "A stored render record without key or paper, or not an object"
+      expect: 'No `render` on the link'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the render we added as an attachment (#180) > drops a render record that names no key or no paper"
+    - id: Y37.13
+      scenario: "Line with an added-page clause, a render and a literature note"
+      expect: '`· added pages not written back: … · [render in Zotero](zotero://open-pdf/library/items/<key>) · literature note: …`'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > links the render in Zotero after the added-page clause"
+    - id: Y37.14
+      scenario: "Line with a render reason"
+      expect: '`· render not added: <reason> ·`'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > says why the render was not added, where it was not"
+    - id: Y37.15
+      scenario: "Line with nothing to say about a render"
+      expect: 'No mention of a render'
+      layer: unit
+      file: src/zotero-note.test.ts
+      test: "the Zotero line of the ownership callout > says nothing about a render where there is none to speak of"
+    - id: Y37.16
+      scenario: "First whole-document sync with the switch on"
+      expect: 'Attachment `annotated_<name>.pdf` created under the paper, uploaded with `If-None-Match`, record saved, line links it'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > creates the attachment under the paper, uploads the render and links it from the line"
+    - id: Y37.17
+      scenario: "Two units of one render in one run (two document tags, or an unchanged re-sync)"
+      expect: 'One create, one upload; both lines link it'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > uploads once for two units of the same render"
+    - id: Y37.18
+      scenario: "Ink changed: the render's MD5 differs from the recorded one"
+      expect: 'Upload with `If-Match: <recorded md5>`, same key, new MD5 recorded'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > replaces the file when the render changed, naming the MD5 it replaces"
+    - id: Y37.19
+      scenario: "The paper's PDF has no filename in Zotero (linked file)"
+      expect: 'Named after the tablet document: `annotated_<visible name>.pdf`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > names the file after the document where the PDF has no filename in Zotero"
+    - id: Y37.20
+      scenario: "Vault whose one reader is zotero.org's"
+      expect: 'Line links the web reader URL of the render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > opens zotero.org's reader on the render in a vault without the desktop app"
+    - id: Y37.21
+      scenario: "Page-tag unit, switch on, no render yet"
+      expect: 'Nothing created; `render not added: tag the whole document`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says to tag the whole document on a page note, and uploads nothing"
+    - id: Y37.22
+      scenario: "Page-tag unit of a document with a render"
+      expect: 'Line links the render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > links a page note to the render its document tag added"
+    - id: Y37.23
+      scenario: "Switch on, desktop connection only"
+      expect: '`render not added: needs a zotero.org connection`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says why without a zotero.org connection"
+    - id: Y37.24
+      scenario: "Paper in a group library"
+      expect: 'Nothing created; `render not added: group library`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says why for a paper in a group library"
+    - id: Y37.25
+      scenario: "Standalone PDF"
+      expect: 'Nothing created; `render not added: this PDF has no parent item in Zotero`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says why for a PDF with no parent item"
+    - id: Y37.26
+      scenario: "Upload answers 413, then a later sync has room"
+      expect: '`render not added: your Zotero Storage is full` + notice; later the same attachment is filled, no second create'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > says the Zotero Storage is full, and fills the same attachment once there is room"
+    - id: Y37.27
+      scenario: "Upload throws (zotero.org unreachable)"
+      expect: 'Highlights still written; `render not added: Zotero could not be reached` + notice'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > keeps the highlights and says why when the upload fails"
+    - id: Y37.28
+      scenario: "Replace answers `changed` (409/412) after the attachment was read"
+      expect: 'Record unchanged; the next sync reads it again'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > records nothing new when the file changed underneath the upload"
+    - id: Y37.29
+      scenario: "*Write text to Zotero* off, render switch on"
+      expect: 'Render uploaded; line `writing text to Zotero is switched off · [render in Zotero](…)`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > uploads with Write text to Zotero switched off: that switch is not the render's"
+    - id: Y37.30
+      scenario: "Render switch off"
+      expect: 'Render not hashed, nothing created, line silent about a render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > neither hashes nor uploads while the switch is off, and says nothing about a render"
+    - id: Y37.31
+      tier: free
+      scenario: "Free vault (lapsed licence), switch on, render recorded, ink changed"
+      expect: 'Nothing uploaded; line still links the existing render'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > uploads nothing from a free vault, and still links the render a Pro licence added"
+    - id: Y37.32
+      scenario: "PDF with a document tag and a page tag"
+      expect: 'The document unit carries the bytes written to the vault (and their MD5); the page unit carries none'
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Zotero half of a sync (spec §3.4) > hands the Zotero half the render it wrote to the vault, for a whole-document unit only"
+
+- feature: Y38
+  name: The render in Zotero, what the user did to it and re-finding it (#180)
+  code: src/zotero-render.ts
+  tier: pro
+  scenarios:
+    - id: Y38.1
+      scenario: "Document tag removed (page-scoped unit), then back"
+      expect: '`none` meanwhile; back, the same attachment is checked'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > updates the same attachment when the document tag returns"
+    - id: Y38.2
+      scenario: "Record carries `theirs` (each kind), whole-document and page-scoped"
+      expect: '`none`: never read, replaced or recreated'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > never touches a render the user made theirs, changed or not"
+    - id: Y38.3
+      scenario: "Any `theirs`, vault note deleted by hand, render MD5 moved or not"
+      expect: '`check`: the attachment is read again, the record is not trusted (an annotated render can be trashed later)'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "the render planner (Zotero spec §4.3) > reads the render again once the vault note is deleted, whatever the user did to it"
+    - id: Y38.4
+      scenario: "`theirs: annotated`, vault note deleted by hand, the annotations are still there"
+      expect: 'Stays theirs, none created, line says it has your annotations'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > keeps a render that still carries the user's annotations when the vault note was deleted"
+    - id: Y38.5
+      scenario: "Attachment holds the MD5 we uploaded last, render changed"
+      expect: 'Upload under that MD5'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > replaces the file under the MD5 Zotero holds"
+    - id: Y38.6
+      scenario: "User renamed the title and the file"
+      expect: 'Bytes replaced, sent under their file name (an upload sets the filename)'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > keeps the title and file name the user gave it, and still replaces the bytes"
+    - id: Y38.7
+      scenario: "Zotero's MD5 is neither the render's nor the one uploaded last"
+      expect: '`theirs: changed`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > takes a file whose MD5 is neither this render nor the last one uploaded for the user's"
+    - id: Y38.8
+      scenario: "Zotero already holds this render (another device uploaded it)"
+      expect: 'Record the MD5, send nothing'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > records a render Zotero already holds, from another device, without sending it"
+    - id: Y38.9
+      scenario: "Render carries annotations not tagged `tagged-sync`"
+      expect: '`theirs: annotated`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > leaves a render that carries the user's annotations"
+    - id: Y38.10
+      scenario: "Render moved to another paper, or made standalone"
+      expect: '`theirs: moved`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > leaves a render moved to another paper or made standalone"
+    - id: Y38.11
+      scenario: "Render trashed, erased, or its paper in the trash"
+      expect: '`theirs: trashed`'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > leaves a render trashed, erased, or under a paper in the trash"
+    - id: Y38.12
+      scenario: "Attachment created, no file yet"
+      expect: 'Upload as a first file'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > fills an attachment that never got its file"
+    - id: Y38.13
+      scenario: "Re-found render (no MD5 of ours) holding another file"
+      expect: 'Replaced once (spec §4.2 accepted loss)'
+      layer: unit
+      file: src/zotero-render.test.ts
+      test: "what the user did to the render (Zotero spec §4.3) > replaces a re-found render once, whatever file it holds"
+    - id: Y38.14
+      scenario: "Stored record with `theirs`, and with an unknown word"
+      expect: 'Read back as stored; an unknown word dropped'
+      layer: unit
+      file: src/zotero-links.test.ts
+      test: "the render we added as an attachment (#180) > reads back what the user did to it, and ignores a word it does not know"
+    - id: Y38.15
+      scenario: "Render's `/children` annotations, ours only, then one of the user's"
+      expect: '`annotated` false, then true'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > tells the user's annotations on the render from ours"
+    - id: Y38.16
+      scenario: "Paper with two tagged PDF children (one trashed, older) and a tagged non-PDF"
+      expect: 'The oldest PDF, trashed included (`includeTrashed=1`)'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > re-finds the oldest render of ours under a paper, trashed ones included"
+    - id: Y38.17
+      scenario: "Paper with no tagged PDF child"
+      expect: '`null`'
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "the render as a Zotero attachment (Zotero spec §4.1) > re-finds nothing under a paper with no render of ours"
+    - id: Y38.18
+      scenario: "User renamed the file, render changed"
+      expect: 'Upload sent under their file name'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > keeps the file name the user gave it when replacing the bytes"
+    - id: Y38.19
+      scenario: "Render annotated by the user, two syncs with changed ink"
+      expect: 'No upload, one read; line `[render in Zotero](…) not updated: it has your annotations`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > leaves a render with the user's annotations, says so, and stops asking"
+    - id: Y38.20
+      scenario: "User rotated pages in Zotero's reader"
+      expect: 'No upload; line `[render in Zotero](…) not updated: you changed its file`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > leaves a render whose file the user changed"
+    - id: Y38.21
+      scenario: "User moved the render to another paper"
+      expect: 'No new one at the old paper; line `render not updated: you moved it in Zotero`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > leaves a moved render where it is and puts no new one under the paper"
+    - id: Y38.22
+      scenario: "User trashed or erased the render, two syncs"
+      expect: 'Never recreated, nothing trashed by us; line `render not added again: you deleted it in Zotero`'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > never recreates a trashed render, and never trashes one itself"
+    - id: Y38.23
+      scenario: "`theirs` recorded: page note, and switch off"
+      expect: 'The line still says what the user did'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > still says what the user did on a page note and with the switch off"
+    - id: Y38.24
+      scenario: "`theirs: trashed`, vault note deleted by hand"
+      expect: 'A new render created and uploaded, linked from the line'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > starts over with a new render once the vault note was deleted"
+    - id: Y38.28
+      scenario: "`theirs: annotated`, trashed in Zotero later, vault note deleted by hand (device check 2026-10-30)"
+      expect: 'The attachment is read again, found trashed, a new render created and uploaded'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > starts over after a render the user annotated was trashed later, once the vault note was deleted"
+    - id: Y38.25
+      scenario: "`data.json` lost the record, ours under the paper"
+      expect: 'Re-found, replaced in place, none created'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > re-finds its render under the paper when data.json lost the record, and creates none"
+    - id: Y38.26
+      scenario: "`data.json` lost the record, ours under the paper is trashed"
+      expect: 'Recorded `theirs: trashed`; nothing created or uploaded'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > leaves a re-found render the user trashed in the trash"
+    - id: Y38.27
+      scenario: "`data.json` lost the record, the re-found render holds these bytes"
+      expect: 'Recorded, nothing sent, line links it'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > records a re-found render that already holds these bytes without sending them"
 

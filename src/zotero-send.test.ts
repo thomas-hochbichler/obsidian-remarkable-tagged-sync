@@ -19,7 +19,7 @@ import {
 const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
-	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: "2de21c18668a0faba572b4c7f7ecd1f5", title: "Full Text PDF", ...overrides };
+	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: "2de21c18668a0faba572b4c7f7ecd1f5", title: "Full Text PDF", ours: false, ...overrides };
 }
 
 describe("what the document is called on the tablet", () => {
@@ -77,6 +77,14 @@ describe("which PDF of an item is meant", () => {
 	it("is nothing for an item whose attachments are all somebody else's", () => {
 		expect(pdfChoice([attachment({ parentKey: "OTHER" })], ITEM)).toEqual({ kind: "none" });
 		expect(pdfChoice([], ITEM)).toEqual({ kind: "none" });
+	});
+
+	// The render we uploaded sits under the paper beside its PDF (Zotero spec §4.2): offering it would
+	// put the tablet's own ink on the tablet a second time.
+	it("never offers a render of ours", () => {
+		const render = attachment({ key: "REN1", filename: "annotated_paper.pdf", ours: true });
+		expect(pdfChoice([attachment(), render], ITEM)).toEqual({ kind: "use", attachment: attachment() });
+		expect(pdfChoice([render], ITEM)).toEqual({ kind: "none" });
 	});
 });
 

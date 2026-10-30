@@ -744,7 +744,7 @@ describe("reporting pages dropped for truncation", () => {
 	/**
 	 * A margin note has no re-transcribe, and the lever here need not change the model: a full context
 	 * is fixed in the server's settings, under the same fingerprint, so no sync retries the note on its
-	 * own. Switching "Handwritten notes" off and on does read every note again.
+	 * own. Switching "Your notes on PDFs" off and on does read every note again.
 	 */
 	it("sends a margin note to the switch that reads it again, not to the next sync", async () => {
 		fetchMock.mockResolvedValueOnce(jsonResponse(200, { choices: [{ message: { content: "Check the" }, finish_reason: "length" }] }));
@@ -754,7 +754,7 @@ describe("reporting pages dropped for truncation", () => {
 
 		expect(result.warnings?.[0]).toMatch(/^Margin notes were left out because the model's answer was cut off before it was complete\./);
 		expect(result.warnings?.[0]).toContain(
-			'once that is fixed, switch "Handwritten notes" off and on in the settings to read them again — that reads every PDF\'s margin notes again.',
+			'once that is fixed, switch "Your notes on PDFs" off and on in the settings to read them again — that reads every PDF\'s margin notes again.',
 		);
 		expect(result.warnings?.[0]).not.toContain("the next sync reads them again");
 	});

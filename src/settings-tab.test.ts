@@ -313,6 +313,8 @@ describe("the shape of the settings screen", () => {
 			"Zotero cloud",
 			"Zotero local",
 			"Zotero libraries",
+			// What goes into Zotero, apart from the connections that carry it (Zotero spec §1).
+			"Into Zotero",
 			"Zotero on the tablet",
 			"Tagged Sync Pro",
 			"Actions",
@@ -594,7 +596,7 @@ describe("vault output", () => {
 		const { plugin, tab } = await tabWith({
 			syncIndex: { rows: { a: { notePath: "a.md", status: "active", renderVersion: 7 } } },
 		});
-		const switchRow = toggle(draw(tab), "Handwritten notes");
+		const switchRow = toggle(draw(tab), "Your notes on PDFs");
 		expect(switchRow.value).toBe(false);
 
 		switchRow.toggle(true);
@@ -969,17 +971,97 @@ describe("the Zotero section", () => {
 		expect(fetched).not.toHaveBeenCalled();
 	});
 
-	// The privacy sentence sits beside the switch it is about, not only in the README (spec §1.2):
-	// write-back is the one thing in this plugin that sends transcribed text anywhere.
-	it("says what leaves the machine, where the switch is", async () => {
-		const free = draw((await tabWith()).tab);
-		const bought = draw((await tabWith(PRO)).tab);
+	// The privacy sentence sits beside the switches it is about, not only in the README (spec §1.2;
+	// Zotero spec §1 moved it under *Into Zotero*, words from ticket 05 #6).
+	it("says what leaves the machine, under the two switches it is about", async () => {
+		const drawn = draw((await tabWith(PRO)).tab);
 
-		expect(rowNames(section(bought, "Zotero on the tablet"))).toContain("What leaves your machine");
-		expect(row(bought, "What leaves your machine").desc).toContain("handwriting never does");
-		// A free vault's Zotero is running too, and the sentence names the half that sends text as
-		// Pro -- so it reads as true there as well, not as a feature that is not there.
-		expect(row(free, "What leaves your machine").desc).toContain("Tagged Sync Pro");
+		expect(rowNames(section(drawn, "Into Zotero"))).toEqual(["Write text to Zotero", "Add the render to Zotero", "What leaves your machine"]);
+		expect(row(drawn, "What leaves your machine").desc).toBe(
+			"Your handwriting never does, unless you switch on Add the render to Zotero. With Write text to Zotero, the text of your highlights, " +
+				"margin notes and added pages is written into your own Zotero library -- and to zotero.org, if that is the connection carrying it.",
+		);
+	});
+
+	describe("Into Zotero", () => {
+		const WEB = { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" };
+
+		it("writes text and adds no render until told otherwise, in the words of ticket 05", async () => {
+			const drawn = draw((await tabWith({ ...PRO, zotero: WEB })).tab);
+
+			expect([toggle(drawn, "Write text to Zotero").value, toggle(drawn, "Add the render to Zotero").value]).toEqual([true, false]);
+			expect([toggle(drawn, "Write text to Zotero").disabled, toggle(drawn, "Add the render to Zotero").disabled]).toEqual([false, false]);
+			expect(row(drawn, "Write text to Zotero").desc).toBe(
+				"Your tablet highlights become Zotero annotations, with your margin notes as their comments, and each page you added to a PDF " +
+					"becomes a note under the paper. Everything carries the tag tagged-sync. Switched off, nothing new is written and what is " +
+					"already in Zotero stays; filter by the tag in Zotero to remove it.",
+			);
+			expect(row(drawn, "Add the render to Zotero").desc).toBe(
+				'Uploads the PDF as it looks on your tablet, ink and all and searchable, to Zotero Storage as an attachment "Annotated PDF" ' +
+					"under the paper. Your handwriting then leaves this machine for zotero.org and counts against your storage there. Only " +
+					"documents tagged as a whole, in your personal library. If your Zotero files sync over WebDAV, leave this off.",
+			);
+			expect(row(drawn, "Use zotero.org").desc).toContain("with write-back your highlights and notes are written there, and the render if you add it.");
+		});
+
+		it("shows both switches shut to a free vault, as Pro rows", async () => {
+			const drawn = draw((await tabWith({ zotero: WEB })).tab);
+
+			expect(rowNames(section(drawn, "Into Zotero"))).toEqual(["Write text to Zotero (Pro)", "Add the render to Zotero (Pro)", "What leaves your machine"]);
+			expect([toggle(drawn, "Write text to Zotero (Pro)").disabled, toggle(drawn, "Add the render to Zotero (Pro)").disabled]).toEqual([true, true]);
+		});
+
+		// Ticket 04 #1: a render reaches Zotero over zotero.org only.
+		it("shuts the render switch without a zotero.org connection and says why, and opens it once there is one", async () => {
+			const { plugin, tab } = await tabWith({ ...PRO, zotero: { useLocal: true } });
+			const drawn = draw(tab);
+
+			expect(toggle(drawn, "Add the render to Zotero").disabled).toBe(true);
+			expect(row(drawn, "Add the render to Zotero").desc).toMatch(/^Needs a zotero\.org connection\. Uploads the PDF/);
+			expect(toggle(drawn, "Write text to Zotero").disabled).toBe(false);
+
+			toggle(drawn, "Use zotero.org").toggle(true);
+			field(drawn, "Zotero API key").type("P9c46b0lkV2XzAoUTqPmPuGZ");
+			await settle();
+
+			// Updated in place, not redrawn: a redraw under a field being typed into takes its focus.
+			expect(plugin.data.zotero).toMatchObject(WEB);
+			expect(toggle(drawn, "Add the render to Zotero").disabled).toBe(false);
+			expect(row(drawn, "Add the render to Zotero").setting.desc).toMatch(/^Uploads the PDF/);
+		});
+
+		// Zotero spec §10 P7: nothing changed on the tablet, so without this the switch would wait for a
+		// change before anything reached Zotero -- and then only for that one document.
+		it.each(["Write text to Zotero", "Add the render to Zotero"])("makes the Zotero-linked documents due once when %s is switched on", async (name) => {
+			const index = {
+				rows: {
+					"doc-1::sync": { docId: "doc-1", notePath: "a.md", status: "active", renderVersion: 33 },
+					"doc-2::sync": { docId: "doc-2", notePath: "b.md", status: "active", renderVersion: 33 },
+				},
+			};
+			const links = { "doc-1": { attachmentKey: "ATT1", library: "user", annotations: {} } };
+			const { plugin, tab } = await tabWith({ ...PRO, zotero: { ...WEB, writeText: false }, syncIndex: index, zoteroLinks: links });
+			const drawn = draw(tab);
+
+			toggle(drawn, name).toggle(true);
+			await settle();
+
+			const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> }; zotero: Record<string, boolean> };
+			expect([saved.syncIndex.rows["doc-1::sync"].renderVersion, saved.syncIndex.rows["doc-2::sync"].renderVersion]).toEqual([undefined, 33]);
+			expect(saved.zotero[name === "Write text to Zotero" ? "writeText" : "addRender"]).toBe(true);
+		});
+
+		it("leaves every document as it is when a switch goes off", async () => {
+			const index = { rows: { "doc-1::sync": { docId: "doc-1", notePath: "a.md", status: "active", renderVersion: 33 } } };
+			const links = { "doc-1": { attachmentKey: "ATT1", library: "user", annotations: {} } };
+			const { plugin, tab } = await tabWith({ ...PRO, zotero: WEB, syncIndex: index, zoteroLinks: links });
+
+			toggle(draw(tab), "Write text to Zotero").toggle(false);
+			await settle();
+
+			const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> }; zotero: { writeText: boolean } };
+			expect([saved.zotero.writeText, saved.syncIndex.rows["doc-1::sync"].renderVersion]).toEqual([false, 33]);
+		});
 	});
 
 	it("says nothing is connected until one of the two is set up", async () => {

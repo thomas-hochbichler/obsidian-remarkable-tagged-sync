@@ -13,6 +13,7 @@
 import { type Fetch, obsidianFetch } from "./obsidian-fetch";
 import {
 	createZoteroConnection,
+	createZoteroRenders,
 	libraryPath,
 	withZoteroTimeout,
 	type ZoteroAccount,
@@ -111,9 +112,10 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obs
 		const response = await request(`${ZOTERO_API}/keys/current`, { headers: headers(false) }, ZOTERO_WEB_TIMEOUT_MS);
 		if (response.status === 401 || response.status === 403) throw new ZoteroError("unauthorized", "Zotero rejected the API key.");
 		if (!response.ok) throw new ZoteroError("server", `zotero.org answered ${response.status} when asked whose key this is.`);
-		const body = (await response.json()) as { userID?: unknown; username?: unknown };
+		const body = (await response.json()) as { userID?: unknown; username?: unknown; access?: { user?: { notes?: unknown } } };
 		if (typeof body.userID !== "number") return null;
-		return { id: body.userID, username: typeof body.username === "string" ? body.username : null };
+		// `=== true`: a key made without notes access leaves the field out rather than saying false (ticket 08 #2).
+		return { id: body.userID, username: typeof body.username === "string" ? body.username : null, notes: body.access?.user?.notes === true };
 	};
 
 	const whose = async (): Promise<ZoteroAccount | null> => {
@@ -136,14 +138,20 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obs
 		return `${ZOTERO_API}/users/${id}`;
 	};
 
-	const requester = async ({ method = "GET", library, path, body, headers: extra }: ZoteroRequest): Promise<Response> =>
+	const requester = async ({ method = "GET", library, path, body, form, headers: extra }: ZoteroRequest): Promise<Response> =>
 		await request(
 			`${await prefix(library)}${path}`,
-			{ method, headers: { ...headers(method !== "GET"), ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) },
+			form === undefined
+				? { method, headers: { ...headers(method !== "GET"), ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }
+				: { method, headers: { ...headers(false), "Content-Type": "application/x-www-form-urlencoded", ...extra }, body: new URLSearchParams(form).toString() },
 			ZOTERO_WEB_TIMEOUT_MS,
 		);
 
-	return createZoteroConnection("web", "zotero.org", requester, {
+	// File storage is not zotero.org: the upload URL is pre-signed, so it gets the bytes and no key.
+	// No timeout, for the reason `bytes` gives.
+	const renders = createZoteroRenders(requester, async (url, contentType, body) => await request(url, { method: "POST", headers: { "Content-Type": contentType }, body }, null));
+
+	const connection = createZoteroConnection("web", "zotero.org", requester, {
 		// Only Zotero's own storage has the bytes, and only the desktop knows a path. Saying so here is
 		// what lets the send command ask the user for the file instead of failing (spec §2.4).
 		path: async () => null,
@@ -158,4 +166,5 @@ export function createZoteroWebConnection(apiKey: string, fetchImpl: Fetch = obs
 			return new Uint8Array(await response.arrayBuffer());
 		},
 	}, whose);
+	return { ...connection, renders };
 }
