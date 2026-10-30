@@ -22,8 +22,10 @@ workflow publishes the section as the GitHub release body. See
 - **The render in Zotero** (Pro, off until you switch it on). *Add the render to Zotero* uploads the
   PDF as it looks on your tablet, ink and all and searchable, as a second attachment *Annotated PDF*
   under the paper, and keeps it current. It goes to your Zotero Storage at zotero.org; only documents
-  tagged as a whole, only your personal library. This is the one setting that sends your handwriting
-  off your machine ([#180](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/180)).
+  tagged as a whole, only your personal library. Rename it, and your name stays; annotate it in
+  Zotero, and it is never replaced again; trash it, and it is not recreated. Beside cloud
+  transcription, this is the one setting that sends your handwriting off your machine
+  ([#180](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues/180)).
 - ***Write text to Zotero*** switches off everything Tagged Sync writes into Zotero as text. What is
   already there stays.
 

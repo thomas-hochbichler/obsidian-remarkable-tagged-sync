@@ -78,6 +78,8 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Notes know their Zotero item — link, web library](#zotero) | ✓ | ✓ |
 | [Your tablet highlights as native Zotero annotations, with a jump into Zotero from every quote](#zotero) | — | ✓ |
 | [Group libraries — search, send from and write into a group you switch on](#zotero) | — | ✓ |
+| [Pages you added to a PDF as Zotero notes](#zotero) | — | ✓ |
+| [The render as a Zotero attachment — opt-in](#zotero) | — | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
@@ -228,9 +230,10 @@ deleted as soon as it has been read.
 | [A local server you run yourself](#a-local-server-you-run-yourself) | everywhere | install Ollama or LM Studio |
 | [Managed local model](#local-model-optional-opt-in) | Apple Silicon, Windows on ARM | one opt-in click, a 1.6 to 6.2 GB download depending on the model |
 
-Four **cloud** backends are also available, with [Tagged Sync Pro](#tagged-sync-pro). Those are the
-one case where a page image leaves your device: you choose them, they use your own API key, and they
-are off unless you turn them on.
+Four **cloud** backends are also available, with [Tagged Sync Pro](#tagged-sync-pro). They are one
+of two cases where a page image leaves your device — the other is [*Add the render to
+Zotero*](#zotero): you choose them, they use your own API key, and they are off unless you turn them
+on.
 
 **Apple Vision aside, you name the model yourself.** The Model field starts empty on every backend,
 local and cloud alike, and the plugin suggests nothing: a model id shipped inside a plugin goes stale
@@ -449,9 +452,9 @@ plugin, no closed Zotero.
 
 What goes into your vault is free; what is written into Zotero is
 [Tagged Sync Pro](#tagged-sync-pro). In other words: sending a paper to the tablet and the note
-knowing which paper it is work with a zotero.org API key and no licence. Writing your highlights
-into Zotero, and talking to the Zotero desktop app, are the Pro half — covered by the 14-day trial
-like everything else.
+knowing which paper it is work with a zotero.org API key and no licence. Writing your highlights,
+the pages you added and the render into Zotero, and talking to the Zotero desktop app, are the Pro
+half — covered by the 14-day trial like everything else.
 
 The loop is three steps:
 
@@ -487,13 +490,28 @@ properties](#frontmatter-properties-pro) on, the note also carries `zotero-key` 
 has one — `citekey`, which is the same vocabulary other Zotero tools in Obsidian use; a paper in a
 group library adds `zotero-library` with the group's id.
 
+**Pages you added** ([Pro](#tagged-sync-pro)). A page you inserted into the PDF on the tablet
+becomes a note under the paper in Zotero, titled *Added page after p. 12*, with what you wrote and
+typed on it. Edit it in Zotero and your version wins; delete the page on the tablet and the note goes
+to Zotero's trash. Your zotero.org key needs notes access for this; without it the plugin writes
+your highlights as before and the note's Zotero line says *added pages not written back: the API
+key has no notes access*.
+
+**The render in Zotero** ([Pro](#tagged-sync-pro), off until you switch it on). *Add the render to
+Zotero* puts the PDF as it looks on your tablet, ink and all, under the paper as a second attachment,
+*Annotated PDF*, and keeps it current on every sync. It goes over zotero.org into your Zotero Storage
+and counts against your quota there; if your files sync over WebDAV, leave it off. Only a document
+tagged as a whole is uploaded, and only into your personal library. Rename it, and your name stays;
+annotate it in Zotero, and it is never replaced again; trash it, and it is not recreated. Both
+switches sit under Settings → *Into Zotero*.
+
 ### Connecting
 
 Either connection is enough on its own, and you can have both:
 
 | | **zotero.org** | **The Zotero desktop app** ([Pro](#tagged-sync-pro)) |
 |---|---|---|
-| What you need | *Use zotero.org* switched on, and an API key from zotero.org with read and write access to your personal library | *Use the Zotero desktop app* switched on, Zotero 10 running, with *Allow other applications on this computer to communicate with Zotero* on |
+| What you need | *Use zotero.org* switched on, and an API key from zotero.org with read, write and notes access to your personal library | *Use the Zotero desktop app* switched on, Zotero 10 running, with *Allow other applications on this computer to communicate with Zotero* on |
 | Works with Zotero closed | ✓ | — |
 | Finds your PDFs | the copies synced to zotero.org | any file on your disk |
 
@@ -518,11 +536,13 @@ tablet](#syncing-without-the-cloud) with **Send over SSH when the cloud is not c
 on. Sending over SSH restarts the tablet's reading app, which closes whatever you have open — that
 is the only way it notices a new file. The home screen is back in about six seconds.
 
-**What leaves your machine.** Your handwriting never does — the ink itself is never uploaded
-anywhere, by any part of this plugin. What write-back sends is the *transcribed text* of your
-margin notes, into your own Zotero library, and to zotero.org if that is the connection carrying
-it. Setting up a connection above is what switches this on; there is no separate step, and with no
-connection nothing is sent at all.
+**What leaves your machine.** Your handwriting does not, unless you switch on *Add the render to
+Zotero*. What write-back sends is text: your highlights, the transcribed and typed text of your
+margin notes and of the pages you added, into your own Zotero library — and to zotero.org if that
+is the connection carrying it. *Write text to Zotero* is on once a connection is set up, and
+switching it off stops it. *Add the render to Zotero* is the one exception for the ink: off until
+you switch it on, and then the PDF as it looks on your tablet, ink and all, is uploaded to your
+Zotero Storage at zotero.org. With no connection nothing is sent at all.
 
 ### Colours
 
@@ -570,7 +590,9 @@ never overwritten again. Delete one and it stays deleted. Your own highlights, m
 never read and never touched. Erase a highlight on the tablet and its annotation goes to Zotero's
 trash on the next sync — unless you have edited it in Zotero, in which case it stays: what you built
 on there is yours. Nothing is ever erased for good; the trash keeps it. On the tablet side nothing is
-ever removed.
+ever removed. Switching *Write text to Zotero* or *Add the render to Zotero* off stops new writes and
+leaves what is there. To remove it, filter your library by the tag `tagged-sync` in Zotero, select
+what it shows, and move it to the trash.
 
 ## Syncing without the cloud
 
@@ -843,6 +865,9 @@ stays where it is and is still preserved on every sync — new notes just no lon
   deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
 - [Zotero](#zotero) works with **PDF attachments only** — an EPUB in your library cannot be sent,
   and a book you read on the tablet is not matched to one.
+- **The render in Zotero needs Zotero Storage.** *Add the render to Zotero* uploads over zotero.org
+  only; a library whose files sync over WebDAV cannot receive it, and the plugin cannot tell the two
+  apart, so leave the switch off there. The desktop-app connection alone cannot carry it either.
 - One tag → folder mapping without Pro; [Tagged Sync Pro](#tagged-sync-pro) maps as many as you
   like.
 - Transcription with Apple Vision requires **macOS 13 or later**, and its transcripts are flat
@@ -919,8 +944,9 @@ This plugin makes network requests to exactly one place by default:
 
 - **`api.zotero.org`** — with your own API key, and only for your personal library. The plugin
   searches it, reads your PDF attachments, and — with [Tagged Sync Pro](#tagged-sync-pro) — writes
-  the annotations it made from your tablet marks. Nothing you did not mark on the tablet is sent,
-  and no annotation of yours is read. Without Pro the plugin only reads.
+  the annotations and notes it made from your tablet, and — if you switch it on — uploads the
+  render. Nothing you did not mark or write on the tablet is sent, and no annotation of yours is
+  read. Without Pro the plugin only reads.
 - **The Zotero desktop app on `localhost:23119`** ([Pro](#tagged-sync-pro)) — the same thing over
   your own machine's loopback interface. Nothing leaves your machine.
 
@@ -933,8 +959,9 @@ entirely on the backend selected in settings:
 - **Apple Vision** and **a local server you run yourself** — nothing leaves your machine.
 - **A cloud backend** (Anthropic, OpenAI, Google, OpenRouter — [Tagged Sync Pro](#tagged-sync-pro))
   — the page image is sent to that provider, using **your own API key**, and the transcript comes
-  back. This is the one case where a page image leaves your device. You choose it, you pay for it,
-  and it is off unless you turn it on. The provider's own terms apply.
+  back. This is one of two cases where your handwriting leaves your device; the other is [*Add the
+  render to Zotero*](#zotero). You choose it, you pay for it, and it is off unless you turn it on.
+  The provider's own terms apply.
 
 On a Mac, Apple Vision also reads each page locally to place the [text layer](#the-text-layer),
 whichever backend you chose; nothing leaves your machine.
@@ -952,8 +979,10 @@ again once the files are on disk:
 Nothing is uploaded to either.
 
 **The licence check** — `polar.sh`, and only if you own or are trialling
-[Tagged Sync Pro](#tagged-sync-pro). It is called **only** when you enter your key or use a paid
-feature, and **at most once every 7 days**; a valid answer is remembered in between. It carries your
+[Tagged Sync Pro](#tagged-sync-pro). It is called **only** when you enter your key, press
+*Deactivate this vault*, add a tag mapping beyond the first, or start a sync, re-transcribe or
+frontmatter run while a cloud transcription backend is selected — and **at most once every 7
+days**; a valid answer is remembered in between. It carries your
 licence key, the activation id of this vault and the plugin's public organization id — no email
 address, no note content. Whenever this vault activates the key — when you enter it, and again if
 its activation is lost — the call also sends this vault's name, so you can tell your devices apart
