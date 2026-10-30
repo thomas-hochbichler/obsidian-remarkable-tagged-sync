@@ -64,7 +64,9 @@ export const NIGHTLY_BACKENDS: NightlyBackendSpec[] = [
 	{ key: "openrouter/google/gemini-2.5-flash", model: "google/gemini-2.5-flash", provider: "google-ai-studio" },
 	// Added 2026-09-09 (spec §2.1): the three cloud models chosen for what their accuracy costs.
 	{ key: "openrouter/google/gemini-3.1-flash-lite", model: "google/gemini-3.1-flash-lite", provider: "google-ai-studio" },
-	{ key: "openrouter/qwen/qwen3-vl-235b-a22b-instruct", model: "qwen/qwen3-vl-235b-a22b-instruct", provider: "deepinfra/fp8" },
+	// `qwen/qwen3-vl-235b-a22b-instruct` (deepinfra/fp8) was dropped 2026-10-30: it answered 429 on
+	// most pages four nights running, which held the whole part at `unknown` and blocked release
+	// 1.10.0. Its recorded nights stay in the history of `.nightly-verdict.json`.
 	// `chutes/fp4` rather than DeepInfra: both of DeepInfra's gemma routes have refused this workload
 	// within one day -- fp4 rate-limits every image request ("temporarily rate-limited upstream"; text
 	// goes through), and fp8 answered `404 No allowed providers` on the first pinned night while still
