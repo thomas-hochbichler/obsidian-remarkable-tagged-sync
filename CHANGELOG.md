@@ -12,6 +12,8 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-30
+
 ### Added
 
 - **Pages you added to a PDF become notes in Zotero** (Pro). Each page you inserted on the tablet
