@@ -28,6 +28,13 @@ Details that matter:
 - **The tag belongs on the squashed commit.** Squash-merging rewrites the commit, so tag only
   after step 5 and after pulling `main` — a tag on the pre-merge commit points at something that
   is not on `main`.
+- **Never tag a `[skip ci]` commit.** The nightly writes its verdict to `main` with `[skip ci]`,
+  and GitHub skips *every* workflow for a push whose head commit carries it — a tag pushed on
+  that commit starts no release run, silently. If the nightly landed after your release commit
+  (it does when the verdict gate sent you back to re-run it), merge one ordinary commit first and
+  tag that. Found on 1.10.0.
+- **The verdict gate reads the tag's tree.** A nightly that turned green *after* the tag does not
+  help it; delete the tag, tag the commit that carries the green verdict, push again.
 
 - **Bump `package-lock.json` by running `npm install`** (or `npm i --package-lock-only`) after
   editing `package.json` — never by hand-editing it. Two version fields and the license must all
