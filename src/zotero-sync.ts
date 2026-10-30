@@ -410,24 +410,32 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		};
 		try {
 			const found = plan.kind === "find" ? await renders.find(plan.parentKey) : null;
-			let render: LinkedRender;
+			const parentKey = plan.kind === "find" ? plan.parentKey : plan.render.parentKey;
+			let render: LinkedRender | null = null;
 			let holds: string | null = null;
 			let filename = file.filename;
 			if (plan.kind === "check" || found !== null) {
-				render = plan.kind === "check" ? plan.render : { key: found!.key, parentKey: plan.parentKey };
-				const judged = judgeRender(file.md5, render, plan.kind === "check" ? await renders.state(render.key) : found);
+				const known = plan.kind === "check" ? plan.render : { key: found!.key, parentKey };
+				const judged = judgeRender(file.md5, known, plan.kind === "check" ? await renders.state(known.key) : found);
 				if (judged.kind === "theirs") {
-					link = await save({ ...link, render: { ...render, theirs: judged.theirs } });
+					// Deleting the vault note is the user's "start over" (§4.3): a render of theirs that is no
+					// longer under the paper is left where it is and a new one made. One still there stays theirs.
+					const gone = judged.theirs === "trashed" || judged.theirs === "moved";
+					if (!(unit.noteWasDeleted === true && gone)) {
+						link = await save({ ...link, render: { ...known, theirs: judged.theirs } });
+						return await done();
+					}
+				} else if (judged.kind === "unchanged") {
+					link = await save({ ...link, render: { ...known, md5: file.md5 } });
 					return await done();
+				} else {
+					render = known;
+					holds = judged.holds;
+					filename = judged.filename ?? filename;
 				}
-				if (judged.kind === "unchanged") {
-					link = await save({ ...link, render: { ...render, md5: file.md5 } });
-					return await done();
-				}
-				holds = judged.holds;
-				filename = judged.filename ?? filename;
-			} else {
-				render = { key: await renders.create(plan.parentKey, filename), parentKey: plan.parentKey };
+			}
+			if (render === null) {
+				render = { key: await renders.create(parentKey, filename), parentKey };
 				// Recorded before the upload, so one that fails fills this attachment next time rather than
 				// leaving it empty beside a second one.
 				link = await save({ ...link, render });

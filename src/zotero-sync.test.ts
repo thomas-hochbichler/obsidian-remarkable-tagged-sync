@@ -1024,7 +1024,7 @@ describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
 		});
 
 		it("starts over with a new render once the vault note was deleted", async () => {
-			const r = renders({ create: vi.fn(async () => "REN2") });
+			const r = renders({ create: vi.fn(async () => "REN2"), state: vi.fn(async () => null) });
 			const { deps, saved } = on(r, { links: linked({ render: { ...RECORDED, theirs: "trashed" } }) });
 
 			const parts = await createZoteroPass(deps).run({ ...whole("md5-b"), noteWasDeleted: true });
@@ -1033,6 +1033,32 @@ describe("the render as a Zotero attachment (#180, Zotero spec §4)", () => {
 			expect(r.upload).toHaveBeenCalledWith("REN2", expect.anything(), null);
 			expect(renderOf(saved())).toEqual({ key: "REN2", parentKey: ITEM_KEY, md5: "md5-b" });
 			expect(parts.line).toContain("· [render in Zotero](zotero://open-pdf/library/items/REN2)");
+		});
+
+		// Found in the device check of 2026-10-30: annotated in Zotero, then trashed there. The record said
+		// "annotated" and nothing ever looked again.
+		it("starts over after a render the user annotated was trashed later, once the vault note was deleted", async () => {
+			const r = renders({ create: vi.fn(async () => "REN2"), state: vi.fn(async () => null) });
+			const { deps, saved } = on(r, { links: linked({ render: { ...RECORDED, theirs: "annotated" } }) });
+
+			await createZoteroPass(deps).run({ ...whole("md5-a"), noteWasDeleted: true });
+
+			expect(r.state).toHaveBeenCalledWith("REN1");
+			expect(r.upload).toHaveBeenCalledWith("REN2", expect.anything(), null);
+			expect(renderOf(saved())).toEqual({ key: "REN2", parentKey: ITEM_KEY, md5: "md5-a" });
+		});
+
+		// Their file is still under the paper: a second render beside it would undo what they did.
+		it("keeps a render that still carries the user's annotations when the vault note was deleted", async () => {
+			const r = renders({ state: vi.fn(async () => live({ annotated: true })) });
+			const { deps, saved } = on(r, { links: linked({ render: { ...RECORDED, theirs: "annotated" } }) });
+
+			const parts = await createZoteroPass(deps).run({ ...whole("md5-b"), noteWasDeleted: true });
+
+			expect(r.create).not.toHaveBeenCalled();
+			expect(r.upload).not.toHaveBeenCalled();
+			expect(renderOf(saved())).toEqual({ ...RECORDED, theirs: "annotated" });
+			expect(parts.line).toContain("not updated: it has your annotations");
 		});
 
 		it("re-finds its render under the paper when data.json lost the record, and creates none", async () => {

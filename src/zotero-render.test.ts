@@ -67,16 +67,13 @@ describe("the render planner (Zotero spec §4.3)", () => {
 		}
 	});
 
-	it("starts over once the vault note is deleted after the user trashed or moved the render", () => {
-		for (const theirs of ["trashed", "moved"] as const) {
-			expect(planRender(input({ noteWasDeleted: true, recorded: { key: "REN1", parentKey: "PAPER1", md5: "old", theirs } }))).toEqual({ kind: "create", parentKey: "PAPER1" });
-		}
-	});
-
-	// Their file is still under the paper: a second render beside it, or theirs overwritten, would undo what they did.
-	it("does not start over for a render the user changed or annotated", () => {
-		for (const theirs of ["changed", "annotated"] as const) {
-			expect(planRender(input({ noteWasDeleted: true, recorded: { key: "REN1", parentKey: "PAPER1", md5: "old", theirs } }))).toEqual({ kind: "none" });
+	// What they did may have changed since -- an annotated render can be trashed later -- so the record
+	// is not trusted: the attachment is read once more, even when the render's MD5 did not move.
+	it("reads the render again once the vault note is deleted, whatever the user did to it", () => {
+		for (const theirs of ["changed", "annotated", "moved", "trashed"] as const) {
+			const recorded = { key: "REN1", parentKey: "PAPER1", md5: "old", theirs };
+			expect(planRender(input({ noteWasDeleted: true, recorded }))).toEqual({ kind: "check", render: recorded });
+			expect(planRender(input({ noteWasDeleted: true, md5: "old", recorded }))).toEqual({ kind: "check", render: recorded });
 		}
 	});
 });

@@ -35,7 +35,10 @@ export interface RenderInput {
 	/** A zotero.org connection is configured: the desktop cannot upload a file (ticket 08 #5). */
 	readonly web: boolean;
 	readonly recorded: LinkedRender | undefined;
-	/** The vault note was deleted by hand: a render the user trashed or moved away is added anew (04 #5). */
+	/**
+	 * The vault note was deleted by hand: the user's "start over". A render they made theirs is read
+	 * once more, and one no longer under the paper (trashed, moved) is added anew (04 #5, §4.3).
+	 */
 	readonly noteWasDeleted?: boolean;
 }
 
@@ -46,9 +49,7 @@ export type RenderPlan =
 	| { readonly kind: "not-added"; readonly reason: string }
 	/** No record: look under the paper for one of ours first (spec §4.2), and create one only if there is none. */
 	| { readonly kind: "find"; readonly parentKey: string }
-	/** Starting over after the user trashed or moved the last one: a new one, whatever is in the trash. */
-	| { readonly kind: "create"; readonly parentKey: string }
-	/** The render changed: read the attachment, then {@link judgeRender}. */
+	/** The render changed, or the user deleted the vault note after making it theirs: read the attachment, then {@link judgeRender}. */
 	| { readonly kind: "check"; readonly render: LinkedRender };
 
 export function planRender(input: RenderInput): RenderPlan {
@@ -56,13 +57,13 @@ export function planRender(input: RenderInput): RenderPlan {
 	const { recorded } = input;
 	// A page note of a document whose document tag already added the render: that one is the line's.
 	if (input.md5 === null) return recorded === undefined ? { kind: "not-added", reason: NOT_WHOLE_DOCUMENT } : { kind: "none" };
-	const startOver = input.noteWasDeleted === true && (recorded?.theirs === "trashed" || recorded?.theirs === "moved");
-	if (recorded?.theirs !== undefined && !startOver) return { kind: "none" };
+	// Theirs stays theirs -- until the vault note is deleted, when what they did is read once more.
+	if (recorded?.theirs !== undefined && input.noteWasDeleted !== true) return { kind: "none" };
 	if (input.library !== "user") return { kind: "not-added", reason: GROUP_LIBRARY };
 	if (!input.web) return { kind: "not-added", reason: NEEDS_WEB };
-	if (recorded !== undefined && !startOver) return recorded.md5 === input.md5 ? { kind: "unchanged" } : { kind: "check", render: recorded };
+	if (recorded !== undefined) return recorded.theirs === undefined && recorded.md5 === input.md5 ? { kind: "unchanged" } : { kind: "check", render: recorded };
 	if (input.paperKey === null) return { kind: "not-added", reason: NO_PARENT_ITEM };
-	return startOver ? { kind: "create", parentKey: input.paperKey } : { kind: "find", parentKey: input.paperKey };
+	return { kind: "find", parentKey: input.paperKey };
 }
 
 export type RenderJudgement =

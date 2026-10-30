@@ -4853,17 +4853,17 @@
       file: src/zotero-render.test.ts
       test: "the render planner (Zotero spec §4.3) > never touches a render the user made theirs, changed or not"
     - id: Y38.3
-      scenario: "`theirs: trashed` or `moved`, vault note deleted by hand"
-      expect: 'Create a new render under the paper, no re-find'
+      scenario: "Any `theirs`, vault note deleted by hand, render MD5 moved or not"
+      expect: '`check`: the attachment is read again, the record is not trusted (an annotated render can be trashed later)'
       layer: unit
       file: src/zotero-render.test.ts
-      test: "the render planner (Zotero spec §4.3) > starts over once the vault note is deleted after the user trashed or moved the render"
+      test: "the render planner (Zotero spec §4.3) > reads the render again once the vault note is deleted, whatever the user did to it"
     - id: Y38.4
-      scenario: "`theirs: changed` or `annotated`, vault note deleted by hand"
-      expect: '`none`: their file stays'
+      scenario: "`theirs: annotated`, vault note deleted by hand, the annotations are still there"
+      expect: 'Stays theirs, none created, line says it has your annotations'
       layer: unit
-      file: src/zotero-render.test.ts
-      test: "the render planner (Zotero spec §4.3) > does not start over for a render the user changed or annotated"
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > keeps a render that still carries the user's annotations when the vault note was deleted"
     - id: Y38.5
       scenario: "Attachment holds the MD5 we uploaded last, render changed"
       expect: 'Upload under that MD5'
@@ -4984,6 +4984,12 @@
       layer: unit
       file: src/zotero-sync.test.ts
       test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > starts over with a new render once the vault note was deleted"
+    - id: Y38.28
+      scenario: "`theirs: annotated`, trashed in Zotero later, vault note deleted by hand (device check 2026-10-30)"
+      expect: 'The attachment is read again, found trashed, a new render created and uploaded'
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "the render as a Zotero attachment (#180, Zotero spec §4) > what the user did to it in Zotero (ticket 16) > starts over after a render the user annotated was trashed later, once the vault note was deleted"
     - id: Y38.25
       scenario: "`data.json` lost the record, ours under the paper"
       expect: 'Re-found, replaced in place, none created'
