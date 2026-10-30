@@ -27,12 +27,14 @@ const median = (values) => {
  * One night's OCR measurements, extracted from a committed verdict -- or null when that night
  * produced no numbers at all.
  *
- * **The numbers decide, not the part's status.** That status is the worst of every backend
+ * **The numbers decide, not the part's status.** That status used to be the worst of every backend
  * (`mergeBackendStatuses`), which was a sound gate while three backends ran and became a trap at
- * eight: one rate-limited page on one model turns the whole part `unknown`, and rejecting the part
+ * eight: one rate-limited page on one model turned the whole part `unknown`, and rejecting the part
  * threw away the seven backends that had measured cleanly. Both nights after the set grew to eight
  * were discarded that way, and the five new backends sat at zero recorded nights while their
- * figures were already in the file.
+ * figures were already in the file. Since 2026-10-30 the part status follows this file's rule too
+ * (worst *measured* backend, `unknown` only when nothing measured) -- after the same trap held
+ * release 1.10.0 at the tag for four nights of one provider's 429.
  *
  * Nothing is softened by reading them. Every backend without a numeric CER is dropped below, the
  * baseline is keyed per backend *and* per page, and a 429 on page 10 therefore means exactly what
