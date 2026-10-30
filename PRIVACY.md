@@ -10,11 +10,13 @@ details: [IMPRESSUM.md](./IMPRESSUM.md).
 
 ## 1. What the plugin sends, and when
 
-### The reMarkable cloud, and any transcription backend you configure
+### Your own accounts and devices: the reMarkable cloud, your tablet, a transcription backend, Zotero
 
-These are your own accounts, used on your instruction. They are described in detail in the
-README's [Network use](./README.md#network-use) section, which is the authoritative list. Nothing
-there goes to me.
+These are your own accounts, used on your instruction: the reMarkable cloud (or, with Pro, your
+tablet over your own network), any transcription backend you configure, and your Zotero library
+if you connect it. They are described in detail in the README's
+[Network use](./README.md#network-use) section, which is the authoritative list. Nothing there
+goes to me.
 
 ### The licence check — the only call added by Tagged Sync Pro
 
@@ -23,7 +25,7 @@ licence key is valid.
 
 | | |
 |---|---|
-| **When** | when you enter your key, and otherwise only on the path of a paid feature — a cloud transcription run, or adding a second tag mapping |
+| **When** | when you enter your key or press *Deactivate this vault*, and otherwise only on the path of a paid feature — a sync, re-transcribe or frontmatter run while a cloud transcription backend is selected, or adding a second tag mapping |
 | **How often** | at most **once every 7 days**. A valid answer is remembered; between checks nothing is sent |
 | **Never** | if you have not bought and are not in the trial. A free user causes **no** call to `polar.sh`, ever |
 | **What is sent** | your licence key, the activation id of this vault, and the public organization id of the plugin. **No email address, no note content, no usage statistics.** Whenever this vault activates the key — when you enter it, and again if its activation is lost — the call also sends this vault's name, so you can tell your devices apart in Polar |
@@ -109,7 +111,12 @@ system.
   mine is the trial ticket above, and it is the request that issues the trial — the server counting
   how often a vault asked is a side of that, disclosed above, not a separate measurement.
 - **No account.** There is nothing to sign up for and nothing to log into.
-- **No page image and no transcript ever leaves your device** except to a transcription backend
-  *you* configured with *your* own key. See the README.
+- **Your handwriting and your transcripts go only where you send them, and never to me.** A page
+  image leaves your device only to a cloud transcription backend you configured with your own key,
+  or — if you switch on *Add the render to Zotero* — to your own Zotero Storage. Transcribed text
+  leaves it only to that same backend, and — with Zotero write-back — into your own Zotero
+  library, or a group library you switched on: margin notes as annotation comments, pages you
+  added as notes. The render carries its text layer, so the transcript goes along with it. See the
+  README.
 
 *Last updated: «DATE».*
