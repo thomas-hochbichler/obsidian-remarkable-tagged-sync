@@ -282,8 +282,8 @@ export async function executeNotes(client: ZoteroClient, link: ZoteroLink, plan:
 			if ((await client.trashAnnotation(trash.note)) === "conflict") {
 				// Edited in Zotero between our read and our write: theirs from now on (Zotero spec §3). The
 				// edit need not be in the body -- a tag or relation changes the version too -- so the next
-				// sync's body comparison could not be trusted to see it.
-				notes[trash.blockId] = { ...(link.notes?.[trash.blockId] ?? trash.record), userEdited: true };
+				// sync's body comparison could not be trusted to see it. A trash always has a stored record.
+				notes[trash.blockId] = { ...notes[trash.blockId], userEdited: true };
 				continue;
 			}
 			notes[trash.blockId] = trash.record;
