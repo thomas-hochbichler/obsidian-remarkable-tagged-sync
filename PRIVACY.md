@@ -119,4 +119,4 @@ system.
   added as notes. The render carries its text layer, so the transcript goes along with it. See the
   README.
 
-*Last updated: «DATE».*
+*Last updated: 2026-10-30.*
