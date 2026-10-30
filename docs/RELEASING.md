@@ -16,7 +16,7 @@ enforce.
 | 3 | Rename the changelog heading | `## [Unreleased]` → `## [1.0.6] - 2026-08-01` |
 | 4 | Commit and push the branch | `git commit -am "Release 1.0.6" && git push -u origin release/1.0.6` |
 | 5 | Open the PR, wait for green, squash-merge | `gh pr create --title "Release 1.0.6"`, then `gh pr merge --squash --delete-branch` |
-| 6 | Tag the **merged** commit on `main` and push the tag | `git switch main && git pull --ff-only && git tag 1.0.6 && git push origin 1.0.6` |
+| 6 | Pre-check, then tag the **merged** commit on `main` and push the tag | `git switch main && git pull --ff-only && node scripts/release-checks.mjs tag 1.0.6 && git tag 1.0.6 && git push origin 1.0.6` |
 | 7 | Wait for the release workflow | it builds, attests, publishes and uploads |
 | 8 | **After** the tag: `npm run freeze-state`, in a PR of its own | rewrites `test-fixtures/legacy-state/` in place |
 
@@ -28,13 +28,12 @@ Details that matter:
 - **The tag belongs on the squashed commit.** Squash-merging rewrites the commit, so tag only
   after step 5 and after pulling `main` — a tag on the pre-merge commit points at something that
   is not on `main`.
-- **Never tag a `[skip ci]` commit.** The nightly writes its verdict to `main` with `[skip ci]`,
-  and GitHub skips *every* workflow for a push whose head commit carries it — a tag pushed on
-  that commit starts no release run, silently. If the nightly landed after your release commit
-  (it does when the verdict gate sent you back to re-run it), merge one ordinary commit first and
-  tag that. Found on 1.10.0.
-- **The verdict gate reads the tag's tree.** A nightly that turned green *after* the tag does not
-  help it; delete the tag, tag the commit that carries the green verdict, push again.
+- **The pre-check is step 6, not optional.** `release-checks.mjs tag` runs the version, changelog
+  and nightly gates on the tree the tag will carry, and refuses two commits no workflow can
+  report on: one whose message carries a skip marker (the nightly's verdict commit — GitHub then
+  starts *no* workflow for the tag push, silently) and one that is not `origin/main`. If the
+  nightly landed after your release commit, merge one ordinary commit and tag that. 1.10.0 spent
+  three tags on these before the check existed.
 
 - **Bump `package-lock.json` by running `npm install`** (or `npm i --package-lock-only`) after
   editing `package.json` — never by hand-editing it. Two version fields and the license must all
@@ -74,6 +73,7 @@ after a failure.
 | 2 | git author email | ✅ | — |
 | 3 | version consistency across the four files, and the frozen state | ✅ | ✅ **plus tag == version** |
 | 4 | changelog | ✅ weaker — see below | ✅ hard |
+| 4b | nightly verdict (`.nightly-verdict.json`, 72 h window) | ✅ release commit only | ✅ |
 | 5 | lint ratchet | ✅ | ✅ |
 | 6 | `tsc -noEmit` + 1805 tests | ✅ | ✅ |
 | 7 | build | ✅ | ✅ |
@@ -88,6 +88,7 @@ npm audit --audit-level=moderate                 # the release gate; must be cle
 node scripts/release-checks.mjs version          # add --tag 1.0.6 to also check the tag
 node scripts/release-checks.mjs changelog --ci   # or --release 1.0.6
 node scripts/release-checks.mjs lint
+node scripts/release-checks.mjs nightly          # the verdict gate; `tag 1.0.6` runs it with the rest
 node scripts/check-bundle.mjs                    # after npm run build
 ```
 
@@ -173,6 +174,7 @@ gh attestation verify main.js --repo thomas-hochbichler/obsidian-remarkable-tagg
 | Situation | What to do |
 |---|---|
 | The run failed and **no release exists** | delete the tag, fix it, re-tag the **same** version |
+| It failed on the **nightly verdict** | `node scripts/release-checks.mjs nightly` names the part; a backend's reason sits in `.nightly-verdict.json` at `parts.ocr.detail.backends.<key>.reason` (a large file — query it, do not print it). Fix the backend list in `tests/support/nightly/ocr.ts` if a provider is the cause, `gh workflow run nightly.yml --ref main`, then tag the commit *after* the verdict commit (step 6's pre-check says which) |
 | A release **exists** | never touch it — bump to the next version |
 
 ```bash
