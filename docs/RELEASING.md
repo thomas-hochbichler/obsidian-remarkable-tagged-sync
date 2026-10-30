@@ -195,15 +195,20 @@ body can still be edited.
 
 The website lives in its own repository, but `https://taggedsync.com/faq` answers questions about
 *this* plugin at *one* version, so a release can make it wrong. Nothing bumps it for you. Read the
-changelog you just wrote and check two things:
+changelog you just wrote and check three things:
 
 - **The version and the month** — `describes` in `src/site.ts`, one line. The stamp under the FAQ
   heading and `softwareVersion` in the schema on the home page both read it. The month says when
   the answers were last checked against this README; it is not a build date and never moves on its
   own.
 - **The README deep links.** Every answer in `src/data/faq.ts` may carry one `readme.anchor`, and
-  each has to match a heading in this README. Renaming a heading here breaks a link there and
-  nothing says so — ten anchors today, and this line is the only check they get.
+  each has to match a heading in this README. Renaming a heading here breaks a link there;
+  `npm run check:prose` in the website repo fetches this README from `main` and says so.
+- **The dates of the pages you revised.** A page with its own date (the answer pages, the legal
+  pages, the articles) is listed in `factsChecked` in `src/site.ts`, and that entry is its sitemap
+  `lastmod`. Revise the page, move its entry to the day — and for a Markdown page, its `updated`
+  in the front matter with it. `check:prose` catches a Markdown page whose two dates disagree;
+  an `.astro` page such as `/zotero` has no date of its own, so nothing catches that one.
 
 Then ask whether any answer is now wrong. A changed limit is the usual case: the answers describe
 what the plugin does, not what it is called.
