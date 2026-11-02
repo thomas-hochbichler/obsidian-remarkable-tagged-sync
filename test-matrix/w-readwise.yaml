@@ -1,0 +1,277 @@
+# Readwise push (spec `.scratch/readwise-integration/spec.md`), starting with the client that talks
+# to readwise.io's Highlights API v2.
+#
+# The load-bearing rows are W1.8 (a listing that fails part-way is a failure, never a shorter list --
+# a shorter one would mark books deleted that the user never touched) and W1.12/W1.13 (which items
+# Readwise refused, so one bad item never blocks the rest). Both are silent when wrong.
+
+- feature: W1
+  name: readwise.io
+  code: src/readwise-client.ts
+  tier: pro
+  scenarios:
+    - id: W1.1
+      scenario: The Connection line asks whether the token works
+      expect: '`GET /auth/` with `Authorization: Token …`; 204 is connected'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > sends the token and says connected on 204"
+
+    - id: W1.2
+      scenario: The token is wrong
+      expect: '`rejected` -- the repair is a new token, not waiting'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what 401 means"
+
+    - id: W1.3
+      scenario: The plan has no API access
+      expect: '`no-api`, read from 403 until spec §12 F5 is checked on an expired trial'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what 403 means"
+
+    - id: W1.4
+      scenario: readwise.io answers 500
+      expect: '`unreachable` -- "Readwise didn''t answer"'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what 500 means"
+
+    - id: W1.5
+      scenario: The machine is offline
+      expect: '`unreachable`, never a throw out of the settings tab'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > tells the Connection line what a network failure means"
+
+    - id: W1.6
+      scenario: A server that accepts the connection and never answers
+      expect: The call gives up. The push is awaited on the sync path, so a hanging socket would be a sync that never ends
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "asking readwise.io about the token > stops waiting for a server that never answers"
+
+    - id: W1.7
+      scenario: Listing our books over more than one page
+      expect: Only `source=tagged_sync`, every page followed through `next`, author `null` kept as `null`
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > asks only for books made with our source, and follows every page"
+
+    - id: W1.8
+      scenario: A later page of the book listing fails
+      expect: The whole listing fails. A shorter list would read as books the user deleted (spec §11 P24)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > fails the whole listing when a later page fails, never answering a shorter list"
+
+    - id: W1.9
+      scenario: '`next` points away from readwise.io'
+      expect: Not followed; the token goes with every request and stays on readwise.io
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > does not follow a next page that leads away from readwise.io, so the token stays there"
+
+    - id: W1.10
+      scenario: The book listing answers something that is not a listing
+      expect: A failure, not an empty list
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > fails on an answer that is not a listing"
+
+    - id: W1.35
+      scenario: The book listing carries a book without an id
+      expect: A failure, not a silently shorter list
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > fails on a book without an id"
+
+    - id: W1.36
+      scenario: readwise.io keeps answering with a `next` page
+      expect: Gives up after 100 pages -- an error, not a sync that never ends
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "listing our books > gives up on a server that never stops paging"
+
+    - id: W1.11
+      scenario: Items are pushed, one with author and note, one without
+      expect: '`category: books`, `source_type: tagged_sync`, `location_type: page`, `highlight_url`; an absent author or note is left out, never sent blank (a blank field fails the whole call)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > sends each item as a page-located highlight of a book from our source, leaving out what is absent"
+
+    - id: W1.12
+      scenario: Readwise refuses some items of a call with a per-item list
+      expect: The refused items by `highlight_url`, so they are set aside and the rest re-sent (spec §11 P13)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > names the items Readwise refused, so the rest can be sent again"
+
+    - id: W1.13
+      scenario: Readwise refuses the one item of a single-item call
+      expect: That item is named. Readwise answers one item with its field errors alone, not a list of one (ticket 15 live check)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > names the one item of a single-item call that Readwise refused"
+
+    - id: W1.14
+      scenario: A single-item 400 that names no field
+      expect: '`bad-request` -- nothing to set aside, so it is not read as a refusal of that item'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 on a single-item call that names no field as its own failure"
+
+    - id: W1.37
+      scenario: A single-item 400 whose body is not an object
+      expect: '`bad-request`'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 on a single-item call that is not an object as its own failure"
+
+    - id: W1.15
+      scenario: A 400 without a per-item list
+      expect: '`bad-request`, its own outcome (spec §6)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 with no list at all as its own failure"
+
+    - id: W1.16
+      scenario: A 400 whose list does not match the items sent
+      expect: '`bad-request` -- the positions no longer say which item is whose'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 with a list of another length as its own failure"
+
+    - id: W1.17
+      scenario: A 400 whose list refuses nothing
+      expect: '`bad-request` -- re-sending the same items would only loop'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > reports a 400 with a list that refuses nothing as its own failure"
+
+    - id: W1.18
+      scenario: A push answered 401
+      expect: '`rejected`; the push stops at once'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > stops on 401 as rejected"
+
+    - id: W1.19
+      scenario: A push answered 403
+      expect: '`no-api`; the push stops at once'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > stops on 403 as no-api"
+
+    - id: W1.20
+      scenario: A push answered 502
+      expect: '`unreachable`; what is pending stays pending'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > stops on 502 as unreachable"
+
+    - id: W1.21
+      scenario: More than 1,000 items handed to one call
+      expect: Refused before anything is sent; the push step batches (spec §11 P15)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > refuses a batch over the limit before sending anything"
+
+    - id: W1.22
+      scenario: A push lands, every item of each book among `modified_highlights`
+      expect: Ids mapped to `highlight_url` by send order, per book; author `null` matches an omitted author (spec §11 P5)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > maps the ids of a book back to the items in send order when the counts match"
+
+    - id: W1.23
+      scenario: A push lands, but an unchanged item is missing from `modified_highlights`
+      expect: No ids mapped for that book -- order no longer says which id is whose
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > maps no ids for a book whose modified highlights are fewer than the items sent"
+
+    - id: W1.24
+      scenario: A push lands with an answer that cannot be read
+      expect: Still pushed, with no books and no ids. It landed; the ids are best effort
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > still counts as pushed when the answer cannot be read"
+
+    - id: W1.38
+      scenario: A push lands; one book entry has no id, another no `modified_highlights`
+      expect: The unreadable entry is skipped, the other book kept with no ids
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > skips a book entry it cannot read, and takes missing modified highlights as none"
+
+    - id: W1.25
+      scenario: Looking up a book's highlights to find one to delete
+      expect: '`book_id=…`, every page, `{id, url}` with `url` = our `highlight_url` or `null`'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "finding a book's highlights > lists one book's highlights over every page as id and url"
+
+    - id: W1.26
+      scenario: The highlight listing carries an entry without an id
+      expect: A failure, not a silently shorter list
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "finding a book's highlights > fails on a highlight without an id"
+
+    - id: W1.27
+      scenario: Deleting a highlight answered 204
+      expect: Gone
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "deleting a highlight > counts 204 as gone"
+
+    - id: W1.28
+      scenario: Deleting a highlight that is already gone (404)
+      expect: Gone too -- the record can be dropped either way
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "deleting a highlight > counts 404 as gone"
+
+    - id: W1.29
+      scenario: Deleting a highlight answered 500
+      expect: Reported; the delete stays pending
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "deleting a highlight > reports any other answer"
+
+    - id: W1.30
+      scenario: 429 with a short `Retry-After`
+      expect: Waited once, asked again
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > waits out a short Retry-After on 429 once and asks again"
+
+    - id: W1.31
+      scenario: 503 with a short `Retry-After`
+      expect: Waited once, asked again
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > waits out a short Retry-After on 503 once and asks again"
+
+    - id: W1.32
+      scenario: 429 without `Retry-After`
+      expect: Reported at once, no wait
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > reports a 429 without Retry-After at once"
+
+    - id: W1.33
+      scenario: 429 with a `Retry-After` over 30 s
+      expect: Reported at once -- past half a minute the next sync does it
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > reports a 429 with a Retry-After over half a minute at once"
+
+    - id: W1.34
+      scenario: A second 429 after the wait
+      expect: Reported, never a loop
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "being asked to slow down > reports a second 429 instead of waiting again"
