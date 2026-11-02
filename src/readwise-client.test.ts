@@ -280,6 +280,25 @@ describe("deleting a highlight", () => {
 	});
 });
 
+describe("putting back a book's names", () => {
+	it("sets the title and author the user gave the book, as overrides", async () => {
+		const { impl, calls } = stubFetch(json({ id: 10 }));
+		await client(impl).rename(10, { title: "Smith 2019", author: "Jane Smith" });
+		expect(calls[0]).toMatchObject({ url: `${API}/books/10/`, method: "PATCH", body: { title_override: "Smith 2019", author_override: "Jane Smith" } });
+	});
+
+	it("leaves out a name that is not to change", async () => {
+		const { impl, calls } = stubFetch(json({ id: 10 }));
+		await client(impl).rename(10, { author: "Jane Smith" });
+		expect(calls[0].body).toEqual({ author_override: "Jane Smith" });
+	});
+
+	it("reports a rename Readwise did not take", async () => {
+		const { impl } = stubFetch(status(404));
+		await expect(client(impl).rename(10, { title: "Smith 2019" })).rejects.toMatchObject({ kind: "unreachable" });
+	});
+});
+
 describe("being asked to slow down", () => {
 	it.each([429, 503])("waits out a short Retry-After on %i once and asks again", async (code) => {
 		const { impl, calls } = stubFetch(status(code, { "Retry-After": "12" }), status(204));

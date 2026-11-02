@@ -241,6 +241,27 @@
       file: src/readwise-client.test.ts
       test: "deleting a highlight > reports any other answer"
 
+    - id: W1.39
+      scenario: A book the user renamed in Readwise gets its names back after a push
+      expect: '`PATCH /books/<id>/` with `title_override` and `author_override` -- the push itself always resets both to ours (spec §11 P25)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > sets the title and author the user gave the book, as overrides"
+
+    - id: W1.40
+      scenario: Only the title or only the author was changed by the user
+      expect: The other is left out, not sent blank
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > leaves out a name that is not to change"
+
+    - id: W1.41
+      scenario: Readwise refuses the rename
+      expect: Reported, so the push can keep the names for the next try
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > reports a rename Readwise did not take"
+
     - id: W1.30
       scenario: 429 with a short `Retry-After`
       expect: Waited once, asked again

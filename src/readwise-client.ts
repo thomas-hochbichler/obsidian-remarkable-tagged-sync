@@ -106,6 +106,18 @@ export interface ReadwiseClient {
 	bookHighlights(bookId: number): Promise<ReadwiseHighlightEntry[]>;
 	/** Deletes one highlight. 404 counts as deleted: either way it is gone. */
 	remove(highlightId: number): Promise<void>;
+	/**
+	 * Shows a book under the title and author the user gave it in Readwise. Every push resets both to
+	 * the ones it sends -- which stay the book's key, since sending the user's title opens a second
+	 * book -- so the push puts the user's names back afterwards (spec §11 P25, ticket 15).
+	 */
+	rename(bookId: number, names: ReadwiseNames): Promise<void>;
+}
+
+/** What `rename` sets; a field left out is left as it is. */
+export interface ReadwiseNames {
+	readonly title?: string;
+	readonly author?: string;
 }
 
 type Json = Record<string, unknown>;
@@ -261,6 +273,12 @@ export function createReadwiseClient(
 			const response = await request(`${READWISE_API}/highlights/${highlightId}/`, { method: "DELETE" });
 			if (response.ok || response.status === 404) return;
 			throw failure(response.status, "when asked to delete a highlight");
+		},
+
+		async rename(bookId, { title, author }) {
+			const body = { ...(title === undefined ? {} : { title_override: title }), ...(author === undefined ? {} : { author_override: author }) };
+			const response = await request(`${READWISE_API}/books/${bookId}/`, { method: "PATCH", body: JSON.stringify(body) });
+			if (!response.ok) throw failure(response.status, "when asked to rename a book");
 		},
 	};
 }
