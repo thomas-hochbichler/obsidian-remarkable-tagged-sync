@@ -50,10 +50,17 @@ export class ReadwiseError extends Error {
 	}
 }
 
+/**
+ * Where Readwise files a book: an EPUB under Books, anything else under Articles (user, 2026-11-02).
+ * Not part of the book's key: a push with the other one moves the book (`research/20-category-check.ts`).
+ */
+export type ReadwiseCategory = "books" | "articles";
+
 /** One highlight as the push sends it. `author` absent = omitted, never blank (ticket 14 #4). */
 export interface ReadwiseItem {
 	readonly title: string;
 	readonly author?: string;
+	readonly category: ReadwiseCategory;
 	readonly text: string;
 	/**
 	 * Never `""`, which Readwise refuses. Absent clears the note Readwise holds, even on a re-push
@@ -230,7 +237,7 @@ export function createReadwiseClient(
 				title: item.title,
 				...(item.author === undefined ? {} : { author: item.author }),
 				...(item.note === undefined ? {} : { note: item.note }),
-				category: "books",
+				category: item.category,
 				source_type: READWISE_SOURCE,
 				location: item.location,
 				location_type: "page",

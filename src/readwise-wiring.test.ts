@@ -141,13 +141,13 @@ describe("the Readwise half of a sync", () => {
 		const plugin = await pluginWith();
 		const page: DigestPage = { pageLabel: "3", embedPage: 1, source: null, highlights: [{ id: "hl-1", key: "p0:9f", sentence: "A new mark.", rects: [], tool: "marker", marked: [], color: null, notes: [], section: null, top: 0 }], notes: [] };
 		engine.during = async () => {
-			await engine.recorders[0]!.record({ docId: "doc-2", pages: [page], scope: "document", pageOrder: null, marginNotes: true, sources: async () => ({ visibleName: "Second" }) });
+			await engine.recorders[0]!.record({ docId: "doc-2", pages: [page], scope: "document", pageOrder: null, marginNotes: true, category: "articles", sources: async () => ({ visibleName: "Second" }) });
 		};
 		readwise.failure = new ReadwiseError("unreachable", "Could not reach readwise.io.");
 
 		await plugin.syncNow();
 
-		expect(plugin.data.readwiseBooks["doc-2"]).toEqual({ title: "Second", highlights: { "p0:9f": { want: { text: "A new mark.", location: 3 } } } });
+		expect(plugin.data.readwiseBooks["doc-2"]).toEqual({ title: "Second", category: "articles", highlights: { "p0:9f": { want: { text: "A new mark.", location: 3 } } } });
 	});
 
 	it("records nothing and pushes nothing without Pro", async () => {

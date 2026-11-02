@@ -9,6 +9,7 @@
  */
 
 import type { BookIdentity } from "./readwise-book";
+import type { ReadwiseCategory } from "./readwise-client";
 import { pageIdOf, type ReadwiseEntry } from "./readwise-highlights";
 
 /** The settings rows of spec §2. */
@@ -50,6 +51,8 @@ export interface ReadwiseBook {
 	readonly title: string;
 	/** Frozen likewise; absent = omitted. */
 	readonly author?: string;
+	/** Written on every record; not part of the key. `books` for one stored without it, which is what was sent then. */
+	readonly category: ReadwiseCategory;
 	readonly bookId?: number;
 	/** Deleted in Readwise: never recorded into or pushed again (ticket 14 #2). */
 	readonly deleted?: true;
@@ -75,6 +78,8 @@ export interface RecordedUnit {
 	readonly scope: RecordScope;
 	/** The book a new document becomes; ignored once the document has one. */
 	readonly identity: BookIdentity;
+	/** Where Readwise files the book: an EPUB under Books, anything else under Articles. */
+	readonly category: ReadwiseCategory;
 	/** The vault's *margin notes* setting. */
 	readonly marginNotes: boolean;
 }
@@ -120,6 +125,7 @@ export function readwiseBook(books: StoredReadwiseBooks, docId: string): Readwis
 	return {
 		title: stored.title,
 		...(typeof stored.author === "string" && stored.author !== "" ? { author: stored.author } : {}),
+		category: stored.category === "articles" ? "articles" : "books",
 		...(typeof stored.bookId === "number" ? { bookId: stored.bookId } : {}),
 		...(stored.deleted === true ? { deleted: true as const } : {}),
 		...(shown === null
@@ -177,7 +183,7 @@ function cut(value: string, limit: number): string {
  * every other book of this vault with the same title and author -- deleted ones too, which still
  * exist in Readwise -- because Readwise files highlights by title and author.
  */
-function newBook(books: StoredReadwiseBooks, docId: string, { title, author }: BookIdentity): ReadwiseBook {
+function newBook(books: StoredReadwiseBooks, docId: string, { title, author }: BookIdentity, category: ReadwiseCategory): ReadwiseBook {
 	const named = author === undefined ? {} : { author: cut(author, AUTHOR_LIMIT) };
 	const taken = new Set(
 		Object.keys(books)
@@ -190,11 +196,11 @@ function newBook(books: StoredReadwiseBooks, docId: string, { title, author }: B
 	const name = title.trim() === "" ? "Untitled" : title;
 	let unique = cut(name, TITLE_LIMIT);
 	for (let n = 2; taken.has(unique); n++) unique = `${cut(name, TITLE_LIMIT - ` (${n})`.length)} (${n})`;
-	return { title: unique, ...named, highlights: {} };
+	return { title: unique, ...named, category, highlights: {} };
 }
 
 /** Every field this build reads into a {@link ReadwiseBook}. Anything else on a stored book was written by a newer build. */
-const KNOWN_FIELDS = new Set(["title", "author", "bookId", "deleted", "shown", "highlights"]);
+const KNOWN_FIELDS = new Set(["title", "author", "category", "bookId", "deleted", "shown", "highlights"]);
 
 /**
  * Every book with one document's book set, as `zotero-links.ts` `withLink` does it: the fields a
@@ -211,7 +217,7 @@ export function withBook(books: StoredReadwiseBooks, docId: string, book: Readwi
 /** Every book with one document's unit recorded into it (spec §4.2). */
 export function recordUnit(books: StoredReadwiseBooks, docId: string, unit: RecordedUnit): StoredReadwiseBooks {
 	const stored = books[docId];
-	const book = stored === undefined ? newBook(books, docId, unit.identity) : readwiseBook(books, docId);
+	const book = stored === undefined ? newBook(books, docId, unit.identity, unit.category) : readwiseBook(books, docId);
 	// A book this build cannot read stays as it is (spec §3): named anew beside the id it may carry,
 	// it would open a second book in Readwise (§1.2).
 	if (book === null || book.deleted) return books;
@@ -232,7 +238,7 @@ export function recordUnit(books: StoredReadwiseBooks, docId: string, unit: Reco
 	}
 	// A document with nothing to record has no name yet: the first record freezes it.
 	if (stored === undefined && Object.keys(highlights).length === 0) return books;
-	return withBook(books, docId, { ...book, highlights });
+	return withBook(books, docId, { ...book, category: unit.category, highlights });
 }
 
 /** Is something waiting to be pushed: a text, or a delete? A text Readwise refused is not, until it changes (spec §11 P13). */

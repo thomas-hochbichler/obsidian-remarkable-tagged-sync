@@ -9,6 +9,7 @@ import { bookIdentity, type BookIdentity, type BookSources } from "./readwise-bo
 import {
 	MAX_PUSH_BATCH,
 	type ReadwiseBookEntry,
+	type ReadwiseCategory,
 	type ReadwiseCheck,
 	type ReadwiseClient,
 	ReadwiseError,
@@ -44,6 +45,8 @@ export interface ReadwiseUnit {
 	readonly pageOrder: readonly string[] | null;
 	/** The vault's *margin notes* setting, which the digest was built under. */
 	readonly marginNotes: boolean;
+	/** Books for an EPUB, Articles for anything else. */
+	readonly category: ReadwiseCategory;
 	/**
 	 * What may name the book. Asked only for a document with no book yet, because the name is frozen
 	 * at the first record (spec §11 P21) and an EPUB's costs a download.
@@ -82,10 +85,10 @@ const NAME_NOT_READ: BookIdentity = { title: "" };
 
 export function createReadwiseRecorder(host: RecorderHost): ReadwiseRecorder {
 	return {
-		async record({ docId, pages, scope, pageOrder, marginNotes, sources }) {
+		async record({ docId, pages, scope, pageOrder, marginNotes, category, sources }) {
 			const identity = host.books()[docId] === undefined ? bookIdentity(await sources()) : NAME_NOT_READ;
 			const items = readwiseHighlights(pages, docId, pageOrder);
-			host.setBooks(recordUnit(host.books(), docId, { items, scope, identity, marginNotes }));
+			host.setBooks(recordUnit(host.books(), docId, { items, scope, identity, category, marginNotes }));
 		},
 	};
 }
@@ -340,6 +343,7 @@ function outgoing(data: ReadwiseData): Outgoing[] {
 				const item: ReadwiseItem = {
 					title: book.title,
 					...(book.author === undefined ? {} : { author: book.author }),
+					category: book.category,
 					text: want.text,
 					...(want.note === undefined ? {} : { note: want.note }),
 					location: want.location,

@@ -53,6 +53,7 @@ const client = (impl: typeof fetch, timeoutMs?: number) => createReadwiseClient(
 const item = (overrides: Partial<ReadwiseItem> = {}): ReadwiseItem => ({
 	title: "Thinking in Systems",
 	author: "Donella Meadows",
+	category: "books",
 	text: "A system is **more than the sum** of its parts.",
 	location: 4,
 	url: "obsidian://tagged-sync?highlight=doc-1/page-1:1a2b",
@@ -124,9 +125,9 @@ describe("listing our books", () => {
 });
 
 describe("pushing highlights", () => {
-	it("sends each item as a page-located highlight of a book from our source, leaving out what is absent", async () => {
+	it("sends each item as a page-located highlight of a book or article from our source, leaving out what is absent", async () => {
 		const { impl, calls } = stubFetch(json([]));
-		await client(impl).push([item({ note: "Compare ch. 2" }), item({ author: undefined, url: "obsidian://tagged-sync?highlight=doc-1/page-2:page" })]);
+		await client(impl).push([item({ note: "Compare ch. 2" }), item({ author: undefined, category: "articles", url: "obsidian://tagged-sync?highlight=doc-1/page-2:page" })]);
 		expect(calls[0]).toMatchObject({ url: `${API}/highlights/`, method: "POST" });
 		expect(calls[0].headers["content-type"]).toBe("application/json");
 		expect(calls[0].body).toEqual({
@@ -145,7 +146,7 @@ describe("pushing highlights", () => {
 				{
 					text: "A system is **more than the sum** of its parts.",
 					title: "Thinking in Systems",
-					category: "books",
+					category: "articles",
 					source_type: "tagged_sync",
 					location: 4,
 					location_type: "page",

@@ -28,7 +28,7 @@ function entry(key: string, text: string, overrides: Partial<ReadwiseEntry> = {}
 }
 
 function unit(items: readonly ReadwiseEntry[], overrides: Partial<RecordedUnit> = {}): RecordedUnit {
-	return { items, scope: "document", identity: { title: "Cape Marrow", author: "Ada Byrne" }, marginNotes: true, ...overrides };
+	return { items, scope: "document", identity: { title: "Cape Marrow", author: "Ada Byrne" }, category: "books", marginNotes: true, ...overrides };
 }
 
 /** The document's book after recording, failing the test where there is none. */
@@ -282,6 +282,25 @@ describe("recordUnit", () => {
 		});
 	});
 
+	// Books for an EPUB, Articles for anything else (user, 2026-11-02). Not part of the book's key in
+	// Readwise, so it is written on every record rather than frozen with the name.
+	describe("the book's category", () => {
+		it("is the one the unit says, for a new book", () => {
+			expect(bookAfter(recordUnit({}, DOC, unit([entry(KEY, SENTENCE)], { category: "articles" }))).category).toBe("articles");
+		});
+
+		it("is written again on every record, so a book recorded before there was one takes it", () => {
+			const books = recordUnit(storedBook({ [KEY]: { pushed: PUSHED, id: 901 } }), DOC, unit([entry(KEY, SENTENCE)], { category: "articles" }));
+
+			expect(bookAfter(books).category).toBe("articles");
+		});
+
+		// What the build before it sent, for every book.
+		it("reads as books for a book stored without one", () => {
+			expect(bookAfter(storedBook({})).category).toBe("books");
+		});
+	});
+
 	// `data.json` is shared between installs and versions (spec §3).
 	describe("what this build cannot read", () => {
 		it("leaves another document's unreadable book exactly where it is", () => {
@@ -317,8 +336,9 @@ describe("recordUnit", () => {
 		});
 
 		it("reads a book field by field, what it cannot read left out", () => {
-			expect(readwiseBook({ [DOC]: { title: "Cape Marrow", shown: { title: 7, author: "Ben Cole", owed: "yes" }, highlights: "junk" } }, DOC)).toEqual({
+			expect(readwiseBook({ [DOC]: { title: "Cape Marrow", category: "tweets", shown: { title: 7, author: "Ben Cole", owed: "yes" }, highlights: "junk" } }, DOC)).toEqual({
 				title: "Cape Marrow",
+				category: "books",
 				shown: { author: "Ben Cole" },
 				highlights: {},
 			});
@@ -345,6 +365,7 @@ describe("recordUnit", () => {
 		expect(bookAfter(books)).toEqual({
 			title: "Cape Marrow",
 			author: "Ada Byrne",
+			category: "books",
 			highlights: { [`${PAGE}:1a2b`]: { want: { text: "The **weather station** was built in the spring.", location: 12 } } },
 		});
 	});
@@ -391,7 +412,7 @@ describe("reading the state", () => {
 
 		const books = withBook(stored, DOC, { ...bookAfter(stored), bookId: 64836623, highlights: { [KEY]: { pushed: PUSHED } } });
 
-		expect(books[DOC]).toEqual({ title: "Cape Marrow", colour: "yellow", bookId: 64836623, highlights: { "old:1": "written by a newer build", [KEY]: { pushed: PUSHED } } });
+		expect(books[DOC]).toEqual({ title: "Cape Marrow", category: "books", colour: "yellow", bookId: 64836623, highlights: { "old:1": "written by a newer build", [KEY]: { pushed: PUSHED } } });
 	});
 
 	it("gives a document's book id, none for a book deleted in Readwise or never matched", () => {

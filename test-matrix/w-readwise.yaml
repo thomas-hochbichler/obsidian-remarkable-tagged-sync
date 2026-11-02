@@ -95,11 +95,11 @@
       test: "listing our books > gives up on a server that never stops paging"
 
     - id: W1.11
-      scenario: Items are pushed, one with author and note, one without
-      expect: '`category: books`, `source_type: tagged_sync`, `location_type: page`, `highlight_url`; an absent author or note is left out, never sent blank (a blank field fails the whole call)'
+      scenario: Items are pushed, one a book's with author and note, one an article's without
+      expect: 'Each item''s own `category`, `source_type: tagged_sync`, `location_type: page`, `highlight_url`; an absent author or note is left out, never sent blank (a blank field fails the whole call)'
       layer: unit
       file: src/readwise-client.test.ts
-      test: "pushing highlights > sends each item as a page-located highlight of a book from our source, leaving out what is absent"
+      test: "pushing highlights > sends each item as a page-located highlight of a book or article from our source, leaving out what is absent"
 
     - id: W1.12
       scenario: Readwise refuses some items of a call with a per-item list
@@ -1009,6 +1009,27 @@
       file: src/readwise-state.test.ts
       test: "reading the state > writes a book back with what this build cannot read kept, and a known field it could not read dropped"
 
+    - id: W8.46
+      scenario: A new document is recorded as an article
+      expect: 'Its book holds `category: articles`'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's category > is the one the unit says, for a new book"
+
+    - id: W8.47
+      scenario: A book recorded before books had a category is recorded again
+      expect: It takes the unit's category -- not part of the key in Readwise (`research/20-category-check.ts`), so not frozen with the name
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's category > is written again on every record, so a book recorded before there was one takes it"
+
+    - id: W8.48
+      scenario: A book stored without a category, or with one this build does not know, is read
+      expect: '`books` -- what the build before sent for every book'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's category > reads as books for a book stored without one"
+
 - feature: W9
   name: Recording in the sync
   code: src/sync-engine.ts, src/readwise-push.ts
@@ -1090,6 +1111,20 @@
       layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > offers no EPUB metadata when the book cannot be fetched"
+
+    - id: W9.16
+      scenario: An EPUB is synced
+      expect: Its unit says `books`
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > files an EPUB under books"
+
+    - id: W9.17
+      scenario: A PDF is synced (a notebook's typed pages likewise, W9.5)
+      expect: Its unit says `articles` -- the user expected an annotated paper under Articles
+      layer: engine
+      file: src/sync-engine.test.ts
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > files a PDF under articles"
 
     - id: W9.12
       scenario: The recorder is handed a unit
@@ -1377,11 +1412,11 @@
       test: "tokenFingerprint (spec §11 P4) > is the first 12 hex of the token's SHA-256"
 
     - id: W10.34
-      scenario: A book with no author
-      expect: '`author` omitted from every item, never blank; its book id still learnt'
+      scenario: An article with no author
+      expect: '`author` omitted from every item, never blank; the book''s category sent with each; its book id still learnt'
       layer: unit
       file: src/readwise-push.test.ts
-      test: "pushToReadwise > omits the author of a book nobody named, and still learns the book's id"
+      test: "pushToReadwise > omits the author of a book nobody named, sends the book's category, and still learns the book's id"
 
     - id: W10.35
       scenario: A create lands but the answer names no book or id we can match

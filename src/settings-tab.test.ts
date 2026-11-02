@@ -1378,7 +1378,7 @@ describe("the Readwise section", () => {
 
 		expect(rowNames(section(drawn, "Readwise"))).toEqual(["Connection", "Push highlights to Readwise", "Readwise access token", "Readwise's own Obsidian plugin"]);
 		expect(row(drawn, "Push highlights to Readwise").desc).toBe(
-			"Your highlights and margin notes become highlights in your Readwise library, one book per document, and come up in your Daily Review. " +
+			"Your highlights and margin notes become highlights in your Readwise library, one book or article per document, and come up in your Daily Review. " +
 				"The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access " +
 				"(Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.",
 		);

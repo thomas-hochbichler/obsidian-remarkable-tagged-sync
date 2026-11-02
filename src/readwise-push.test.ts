@@ -20,7 +20,7 @@ function page(sentence = "The weather station at Cape Marrow was built in the sp
 }
 
 function unit(overrides: Partial<ReadwiseUnit> = {}): ReadwiseUnit {
-	return { docId: DOC, pages: [page()], scope: "document", pageOrder: null, marginNotes: true, sources: async () => ({ visibleName: "cape-marrow_final" }), ...overrides };
+	return { docId: DOC, pages: [page()], scope: "document", pageOrder: null, marginNotes: true, category: "articles", sources: async () => ({ visibleName: "cape-marrow_final" }), ...overrides };
 }
 
 /** A vault's `readwiseBooks`, as the recorder reads and writes it. */
@@ -38,6 +38,7 @@ describe("the Readwise recorder", () => {
 		expect(readwiseBook(books(), DOC)).toEqual({
 			title: "Cape Marrow",
 			author: "Ada Byrne",
+			category: "articles",
 			highlights: { [KEY]: { want: { text: "The weather station at **Cape Marrow** was built in the spring.", location: 12 } } },
 		});
 	});
@@ -147,7 +148,7 @@ function fakeReadwise() {
 }
 
 function book(highlights: Record<string, ReadwiseHighlight>, extra: Partial<ReadwiseBook> = {}): ReadwiseBook {
-	return { title: "Cape Marrow", author: "Ada Byrne", highlights, ...extra };
+	return { title: "Cape Marrow", author: "Ada Byrne", category: "books", highlights, ...extra };
 }
 
 function data(books: Record<string, ReadwiseBook>, extra: Partial<ReadwiseData> = {}): ReadwiseData {
@@ -190,13 +191,13 @@ describe("pushToReadwise", () => {
 		await pushToReadwise(state, readwise.client, FINGERPRINT);
 
 		expect(sent).toEqual([
-			{ title: "Cape Marrow", author: "Ada Byrne", ...TEXT, note: "check the date", url: URL },
-			{ title: "Cape Marrow", author: "Ada Byrne", ...CHANGED, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
+			{ title: "Cape Marrow", author: "Ada Byrne", category: "books", ...TEXT, note: "check the date", url: URL },
+			{ title: "Cape Marrow", author: "Ada Byrne", category: "books", ...CHANGED, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
 		]);
 	});
 
 	// Ticket 14 #4: never blank, never a placeholder. Readwise answers `null` for it.
-	it("omits the author of a book nobody named, and still learns the book's id", async () => {
+	it("omits the author of a book nobody named, sends the book's category, and still learns the book's id", async () => {
 		const readwise = fakeReadwise();
 		const sent: ReadwiseItem[] = [];
 		const push = readwise.client.push;
@@ -204,11 +205,11 @@ describe("pushToReadwise", () => {
 			sent.push(...items);
 			return await push(items);
 		};
-		const state = data({ [DOC]: { title: "cape-marrow_final", highlights: { [KEY]: { want: TEXT } } } });
+		const state = data({ [DOC]: { title: "cape-marrow_final", category: "articles", highlights: { [KEY]: { want: TEXT } } } });
 
 		await pushToReadwise(state, readwise.client, FINGERPRINT);
 
-		expect(sent).toEqual([{ title: "cape-marrow_final", ...TEXT, url: URL }]);
+		expect(sent).toEqual([{ title: "cape-marrow_final", category: "articles", ...TEXT, url: URL }]);
 		expect(after(state)!.bookId).toBe(readwise.books[0].id);
 	});
 

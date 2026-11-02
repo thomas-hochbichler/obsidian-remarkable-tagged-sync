@@ -6477,7 +6477,7 @@ describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
 		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
 
 		expect(seen).toHaveLength(1);
-		expect(seen[0].unit).toMatchObject({ scope: "document", pageOrder: ["page-a", "page-b", "page-c"] });
+		expect(seen[0].unit).toMatchObject({ scope: "document", pageOrder: ["page-a", "page-b", "page-c"], category: "articles" });
 		expect(seen[0].unit.pages).toHaveLength(1);
 		expect(seen[0].sources).toEqual({ visibleName: "Article" });
 	});
@@ -6530,6 +6530,18 @@ describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
 		await runSync({ ...baseDeps(await epubDocument("root-rw-epub", async () => PAGE_BYTES), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
 
 		expect(seen[0].sources).toEqual({ epub: ALICE, visibleName: "Prompting" });
+	});
+
+	// The user, 2026-11-02: an annotated paper under Books read wrong. An EPUB is a book; everything else an article.
+	it.each([
+		["an EPUB", "books", "epub"],
+		["a PDF", "articles", "pdf"],
+	] as const)("files %s under %s", async (_name, category, fileType) => {
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument(`root-rw-category-${fileType}`, { fileType }), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => unit.category)).toEqual([category]);
 	});
 
 	// A document the recorder already knows is named: fetching its book again would buy nothing.

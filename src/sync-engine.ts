@@ -1077,7 +1077,7 @@ interface UnitParams {
 	 * handwritten notebook or page -- is recorded as having nothing, so the typed pages it no longer has
 	 * are cleaned up (§4.2). `epub` fetches the book's OPF, for a book only.
 	 */
-	readwise?: Pick<ReadwiseUnit, "pages" | "scope" | "pageOrder" | "marginNotes"> & { readonly epub?: () => Promise<EpubBook | null> };
+	readwise?: Pick<ReadwiseUnit, "pages" | "scope" | "pageOrder" | "marginNotes" | "category"> & { readonly epub?: () => Promise<EpubBook | null> };
 }
 
 /**
@@ -2445,7 +2445,9 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// numbered from the document, never from the unit (§11 P8), so a typed page by its page order.
 		const readwiseUnit = (pageId: string | null, digest: { pages: DigestPage[]; failed?: true }): UnitParams["readwise"] => {
 			const scope: RecordScope = digest.failed ? "none" : pageId === null ? "document" : { pageId };
-			return { pages: digest.pages, scope, pageOrder: pdfBacked ? null : pageOrder, marginNotes: deps.marginNotes ?? false, epub: getBook };
+			// An EPUB is a book; a PDF, a typed document or a notebook's typed pages an article (user, 2026-11-02).
+			const category = content.fileType === "epub" ? "books" : "articles";
+			return { pages: digest.pages, scope, pageOrder: pdfBacked ? null : pageOrder, marginNotes: deps.marginNotes ?? false, category, epub: getBook };
 		};
 
 		// A tagged page's change-detection hash: its own `.rm` hash for handwritten pages, else the
