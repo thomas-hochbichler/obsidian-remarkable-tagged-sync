@@ -443,6 +443,31 @@ describe("pushToReadwise", () => {
 			expect(accountB.calls).toEqual([]);
 		});
 
+		// Computer B dropped A's state and has not pushed yet: there is nothing to compare, but A coming
+		// back to the fingerprint just replaced is the same clash -- or A backfills, then B, then A again.
+		it("stops a computer that comes back to the token just replaced before the other one pushed", async () => {
+			const readwise = fakeReadwise();
+			const state = data({ [DOC]: book({ [KEY]: { want: TEXT } }) }, { readwiseAccount: OTHER_FINGERPRINT, readwiseAccountBefore: FINGERPRINT });
+
+			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBe("clash");
+
+			expect(readwise.calls).toEqual([]);
+			expect(state.readwiseAccountClash).toBe(true);
+			expect(state.readwiseAccount).toBe(OTHER_FINGERPRINT);
+		});
+
+		// The "no fingerprint stored" leg alone: book ids remembered, but nothing says which token they came with.
+		it("keeps the state when no fingerprint was ever stored, whatever book ids it remembers", async () => {
+			const readwise = fakeReadwise();
+			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: 3 }) }, { readwiseAccount: undefined });
+
+			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
+
+			expect(readwise.calls).toEqual([]);
+			expect(state.readwiseAccount).toBe(FINGERPRINT);
+			expect(after(state)!.bookId).toBe(3);
+		});
+
 		it("lets a third token clear the clash and be checked like any other", async () => {
 			const readwise = fakeReadwise();
 			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } });

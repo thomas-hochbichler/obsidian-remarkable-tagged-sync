@@ -67,13 +67,13 @@ export function readwiseRecorderFor(settings: ReadwiseSettings, entitlement: Ent
 	return readwiseRecordingOn(settings, entitlement) ? createReadwiseRecorder(host) : undefined;
 }
 
-/** The book `recordUnit` names a new document; it ignores the name for a document that has one. */
-const NAMED: BookIdentity = { title: "" };
+/** What `recordUnit` is handed for a document that already has its book, whose name it never reads again. */
+const NAME_NOT_READ: BookIdentity = { title: "" };
 
 export function createReadwiseRecorder(host: RecorderHost): ReadwiseRecorder {
 	return {
 		async record({ docId, pages, scope, pageOrder, marginNotes, sources }) {
-			const identity = host.books()[docId] === undefined ? bookIdentity(await sources()) : NAMED;
+			const identity = host.books()[docId] === undefined ? bookIdentity(await sources()) : NAME_NOT_READ;
 			const items = readwiseHighlights(pages, docId, pageOrder);
 			host.setBooks(recordUnit(host.books(), docId, { items, scope, identity, marginNotes }));
 		},
@@ -160,11 +160,15 @@ export async function pushToReadwise(data: ReadwiseData, client: ReadwiseClient,
 		let listing: ReadwiseBookEntry[] | null = null;
 		if (fingerprint !== data.readwiseAccount) {
 			const known = liveBooks(data.readwiseBooks).flatMap(([, book]) => (book.bookId === undefined ? [] : [book.bookId]));
-			// With no fingerprint stored or no book id remembered there is nothing to compare: the state stays.
+			// With no fingerprint stored or no book id remembered there is nothing to compare: the state stays --
+			// unless this is the fingerprint the state was just dropped for, whose computer would otherwise
+			// backfill it back before the other one has pushed anything to compare (spec §11 P4).
 			if (data.readwiseAccount !== undefined && known.length > 0) {
 				listing = await client.ourBooks();
 				const listed = new Set(listing.map((entry) => entry.id));
 				if (!known.some((id) => listed.has(id))) return switchAccount(data, fingerprint);
+			} else if (fingerprint === data.readwiseAccountBefore) {
+				return switchAccount(data, fingerprint);
 			}
 			data.readwiseAccount = fingerprint;
 		}

@@ -1073,8 +1073,9 @@ interface UnitParams {
 		md5(): Promise<string | null>;
 	};
 	/**
-	 * What the Readwise record needs about this unit: supplied for every unit with a digest, PDF-backed
-	 * or not (Readwise spec §4.1), and for no other. `epub` fetches the book's OPF, for a book only.
+	 * What the Readwise record needs about this unit (Readwise spec §4.1). A unit without a digest -- a
+	 * handwritten notebook or page -- is recorded as having nothing, so the typed pages it no longer has
+	 * are cleaned up (§4.2). `epub` fetches the book's OPF, for a book only.
 	 */
 	readwise?: Pick<ReadwiseUnit, "pages" | "scope" | "pageOrder" | "marginNotes"> & { readonly epub?: () => Promise<EpubBook | null> };
 }
@@ -1409,6 +1410,7 @@ async function writeUnit(
 	}
 
 	// After the Zotero pass, which is what names the paper the book may be named after (spec §11 P21).
+	// Nothing here can fail the write: the recorder is pure, and the book's fetch is caught below.
 	if (params.readwise !== undefined && deps.readwise !== undefined) {
 		const { epub, ...unit } = params.readwise;
 		const paper = zotero?.paper;
@@ -2438,7 +2440,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			return pageRefById.get(pageId)?.appended ? { blockId: digestId("nt", pageId, "page") } : "none";
 		};
 
-		// The Readwise record of a unit with a digest (Readwise spec §4.2): a whole-document unit speaks for
+		// The Readwise record of a unit, with or without a digest (Readwise spec §4.2): a whole-document unit speaks for
 		// every record of the book, a page tag for its one page, a failed build for none. Pages are
 		// numbered from the document, never from the unit (§11 P8), so a typed page by its page order.
 		const readwiseUnit = (pageId: string | null, digest: { pages: DigestPage[]; failed?: true }): UnitParams["readwise"] => {
@@ -2563,7 +2565,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 						zoteroMd5 === undefined
 							? undefined
 							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(null, digest), md5: zoteroMd5 },
-					readwise: digestPages === null ? undefined : readwiseUnit(null, digest),
+					readwise: readwiseUnit(null, digest),
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2696,7 +2698,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 						zoteroMd5 === undefined
 							? undefined
 							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(unit.pageId, digest), md5: zoteroMd5 },
-					readwise: digestPages === null ? undefined : readwiseUnit(unit.pageId, digest),
+					readwise: readwiseUnit(unit.pageId, digest),
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);

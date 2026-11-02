@@ -1017,77 +1017,77 @@
     - id: W9.1
       scenario: An annotated PDF is synced under a document tag
       expect: Recorded after its note is written; whole-document scope, numbered by the PDF's own pages
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > records a PDF's whole-document unit after its note is written, numbered by the PDF's own pages"
 
     - id: W9.2
       scenario: The same document also has a page tag
       expect: Two records into one book -- the document's scope and the page's
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > records a page-tag unit for its one page, beside the document tag's unit of the same document"
 
     - id: W9.3
       scenario: The digest build throws
       expect: Recorded with scope none and no pages -- nothing read, nothing erased
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > records nothing a failed digest build could speak for"
 
     - id: W9.4
       scenario: Margin notes are switched off in the vault
       expect: The recorder hears so, and leaves notes in Readwise as they are (spec §11 P20)
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > hands over the vault's margin-notes setting, which the digest was built under"
 
     - id: W9.5
       scenario: A notebook with one typed page among handwritten ones
       expect: Its typed page recorded, numbered by the notebook's page order (spec §1.1, §11 P8)
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > records a notebook's typed pages, numbered by the notebook's page order"
 
     - id: W9.6
-      scenario: A handwritten notebook
-      expect: Not recorded -- it has no digest
-      layer: unit
+      scenario: A handwritten notebook (or one whose typed pages became handwriting)
+      expect: Recorded as having nothing -- no book for a new one, the old typed pages deleted (spec §4.2)
+      layer: engine
       file: src/sync-engine.test.ts
-      test: "the Readwise record (Readwise spec §4.1, §4.2) > records no handwritten notebook: it has no digest"
+      test: "the Readwise record (Readwise spec §4.1, §4.2) > records a handwritten notebook as having nothing, so typed pages it no longer has are cleaned up"
 
     - id: W9.7
       scenario: The note was edited by hand, then the document changes
       expect: Not recorded -- the frozen note's changes never reach Readwise
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > records nothing for a note frozen by a hand edit"
 
     - id: W9.8
       scenario: The Zotero pass linked the document to a paper
       expect: The paper's title and creators offered for the book's name
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > offers the paper the Zotero pass linked to name the book"
 
     - id: W9.9
       scenario: An EPUB is recorded for the first time
       expect: Its OPF title and authors offered, fetched even when no quote needed the book (review B10)
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > offers an EPUB's own title and authors"
 
     - id: W9.10
       scenario: The recorder does not ask for the book's sources
       expect: The `.epub` is not downloaded
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > fetches the EPUB only when the recorder asks for the sources"
 
     - id: W9.11
       scenario: The `.epub` cannot be fetched
       expect: Recorded all the same, offered only the tablet's name
-      layer: unit
+      layer: engine
       file: src/sync-engine.test.ts
       test: "the Readwise record (Readwise spec §4.1, §4.2) > offers no EPUB metadata when the book cannot be fetched"
 
@@ -1271,6 +1271,20 @@
       file: src/readwise-push.test.ts
       test: "pushToReadwise > the account check (spec §11 P4) > stops two computers on two accounts instead of backfilling each other"
 
+    - id: W10.40
+      scenario: Computer A comes back to its token before computer B, which dropped A's state, has pushed
+      expect: Clash, no call -- not a backfill each way, even with no book id to compare (spec §11 P4)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > stops a computer that comes back to the token just replaced before the other one pushed"
+
+    - id: W10.41
+      scenario: Book ids remembered, but no fingerprint ever stored
+      expect: State kept, no listing for the account check
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > keeps the state when no fingerprint was ever stored, whatever book ids it remembers"
+
     - id: W10.22
       scenario: A third token after a clash
       expect: The clash cleared, the token checked as usual
@@ -1405,76 +1419,76 @@
     - id: W11.1
       scenario: A sync with Pro, the switch on and a token in the Keychain
       expect: The run gets a recorder; afterwards the push sends what is pending with that token
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > records during the run and pushes after it, with the token from this computer's Keychain"
 
     - id: W11.11
       scenario: The run's recorder records a unit
       expect: Into the plugin's `readwiseBooks`, which the run's checkpoint saves
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > records into the vault's data, where the run's checkpoint saves it"
 
     - id: W11.2
       scenario: A free vault with the switch on
       expect: No recorder, no client, nothing sent
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > records nothing and pushes nothing without Pro"
 
     - id: W11.3
       scenario: A computer without a token
       expect: Records, does not push (spec §11 P2)
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > records on a computer without a token, and pushes nothing from it"
 
     - id: W11.4
       scenario: The reMarkable cloud cannot be reached
       expect: The push runs all the same (spec §11 P22)
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > pushes when the source cannot be opened"
 
     - id: W11.5
       scenario: The user stops the run
       expect: No push; what is recorded waits (spec §11 P16)
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > does not push on a run the user stopped"
 
     - id: W11.6
       scenario: Recording starts, then the source fails
       expect: Flag and invalidation saved at the start, so the backfill still happens later (spec §5)
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > makes every note due once when recording starts, even when the source then fails"
 
     - id: W11.7
       scenario: The token is rejected on Sync now
       expect: The §6 notice
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > says why a push stopped on a sync the user started"
 
     - id: W11.8
       scenario: The push throws a bug
       expect: Logged, the sync's report unharmed, the state still pending
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the Readwise half of a sync > keeps a push that throws out of the sync's report"
 
     - id: W11.9
       scenario: A background sync finds the tablet asleep
       expect: The push runs alone under the run lock, with no notice
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the push when a background sync finds the tablet asleep (spec §11 P22) > pushes alone and quietly, holding the run lock while it does"
 
     - id: W11.10
       scenario: A run takes the lock while the tablet is being asked about
       expect: No second push -- the run has its own
-      layer: unit
-      file: src/readwise-plugin.test.ts
+      layer: vault
+      file: src/readwise-wiring.test.ts
       test: "the push when a background sync finds the tablet asleep (spec §11 P22) > does not push while a run holds the lock"

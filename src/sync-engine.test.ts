@@ -6482,7 +6482,9 @@ describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
 		expect(seen[0].sources).toEqual({ visibleName: "Article" });
 	});
 
-	it("records no handwritten notebook: it has no digest", async () => {
+	// Spec §4.2: a whole-document unit speaks for every record of the book -- also those of a page whose
+	// typed text has since become handwriting. A notebook with no typed page left has none to push.
+	it("records a handwritten notebook as having nothing, so typed pages it no longer has are cleaned up", async () => {
 		const api = fakeApi({
 			rootHash: "root-rw-notebook",
 			entries: [documentEntry({ tags: [{ name: "sync", timestamp: 0 }] })],
@@ -6493,7 +6495,7 @@ describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
 
 		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
 
-		expect(seen).toEqual([]);
+		expect(seen.map(({ unit }) => [unit.scope, unit.pages])).toEqual([["document", []]]);
 	});
 
 	it("records nothing for a note frozen by a hand edit", async () => {

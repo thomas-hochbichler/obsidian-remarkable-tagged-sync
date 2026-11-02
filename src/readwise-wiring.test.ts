@@ -93,7 +93,7 @@ async function pluginWith(setup: { pro?: boolean; token?: string | null; recordi
 	const { default: TaggedSyncPlugin } = await import("./entry");
 	const app = new FakeApp();
 	const plugin = new (TaggedSyncPlugin as unknown as new (a: unknown, m: unknown) => Plugin & { saved: unknown })(app, { id: "tagged-sync", name: "Tagged Sync", version: "0.0.0" });
-	if (setup.token !== null) app.secretStorage.setSecret("readwise", setup.token ?? "rw-token");
+	if (setup.token !== null) app.secretStorage.secrets.set("readwise", setup.token ?? "rw-token");
 	plugin.saved = {
 		deviceToken: "device-token",
 		ocrBackend: "off",
