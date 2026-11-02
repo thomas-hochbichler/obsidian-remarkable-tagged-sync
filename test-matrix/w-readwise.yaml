@@ -296,3 +296,172 @@
       layer: unit
       file: src/readwise-client.test.ts
       test: "being asked to slow down > reports a second 429 instead of waiting again"
+
+# Which book a document becomes (spec §1.2, §11 P7). The title and author are the book's key in
+# Readwise, so a wrong pick here is a book under the wrong name for good -- the recorder freezes it.
+- feature: W2
+  name: The book's title and author
+  code: src/readwise-book.ts
+  tier: pro
+  scenarios:
+    - id: W2.1
+      scenario: A document linked to a Zotero paper that is also an EPUB with its own metadata
+      expect: The paper's title and author win over the OPF and the tablet's name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names a Zotero paper, ahead of the book's own metadata and the tablet's name"
+
+    - id: W2.2
+      scenario: A paper with two authors
+      expect: '"First Last" each, joined with ", " in Zotero''s order'
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names several authors, in Zotero's order"
+
+    - id: W2.3
+      scenario: A paper by an institution
+      expect: Its one name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names an institution, by its one name"
+
+    - id: W2.4
+      scenario: A paper with an editor and an author
+      expect: Only the author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names only the authors when a paper also has editors"
+
+    - id: W2.5
+      scenario: A paper with editors only
+      expect: Every creator, so the book still names someone; a person with no first name is just the family name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names every creator when a paper has editors only"
+
+    - id: W2.12
+      scenario: A paper whose only author's name is blank, beside an editor
+      expect: The editor -- a blank name is no author, so "none → every creator" applies
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the editors when the only author's name is blank"
+
+    - id: W2.6
+      scenario: A paper with no creators
+      expect: No author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names no author at all for a paper with no creators"
+
+    - id: W2.7
+      scenario: A Zotero item whose title is only spaces
+      expect: The tablet's name
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the tablet's name when the Zotero item's title is blank"
+
+    - id: W2.8
+      scenario: An EPUB whose OPF has a title and two authors
+      expect: Both, authors joined with ", "
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names an EPUB's own title and authors"
+
+    - id: W2.9
+      scenario: An EPUB whose OPF names neither
+      expect: The tablet's name, no author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the tablet's name, and no author, for an EPUB without metadata"
+
+    - id: W2.10
+      scenario: A notebook or typed document
+      expect: The tablet's name, no author
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > names the tablet's name, and no author, for a notebook"
+
+    - id: W2.11
+      scenario: No author anywhere
+      expect: The `author` key is absent, never `""` -- Readwise refuses a blank author, and a placeholder would invent one
+      layer: unit
+      file: src/readwise-book.test.ts
+      test: "bookIdentity > leaves out the author key rather than sending it empty"
+
+- feature: W3
+  name: An EPUB's own title and authors
+  code: src/epub-text.ts
+  tier: pro
+  scenarios:
+    - id: W3.1
+      scenario: An OPF with a `dc:title` and one `dc:creator`, the title written with an entity
+      expect: Both read, the entity decoded
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > reads the title and the one author off the OPF"
+
+    - id: W3.2
+      scenario: An OPF with two `dc:creator`s
+      expect: Both, in OPF order
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > keeps every author, in the order the OPF lists them"
+
+    - id: W3.3
+      scenario: A blank `dc:title` and an empty `dc:creator`
+      expect: No title and no authors -- never `""`, which would name the Readwise book nothing
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > leaves out a blank title and blank authors rather than reporting them empty"
+
+    - id: W3.4
+      scenario: An OPF with neither element
+      expect: No title, no authors
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > reports no title and no authors for a book without them"
+
+    - id: W3.5
+      scenario: An archive with no OPF at all
+      expect: The prose is still read; only the metadata is missing. A quote's spelling must not depend on the metadata
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > still reads a book that has no OPF"
+
+    - id: W3.6
+      scenario: An OPF entry that claims deflate but cannot be inflated
+      expect: The prose is still read, with no title and no authors -- never a throw
+      layer: unit
+      file: src/epub-text.test.ts
+      test: "readEpubBook > the title and authors > still reads a book whose OPF cannot be decompressed"
+
+- feature: W4
+  name: A Zotero item's creators
+  code: src/zotero-client.ts
+  tier: pro
+  scenarios:
+    - id: W4.1
+      scenario: An item with a person, an institution, an editor, and a creator with no name
+      expect: Every named creator with its `creatorType`, a person as first/last (missing first = ""), an institution as `name`; the nameless one dropped
+      layer: unit
+      file: src/zotero-client.test.ts
+      test: "reading the library > hands out every creator, person or institution, with its role"
+
+- feature: W5
+  name: The paper the Zotero pass hands to the Readwise book
+  code: src/zotero-sync.ts
+  tier: pro
+  scenarios:
+    - id: W5.1
+      scenario: A document linked to an attachment under a paper
+      expect: The paper's title and creators leave the pass beside its keys
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > hands back the item's title and every creator, for the Readwise book"
+
+    - id: W5.2
+      scenario: A document linked to a standalone PDF (or one whose paper was deleted)
+      expect: No paper -- the attachment's title is a label like "Full Text PDF", and every such book would share it
+      layer: unit
+      file: src/zotero-sync.test.ts
+      test: "what the pass does for one written note > hands back no paper for a standalone PDF"

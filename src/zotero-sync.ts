@@ -78,6 +78,11 @@ export interface ZoteroNoteParts {
 	/** Block id -> the `in Zotero` link of that quote (§4). Empty unless write-back put something there. */
 	readonly links: ZoteroDigestLinks;
 	readonly keys: ZoteroKeys;
+	/**
+	 * The paper's title and creators (Readwise spec §1.2). Absent unless the document hangs under a
+	 * paper: a standalone PDF's own title is an attachment label ("Full Text PDF"), not a book's name.
+	 */
+	readonly paper?: Pick<ZoteroItem, "title" | "creators">;
 	/** Sentences for the run's report (§3.4.2, §3.4.3). Empty when there is nothing to say. */
 	readonly notices: readonly string[];
 }
@@ -256,7 +261,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 		const parent = attachment.parentKey === null ? null : await deps.client.parentItem(attachment.parentKey, attachment.library);
 		// A standalone PDF *is* the item in Zotero, and `zotero://select` opens it by its own key. The
 		// same fallback covers a parent that has been deleted out from under a file Zotero still has.
-		return parent ?? { key: attachment.key, library: attachment.library, title: attachment.title, creator: null, year: null, citationKey: null };
+		return parent ?? { key: attachment.key, library: attachment.library, title: attachment.title, creator: null, creators: [], year: null, citationKey: null };
 	};
 
 	const libraryOn = (library: ZoteroLibrary): boolean => deps.client.libraries.some((enabled) => sameLibrary(enabled, library));
@@ -526,6 +531,7 @@ export function createZoteroPass(deps: ZoteroPassDeps): ZoteroPass {
 			line,
 			links: zoteroDigestLinks(link, unit.pages, username === null ? null : { username, itemKey: item.key }),
 			keys: { zoteroKey: item.key, zoteroLibrary: item.library === "user" ? null : String(item.library.group), citekey: item.citationKey },
+			...(item.key === attachment.key ? {} : { paper: { title: item.title, creators: item.creators } }),
 			notices,
 		};
 	};

@@ -3,8 +3,8 @@ import { asApp, FakeApp, takeModals, takeSettings } from "../tests/stubs/fake-ob
 import type { ZoteroAttachment, ZoteroItem } from "./zotero-client";
 import { askWhatToSend, NO_PDF, NO_RESULTS, type SendChoice, type SendDialogDeps } from "./zotero-send-dialog";
 
-const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
-const OTHER: ZoteroItem = { key: "ITEM2", library: "user", title: "Etwas anderes", creator: null, year: null, citationKey: null };
+const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }], year: "2024", citationKey: null };
+const OTHER: ZoteroItem = { key: "ITEM2", library: "user", title: "Etwas anderes", creator: null, creators: [], year: null, citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
 	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: null, title: "Full Text PDF", ours: false, ...overrides };

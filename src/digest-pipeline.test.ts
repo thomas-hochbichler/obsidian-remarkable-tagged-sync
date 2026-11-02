@@ -339,7 +339,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 			);
 		}
 
-		const BOOK: EpubBook = { text: "Chapter One. Nine of those were in one week in February of nineteen seventy-four, when the roof came off. The keeper rebuilt it that spring.", chapters: [] };
+		const BOOK: EpubBook = { text: "Chapter One. Nine of those were in one week in February of nineteen seventy-four, when the roof came off. The keeper rebuilt it that spring.", chapters: [], authors: [] };
 
 		it("re-spells a damaged quote in the book's own words, and keeps the run marked", async () => {
 			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => BOOK);
@@ -358,7 +358,7 @@ describe("buildDigest with the fixture page's text layer", () => {
 		it("keeps a quote it cannot find in the book, and stays quiet about it", async () => {
 			// Not a failure worth a line: the device's text is not known to be wrong, and a book has
 			// pages this quote could legitimately not be on.
-			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ text: "A different book about sailing ships.", chapters: [] }));
+			const result = await build([fixturePage()], { loadText: async () => damagedTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) }, async () => ({ text: "A different book about sailing ships.", chapters: [], authors: [] }));
 
 			expect(result.markdown).toContain("Febrnary");
 			expect(result.warnings).toEqual([]);

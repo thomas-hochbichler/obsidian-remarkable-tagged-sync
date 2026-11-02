@@ -6,7 +6,7 @@ import type { ZoteroItem } from "./zotero-client";
 import type { ZoteroLink } from "./zotero-links";
 import { findLiteratureNote, formatLocalDate, itemLabel, openPdfUrl, webReaderUrl, zoteroCalloutLine, zoteroDigestLinks, type ZoteroNoteInfo } from "./zotero-note";
 
-const ITEM: ZoteroItem = { key: "KX7Q2R4M", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: "smith2024prompting" };
+const ITEM: ZoteroItem = { key: "KX7Q2R4M", library: "user", title: "Best Practices für Prompting", creator: "Smith", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }], year: "2024", citationKey: "smith2024prompting" };
 
 function info(overrides: Partial<ZoteroNoteInfo> = {}): ZoteroNoteInfo {
 	return {

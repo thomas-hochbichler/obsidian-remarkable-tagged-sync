@@ -99,12 +99,34 @@ function textOfXhtml(xhtml: string): string {
 		.trim();
 }
 
-/** What the `.epub` is read for: the author's own wording, and the book's own names for its parts. */
+/** What the `.epub` is read for: the author's own wording, and the book's own names for itself and its parts. */
 export interface EpubBook {
 	/** The book's prose, joined from every XHTML document in the archive. */
 	text: string;
 	/** The chapter names the navigation carries, in navigation order. Empty when the book has no readable navigation. */
 	chapters: string[];
+	/** The OPF's first non-blank `dc:title`. Absent, never `""`, when there is none. */
+	title?: string;
+	/** Every non-blank `dc:creator`, in OPF order. Empty when there is none. */
+	authors: string[];
+}
+
+/**
+ * The `dc:title` and `dc:creator`s of the OPF, by file shape like the navigation. Unreadable = none.
+ *
+ * The first `.opf` in the archive, not the rootfile `container.xml` names: they differ only in a
+ * multi-rendition EPUB. The first non-blank `dc:title` is the main title in every OPF we have seen;
+ * EPUB 3 may add a subtitle after it, marked through `refines`, which is not read.
+ */
+async function readMetadata(bytes: Uint8Array, entries: ZipEntry[]): Promise<{ title?: string; authors: string[] }> {
+	const entry = entries.find((candidate) => /\.opf$/i.test(candidate.name));
+	const data = entry ? await readEntry(bytes, entry).catch(() => null) : null;
+	if (!data) return { authors: [] };
+	const opf = new TextDecoder().decode(data);
+	const values = (element: string) =>
+		[...opf.matchAll(new RegExp(`<dc:${element}\\b[^>]*>([\\s\\S]*?)</dc:${element}>`, "gi"))].map((match) => textOfXhtml(match[1])).filter((value) => value.length > 0);
+	const title = values("title")[0];
+	return { ...(title === undefined ? {} : { title }), authors: values("creator") };
 }
 
 /** Every `<navLabel>` of an EPUB 2 `.ncx`, in document order -- which is reading order, and is what `playOrder` says too. */
@@ -145,9 +167,10 @@ async function readNavigation(bytes: Uint8Array, entries: ZipEntry[], documents:
  * The book, or null when this is not an archive we can read prose out of.
  *
  * The spine order is not read, and does not matter: the prose's only consumer searches it for a
- * quote it already knows the position of (`correctQuote`). Skipping the OPF keeps a book with a
- * broken or unusual manifest readable, which is the whole point of a fallback source -- and is why
- * the navigation is looked for by file shape rather than through the manifest that names it.
+ * quote it already knows the position of (`correctQuote`). Skipping the OPF's manifest keeps a book
+ * with a broken or unusual one readable, which is the whole point of a fallback source -- and is why
+ * the navigation is looked for by file shape rather than through the manifest that names it. The
+ * OPF is read for its title and authors only, and a book whose OPF cannot be read simply has none.
  */
 export async function readEpubBook(bytes: Uint8Array): Promise<EpubBook | null> {
 	const entries = readCentralDirectory(bytes);
@@ -167,5 +190,5 @@ export async function readEpubBook(bytes: Uint8Array): Promise<EpubBook | null> 
 	const text = parts.filter((part) => part.length > 0).join(" ");
 	if (text.length === 0) return null;
 
-	return { text, chapters: await readNavigation(bytes, entries, xhtml) };
+	return { text, chapters: await readNavigation(bytes, entries, xhtml), ...(await readMetadata(bytes, entries)) };
 }

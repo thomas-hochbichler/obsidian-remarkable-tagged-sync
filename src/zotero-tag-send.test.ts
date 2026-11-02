@@ -13,8 +13,8 @@ import { NO_COPY_OF_PDF, NO_PDF_IN_ZOTERO, NO_SEND_TAG, nothingToSend, sendTagge
 const PRO: Entitlement = { tier: "pro", since: "2026-09-01T00:00:00.000Z", stale: false };
 const NOW = "2026-09-12T09:00:00.000Z";
 
-const PAPER: ZoteroItem = { key: "ITEM1", library: "user", title: "Prompting", creator: "Smith", year: "2024", citationKey: null };
-const SECOND: ZoteroItem = { key: "ITEM2", library: "user", title: "Retrieval", creator: "Lee", year: "2025", citationKey: null };
+const PAPER: ZoteroItem = { key: "ITEM1", library: "user", title: "Prompting", creator: "Smith", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }], year: "2024", citationKey: null };
+const SECOND: ZoteroItem = { key: "ITEM2", library: "user", title: "Retrieval", creator: "Lee", creators: [{ creatorType: "author", firstName: "B.", lastName: "Lee" }], year: "2025", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
 	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "prompting.pdf", md5: null, title: "Full Text PDF", ours: false, ...overrides };

@@ -86,7 +86,7 @@ describe("reading the library", () => {
 				data: {
 					key: "ITEM",
 					title: "Best Practices für Prompting",
-					creators: [{ lastName: "Smith", firstName: "A." }],
+					creators: [{ creatorType: "author", lastName: "Smith", firstName: "A." }],
 					date: "June 2024",
 					extra: "tex.ids: x\nCitation Key: smith2024prompting",
 				},
@@ -97,14 +97,38 @@ describe("reading the library", () => {
 			library: "user",
 			title: "Best Practices für Prompting",
 			creator: "Smith",
+			creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }],
 			year: "2024",
 			citationKey: "smith2024prompting",
 		});
 	});
 
+	// Readwise names the book after every author, not only the first (Readwise spec §11 P7).
+	it("hands out every creator, person or institution, with its role", async () => {
+		const { api } = connection(() =>
+			json({
+				data: {
+					key: "ITEM",
+					title: "Annual Report",
+					creators: [
+						{ creatorType: "author", firstName: "Ada", lastName: "Lovelace" },
+						{ creatorType: "author", name: "World Health Organization" },
+						{ creatorType: "editor", lastName: "Babbage" },
+						{ creatorType: "author" },
+					],
+				},
+			}),
+		);
+		expect((await api.parentItem("ITEM", "user"))?.creators).toEqual([
+			{ creatorType: "author", firstName: "Ada", lastName: "Lovelace" },
+			{ creatorType: "author", name: "World Health Organization" },
+			{ creatorType: "editor", firstName: "", lastName: "Babbage" },
+		]);
+	});
+
 	it("invents no citation key where Zotero has none", async () => {
 		const { api } = connection(() => json({ data: { key: "ITEM", title: "Untitled", creators: [], date: "" } }));
-		expect(await api.parentItem("ITEM", "user")).toMatchObject({ citationKey: null, creator: null, year: null });
+		expect(await api.parentItem("ITEM", "user")).toMatchObject({ citationKey: null, creator: null, creators: [], year: null });
 	});
 
 	it("searches top-level items the way Zotero's own quick search does", async () => {

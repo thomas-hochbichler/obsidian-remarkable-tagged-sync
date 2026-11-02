@@ -16,7 +16,7 @@ import {
 	type SendTransport,
 } from "./zotero-send";
 
-const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", year: "2024", citationKey: null };
+const ITEM: ZoteroItem = { key: "ITEM1", library: "user", title: "Best Practices für Prompting", creator: "Smith", creators: [{ creatorType: "author", firstName: "A.", lastName: "Smith" }], year: "2024", citationKey: null };
 
 function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment {
 	return { key: "ATT1", library: "user", parentKey: "ITEM1", filename: "paper.pdf", md5: "2de21c18668a0faba572b4c7f7ecd1f5", title: "Full Text PDF", ours: false, ...overrides };
