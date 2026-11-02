@@ -880,6 +880,39 @@ describe("renderAnnotatedPdf", () => {
 		expect(ops).toContain("0.984313725490196 0.9686274509803922 0.09803921568627451 rg"); // YELLOW (251, 247, 25)
 	});
 
+	// A page marked once in each colour with the Paper Pro's gesture (2026-11-02): blue, orange and
+	// grey arrive as ids 14-16 beside a black placeholder, and synced as black bars over the text.
+	it("renders the Paper Pro's blue, orange and grey highlight ids in their colours", async () => {
+		const rect = { x: 549, y: 727, width: 163.5, height: 42 };
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [],
+			paperSize: { width: 1404, height: 1872 },
+			highlights: [14, 15, 16].map((color) => ({ id: `hl-${color}`, color, text: "", colorRgba: { r: 0, g: 0, b: 0 }, rects: [rect] })),
+		};
+
+		const { ops } = await decodePageContent(await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: page }]));
+
+		expect(ops).toContain("0.7450980392156863 0.9176470588235294 0.996078431372549 rg"); // blue (190, 234, 254)
+		expect(ops).toContain("1 0.7647058823529411 0.5490196078431373 rg"); // orange (255, 195, 140)
+		expect(ops).toContain("0.7803921568627451 0.7803921568627451 0.7764705882352941 rg"); // grey (199, 199, 198)
+	});
+
+	it("renders a highlight of an id it does not know in yellow rather than its black placeholder", async () => {
+		const page: RmPage = {
+			formatVersion: 6,
+			layers: [{ id: "layer-1", name: null, strokes: [stroke({ penType: 18, color: 42, colorRgba: { r: 0, g: 0, b: 0 } })] }],
+			paperSize: { width: 1404, height: 1872 },
+			highlights: [{ id: "hl-1", color: 42, text: "", colorRgba: { r: 0, g: 0, b: 0 }, rects: [{ x: 549, y: 727, width: 163.5, height: 42 }] }],
+		};
+
+		const { ops } = await decodePageContent(await renderAnnotatedPdf(await makeSource(1), [{ sourceIndex: 0, annotations: page }]));
+
+		expect(ops).toContain("0.984313725490196 0.9686274509803922 0.09803921568627451 rg"); // the text highlight
+		expect(ops).toContain("0.984313725490196 0.9686274509803922 0.09803921568627451 RG"); // the marker swipe
+		expect(ops).not.toMatch(/^0 0 0 (rg|RG)$/m);
+	});
+
 	it("draws text highlights under the ink that annotates them", async () => {
 		const page: RmPage = {
 			formatVersion: 6,

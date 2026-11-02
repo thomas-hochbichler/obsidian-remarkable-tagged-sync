@@ -12,6 +12,14 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Fixed
+
+- **Blue, orange and grey highlights on a reMarkable Paper Pro no longer black out the text.** A
+  line marked in one of these three colours came through in the PDF as a solid black bar, and in the
+  note and in Zotero as grey. They now keep their colour everywhere. A highlight in a colour the
+  plugin does not know yet is drawn yellow instead of black. Documents already synced pick up the fix
+  the next time you change them on the tablet.
+
 ## [1.10.0] - 2026-10-30
 
 ### Added

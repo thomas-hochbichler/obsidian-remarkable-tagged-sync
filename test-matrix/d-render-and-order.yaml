@@ -69,6 +69,20 @@
       file: src/pdf-renderer.test.ts
       test: "renderPagesToPdf > draws a single-point stroke (a tap) as a filled dot, not as nothing at all"
 
+    - id: D3.2
+      scenario: A Paper Pro page marked with the selection gesture in blue, orange and grey -- ids 14, 15 and 16, which rmscene does not name, each beside an opaque-black `color_rgba` placeholder
+      expect: Each rectangle in its highlighter colour. Without the ids the placeholder was taken for the colour, and every line marked in one of the three synced as a black bar over its text
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > renders the Paper Pro's blue, orange and grey highlight ids in their colours"
+
+    - id: D3.3
+      scenario: A text highlight and a marker swipe carrying a palette id newer than the palette, with only the black placeholder beside it
+      expect: Yellow, the default highlight colour -- never black, which would hide the words the reader marked
+      layer: unit
+      file: src/pdf-renderer.test.ts
+      test: "renderAnnotatedPdf > renders a highlight of an id it does not know in yellow rather than its black placeholder"
+
 - feature: D9
   name: Highlights section with quotes
   code: src/sync-engine.ts

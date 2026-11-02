@@ -147,6 +147,9 @@ describe("the colour", () => {
 		["palette 11 cyan", { r: 139, g: 208, b: 229 }, "#2ea8e5"],
 		["palette 12 magenta", { r: 183, g: 130, b: 205 }, "#e56eee"],
 		["palette 13 yellow_2", { r: 247, g: 232, b: 81 }, "#ffd400"],
+		["palette 14 highlighter blue", { r: 190, g: 234, b: 254 }, "#2ea8e5"],
+		["palette 15 highlighter orange", { r: 255, g: 195, b: 140 }, "#f19837"],
+		["palette 16 highlighter grey", { r: 199, g: 199, b: 198 }, "#aaaaaa"],
 		// Paper Pro highlighter, id 9 + color_rgba
 		["highlighter yellow", { r: 255, g: 237, b: 117 }, "#ffd400"],
 		["highlighter blue", { r: 190, g: 234, b: 254 }, "#2ea8e5"],
