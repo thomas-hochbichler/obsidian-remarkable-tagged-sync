@@ -264,8 +264,9 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		// edited by hand, is missing fields rather than being rejected.
 		licence: { ...NO_LICENCE, ...stored?.licence },
 		readwise: { ...DEFAULT_READWISE_SETTINGS, ...stored?.readwise },
-		// Carried whole, like `zoteroLinks`: a book this build cannot read belongs to the install that wrote it.
-		readwiseBooks: stored?.readwiseBooks ?? {},
+		// Carried whole, like `zoteroLinks`: a book this build cannot read belongs to the install that
+		// wrote it. Only a map, though -- recording spreads it, and a string would spread into characters.
+		readwiseBooks: typeof stored?.readwiseBooks === "object" && stored.readwiseBooks !== null && !Array.isArray(stored.readwiseBooks) ? stored.readwiseBooks : {},
 		...(typeof stored?.readwiseAccount === "string" && stored.readwiseAccount !== "" ? { readwiseAccount: stored.readwiseAccount } : {}),
 		...(typeof stored?.readwiseAccountBefore === "string" && stored.readwiseAccountBefore !== "" ? { readwiseAccountBefore: stored.readwiseAccountBefore } : {}),
 		...(stored?.readwiseAccountClash === true ? { readwiseAccountClash: true as const } : {}),

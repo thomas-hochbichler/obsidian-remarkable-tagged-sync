@@ -180,6 +180,11 @@ describe("migrateSettings", () => {
 			expect(migrateSettings({ readwiseBooks }, ENV).readwiseBooks).toEqual(readwiseBooks);
 		});
 
+		// Recording spreads the map; a string would come back as one book per character.
+		it("reads books that are no map as none", () => {
+			for (const readwiseBooks of ["junk", [{ title: "Cape Marrow" }], null]) expect(migrateSettings({ readwiseBooks }, ENV).readwiseBooks).toEqual({});
+		});
+
 		it("keeps the account and recording marks only where they read as such", () => {
 			const marks = { readwiseAccount: "3f2a9c01b7de", readwiseAccountBefore: "0c4e8a1f9b23", readwiseAccountClash: true, readwiseRecording: true };
 

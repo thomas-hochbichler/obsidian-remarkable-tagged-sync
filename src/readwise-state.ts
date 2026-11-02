@@ -9,7 +9,7 @@
  */
 
 import type { BookIdentity } from "./readwise-book";
-import type { ReadwiseEntry } from "./readwise-highlights";
+import { pageIdOf, type ReadwiseEntry } from "./readwise-highlights";
 
 /** The settings rows of spec §2. */
 export interface ReadwiseSettings {
@@ -53,7 +53,11 @@ export interface ReadwiseBook {
 	readonly bookId?: number;
 	/** Deleted in Readwise: never recorded into or pushed again (ticket 14 #2). */
 	readonly deleted?: true;
-	/** The names the user gave the book in Readwise (spec §11 P25). Written by the push, never by the recorder. */
+	/**
+	 * The names the user gave the book in Readwise (spec §11 P25), each absent = ours. `owed`: a push
+	 * reset them to ours and putting the user's back has not succeeded yet. Written by the push, never
+	 * by the recorder.
+	 */
 	readonly shown?: { readonly title?: string; readonly author?: string; readonly owed?: true };
 	/** Key `pageId:crdtId` (spec §1.3) -> its record. */
 	readonly highlights: Record<string, ReadwiseHighlight>;
@@ -145,11 +149,6 @@ function wanting(record: ReadwiseHighlight | undefined, text: ReadwiseText): Rea
 	return { ...record, want: text };
 }
 
-/** The page a key belongs to: everything before its first colon (spec §1.3). */
-function pageIdOf(key: string): string {
-	return key.slice(0, key.indexOf(":"));
-}
-
 /** Does the unit speak for this record? With margin notes off, never for a note or an added page (spec §11 P20). */
 function covers({ scope, marginNotes }: RecordedUnit, key: string, record: ReadwiseHighlight): boolean {
 	if (scope === "none" || (record.margin && !marginNotes)) return false;
@@ -187,22 +186,42 @@ function newBook(books: StoredReadwiseBooks, docId: string, { title, author }: B
 			.filter((book) => book !== null && book.author === named.author)
 			.map((book) => book?.title),
 	);
-	let unique = cut(title, TITLE_LIMIT);
-	for (let n = 2; taken.has(unique); n++) unique = `${cut(title, TITLE_LIMIT - ` (${n})`.length)} (${n})`;
+	// Never blank: Readwise fails the whole call on a blank field (ticket 10).
+	const name = title.trim() === "" ? "Untitled" : title;
+	let unique = cut(name, TITLE_LIMIT);
+	for (let n = 2; taken.has(unique); n++) unique = `${cut(name, TITLE_LIMIT - ` (${n})`.length)} (${n})`;
 	return { title: unique, ...named, highlights: {} };
+}
+
+/** Every field this build reads into a {@link ReadwiseBook}. Anything else on a stored book was written by a newer build. */
+const KNOWN_FIELDS = new Set(["title", "author", "bookId", "deleted", "shown", "highlights"]);
+
+/**
+ * Every book with one document's book set, as `zotero-links.ts` `withLink` does it: the fields a
+ * newer build wrote on it and the records this build cannot read are carried along untouched, while
+ * a field this build knows is the book's to say, so one it could not read is not written back.
+ */
+export function withBook(books: StoredReadwiseBooks, docId: string, book: ReadwiseBook): StoredReadwiseBooks {
+	const stored = asRecord(books[docId]) ?? {};
+	const unknown = Object.entries(stored).filter(([field]) => !KNOWN_FIELDS.has(field));
+	const unreadable = Object.entries(asRecord(stored.highlights) ?? {}).filter(([, value]) => readHighlight(value) === null);
+	return { ...books, [docId]: { ...Object.fromEntries(unknown), ...book, highlights: { ...Object.fromEntries(unreadable), ...book.highlights } } };
 }
 
 /** Every book with one document's unit recorded into it (spec §4.2). */
 export function recordUnit(books: StoredReadwiseBooks, docId: string, unit: RecordedUnit): StoredReadwiseBooks {
-	const book = readwiseBook(books, docId) ?? newBook(books, docId, unit.identity);
-	if (book.deleted) return books;
+	const stored = books[docId];
+	const book = stored === undefined ? newBook(books, docId, unit.identity) : readwiseBook(books, docId);
+	// A book this build cannot read stays as it is (spec §3): named anew beside the id it may carry,
+	// it would open a second book in Readwise (§1.2).
+	if (book === null || book.deleted) return books;
 	const highlights = { ...book.highlights };
 	const seen = new Set<string>();
 	for (const item of unit.items) {
 		seen.add(item.key);
-		if (item.unread) continue;
+		if (item.unread || (item.margin && !unit.marginNotes)) continue;
 		const record = highlights[item.key];
-		const note = item.margin || (unit.marginNotes && !item.noteUnread) ? item.note : storedNote(record);
+		const note = unit.marginNotes && !item.noteUnread ? item.note : storedNote(record);
 		const wanted = wanting(record, { text: item.text, ...(note === undefined ? {} : { note }), location: item.location });
 		highlights[item.key] = item.margin ? { ...wanted, margin: true } : wanted;
 	}
@@ -212,11 +231,8 @@ export function recordUnit(books: StoredReadwiseBooks, docId: string, unit: Reco
 		else delete highlights[key];
 	}
 	// A document with nothing to record has no name yet: the first record freezes it.
-	const stored = asRecord(books[docId]);
-	if (stored === null && Object.keys(highlights).length === 0) return books;
-	// What a newer build wrote stays: unknown fields of the book, and records this one cannot read.
-	const unreadable = Object.entries(asRecord(stored?.highlights) ?? {}).filter(([, value]) => readHighlight(value) === null);
-	return { ...books, [docId]: { ...stored, ...book, highlights: { ...Object.fromEntries(unreadable), ...highlights } } };
+	if (stored === undefined && Object.keys(highlights).length === 0) return books;
+	return withBook(books, docId, { ...book, highlights });
 }
 
 /** Is something waiting to be pushed: a text, or a delete? A text Readwise refused is not, until it changes (spec §11 P13). */
@@ -244,12 +260,18 @@ export function pendingDocuments(books: StoredReadwiseBooks): string[] {
 		.map(([docId]) => docId);
 }
 
-/** For the Connection line (spec §2.1): from the state, never from Readwise. */
+/** A book's records with something waiting to be pushed, by key. */
+export function pendingItems(book: ReadwiseBook): [string, ReadwiseHighlight][] {
+	return Object.entries(book.highlights).filter(([, record]) => isPending(record));
+}
+
+/** For the Connection line (spec §2.1): from the state, never from Readwise. A set-aside item counts as neither pushed nor waiting. */
 export function readwiseCounts(books: StoredReadwiseBooks): { books: number; highlights: number; setAside: number } {
 	const records = liveBooks(books).map(([, book]) => Object.values(book.highlights));
+	const pushed = (record: ReadwiseHighlight) => record.pushed !== undefined && !isSetAside(record);
 	return {
-		books: records.filter((highlights) => highlights.some((record) => record.pushed)).length,
-		highlights: records.flat().filter((record) => record.pushed).length,
+		books: records.filter((highlights) => highlights.some(pushed)).length,
+		highlights: records.flat().filter(pushed).length,
 		setAside: records.flat().filter(isSetAside).length,
 	};
 }

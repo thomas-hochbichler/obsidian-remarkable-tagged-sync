@@ -176,6 +176,13 @@
       file: src/settings-store.test.ts
       test: "migrateSettings > the Readwise push (Readwise spec §3) > carries the books whole, a malformed one included"
 
+    - id: A8.42
+      scenario: readwiseBooks is a string, an array or null
+      expect: No books -- recording spreads the map, and a string would become one book per character
+      layer: unit
+      file: src/settings-store.test.ts
+      test: "migrateSettings > the Readwise push (Readwise spec §3) > reads books that are no map as none"
+
     - id: A8.41
       scenario: The account fingerprints and the clash and recording marks, readable and junk
       expect: Kept when a non-empty string or `true`; otherwise absent, never a value the push would misread

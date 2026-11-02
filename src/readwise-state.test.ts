@@ -4,6 +4,7 @@ import {
 	bookIdOf,
 	isPending,
 	pendingDocuments,
+	pendingItems,
 	type ReadwiseBook,
 	readwiseBook,
 	readwiseCounts,
@@ -12,6 +13,7 @@ import {
 	recordUnit,
 	type RecordedUnit,
 	type StoredReadwiseBooks,
+	withBook,
 } from "./readwise-state";
 
 // Spec §4.2: what one unit write records for Readwise, no network. Every state row of spec §8 is one
@@ -187,6 +189,12 @@ describe("recordUnit", () => {
 			expect(bookAfter(books).highlights).toEqual(bookAfter(stored()).highlights);
 		});
 
+		it("ignores a note or an added page handed to it all the same", () => {
+			const books = recordUnit(stored(), DOC, unit([entry(KEY, SENTENCE), entry(NOTE_KEY, "check the year", { margin: true })], { marginNotes: false }));
+
+			expect(bookAfter(books).highlights).toEqual(bookAfter(stored()).highlights);
+		});
+
 		it("still records a highlight's own change, with the note it had", () => {
 			const books = recordUnit(stored(), DOC, unit([entry(KEY, SENTENCE, { location: 13 })], { marginNotes: false }));
 
@@ -253,6 +261,11 @@ describe("recordUnit", () => {
 			expect(bookAfter(books).title).toBe("Notes (2)");
 		});
 
+		// Spec §11 P9: never sent blank -- Readwise fails the whole call on a blank field (ticket 10).
+		it("is Untitled for a document with no name on the tablet", () => {
+			expect(bookAfter(recordUnit({}, DOC, unit([entry(KEY, SENTENCE)], { identity: { title: "  " } }))).title).toBe("Untitled");
+		});
+
 		it("needs no number for the same title under another author", () => {
 			const books = recordUnit({ "doc-0": { title: "Notes", author: "Ben Cole", highlights: {} } }, DOC, unit([entry(KEY, SENTENCE)], { identity: { title: "Notes" } }));
 
@@ -282,6 +295,19 @@ describe("recordUnit", () => {
 			const books = recordUnit(storedBook({ [KEY]: { pushed: PUSHED, id: 901 } }, { shown, colour: "yellow" } as Partial<ReadwiseBook>), DOC, unit([entry(KEY, "Changed.")]));
 
 			expect(books[DOC]).toMatchObject({ bookId: 64836623, shown, colour: "yellow" });
+		});
+
+		// A new title beside the old book's id would open a second book in Readwise (spec §1.2).
+		it("records nothing into this document's book when it cannot read it", () => {
+			const stored = { [DOC]: { bookId: 64836623, deleted: true, highlights: {} } };
+
+			expect(recordUnit(stored, DOC, unit([entry(KEY, SENTENCE)]))).toEqual(stored);
+		});
+
+		it("drops a field it knows but cannot read, rather than writing it back beside the one it read", () => {
+			const books = recordUnit(storedBook({}, { author: "" } as Partial<ReadwiseBook>), DOC, unit([entry(KEY, SENTENCE)], { identity: { title: "Cape Marrow" } }));
+
+			expect(books[DOC]).not.toHaveProperty("author");
 		});
 
 		it("keeps a record it cannot read beside the ones it records", () => {
@@ -332,7 +358,7 @@ describe("reading the state", () => {
 		"doc-b": { title: "B", highlights: { k1: { want: PUSHED } } },
 		"doc-c": { title: "C", bookId: 13, highlights: { k1: { pushed: PUSHED } } },
 		"doc-d": { title: "D", bookId: 14, deleted: true, highlights: { k1: { pushed: PUSHED, want: PUSHED } } },
-		"doc-e": { title: "E", highlights: { k1: REFUSED } },
+		"doc-e": { title: "E", highlights: { k1: REFUSED, k2: { ...REFUSED, pushed: PUSHED } } },
 		"doc-x": "unreadable",
 	};
 
@@ -352,7 +378,20 @@ describe("reading the state", () => {
 
 	// Spec §2.1: from the state, never from Readwise; set-aside items count as neither pushed nor waiting.
 	it("counts the books and highlights pushed, and the items set aside, for the Connection line", () => {
-		expect(readwiseCounts(books)).toEqual({ books: 2, highlights: 3, setAside: 2 });
+		expect(readwiseCounts(books)).toEqual({ books: 2, highlights: 3, setAside: 3 });
+	});
+
+	it("gives a book's records waiting to be pushed", () => {
+		expect(pendingItems(bookAfter(books, "doc-a"))).toEqual([["k2", { pushed: PUSHED, want: null }]]);
+	});
+
+	// The push (19) writes its results back through this, so it must keep what `readwiseBook` leaves out.
+	it("writes a book back with what this build cannot read kept, and a known field it could not read dropped", () => {
+		const stored = { [DOC]: { title: "Cape Marrow", author: "", colour: "yellow", highlights: { "old:1": "written by a newer build", [KEY]: { want: PUSHED } } } };
+
+		const books = withBook(stored, DOC, { ...bookAfter(stored), bookId: 64836623, highlights: { [KEY]: { pushed: PUSHED } } });
+
+		expect(books[DOC]).toEqual({ title: "Cape Marrow", colour: "yellow", bookId: 64836623, highlights: { "old:1": "written by a newer build", [KEY]: { pushed: PUSHED } } });
 	});
 
 	it("gives a document's book id, none for a book deleted in Readwise or never matched", () => {

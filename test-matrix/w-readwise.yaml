@@ -911,20 +911,6 @@
       file: src/readwise-state.test.ts
       test: "recordUnit > what this build cannot read > keeps what the push and a newer build wrote on this document's book"
 
-    - id: W8.38
-      scenario: The book holds a highlight record this build cannot read
-      expect: Kept beside the records this unit writes
-      layer: unit
-      file: src/readwise-state.test.ts
-      test: "recordUnit > what this build cannot read > keeps a record it cannot read beside the ones it records"
-
-    - id: W8.39
-      scenario: A book whose `shown` and `highlights` are partly junk
-      expect: Read field by field; what is unreadable is left out, the book still reads
-      layer: unit
-      file: src/readwise-state.test.ts
-      test: "recordUnit > what this build cannot read > reads a book field by field, what it cannot read left out"
-
     - id: W8.32
       scenario: A pending change, then the tablet back to what Readwise holds
       expect: The change is voided
@@ -966,3 +952,59 @@
       layer: unit
       file: src/readwise-state.test.ts
       test: "reading the state > gives a document's book id, none for a book deleted in Readwise or never matched"
+
+    - id: W8.38
+      scenario: The book holds a highlight record this build cannot read
+      expect: Kept beside the records this unit writes
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > keeps a record it cannot read beside the ones it records"
+
+    - id: W8.39
+      scenario: A book whose `shown` and `highlights` are partly junk
+      expect: Read field by field; what is unreadable is left out, the book still reads
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > reads a book field by field, what it cannot read left out"
+
+    - id: W8.40
+      scenario: This document's own book cannot be read (no title), but carries a book id
+      expect: Nothing recorded, the entry left as it is -- a new title beside that id would open a second book
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > records nothing into this document's book when it cannot read it"
+
+    - id: W8.41
+      scenario: The book carries a known field this build cannot read (`author` blank)
+      expect: Not written back
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > drops a field it knows but cannot read, rather than writing it back beside the one it read"
+
+    - id: W8.42
+      scenario: Margin notes off, and a note's entry is handed to the recorder all the same
+      expect: Ignored; the rule holds in the recorder, not by the digest's convention
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > ignores a note or an added page handed to it all the same"
+
+    - id: W8.43
+      scenario: The document has a blank name on the tablet and nothing else names it
+      expect: '"Untitled" -- never a blank title'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > is Untitled for a document with no name on the tablet"
+
+    - id: W8.44
+      scenario: A book with pending and settled records
+      expect: Only the pending ones, by key
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > gives a book's records waiting to be pushed"
+
+    - id: W8.45
+      scenario: The push writes a book back
+      expect: Unknown fields and unreadable records kept; a known field it could not read dropped
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > writes a book back with what this build cannot read kept, and a known field it could not read dropped"

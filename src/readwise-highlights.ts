@@ -107,7 +107,7 @@ function nestedNote({ notes }: DigestHighlight): { note?: string; noteUnread?: t
 }
 
 /** The page a key belongs to: everything before its first colon (spec §1.3). */
-function pageIdOf(key: string): string {
+export function pageIdOf(key: string): string {
 	return key.slice(0, key.indexOf(":"));
 }
 
