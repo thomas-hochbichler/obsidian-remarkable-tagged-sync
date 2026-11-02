@@ -12,6 +12,17 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+### Added
+
+- **Push your highlights to Readwise** (Pro). Switch on *Push highlights to Readwise*, add your
+  Readwise access token, and every sync puts the highlights of your annotated PDFs, EPUBs and typed
+  pages into your Readwise library: one book per document, the sentence each mark sits in with your
+  marked words in bold, your margin notes as highlight notes, and a link from each highlight back to
+  the note. They come up in your Daily Review. Erase a mark on the tablet and it goes from Readwise
+  too; an edit you make in Readwise stays until that highlight, or the reading of its margin note,
+  changes. Only text is sent; your handwriting and page images stay on your machine. Needs a
+  Readwise plan with API access and Obsidian 1.11.4 or newer.
+
 ### Fixed
 
 - **Blue, orange and grey highlights on a reMarkable Paper Pro no longer black out the text.** A
@@ -19,6 +30,11 @@ workflow publishes the section as the GitHub release body. See
   note and in Zotero as grey. They now keep their colour everywhere. A highlight in a colour the
   plugin does not know yet is drawn yellow instead of black. Documents already synced pick up the fix
   the next time you change them on the tablet.
+
+### Changed
+
+- The first sync after switching Readwise on re-renders every note once, and reads your margin notes
+  and added pages again with your transcription backend; handwritten notebook transcripts are kept.
 
 ## [1.10.0] - 2026-10-30
 

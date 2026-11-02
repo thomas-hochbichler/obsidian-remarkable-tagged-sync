@@ -16,6 +16,9 @@ import { Platform } from "obsidian";
 import { digestId, NOT_TRANSCRIBED } from "./digest-builder";
 import { md5Hex } from "./file-md5";
 import type { ZoteroNoteParts, ZoteroPass, ZoteroUnit } from "./zotero-sync";
+import { readEpubBook } from "./epub-text";
+import type { BookSources } from "./readwise-book";
+import type { ReadwiseRecorder, ReadwiseUnit } from "./readwise-push";
 import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
@@ -62,6 +65,13 @@ vi.mock("./scene-text", async (importOriginal) => {
 vi.mock("./rm-parser", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./rm-parser")>();
 	return { ...actual, parseRmV6: vi.fn(actual.parseRmV6) };
+});
+
+// A book's OPF is read from a real archive in `epub-text.test.ts`. Here it is whatever a test says, so a
+// fixture need not be a zip; it delegates to the real reader until a test says otherwise.
+vi.mock("./epub-text", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./epub-text")>();
+	return { ...actual, readEpubBook: vi.fn(actual.readEpubBook) };
 });
 
 // Laying the layer fails only on a PDF pdf-lib cannot load, and the sync renders its PDFs itself. The
@@ -6364,5 +6374,181 @@ describe("the Zotero half of a sync (spec §3.4)", () => {
 		expect(note).not.toContain("zotero://select");
 		expect(note).toContain("zotero-key: ITEM1");
 		expect(blockHashOf(extractManagedBlock(note)!)).toBe(result.index.rows[notebookSyncKey("doc-1", "sync")].blockHash);
+	});
+});
+
+describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
+	/** A recorder that keeps every unit it is handed, with the book sources it was offered resolved. */
+	function fakeRecorder() {
+		const seen: { unit: ReadwiseUnit; sources: BookSources }[] = [];
+		const readwise: ReadwiseRecorder = {
+			record: async (unit) => {
+				seen.push({ unit, sources: await unit.sources() });
+			},
+		};
+		return { readwise, seen };
+	}
+
+	type Tag = { name: string; timestamp: number };
+
+	async function pdfDocument(rootHash: string, opts: { fileType?: "pdf" | "epub"; pageTags?: (Tag & { pageId: string })[]; hash?: string } = {}) {
+		const fileType = opts.fileType ?? "pdf";
+		return fakeApi({
+			rootHash,
+			entries: [documentEntry({ hash: opts.hash ?? "hash-1", fileType, visibleName: "Prompting", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: {
+				"doc-1": documentContent({ fileType, pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]), pageTags: opts.pageTags ?? [] }),
+			},
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [100, 100]]) },
+			pageHashesByDoc: { "doc-1": { p0: "anno-hash", p1: "anno-hash-2" } },
+		});
+	}
+
+	/** A book: the rendered PDF, and beside it the `.epub` the tablet keeps, which `fetch` answers for. */
+	async function epubDocument(rootHash: string, fetch: () => Promise<Uint8Array>) {
+		const api = await pdfDocument(rootHash, { fileType: "epub" });
+		const listed = api.raw.getEntries.getMockImplementation() as (ref: ItemRef) => Promise<{ entries: object[] }>;
+		api.raw.getEntries.mockImplementation(async (ref: ItemRef) => {
+			const files = await listed(ref);
+			return { entries: [...files.entries, { id: "doc-1.epub", hash: "epub-hash", type: 0, subfiles: 0, size: 0 }] };
+		});
+		api.raw.getHash.mockImplementation(async (ref: ItemRef) => (ref.id === "doc-1.epub" ? await fetch() : PAGE_BYTES));
+		return api;
+	}
+
+	const ALICE = { text: "", chapters: [], title: "Alice", authors: ["Lewis Carroll"] };
+
+	it("records a PDF's whole-document unit after its note is written, numbered by the PDF's own pages", async () => {
+		const deps = baseDeps(await pdfDocument("root-rw-pdf"), { sync: "Target" });
+		const seen: { unit: ReadwiseUnit; onDisk: string | null }[] = [];
+		const readwise: ReadwiseRecorder = {
+			record: async (unit) => {
+				seen.push({ unit, onDisk: await deps.noteStore.read("Target/Prompting.md") });
+			},
+		};
+
+		await runSync({ ...deps, readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0].unit).toMatchObject({ docId: "doc-1", scope: "document", pageOrder: null, marginNotes: true });
+		expect(seen[0].unit.pages.map((page) => page.embedPage)).toEqual([1, 2]);
+		expect(seen[0].onDisk).toContain("## Digest");
+	});
+
+	it("records a page-tag unit for its one page, beside the document tag's unit of the same document", async () => {
+		const api = await pdfDocument("root-rw-page", { pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }] });
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(api, { sync: "Target", todo: "Todo" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => [unit.docId, unit.scope])).toEqual([
+			["doc-1", "document"],
+			["doc-1", { pageId: "p1" }],
+		]);
+	});
+
+	it("records nothing a failed digest build could speak for", async () => {
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("pdf.js went away"));
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument("root-rw-failed"), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => [unit.scope, unit.pages])).toEqual([["none", []]]);
+	});
+
+	it("hands over the vault's margin-notes setting, which the digest was built under", async () => {
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument("root-rw-margin"), { sync: "Target" }), marginNotes: false, readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen.map(({ unit }) => unit.marginNotes)).toEqual([false]);
+	});
+
+	it("records a notebook's typed pages, numbered by the notebook's page order", async () => {
+		vi.mocked(isDocumentText).mockReturnValueOnce(false).mockReturnValueOnce(true).mockReturnValueOnce(false);
+		const api = fakeApi({
+			rootHash: "root-rw-typed",
+			entries: [documentEntry({ visibleName: "Article", tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a", "page-b", "page-c"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a", "page-b": "hash-b", "page-c": "hash-c" } },
+		});
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen).toHaveLength(1);
+		expect(seen[0].unit).toMatchObject({ scope: "document", pageOrder: ["page-a", "page-b", "page-c"] });
+		expect(seen[0].unit.pages).toHaveLength(1);
+		expect(seen[0].sources).toEqual({ visibleName: "Article" });
+	});
+
+	it("records no handwritten notebook: it has no digest", async () => {
+		const api = fakeApi({
+			rootHash: "root-rw-notebook",
+			entries: [documentEntry({ tags: [{ name: "sync", timestamp: 0 }] })],
+			contentById: { "doc-1": documentContent({ cPages: cPages(["page-a"]) }) },
+			pageHashesByDoc: { "doc-1": { "page-a": "hash-a" } },
+		});
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen).toEqual([]);
+	});
+
+	it("records nothing for a note frozen by a hand edit", async () => {
+		const first = baseDeps(await pdfDocument("root-rw-frozen-1"), { sync: "Target" });
+		const synced = await runSync(first, EMPTY_SYNC_INDEX);
+		const path = synced.index.rows[notebookSyncKey("doc-1", "sync")].notePath;
+		await first.noteStore.write(path, (await first.noteStore.read(path))!.replace("## Digest", "## Digest\nby hand"));
+		const { readwise, seen } = fakeRecorder();
+
+		const result = await runSync({ ...baseDeps(await pdfDocument("root-rw-frozen-2", { hash: "hash-9" }), { sync: "Target" }), noteStore: first.noteStore, readwise }, synced.index);
+
+		expect(result.editedNotesSkipped).toBe(1);
+		expect(seen).toEqual([]);
+	});
+
+	it("offers the paper the Zotero pass linked to name the book", async () => {
+		const paper = { title: "Prompting at Scale", creators: [{ creatorType: "author", firstName: "Ada", lastName: "Smith" }] };
+		const zotero: ZoteroPass = { run: async () => ({ line: null, links: {}, keys: {}, notices: [], paper }) };
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await pdfDocument("root-rw-zotero"), { sync: "Target" }), zotero, readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen[0].sources).toEqual({ zotero: paper, visibleName: "Prompting" });
+	});
+
+	// Spec review B10: the book is named at its first record for good, so an EPUB's own title is read
+	// then, even when no quote needed the book to correct its wording.
+	it("offers an EPUB's own title and authors", async () => {
+		vi.mocked(readEpubBook).mockResolvedValueOnce(ALICE);
+		const { readwise, seen } = fakeRecorder();
+
+		await runSync({ ...baseDeps(await epubDocument("root-rw-epub", async () => PAGE_BYTES), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen[0].sources).toEqual({ epub: ALICE, visibleName: "Prompting" });
+	});
+
+	// A document the recorder already knows is named: fetching its book again would buy nothing.
+	it("fetches the EPUB only when the recorder asks for the sources", async () => {
+		const fetch = vi.fn(async () => PAGE_BYTES);
+		const readwise: ReadwiseRecorder = { record: async () => {} };
+
+		await runSync({ ...baseDeps(await epubDocument("root-rw-epub-quiet", fetch), { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	// A book named after the tablet's file is still a book: a fetch that fails costs its OPF, not the record.
+	it("offers no EPUB metadata when the book cannot be fetched", async () => {
+		const { readwise, seen } = fakeRecorder();
+		const api = await epubDocument("root-rw-epub-fail", async () => {
+			throw new Error("network went away");
+		});
+
+		await runSync({ ...baseDeps(api, { sync: "Target" }), readwise }, EMPTY_SYNC_INDEX);
+
+		expect(seen[0].sources).toEqual({ visibleName: "Prompting" });
 	});
 });

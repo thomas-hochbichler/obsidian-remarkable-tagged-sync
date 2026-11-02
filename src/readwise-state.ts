@@ -246,7 +246,7 @@ function isSetAside({ want, rejected }: ReadwiseHighlight): boolean {
 }
 
 /** Every readable book not deleted in Readwise, by document. */
-function liveBooks(books: StoredReadwiseBooks): [string, ReadwiseBook][] {
+export function liveBooks(books: StoredReadwiseBooks): [string, ReadwiseBook][] {
 	return Object.keys(books).flatMap((docId): [string, ReadwiseBook][] => {
 		const book = readwiseBook(books, docId);
 		return book === null || book.deleted ? [] : [[docId, book]];

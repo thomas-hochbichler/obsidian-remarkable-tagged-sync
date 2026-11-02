@@ -23,6 +23,7 @@ export {
 	PluginSettingTab,
 	ProgressBarComponent,
 	requestUrl,
+	requireApiVersion,
 	Scope,
 	Setting,
 	setIcon,

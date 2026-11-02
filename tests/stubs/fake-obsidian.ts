@@ -184,6 +184,14 @@ export const Platform = {
 /** The version `main.ts` puts in its diagnostics block. */
 export const apiVersion = READ_FROM_VERSION;
 
+/** Whether the running Obsidian is at least `version`, against {@link apiVersion}: what guards an API newer than `minAppVersion`. */
+export function requireApiVersion(version: string): boolean {
+	const parts = (value: string) => value.split(".").map(Number);
+	const [want, have] = [parts(version), parts(apiVersion)];
+	const differs = want.findIndex((part, index) => part !== (have[index] ?? 0));
+	return differs === -1 || want[differs] < (have[differs] ?? 0);
+}
+
 // --- elements ------------------------------------------------------------------------------------
 
 /**
@@ -750,6 +758,13 @@ export class FakeApp {
 	};
 	/** The workspace's own events. Same shape as the vault's, for the same reason: one `trigger`. */
 	private readonly workspaceRefs: EventRef[] = [];
+	/** Obsidian's Keychain (since 1.11.4): secrets by id, on this computer only. A map; nothing about encryption is modelled. */
+	readonly secretStorage = {
+		secrets: new Map<string, string>(),
+		setSecret: (id: string, secret: string): void => void this.secretStorage.secrets.set(id, secret),
+		getSecret: (id: string): string | null => this.secretStorage.secrets.get(id) ?? null,
+		listSecrets: (): string[] => [...this.secretStorage.secrets.keys()],
+	};
 	readonly fileManager = {
 		renameFile: async (file: TAbstractFile, newPath: string): Promise<void> => {
 			this.vault.rename(file, newPath);

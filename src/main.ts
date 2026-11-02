@@ -3,6 +3,7 @@ import {
 	Notice,
 	Plugin,
 	ProgressBarComponent,
+	requireApiVersion,
 	setIcon,
 	setTooltip,
 	type TAbstractFile,
@@ -53,6 +54,8 @@ import type { SendRoutes } from "./zotero-send";
 import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero-plugin";
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
+import { createReadwiseClient } from "./readwise-client";
+import { pushToReadwise, readwiseNotice, readwiseRecorderFor, readwiseRecordingOn, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
 import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
 import type { TextLayerTally } from "./text-layer";
 import { type Scheduler, windowScheduler } from "./scheduler";
@@ -682,6 +685,8 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.data.legacyOcrLossesMarked = true;
 				await this.saveData(this.data);
 			}
+			// Readwise's backfill, before opening the source for the same reason (Readwise spec §5).
+			if (startReadwiseRecording(this.data, readwiseRecordingOn(this.data.readwise, this.entitlement()))) await this.saveData(this.data);
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;
@@ -703,6 +708,14 @@ export default class TaggedSyncPlugin extends Plugin {
 					// a zotero.org key: it links and names the paper, and the pass itself skips the write
 					// step (§5). A note rewritten without it loses its Zotero callout line and keeps its keys.
 					zotero: zoteroPassFor(this.zoteroHost(), !auto),
+					// Absent without Pro or with the switch off. What it records reaches `data.json` with the
+					// checkpoint after each unit; a token is not needed to record (Readwise spec §11 P2).
+					readwise: readwiseRecorderFor(this.data.readwise, this.entitlement(), {
+						books: () => this.data.readwiseBooks,
+						setBooks: (books) => {
+							this.data.readwiseBooks = books;
+						},
+					}),
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
 					shouldStop: () => this.stopRequested,
@@ -787,11 +800,39 @@ export default class TaggedSyncPlugin extends Plugin {
 			if (!auto) new Notice(explainTransportError(transport, error, "sync"));
 		} finally {
 			await session?.close();
+			// After every sync attempt -- one that changed nothing, one whose source could not be opened --
+			// because that is how a failed push is retried (Readwise spec §11 P1, P22). Not on a run the
+			// user stopped: they asked for it to end (§11 P16).
+			if (!this.stopRequested) await this.pushReadwise(!auto);
 			this.stopRequested = false;
 			// Re-anchor the interval to this run so the next auto-sync counts from the last sync, not
 			// from load — otherwise the launch sync's few-second offset makes the first tick fall short.
 			this.rearmAutoSyncInterval();
 		}
+	}
+
+	/**
+	 * The Readwise push (Readwise spec §4.3), with Pro, the switch on and a token on this computer. The
+	 * caller holds the run lock. Its failure is its own and never the sync's: what did not land stays
+	 * pending, and the Connection line carries the state; a notice only when `speak` (§11 P17).
+	 */
+	private async pushReadwise(speak: boolean): Promise<void> {
+		const token = this.readwiseToken();
+		if (token === null || !readwiseRecordingOn(this.data.readwise, this.entitlement())) return;
+		try {
+			const failure = await pushToReadwise(this.data, createReadwiseClient(token), await tokenFingerprint(token));
+			await this.saveData(this.data);
+			const notice = speak ? readwiseNotice(failure, this.data.readwiseBooks) : null;
+			if (notice !== null) new Notice(notice);
+		} catch (error) {
+			console.warn("Tagged Sync: the Readwise push failed", error);
+		}
+	}
+
+	/** This computer's Readwise token, from Obsidian's Keychain (Readwise spec §2), or null. Obsidian before 1.11.4 has no Keychain. */
+	private readwiseToken(): string | null {
+		const name = this.data.readwise.tokenSecret;
+		return requireApiVersion("1.11.4") && name !== null ? this.app.secretStorage.getSecret(name) || null : null;
 	}
 
 	/**
@@ -846,6 +887,16 @@ export default class TaggedSyncPlugin extends Plugin {
 				this.setStatus("asleep", "Tagged Sync: reMarkable not reachable", {
 					detail: "The last background sync was skipped because your reMarkable did not answer.",
 				});
+				// The push needs no tablet (Readwise spec §11 P22). It takes the run lock itself, so it
+				// never overlaps a run's push.
+				if (!this.syncing) {
+					this.syncing = true;
+					try {
+						await this.pushReadwise(false);
+					} finally {
+						this.syncing = false;
+					}
+				}
 			}
 			return;
 		}

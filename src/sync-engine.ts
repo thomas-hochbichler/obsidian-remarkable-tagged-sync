@@ -6,6 +6,8 @@ import { buildDigest, type DigestPageInput, worstOcrStatus } from "./digest-pipe
 import { type DigestPage, digestId, NOT_TRANSCRIBED, renderDigest } from "./digest-builder";
 import type { AddedPagesScope } from "./zotero-notes";
 import type { ZoteroNoteParts, ZoteroPass } from "./zotero-sync";
+import type { ReadwiseRecorder, ReadwiseUnit } from "./readwise-push";
+import type { RecordScope } from "./readwise-state";
 import {
 	blockHashOf,
 	extractManagedBlock,
@@ -359,6 +361,11 @@ export interface SyncDeps {
 	 * PDF-backed note, **after** that note is written, and nothing it answers can fail the sync.
 	 */
 	zotero?: ZoteroPass;
+	/**
+	 * The Readwise record (Readwise spec §4.1), or absent while recording is off -- no Pro, or the switch
+	 * off. Handed every written unit with a digest after the Zotero pass; it never touches the network.
+	 */
+	readwise?: ReadwiseRecorder;
 	/**
 	 * Polled at unit boundaries: `true` ends the run early, in a state the next sync resumes from.
 	 * Only ever read, never awaited -- nothing in this path can actually be aborted (the cloud API
@@ -1065,6 +1072,11 @@ interface UnitParams {
 		/** MD5 of the source PDF the tablet holds -- what §2.3 matches on. Read only when something asks. */
 		md5(): Promise<string | null>;
 	};
+	/**
+	 * What the Readwise record needs about this unit: supplied for every unit with a digest, PDF-backed
+	 * or not (Readwise spec §4.1), and for no other. `epub` fetches the book's OPF, for a book only.
+	 */
+	readwise?: Pick<ReadwiseUnit, "pages" | "scope" | "pageOrder" | "marginNotes"> & { readonly epub?: () => Promise<EpubBook | null> };
 }
 
 /**
@@ -1307,7 +1319,7 @@ function layerTally(scenes: RmPage[], texts: { embedPage: number; text: string }
 
 /** Reads the unit, then writes the attachment + note (via `write`) and builds the index row for one produced note (notebook- or page-granularity). Rendering is the caller's job -- see the fileType branch in `runSync`. */
 async function writeUnit(
-	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero"> & { attachmentsFolder: string; newNoteId: () => string },
+	deps: Pick<SyncDeps, "attachmentStore" | "noteStore" | "now" | "ocrBackend" | "layerReader" | "zotero" | "readwise"> & { attachmentsFolder: string; newNoteId: () => string },
 	params: UnitParams,
 	write: (fields: NoteFields) => Promise<string>,
 ): Promise<WriteUnitResult> {
@@ -1394,6 +1406,21 @@ async function writeUnit(
 			withZotero = { ...fields, zoteroLine: zotero.line, digest: renderDigest(embedPath, [...params.zotero.pages], zotero.links) };
 			await writeNote(deps.noteStore, "", withZotero, notePath);
 		}
+	}
+
+	// After the Zotero pass, which is what names the paper the book may be named after (spec §11 P21).
+	if (params.readwise !== undefined && deps.readwise !== undefined) {
+		const { epub, ...unit } = params.readwise;
+		const paper = zotero?.paper;
+		await deps.readwise.record({
+			...unit,
+			docId: params.docId,
+			sources: async () => {
+				// A book that cannot be fetched is still recorded, under the name the tablet gives it.
+				const book = await epub?.().catch(() => null);
+				return { ...(paper ? { zotero: paper } : {}), ...(book ? { epub: book } : {}), visibleName: params.source };
+			},
+		});
 	}
 
 	// Carried from the row this write replaces -- which is the rename's source row when a mapped tag
@@ -2097,7 +2124,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 	const { api, tagRouter, now, ocrBackend } = deps;
 	const attachmentsFolder = deps.attachmentsFolder ?? DEFAULT_ATTACHMENTS_FOLDER;
 	const newNoteId = deps.newNoteId ?? (() => crypto.randomUUID());
-	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, layerReader: deps.layerReader, newNoteId, zotero: deps.zotero };
+	const writeDeps = { attachmentStore: deps.attachmentStore, noteStore: deps.noteStore, now, attachmentsFolder, ocrBackend, layerReader: deps.layerReader, newNoteId, zotero: deps.zotero, readwise: deps.readwise };
 	const report = deps.onProgress ?? (() => {});
 	const shouldStop = deps.shouldStop ?? (() => false);
 
@@ -2411,6 +2438,14 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 			return pageRefById.get(pageId)?.appended ? { blockId: digestId("nt", pageId, "page") } : "none";
 		};
 
+		// The Readwise record of a unit with a digest (Readwise spec §4.2): a whole-document unit speaks for
+		// every record of the book, a page tag for its one page, a failed build for none. Pages are
+		// numbered from the document, never from the unit (§11 P8), so a typed page by its page order.
+		const readwiseUnit = (pageId: string | null, digest: { pages: DigestPage[]; failed?: true }): UnitParams["readwise"] => {
+			const scope: RecordScope = digest.failed ? "none" : pageId === null ? "document" : { pageId };
+			return { pages: digest.pages, scope, pageOrder: pdfBacked ? null : pageOrder, marginNotes: deps.marginNotes ?? false, epub: getBook };
+		};
+
 		// A tagged page's change-detection hash: its own `.rm` hash for handwritten pages, else the
 		// whole-doc hash -- for a PDF page (no `.rm`) or a blank page (never drawn), the page changes
 		// exactly when the document does.
@@ -2528,6 +2563,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 						zoteroMd5 === undefined
 							? undefined
 							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(null, digest), md5: zoteroMd5 },
+					readwise: digestPages === null ? undefined : readwiseUnit(null, digest),
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);
@@ -2660,6 +2696,7 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 						zoteroMd5 === undefined
 							? undefined
 							: { pages: digest.pages, covered: coveredPages(digestPages, digest), addedPages: coveredAdded(unit.pageId, digest), md5: zoteroMd5 },
+					readwise: digestPages === null ? undefined : readwiseUnit(unit.pageId, digest),
 				},
 				resolveWriter(deps.noteStore, tagRouter, rename, folder, existingRow),
 			);

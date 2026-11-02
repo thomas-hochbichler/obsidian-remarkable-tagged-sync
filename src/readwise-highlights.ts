@@ -106,6 +106,11 @@ function nestedNote({ notes }: DigestHighlight): { note?: string; noteUnread?: t
 	return { ...(note === "" ? {} : { note }), ...(notes.some((nested) => nested.text === "") ? { noteUnread: true as const } : {}) };
 }
 
+/** Readwise's `highlight_url` for a record: its update key, written unencoded as ticket 10 live-checked it (spec §1.3). */
+export function highlightUrl(docId: string, key: string): string {
+	return `obsidian://tagged-sync?highlight=${docId}/${key}`;
+}
+
 /** The page a key belongs to: everything before its first colon (spec §1.3). */
 export function pageIdOf(key: string): string {
 	return key.slice(0, key.indexOf(":"));
@@ -138,7 +143,7 @@ function location(page: DigestPage, key: string, pageOrder: readonly string[] | 
  */
 export function readwiseHighlights(pages: readonly DigestPage[], docId: string, pageOrder: readonly string[] | null): ReadwiseEntry[] {
 	return pages.flatMap((page) => {
-		const place = (key: string): EntryPlace => ({ key, location: location(page, key, pageOrder), url: `obsidian://tagged-sync?highlight=${docId}/${key}` });
+		const place = (key: string): EntryPlace => ({ key, location: location(page, key, pageOrder), url: highlightUrl(docId, key) });
 		const highlights = page.highlights.map((highlight): ReadwiseEntry =>
 			highlight.sentence === "" ? { ...place(highlight.key), unread: true } : { ...place(highlight.key), text: boldText(highlight), ...nestedNote(highlight) },
 		);
