@@ -683,3 +683,286 @@
       layer: unit
       file: src/digest-pipeline.test.ts
       test: "buildDigest determinism > keys a page added on the device by its page, with `page` for the CRDT id"
+
+# Recording one unit (spec §3, §4.2): what Readwise should hold, merged into the document's book with
+# no network. One row per state row of spec §8. The load-bearing rows are W8.6-W8.9 (what a unit
+# covers -- too much deletes highlights of pages it never looked at, too little never cleans up a
+# deleted page), W8.13-W8.16 (an unread transcription must not delete or blank what Readwise holds)
+# and W8.17-W8.19 (margin notes off must not delete every standalone note). All are silent when wrong.
+- feature: W8
+  name: Recording a unit for Readwise
+  code: src/readwise-state.ts
+  tier: pro
+  scenarios:
+    - id: W8.1
+      scenario: A document recorded for the first time
+      expect: A book under the identity's title and author, every read entry a pending `want`
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > gives a new document its book, named once, with every mark waiting to be pushed"
+
+    - id: W8.2
+      scenario: A pushed mark changed on the tablet
+      expect: '`want` = the new text in the same record; `pushed` and `id` kept'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > wants the new text of a mark changed on the tablet, in the same record"
+
+    - id: W8.3
+      scenario: Nothing changed
+      expect: Nothing pending
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > wants nothing for a mark that is what Readwise holds"
+
+    - id: W8.4
+      scenario: Same text, but the page number or the note changed
+      expect: A change -- the whole `ReadwiseText` is compared
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > counts a moved page or an added note as a change, the whole text compared"
+
+    - id: W8.5
+      scenario: A pushed mark erased on the tablet
+      expect: '`want: null` (delete), also when the user edited it in Readwise'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > wants a mark erased on the tablet deleted, also one edited in Readwise"
+
+    - id: W8.6
+      scenario: A mark erased before its first push landed
+      expect: The record is dropped; nothing reaches Readwise
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > drops a mark erased before its first push landed: nothing reaches Readwise"
+
+    - id: W8.7
+      scenario: A page-tag unit with no marks, beside a record of another page
+      expect: Only its own page's record is deleted
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > is the one page of a page-tag unit: a mark of another page is not erased by it"
+
+    - id: W8.8
+      scenario: The digest failed to build
+      expect: Covers nothing; every record stays
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > is nothing for a digest that failed to build"
+
+    - id: W8.9
+      scenario: A page deleted on the tablet, then a whole-document unit
+      expect: Its highlights are deleted -- the unit covers every record of the book
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > is every record of the book for a whole-document unit, so a page deleted on the tablet takes its highlights with it"
+
+    - id: W8.10
+      scenario: A page added on the tablet, pushed, then erased
+      expect: '`want: null`'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > deletes a page added on the tablet and then erased"
+
+    - id: W8.11
+      scenario: A document tag and a page tag record one document in one run, reading a note differently
+      expect: The later unit's `want` wins on its page; the other pages keep what the first recorded
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what a unit speaks for > lets the later of two units of one document win on their page, and leaves the other pages to the first"
+
+    - id: W8.12
+      scenario: A passage re-selected so its key changed
+      expect: 'Old key `want: null`, new key `want` = the text'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > deletes a passage re-selected under a new key and creates it under that key"
+
+    - id: W8.13
+      scenario: An EPUB re-laid out -- same key, other text
+      expect: '`want` = the new text'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > overwrites a highlight of an EPUB re-laid out, the same key now holding other text"
+
+    - id: W8.14
+      scenario: A margin note unread this sync, beside a read highlight
+      expect: The note's record untouched; the highlight recorded
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > leaves its own record as it is, neither pushed nor deleted, and records the entry beside it"
+
+    - id: W8.15
+      scenario: An unread entry with no record yet
+      expect: No record created
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > creates nothing for an entry never read"
+
+    - id: W8.16
+      scenario: A highlight whose nested note was unread
+      expect: Keeps the stored note; text and page compared as usual
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > keeps the note Readwise holds for a highlight whose nested note could not be read, the text compared as usual"
+
+    - id: W8.17
+      scenario: A pending note change, then the nested note unread
+      expect: The pending note is kept, not voided against the older pushed note
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an unread transcription > keeps a pending note rather than voiding it against the older one Readwise holds"
+
+    - id: W8.18
+      scenario: Margin notes switched off
+      expect: Standalone notes and added pages not covered; each highlight keeps its note
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > leaves the notes and added pages in Readwise as they are, and each highlight its note"
+
+    - id: W8.19
+      scenario: Margin notes off and a highlight moved
+      expect: '`want` = the moved highlight with its stored note'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > still records a highlight's own change, with the note it had"
+
+    - id: W8.20
+      scenario: Margin notes switched on again
+      expect: Changes since then are pending; an added page gone meanwhile is deleted
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > margin notes switched off > records what changed meanwhile once they are on again"
+
+    - id: W8.21
+      scenario: An item Readwise refused, unchanged on the tablet
+      expect: Stays set aside (`want` = `rejected`)
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an item Readwise refused > stays set aside while the tablet shows what was refused"
+
+    - id: W8.22
+      scenario: A refused item changed on the tablet
+      expect: Pending again
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > an item Readwise refused > is wanted again once it changes on the tablet"
+
+    - id: W8.23
+      scenario: A book deleted in Readwise
+      expect: Nothing recorded into it
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > records nothing into a book deleted in Readwise"
+
+    - id: W8.24
+      scenario: The document renamed on the tablet or matched to Zotero after its first record
+      expect: Same title and author (frozen, P21)
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > stays the one it was first recorded under when the document is renamed on the tablet or matched to Zotero later"
+
+    - id: W8.25
+      scenario: A new document's unit with nothing to record
+      expect: No book yet, so nothing is frozen
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > is not taken before the document has a mark to record"
+
+    - id: W8.26
+      scenario: Two documents with the same title and author
+      expect: '" (2)", " (3)", … (P6)'
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > gets a number when another document of this vault already has the same title and author"
+
+    - id: W8.27
+      scenario: The title clashes with a book deleted in Readwise
+      expect: Numbered as well -- the deleted book still exists there
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > counts a book deleted in Readwise as taken"
+
+    - id: W8.28
+      scenario: Same title, another author
+      expect: No number
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > needs no number for the same title under another author"
+
+    - id: W8.29
+      scenario: Title over 511, author over 1,024 characters, alone and numbered
+      expect: Cut to the limit ending in "…"; the number after the cut
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the book's name > is cut to Readwise's limits, ending in an ellipsis, the number kept after the cut"
+
+    - id: W8.30
+      scenario: Another document's book cannot be read by this build
+      expect: Left in the map exactly as it is
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > leaves another document's unreadable book exactly where it is"
+
+    - id: W8.31
+      scenario: The document's book carries `shown`, `bookId` and a field of a newer build
+      expect: All kept by the recorder
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > keeps what the push and a newer build wrote on this document's book"
+
+    - id: W8.38
+      scenario: The book holds a highlight record this build cannot read
+      expect: Kept beside the records this unit writes
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > keeps a record it cannot read beside the ones it records"
+
+    - id: W8.39
+      scenario: A book whose `shown` and `highlights` are partly junk
+      expect: Read field by field; what is unreadable is left out, the book still reads
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > what this build cannot read > reads a book field by field, what it cannot read left out"
+
+    - id: W8.32
+      scenario: A pending change, then the tablet back to what Readwise holds
+      expect: The change is voided
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the tablet back to what Readwise holds > voids a pending change"
+
+    - id: W8.33
+      scenario: A pending delete, then the mark back on the tablet as Readwise holds it
+      expect: The delete is voided
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > the tablet back to what Readwise holds > voids a pending delete"
+
+    - id: W8.34
+      scenario: Records with a text, a delete, nothing, a refused text, a refused text changed
+      expect: Pending, pending, not, not, pending
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > knows what is pending: a text or a delete, never what Readwise refused unchanged"
+
+    - id: W8.35
+      scenario: Several books, one deleted with a pending change, one unreadable
+      expect: Only the readable, not deleted books with something pending are listed
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > lists the documents waiting to be pushed, none of them in a deleted book"
+
+    - id: W8.36
+      scenario: The Connection line's counts
+      expect: Books with a pushed highlight, highlights pushed, items set aside -- deleted books left out
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > counts the books and highlights pushed, and the items set aside, for the Connection line"
+
+    - id: W8.37
+      scenario: '*Open in Readwise* asks for a book id'
+      expect: The id; none for a deleted, unmatched, unreadable or unknown book
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "reading the state > gives a document's book id, none for a book deleted in Readwise or never matched"

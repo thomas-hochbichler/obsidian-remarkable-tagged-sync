@@ -105,7 +105,7 @@ describe("readwiseHighlights", () => {
 	describe("a margin note of its own", () => {
 		it("becomes its transcript, with no note", () => {
 			expect(readwiseHighlights([page({ notes: [note()] })], DOC, null)).toEqual([
-				{ key: `${PAGE}:3c4d`, text: "check the date", location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
+				{ key: `${PAGE}:3c4d`, text: "check the date", margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
 			]);
 		});
 
@@ -115,8 +115,8 @@ describe("readwiseHighlights", () => {
 			const entries = readwiseHighlights([page({ notes: [note({ text: "" }), note({ key: `${PAGE}:5e6f`, text: "1962?" })] })], DOC, null);
 
 			expect(entries).toEqual([
-				{ key: `${PAGE}:3c4d`, unread: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
-				{ key: `${PAGE}:5e6f`, text: "1962?", location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:5e6f` },
+				{ key: `${PAGE}:3c4d`, unread: true, margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
+				{ key: `${PAGE}:5e6f`, text: "1962?", margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:5e6f` },
 			]);
 		});
 	});
@@ -137,7 +137,7 @@ describe("readwiseHighlights", () => {
 
 		it("becomes its transcript, line breaks kept, on the page it follows", () => {
 			expect(readwiseHighlights([added("first line\nsecond line")], DOC, null)).toEqual([
-				{ key: `${ADDED}:page`, text: "first line\nsecond line", location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${ADDED}:page` },
+				{ key: `${ADDED}:page`, text: "first line\nsecond line", margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${ADDED}:page` },
 			]);
 		});
 
@@ -145,7 +145,7 @@ describe("readwiseHighlights", () => {
 		it("is unread when its handwriting could not be read, whatever text stands in for it", () => {
 			const entries = readwiseHighlights([added("typed text", { added: { relation: "after", label: "12", sourceIndex: 11, nth: null, unread: true } })], DOC, null);
 
-			expect(entries).toEqual([{ key: `${ADDED}:page`, unread: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${ADDED}:page` }]);
+			expect(entries).toEqual([{ key: `${ADDED}:page`, unread: true, margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${ADDED}:page` }]);
 		});
 
 		// Read, and nothing legible on it: there is nothing to push, and nothing says to keep an older reading.

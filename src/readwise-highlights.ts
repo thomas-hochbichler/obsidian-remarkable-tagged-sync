@@ -6,6 +6,11 @@ import type { DigestHighlight, DigestPage } from "./digest-builder";
 interface EntryPlace {
 	/** `pageId:crdtId` -- the record's key in the state, and the end of `url`. */
 	readonly key: string;
+	/**
+	 * A margin note of its own or a page added on the tablet, not a highlight: the key cannot tell them
+	 * apart, and with margin notes off the recorder leaves these alone (spec §11 P20).
+	 */
+	readonly margin?: true;
 	readonly location: number;
 	/** Readwise's `highlight_url`: its update key, and the link back into the vault (spec §7). */
 	readonly url: string;
@@ -140,8 +145,8 @@ export function readwiseHighlights(pages: readonly DigestPage[], docId: string, 
 		// Every `""` margin note is unread: a note carries no status of its own, and its entry in the
 		// vault says "could not be transcribed" for it (spec §4.2). A page added on the tablet says.
 		const notes = page.notes.flatMap((note): ReadwiseEntry[] => {
-			if (page.added?.unread || (!note.wholePage && note.text === "")) return [{ ...place(note.key), unread: true }];
-			return note.text === "" ? [] : [{ ...place(note.key), text: fitted(note.text) }];
+			if (page.added?.unread || (!note.wholePage && note.text === "")) return [{ ...place(note.key), unread: true, margin: true }];
+			return note.text === "" ? [] : [{ ...place(note.key), text: fitted(note.text), margin: true }];
 		});
 		return [...highlights, ...notes];
 	});
