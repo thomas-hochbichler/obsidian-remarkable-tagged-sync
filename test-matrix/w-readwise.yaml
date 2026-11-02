@@ -465,3 +465,214 @@
       layer: unit
       file: src/zotero-sync.test.ts
       test: "what the pass does for one written note > hands back no paper for a standalone PDF"
+
+# What each digest entry becomes in Readwise (spec §1.3, §11 P8, P9, P12). The load-bearing rows are
+# W6.18/W6.22 (a location that differs between the units of one document re-pushes forever) and
+# W6.8/W6.10/W6.12/W6.14 (an unread entry must never read as erased -- that would delete it in Readwise).
+- feature: W6
+  name: Digest entries as Readwise highlights
+  code: src/readwise-highlights.ts
+  tier: pro
+  scenarios:
+    - id: W6.1
+      scenario: A marked sentence on a page printed as 12
+      expect: 'The sentence with the marked words in `**…**`, location 12, `highlight_url` = `obsidian://tagged-sync?highlight=<docId>/<pageId:crdtId>`, unencoded'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > becomes its sentence with the marked words in bold, on the page it is printed on, linking back to its entry"
+
+    - id: W6.2
+      scenario: Two marked runs apart in one sentence
+      expect: Two bold stretches
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > bolds two runs apart"
+
+    - id: W6.3
+      scenario: Overlapping runs -- the versions of a selection the reader adjusted
+      expect: 'One bold stretch, never `**…****…**`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > bolds overlapping runs as one stretch"
+
+    - id: W6.4
+      scenario: One run found, one not
+      expect: The found run bold, the other left out
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > leaves out a run it cannot find in the sentence and bolds the rest"
+
+    - id: W6.5
+      scenario: No run found, or none known
+      expect: The plain sentence
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > sends the plain sentence when no run is found"
+
+    - id: W6.6
+      scenario: Two notes nested under a highlight
+      expect: 'Their transcripts as its `note`, joined by a blank line'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > carries the margin notes written at it as its note, joined by a blank line"
+
+    - id: W6.7
+      scenario: A highlight with no note
+      expect: 'No `note` key -- Readwise refuses `""`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > carries no note when nothing was written at it"
+
+    - id: W6.8
+      scenario: One nested note unread, one read
+      expect: 'The readable one as `note`, plus `noteUnread` so the recorder keeps the note Readwise holds (spec §11 P12)'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > says when a note written at it could not be read, beside the one that could"
+
+    - id: W6.9
+      scenario: Its only nested note unread
+      expect: 'No `note`, `noteUnread` set'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > says so with no note at all when its only note could not be read"
+
+    - id: W6.10
+      scenario: No text layer and no recorded text this sync
+      expect: '`unread`, no text -- the recorder skips that one record (spec §11 P12)'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > is unread, with no text, when its sentence is empty"
+
+    - id: W6.11
+      scenario: A standalone margin note
+      expect: 'Its transcript as the text, no `note`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a margin note of its own > becomes its transcript, with no note"
+
+    - id: W6.12
+      scenario: An unread note beside a read one on one page
+      expect: 'Only the unread one is `unread`; the exemption is per item, never per page'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a margin note of its own > is unread when it could not be transcribed, and the readable note beside it is not"
+
+    - id: W6.13
+      scenario: A page added after page 12
+      expect: Its transcript, line breaks kept, location 12 (spec §11 P8)
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a page added on the tablet > becomes its transcript, line breaks kept, on the page it follows"
+
+    - id: W6.14
+      scenario: Its handwriting unread, typed text standing in
+      expect: '`unread` -- what the entry says is less than what the page says'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a page added on the tablet > is unread when its handwriting could not be read, whatever text stands in for it"
+
+    - id: W6.15
+      scenario: Read, nothing legible
+      expect: 'No item: never pushed blank'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a page added on the tablet > gives nothing when it was read and holds no text"
+
+    - id: W6.16
+      scenario: A PDF page printed as 12, embedded as page 3
+      expect: 12, never the embed page
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is the printed label where that is a number"
+
+    - id: W6.17
+      scenario: 'A page labelled `xii`, or `0`'
+      expect: Its source index + 1
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is the page's place in the PDF where the printed label is no number"
+
+    - id: W6.18
+      scenario: One PDF page in both units
+      expect: The same location -- a unit-relative one would re-push forever
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is the same for a PDF page in its whole-document unit and in its page-tag unit"
+
+    - id: W6.19
+      scenario: Added after a page printed as 12
+      expect: "12"
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > of a page added on the tablet > is that of the page it follows, by its printed label"
+
+    - id: W6.20
+      scenario: Added after a roman-numbered page
+      expect: That page's source index + 1
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > of a page added on the tablet > is that of the page it follows, by its place in the PDF where the label is roman"
+
+    - id: W6.21
+      scenario: Added before page 1
+      expect: "1"
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > of a page added on the tablet > is 1 ahead of the document's first page"
+
+    - id: W6.22
+      scenario: A typed page, third in its notebook, in both units
+      expect: '3 in both: its place in the page order, not its label or source index, which are unit-relative'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is a typed page's place in the document's page order, the same in its whole-document and its page-tag unit"
+
+    - id: W6.23
+      scenario: A sentence of 10,889 characters
+      expect: 'Cut to at most 8,191, ending in `…` (spec §11 P9)'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > is cut to the limit, ending in an ellipsis"
+
+    - id: W6.24
+      scenario: A long sentence with runs before, across and past the cut
+      expect: 'Final length with bold marks ≤ 8,191; the crossed run closed at the cut, the later one dropped, never an unclosed `**`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > is cut, bold marks counted, closing a run the cut goes through and dropping one past it"
+
+    - id: W6.25
+      scenario: A nested note, a margin note and an added page over the limit
+      expect: 'Each cut to 8,191 with `…`'
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > cuts a margin note's and an added page's text as well, and a highlight's note"
+
+    - id: W6.26
+      scenario: A text of exactly 8,191 characters
+      expect: Unchanged
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a text over Readwise's limit > is left whole at exactly the limit"
+
+# The key the Readwise state is keyed by, carried out of the digest (spec §1.3). The source index of
+# the page an added page follows (P8) rides on `added`, asserted by Y-zotero's "where it sits" rows.
+- feature: W7
+  name: The digest's Readwise key
+  code: src/digest-pipeline.ts
+  tier: pro
+  scenarios:
+    - id: W7.1
+      scenario: Every highlight and note of the fixture page, built twice
+      expect: '`key` = `pageId:crdtId`, the pair the block id hashes; equal across builds'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest determinism > keys every entry by its page and CRDT id, the pair its block id is hashed from, the same on every build"
+
+    - id: W7.2
+      scenario: A page added on the device
+      expect: '`key` = `<pageId>:page`'
+      layer: unit
+      file: src/digest-pipeline.test.ts
+      test: "buildDigest determinism > keys a page added on the device by its page, with `page` for the CRDT id"

@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { buildDigest, type DigestPageInput, type DigestPipelineDeps } from "./digest-pipeline";
+import type { DigestPage } from "./digest-builder";
 import type { EpubBook } from "./epub-text";
 import type { OcrBackend, OcrResult } from "./ocr-backend";
 import { notebookPageFrame, resolveDeviceCanvas } from "./pdf-renderer";
 import { parseRmV6, type RmHighlight, type RmPage, type RmStroke, type RmText } from "./rm-parser";
 import { PLAIN_TEXT_SIZE_PX } from "./device-font";
+import { hashString } from "./note-builder";
 import { layoutText } from "./text-layout";
 import type { PdfHeading, PdfPageText, PdfTextDocument, PdfTextLine } from "./pdf-text";
 
@@ -1191,6 +1193,29 @@ describe("buildDigest determinism", () => {
 		expect(second.markdown).toBe(first.markdown);
 		expect(second.warnings).toEqual(first.warnings);
 	});
+
+	// The Readwise key (spec §1.3): the full pair the block id hashes down to 24 bits, so it never
+	// collides and stays the same wherever the page is synced.
+	it("keys every entry by its page and CRDT id, the pair its block id is hashed from, the same on every build", async () => {
+		const run = () => build([fixturePage()], { loadText: async () => fixtureTextDocument(), ocrBackend: fakeOcr(...VISION_OUTPUT) });
+		const entries = (pages: DigestPage[]) => pages.flatMap((page) => [...page.highlights, ...page.highlights.flatMap((highlight) => highlight.notes), ...page.notes]);
+
+		const first = entries((await run()).pages);
+		const second = entries((await run()).pages);
+
+		expect(first.length).toBeGreaterThan(4);
+		for (const entry of first) {
+			expect(entry.key).toMatch(/^page-a:[0-9a-f]+$/);
+			expect(entry.id.slice(3)).toBe(hashString(entry.key).slice(0, 6));
+		}
+		expect(second.map((entry) => entry.key)).toEqual(first.map((entry) => entry.key));
+	});
+
+	it("keys a page added on the device by its page, with `page` for the CRDT id", async () => {
+		const result = await build([{ pageId: "added-page", sourceIndex: 15, embedPage: 16, scene: fixtureScene(), appended: true }], { ocrBackend: fakeOcr("text") });
+
+		expect(result.pages[0].notes[0].key).toBe("added-page:page");
+	});
 });
 
 describe("buildDigest page selection", () => {
@@ -1334,14 +1359,15 @@ describe("buildDigest on a page added on the device", () => {
 
 			const result = await build([placed({ relation: "after", sourceIndex: 11, nth: 2 })], { loadText: async () => text, ocrBackend: fakeOcr("text") });
 
-			expect(result.pages[0].added).toEqual({ relation: "after", label: "xii", nth: 2 });
+			// The source index too, for Readwise's page number where the label is no number (spec §11 P8).
+			expect(result.pages[0].added).toEqual({ relation: "after", label: "xii", sourceIndex: 11, nth: 2 });
 		});
 
 		// The same fallback the note's own "p. N" takes for a page with no text layer to carry a label.
 		it("names it by its number where the PDF has no label to give", async () => {
 			const result = await build([placed({ relation: "before", sourceIndex: 0, nth: null })], { ocrBackend: fakeOcr("text") });
 
-			expect(result.pages[0].added).toEqual({ relation: "before", label: "1", nth: null });
+			expect(result.pages[0].added).toEqual({ relation: "before", label: "1", sourceIndex: 0, nth: null });
 		});
 
 		it("says when its handwriting could not be read, even where typed text stands in for it", async () => {
@@ -1369,7 +1395,7 @@ describe("buildDigest on a page added on the device", () => {
 				pages: [placed({ relation: "after", sourceIndex: 2, nth: null })],
 			});
 
-			expect(result.pages[0].added).toEqual({ relation: "after", label: "3", nth: null });
+			expect(result.pages[0].added).toEqual({ relation: "after", label: "3", sourceIndex: 2, nth: null });
 		});
 	});
 });

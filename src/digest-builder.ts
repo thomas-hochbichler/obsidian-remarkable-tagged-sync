@@ -32,6 +32,8 @@ export interface NoteRegion {
 export interface DigestNote {
 	/** Block id without the caret, e.g. `nt-4c8a17`. */
 	id: string;
+	/** The full `pageId:crdtId` pair the block id is hashed from -- see {@link digestKey}. */
+	key: string;
 	anchor: DigestAnchor;
 	/** "" when nothing was transcribed -- then the entry says so in words, see `NOT_TRANSCRIBED`. */
 	text: string;
@@ -64,6 +66,8 @@ export interface DigestNote {
 export interface DigestHighlight {
 	/** Block id without the caret, e.g. `hl-9f21c4`. */
 	id: string;
+	/** The full `pageId:crdtId` pair the block id is hashed from -- see {@link digestKey}. */
+	key: string;
 	/** The full surrounding sentence, or the `.rm` highlight text alone (F4 soft fail). */
 	sentence: string;
 	/**
@@ -161,6 +165,8 @@ export interface AddedPage {
 	relation: "after" | "before";
 	/** The label the vault note shows for that page of the document: its printed label, else its 1-based number. */
 	label: string;
+	/** That page's 0-based index in the source document: Readwise's page number where `label` is no number (Readwise spec §11 P8). */
+	sourceIndex: number;
 	/** Its place in a run of several added pages there, 1-based; null for one on its own. */
 	nth: number | null;
 	/**
@@ -478,5 +484,15 @@ export function renderDigest(embedPath: string, pages: DigestPage[], zotero: Zot
  * collision would merge two entries' links, not lose an entry.
  */
 export function digestId(prefix: "hl" | "nt", pageId: string, crdtId: string): string {
-	return `${prefix}-${hashString(`${pageId}:${crdtId}`).slice(0, 6)}`;
+	return `${prefix}-${hashString(digestKey(pageId, crdtId)).slice(0, 6)}`;
+}
+
+/**
+ * The pair a block id is hashed from, whole: the key of an entry outside the vault, where a 24-bit
+ * collision would make two highlights one (Readwise spec §1.3). A page UUID never contains a colon, so
+ * the page id is everything before the first one; a CRDT id is raw hex, or `page` for a page added on
+ * the device.
+ */
+export function digestKey(pageId: string, crdtId: string): string {
+	return `${pageId}:${crdtId}`;
 }

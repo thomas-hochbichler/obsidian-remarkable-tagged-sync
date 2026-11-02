@@ -687,7 +687,7 @@ describe("the run's Zotero half", () => {
 	// The gate is the desktop connection, which is `useLocal` and a licence together, the way
 	// `createZoteroClientFor` builds it. Write-back is Pro too, so only a Pro vault has quotes to link.
 	it("sends the quotes to zotero.org's reader only where no desktop app is connected", async () => {
-		const highlight = { id: "hl-9f21c4", sentence: "Ein Satz.", rects: [{ x: 1, y: 2, width: 3, height: 4 }], tool: "marker" as const, marked: [], color: null, notes: [], section: null, top: 10 };
+		const highlight = { id: "hl-9f21c4", key: "page-1:1", sentence: "Ein Satz.", rects: [{ x: 1, y: 2, width: 3, height: 4 }], tool: "marker" as const, marked: [], color: null, notes: [], section: null, top: 10 };
 		const page: DigestPage = { pageLabel: "2", embedPage: 2, source: { index: 1, widthPt: 612, heightPt: 792 }, highlights: [highlight], notes: [] };
 		const client = fakeClient({ username: async () => "someone", createAnnotations: async () => ({ keys: ["KEY0"], failures: [] }) });
 		const quotes = async (useLocal: boolean) => {

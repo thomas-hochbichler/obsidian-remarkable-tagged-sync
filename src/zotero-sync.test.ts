@@ -34,6 +34,7 @@ function attachment(overrides: Partial<ZoteroAttachment> = {}): ZoteroAttachment
 function highlight(overrides: Partial<DigestHighlight> = {}): DigestHighlight {
 	return {
 		id: "hl-9f21c4",
+		key: "page-1:1",
 		sentence: "Die Techniken gelten für alle Modelle.",
 		rects: [{ x: 72, y: 700, width: 228, height: 12 }],
 		tool: "marker",
@@ -448,8 +449,8 @@ describe("pages added on the tablet (#246)", () => {
 			embedPage: 13,
 			source: null,
 			highlights: [],
-			notes: [{ id: BLOCK, anchor: { kind: "page" }, text, region: null, rect: null, top: 0, wholePage: true, section: null }],
-			added: { relation: "after", label: "12", nth: null },
+			notes: [{ id: BLOCK, key: "page-13:page", anchor: { kind: "page" }, text, region: null, rect: null, top: 0, wholePage: true, section: null }],
+			added: { relation: "after", label: "12", sourceIndex: 11, nth: null },
 		};
 	}
 

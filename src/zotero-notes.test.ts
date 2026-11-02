@@ -13,8 +13,8 @@ function addedPage(blockId: string, text: string, added: Partial<AddedPage> = {}
 		embedPage: 13,
 		source: null,
 		highlights: [],
-		notes: [{ id: blockId, anchor: { kind: "page" }, text, region: null, rect: null, top: 0, wholePage: true, section: null }],
-		added: { relation: "after", label: "12", nth: null, ...added },
+		notes: [{ id: blockId, key: "page-13:page", anchor: { kind: "page" }, text, region: null, rect: null, top: 0, wholePage: true, section: null }],
+		added: { relation: "after", label: "12", sourceIndex: 11, nth: null, ...added },
 	};
 }
 
