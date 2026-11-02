@@ -169,6 +169,12 @@ describe("readwiseHighlights", () => {
 			expect(locationOf([page({ pageLabel: "0", source: { index: 4, widthPt: 612, heightPt: 792 }, highlights: [highlight()] })])).toEqual([5]);
 		});
 
+		// The pipeline never builds such a page -- a label that is no number came from a text layer, which
+		// places the page -- but the type allows it, and Readwise wants a page number of 1 or more.
+		it("is 1 for a page that gives neither a number nor a place in the PDF", () => {
+			expect(locationOf([page({ pageLabel: null, source: null, highlights: [highlight()] })])).toEqual([1]);
+		});
+
 		it("is the same for a PDF page in its whole-document unit and in its page-tag unit", () => {
 			const whole = page({ pageLabel: "xii", embedPage: 12, highlights: [highlight()] });
 			const tagged = page({ pageLabel: "xii", embedPage: 1, highlights: [highlight()] });

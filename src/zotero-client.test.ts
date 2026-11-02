@@ -115,6 +115,7 @@ describe("reading the library", () => {
 						{ creatorType: "author", name: "World Health Organization" },
 						{ creatorType: "editor", lastName: "Babbage" },
 						{ creatorType: "author" },
+						{ firstName: "Plato" },
 					],
 				},
 			}),
@@ -123,6 +124,8 @@ describe("reading the library", () => {
 			{ creatorType: "author", firstName: "Ada", lastName: "Lovelace" },
 			{ creatorType: "author", name: "World Health Organization" },
 			{ creatorType: "editor", firstName: "", lastName: "Babbage" },
+			// A row with no role and no family name: still a person, with blanks rather than missing fields.
+			{ creatorType: "", firstName: "Plato", lastName: "" },
 		]);
 	});
 

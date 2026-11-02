@@ -441,8 +441,8 @@
   tier: pro
   scenarios:
     - id: W4.1
-      scenario: An item with a person, an institution, an editor, and a creator with no name
-      expect: Every named creator with its `creatorType`, a person as first/last (missing first = ""), an institution as `name`; the nameless one dropped
+      scenario: An item with a person, an institution, an editor, a creator with no name, and one with no role and no family name
+      expect: Every named creator with its `creatorType` (missing = ""), a person as first/last (a missing one = ""), an institution as `name`; the nameless one dropped
       layer: unit
       file: src/zotero-client.test.ts
       test: "reading the library > hands out every creator, person or institution, with its role"
@@ -592,6 +592,13 @@
       layer: unit
       file: src/readwise-highlights.test.ts
       test: "readwiseHighlights > the page number > is the page's place in the PDF where the printed label is no number"
+
+    - id: W6.27
+      scenario: A page with no label and no known source page (the type allows it; the pipeline never builds it)
+      expect: Location 1 -- never 0 or NaN
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > the page number > is 1 for a page that gives neither a number nor a place in the PDF"
 
     - id: W6.18
       scenario: One PDF page in both units
