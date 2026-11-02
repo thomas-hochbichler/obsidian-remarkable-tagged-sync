@@ -152,6 +152,12 @@ export const RM_PALETTE: Record<number, Rgb> = {
 	11: { r: 139, g: 208, b: 229 }, // CYAN
 	12: { r: 183, g: 130, b: 205 }, // MAGENTA
 	13: { r: 247, g: 232, b: 81 }, // YELLOW_2
+	// Not in rmscene: the Paper Pro's selection gesture writes these for its blue, orange and grey
+	// highlighter (a page marked once in each colour, 2026-11-02). The values are the colours the same
+	// highlighter records in `color_rgba` when it draws freehand.
+	14: { r: 190, g: 234, b: 254 }, // highlighter blue
+	15: { r: 255, g: 195, b: 140 }, // highlighter orange
+	16: { r: 199, g: 199, b: 198 }, // highlighter grey
 };
 
 const STROKE_COLORS: Record<number, Color> = Object.fromEntries(
@@ -174,7 +180,17 @@ const ACHROMATIC_PALETTE_IDS = new Set([0, 1, 2, 8]);
 export function recordedColor(item: { color: number; colorRgba?: Rgb }): Rgb | null {
 	const palette = RM_PALETTE[item.color];
 	if (palette && !ACHROMATIC_PALETTE_IDS.has(item.color)) return palette;
-	return item.colorRgba ?? null;
+	return trueColor(item.colorRgba) ?? null;
+}
+
+/**
+ * `color_rgba` as a colour, or undefined when it is the opaque-black placeholder the selection
+ * gesture writes beside its palette id. A palette id newer than `RM_PALETTE` arrives with only that
+ * placeholder, and taking it for the colour laid a black bar over the words it marks (the blue,
+ * orange and grey ids 14-16 did, before they were added).
+ */
+function trueColor(rgba: Rgb | undefined): Rgb | undefined {
+	return rgba && (rgba.r > 0 || rgba.g > 0 || rgba.b > 0) ? rgba : undefined;
 }
 
 /**
@@ -186,8 +202,10 @@ export function recordedColor(item: { color: number; colorRgba?: Rgb }): Rgb | n
 function strokeColor(stroke: RmStroke): Color {
 	const palette = STROKE_COLORS[stroke.color];
 	if (palette) return palette;
-	if (stroke.colorRgba) return paletteColor(stroke.colorRgba.r, stroke.colorRgba.g, stroke.colorRgba.b);
-	return STROKE_COLORS[0];
+	const rgba = isHighlighterOrShader(stroke.penType) ? trueColor(stroke.colorRgba) : stroke.colorRgba;
+	if (rgba) return paletteColor(rgba.r, rgba.g, rgba.b);
+	// A marker of unknown colour is still a marker: black would hide the text it was swiped across.
+	return isHighlighterOrShader(stroke.penType) ? DEFAULT_HIGHLIGHT_COLOR : STROKE_COLORS[0];
 }
 
 function strokeWidthPt(stroke: RmStroke, canvas: DeviceCanvas): number {
@@ -349,11 +367,8 @@ const DEFAULT_HIGHLIGHT_COLOR = STROKE_COLORS[3];
 /** Draws a text highlight's rectangles, in the same frame and translucent treatment as a marker stroke. */
 function drawHighlight(page: PDFPage, highlight: RmHighlight, canvas: DeviceCanvas): void {
 	// Same precedence as `strokeColor`: a known palette id wins, `colorRgba` resolves the rest.
-	const color =
-		STROKE_COLORS[highlight.color] ??
-		(highlight.colorRgba
-			? paletteColor(highlight.colorRgba.r, highlight.colorRgba.g, highlight.colorRgba.b)
-			: DEFAULT_HIGHLIGHT_COLOR);
+	const rgba = trueColor(highlight.colorRgba);
+	const color = STROKE_COLORS[highlight.color] ?? (rgba ? paletteColor(rgba.r, rgba.g, rgba.b) : DEFAULT_HIGHLIGHT_COLOR);
 	for (const rect of highlight.rects) {
 		page.drawRectangle({
 			...sceneRectToPdf(rect, canvas),
