@@ -1,4 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as obsidianSurface from "./obsidian";
 import {
 	checkPath,
 	createFragment,
@@ -23,6 +26,29 @@ describe("the plugin's module graph", () => {
 	it("loads against this fake, which is the whole reason the fake exists", async () => {
 		const main = await import("../../src/main");
 		expect(typeof main.default).toBe("function");
+	});
+
+	// `tsc` checks these imports against the real obsidian.d.ts, so a name the surface lacks passes
+	// the typecheck and fails only when a test reaches it ("requireApiVersion is not a function").
+	it("exports every value a non-test file imports from obsidian", () => {
+		const missing: string[] = [];
+		const walk = (dir: string): void => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				const full = join(dir, entry.name);
+				if (entry.isDirectory()) walk(full);
+				else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") && !entry.name.endsWith(".d.ts")) {
+					for (const [, typeOnly, names] of readFileSync(full, "utf8").matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*"obsidian"/g)) {
+						if (typeOnly) continue;
+						for (const name of names.split(",").map((n) => n.trim().split(/\s+as\s+/)[0])) {
+							if (name && !name.startsWith("type ") && !(name in obsidianSurface)) missing.push(`${name} (${full.replace(`${process.cwd()}/`, "")})`);
+						}
+					}
+				}
+			}
+		};
+		walk(join(process.cwd(), "src"));
+		walk(join(process.cwd(), "pro"));
+		expect(missing).toEqual([]);
 	});
 });
 

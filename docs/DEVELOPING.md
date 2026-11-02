@@ -30,6 +30,8 @@ Details that matter:
   run checks the merge result against `main`. Both are meaningful; the duplication is accepted.
 - **No e2e checklist template.** What to test is written in the PR description when it isn't
   obvious — a standing template earned its upkeep nowhere yet.
+- **A live check or one-off script against `src/`** runs with `npm run ts -- <file.ts> [args]`
+  (bundled with `obsidian` aliased to the test stub; top-level `await` works).
 
 ## Watching CI from the terminal
 

@@ -19,6 +19,13 @@
       file: tests/stubs/fake-obsidian.test.ts
       test: "the plugin's module graph > loads against this fake, which is the whole reason the fake exists"
 
+    - id: T1.2
+      scenario: A file in src/ starts importing a value from obsidian the surface does not export yet, as main.ts did with requireApiVersion
+      expect: This test names it. tsc cannot -- it checks the import against the real obsidian.d.ts -- so before this the first sign was "is not a function" in whichever test reached the line
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the plugin's module graph > exports every value a non-test file imports from obsidian"
+
 - feature: T2
   name: normalizePath decides what counts as the same path
   code: tests/stubs/fake-obsidian.ts

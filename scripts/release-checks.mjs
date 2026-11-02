@@ -46,6 +46,7 @@ const BASELINE = ".eslint-baseline.json";
 // the delta CI printed.
 const COVERAGE_BASELINE = ".coverage-baseline.json";
 const COVERAGE_SUMMARY = "coverage/coverage-summary.json";
+const COVERAGE_DETAIL = "coverage/coverage-final.json";
 const NIGHTLY_VERDICT = ".nightly-verdict.json";
 
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
@@ -331,6 +332,48 @@ function coverageFacts() {
 	return { total: summary.total, files };
 }
 
+// The lines this branch changed in `file`, uncommitted edits included -- or null where git cannot
+// say, as in CI's shallow checkout without `origin/main`.
+function changedLines(file) {
+	const git = (...args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+	try {
+		const diff = git("diff", "-U0", git("merge-base", "origin/main", "HEAD").trim(), "--", file);
+		const lines = new Set();
+		for (const [, start, count = "1"] of diff.matchAll(/^@@ -\S+ \+(\d+)(?:,(\d+))? @@/gm)) {
+			for (let i = 0; i < Number(count); i++) lines.add(Number(start) + i);
+		}
+		return lines;
+	} catch {
+		return null;
+	}
+}
+
+// Where a file's uncovered statements and branch arms sit, so a failing ratchet says which lines to
+// test instead of only how many. The same run wrote this file (vitest.config.ts, `json`).
+function whereUncovered(detail, file) {
+	const f = detail?.[`${process.cwd()}/${file}`];
+	if (!f) return "";
+	const changed = changedLines(file);
+	const keep = (line) => changed === null || changed.has(line);
+	const ranges = (lines) => {
+		const sorted = [...new Set(lines.filter(keep))].sort((a, b) => a - b);
+		const out = [];
+		for (const n of sorted) {
+			const last = out.at(-1);
+			if (last && n === last[1] + 1) last[1] = n;
+			else out.push([n, n]);
+		}
+		return out.map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).join(", ") || "none";
+	};
+	const lines = Object.entries(f.s).flatMap(([id, n]) => (n === 0 ? [f.statementMap[id].start.line] : []));
+	// An `if` without `else` has an empty second arm; it is counted at the `if`.
+	const arms = Object.entries(f.b).flatMap(([id, counts]) =>
+		counts.flatMap((n, i) => (n === 0 ? [f.branchMap[id].locations[i]?.start?.line ?? f.branchMap[id].loc.start.line] : [])),
+	);
+	const scope = changed === null ? "uncovered" : "uncovered on lines this branch changed";
+	return `\n          ${scope}: lines ${ranges(lines)}; branch arms at ${ranges(arms)}`;
+}
+
 function coverageRatchet(write) {
 	const { total, files } = coverageFacts();
 	const pct = (m) => `${m.pct.toFixed(1)} % (${m.total - m.covered} of ${m.total} uncovered)`;
@@ -362,15 +405,23 @@ function coverageRatchet(write) {
 	const gone = Object.keys(baseline.files).filter((f) => !(f in files));
 
 	if (worse.length > 0) {
-		fail(
-			`${worse.length} file(s) got less covered. Test the new code, or re-baseline in the same ` +
-				"commit with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`.",
-		);
+		// `--write` only where the baseline's numbers come from -- see COVERAGE_BASELINE.
+		const escape =
+			process.platform === "linux"
+				? "re-baseline in the same commit with `npm run test:coverage && node scripts/release-checks.mjs coverage --write`"
+				: `raise the file's entry in ${COVERAGE_BASELINE} by hand -- never \`--write\` on ${process.platform}, the baseline holds Linux's numbers`;
+		fail(`${worse.length} file(s) got less covered. Test the new code, or ${escape}.`);
+		let detail = null;
+		try {
+			detail = readJson(COVERAGE_DETAIL);
+		} catch {
+			// Older runs wrote only the summary; the counts below still stand.
+		}
 		for (const w of worse) {
 			const what = [w.dl > 0 ? `+${w.dl} uncovered lines` : null, w.db > 0 ? `+${w.db} uncovered branches` : null]
 				.filter(Boolean)
 				.join(", ");
-			console.error(`        ${w.file}${w.isNew ? " (new file)" : ""}: ${what}`);
+			console.error(`        ${w.file}${w.isNew ? " (new file)" : ""}: ${what}${whereUncovered(detail, w.file)}`);
 		}
 	} else {
 		ok(`no file got less covered${better > 0 ? `; ${better} improved` : ""}`);
