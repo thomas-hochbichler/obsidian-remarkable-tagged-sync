@@ -74,9 +74,31 @@ export interface ReadwiseItem {
 
 export interface ReadwiseBookEntry {
 	readonly id: number;
+	/** As readwise.io holds it: see {@link heldTitle}. */
 	readonly title: string;
-	/** `null` is how Readwise answers for a book whose author we omitted (ticket 10). */
+	/** `null` is how Readwise answers for a book whose author we omitted (ticket 10). As held: see {@link heldAuthor}. */
 	readonly author: string | null;
+	/** Whatever Readwise files the book under now -- the user may have changed it in the web app -- or `null` when not said. */
+	readonly category: string | null;
+}
+
+/** How readwise.io holds a title it was sent: trimmed (`research/20-title-check.mjs`). */
+export function heldTitle(title: string): string {
+	return title.trim();
+}
+
+/**
+ * How readwise.io holds an author it was sent: over 100 characters, the first 100 and "...". It
+ * still files highlights by the full one (`research/20-author-and-category-check.ts`), so the push
+ * sends the full one and compares what comes back with this.
+ */
+export function heldAuthor(author: string): string {
+	return author.length > 100 ? `${author.slice(0, 100)}...` : author;
+}
+
+/** Is `entry` the book these title and author are filed under? */
+export function filesUnder(entry: ReadwiseBookEntry, title: string, author: string | undefined): boolean {
+	return entry.title === heldTitle(title) && entry.author === (author === undefined ? null : heldAuthor(author));
 }
 
 export interface ReadwisePushedBook extends ReadwiseBookEntry {
@@ -125,6 +147,7 @@ export interface ReadwiseClient {
 export interface ReadwiseNames {
 	readonly title?: string;
 	readonly author?: string;
+	readonly category?: string;
 }
 
 type Json = Record<string, unknown>;
@@ -146,7 +169,12 @@ function failure(status: number, what: string): ReadwiseError {
 
 function bookEntry(value: unknown): ReadwiseBookEntry | null {
 	if (!isRecord(value) || typeof value.id !== "number" || typeof value.title !== "string") return null;
-	return { id: value.id, title: value.title, author: typeof value.author === "string" ? value.author : null };
+	return {
+		id: value.id,
+		title: value.title,
+		author: typeof value.author === "string" ? value.author : null,
+		category: typeof value.category === "string" ? value.category : null,
+	};
 }
 
 /**
@@ -157,7 +185,7 @@ function bookEntry(value: unknown): ReadwiseBookEntry | null {
 function idsBySendOrder(items: readonly ReadwiseItem[], books: readonly ReadwisePushedBook[]): Map<string, number> {
 	const ids = new Map<string, number>();
 	for (const book of books) {
-		const sent = items.filter((item) => item.title === book.title && (item.author ?? null) === book.author);
+		const sent = items.filter((item) => filesUnder(book, item.title, item.author));
 		if (sent.length !== book.highlightIds.length) continue;
 		sent.forEach((item, index) => ids.set(item.url, book.highlightIds[index]));
 	}
@@ -282,8 +310,12 @@ export function createReadwiseClient(
 			throw failure(response.status, "when asked to delete a highlight");
 		},
 
-		async rename(bookId, { title, author }) {
-			const body = { ...(title === undefined ? {} : { title_override: title }), ...(author === undefined ? {} : { author_override: author }) };
+		async rename(bookId, { title, author, category }) {
+			const body = {
+				...(title === undefined ? {} : { title_override: title }),
+				...(author === undefined ? {} : { author_override: author }),
+				...(category === undefined ? {} : { category }),
+			};
 			const response = await request(`${READWISE_API}/books/${bookId}/`, { method: "PATCH", body: JSON.stringify(body) });
 			if (!response.ok) throw failure(response.status, "when asked to rename a book");
 		},

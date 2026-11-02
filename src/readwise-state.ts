@@ -57,11 +57,11 @@ export interface ReadwiseBook {
 	/** Deleted in Readwise: never recorded into or pushed again (ticket 14 #2). */
 	readonly deleted?: true;
 	/**
-	 * The names the user gave the book in Readwise (spec §11 P25), each absent = ours. `owed`: a push
-	 * reset them to ours and putting the user's back has not succeeded yet. Written by the push, never
-	 * by the recorder.
+	 * The names and the category the user gave the book in Readwise (spec §11 P25), each absent = ours.
+	 * `owed`: a push reset them to ours and putting the user's back has not succeeded yet. Written by
+	 * the push, never by the recorder.
 	 */
-	readonly shown?: { readonly title?: string; readonly author?: string; readonly owed?: true };
+	readonly shown?: { readonly title?: string; readonly author?: string; readonly category?: string; readonly owed?: true };
 	/** Key `pageId:crdtId` (spec §1.3) -> its record. */
 	readonly highlights: Record<string, ReadwiseHighlight>;
 }
@@ -134,6 +134,7 @@ export function readwiseBook(books: StoredReadwiseBooks, docId: string): Readwis
 					shown: {
 						...(typeof shown.title === "string" ? { title: shown.title } : {}),
 						...(typeof shown.author === "string" ? { author: shown.author } : {}),
+						...(typeof shown.category === "string" ? { category: shown.category } : {}),
 						...(shown.owed === true ? { owed: true as const } : {}),
 					},
 				}),

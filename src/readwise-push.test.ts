@@ -64,15 +64,21 @@ const THIRD_FINGERPRINT = "123456123456";
 const URL = `obsidian://tagged-sync?highlight=${DOC}/${KEY}`;
 const TEXT = { text: "The weather station at **Cape Marrow** was built in the spring.", location: 12 };
 const CHANGED = { text: "The station was **moved** in the autumn.", location: 12 };
+/** Eleven authors, 111 characters, like the ACON paper's in the Demo vault: readwise.io holds the first 100 and "...". */
+const LONG_AUTHOR = "Ada Byrne, Ben Cole, Cara Dunn, Dev Eames, Eli Frost, Fay Gill, Gus Hale, Hal Ives, Ian Judd, Jo Kerr, Kim Lund";
 
 interface FakeBook {
 	readonly id: number;
+	/** As readwise.io holds them: the title trimmed, an author over 100 characters cut to 100 and "..." (research/20-author-and-category-check.ts). */
 	readonly title: string;
 	readonly author: string | null;
-	/** What the web app shows, after a rename there (spec §11 P25); a push resets it to `title`/`author`. */
-	shown: { title: string; author: string | null };
+	/** What the web app shows, after a rename there (spec §11 P25); a push resets it to `title`/`author` and the category it sent. */
+	shown: { title: string; author: string | null; category: string };
 	readonly highlights: Map<string, { id: number; text: string; note?: string }>;
 }
+
+/** readwise.io's own rule, written out here rather than borrowed from the client it is checked against. */
+const held = (title: string, author: string | undefined) => ({ title: title.trim(), author: author === undefined ? null : author.length > 100 ? `${author.slice(0, 100)}...` : author });
 
 type Method = Exclude<keyof ReadwiseClient, "check">;
 
@@ -105,19 +111,19 @@ function fakeReadwise() {
 			const touched = new Map<FakeBook, number[]>();
 			const ids = new Map<string, number>();
 			for (const item of items) {
-				const author = item.author ?? null;
-				let book = books.find((candidate) => candidate.title === item.title && candidate.author === author);
+				const { title, author } = held(item.title, item.author);
+				let book = books.find((candidate) => candidate.title === title && candidate.author === author);
 				if (book === undefined) {
-					book = { id: next++, title: item.title, author, shown: { title: item.title, author }, highlights: new Map() };
+					book = { id: next++, title, author, shown: { title, author, category: item.category }, highlights: new Map() };
 					books.push(book);
 				}
-				book.shown = { title: book.title, author: book.author };
+				book.shown = { title: book.title, author: book.author, category: item.category };
 				const id = book.highlights.get(item.url)?.id ?? next++;
 				book.highlights.set(item.url, { id, text: item.text, ...(item.note === undefined ? {} : { note: item.note }) });
 				touched.set(book, [...(touched.get(book) ?? []), id]);
 				ids.set(item.url, id);
 			}
-			return { kind: "pushed", books: [...touched].map(([book, highlightIds]) => ({ id: book.id, title: book.title, author: book.author, highlightIds })), ids };
+			return { kind: "pushed", books: [...touched].map(([book, highlightIds]) => ({ id: book.id, title: book.title, author: book.author, category: book.shown.category, highlightIds })), ids };
 		},
 		async bookHighlights(bookId: number) {
 			calls.push(`highlights of ${bookId}`);
@@ -134,12 +140,12 @@ function fakeReadwise() {
 			calls.push(`rename ${bookId}`);
 			thrown("rename");
 			const book = books.find((candidate) => candidate.id === bookId)!;
-			book.shown = { title: names.title ?? book.shown.title, author: names.author ?? book.shown.author };
+			book.shown = { title: names.title ?? book.shown.title, author: names.author ?? book.shown.author, category: names.category ?? book.shown.category };
 		},
 	};
 	/** A book of ours already in the account, as an earlier push left it. */
-	const seed = (title: string, author: string | null, highlights: Record<string, { id: number; text: string }> = {}): FakeBook => {
-		const book: FakeBook = { id: next++, title, author, shown: { title, author }, highlights: new Map(Object.entries(highlights)) };
+	const seed = (title: string, author: string | null, highlights: Record<string, { id: number; text: string }> = {}, category = "books"): FakeBook => {
+		const book: FakeBook = { id: next++, ...held(title, author ?? undefined), shown: { ...held(title, author ?? undefined), category }, highlights: new Map(Object.entries(highlights)) };
 		books.push(book);
 		return book;
 	};
@@ -211,6 +217,21 @@ describe("pushToReadwise", () => {
 
 		expect(sent).toEqual([{ title: "cape-marrow_final", category: "articles", ...TEXT, url: URL }]);
 		expect(after(state)!.bookId).toBe(readwise.books[0].id);
+	});
+
+	// The Demo vault, 2026-11-02: the ACON paper's long author came back shortened, no id was learnt, and
+	// a paragraph erased on the tablet stayed in Readwise.
+	it("learns the ids of a book with an author readwise.io shortens, so a mark erased later is deleted", async () => {
+		const readwise = fakeReadwise();
+		const state = data({ [DOC]: book({ [KEY]: { want: TEXT } }, { author: LONG_AUTHOR }) });
+
+		await pushToReadwise(state, readwise.client, FINGERPRINT);
+		expect(after(state)!.bookId).toBe(readwise.books[0].id);
+		expect(after(state)!.highlights[KEY].id).toBeDefined();
+
+		state.readwiseBooks = data({ [DOC]: { ...after(state)!, highlights: { [KEY]: { ...after(state)!.highlights[KEY], want: null } } } }).readwiseBooks;
+		await pushToReadwise(state, readwise.client, FINGERPRINT);
+		expect(readwise.texts()).toEqual([]);
 	});
 
 	// Spec §11 P5: ids are best effort; what landed is recorded either way.
@@ -506,13 +527,13 @@ describe("pushToReadwise", () => {
 		it("puts back a title and author the user gave the book, after a push reset them", async () => {
 			const readwise = fakeReadwise();
 			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } });
-			landed.shown = { title: "Marrow, the station book", author: "A. Byrne" };
+			landed.shown = { ...landed.shown, title: "Marrow, the station book", author: "A. Byrne" };
 			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { bookId: landed.id }) });
 
 			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
 
 			expect(readwise.calls).toEqual(["books", "push 1", `rename ${landed.id}`]);
-			expect(landed.shown).toEqual({ title: "Marrow, the station book", author: "A. Byrne" });
+			expect(landed.shown).toEqual({ title: "Marrow, the station book", author: "A. Byrne", category: "books" });
 			expect(after(state)!.shown).toEqual({ title: "Marrow, the station book", author: "A. Byrne" });
 		});
 
@@ -525,19 +546,19 @@ describe("pushToReadwise", () => {
 				await rename(bookId, names);
 			};
 			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } });
-			landed.shown = { title: "Cape Marrow", author: "A. Byrne" };
+			landed.shown = { ...landed.shown, author: "A. Byrne" };
 			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { bookId: landed.id }) });
 
 			await pushToReadwise(state, readwise.client, FINGERPRINT);
 
 			expect(renames).toEqual([{ author: "A. Byrne" }]);
-			expect(landed.shown).toEqual({ title: "Cape Marrow", author: "A. Byrne" });
+			expect(landed.shown).toEqual({ title: "Cape Marrow", author: "A. Byrne", category: "books" });
 		});
 
 		it("lets an error that is not readwise.io's through a rename", async () => {
 			const readwise = fakeReadwise();
 			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } });
-			landed.shown = { title: "Marrow", author: "Ada Byrne" };
+			landed.shown = { ...landed.shown, title: "Marrow" };
 			readwise.client.rename = async () => {
 				throw new TypeError("names is undefined");
 			};
@@ -549,7 +570,7 @@ describe("pushToReadwise", () => {
 		it("keeps owing a rename that failed, and retries it on the next push with nothing else pending", async () => {
 			const readwise = fakeReadwise();
 			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } });
-			landed.shown = { title: "Marrow, the station book", author: "Ada Byrne" };
+			landed.shown = { ...landed.shown, title: "Marrow, the station book" };
 			readwise.fail.set("rename", new ReadwiseError("unreachable", "no"));
 			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { bookId: landed.id }) });
 
@@ -574,10 +595,61 @@ describe("pushToReadwise", () => {
 			expect(after(state)!.shown).toBeUndefined();
 		});
 
+		// Ticket 15, F3: an author added in Readwise to a book we sent without one is reset by a push like any edit.
+		it("puts back an author the user gave a book we sent without one", async () => {
+			const readwise = fakeReadwise();
+			const landed = readwise.seed("Cape Marrow", null, { [URL]: { id: 7, text: TEXT.text } });
+			landed.shown = { ...landed.shown, author: "A. Byrne" };
+			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { author: undefined, bookId: landed.id }) });
+
+			await pushToReadwise(state, readwise.client, FINGERPRINT);
+
+			expect(landed.shown.author).toBe("A. Byrne");
+			expect(after(state)!.shown).toEqual({ author: "A. Byrne" });
+		});
+
+		// readwise.io answers an author over 100 characters as its first 100 and "...": that is not a rename.
+		it("does not take an author readwise.io shortened for one the user gave the book", async () => {
+			const readwise = fakeReadwise();
+			const landed = readwise.seed("Cape Marrow", LONG_AUTHOR, { [URL]: { id: 7, text: TEXT.text } });
+			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { author: LONG_AUTHOR, bookId: landed.id }) });
+
+			await pushToReadwise(state, readwise.client, FINGERPRINT);
+
+			expect(readwise.calls).toEqual(["books", "push 1"]);
+			expect(after(state)!.shown).toBeUndefined();
+		});
+
+		// The user, 2026-11-02: a category changed in the web app was reset by the next push. A push sends
+		// ours, which resets it as it resets the names (research/20-author-and-category-check.ts).
+		it("puts back the category the user gave the book, after a push reset it", async () => {
+			const readwise = fakeReadwise();
+			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } }, "articles");
+			landed.shown = { ...landed.shown, category: "books" };
+			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { category: "articles", bookId: landed.id }) });
+
+			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
+
+			expect(readwise.calls).toEqual(["books", "push 1", `rename ${landed.id}`]);
+			expect(landed.shown.category).toBe("books");
+			expect(after(state)!.shown).toEqual({ category: "books" });
+		});
+
+		it("forgets the user's category once it is ours again", async () => {
+			const readwise = fakeReadwise();
+			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } }, "articles");
+			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { category: "articles", bookId: landed.id, shown: { category: "books" } }) });
+
+			await pushToReadwise(state, readwise.client, FINGERPRINT);
+
+			expect(readwise.calls).toEqual(["books", "push 1"]);
+			expect(after(state)!.shown).toBeUndefined();
+		});
+
 		it("reads a blank author in the listing as ours: a blank cannot be put back", async () => {
 			const readwise = fakeReadwise();
 			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } });
-			landed.shown = { title: "Cape Marrow", author: null };
+			landed.shown = { ...landed.shown, author: null };
 			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7, want: CHANGED } }, { bookId: landed.id }) });
 
 			await pushToReadwise(state, readwise.client, FINGERPRINT);

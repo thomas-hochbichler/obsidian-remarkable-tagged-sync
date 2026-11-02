@@ -262,6 +262,34 @@
       file: src/readwise-client.test.ts
       test: "putting back a book's names > reports a rename Readwise did not take"
 
+    - id: W1.42
+      scenario: A book whose category the user changed in Readwise gets it back after a push
+      expect: '`PATCH /books/<id>/` with `category` -- a push resets it to the one it sends (research/20-author-and-category-check.ts)'
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "putting back a book's names > sets the category the user gave the book"
+
+    - id: W1.43
+      scenario: The create answer names the book with an author over 100 characters, shortened, and a title the push sent with a trailing space
+      expect: Matched all the same, so the ids are learnt -- the ACON paper in the Demo vault learnt none
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > knows its book in the answer by the title and author as readwise.io holds them"
+
+    - id: W1.44
+      scenario: How readwise.io holds an author it was sent
+      expect: Up to 100 characters as sent; longer, the first 100 and "..." (measured 2026-11-02)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > says readwise.io holds an author of 100 characters as sent, a longer one as its first 100 and ..."
+
+    - id: W1.45
+      scenario: How readwise.io holds a title it was sent
+      expect: Trimmed; not shortened up to 511 characters (research/20-title-check.mjs)
+      layer: unit
+      file: src/readwise-client.test.ts
+      test: "pushing highlights > says readwise.io holds a title without the spaces around it"
+
     - id: W1.30
       scenario: 429 with a short `Retry-After`
       expect: Waited once, asked again
@@ -1361,6 +1389,41 @@
       layer: unit
       file: src/readwise-push.test.ts
       test: "pushToReadwise > the user's names for a book (spec §11 P25) > reads a blank author in the listing as ours: a blank cannot be put back"
+
+    - id: W10.47
+      scenario: The user added an author in Readwise to a book we sent without one
+      expect: Put back after the push resets it, and remembered (ticket 15, F3)
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > puts back an author the user gave a book we sent without one"
+
+    - id: W10.43
+      scenario: The listing shows our author over 100 characters as readwise.io shortens it
+      expect: Read as ours -- no rename owed, none sent
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > does not take an author readwise.io shortened for one the user gave the book"
+
+    - id: W10.44
+      scenario: The user changed the book's category in Readwise, then a change is pushed
+      expect: The push resets it, the category is put back afterwards and remembered -- the user found it reset on 2026-11-02
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > puts back the category the user gave the book, after a push reset it"
+
+    - id: W10.45
+      scenario: The user set the category back to ours
+      expect: Forgotten; nothing put back
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the user's names for a book (spec §11 P25) > forgets the user's category once it is ours again"
+
+    - id: W10.46
+      scenario: A first push of a book whose author readwise.io shortens, then the mark is erased
+      expect: Book and highlight ids learnt, so the erased mark is deleted in Readwise -- in the Demo vault it stayed
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > learns the ids of a book with an author readwise.io shortens, so a mark erased later is deleted"
 
     - id: W10.27
       scenario: The token was not accepted

@@ -12,6 +12,9 @@ import {
 	type ReadwiseCategory,
 	type ReadwiseCheck,
 	type ReadwiseClient,
+	filesUnder,
+	heldAuthor,
+	heldTitle,
 	ReadwiseError,
 	type ReadwiseErrorKind,
 	type ReadwiseItem,
@@ -282,8 +285,9 @@ function settled({ want: _sent, rejected: _cleared, ...record }: ReadwiseHighlig
 
 /**
  * Step 2: a remembered book the listing does not have was deleted in Readwise (ticket 14 #2); one it
- * has tells the names the user gave it there (spec §11 P25). A blank author listed where ours is set
- * counts as ours: a blank cannot be put back.
+ * has tells the names and the category the user gave it there (spec §11 P25), each compared as
+ * readwise.io holds ours (a long author comes back shortened). A blank author listed where ours is
+ * set counts as ours: a blank cannot be put back.
  */
 function readListing(data: ReadwiseData, listing: readonly ReadwiseBookEntry[]): void {
 	const byId = new Map(listing.map((entry) => [entry.id, entry]));
@@ -295,11 +299,14 @@ function readListing(data: ReadwiseData, listing: readonly ReadwiseBookEntry[]):
 			put(data, docId, { ...book, deleted: true, highlights: Object.fromEntries(kept) });
 			continue;
 		}
-		const title = entry.title === book.title ? undefined : entry.title;
-		const author = entry.author === null || entry.author === book.author ? undefined : entry.author;
+		const shown = {
+			...(entry.title === heldTitle(book.title) ? {} : { title: entry.title }),
+			...(entry.author === null || entry.author === (book.author === undefined ? null : heldAuthor(book.author)) ? {} : { author: entry.author }),
+			...(entry.category === null || entry.category === book.category ? {} : { category: entry.category }),
+		};
 		const { shown: _shown, ...unnamed } = book;
-		// Readwise shows the user's names right now, so nothing is owed; ours again ends what was owed unless a push reset them.
-		if (title !== undefined || author !== undefined) put(data, docId, { ...book, shown: { ...(title === undefined ? {} : { title }), ...(author === undefined ? {} : { author }) } });
+		// Readwise shows the user's choices right now, so nothing is owed; ours again ends what was owed unless a push reset them.
+		if (Object.keys(shown).length > 0) put(data, docId, { ...book, shown });
 		else if (!book.shown?.owed) put(data, docId, unnamed);
 	}
 }
@@ -388,7 +395,7 @@ function land(data: ReadwiseData, batch: readonly Outgoing[], result: Extract<Re
 	for (const { docId, key, want, item } of batch) {
 		const book = bookOf(data, docId);
 		const id = result.ids.get(item.url) ?? book.highlights[key].id;
-		const bookId = book.bookId ?? result.books.find((entry) => entry.title === book.title && entry.author === (book.author ?? null))?.id;
+		const bookId = book.bookId ?? result.books.find((entry) => filesUnder(entry, book.title, book.author))?.id;
 		put(data, docId, {
 			...book,
 			...(bookId === undefined ? {} : { bookId }),

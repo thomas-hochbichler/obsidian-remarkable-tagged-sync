@@ -336,10 +336,10 @@ describe("recordUnit", () => {
 		});
 
 		it("reads a book field by field, what it cannot read left out", () => {
-			expect(readwiseBook({ [DOC]: { title: "Cape Marrow", category: "tweets", shown: { title: 7, author: "Ben Cole", owed: "yes" }, highlights: "junk" } }, DOC)).toEqual({
+			expect(readwiseBook({ [DOC]: { title: "Cape Marrow", category: "tweets", shown: { title: 7, author: "Ben Cole", category: "articles", owed: "yes" }, highlights: "junk" } }, DOC)).toEqual({
 				title: "Cape Marrow",
 				category: "books",
-				shown: { author: "Ben Cole" },
+				shown: { author: "Ben Cole", category: "articles" },
 				highlights: {},
 			});
 		});

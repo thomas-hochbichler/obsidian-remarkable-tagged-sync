@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createReadwiseClient, MAX_PUSH_BATCH, ReadwiseError, type ReadwiseItem } from "./readwise-client";
+import { createReadwiseClient, heldAuthor, heldTitle, MAX_PUSH_BATCH, ReadwiseError, type ReadwiseItem } from "./readwise-client";
 
 // The timeout reaches for `window.setTimeout`, which is Obsidian's rule for popout-window
 // compatibility and does not exist under vitest.
@@ -87,12 +87,12 @@ describe("asking readwise.io about the token", () => {
 describe("listing our books", () => {
 	it("asks only for books made with our source, and follows every page", async () => {
 		const { impl, calls } = stubFetch(
-			page([{ id: 1, title: "A", author: "Ann" }], `${API}/books/?page=2&page_size=1000&source=tagged_sync`),
+			page([{ id: 1, title: "A", author: "Ann", category: "articles" }], `${API}/books/?page=2&page_size=1000&source=tagged_sync`),
 			page([{ id: 2, title: "B", author: null }]),
 		);
 		expect(await client(impl).ourBooks()).toEqual([
-			{ id: 1, title: "A", author: "Ann" },
-			{ id: 2, title: "B", author: null },
+			{ id: 1, title: "A", author: "Ann", category: "articles" },
+			{ id: 2, title: "B", author: null, category: null },
 		]);
 		expect(calls.map((call) => call.url)).toEqual([`${API}/books/?source=tagged_sync&page_size=1000`, `${API}/books/?page=2&page_size=1000&source=tagged_sync`]);
 	});
@@ -170,8 +170,8 @@ describe("pushing highlights", () => {
 		expect(result).toEqual({
 			kind: "pushed",
 			books: [
-				{ id: 10, title: "Thinking in Systems", author: "Donella Meadows", highlightIds: [101, 102] },
-				{ id: 11, title: "Other", author: null, highlightIds: [103] },
+				{ id: 10, title: "Thinking in Systems", author: "Donella Meadows", category: null, highlightIds: [101, 102] },
+				{ id: 11, title: "Other", author: null, category: null, highlightIds: [103] },
 			],
 			ids: new Map([
 				["u1", 101],
@@ -179,6 +179,26 @@ describe("pushing highlights", () => {
 				["u3", 103],
 			]),
 		});
+	});
+
+	// The ACON paper in the Demo vault (2026-11-02): eight authors, 115 characters, answered as the first
+	// 100 and "..." -- so its book's id and every highlight id went unlearnt, and an erased mark stayed.
+	// Titles come back trimmed (research/20-author-and-category-check.ts, 20-title-check.mjs).
+	it("knows its book in the answer by the title and author as readwise.io holds them", async () => {
+		const author = "Minki Kang, Wei-Ning Chen, Dongge Han, Huseyin A. Inan, Lukas Wutschitz, Yanzhi Chen, Robert Sim, Saravan Rajmohan";
+		const { impl } = stubFetch(
+			json([{ id: 10, title: "ACON", author: "Minki Kang, Wei-Ning Chen, Dongge Han, Huseyin A. Inan, Lukas Wutschitz, Yanzhi Chen, Robert Sim, Sa...", modified_highlights: [101] }]),
+		);
+		const result = await client(impl).push([item({ title: "ACON ", author, url: "u1" })]);
+		expect(result.kind === "pushed" && result.ids).toEqual(new Map([["u1", 101]]));
+	});
+
+	it("says readwise.io holds an author of 100 characters as sent, a longer one as its first 100 and ...", () => {
+		expect([heldAuthor("A".repeat(100)), heldAuthor("A".repeat(101))]).toEqual(["A".repeat(100), `${"A".repeat(100)}...`]);
+	});
+
+	it("says readwise.io holds a title without the spaces around it", () => {
+		expect(heldTitle(" Notes ")).toBe("Notes");
 	});
 
 	// An identical re-push is left out of `modified_highlights` (ticket 10), so order says nothing then.
@@ -193,7 +213,7 @@ describe("pushing highlights", () => {
 		const { impl } = stubFetch(json([{ title: "No id" }, { id: 10, title: "Thinking in Systems", author: "Donella Meadows" }]));
 		expect(await client(impl).push([item({ url: "u1" })])).toEqual({
 			kind: "pushed",
-			books: [{ id: 10, title: "Thinking in Systems", author: "Donella Meadows", highlightIds: [] }],
+			books: [{ id: 10, title: "Thinking in Systems", author: "Donella Meadows", category: null, highlightIds: [] }],
 			ids: new Map(),
 		});
 	});
@@ -286,6 +306,13 @@ describe("putting back a book's names", () => {
 		const { impl, calls } = stubFetch(json({ id: 10 }));
 		await client(impl).rename(10, { title: "Smith 2019", author: "Jane Smith" });
 		expect(calls[0]).toMatchObject({ url: `${API}/books/10/`, method: "PATCH", body: { title_override: "Smith 2019", author_override: "Jane Smith" } });
+	});
+
+	// A push resets the category to the one it sends, as it does the names (research/20-author-and-category-check.ts).
+	it("sets the category the user gave the book", async () => {
+		const { impl, calls } = stubFetch(json({ id: 10 }));
+		await client(impl).rename(10, { category: "articles" });
+		expect(calls[0]).toMatchObject({ url: `${API}/books/10/`, method: "PATCH", body: { category: "articles" } });
 	});
 
 	it("leaves out a name that is not to change", async () => {
