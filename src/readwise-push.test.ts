@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DigestPage } from "./digest-builder";
 import { type ReadwiseClient, ReadwiseError, type ReadwiseItem } from "./readwise-client";
-import { createReadwiseRecorder, pushToReadwise, type ReadwiseData, readwiseNotice, type ReadwiseUnit, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
+import { createReadwiseRecorder, pushToReadwise, type ReadwiseData, readwiseNotice, type ReadwiseUnit, startOverReadwise, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
 import { type ReadwiseBook, readwiseBook, type ReadwiseHighlight, type StoredReadwiseBooks } from "./readwise-state";
 import { RENDER_VERSION, type SyncIndex, type SyncIndexRow } from "./sync-engine";
 
@@ -477,6 +477,27 @@ describe("pushToReadwise", () => {
 
 			expect(state.readwiseAccountClash).toBeUndefined();
 			expect(state.readwiseAccount).toBe(THIRD_FINGERPRINT);
+		});
+
+		// Ticket 19's open point, the way out the user chose (ticket 20, option C): one of the two tokens
+		// on both computers keeps the clash for good, so the settings offer to start over.
+		it("pushes again after starting over with one token on both computers, and catches a second account again", async () => {
+			const readwise = fakeReadwise();
+			const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: 3 }) }, { readwiseAccount: OTHER_FINGERPRINT, readwiseAccountBefore: FINGERPRINT, readwiseAccountClash: true, readwiseRecording: true });
+			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBe("clash");
+
+			startOverReadwise(state);
+			// The next sync's backfill (spec §5) records the document again.
+			state.readwiseBooks = data({ [DOC]: book({ [KEY]: { want: TEXT } }) }).readwiseBooks;
+
+			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
+			expect(readwise.texts()).toEqual([TEXT.text]);
+			expect(state.readwiseAccount).toBe(FINGERPRINT);
+			// The other computer, still on the other account: dropped once, then caught when this one comes back.
+			const elsewhere = fakeReadwise();
+			expect(await pushToReadwise(state, elsewhere.client, OTHER_FINGERPRINT)).toBeNull();
+			expect(state.readwiseBooks).toEqual({});
+			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBe("clash");
 		});
 	});
 

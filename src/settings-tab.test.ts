@@ -7,6 +7,8 @@ import {
 	FakeApp,
 	type FakeEl,
 	Platform,
+	runAsVersion,
+	type SecretComponent,
 	type Setting,
 	takeNotices,
 	takeSettings,
@@ -28,6 +30,7 @@ import { DeviceUnreachableError } from "./ssh-connection";
 import { NOT_CONNECTED_NOTICE } from "./sync-guards";
 import { PairingRefusedError } from "./ssh-pairing";
 import { BACKGROUND_CONSENT_NAME, type OcrBackendEntry, ocrBackendEntries, registerOcrBackend } from "./ocr-registry";
+import { tokenFingerprint } from "./readwise-push";
 
 // Gap G28 -- the settings tab. `main.ts` and `local-register.ts` are the only files that construct a
 // `Setting`, and neither had a test file: every string, state and rule *below* the tab is verified
@@ -205,7 +208,7 @@ async function tabWith(
 
 /** One thing the tab drew, in draw order -- a `Setting` row, a heading, or a bare note div. */
 type Drawn =
-	| { kind: "heading"; name: string }
+	| { kind: "heading"; name: string; desc: string }
 	| { kind: "row"; name: string; desc: string; setting: Setting }
 	| { kind: "note"; cls: string; text: string };
 
@@ -225,7 +228,7 @@ function onScreen(tab: Tab): Drawn[] {
 	return tab.containerEl.children.map((child): Drawn => {
 		const setting = bySettingEl.get(child);
 		if (!setting) return { kind: "note", cls: [...child.classes].join(" "), text: child.allText().join(" ") };
-		if (setting.heading) return { kind: "heading", name: setting.name };
+		if (setting.heading) return { kind: "heading", name: setting.name, desc: setting.desc };
 		return { kind: "row", name: setting.name, desc: setting.desc, setting };
 	});
 }
@@ -280,6 +283,7 @@ beforeEach(() => {
 	Platform.isMacOS = false;
 	machine.visionAvailable = false;
 	pairing.fail = null;
+	runAsVersion(null);
 	resetNetwork();
 	cloud.register = async () => "device-token";
 	opened.length = 0;
@@ -316,6 +320,8 @@ describe("the shape of the settings screen", () => {
 			// What goes into Zotero, apart from the connections that carry it (Zotero spec §1).
 			"Into Zotero",
 			"Zotero on the tablet",
+			// Built like Zotero and after it (Readwise spec §2): the other place highlights go.
+			"Readwise",
 			"Tagged Sync Pro",
 			"Actions",
 		]);
@@ -1328,6 +1334,307 @@ describe("the Zotero section", () => {
 		const { tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
 
 		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Group libraries", "Lab reading group"]);
+	});
+});
+
+describe("the Readwise section", () => {
+	// Readwise spec §2: shown to every vault, the switch shut with "(Pro)" to a free one; the token is a
+	// Keychain entry's name in data.json, never the token; the Connection line says which of §2.1's
+	// states this computer is in, counts from the state and never from Readwise.
+	const PRO = {
+		licence: {
+			...NO_LICENCE,
+			key: "TS-XXXX-1234",
+			activationId: "act-1",
+			validatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+		},
+	};
+	const ON = { readwise: { push: true, tokenSecret: "readwise-token" } };
+
+	/** An app whose Keychain holds `token` under the entry `ON` names. */
+	function keychainWith(token: string): FakeApp {
+		const app = new FakeApp();
+		app.secretStorage.secrets.set("readwise-token", token);
+		return app;
+	}
+
+	/** readwise.io's `/auth/` answering `status`, every request to readwise.io recorded (a Pro vault's Zotero line asks too). */
+	function readwiseAnswering(status: number): string[] {
+		const asked: string[] = [];
+		stubNetwork(async (input) => {
+			if (String(input).startsWith("https://readwise.io/")) asked.push(String(input));
+			return new Response(null, { status });
+		});
+		return asked;
+	}
+
+	const lineOf = (drawn: Drawn[]): FakeEl => verdict(row(section(drawn, "Readwise"), "Connection"));
+	const secret = (drawn: Drawn[]): SecretComponent => row(drawn, "Readwise access token").setting.components[0] as SecretComponent;
+	/** Waits for the line to read `text`: a probe first hashes the token, which takes the crypto worker more than one tick. */
+	const answered = (drawn: Drawn[], text: string) => vi.waitFor(() => expect(lineOf(drawn).text).toBe(text));
+
+	it("draws the rows of the spec, in its words", async () => {
+		const drawn = draw((await tabWith(PRO)).tab);
+
+		expect(rowNames(section(drawn, "Readwise"))).toEqual(["Connection", "Push highlights to Readwise", "Readwise access token", "Readwise's own Obsidian plugin"]);
+		expect(row(drawn, "Push highlights to Readwise").desc).toBe(
+			"Your highlights and margin notes become highlights in your Readwise library, one book per document, and come up in your Daily Review. " +
+				"The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access " +
+				"(Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.",
+		);
+		expect(row(drawn, "Readwise access token").desc).toBe(
+			"From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.",
+		);
+		expect(row(drawn, "Readwise's own Obsidian plugin").desc).toBe(
+			"If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, each highlight linking to your note. " +
+				"To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book.",
+		);
+		expect(toggle(drawn, "Push highlights to Readwise").disabled).toBe(false);
+	});
+
+	it("shows a free vault the switch shut, and says pushing is Pro", async () => {
+		const asked = readwiseAnswering(204);
+		const drawn = draw((await tabWith(ON, keychainWith("rw-token"))).tab);
+		await settle();
+
+		expect(toggle(drawn, "Push highlights to Readwise (Pro)").disabled).toBe(true);
+		expect(lineOf(drawn).text).toBe("Pushing to Readwise is part of Tagged Sync Pro.");
+		expect(lineOf(drawn).style.color).toBe("var(--text-muted)");
+		expect(asked).toEqual([]);
+	});
+
+	// No `minAppVersion` bump (ticket 13 #2): an Obsidian without the Keychain gets one row, not a
+	// token field that cannot store anything.
+	it("is one line on an Obsidian without the Keychain", async () => {
+		runAsVersion("1.11.3");
+		const drawn = draw((await tabWith({ ...PRO, ...ON })).tab);
+
+		const heading = drawn.find((item) => item.kind === "heading" && item.name === "Readwise");
+		expect(heading).toMatchObject({ desc: "Needs Obsidian 1.11.4 or newer." });
+		expect(section(drawn, "Readwise")).toEqual([]);
+	});
+
+	it("reads Off. while the switch is off, without asking readwise.io", async () => {
+		const asked = readwiseAnswering(204);
+		const drawn = draw((await tabWith({ ...PRO, readwise: { push: false, tokenSecret: "readwise-token" } }, keychainWith("rw-token"))).tab);
+		await settle();
+
+		expect(lineOf(drawn).text).toBe("Off.");
+		expect(asked).toEqual([]);
+	});
+
+	it("says so when this computer has no token, without asking readwise.io", async () => {
+		const asked = readwiseAnswering(204);
+		const drawn = draw((await tabWith({ ...PRO, ...ON })).tab);
+		await settle();
+
+		expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+		expect(lineOf(drawn).style.color).toBe("var(--text-error)");
+		expect(asked).toEqual([]);
+	});
+
+	it("asks readwise.io and counts what the state says was pushed", async () => {
+		const asked = readwiseAnswering(204);
+		const { tab } = await tabWith(
+			{
+				...PRO,
+				...ON,
+				readwiseBooks: {
+					a: {
+						title: "A",
+						highlights: {
+							"p:1": { pushed: { text: "one", location: 1 } },
+							"p:2": { pushed: { text: "two", location: 1 } },
+							"p:4": { want: { text: "four", location: 1 }, rejected: { text: "four", location: 1 } },
+						},
+					},
+					b: { title: "B", highlights: { "p:3": { want: { text: "three", location: 2 } } } },
+				},
+			},
+			keychainWith("rw-token"),
+		);
+		const drawn = draw(tab);
+		const tail = " 1 document waiting to be pushed. 1 highlight Readwise refused — it is retried when it changes on the tablet.";
+		expect(lineOf(drawn).text).toBe(`Checking…${tail}`);
+		await answered(drawn, `Connected — 1 book, 2 highlights pushed.${tail}`);
+
+		expect(asked).toEqual(["https://readwise.io/api/v2/auth/"]);
+		expect(lineOf(drawn).style.color).toBe("var(--text-success)");
+	});
+
+	it("reads 0 books before the first push, and says what Readwise refused", async () => {
+		readwiseAnswering(204);
+		const refused = { text: "x", location: 1 };
+		const { tab } = await tabWith(
+			{ ...PRO, ...ON, readwiseBooks: { a: { title: "A", highlights: { "p:1": { want: refused, rejected: refused }, "p:2": { want: refused, rejected: refused } } } } },
+			keychainWith("rw-token"),
+		);
+		await answered(draw(tab), "Connected — 0 books, 0 highlights pushed. 2 highlights Readwise refused — they are retried when they change on the tablet.");
+	});
+
+	it.each([
+		[401, "The access token was not accepted — paste a new one from readwise.io/access_token."],
+		[403, "Your Readwise plan doesn't include API access."],
+		[500, "Readwise didn't answer."],
+	])("reads a %i as an error line, with no counts", async (status, text) => {
+		readwiseAnswering(status);
+		const { tab } = await tabWith({ ...PRO, ...ON, readwiseBooks: { b: { title: "B", highlights: { "p:3": { want: { text: "three", location: 2 } } } } } }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+		await answered(drawn, text);
+
+		expect(lineOf(drawn).style.color).toBe("var(--text-error)");
+	});
+
+	it("saves the Keychain entry's name, never the token, and asks again", async () => {
+		const asked = readwiseAnswering(204);
+		const app = keychainWith("rw-token");
+		const { plugin, tab } = await tabWith({ ...PRO, readwise: { push: true, tokenSecret: null } }, app);
+		const drawn = draw(tab);
+		expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+
+		await secret(drawn).pick("readwise-token");
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		expect(plugin.data.readwise).toEqual({ push: true, tokenSecret: "readwise-token" });
+		expect(JSON.stringify(plugin.saves)).not.toContain("rw-token");
+		expect(asked).toEqual(["https://readwise.io/api/v2/auth/"]);
+	});
+
+	it("shows the chosen entry, and forgets it when the choice is cleared", async () => {
+		readwiseAnswering(204);
+		const { plugin, tab } = await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+		expect(secret(drawn).value).toBe("readwise-token");
+		// Its probe done first, so it cannot land in the next test's network.
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		await secret(drawn).pick(null);
+		await settle();
+
+		expect(plugin.data.readwise).toEqual({ push: true, tokenSecret: null });
+		expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+	});
+
+	// Ticket 20 item 4: the next sync's backfill (Readwise spec §5) does the rest.
+	it("saves the switch and asks the line again", async () => {
+		const asked = readwiseAnswering(204);
+		const { plugin, tab } = await tabWith({ ...PRO, readwise: { push: false, tokenSecret: "readwise-token" } }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+
+		toggle(drawn, "Push highlights to Readwise").toggle(true);
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+
+		expect(plugin.data.readwise).toEqual({ push: true, tokenSecret: "readwise-token" });
+		expect(plugin.saves).toHaveLength(1);
+		expect(asked).toEqual(["https://readwise.io/api/v2/auth/"]);
+	});
+
+	it("never lets a slow answer land on top of a newer one", async () => {
+		const answers: ((response: Response) => void)[] = [];
+		stubNetwork(async (input) =>
+			String(input).startsWith("https://readwise.io/") ? new Promise((resolve) => answers.push(resolve)) : new Response(null, { status: 404 }),
+		);
+		const { tab } = await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"));
+		const drawn = draw(tab);
+		await vi.waitFor(() => expect(answers).toHaveLength(1));
+
+		await secret(drawn).pick("readwise-token");
+		await vi.waitFor(() => expect(answers).toHaveLength(2));
+		answers[1](new Response(null, { status: 204 }));
+		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");
+		// The old probe's 401, with a sign of having been read: without it the test could end first and pass by default.
+		let read = false;
+		const rejected = new Response(null, { status: 401 });
+		answers[0](
+			new Proxy(rejected, {
+				get: (target, key) => {
+					if (key === "status") read = true;
+					const value: unknown = Reflect.get(target, key, target);
+					return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+				},
+			}),
+		);
+		await vi.waitFor(() => expect(read).toBe(true));
+		await settle();
+
+		expect(lineOf(drawn).text).toBe("Connected — 0 books, 0 highlights pushed.");
+	});
+
+	// Readwise spec §11 P4, and the way out the user chose for ticket 19's open point (C): once two
+	// computers were caught pushing to two accounts, neither of the two tokens clears it again, so the
+	// section offers to start over with this computer's.
+	describe("two computers on two accounts", () => {
+		async function clashed(fingerprintOf: "readwiseAccount" | "readwiseAccountBefore") {
+			const fingerprint = await tokenFingerprint("rw-token");
+			const other = fingerprint === "aaaaaaaaaaaa" ? "bbbbbbbbbbbb" : "aaaaaaaaaaaa";
+			return {
+				...PRO,
+				...ON,
+				readwiseAccount: fingerprintOf === "readwiseAccount" ? fingerprint : other,
+				readwiseAccountBefore: fingerprintOf === "readwiseAccount" ? other : fingerprint,
+				readwiseAccountClash: true,
+				readwiseRecording: true,
+				readwiseBooks: { a: { title: "A", bookId: 7, highlights: { "p:1": { pushed: { text: "one", location: 1 } } } } },
+			};
+		}
+
+		it.each(["readwiseAccount", "readwiseAccountBefore"] as const)("says so for a token that is the %s, without asking readwise.io", async (which) => {
+			const asked = readwiseAnswering(204);
+			const drawn = draw((await tabWith(await clashed(which), keychainWith("rw-token"))).tab);
+			await answered(drawn, "This computer and another one push to different Readwise accounts — use one account's token on both, then start over below.");
+
+			expect(lineOf(drawn).style.color).toBe("var(--text-error)");
+			expect(asked).toEqual([]);
+		});
+
+		it("starts over with this computer's token: the state goes, the next sync pushes everything", async () => {
+			readwiseAnswering(204);
+			const { plugin, tab } = await tabWith(await clashed("readwiseAccount"), keychainWith("rw-token"));
+			const drawn = draw(tab);
+			expect(row(drawn, "Start over with this computer's token").desc).toBe(
+				"Forgets what was pushed to Readwise; the next sync pushes every document again, into the account of this computer's token. " +
+					"Books you deleted in Readwise come back, and your margin notes go to your transcription backend again.",
+			);
+
+			buttons(drawn, "Start over with this computer's token")[0].click();
+			await settle();
+
+			for (const key of ["readwiseAccount", "readwiseAccountBefore", "readwiseAccountClash", "readwiseRecording"]) expect(plugin.data).not.toHaveProperty(key);
+			expect(plugin.data.readwiseBooks).toEqual({});
+			expect(plugin.saves).toHaveLength(1);
+			const after = onScreen(tab);
+			expect(rowNames(section(after, "Readwise"))).not.toContain("Start over with this computer's token");
+			await answered(after, "Connected — 0 books, 0 highlights pushed.");
+		});
+
+		it("offers no start-over on a computer without a token to start over with", async () => {
+			const drawn = draw((await tabWith(await clashed("readwiseAccount"))).tab);
+
+			expect(lineOf(drawn).text).toBe("No Readwise token on this computer — add it to push from here too.");
+			expect(rowNames(section(drawn, "Readwise"))).not.toContain("Start over with this computer's token");
+		});
+
+		// The push holds the run lock and writes the state back when it ends: starting over under it would be undone.
+		it("does not start over while a sync runs", async () => {
+			readwiseAnswering(204);
+			const { plugin, tab } = await tabWith(await clashed("readwiseAccount"), keychainWith("rw-token"));
+			const drawn = draw(tab);
+			(plugin as unknown as { syncing: boolean }).syncing = true;
+
+			buttons(drawn, "Start over with this computer's token")[0].click();
+			await settle();
+
+			expect(takeNotices()).toEqual(["Wait for the sync to finish, then start over."]);
+			expect(plugin.data.readwiseAccountClash).toBe(true);
+			expect(plugin.saves).toHaveLength(0);
+		});
+
+		it("offers no start-over while nothing clashes", async () => {
+			readwiseAnswering(204);
+			const drawn = draw((await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"))).tab);
+
+			expect(rowNames(section(drawn, "Readwise"))).not.toContain("Start over with this computer's token");
+		});
 	});
 });
 

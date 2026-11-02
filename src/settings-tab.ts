@@ -5,6 +5,8 @@ import {
 	Notice,
 	Platform,
 	PluginSettingTab,
+	requireApiVersion,
+	SecretComponent,
 	Setting,
 	TFolder,
 	type ToggleComponent,
@@ -29,6 +31,9 @@ import { DEFAULT_SEND_TAG } from "./zotero-send";
 import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transport";
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
+import { createReadwiseClient } from "./readwise-client";
+import { type ReadwiseConnection, readwiseClashed, readwiseConnectionLine, readwiseProAllowed, startOverReadwise, tokenFingerprint } from "./readwise-push";
+import type { ReadwiseSettings } from "./readwise-state";
 import { invalidateRenders, pendingOcrRetries } from "./sync-engine";
 import { planTagRouting } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
@@ -123,6 +128,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		this.renderOcrSettings(containerEl);
 		this.renderAutoSyncSettings(containerEl);
 		this.renderZotero(containerEl);
+		this.renderReadwise(containerEl);
 		this.renderPro(containerEl);
 		this.renderActions(containerEl, connected);
 		// After the content is back, so there is something to scroll through. A page that got shorter
@@ -844,6 +850,108 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						this.plugin.data.zotero = { ...this.plugin.data.zotero, groups: value ? [...others, group] : others };
 						await this.plugin.saveData(this.plugin.data);
 					});
+				});
+		}
+	}
+
+	/**
+	 * Readwise (Readwise spec §2), built like Zotero: a live Connection line, the Pro switch, the token
+	 * and the round-trip hint. Shown to every vault, the switch shut with "(Pro)" to a free one.
+	 *
+	 * The token is a Keychain entry, which this computer has or has not: `data.json` holds only the
+	 * entry's name, and the token is read when the line asks readwise.io. An Obsidian without the
+	 * Keychain (before 1.11.4) gets the heading and one sentence, with no `minAppVersion` bump (ticket 13 #2).
+	 */
+	private renderReadwise(containerEl: HTMLElement): void {
+		const heading = new Setting(containerEl).setName("Readwise").setHeading();
+		if (!requireApiVersion("1.11.4")) {
+			heading.setDesc("Needs Obsidian 1.11.4 or newer.");
+			return;
+		}
+		const pro = readwiseProAllowed(this.plugin.entitlement());
+
+		const line = new Setting(containerEl).setName("Connection").descEl.createDiv({ cls: "tagged-sync-verdict" });
+		const paint = (connection: ReadwiseConnection) => {
+			const { text, tone } = readwiseConnectionLine(connection, this.plugin.data.readwiseBooks);
+			line.setText(text);
+			line.style.color = tone === null ? "" : `var(--text-${tone})`;
+		};
+		// Numbered like Zotero's probe: a slow answer never lands on top of a newer one.
+		let probe = 0;
+		const refreshStatus = () => {
+			const mine = ++probe;
+			// The Keychain is read only when the line will ask readwise.io (ticket 20 item 2).
+			const token = pro && this.plugin.data.readwise.push ? this.plugin.readwiseToken() : null;
+			const first = !pro ? "free" : !this.plugin.data.readwise.push ? "off" : token === null ? "no-token" : "checking";
+			paint(first);
+			if (token === null) return;
+			void (async () => {
+				// A clash is the state's to say, so readwise.io is not asked (spec §11 P4).
+				const answer = readwiseClashed(this.plugin.data, await tokenFingerprint(token)) ? "clash" : await createReadwiseClient(token).check();
+				if (mine !== probe) return;
+				paint(answer);
+			})();
+		};
+		refreshStatus();
+
+		const save = async (readwise: Partial<ReadwiseSettings>): Promise<void> => {
+			this.plugin.data.readwise = { ...this.plugin.data.readwise, ...readwise };
+			await this.plugin.saveData(this.plugin.data);
+			refreshStatus();
+		};
+
+		new Setting(containerEl)
+			.setName(pro ? "Push highlights to Readwise" : "Push highlights to Readwise (Pro)")
+			.setDesc(
+				"Your highlights and margin notes become highlights in your Readwise library, one book per document, and come up in your Daily Review. " +
+					"The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access " +
+					"(Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.",
+			)
+			// Switching on needs nothing more here: the next sync starts the backfill (spec §5).
+			.addToggle((toggle) => {
+				toggle.setValue(this.plugin.data.readwise.push).setDisabled(!pro);
+				toggle.onChange((push) => save({ push }));
+			});
+
+		// The guard again, where the store's lint can see it: it reads only an enclosing `if`, not the return above.
+		if (requireApiVersion("1.11.4")) {
+			new Setting(containerEl)
+				.setName("Readwise access token")
+				.setDesc("From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.")
+				.addComponent((el) =>
+					new SecretComponent(this.app, el).setValue(this.plugin.data.readwise.tokenSecret ?? "").onChange((name) => save({ tokenSecret: name || null })),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName("Readwise's own Obsidian plugin")
+			.setDesc(
+				"If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, each highlight linking to your note. " +
+					"To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book.",
+			);
+
+		// Only while stopped, and on a computer with a token to start over with: it is the one way out once
+		// neither token clears the clash (ticket 20, option C).
+		if (this.plugin.data.readwiseAccountClash && this.plugin.readwiseToken() !== null) {
+			new Setting(containerEl)
+				.setName("Start over with this computer's token")
+				.setDesc(
+					"Forgets what was pushed to Readwise; the next sync pushes every document again, into the account of this computer's token. " +
+						"Books you deleted in Readwise come back, and your margin notes go to your transcription backend again.",
+				)
+				.addButton((button) => {
+					button.setButtonText("Start over").onClick(async () => {
+						// A push in flight writes the state back when it ends (spec §4.1: it holds the run lock).
+						if (this.plugin.isSyncing()) {
+							new Notice("Wait for the sync to finish, then start over.");
+							return;
+						}
+						startOverReadwise(this.plugin.data);
+						await this.plugin.saveData(this.plugin.data);
+						this.redraw();
+					});
+					// Destructive, styled like the tag row's Remove: `setDestructive()` needs 1.13.
+					button.buttonEl.addClass("mod-warning");
 				});
 		}
 	}

@@ -25,6 +25,7 @@ export {
 	requestUrl,
 	requireApiVersion,
 	Scope,
+	SecretComponent,
 	Setting,
 	setIcon,
 	setTooltip,

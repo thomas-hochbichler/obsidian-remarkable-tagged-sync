@@ -185,13 +185,25 @@ export const Platform = {
 export const apiVersion = READ_FROM_VERSION;
 
 /**
- * Whether the running Obsidian is at least `version`, against {@link apiVersion}: what guards an API
- * newer than `minAppVersion`. Not read from `app.js`; `obsidian.d.ts` says it "returns `true` if the API
- * version is equal to or higher than the requested version", and this compares the dotted numbers that way.
+ * What {@link requireApiVersion} compares against: {@link apiVersion} unless a test runs as an older
+ * Obsidian. `apiVersion` itself stays put -- only the diagnostics block prints it, and no test that
+ * changes this reads it; a test that needs both to agree has to move `apiVersion` too.
+ */
+let runningVersion = READ_FROM_VERSION;
+
+/** Not an Obsidian member. How a test runs as another Obsidian; `null` goes back to {@link apiVersion}. */
+export function runAsVersion(version: string | null): void {
+	runningVersion = version ?? READ_FROM_VERSION;
+}
+
+/**
+ * Whether the running Obsidian is at least `version`: what guards an API newer than `minAppVersion`.
+ * Not read from `app.js`; `obsidian.d.ts` says it "returns `true` if the API version is equal to or
+ * higher than the requested version", and this compares the dotted numbers that way.
  */
 export function requireApiVersion(version: string): boolean {
 	const parts = (value: string) => value.split(".").map(Number);
-	const [want, have] = [parts(version), parts(apiVersion)];
+	const [want, have] = [parts(version), parts(runningVersion)];
 	const differs = want.findIndex((part, index) => part !== (have[index] ?? 0));
 	return differs === -1 || want[differs] < (have[differs] ?? 0);
 }
@@ -1094,6 +1106,33 @@ export class ButtonComponent {
 	}
 }
 
+/**
+ * Obsidian's Keychain picker (since 1.11.4): the user picks or creates an entry, and the component
+ * hands back the entry's **name**, never the secret. Not read from `app.js`; `obsidian.d.ts` gives
+ * `setValue(name)` and `onChange(name | null)`, and that is all this claims.
+ */
+export class SecretComponent {
+	value = "";
+	private changed: ((value: string | null) => unknown) | null = null;
+	constructor(
+		readonly app: FakeApp,
+		readonly containerEl: FakeEl,
+	) {}
+	setValue(value: string): this {
+		this.value = value;
+		return this;
+	}
+	onChange(cb: (value: string | null) => unknown): this {
+		this.changed = cb;
+		return this;
+	}
+	/** Not an Obsidian member. How a test picks a Keychain entry, or clears the choice with `null`. */
+	pick(name: string | null): unknown {
+		this.value = name ?? "";
+		return this.changed?.(name);
+	}
+}
+
 export class Setting {
 	name = "";
 	desc = "";
@@ -1107,6 +1146,8 @@ export class Setting {
 	readonly toggles: ToggleComponent[] = [];
 	readonly dropdowns: DropdownComponent[] = [];
 	readonly buttons: ButtonComponent[] = [];
+	/** What `addComponent` built, in order. */
+	readonly components: unknown[] = [];
 
 	constructor(readonly containerEl: FakeEl) {
 		settingLog.push(this);
@@ -1166,6 +1207,10 @@ export class Setting {
 	}
 	addExtraButton(cb: (button: ButtonComponent) => unknown): this {
 		return this.addButton(cb);
+	}
+	addComponent(cb: (el: FakeEl) => unknown): this {
+		this.components.push(cb(this.controlEl));
+		return this;
 	}
 	then(cb: (setting: this) => unknown): this {
 		cb(this);

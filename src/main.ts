@@ -829,8 +829,8 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 	}
 
-	/** This computer's Readwise token, from Obsidian's Keychain (Readwise spec §2), or null. Obsidian before 1.11.4 has no Keychain. */
-	private readwiseToken(): string | null {
+	/** This computer's Readwise token, from Obsidian's Keychain (Readwise spec §2), or null. Obsidian before 1.11.4 has no Keychain. Never logged. */
+	readwiseToken(): string | null {
 		const name = this.data.readwise.tokenSecret;
 		return requireApiVersion("1.11.4") && name !== null ? this.app.secretStorage.getSecret(name) || null : null;
 	}

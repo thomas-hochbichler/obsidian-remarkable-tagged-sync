@@ -6,7 +6,16 @@
 import type { DigestPage } from "./digest-builder";
 import type { Entitlement } from "./licence-state";
 import { bookIdentity, type BookIdentity, type BookSources } from "./readwise-book";
-import { MAX_PUSH_BATCH, type ReadwiseBookEntry, type ReadwiseClient, ReadwiseError, type ReadwiseErrorKind, type ReadwiseItem, type ReadwisePushResult } from "./readwise-client";
+import {
+	MAX_PUSH_BATCH,
+	type ReadwiseBookEntry,
+	type ReadwiseCheck,
+	type ReadwiseClient,
+	ReadwiseError,
+	type ReadwiseErrorKind,
+	type ReadwiseItem,
+	type ReadwisePushResult,
+} from "./readwise-client";
 import { highlightUrl, readwiseHighlights } from "./readwise-highlights";
 import {
 	liveBooks,
@@ -16,6 +25,7 @@ import {
 	readwiseBook,
 	type ReadwiseHighlight,
 	type ReadwiseText,
+	readwiseCounts,
 	recordUnit,
 	type RecordScope,
 	type ReadwiseSettings,
@@ -133,9 +143,67 @@ export function readwiseNotice(failure: PushFailure | null, books: StoredReadwis
 		case "unreachable":
 		case "bad-request": {
 			const waiting = pendingDocuments(books).length;
-			return waiting === 0 ? null : `Readwise: ${waiting} document${waiting === 1 ? "" : "s"} not pushed — will retry next sync.`;
+			return waiting === 0 ? null : `Readwise: ${plural(waiting, "document", "documents")} not pushed — will retry next sync.`;
 		}
 	}
+}
+
+/** Stopped for two computers on two accounts (spec §11 P4): only a third token, or starting over, ends it. */
+export function readwiseClashed(data: ReadwiseData, fingerprint: string): boolean {
+	return data.readwiseAccountClash === true && (fingerprint === data.readwiseAccount || fingerprint === data.readwiseAccountBefore);
+}
+
+/**
+ * The way out of a clash the user chose (ticket 20, for ticket 19's open point): the state and the
+ * fingerprints go, so the next sync backfills (§5) into the account of whichever token pushes first,
+ * and a second account is caught again from scratch. Books deleted in Readwise come back.
+ */
+export function startOverReadwise(data: ReadwiseData): void {
+	data.readwiseBooks = {};
+	delete data.readwiseAccount;
+	delete data.readwiseAccountBefore;
+	delete data.readwiseAccountClash;
+	delete data.readwiseRecording;
+}
+
+/** Which of the Connection line's states this computer is in (spec §2.1). */
+export type ReadwiseConnection = "free" | "off" | "no-token" | "checking" | "clash" | ReadwiseCheck;
+
+const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+interface ConnectionLine {
+	readonly text: string;
+	readonly tone: "muted" | "success" | "error" | null;
+}
+
+/** Every line of spec §2.1 but Connected, whose counts come from the state. */
+const CONNECTION_LINES: Record<Exclude<ReadwiseConnection, "ok">, ConnectionLine> = {
+	free: { text: "Pushing to Readwise is part of Tagged Sync Pro.", tone: "muted" },
+	off: { text: "Off.", tone: "muted" },
+	checking: { text: "Checking…", tone: null },
+	"no-token": { text: "No Readwise token on this computer — add it to push from here too.", tone: "error" },
+	rejected: { text: "The access token was not accepted — paste a new one from readwise.io/access_token.", tone: "error" },
+	"no-api": { text: "Your Readwise plan doesn't include API access.", tone: "error" },
+	unreachable: { text: "Readwise didn't answer.", tone: "error" },
+	clash: { text: "This computer and another one push to different Readwise accounts — use one account's token on both, then start over below.", tone: "error" },
+};
+
+/** The Connection line (spec §2.1), from the state, never from Readwise. A line that is not an error gains the waiting and refused counts. */
+export function readwiseConnectionLine(connection: ReadwiseConnection, books: StoredReadwiseBooks): ConnectionLine {
+	const counts = readwiseCounts(books);
+	const line =
+		connection === "ok"
+			? { text: `Connected — ${plural(counts.books, "book", "books")}, ${plural(counts.highlights, "highlight", "highlights")} pushed.`, tone: "success" as const }
+			: CONNECTION_LINES[connection];
+	if (line.tone === "error") return line;
+	const waiting = pendingDocuments(books).length;
+	const pending = waiting === 0 ? "" : ` ${plural(waiting, "document", "documents")} waiting to be pushed.`;
+	const single = counts.setAside === 1;
+	const refused =
+		counts.setAside === 0
+			? ""
+			: ` ${plural(counts.setAside, "highlight", "highlights")} Readwise refused — ${single ? "it is" : "they are"} retried when ${single ? "it changes" : "they change"} on the tablet.`;
+	return { text: line.text + pending + refused, tone: line.tone };
 }
 
 /** Is there anything to send: a change, or a book still owed the user's names (spec §4.3 step 4b)? */
@@ -151,10 +219,8 @@ function hasWork(books: StoredReadwiseBooks): boolean {
  * The caller holds the run lock, so no unit is recorded meanwhile, and saves `data` once afterwards.
  */
 export async function pushToReadwise(data: ReadwiseData, client: ReadwiseClient, fingerprint: string): Promise<PushFailure | null> {
-	if (data.readwiseAccountClash) {
-		if (fingerprint === data.readwiseAccount || fingerprint === data.readwiseAccountBefore) return "clash";
-		delete data.readwiseAccountClash;
-	}
+	if (readwiseClashed(data, fingerprint)) return "clash";
+	delete data.readwiseAccountClash;
 	if (fingerprint === data.readwiseAccount && !hasWork(data.readwiseBooks)) return null;
 	try {
 		let listing: ReadwiseBookEntry[] | null = null;

@@ -1292,6 +1292,13 @@
       file: src/readwise-push.test.ts
       test: "pushToReadwise > the account check (spec §11 P4) > lets a third token clear the clash and be checked like any other"
 
+    - id: W10.42
+      scenario: Stopped for two accounts, the user starts over (ticket 20, option C) with one token on both computers
+      expect: The backfilled document is pushed and the token stored; the other account, if still in use, drops the state once and is caught again when this computer comes back
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > the account check (spec §11 P4) > pushes again after starting over with one token on both computers, and catches a second account again"
+
     - id: W10.23
       scenario: The user renamed the book and its author in Readwise
       expect: Read from the listing, put back after the push reset them (spec §11 P25)
