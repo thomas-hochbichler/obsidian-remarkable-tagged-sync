@@ -82,7 +82,7 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Pages you added to a PDF as Zotero notes](#zotero) | — | ✓ |
 | [The render as a Zotero attachment — opt-in](#zotero) | — | ✓ |
 | **Readwise** | | |
-| [Your highlights and margin notes pushed to Readwise, one book per document](#readwise) | — | ✓ |
+| [Your highlights and margin notes pushed to Readwise, one entry per document](#readwise) | — | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
