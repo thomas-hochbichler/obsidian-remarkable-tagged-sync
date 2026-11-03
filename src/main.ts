@@ -55,6 +55,7 @@ import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
+import { HIGHLIGHT_NOTE_GONE_NOTICE, linkedNote, readwiseBookUrl } from "./readwise-links";
 import { pushToReadwise, readwiseNotice, readwiseRecorderFor, readwiseRecordingOn, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
 import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
 import type { TextLayerTally } from "./text-layer";
@@ -464,6 +465,23 @@ export default class TaggedSyncPlugin extends Plugin {
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
 
+		// Free, both (spec §11 P19): a link from Readwise only opens a note, and a lapsed licence must
+		// not break the links already sitting in someone's library.
+		this.registerObsidianProtocolHandler("tagged-sync", (params) => void this.openHighlightLink(params.highlight ?? ""));
+		this.addCommand({
+			id: "open-in-readwise",
+			name: "Open in Readwise",
+			// One pass over the index per palette keystroke, unlike *Re-transcribe this note*: a note never
+			// pushed has nothing to open, and a command that says so at run time would only be noise.
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				const url = file === null ? null : readwiseBookUrl(this.data.syncIndex.rows, this.data.readwiseBooks, file.path);
+				if (url === null) return false;
+				if (!checking) window.open(url);
+				return true;
+			},
+		});
+
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
 
@@ -484,6 +502,23 @@ export default class TaggedSyncPlugin extends Plugin {
 		// One does: the local model's download runs on promises and a `window` interval, and a reload
 		// mid-download used to leave both running with no way to reach them.
 		for (const entry of ocrBackendEntries()) entry.onPluginUnload?.();
+	}
+
+	/**
+	 * Opens the note behind a Readwise highlight's link, `obsidian://tagged-sync?highlight=…` (spec §7),
+	 * at its block. The note is looked up rather than trusted to exist: `openLinkText` on a path that is
+	 * gone would create an empty note there.
+	 */
+	private async openHighlightLink(value: string): Promise<void> {
+		const target = linkedNote(this.data.syncIndex.rows, value, (notePath) => {
+			const file = this.app.vault.getFileByPath(notePath);
+			return file === null ? null : Object.keys(this.app.metadataCache.getFileCache(file)?.blocks ?? {});
+		});
+		if (target === null) {
+			new Notice(HIGHLIGHT_NOTE_GONE_NOTICE);
+			return;
+		}
+		await this.app.workspace.openLinkText(target.block === null ? target.notePath : `${target.notePath}#^${target.block}`, "", false);
 	}
 
 	/**

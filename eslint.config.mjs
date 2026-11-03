@@ -86,9 +86,9 @@ export default defineConfig(
 	},
 	{
 		rules: {
-			// "reMarkable", "Obsidian" and "Zotero" are brand names; without this the sentence-case
-			// rule lowercases them.
-			"obsidianmd/ui/sentence-case": ["warn", { brands: ["reMarkable", "Obsidian", "Zotero"] }],
+			// "reMarkable", "Obsidian", "Zotero" and "Readwise" are brand names; without this the
+			// sentence-case rule lowercases them.
+			"obsidianmd/ui/sentence-case": ["warn", { brands: ["reMarkable", "Obsidian", "Zotero", "Readwise"] }],
 		},
 	},
 );

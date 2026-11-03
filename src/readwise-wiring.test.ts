@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../tests/stubs/fake-clock";
-import { FakeApp, takeNotices } from "../tests/stubs/fake-obsidian";
-import type { DigestPage } from "./digest-builder";
+import { type Command, FakeApp, takeNotices } from "../tests/stubs/fake-obsidian";
+import { digestId, type DigestPage } from "./digest-builder";
 import { NO_LICENCE } from "./licence-state";
 import type { ReadwiseClient } from "./readwise-client";
 import type { ReadwiseRecorder } from "./readwise-push";
@@ -79,6 +79,8 @@ const { ReadwiseError } = await import("./readwise-client");
 
 interface Plugin {
 	app: FakeApp;
+	commands: Command[];
+	protocolHandlers: Map<string, (params: Record<string, string>) => unknown>;
 	data: Record<string, unknown> & { readwiseBooks: Record<string, { highlights: Record<string, unknown> }>; syncIndex: { rows: Record<string, { renderVersion?: number }> } };
 	syncNow(): Promise<void>;
 	requestStop(): void;
@@ -259,5 +261,57 @@ describe("the push when a background sync finds the tablet asleep (spec §11 P22
 		await plugin.triggerAutoSync();
 
 		expect(readwise.calls).toEqual([]);
+	});
+});
+
+describe("the link back from Readwise and Open in Readwise (spec §7)", () => {
+	const BLOCK = digestId("hl", "6a7b8c9d-page", "1a2b");
+
+	it("opens the note at the highlight's block, in a free vault too (spec §11 P19)", async () => {
+		const plugin = await pluginWith({ pro: false });
+		await plugin.app.vault.create("Notes/1.md", "");
+		plugin.app.metadataCache.blocks.set("Notes/1.md", [BLOCK]);
+
+		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
+		await vi.waitFor(() => expect(plugin.app.workspace.openedLinks).toEqual([`Notes/1.md#^${BLOCK}`]));
+		expect(takeNotices()).toEqual([]);
+	});
+
+	it("opens the note at its top when Obsidian knows no block in it", async () => {
+		const plugin = await pluginWith();
+		await plugin.app.vault.create("Notes/1.md", "");
+
+		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
+		await vi.waitFor(() => expect(plugin.app.workspace.openedLinks).toEqual(["Notes/1.md"]));
+	});
+
+	it("says the note is gone rather than opening a path no note is at, and for a link without a highlight", async () => {
+		const plugin = await pluginWith();
+
+		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
+		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync" });
+		await vi.waitFor(() => expect(takeNotices()).toEqual(["This highlight's note is no longer in this vault.", "This highlight's note is no longer in this vault."]));
+		expect(plugin.app.workspace.openedLinks).toEqual([]);
+	});
+
+	it("opens the note's book in Readwise once its id is known, and is unavailable before", async () => {
+		const open = vi.fn();
+		vi.stubGlobal("window", { open });
+		try {
+			const plugin = await pluginWith();
+			const command = plugin.commands.find((each) => each.id === "open-in-readwise")!;
+			expect(command.checkCallback!(true)).toBe(false);
+
+			plugin.app.workspace.activeFile = (await plugin.app.vault.create("Notes/1.md", ""))!;
+			expect(command.checkCallback!(true)).toBe(false);
+
+			plugin.data.readwiseBooks["doc-1"] = { ...plugin.data.readwiseBooks["doc-1"], bookId: 4711 } as never;
+			expect(command.checkCallback!(true)).toBe(true);
+			expect(open).not.toHaveBeenCalled();
+			command.checkCallback!(false);
+			expect(open).toHaveBeenCalledWith("https://readwise.io/bookreview/4711");
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

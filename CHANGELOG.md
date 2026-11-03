@@ -23,6 +23,7 @@ workflow publishes the section as the GitHub release body. See
   too; an edit you make in Readwise stays until that highlight, or the reading of its margin note,
   changes. Only text is sent; your handwriting and page images stay on your machine. Needs a
   Readwise plan with API access and Obsidian 1.11.4 or newer.
+- ***Open in Readwise*** opens the Readwise book of the note you are in.
 
 ### Fixed
 
