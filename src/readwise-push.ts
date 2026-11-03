@@ -172,6 +172,17 @@ export function startOverReadwise(data: ReadwiseData): void {
 	delete data.readwiseRecording;
 }
 
+/**
+ * The way back from a book deleted in Readwise, *Push to Readwise again* (ticket 22, user 2026-11-03):
+ * the document's book is forgotten, so its next record starts a new one (§4.2), and its notes are
+ * made due once so the next sync records them -- its margin notes are read again, as in a backfill.
+ */
+export function pushBookAgain(data: ReadwiseData & { syncIndex: SyncIndex }, docId: string): void {
+	const { [docId]: _deleted, ...others } = data.readwiseBooks;
+	data.readwiseBooks = others;
+	data.syncIndex = invalidateRenders(data.syncIndex, [docId]);
+}
+
 /** Which of the Connection line's states this computer is in (spec §2.1). */
 export type ReadwiseConnection = "free" | "off" | "no-token" | "checking" | "clash" | ReadwiseCheck;
 

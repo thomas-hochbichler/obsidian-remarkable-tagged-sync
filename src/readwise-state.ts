@@ -54,7 +54,7 @@ export interface ReadwiseBook {
 	/** Written on every record; not part of the key. `books` for one stored without it, which is what was sent then. */
 	readonly category: ReadwiseCategory;
 	readonly bookId?: number;
-	/** Deleted in Readwise: never recorded into or pushed again (ticket 14 #2). */
+	/** Deleted in Readwise: never recorded into or pushed again (ticket 14 #2), until *Push to Readwise again* drops the book (ticket 22). */
 	readonly deleted?: true;
 	/**
 	 * The names and the category the user gave the book in Readwise (spec §11 P25), each absent = ours.

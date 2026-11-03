@@ -326,3 +326,43 @@ describe("the link back from Readwise and Open in Readwise (spec §7)", () => {
 		}
 	});
 });
+
+describe("Push to Readwise again (ticket 22)", () => {
+	async function deleted(setup: { pro?: boolean } = {}) {
+		const plugin = await pluginWith(setup);
+		plugin.app.workspace.activeFile = (await plugin.app.vault.create("Notes/1.md", ""))!;
+		plugin.data.readwiseBooks["doc-1"] = { ...plugin.data.readwiseBooks["doc-1"], bookId: 4711, deleted: true } as never;
+		return { plugin, command: plugin.commands.find((each) => each.id === "push-to-readwise-again")! };
+	}
+
+	it("forgets the deleted book and makes the note due, saved at once", async () => {
+		const { plugin, command } = await deleted();
+
+		expect(command.checkCallback!(true)).toBe(true);
+		command.checkCallback!(false);
+
+		await vi.waitFor(() => expect(takeNotices()).toEqual(["The next sync pushes this document to Readwise again."]));
+		expect(plugin.data.readwiseBooks).toEqual({});
+		expect(plugin.data.syncIndex.rows["unit-1"].renderVersion).toBeUndefined();
+		expect((plugin as unknown as { saved: typeof plugin.data }).saved.readwiseBooks).toEqual({});
+	});
+
+	it("is unavailable for a book still in Readwise, and while recording is off", async () => {
+		const free = await deleted({ pro: false });
+		expect(free.command.checkCallback!(true)).toBe(false);
+
+		const { plugin, command } = await deleted();
+		plugin.data.readwiseBooks["doc-1"] = { title: "Cape Marrow", highlights: {}, bookId: 4711 } as never;
+		expect(command.checkCallback!(true)).toBe(false);
+	});
+
+	it("waits for a sync in flight, which would write its own state over the change", async () => {
+		const { plugin, command } = await deleted();
+		(plugin as unknown as { syncing: boolean }).syncing = true;
+
+		command.checkCallback!(false);
+
+		await vi.waitFor(() => expect(takeNotices()).toEqual(["Wait for the sync to finish, then push to Readwise again."]));
+		expect(plugin.data.readwiseBooks["doc-1"]).toMatchObject({ deleted: true });
+	});
+});

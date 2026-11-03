@@ -1784,3 +1784,71 @@
       layer: vault
       file: src/readwise-wiring.test.ts
       test: "the link back from Readwise and Open in Readwise (spec §7) > opens the note's book in Readwise once its id is known, and is unavailable before"
+
+- feature: W14
+  name: Push to Readwise again, the way back from a book deleted in Readwise (ticket 22)
+  code: src/readwise-links.ts, src/readwise-push.ts, src/main.ts
+  tier: pro
+  scenarios:
+    - id: W14.1
+      scenario: The command looks up a note whose document's book was deleted in Readwise
+      expect: That document
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is the note's document when its book was deleted in Readwise"
+
+    - id: W14.2
+      scenario: The command looks up a note the plugin never synced
+      expect: None, so the command is unavailable
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a note the plugin never synced"
+
+    - id: W14.3
+      scenario: The command looks up a note whose document was never pushed
+      expect: None
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a document never pushed"
+
+    - id: W14.4
+      scenario: The command looks up a note whose book is still in Readwise
+      expect: None
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a book still in Readwise"
+
+    - id: W14.5
+      scenario: The command looks up a note whose stored book this build cannot read
+      expect: None; the book stays untouched (spec §3)
+      layer: unit
+      file: src/readwise-links.test.ts
+      test: "deletedBookOf > is none for a book this build cannot read"
+
+    - id: W14.6
+      scenario: A book deleted in Readwise, then Push to Readwise again, the next sync's record, the push
+      expect: Only that document's book forgotten and its rows made due; the record starts a new book; the push sends it and nothing marks it deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > a book deleted in Readwise (ticket 14 #2) > comes back as a new book after *Push to Readwise again*, and the next sync records only that document anew"
+
+    - id: W14.7
+      scenario: The plugin's Push to Readwise again on a note whose book was deleted
+      expect: Available; running it drops the book, makes the note due, saves data.json at once and says the next sync pushes it
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "Push to Readwise again (ticket 22) > forgets the deleted book and makes the note due, saved at once"
+
+    - id: W14.8
+      scenario: The command in a free vault, and on a book still in Readwise
+      expect: Unavailable both times
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "Push to Readwise again (ticket 22) > is unavailable for a book still in Readwise, and while recording is off"
+
+    - id: W14.9
+      scenario: The command run while a sync holds the run lock
+      expect: A notice to wait; the state is unchanged
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "Push to Readwise again (ticket 22) > waits for a sync in flight, which would write its own state over the change"

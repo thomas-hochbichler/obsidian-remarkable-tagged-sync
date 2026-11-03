@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DigestPage } from "./digest-builder";
 import { type ReadwiseClient, ReadwiseError, type ReadwiseItem } from "./readwise-client";
-import { createReadwiseRecorder, pushToReadwise, type ReadwiseData, readwiseNotice, type ReadwiseUnit, startOverReadwise, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
+import { createReadwiseRecorder, pushBookAgain, pushToReadwise, type ReadwiseData, readwiseNotice, type ReadwiseUnit, startOverReadwise, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
 import { type ReadwiseBook, readwiseBook, type ReadwiseHighlight, type StoredReadwiseBooks } from "./readwise-state";
 import { RENDER_VERSION, type SyncIndex, type SyncIndexRow } from "./sync-engine";
 
@@ -404,6 +404,26 @@ describe("pushToReadwise", () => {
 			expect(readwise.calls).toEqual(["books"]);
 			expect(after(state)!.deleted).toBeUndefined();
 			expect(after(state)!.highlights[KEY].want).toEqual(CHANGED);
+		});
+
+		// Ticket 22 (user 2026-11-03): the one way back, by the user's own command.
+		it("comes back as a new book after *Push to Readwise again*, and the next sync records only that document anew", async () => {
+			const readwise = fakeReadwise();
+			const row = (docId: string): SyncIndexRow => ({ syncKey: `${docId}:sync`, docId, pageId: null, tag: "sync", entryHash: "h", pageHash: null, notePath: `${docId}.md`, status: "active", syncedAt: "2026-11-02T00:00:00.000Z", renderVersion: RENDER_VERSION });
+			const other = book({ [KEY]: { pushed: TEXT, id: 8 } }, { title: "Other" });
+			const state = { ...data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: 3, deleted: true }), "doc-b": other }), syncIndex: { rootHash: "root", mappings: "m", rows: { a: row(DOC), b: row("doc-b") } } };
+
+			pushBookAgain(state, DOC);
+
+			expect(state.syncIndex.rows.a.renderVersion).toBeUndefined();
+			expect(state.syncIndex.rows.b.renderVersion).toBe(RENDER_VERSION);
+			expect(state.readwiseBooks).toEqual({ "doc-b": other });
+			// The next sync re-renders the document, and the recorder starts its book afresh.
+			await createReadwiseRecorder({ books: () => state.readwiseBooks, setBooks: (next) => void (state.readwiseBooks = next) }).record(unit());
+			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
+			expect(readwise.texts()).toEqual([TEXT.text]);
+			expect(after(state)!.deleted).toBeUndefined();
+			expect(after(state)!.highlights[KEY].pushed).toEqual(TEXT);
 		});
 	});
 

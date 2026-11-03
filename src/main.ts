@@ -55,8 +55,8 @@ import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
-import { HIGHLIGHT_NOTE_GONE_NOTICE, linkedNote, readwiseBookUrl } from "./readwise-links";
-import { pushToReadwise, readwiseNotice, readwiseRecorderFor, readwiseRecordingOn, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
+import { deletedBookOf, HIGHLIGHT_NOTE_GONE_NOTICE, linkedNote, readwiseBookUrl } from "./readwise-links";
+import { pushBookAgain, pushToReadwise, readwiseNotice, readwiseRecorderFor, readwiseRecordingOn, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
 import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
 import type { TextLayerTally } from "./text-layer";
 import { type Scheduler, windowScheduler } from "./scheduler";
@@ -481,6 +481,19 @@ export default class TaggedSyncPlugin extends Plugin {
 				return true;
 			},
 		});
+		this.addCommand({
+			id: "push-to-readwise-again",
+			name: "Push to Readwise again",
+			// Only while recording is on: off, the note would be read again for nothing, and switching on
+			// backfills it anyway (spec §5).
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				const docId = file === null || !readwiseRecordingOn(this.data.readwise, this.entitlement()) ? null : deletedBookOf(this.data.syncIndex.rows, this.data.readwiseBooks, file.path);
+				if (docId === null) return false;
+				if (!checking) void this.pushBookAgain(docId);
+				return true;
+			},
+		});
 
 		// Keep data.json note paths accurate across user renames/moves (invisible-sync-state 01).
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onVaultRename(file, oldPath)));
@@ -502,6 +515,18 @@ export default class TaggedSyncPlugin extends Plugin {
 		// One does: the local model's download runs on promises and a `window` interval, and a reload
 		// mid-download used to leave both running with no way to reach them.
 		for (const entry of ocrBackendEntries()) entry.onPluginUnload?.();
+	}
+
+	/** *Push to Readwise again* (ticket 22): the next sync records the document anew and pushes it as a new book. */
+	private async pushBookAgain(docId: string): Promise<void> {
+		// A run writes the index and the state back when it ends, over this change (spec §4.1).
+		if (this.isSyncing()) {
+			new Notice("Wait for the sync to finish, then push to Readwise again.");
+			return;
+		}
+		pushBookAgain(this.data, docId);
+		await this.saveData(this.data);
+		new Notice("The next sync pushes this document to Readwise again.");
 	}
 
 	/**

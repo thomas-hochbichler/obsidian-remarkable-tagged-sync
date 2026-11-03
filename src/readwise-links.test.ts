@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { digestId } from "./digest-builder";
-import { type FoundNote, linkedNote, readwiseBookUrl } from "./readwise-links";
+import { deletedBookOf, type FoundNote, linkedNote, readwiseBookUrl } from "./readwise-links";
 
 const DOC = "0f1e2d3c-doc";
 const PAGE = "6a7b8c9d-page";
@@ -101,5 +101,23 @@ describe("readwiseBookUrl", () => {
 		["a book deleted in Readwise", { [DOC]: { ...book, bookId: 4711, deleted: true } }, "Papers/Cape Marrow.md"],
 	])("is none for %s", (_, books, notePath) => {
 		expect(readwiseBookUrl({ a: row() }, books, notePath)).toBeNull();
+	});
+});
+
+describe("deletedBookOf", () => {
+	const book = { title: "Cape Marrow", category: "articles", bookId: 4711, highlights: {} };
+
+	it("is the note's document when its book was deleted in Readwise", () => {
+		const rows = { a: row({ pageId: PAGE, notePath: "Notes/Page 3.md" }) };
+		expect(deletedBookOf(rows, { [DOC]: { ...book, deleted: true } }, "Notes/Page 3.md")).toBe(DOC);
+	});
+
+	it.each([
+		["a note the plugin never synced", { [DOC]: { ...book, deleted: true } }, "Elsewhere.md"],
+		["a document never pushed", {}, "Papers/Cape Marrow.md"],
+		["a book still in Readwise", { [DOC]: book }, "Papers/Cape Marrow.md"],
+		["a book this build cannot read", { [DOC]: "not a book" }, "Papers/Cape Marrow.md"],
+	])("is none for %s", (_, books, notePath) => {
+		expect(deletedBookOf({ a: row() }, books, notePath)).toBeNull();
 	});
 });

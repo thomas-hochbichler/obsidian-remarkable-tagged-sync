@@ -1,7 +1,7 @@
 import { digestId } from "./digest-builder";
 import { rowForNotePath } from "./note-rename";
 import { pageIdOf } from "./readwise-highlights";
-import { bookIdOf, type StoredReadwiseBooks } from "./readwise-state";
+import { bookIdOf, readwiseBook, type StoredReadwiseBooks } from "./readwise-state";
 
 /** What the link back needs of a sync index row. */
 interface NoteRow {
@@ -61,4 +61,10 @@ export function readwiseBookUrl(rows: Record<string, NoteRow>, books: StoredRead
 	const row = rowForNotePath(rows, notePath);
 	const bookId = row === undefined ? undefined : bookIdOf(books, row.docId);
 	return bookId === undefined ? null : `https://readwise.io/bookreview/${bookId}`;
+}
+
+/** *Push to Readwise again* for the note at `notePath` (ticket 22): its document, when that document's book was deleted in Readwise, else `null`. */
+export function deletedBookOf(rows: Record<string, NoteRow>, books: StoredReadwiseBooks, notePath: string): string | null {
+	const row = rowForNotePath(rows, notePath);
+	return row !== undefined && readwiseBook(books, row.docId)?.deleted ? row.docId : null;
 }
