@@ -1,5 +1,6 @@
 import { digestId } from "./digest-builder";
 import { rowForNotePath } from "./note-rename";
+import { pageIdOf } from "./readwise-highlights";
 import { bookIdOf, type StoredReadwiseBooks } from "./readwise-state";
 
 /** What the link back needs of a sync index row. */
@@ -13,9 +14,15 @@ interface NoteRow {
 /** Said when a link from Readwise finds no note to open (spec §7). */
 export const HIGHLIGHT_NOTE_GONE_NOTICE = "This highlight's note is no longer in this vault.";
 
+/** A note in the vault, as the caller found it at a row's path, and the `^block` ids it carries. */
+export interface FoundNote<Note> {
+	readonly note: Note;
+	readonly blocks: readonly string[];
+}
+
 /** Where a Readwise highlight's link opens: a note, at the block of the entry when the note carries it. */
-export interface LinkedNote {
-	readonly notePath: string;
+export interface LinkedNote<Note> {
+	readonly note: Note;
 	readonly block: string | null;
 }
 
@@ -25,29 +32,25 @@ export interface LinkedNote {
  *
  * The document is everything before the first `/`, the page everything before the key's first `:`
  * (spec §1.3). The whole-document note comes first, then the page note; of those still in the vault
- * (`blocksIn` answers `null` for a note deleted by hand), the first that carries the entry's block
+ * (`find` answers `null` for a note deleted by hand), the first that carries the entry's block
  * wins -- `hl-` or `nt-`, the key cannot tell a highlight from a margin note -- and with none
  * carrying it the first note opens at its top.
  */
-export function linkedNote(rows: Record<string, NoteRow>, value: string, blocksIn: (notePath: string) => readonly string[] | null): LinkedNote | null {
+export function linkedNote<Note>(rows: Record<string, NoteRow>, value: string, find: (notePath: string) => FoundNote<Note> | null): LinkedNote<Note> | null {
 	const slash = value.indexOf("/");
-	const key = value.slice(slash + 1);
-	const colon = key.indexOf(":");
 	const docId = value.slice(0, slash);
-	const pageId = key.slice(0, colon);
-	const crdtId = key.slice(colon + 1);
-	if (slash < 1 || colon < 1 || crdtId === "") return null;
+	const key = value.slice(slash + 1);
+	const pageId = pageIdOf(key);
+	const crdtId = key.slice(pageId.length + 1);
+	if (slash < 1 || !key.includes(":") || pageId === "" || crdtId === "") return null;
 	const active = Object.values(rows).filter((row) => row.docId === docId && row.status === "active");
-	const notes = [...active.filter((row) => row.pageId === null), ...active.filter((row) => row.pageId === pageId)].flatMap((row) => {
-		const blocks = blocksIn(row.notePath);
-		return blocks === null ? [] : [{ notePath: row.notePath, blocks }];
-	});
+	const notes = [...active.filter((row) => row.pageId === null), ...active.filter((row) => row.pageId === pageId)].flatMap((row) => find(row.notePath) ?? []);
 	const ids = [digestId("hl", pageId, crdtId), digestId("nt", pageId, crdtId)];
-	for (const { notePath, blocks } of notes) {
+	for (const { note, blocks } of notes) {
 		const block = ids.find((id) => blocks.includes(id));
-		if (block !== undefined) return { notePath, block };
+		if (block !== undefined) return { note, block };
 	}
-	return notes.length === 0 ? null : { notePath: notes[0].notePath, block: null };
+	return notes.length === 0 ? null : { note: notes[0].note, block: null };
 }
 
 /**

@@ -506,19 +506,19 @@ export default class TaggedSyncPlugin extends Plugin {
 
 	/**
 	 * Opens the note behind a Readwise highlight's link, `obsidian://tagged-sync?highlight=…` (spec §7),
-	 * at its block. The note is looked up rather than trusted to exist: `openLinkText` on a path that is
-	 * gone would create an empty note there.
+	 * at its block. The file itself is opened, not a link text: `openLinkText` would cut a note named
+	 * "C# Primer" at its `#` and create an empty note "C".
 	 */
 	private async openHighlightLink(value: string): Promise<void> {
 		const target = linkedNote(this.data.syncIndex.rows, value, (notePath) => {
-			const file = this.app.vault.getFileByPath(notePath);
-			return file === null ? null : Object.keys(this.app.metadataCache.getFileCache(file)?.blocks ?? {});
+			const note = this.app.vault.getFileByPath(notePath);
+			return note === null ? null : { note, blocks: Object.keys(this.app.metadataCache.getFileCache(note)?.blocks ?? {}) };
 		});
 		if (target === null) {
 			new Notice(HIGHLIGHT_NOTE_GONE_NOTICE);
 			return;
 		}
-		await this.app.workspace.openLinkText(target.block === null ? target.notePath : `${target.notePath}#^${target.block}`, "", false);
+		await this.app.workspace.getLeaf(false).openFile(target.note, target.block === null ? {} : { eState: { subpath: `#^${target.block}` } });
 	}
 
 	/**

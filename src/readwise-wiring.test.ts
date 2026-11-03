@@ -273,8 +273,19 @@ describe("the link back from Readwise and Open in Readwise (spec §7)", () => {
 		plugin.app.metadataCache.blocks.set("Notes/1.md", [BLOCK]);
 
 		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
-		await vi.waitFor(() => expect(plugin.app.workspace.openedLinks).toEqual([`Notes/1.md#^${BLOCK}`]));
+		await vi.waitFor(() => expect(plugin.app.workspace.openedFiles).toEqual([`Notes/1.md#^${BLOCK}`]));
 		expect(takeNotices()).toEqual([]);
+	});
+
+	it("opens a note whose name holds a # as that note, not as a link cut at the #", async () => {
+		const plugin = await pluginWith();
+		plugin.data.syncIndex.rows["unit-1"] = { ...plugin.data.syncIndex.rows["unit-1"], notePath: "Papers/C# Primer.md" } as never;
+		await plugin.app.vault.create("Papers/C# Primer.md", "");
+		plugin.app.metadataCache.blocks.set("Papers/C# Primer.md", [BLOCK]);
+
+		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
+		await vi.waitFor(() => expect(plugin.app.workspace.openedFiles).toEqual([`Papers/C# Primer.md#^${BLOCK}`]));
+		expect(plugin.app.vault.getFileByPath("Papers/C.md")).toBeNull();
 	});
 
 	it("opens the note at its top when Obsidian knows no block in it", async () => {
@@ -282,7 +293,7 @@ describe("the link back from Readwise and Open in Readwise (spec §7)", () => {
 		await plugin.app.vault.create("Notes/1.md", "");
 
 		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
-		await vi.waitFor(() => expect(plugin.app.workspace.openedLinks).toEqual(["Notes/1.md"]));
+		await vi.waitFor(() => expect(plugin.app.workspace.openedFiles).toEqual(["Notes/1.md"]));
 	});
 
 	it("says the note is gone rather than opening a path no note is at, and for a link without a highlight", async () => {
@@ -291,7 +302,7 @@ describe("the link back from Readwise and Open in Readwise (spec §7)", () => {
 		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
 		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync" });
 		await vi.waitFor(() => expect(takeNotices()).toEqual(["This highlight's note is no longer in this vault.", "This highlight's note is no longer in this vault."]));
-		expect(plugin.app.workspace.openedLinks).toEqual([]);
+		expect(plugin.app.workspace.openedFiles).toEqual([]);
 	});
 
 	it("opens the note's book in Readwise once its id is known, and is unavailable before", async () => {

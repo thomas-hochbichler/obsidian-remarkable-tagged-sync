@@ -751,11 +751,13 @@ export class FakeApp {
 		 */
 		activeView: null as unknown,
 		getActiveViewOfType: (_type: unknown): unknown => this.workspace.activeView,
-		/** Recording: every link text opened, in order. Opens nothing, so creates nothing either. */
-		openedLinks: [] as string[],
-		openLinkText: async (linktext: string, _sourcePath: string, _newLeaf?: unknown): Promise<void> => {
-			this.workspace.openedLinks.push(linktext);
-		},
+		/** Recording: every file opened in a leaf, as its path plus the `eState.subpath` it was opened at. */
+		openedFiles: [] as string[],
+		getLeaf: (_newLeaf?: unknown) => ({
+			openFile: async (file: TFile, state?: { eState?: { subpath?: string } }): Promise<void> => {
+				this.workspace.openedFiles.push(`${file.path}${state?.eState?.subpath ?? ""}`);
+			},
+		}),
 		onLayoutReady: (cb: () => void): void => {
 			if (this.workspace.layoutReady) cb();
 			else this.workspace.pending.push(cb);
