@@ -7,6 +7,7 @@
 // docs/RELEASING.md.
 
 import obsidianmd from "eslint-plugin-obsidianmd";
+import { DEFAULT_BRANDS } from "eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js";
 import globals from "globals";
 import { globalIgnores, defineConfig } from "eslint/config";
 
@@ -86,9 +87,22 @@ export default defineConfig(
 	},
 	{
 		rules: {
-			// "reMarkable", "Obsidian", "Zotero" and "Readwise" are brand names; without this the
-			// sentence-case rule lowercases them.
-			"obsidianmd/ui/sentence-case": ["warn", { brands: ["reMarkable", "Obsidian", "Zotero", "Readwise"] }],
+			// The rule's own brand list, which the scanner uses, plus "reMarkable". A `brands` option
+			// replaces the defaults rather than adding to them, so a list of our own would flag names the
+			// scanner accepts (it did: "Open in Readwise").
+			"obsidianmd/ui/sentence-case": ["warn", { brands: [...DEFAULT_BRANDS, "reMarkable"] }],
+			// Ours, not the scanner's: an error, so the ratchet fails on the first one. Obsidian reads a
+			// link text up to its first `#` as the path, so a note named "C# Primer" opens -- or creates --
+			// "C". A file already in hand opens with `getLeaf().openFile(file, { eState: { subpath } })`.
+			"no-restricted-syntax": [
+				"error",
+				{
+					// The first argument, or anywhere inside it (a `?:` around the template counts too).
+					selector:
+						"CallExpression[callee.property.name='openLinkText'] > :matches(TemplateLiteral, BinaryExpression[operator='+']):first-child, CallExpression[callee.property.name='openLinkText'] > :first-child :matches(TemplateLiteral, BinaryExpression[operator='+'])",
+					message: "Open a file you already have with getLeaf().openFile(file, { eState: { subpath } }); a link text built from a path breaks on a '#' in the name.",
+				},
+			],
 		},
 	},
 );
