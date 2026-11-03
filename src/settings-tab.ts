@@ -1434,7 +1434,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const items: SettingDefinition[] = view.mapped.map((mapped) => ({
 			name: mapped.tag,
-			aliases: [mapped.folder],
+			// The name the folder button shows, so "vault root" finds a tag mapped to "/".
+			aliases: [folderLabel(mapped.folder)],
 			render: tagRow(mapped.tag, (setting) => this.renderMappedTag(setting, mapped, () => pick(mapped.tag, false))),
 		}));
 		if (view.removalNote) {

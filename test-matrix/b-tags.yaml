@@ -257,6 +257,13 @@
       file: src/tag-routing-section.test.ts
       test: "a mapped tag > is found by its folder in the settings search, and the other rows are not searched"
 
+    - id: B2.11
+      scenario: A tag is mapped to the vault root and Obsidian's settings search is asked about its row
+      expect: The row is found by "Vault root", the name its folder button shows, not by "/"
+      layer: vault
+      file: src/tag-routing-section.test.ts
+      test: "a mapped tag > is found by the name its button shows for the vault root, not by '/'"
+
 - feature: B3
   name: Re-target a mapped tag
   code: src/settings-tab.ts

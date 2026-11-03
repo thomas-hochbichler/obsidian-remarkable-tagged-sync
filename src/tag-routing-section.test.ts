@@ -424,6 +424,14 @@ describe("a mapped tag", () => {
 			["Found tags", ["home"], undefined],
 		]);
 	});
+
+	it("is found by the name its button shows for the vault root, not by '/'", async () => {
+		const { tab } = await tabWith({ mapping: { inbox: "/" }, licence: PRO });
+
+		const definitions = tab.getSettingDefinitions() as unknown as { heading?: string; items?: { name: string; aliases?: string[] }[] }[];
+		const items = definitions.find((item) => item.heading === "Tag routing")?.items ?? [];
+		expect(items.find((item) => item.name === "inbox")?.aliases).toEqual(["Vault root"]);
+	});
 });
 
 describe("the filter", () => {
