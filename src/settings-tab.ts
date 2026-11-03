@@ -114,7 +114,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * on every opening and by every `update()`, so it reads the state and does no network I/O.
 	 *
 	 * Each group still holds one row that draws its section with the old code; tickets 11–14 replace
-	 * them with definitions of their own.
+	 * them with definitions of their own. A control that changes the page calls `update()`, which keeps
+	 * the reader's place itself (ticket 17's F1, spec §2.5).
 	 *
 	 * It runs inside `onload` too (`addSettingTab`), where a throw would stop the plugin, so a throw
 	 * here becomes one row instead.
@@ -222,18 +223,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * The tab drawn again from its definitions. Read before the rebuild, restored after it: nearly
-	 * every control redraws -- choosing a backend, a transport, a tag -- and an emptied element scrolls
-	 * back to the top, which threw the reader away from the setting they had just touched. Ticket 17's
-	 * F1 says whether `update()` still needs this (spec §2.5).
-	 */
-	private refresh(): void {
-		const offset = this.containerEl.scrollTop;
-		this.update();
-		this.containerEl.scrollTop = offset;
-	}
-
-	/**
 	 * Where this vault reads from, and what it falls back to.
 	 *
 	 * Rendered above the cloud account rather than beside it, because with two sources the first
@@ -268,7 +257,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				data.primaryTransport = value as TransportId;
 				if (data.fallbackTransport === data.primaryTransport) data.fallbackTransport = null;
 				await this.plugin.saveData(data);
-				this.refresh();
+				this.update();
 			});
 		});
 
@@ -286,7 +275,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					data.fallbackTransport = value === "none" ? null : (value as TransportId);
 					await this.plugin.saveData(data);
-					this.refresh();
+					this.update();
 				});
 			});
 
@@ -319,7 +308,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						this.deviceHost = ssh.host === USB_HOST ? "" : ssh.host;
 						this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
 						await this.plugin.saveData(this.plugin.data);
-						this.refresh();
+						this.update();
 					}),
 				)
 				.addButton((button) =>
@@ -330,7 +319,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						this.plugin.data.ssh = { ...DEFAULT_SSH_SETTINGS };
 						this.plugin.data.sshHashes = {};
 						await this.plugin.saveData(this.plugin.data);
-						this.refresh();
+						this.update();
 					}),
 				);
 			return;
@@ -429,7 +418,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			// one nobody asked to store, and the redraw is what makes the emptied field visible rather
 			// than leaving the box on screen full of a password the next "Pair" would no longer send.
 			this.devicePassword = "";
-			this.refresh();
+			this.update();
 		}
 	}
 
@@ -446,7 +435,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			connectionSetting.addButton((button) =>
 				button.setButtonText("Disconnect").onClick(async () => {
 					await this.plugin.auth.disconnect();
-					this.refresh();
+					this.update();
 				}),
 			);
 		} else {
@@ -476,7 +465,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							try {
 								await this.plugin.auth.connect(this.code);
 								new Notice("Connected to reMarkable.");
-								this.refresh();
+								this.update();
 							} catch (error) {
 								new Notice(explainError(error, "connect"), 10_000);
 							}
@@ -525,7 +514,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							return;
 						}
 						await this.plugin.saveData(this.plugin.data);
-						this.refresh();
+						this.update();
 					}),
 			);
 		}
@@ -543,7 +532,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					await deactivateHere(this.plugin.data.licence, this.plugin.licenceApi);
 					this.plugin.data.licence = withoutLicence(this.plugin.data.licence);
 					await this.plugin.saveData(this.plugin.data);
-					this.refresh();
+					this.update();
 				}),
 			);
 		} else {
@@ -576,7 +565,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.licence = result.state;
 					await this.plugin.saveData(this.plugin.data);
 					new Notice(activationMessage(result.outcome));
-					this.refresh();
+					this.update();
 				}),
 			);
 	}
@@ -675,7 +664,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		// changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading
 		// "Connected via web." until the tab was reopened). Each probe is numbered, so a slow answer
 		// never lands on top of a newer one; a render that has been superseded drops its own answer on
-		// the floor (`refresh()` draws the tab anew).
+		// the floor (`update()` draws the tab anew).
 		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		// Coloured like the vision verdict under Model (asked for in the desk test of 2026-09-13): the
 		// theme's own success and error tones, through a variable, so the answer reads at a glance.
@@ -758,7 +747,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
 					await this.plugin.saveData(this.plugin.data);
 					// Redrawn, because the status line above is now about a different set of connections.
-					this.refresh();
+					this.update();
 				});
 			});
 
@@ -914,7 +903,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.zoteroGroups = found;
 					// Drawn again only when the answer adds a row: the same list twice is not a reason to
 					// pull the screen out from under a person reading it.
-					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.refresh();
+					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.update();
 				},
 				(error: unknown) => status.setText(`Could not list your groups: ${describeZoteroError(error)}`),
 			);
@@ -1025,7 +1014,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						}
 						startOverReadwise(this.plugin.data);
 						await this.plugin.saveData(this.plugin.data);
-						this.refresh();
+						this.update();
 					});
 					button.setDestructive();
 				});
@@ -1136,7 +1125,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.data.ocrBackend = value;
 					await this.plugin.saveData(this.plugin.data);
-					this.refresh();
+					this.update();
 				});
 			});
 
@@ -1146,7 +1135,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			selectDefaultBackend: async () => {
 				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
 				await this.plugin.saveData(this.plugin.data);
-				this.refresh();
+				this.update();
 			},
 		});
 
@@ -1165,7 +1154,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
 			this.plugin.rearmAutoSyncInterval();
-			this.refresh();
+			this.update();
 		};
 
 		new Setting(containerEl)
@@ -1255,7 +1244,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					} finally {
 						await session?.close();
 					}
-					this.refresh();
+					this.update();
 				}),
 			);
 
@@ -1277,7 +1266,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
-			this.refresh();
+			this.update();
 		};
 
 		for (const item of view.items) {
@@ -1304,7 +1293,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						view.recheckLicenceBeforeAdd &&
 						(await this.plugin.refreshLicence()).tier === "free"
 					) {
-						this.refresh();
+						this.update();
 						return;
 					}
 					mapping[item.tag] = value;

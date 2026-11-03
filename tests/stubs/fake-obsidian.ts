@@ -1357,10 +1357,17 @@ export class PluginSettingTab {
 	getSettingDefinitions(): FakeDefinition[] {
 		return [];
 	}
-	/** Asks for the definitions again, and draws them again if the tab is open. */
+	/**
+	 * Asks for the definitions again, and draws them again if the tab is open -- at the same scroll
+	 * offset: measured on Obsidian 1.15.0, `update()` left the root at 4540 of 5277 and a sub-page at
+	 * 2510 (settings-redesign ticket 17, F1, `.scratch/settings-redesign/research/settings-probe/`).
+	 */
 	update(): void {
 		this.settingItems = this.getSettingDefinitions();
-		if (this.shown !== null) this.draw(this.shown);
+		if (this.shown === null) return;
+		const offset = this.containerEl.scrollTop;
+		this.draw(this.shown);
+		this.containerEl.scrollTop = offset;
 	}
 	/** Closing the tab tears its rows down, so their cleanups run. */
 	hide(): void {

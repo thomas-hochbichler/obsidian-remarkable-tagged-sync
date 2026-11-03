@@ -843,7 +843,9 @@ describe("the backend dropdown", () => {
 	 * The re-draw above is what makes the rows right; this is what stops it costing the reader their
 	 * place. Transcription sits well down a long page, so choosing a backend emptied the element the
 	 * pane scrolls, took the offset to zero with it, and left the user at the top -- away from the very
-	 * setting they had just changed. Reported from a real settings page on 2026-09-10.
+	 * setting they had just changed. Reported from a real settings page on 2026-09-10. Since 1.11.0
+	 * `update()` keeps the place itself (measured, settings-redesign ticket 17's F1); this guards that
+	 * nothing of ours moves it.
 	 */
 	it("leaves the reader where they were after a re-draw", async () => {
 		const { tab } = await tabWith({ ocrBackend: "off" });
