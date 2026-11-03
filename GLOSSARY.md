@@ -8,6 +8,10 @@ the person using it lives in [README.md](README.md).
 
 ## Glossary
 
+- **Tag mapping** — one reMarkable tag assigned to exactly one vault folder. Everything on the
+  tablet that carries the tag syncs into that folder; nothing else syncs. An **unmapped tag** is a
+  tag found on the tablet that has no mapping, so nothing carrying only that tag is ever synced.
+  Not *routing rule* or *filter*.
 - **Digest** — what a marked-up document leaves in the vault: the passages you marked, the sentence
   around each one, the margin notes placed at the passage they point at, each linked back to its
   page. A digest is not a transcript of the document — nothing you did not mark appears in it.
