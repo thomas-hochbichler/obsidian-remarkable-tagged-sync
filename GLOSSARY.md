@@ -25,6 +25,12 @@ the person using it lives in [README.md](README.md).
   library as text: highlights and margin notes as native Zotero annotations on the PDF, added pages
   as Zotero notes under the paper. Add-and-refresh only: a field the user edited in Zotero wins,
   and is never overwritten again.
+- **Readwise push** — the highlights and margin notes of a synced document becoming highlights in
+  the user's own Readwise library, one Readwise book per document. Unlike write-back, the tablet
+  wins: an edit made in Readwise lasts until the same highlight changes on the tablet, and a mark
+  erased on the tablet is deleted in Readwise. A book deleted in Readwise stays deleted until the
+  user runs *Push to Readwise again* on its note. Not *Send*
+  (that goes to the tablet) and not *export* (Readwise's own way into the vault).
 - **Render** — the PDF of a synced document that the plugin writes into the vault and embeds at
   the top of its note: the pages with everything you wrote and drew on them. The render is not the
   transcript, and not the source PDF on the tablet. Users call it the *annotated* or *flattened

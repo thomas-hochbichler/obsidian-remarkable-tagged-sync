@@ -6,8 +6,9 @@
 [![branches](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/main/.coverage-badge-branches.json)](https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/blob/main/.coverage-baseline.json)
 
 > **Disclaimer:** Tagged Sync for reMarkable is an unofficial, community-built plugin. It is not
-> affiliated with, endorsed by, or supported by reMarkable AS. "reMarkable" is a trademark of
-> reMarkable AS, used only to describe compatibility.
+> affiliated with, endorsed by, or supported by reMarkable AS or Readwise, Inc. "reMarkable" is a
+> trademark of reMarkable AS and "Readwise" a trademark of Readwise, Inc.; both are used only to
+> describe compatibility.
 
 Tag a notebook or a PDF on your reMarkable, and it lands in the vault folder you mapped — your
 handwriting transcribed, your highlights quoted.
@@ -36,9 +37,9 @@ it does on a Mac.
 <sub>PDF shown: Kang et al., <a href="https://arxiv.org/abs/2510.00615">ACON: Optimizing Context
 Compression for Long-horizon LLM Agents</a>, CC BY 4.0.</sub>
 
-**Desktop only** · **one-way** (reMarkable → Obsidian, and → Zotero) · **Sync never writes to
-your tablet.** Send puts a PDF on it only when you run it — and only adds, never changes, deletes
-or moves anything.
+**Desktop only** · **one-way** (reMarkable → Obsidian, and → Zotero and Readwise) · **Sync never
+writes to your tablet.** Send puts a PDF on it only when you run it — and only adds, never changes,
+deletes or moves anything.
 
 ## What makes it different
 
@@ -80,6 +81,8 @@ Every feature at a glance, Free against Pro. Most rows link to the section that 
 | [Group libraries — search, send from and write into a group you switch on](#zotero) | — | ✓ |
 | [Pages you added to a PDF as Zotero notes](#zotero) | — | ✓ |
 | [The render as a Zotero attachment — opt-in](#zotero) | — | ✓ |
+| **Readwise** | | |
+| [Your highlights and margin notes pushed to Readwise, one book per document](#readwise) | — | ✓ |
 | **Organization** | | |
 | [Tag → folder routing](#how-it-works) | 1 tag | unlimited |
 | [Selective sync — only what you tag](#how-it-works) | ✓ | ✓ |
@@ -116,6 +119,7 @@ Obsidian itself must be the **desktop** app — see [Limitations](#limitations).
 - [Typed text and the Type Folio](#typed-text-and-the-type-folio)
 - [Tagged Sync Pro](#tagged-sync-pro)
 - [Zotero](#zotero)
+- [Readwise](#readwise)
 - [Syncing without the cloud](#syncing-without-the-cloud)
 - [Annotated PDFs](#annotated-pdfs)
 - [What gets synced](#what-gets-synced)
@@ -403,6 +407,8 @@ Everything not listed here is free and stays free. These are paid:
   to the tablet over SSH is Pro too, as part of [syncing without the
   cloud](#syncing-without-the-cloud). Sending a paper over the reMarkable cloud and the note's link
   to its Zotero item are free.
+- **[Pushing to Readwise](#readwise)** — your highlights and margin notes go into your Readwise
+  library and come up in your Daily Review.
 
 **€24, once.** No subscription, no renewal, no expiry. The licence is for one person, on up to 50
 devices, at home and at work.
@@ -593,6 +599,89 @@ on there is yours. Nothing is ever erased for good; the trash keeps it. On the t
 ever removed. Switching *Write text to Zotero* or *Add the render to Zotero* off stops new writes and
 leaves what is there. To remove it, filter your library by the tag `tagged-sync` in Zotero, select
 what it shows, and move it to the trash.
+
+## Readwise
+
+*[Tagged Sync Pro](#tagged-sync-pro).*
+
+Your reMarkable highlights land in your Readwise library as ordinary highlights, and come up in
+your Daily Review.
+
+**What you need:** [Tagged Sync Pro](#tagged-sync-pro), and a Readwise account on a plan that
+includes API access — Full or Highlights. Readwise is free for 30 days, then paid; its Lite plan has
+no API access. Readwise is a separate service with its own subscription; nothing of it is sold
+through this plugin.
+
+**What arrives.** Each document becomes one entry in Readwise: an EPUB arrives as a book, anything
+else — a PDF, a typed document, an article sent with *Read on reMarkable* — as an article. Its title
+and author come from Zotero when the note knows its Zotero item, otherwise from the EPUB itself,
+otherwise it is the document's name on the tablet, with no author. Every passage you marked is one
+highlight: the sentence it sits in, with the words you marked in bold, and its page number. A
+margin note anchored to the passage becomes that highlight's note; a margin note on its own, and a
+page you added on the tablet, become highlights of their own. The typed pages of a notebook go too;
+handwritten notebook pages are never pushed. In Readwise, each highlight's *(Page 12)* is a link:
+click it and Obsidian opens the note at that quote.
+
+The highlights stay in page order. One limit: a mark you make later, above marks already sent on the
+same page, shows last on that page in Readwise.
+
+### Setting it up
+
+1. Under Settings → Tagged Sync → *Readwise*, switch on **Push highlights to Readwise**.
+2. Under **Readwise access token**, pick or create an entry in Obsidian's keychain and paste your
+   token from [readwise.io/access_token](https://readwise.io/access_token). The token stays in the
+   keychain of this computer and is not synced with your vault, so add it on each computer that
+   should push. A computer without it still notes what is to be sent; the one with the token sends
+   it. Use the same Readwise account on every computer: if two computers push to two different
+   accounts, both stop, and the settings say so.
+3. Sync. **The first sync re-reads every note once**, so your margin notes and the pages you added go
+   to your transcription backend again — on a cloud backend that is paid once more, on a local model
+   it takes time — and then everything is pushed. A licence that lapses and is renewed costs this
+   once more. From then on, each sync sends only what changed.
+
+*Connection*, at the top of the section, says how many books and highlights are in Readwise and
+whether anything is waiting. The section needs Obsidian 1.11.4 or newer.
+
+### When something changes
+
+**The tablet wins.** Change a mark on the tablet, and the highlight in Readwise changes with it.
+Erase it, and it is deleted in Readwise — also if you edited it there. **Edits you make in Readwise
+stay until the same highlight changes on your tablet, or until the plugin reads its margin note
+anew and reads it differently.** Discard a highlight in Readwise and it stays discarded. Rename a
+book in Readwise, edit its author or move it to another category, and your choice stays; a sync may
+show the document's own title for a moment before putting yours back.
+
+**A book you delete in Readwise stays deleted.** The plugin never sends it again by itself — not
+after switching off and on, and not when it re-reads every note. If you deleted one by mistake, open
+its note and run **Push to Readwise again**: the next sync pushes it as a new book, and reads its
+margin notes once more for that. Deleting a large book in Readwise's web app takes several clicks,
+each removing a part of it; until it is all gone, a highlight you change on the tablet can come back
+into it.
+
+Switching *Push highlights to Readwise* off, removing the token, or a lapsed licence only stops the
+pushing: nothing is deleted in Readwise. Switched back on, the plugin catches up on whatever changed
+in between.
+
+Your notes are never held up by Readwise: the push runs after the sync and nothing in a note says
+whether it reached Readwise. If `readwise.io` cannot be reached, or asks for a pause, the next sync
+tries again; on a sync you started, a notice says so. A highlight Readwise refuses is set aside until
+it changes on the tablet, and *Connection* counts it.
+
+### Readwise's own Obsidian plugin
+
+If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, one file
+per book, each highlight linking to your note. To keep them out, turn on *Select Items to be
+Exported* in Readwise and uncheck each Tagged Sync book. Every new book arrives checked, so each new
+document has to be unchecked by hand.
+
+### Daily Review and commands
+
+Your highlights come up in Daily Review like any others. The review email's subject can name a
+book's author. Readwise's *Highlight Quality Filter*, on by default, may hide a very short
+highlight — a one-line margin note, say — from the review; the highlight itself stays.
+
+**Open in Readwise** opens the Readwise book of the note you are in. **Push to Readwise again**
+appears only in a note whose book you deleted in Readwise.
 
 ## Syncing without the cloud
 
@@ -861,8 +950,8 @@ stays where it is and is still preserved on every sync — new notes just no lon
 ## Limitations
 
 - Desktop only. Obsidian on mobile is unsupported.
-- One-way sync: reMarkable → Obsidian, and → Zotero. Nothing on your tablet is ever changed,
-  deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
+- One-way sync: reMarkable → Obsidian, and → Zotero and Readwise. Nothing on your tablet is ever
+  changed, deleted, moved, renamed or re-tagged; [Send](#zotero) only ever adds a file to it.
 - [Zotero](#zotero) works with **PDF attachments only** — an EPUB in your library cannot be sent,
   and a book you read on the tablet is not matched to one.
 - **The render in Zotero needs Zotero Storage.** *Add the render to Zotero* uploads over zotero.org
@@ -952,6 +1041,23 @@ This plugin makes network requests to exactly one place by default:
 
   Both are off unless you configure them; a vault with no Zotero API key and no desktop app
   switched on never causes either call.
+
+**Your Readwise library — only if you set it up** ([Readwise](#readwise),
+[Tagged Sync Pro](#tagged-sync-pro)):
+
+- **`readwise.io`** — with your own access token. On each sync the plugin pushes the highlights
+  of your annotated PDFs, EPUBs and typed pages into your Readwise library: the sentence each
+  mark sits in, with the marked words in bold; the transcribed text of your margin notes and of
+  pages you added on the tablet; the page number; the document's title and author; and a link back
+  to the note, which carries the reMarkable document's id but not its name or folder. It reads back
+  only the list of books it pushed itself and, when it has to, the ids of its own highlights — to
+  notice a book you deleted, to delete a highlight you erased, and to tell whether a new token
+  belongs to a different account. Handwritten notebook pages are never pushed, and your handwriting
+  and page images never leave your machine.
+
+  Off unless you switch on *Push highlights to Readwise* and add a token; without Pro nothing is
+  sent. Readwise's own terms apply — among them, a passage you highlight may count, without your
+  name or notes, toward the popular highlights Readwise shows other readers of the same book.
 
 **A transcription backend you choose yourself.** Which of these is contacted, if any, depends
 entirely on the backend selected in settings:
