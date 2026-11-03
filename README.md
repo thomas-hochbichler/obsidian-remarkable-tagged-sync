@@ -159,7 +159,7 @@ Two limits, so you know them up front:
 
 ## Install and set up
 
-You need Obsidian **1.5.7 or later** on **desktop** (Windows, macOS, or Linux — Obsidian on mobile
+You need Obsidian **1.13.4 or later** on **desktop** (Windows, macOS, or Linux — Obsidian on mobile
 is unsupported), and a reMarkable account with cloud sync switched on — unless you sync
 [straight from the tablet](#syncing-without-the-cloud), which needs no account at all.
 
@@ -168,15 +168,15 @@ is unsupported), and a reMarkable account with cloud sync switched on — unless
 2. Open **Settings → Tagged Sync for reMarkable**, and follow the "Connect" link to
    `my.remarkable.com/device/browser/connect` to get a one-time code. Enter it and click
    **Connect**. Codes expire after a few minutes, so get a fresh one if it is refused.
-3. Under **Tag routing**, click **Scan** next to *Discover tags* to find the tags on your reMarkable
-   notebooks, pages and folders, then choose a vault folder for the tag you want to sync. Only a
+3. Under **Tag routing**, click **Scan** to find the tags on your reMarkable notebooks, pages and
+   folders, then click the tag you want to sync and choose a vault folder for it. Only a
    mapped tag is synced — an unmapped tag is simply not selected, not lost.
-4. Click **Sync now**.
+4. Click **Sync** beside *Sync now*.
 
 Sync is also available from Obsidian's command palette (`Ctrl`/`Cmd` + `P`) as **Tagged Sync for
 reMarkable: Sync now**.
 
-![The plugin settings: reMarkable connection, transcription backend, tag mapping, and the Sync now button](docs/screenshot-settings.png)
+![The plugin settings: the reMarkable connection, tag routing with mapped and unmapped tags, and the integrations](docs/screenshot-settings.png)
 
 ### Stopping a sync
 
@@ -475,8 +475,8 @@ The loop is three steps:
    Pro the note says so in its top line: *highlights stay in the vault*.
 
 **Or start in Zotero.** Tag the paper `to-remarkable` (the *Send tag in Zotero* setting under
-Settings → *Zotero on the tablet*; change it if you like), then run **Send tagged Zotero papers to
-reMarkable**. Every paper carrying the tag lands on your tablet, in the same `Zotero` folder as
+Settings → *Zotero* → *Send to your tablet*; change it if you like), then run **Send tagged Zotero
+papers to reMarkable**. Every paper carrying the tag lands on your tablet, in the same `Zotero` folder as
 *Send* and without a sync tag — you tag it on the tablet when you want it back. Tag the paper in
 Zotero, not the PDF. Nothing is ever taken off the tablet, and the Zotero tag is left where you put
 it; a paper that is already there is simply skipped, and if every tagged paper is there already, the
@@ -509,7 +509,7 @@ Zotero* puts the PDF as it looks on your tablet, ink and all, under the paper as
 and counts against your quota there; if your files sync over WebDAV, leave it off. Only a document
 tagged as a whole is uploaded, and only into your personal library. Rename it, and your name stays;
 annotate it in Zotero, and it is never replaced again; trash it, and it is not recreated. Both
-switches sit under Settings → *Into Zotero*.
+switches sit under Settings → *Zotero* → *Into Zotero*.
 
 ### Connecting
 
@@ -521,15 +521,14 @@ Either connection is enough on its own, and you can have both:
 | Works with Zotero closed | ✓ | — |
 | Finds your PDFs | the copies synced to zotero.org | any file on your disk |
 
-Each connection has its own switch, under Settings → *Zotero cloud* and *Zotero local*, so whether
-anything goes over the internet is one thing to look at: with *Use zotero.org* off, nothing
-Zotero-related leaves your machine, whatever key is stored. With both set up the desktop app is
+Each connection has its own switch, on the plugin's *Zotero* settings page, so whether anything
+goes over the internet is one thing to look at: with *Use zotero.org* off, nothing Zotero-related leaves your machine, whatever key is stored. With both set up the desktop app is
 asked first and zotero.org is the fallback, so a paper Zotero never uploaded still gets sent. If
 neither is set up, nothing Zotero-related runs and your sync is exactly what it was.
 
 **Group libraries** ([Pro](#tagged-sync-pro)). Your own library is always on. Under Settings →
-*Zotero libraries* → *Group libraries*, every group your account is in is a switch of its own, off
-until you name it — a group is other people's work, and **highlights written into a group library
+*Zotero* → *Libraries*, every group your account is in is a switch of its own, off until you name
+it — a group is other people's work, and **highlights written into a group library
 are visible to everyone in that group.** A group you switch on is searched by *Send*, sent from by
 the tag command, matched against at sync time and, with write-back, written into like your own
 library; the note then links into the group. Where the same PDF is in your library and in a group,
@@ -639,8 +638,8 @@ same page, shows last on that page in Readwise.
    it takes time — and then everything is pushed. A licence that lapses and is renewed costs this
    once more. From then on, each sync sends only what changed.
 
-*Connection*, at the top of the section, says how many books and highlights are in Readwise and
-whether anything is waiting. The section needs Obsidian 1.11.4 or newer.
+*Connection*, at the top of the *Readwise* page, says how many books and highlights are in Readwise
+and whether anything is waiting.
 
 ### When something changes
 
@@ -1134,7 +1133,7 @@ Three behaviours show up in Obsidian's automated plugin review, so they are spel
   notebook or document — look before you paste it anywhere public. The plugin **never reads** your
   clipboard, and nothing is sent anywhere — you choose where to paste it.
 - **Vault folder list.** The tag-routing settings read the list of folders in your vault to fill
-  the "map this tag to a folder" dropdown. Only folder *paths* are read; note contents are never
+  the folder picker you choose a tag's folder in. Only folder *paths* are read; note contents are never
   scanned for this, and the list never leaves your machine.
 - **Running programs on your computer.** Four programs, each for one job:
   - **`/usr/bin/osascript`**, built into macOS, drives Apple Vision whenever a page is transcribed

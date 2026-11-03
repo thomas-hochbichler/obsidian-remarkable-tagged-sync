@@ -12,6 +12,9 @@ workflow publishes the section as the GitHub release body. See
 
 ## [Unreleased]
 
+Needs Obsidian 1.13.4 or newer. On an older Obsidian the community store keeps you on 1.10.x; update
+Obsidian to get this release.
+
 ### Added
 
 - **Push your highlights to Readwise** (Pro). Switch on *Push highlights to Readwise*, add your
@@ -22,8 +25,7 @@ workflow publishes the section as the GitHub release body. See
   Review. Erase a mark on the tablet and it goes from Readwise too; an edit you make in Readwise
   stays until that highlight, or the reading of its margin note, changes. A name or category you
   give a book in Readwise is kept, and a book you delete there stays deleted. Only text is sent;
-  your handwriting and page images stay on your machine. Needs a Readwise plan with API access and
-  Obsidian 1.11.4 or newer.
+  your handwriting and page images stay on your machine. Needs a Readwise plan with API access.
 - ***Open in Readwise*** opens the Readwise book of the note you are in.
 - ***Push to Readwise again*** brings back a book you deleted in Readwise: it syncs and pushes the
   note you are in as a new book.
@@ -38,6 +40,10 @@ workflow publishes the section as the GitHub release body. See
 
 ### Changed
 
+- **The settings are reorganised:** the reMarkable connection first, then tag routing, vault output,
+  transcription and automatic sync; Zotero and Readwise each have their own page under
+  *Integrations*, which shows whether they are set up. Unmapped tags show as compact tags you click
+  to choose a folder, and most settings can now be found from Obsidian's settings search.
 - The first sync after switching Readwise on re-renders every note once, and reads your margin notes
   and added pages again with your transcription backend; handwritten notebook transcripts are kept.
 
