@@ -430,11 +430,17 @@ if (offeredOnThisPlatform()) {
 					// user with a lone card and no settings, and the redrawn card's own redraw was a no-op,
 					// so the tick after it moved nothing.
 					const host = containerEl.createDiv();
-					redrawCard = () => {
+					const redraw = (): void => {
 						host.empty();
 						renderCard(host, ctx, () => redrawCard());
 					};
+					redrawCard = redraw;
 					renderCard(host, ctx, () => redrawCard());
+					// A download tick after the tab tore this card down would draw into a card nobody sees.
+					// Only this card's own redraw is dropped: a newer card may have taken its place already.
+					return () => {
+						if (redrawCard === redraw) redrawCard = () => undefined;
+					};
 				}
 			: undefined,
 

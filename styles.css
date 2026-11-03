@@ -91,6 +91,18 @@
 }
 
 /*
+ * The selected backend's own rows, hosted by one settings row (settings-redesign spec §3.4). That row
+ * is a padded flex line made for a label and a control, which left the rows inside half as wide and
+ * indented once more (ticket 17's F8): the host row gives its box up, and the rows inside stand like
+ * the group's other rows. As specific as Obsidian's `.setting-group .setting-item:not(…)`, which pads
+ * every row of a group; later in the cascade, so it wins.
+ */
+.setting-group .setting-item.tagged-sync-backend-row {
+	display: block;
+	padding: 0;
+}
+
+/*
  * The local model's setup card: one block that carries prose, a progress bar and a button row, so it
  * takes the card treatment itself rather than sitting between the cards as loose text.
  */
@@ -109,6 +121,11 @@
 	margin: 0 0 var(--size-4-2);
 }
 
+/* Obsidian pads a heading in the settings 16 px in; inside the card it would stand right of its text. */
+.tagged-sync-card > h4 {
+	padding: 0;
+}
+
 .tagged-sync-card > *:last-child {
 	margin-bottom: 0;
 }
@@ -121,7 +138,11 @@
 	padding: var(--size-4-2) var(--setting-items-padding-x, 0);
 }
 
-/* A row inside the card is already inside the card's padding; a second inset would step it right. */
+/*
+ * A row inside the card is already inside the card's padding; a second inset would step it right. As
+ * specific as Obsidian's padding for every row of a group, and later, so it wins inside a group too.
+ */
+.setting-group .tagged-sync-card > .setting-item,
 .tagged-sync-card > .setting-item {
 	padding-inline: 0;
 	background: transparent;
@@ -225,12 +246,13 @@
 }
 
 /*
- * The fold-away pairing help. Muted and indented so it reads as a footnote to the row above rather
- * than as another setting -- an rM1 or rM2 owner needs none of it and should be able to skip it at a
- * glance, while a Paper Pro owner finds the factory-reset warning before they type a password.
+ * The fold-away pairing help, the last part of *Connect device*'s description (settings-redesign P10).
+ * Folded so it reads as a footnote rather than as another setting -- an rM1 or rM2 owner needs none of
+ * it and should be able to skip it at a glance, while a Paper Pro owner finds the factory-reset warning
+ * before they type a password. Flush with the description above it: it is part of the same text.
  */
 .tagged-sync-pairing-help {
-	margin: 0 0 var(--size-4-4) var(--size-4-2);
+	margin: var(--size-4-2) 0 0;
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }

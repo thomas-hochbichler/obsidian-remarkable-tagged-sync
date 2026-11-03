@@ -121,6 +121,8 @@ interface Rendered {
 	saves: number;
 	defaultSelected: number;
 	rows: Setting[];
+	/** What the settings tab runs when it tears the card down. */
+	tearDown: void | (() => void);
 	/** The button whose label starts with this, from everything the render produced. */
 	button(prefix: string): ButtonComponent | undefined;
 	dropdown(): DropdownComponent | undefined;
@@ -132,7 +134,7 @@ function render(blob: BackendSettings = {}): Rendered {
 	const page = new FakeEl();
 	const counts = { saves: 0, defaultSelected: 0 };
 	takeSettings();
-	ocrBackendEntry("local")?.renderSettings?.(page as never, {
+	const tearDown = ocrBackendEntry("local")?.renderSettings?.(page as never, {
 		settings: blob,
 		save: async () => {
 			counts.saves++;
@@ -151,6 +153,7 @@ function render(blob: BackendSettings = {}): Rendered {
 			return counts.defaultSelected;
 		},
 		rows,
+		tearDown,
 		button: (prefix) => rows.flatMap((setting) => setting.buttons).find((candidate) => candidate.text.startsWith(prefix)),
 		dropdown: () => rows.flatMap((setting) => setting.dropdowns)[0],
 		row: (name) => rows.find((setting) => setting.name === name),
@@ -252,6 +255,26 @@ describe("the choice of model", () => {
 		render(page.blob).dropdown()?.pick(BEST.dir);
 		await settle();
 		expect(preferred(page.blob)).toBeUndefined();
+	});
+});
+
+// The card redraws itself on every download tick. Once the settings tab has torn it down, a tick
+// must draw nothing -- and must still redraw a newer card that took its place.
+describe("a card the settings tab tore down", () => {
+	it("draws nothing more, while a newer card keeps redrawing", async () => {
+		const old = render();
+		const newer = render();
+		if (typeof old.tearDown !== "function") throw new Error("the card returned no cleanup");
+
+		old.tearDown();
+		newer.dropdown()?.pick(SMALL.dir);
+		await settle();
+		expect(takeSettings().map((setting) => setting.name)).toContain("Model");
+
+		if (typeof newer.tearDown === "function") newer.tearDown();
+		newer.dropdown()?.pick(BEST.dir);
+		await settle();
+		expect(takeSettings()).toEqual([]);
 	});
 });
 

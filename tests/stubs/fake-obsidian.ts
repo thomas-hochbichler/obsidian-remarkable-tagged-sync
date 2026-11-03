@@ -215,17 +215,19 @@ export class FakeEl {
 
 	constructor(readonly tag = "div") {}
 
-	private child(tag: string, options?: { cls?: string; text?: string; attr?: Record<string, string> }): FakeEl {
+	/** `href` lands among the attributes, as `DomElementInfo.href` sets the attribute. */
+	private child(tag: string, options?: { cls?: string; text?: string; href?: string; attr?: Record<string, string> }): FakeEl {
 		const el = new FakeEl(tag);
 		if (options?.cls) for (const c of options.cls.split(/\s+/)) el.classes.add(c);
 		if (options?.text) el.text = options.text;
+		if (options?.href) el.attributes.href = options.href;
 		if (options?.attr) Object.assign(el.attributes, options.attr);
 		el.parentEl = this;
 		this.children.push(el);
 		return el;
 	}
 
-	createEl(tag: string, options?: { cls?: string; text?: string; attr?: Record<string, string> }): FakeEl {
+	createEl(tag: string, options?: { cls?: string; text?: string; href?: string; attr?: Record<string, string> }): FakeEl {
 		return this.child(tag, options);
 	}
 	createDiv(options?: { cls?: string; text?: string }): FakeEl {
@@ -1156,8 +1158,14 @@ export class Setting {
 		this.name = typeof name === "string" ? name : name.allText().join("");
 		return this;
 	}
+	/**
+	 * Replaces what `descEl` held. A fragment's elements land in it, as the DOM moves a fragment's
+	 * nodes: a fold in a description is there to read.
+	 */
 	setDesc(desc: string | FakeEl): this {
 		this.desc = typeof desc === "string" ? desc : desc.allText().join(" ");
+		this.descEl.empty();
+		if (typeof desc !== "string") for (const child of [...desc.children]) this.descEl.appendChild(child);
 		return this;
 	}
 	setHeading(): this {
@@ -1214,8 +1222,10 @@ export class Setting {
 		cb(this);
 		return this;
 	}
+	/** The controls go, from the element and from the record: a redrawn row starts without them. */
 	clear(): this {
 		this.controlEl.empty();
+		for (const list of [this.texts, this.toggles, this.dropdowns, this.buttons, this.components]) list.length = 0;
 		return this;
 	}
 }
@@ -1313,12 +1323,26 @@ export class Plugin {
  * cleanup it returns is kept on the row. From `obsidian.d.ts` only: `addSettingTab()` calls `update()`,
  * and the cleanup runs "before the row is torn down".
  *
+ * Also from 1.15.0's `app.js`: a control row's change is `await this.setControlValue(key, value)`
+ * followed by `this.refreshDomState()` (`getControlBinding`), and `refreshDomState()` re-evaluates
+ * each drawn row's `visible` into `settingEl.toggle(…)` and its `disabled` into `setting.setDisabled(…)`
+ * -- nothing is drawn again, so a row hidden by `visible` stays in the page. The value a control starts
+ * with is `getControlValue(key)`, or the control's `defaultValue` when that answers nothing.
+ *
+ * And a redraw **reuses** a row whose key it drew before (`due`/`nue`): the key is the control's key,
+ * else the row's name, else its index, within its group. The reused row's cleanup runs, `setting.clear()`
+ * empties its controls, and the definition is drawn again into the same `Setting` -- so whatever a
+ * render put into `settingEl` itself is still there. A row whose key is gone has its cleanup run after
+ * the redraw. Not modelled: Obsidian skips redrawing a control row that holds the focused element.
+ *
  * Recorded, not claimed: a group's heading is drawn here as a heading {@link Setting} (Obsidian draws a
  * group header of its own), and every row lands in draw order in one element, like the imperative
  * tab's did. The group a render callback gets is an empty object: nothing in the plugin reads it yet.
+ * A control is drawn as the component its type names; `folder` as a text field (its suggester is
+ * Obsidian's).
  *
  * Kinds and fields no definition of this plugin uses yet throw, rather than being drawn as though they
- * were understood: a `visible: false` drawn anyway is a test passing on a row the user never sees.
+ * were understood: a group's `visible` (Obsidian hides a group whose rows are all hidden) is one.
  */
 export interface FakeDefinition {
 	type?: "group" | "list" | "page";
@@ -1327,11 +1351,37 @@ export interface FakeDefinition {
 	heading?: string;
 	cls?: string;
 	searchable?: boolean;
+	aliases?: string[];
+	visible?: boolean | (() => boolean);
+	control?: FakeControl;
 	items?: FakeDefinition[];
 	render?: (setting: Setting, group: object) => void | (() => void);
 }
 
-const NOT_MODELLED = ["control", "action", "visible", "disabled", "search", "extraButtons", "displayValue", "status"];
+/** The control types this plugin's definitions use. */
+export interface FakeControl {
+	type: "toggle" | "dropdown" | "text" | "folder";
+	key: string;
+	defaultValue?: unknown;
+	disabled?: boolean | (() => boolean);
+	options?: Record<string, string>;
+	placeholder?: string;
+	includeRoot?: boolean;
+}
+
+const NOT_MODELLED = ["action", "disabled", "search", "extraButtons", "displayValue", "status"];
+
+/** `app.js`'s `el(value, fallback)`: a predicate is a value or a function answering one. */
+function evaluate(value: boolean | (() => boolean) | undefined, fallback: boolean): boolean {
+	return value === undefined ? fallback : typeof value === "function" ? value() : value;
+}
+
+/** A row on screen: what drew it, its `Setting`, and the cleanup its render returned. */
+interface DrawnRow {
+	def: FakeDefinition;
+	setting: Setting;
+	cleanup?: () => void;
+}
 
 /** How {@link renderSettingTab} was last asked to draw, so `update()` draws the same view again. */
 export interface RenderOptions {
@@ -1349,13 +1399,33 @@ export class PluginSettingTab {
 	settingItems: FakeDefinition[] = [];
 	/** Not an Obsidian member. What is on screen, or `null` while the tab is closed. */
 	shown: RenderOptions | null = null;
-	private cleanups: (() => void)[] = [];
+	/** The view the rows below were drawn for; another view starts from nothing. */
+	private drawnFor = "";
+	/** Every row drawn, by its key, with its definition and cleanup: what a redraw reuses and `refreshDomState()` walks. */
+	private rendered = new Map<string, DrawnRow>();
 	constructor(
 		readonly app: FakeApp,
 		readonly plugin: Plugin,
 	) {}
 	getSettingDefinitions(): FakeDefinition[] {
 		return [];
+	}
+	/** `app.js`: `PluginSettingTab` reads `this.plugin.settings[key]`. The plugin overrides both. */
+	getControlValue(key: string): unknown {
+		return (this.plugin as unknown as { settings?: Record<string, unknown> }).settings?.[key];
+	}
+	setControlValue(key: string, value: unknown): void | Promise<void> {
+		const settings = (this.plugin as unknown as { settings?: Record<string, unknown> }).settings;
+		if (!settings) return;
+		settings[key] = value;
+		return this.plugin.saveData(settings);
+	}
+	/** Re-evaluates `visible` and `disabled` on what is drawn, and draws nothing again. */
+	refreshDomState(): void {
+		for (const { def, setting } of this.rendered.values()) {
+			setting.settingEl.toggle(evaluate(def.visible, true));
+			if (def.control?.disabled !== undefined) setting.setDisabled(evaluate(def.control.disabled, false));
+		}
 	}
 	/**
 	 * Asks for the definitions again, and draws them again if the tab is open -- at the same scroll
@@ -1375,39 +1445,69 @@ export class PluginSettingTab {
 		this.tearDown();
 	}
 	private tearDown(): void {
-		for (const cleanup of this.cleanups.splice(0, this.cleanups.length)) cleanup();
+		for (const row of this.rendered.values()) row.cleanup?.();
+		this.rendered.clear();
 	}
 	private draw(options: RenderOptions): void {
-		this.tearDown();
+		const view = JSON.stringify(options);
+		if (view !== this.drawnFor) this.tearDown();
+		this.drawnFor = view;
+		const previous = this.rendered;
+		this.rendered = new Map();
 		this.containerEl.empty();
 		const page = options.page === undefined ? null : findPage(this.settingItems, options.page);
 		if (options.page !== undefined && page === null) throw new Error(`tests/stubs: no settings page named "${options.page}"`);
 		const items = page === null ? this.settingItems : (page.items ?? []);
-		this.drawItems(items, options.openPages === true);
+		this.drawItems(items, options.openPages === true, "", previous);
+		for (const [key, row] of previous) if (!this.rendered.has(key)) row.cleanup?.();
+		this.refreshDomState();
 	}
-	private drawItems(items: FakeDefinition[], openPages: boolean): void {
+	private drawItems(items: FakeDefinition[], openPages: boolean, path: string, previous: Map<string, DrawnRow>): void {
 		const el = this.containerEl;
 		const group = {};
-		for (const item of items) {
+		items.forEach((item, index) => {
 			const unmodelled = NOT_MODELLED.find((field) => (item as Record<string, unknown>)[field] !== undefined);
-			if (unmodelled !== undefined || item.type === "list") {
-				throw new Error(`tests/stubs: a definition's "${unmodelled ?? "list"}" is not modelled yet. Model it from obsidian.d.ts first.`);
+			if (unmodelled !== undefined || item.type === "list" || (item.type !== undefined && item.visible !== undefined)) {
+				throw new Error(`tests/stubs: a definition's "${unmodelled ?? (item.type === "list" ? "list" : "visible")}" is not modelled yet. Model it from obsidian.d.ts first.`);
 			}
 			if (item.type === "group") {
 				if (item.heading !== undefined) new Setting(el).setName(item.heading).setHeading();
-				this.drawItems(item.items ?? [], openPages);
+				this.drawItems(item.items ?? [], openPages, `${path}group:${item.heading ?? item.cls ?? index}/`, previous);
 			} else if (item.type === "page") {
 				new Setting(el).setName(item.name ?? "");
-				if (!openPages) continue;
+				if (!openPages) return;
 				new Setting(el).setName(item.name ?? "").setHeading();
-				this.drawItems(item.items ?? [], openPages);
+				this.drawItems(item.items ?? [], openPages, `${path}page:${item.name}/`, previous);
 			} else {
-				const setting = new Setting(el).setName(item.name ?? "");
-				if (item.desc !== undefined) setting.setDesc(item.desc);
+				const key = path + (item.control ? `ctrl:${item.control.key}` : item.name ? `name:${item.name}` : `item#${index}`);
+				const reused = previous.get(key);
+				let setting: Setting;
+				if (reused) {
+					reused.cleanup?.();
+					setting = reused.setting.clear();
+					el.appendChild(setting.settingEl);
+					settingLog.push(setting);
+				} else {
+					setting = new Setting(el);
+				}
+				setting.setName(item.name ?? "").setDesc(item.desc ?? "");
+				const row: DrawnRow = { def: item, setting };
+				this.rendered.set(key, row);
+				if (item.control !== undefined) this.drawControl(setting, item.control);
 				const cleanup = item.render?.(setting, group);
-				if (cleanup) this.cleanups.push(cleanup);
+				if (cleanup) row.cleanup = cleanup;
 			}
-		}
+		});
+	}
+	private drawControl(setting: Setting, control: FakeControl): void {
+		const value = this.getControlValue(control.key) ?? control.defaultValue;
+		const onChange = async (next: unknown): Promise<void> => {
+			await this.setControlValue(control.key, next);
+			this.refreshDomState();
+		};
+		if (control.type === "toggle") setting.addToggle((toggle) => toggle.setValue(value as boolean).onChange(onChange));
+		else if (control.type === "dropdown") setting.addDropdown((dropdown) => dropdown.addOptions(control.options ?? {}).setValue(value as string).onChange(onChange));
+		else setting.addText((text) => text.setPlaceholder(control.placeholder ?? "").setValue((value as string | undefined) ?? "").onChange(onChange));
 	}
 }
 

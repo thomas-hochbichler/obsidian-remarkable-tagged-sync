@@ -120,8 +120,11 @@ export interface OcrBackendEntry {
 	 * which is why it is listed *before* the download: the reader picks it, sees "not downloaded" and
 	 * the button, and until the download is done a sync writes notes without a transcript rather than
 	 * falling back. Hiding the entry until the model was there was reported as the entry missing.
+	 *
+	 * May return a cleanup, run when the settings tab tears these rows down (a redraw, or the tab
+	 * closing): whatever the rows keep redrawing on their own stops there.
 	 */
-	renderSettings?(containerEl: HTMLElement, ctx: BackendSettingsContext): void;
+	renderSettings?(containerEl: HTMLElement, ctx: BackendSettingsContext): void | (() => void);
 	/**
 	 * This backend's own sentence for the re-transcribe confirmation, or null when it has nothing to
 	 * add. The core cannot compute it: a figure like "about ten minutes per notebook" is a rolling mean

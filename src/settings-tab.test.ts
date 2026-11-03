@@ -10,7 +10,7 @@ import {
 	type PluginSettingTab,
 	renderSettingTab,
 	type SecretComponent,
-	type Setting,
+	Setting,
 	takeNotices,
 	takeSettings,
 	type TextComponent,
@@ -21,6 +21,7 @@ import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { explainError } from "./explain-error";
 import {
 	ACTIVATION_LIMIT_MESSAGE,
+	MONEY_BACK_MESSAGE,
 	OFFLINE_ACTIVATION_MESSAGE,
 	WITHDRAWN_KEY_MESSAGE,
 	WRONG_KEY_MESSAGE,
@@ -152,6 +153,24 @@ registerOcrBackend(
 );
 /** Declares the need and forgets the accessors -- the half-declared pair, from the tab's side. */
 registerOcrBackend(testBackend("test-half-consent", { needsBackgroundConsent: true }));
+/** Its rows cannot be drawn. */
+registerOcrBackend(
+	testBackend("test-throws", {
+		renderSettings: () => {
+			throw new Error("broken rows");
+		},
+	}),
+);
+/** Draws a row and keeps something running until its rows are torn down, like the local model's download ticks. */
+const tornDown: string[] = [];
+registerOcrBackend(
+	testBackend("test-cleanup", {
+		renderSettings: (containerEl) => {
+			new Setting(containerEl as unknown as FakeEl).setName("Backend's own row");
+			return () => void tornDown.push("test-cleanup");
+		},
+	}),
+);
 
 /**
  * A key pair for the trial ticket (`trial-ticket.ts`). The plugin gets its public half; "signed by
@@ -225,16 +244,17 @@ function draw(tab: Tab): Drawn[] {
 
 /**
  * What the screen holds now, without drawing it again -- so a control that changed the page and lost
- * its re-render reads as the stale page it left behind. A row that hosts rows (a section still drawn
- * by its old code) is read as the rows it holds.
+ * its re-render reads as the stale page it left behind. An element that holds rows at any depth (a
+ * section still drawn by its old code, the backend's host row) is read as the rows it holds.
  */
 function onScreen(tab: Tab): Drawn[] {
 	const bySettingEl = new Map(takeSettings().map((setting: Setting) => [setting.settingEl, setting]));
+	const holdsRows = (el: FakeEl): boolean => el.children.some((inner) => bySettingEl.has(inner) || holdsRows(inner));
 	const read = (el: FakeEl): Drawn[] =>
 		el.children.flatMap((child): Drawn[] => {
 			const setting = bySettingEl.get(child);
+			if (holdsRows(child)) return read(child);
 			if (!setting) return [{ kind: "note", cls: [...child.classes].join(" "), text: child.allText().join(" ") }];
-			if (child.children.some((inner) => bySettingEl.has(inner))) return read(child);
 			if (setting.heading) return [{ kind: "heading", name: setting.name, desc: setting.desc }];
 			return [{ kind: "row", name: setting.name, desc: setting.desc, setting }];
 		});
@@ -263,8 +283,11 @@ function verdict(found: Extract<Drawn, { kind: "row" }>): FakeEl {
 	return line;
 }
 
+/** The rows a reader sees: a row hidden by its `visible` predicate is in the page and not on screen. */
 function rowNames(drawn: Drawn[]): string[] {
-	return drawn.filter((item) => item.kind === "row").map((item) => item.name);
+	return drawn
+		.filter((item): item is Extract<Drawn, { kind: "row" }> => item.kind === "row" && item.setting.settingEl.visible)
+		.map((item) => item.name);
 }
 
 function buttons(drawn: Drawn[], name: string): ButtonComponent[] {
@@ -339,7 +362,59 @@ describe("the shape of the settings screen", () => {
 		const drawn = draw(tab);
 
 		expect(drawn.filter((item) => item.kind === "heading").map((item) => item.name)).not.toContain("Tag routing");
-		expect(rowNames(section(drawn, "Help"))).toEqual(["Report a problem", "Request a feature"]);
+		expect(rowNames(section(drawn, "reMarkable connection"))).not.toContain("Sync now");
+	});
+});
+
+describe("the reMarkable connection group", () => {
+	// Every row is ours to draw: dropdowns with a disabled option, pairing, the cloud code (spec §3.1).
+	// Rows come and go with `update()`, so they are in the array or out of it, never hidden (spec §2.4).
+	it("starts with Sync now once connected, then the sources and the cloud account", async () => {
+		const { tab } = await tabWith({ deviceToken: "d" });
+
+		expect(rowsOf(tab, "reMarkable connection")).toEqual([
+			{ name: "Sync now", kind: "render", shown: true },
+			{ name: "Sync from", kind: "render", shown: true },
+			{ name: "If that is not reachable", kind: "render", shown: true },
+			{ name: "reMarkable cloud account", kind: "render", shown: true },
+		]);
+		const syncNow = buttons(draw(tab), "Sync now");
+		expect(syncNow.map((button) => [button.text, button.cta])).toEqual([["Sync", true]]);
+	});
+
+	// The palette was the only way in, and the plugin registers no ribbon icon.
+	it("syncs from the button", async () => {
+		const { plugin, tab } = await tabWith({ deviceToken: "d" });
+		const synced = vi.fn();
+		(plugin as unknown as { syncNow(): void }).syncNow = synced;
+
+		await buttons(draw(tab), "Sync now")[0].click();
+
+		expect(synced).toHaveBeenCalledOnce();
+	});
+
+	it("asks for the one-time code while nothing is connected, and offers pairing only for a device source", async () => {
+		const cloudOnly = await tabWith();
+		expect(rowsOf(cloudOnly.tab, "reMarkable connection").map((item) => item.name)).toEqual([
+			"Sync from",
+			"If that is not reachable",
+			"reMarkable cloud account",
+			"Connect",
+		]);
+
+		const device = await tabWith({ primaryTransport: "ssh" });
+		expect(rowsOf(device.tab, "reMarkable connection").map((item) => item.name)).toEqual([
+			"Sync from",
+			"If that is not reachable",
+			"Connect device",
+			"reMarkable cloud account",
+			"Connect",
+		]);
+	});
+
+	it("finds Sync from by the words people search for", async () => {
+		const { tab } = await tabWith();
+		expect(itemsOf(tab, "reMarkable connection").find((item) => item.name === "Sync from")?.aliases).toEqual(["source", "SSH", "USB", "Wi-Fi", "cloud"]);
 	});
 });
 
@@ -350,7 +425,32 @@ interface Definition {
 	desc?: string;
 	heading?: string;
 	cls?: string;
+	aliases?: string[];
+	searchable?: boolean;
+	visible?: () => boolean;
+	control?: { type: string; key: string };
+	render?: unknown;
 	items?: Definition[];
+}
+
+/** One root group's row definitions, as `getSettingDefinitions()` answers them. */
+function itemsOf(tab: Tab, heading: string): Definition[] {
+	const group = (tab.getSettingDefinitions() as unknown as Definition[]).find((item) => item.heading === heading);
+	if (!group) throw new Error(`no group "${heading}"`);
+	return group.items ?? [];
+}
+
+/**
+ * One root group's rows as definitions: the name, the kind (a control's type, `render`, or `text`),
+ * the control's key, and whether a `visible` predicate shows it right now.
+ */
+function rowsOf(tab: Tab, heading: string): { name: string; kind: string; key?: string; shown: boolean }[] {
+	return itemsOf(tab, heading).map((item) => ({
+		name: item.name ?? "",
+		kind: item.control?.type ?? (item.render ? "render" : "text"),
+		...(item.control ? { key: item.control.key } : {}),
+		shown: item.visible?.() ?? true,
+	}));
 }
 
 describe("the declarative tab (settings-redesign spec §2, §3)", () => {
@@ -384,19 +484,36 @@ describe("the declarative tab (settings-redesign spec §2, §3)", () => {
 		expect(groupsOf(tab).map(([heading]) => heading)).not.toContain("Tag routing");
 	});
 
-	it("draws a section that throws as one sentence, and every other section as before", async () => {
-		const { plugin, tab } = await tabWith();
+	it("draws a row that throws as one sentence, and every other row as before", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-throws" });
 		const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
-		(plugin as unknown as { cloudTransportStatus(): never }).cloudTransportStatus = () => {
-			throw new Error("broken");
-		};
 
 		const drawn = draw(tab);
 
-		expect(section(drawn, "reMarkable connection")).toEqual([
+		expect(section(drawn, "Transcription")).toEqual([
+			expect.objectContaining({ kind: "row", name: "Backend" }),
 			expect.objectContaining({ kind: "row", desc: "This row could not be drawn. Copy diagnostics under Help and report it." }),
 		]);
 		expect(rowNames(section(drawn, "Vault output"))).toContain("Attachments folder");
+		expect(errors).toHaveBeenCalled();
+		errors.mockRestore();
+	});
+
+	// A predicate that throws must not take the tab with it either; hidden is the answer that shows
+	// nothing broken (spec §2.2).
+	it("hides a row whose visible predicate throws, and says why in the console", async () => {
+		const { plugin, tab } = await tabWith({ autoSync: { enabled: true, intervalHours: 6, autoTranscribeMetered: false } });
+		const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const drawn = draw(tab);
+		Object.defineProperty(plugin.data, "autoSync", {
+			get: () => {
+				throw new Error("broken");
+			},
+		});
+
+		tab.refreshDomState();
+
+		expect(rowNames(section(drawn, "Automatic sync"))).toEqual(["Enable automatic sync"]);
 		expect(errors).toHaveBeenCalled();
 		errors.mockRestore();
 	});
@@ -674,16 +791,34 @@ describe("where your notes come from", () => {
 
 	it("says out loud, before anyone types a password, what Developer Mode costs", async () => {
 		// The one fact no competitor states in-product, and the worst possible one to meet halfway
-		// through pairing. Folded away, but present and reachable without an attempt first.
+		// through pairing. Folded away, but present and reachable without an attempt first -- in the
+		// row's own description, since a group has no loose text between rows (spec P10).
 		const { tab } = await tabWith({ deviceToken: "d", primaryTransport: "ssh", ...BOUGHT_PRO });
-		const help = draw(tab).filter((item) => item.kind === "note" && item.cls.includes("tagged-sync-pairing-help"));
+		const help = row(draw(tab), "Connect device").setting.descEl.children.filter((child) => child.classes.has("tagged-sync-pairing-help"));
 
-		expect(help).toHaveLength(1);
-		expect(help[0].kind === "note" && help[0].text).toContain("erases the tablet");
+		expect(help.map((fold) => fold.tag)).toEqual(["details"]);
+		expect(help[0].allText().join(" ")).toContain("erases the tablet");
+		expect(help[0].children[0]).toMatchObject({ tag: "summary", text: "What your reMarkable needs before this works" });
 	});
 });
 
 describe("vault output", () => {
+	// Frontmatter stays drawn by our code: a refused switch has to be set back, and Obsidian leaves a
+	// control showing what was clicked (settings-redesign ticket 17's F5).
+	it("binds the folder and the handwriting switch to data.json, and draws frontmatter itself", async () => {
+		const { tab } = await tabWith();
+
+		expect(rowsOf(tab, "Vault output")).toEqual([
+			{ name: "Attachments folder", kind: "folder", key: "attachmentsFolder", shown: true },
+			{ name: "Your notes on PDFs", kind: "toggle", key: "marginNotes", shown: true },
+			{ name: "Frontmatter properties (Pro)", kind: "render", shown: true },
+		]);
+		expect(itemsOf(tab, "Vault output")[0]).toMatchObject({
+			aliases: ["PDF folder", "render"],
+			control: { placeholder: DEFAULT_ATTACHMENTS_FOLDER, includeRoot: false },
+		});
+	});
+
 	it("shows the folder the plugin will actually use, as both placeholder and value", async () => {
 		// The default is seeded by the settings migration rather than left empty, so the field arrives
 		// filled: a fresh install reads its own answer instead of an empty box under a grey hint, and
@@ -919,6 +1054,56 @@ describe("the transcript sentence in the Backend row", () => {
 });
 
 describe("a backend's own rows", () => {
+	// One row hosts them (spec P3): the backends keep their code, and settings search skips the host.
+	it("are hosted by one unsearchable row, there only while the selected backend has rows", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-plain" });
+
+		expect(rowsOf(tab, "Transcription")).toEqual([
+			{ name: "Backend", kind: "render", shown: true },
+			{ name: "Backend settings", kind: "render", shown: true },
+		]);
+		expect(itemsOf(tab, "Transcription").map((item) => [item.aliases, item.searchable])).toEqual([
+			[["OCR", "handwriting", "transcription model"], undefined],
+			[undefined, false],
+		]);
+		expect(rowsOf((await tabWith({ ocrBackend: "off" })).tab, "Transcription").map((item) => item.name)).toEqual(["Backend"]);
+	});
+
+	it("draws them into the host row's own element, without the row's name or controls beside them", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-cleanup" });
+		const drawn = draw(tab);
+
+		expect(rowNames(section(drawn, "Transcription"))).toEqual(["Backend", "Backend's own row"]);
+		const own = row(drawn, "Backend's own row").setting.settingEl.parentEl;
+		expect(own?.classes.has("tagged-sync-backend-host")).toBe(true);
+	});
+
+	// Obsidian keeps the host row across a redraw (same name, same row) and draws into it again; the
+	// rows of the backend left behind must go with the switch. Found on the device: the local model's
+	// card stayed under LM Studio's rows.
+	it("replaces the previous backend's rows when another backend is picked", async () => {
+		const { tab } = await tabWith({ ocrBackend: "test-cleanup" });
+		dropdown(draw(tab), "Backend").pick("test-plain");
+		await settle();
+
+		const drawn = onScreen(tab);
+		expect(rowNames(section(drawn, "Transcription"))).not.toContain("Backend's own row");
+		const hosts = row(drawn, "Backend settings").setting.settingEl.children.filter((child) => child.classes.has("tagged-sync-backend-host"));
+		expect(hosts.map((host) => host.allText())).toEqual([["rows:test-plain"]]);
+	});
+
+	// The local model's card redraws itself on each download tick; a torn-down host must stop that.
+	it("tears the backend's rows down with the host row: on a redraw and when the tab closes", async () => {
+		tornDown.length = 0;
+		const { tab } = await tabWith({ ocrBackend: "test-cleanup" });
+		draw(tab);
+
+		tab.update();
+		expect(tornDown).toEqual(["test-cleanup"]);
+		tab.hide();
+		expect(tornDown).toEqual(["test-cleanup", "test-cleanup"]);
+	});
+
 	it("draws the settings rows of the selected backend and of no other", async () => {
 		const { tab } = await tabWith({ ocrBackend: "test-plain" });
 		draw(tab);
@@ -934,38 +1119,64 @@ describe("a backend's own rows", () => {
 describe("automatic sync", () => {
 	const AUTO_ON = { enabled: true, intervalHours: 6, autoTranscribeMetered: false };
 
+	it("keeps its rows as controls bound to data.json, the ones after the switch shown only while it is on", async () => {
+		const off = await tabWith({ ocrBackend: "anthropic" });
+		expect(rowsOf(off.tab, "Automatic sync")).toEqual([
+			{ name: "Enable automatic sync", kind: "toggle", key: "autoSync.enabled", shown: true },
+			{ name: "Sync interval", kind: "dropdown", key: "autoSync.interval", shown: false },
+			{ name: BACKGROUND_CONSENT_NAME, kind: "toggle", key: "autoSync.autoTranscribeMetered", shown: false },
+		]);
+
+		// The consent row whose blob the backend owns is drawn by our code: its description reads the disk.
+		const on = await tabWith({ autoSync: AUTO_ON, ocrBackend: "test-consent" });
+		expect(rowsOf(on.tab, "Automatic sync")).toEqual([
+			{ name: "Enable automatic sync", kind: "toggle", key: "autoSync.enabled", shown: true },
+			{ name: "Sync interval", kind: "dropdown", key: "autoSync.interval", shown: true },
+			{ name: BACKGROUND_CONSENT_NAME, kind: "render", shown: true },
+		]);
+	});
+
 	it("shows one switch and nothing else while it is off", async () => {
 		const { tab } = await tabWith();
 
 		expect(rowNames(section(draw(tab), "Automatic sync"))).toEqual(["Enable automatic sync"]);
 	});
 
-	it("re-draws the moment it is switched on, so the rows it unlocks are there to be set", async () => {
+	// The rows it unlocks are in the page already and only shown (spec §3.5): nothing is drawn again,
+	// so the page cannot jump under the reader's pointer.
+	it("shows the rows it unlocks the moment it is switched on, without drawing the page again", async () => {
 		const { plugin, tab } = await tabWith();
-		toggle(draw(tab), "Enable automatic sync").toggle(true);
+		const drawn = draw(tab);
+		toggle(drawn, "Enable automatic sync").toggle(true);
 		await settle();
 
 		expect((plugin.saves.at(-1) as { autoSync: { enabled: boolean } }).autoSync.enabled).toBe(true);
-		expect(rowNames(section(onScreen(tab), "Automatic sync"))).toEqual(["Enable automatic sync", "Sync interval"]);
+		expect(rowNames(section(drawn, "Automatic sync"))).toEqual(["Enable automatic sync", "Sync interval"]);
+		expect(takeSettings()).toEqual([]);
 	});
 
-	it("offers launch-only and four intervals, and stores launch-only as no interval at all", async () => {
+	// Not numeric keys: an object lists integer-like keys first, which would put "Only on launch" last.
+	it("offers launch-only and four intervals, launch-only first, and stores it as no interval at all", async () => {
 		const { plugin, tab } = await tabWith({ autoSync: AUTO_ON });
 		const interval = dropdown(draw(tab), "Sync interval");
 
-		expect(interval.options).toEqual({
-			launch: "Only on launch",
-			"2": "Every 2 hours",
-			"6": "Every 6 hours",
-			"12": "Every 12 hours",
-			"24": "Every 24 hours",
-		});
-		expect(interval.value).toBe("6");
+		expect(Object.entries(interval.options)).toEqual([
+			["launch", "Only on launch"],
+			["h2", "Every 2 hours"],
+			["h6", "Every 6 hours"],
+			["h12", "Every 12 hours"],
+			["h24", "Every 24 hours"],
+		]);
+		expect(interval.value).toBe("h6");
 
 		interval.pick("launch");
 		await settle();
 		expect((plugin.data.autoSync as { intervalHours: number | null }).intervalHours).toBeNull();
 		expect(dropdown(draw(tab), "Sync interval").value).toBe("launch");
+
+		dropdown(draw(tab), "Sync interval").pick("h12");
+		await settle();
+		expect((plugin.saves.at(-1) as { autoSync: { intervalHours: number | null } }).autoSync.intervalHours).toBe(12);
 	});
 
 	it("re-arms the timer on every change, not only on the next restart", async () => {
@@ -976,7 +1187,7 @@ describe("automatic sync", () => {
 		const clock = (plugin as unknown as { scheduler: FakeClock }).scheduler;
 		const before = clock.armed;
 
-		dropdown(draw(tab), "Sync interval").pick("2");
+		dropdown(draw(tab), "Sync interval").pick("h2");
 		await settle();
 
 		expect(clock.armed).toBe(before + 1);
@@ -1772,8 +1983,23 @@ describe("the Tagged Sync Pro section", () => {
 		return rowNames(section(drawn, "Tagged Sync Pro")).includes("Licence key");
 	}
 	function moneyBack(drawn: Drawn[]): boolean {
-		return section(drawn, "Tagged Sync Pro").some((item) => item.kind === "note" && item.text.includes("no questions asked"));
+		return section(drawn, "Tagged Sync Pro").some((item) => item.kind === "row" && item.desc.includes("no questions asked"));
 	}
+
+	// A group has no loose text between rows, so the money-back note is the key row's second sentence
+	// (spec P11), and every row is ours to draw: its buttons change with the licence.
+	it("draws the status row and, until Pro is active, the key row with the money-back promise", async () => {
+		const free = await tabWith();
+		expect(rowsOf(free.tab, "Tagged Sync Pro")).toEqual([
+			{ name: "Not active", kind: "render", shown: true },
+			{ name: "Licence key", kind: "render", shown: true },
+		]);
+		expect(itemsOf(free.tab, "Tagged Sync Pro")[1]).toMatchObject({ desc: `Paste the key from your purchase page. ${MONEY_BACK_MESSAGE}`, aliases: ["license"] });
+		expect(section(draw(free.tab), "Tagged Sync Pro").filter((item) => item.kind === "note")).toEqual([]);
+
+		const bought = await tabWith({ licence: { ...NO_LICENCE, ...BOUGHT, validatedAt: iso(DAY_MS) } });
+		expect(rowsOf(bought.tab, "Tagged Sync Pro").map((item) => item.name)).toEqual(["Active"]);
+	});
 
 	it("offers the trial once, to somebody who has never had one", async () => {
 		const { tab } = await tabWith();
@@ -1981,11 +2207,17 @@ describe("the Tagged Sync Pro section", () => {
 	});
 });
 
-describe("the actions at the bottom", () => {
-	it("puts a Sync button on the settings screen, because the palette was the only way in", async () => {
+describe("help at the bottom", () => {
+	// Read when something has gone wrong, so last; *Sync now* went to the top (spec P1 (a)).
+	it("holds the diagnostics button and the feature links, and nothing else", async () => {
 		const { tab } = await tabWith({ deviceToken: "d" });
 
-		expect(buttons(draw(tab), "Sync now").map((button) => button.text)).toEqual(["Sync"]);
+		expect(rowsOf(tab, "Help")).toEqual([
+			{ name: "Report a problem", kind: "render", shown: true },
+			{ name: "Request a feature", kind: "text", shown: true },
+		]);
+		const links = row(draw(tab), "Request a feature").setting.descEl.children.map((link) => link.attributes.href);
+		expect(links).toEqual([expect.stringContaining("feature_request"), expect.stringContaining("label%3Aenhancement")]);
 	});
 
 	it("copies the diagnostics to the clipboard and says it did, without sending anything", async () => {

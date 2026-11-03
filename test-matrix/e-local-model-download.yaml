@@ -665,6 +665,13 @@
       file: src/local-register.test.ts
       test: "a model an earlier release left behind > removes an unfinishable partial without asking"
 
+    - id: E39.13
+      scenario: The settings tab tears a card down while a newer card is on screen, then tears the newer one down too
+      expect: The old card's cleanup leaves the newer card redrawing; once the newer one is torn down, a redraw it asks for draws nothing (settings-redesign spec §3.4)
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a card the settings tab tore down > draws nothing more, while a newer card keeps redrawing"
+
 
 - feature: E41
   name: What the dropdown says on a machine the model is not offered on

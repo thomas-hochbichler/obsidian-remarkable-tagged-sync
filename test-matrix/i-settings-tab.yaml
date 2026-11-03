@@ -212,17 +212,17 @@
 
     - id: C15.16
       scenario: The master switch is turned on
-      expect: Saved, and the tab re-draws at once so the rows it unlocks are there to be set without reopening settings
+      expect: Saved, and the rows it unlocks are shown at once, without the page being drawn again
       layer: vault
       file: src/settings-tab.test.ts
-      test: "automatic sync > re-draws the moment it is switched on, so the rows it unlocks are there to be set"
+      test: "automatic sync > shows the rows it unlocks the moment it is switched on, without drawing the page again"
 
     - id: C15.17
-      scenario: The interval dropdown is drawn and launch-only is picked
-      expect: Five entries, and launch-only stores `null` rather than a number -- the two are different states, not a zero
+      scenario: The interval dropdown is drawn, launch-only is picked, then twelve hours
+      expect: Five entries with launch-only first, and launch-only stores `null` rather than a number -- the two are different states, not a zero; twelve hours stores 12
       layer: vault
       file: src/settings-tab.test.ts
-      test: "automatic sync > offers launch-only and four intervals, and stores launch-only as no interval at all"
+      test: "automatic sync > offers launch-only and four intervals, launch-only first, and stores it as no interval at all"
 
     - id: C15.18
       scenario: The interval is changed while Obsidian is running
@@ -402,7 +402,7 @@
       expect: The clipboard gets the block, carrying this build's version and the selected backend, and one notice says it happened -- nothing leaves the machine
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the actions at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+      test: "help at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
 
 - feature: H2
   name: Report a problem / request a feature
@@ -414,7 +414,14 @@
       expect: 'It states "Nothing is sent from here." beside the button that fills the clipboard'
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the actions at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+      test: "help at the bottom > copies the diagnostics to the clipboard and says it did, without sending anything"
+
+    - id: H2.2
+      scenario: The Help group is asked for its rows
+      expect: Report a problem (drawn, Copy diagnostics) and Request a feature (text, with the request and voting links), nothing else -- Sync now moved to the top
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "help at the bottom > holds the diagnostics button and the feature links, and nothing else"
 
 - feature: C2
   name: Sync from the settings screen
@@ -422,11 +429,18 @@
   tier: free
   scenarios:
     - id: C2.10
-      scenario: A paired vault opens the tab
-      expect: A Sync button under Actions -- syncing was reachable only from the command palette, and the plugin registers no ribbon icon
+      scenario: A connected vault opens the tab
+      expect: Sync now is the first row of reMarkable connection, a CTA button Sync -- syncing was reachable only from the command palette, and the plugin registers no ribbon icon
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the actions at the bottom > puts a Sync button on the settings screen, because the palette was the only way in"
+      test: "the reMarkable connection group > starts with Sync now once connected, then the sources and the cloud account"
+
+    - id: C2.16
+      scenario: Sync is pressed beside Sync now
+      expect: The plugin's sync starts, once
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > syncs from the button"
 
 - feature: W12
   name: Readwise settings section
@@ -586,11 +600,18 @@
       test: "the declarative tab (settings-redesign spec §2, §3) > leaves Tag routing out of the definitions until there is a device to sync with"
 
     - id: SR1.3
-      scenario: One section throws while it is drawn
-      expect: That row says it could not be drawn and the error is logged; every other section draws as before
+      scenario: One row throws while it is drawn (a backend whose own rows cannot be drawn)
+      expect: That row says it could not be drawn and the error is logged; the Backend row and every other group draw as before
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the declarative tab (settings-redesign spec §2, §3) > draws a section that throws as one sentence, and every other section as before"
+      test: "the declarative tab (settings-redesign spec §2, §3) > draws a row that throws as one sentence, and every other row as before"
+
+    - id: SR1.9
+      scenario: A visible predicate throws when the drawn rows are re-evaluated
+      expect: The row is hidden and the error logged; the tab stays (spec §2.2)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > hides a row whose visible predicate throws, and says why in the console"
 
     - id: SR1.4
       scenario: Building the definitions throws (they also run inside onload)
@@ -626,3 +647,78 @@
       layer: vault
       file: src/settings-tab.test.ts
       test: "the declarative tab (settings-redesign spec §2, §3) > refuses a key that names nothing in data.json, and saves nothing"
+
+- feature: SR2
+  name: The root groups as definitions (settings-redesign ticket 11)
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: SR2.1
+      scenario: A connected free vault is asked for reMarkable connection's rows
+      expect: Sync now, Sync from, If that is not reachable, reMarkable cloud account -- all drawn by the plugin, in that order
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > starts with Sync now once connected, then the sources and the cloud account"
+
+    - id: SR2.2
+      scenario: A vault with nothing connected, then one whose source is the device
+      expect: No Sync now and a Connect row for the one-time code; Connect device comes in before the cloud account only for the device source
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > asks for the one-time code while nothing is connected, and offers pairing only for a device source"
+
+    - id: SR2.3
+      scenario: Sync from's definition is read for settings search
+      expect: Its aliases are source, SSH, USB, Wi-Fi and cloud (spec §8)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the reMarkable connection group > finds Sync from by the words people search for"
+
+    - id: SR2.4
+      scenario: Vault output is asked for its rows
+      expect: Attachments folder is a folder control on attachmentsFolder (placeholder the default, no root, aliases PDF folder and render), Your notes on PDFs a toggle on marginNotes, Frontmatter drawn by the plugin (F5)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "vault output > binds the folder and the handwriting switch to data.json, and draws frontmatter itself"
+
+    - id: SR2.5
+      scenario: Transcription is asked for its rows, with a backend that has rows and with one that has none
+      expect: Backend (drawn, aliases OCR, handwriting, transcription model) and a host row Backend settings that search skips; with no backend rows, Backend alone
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > are hosted by one unsearchable row, there only while the selected backend has rows"
+
+    - id: SR2.6
+      scenario: A backend that draws a row of its own is selected
+      expect: The row is drawn inside the host's tagged-sync-backend-host element, with no name or control of the host beside it
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > draws them into the host row's own element, without the row's name or controls beside them"
+
+    - id: SR2.7
+      scenario: Another backend is picked while one with its own rows is selected
+      expect: One host, holding only the new backend's rows -- Obsidian keeps the host row across the redraw and draws into it again (found on the device)
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > replaces the previous backend's rows when another backend is picked"
+
+    - id: SR2.8
+      scenario: The tab is redrawn, then closed, while a backend that returns a cleanup is selected
+      expect: The backend's cleanup runs each time, so a download tick no longer redraws a card nobody sees
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "a backend's own rows > tears the backend's rows down with the host row: on a redraw and when the tab closes"
+
+    - id: SR2.9
+      scenario: Automatic sync is asked for its rows, off with a metered backend and on with a consent backend
+      expect: Enable a toggle on autoSync.enabled; Sync interval a dropdown on autoSync.interval; the metered consent a toggle on autoSync.autoTranscribeMetered, the backend's consent drawn by the plugin; the rows after the switch shown only while it is on
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "automatic sync > keeps its rows as controls bound to data.json, the ones after the switch shown only while it is on"
+
+    - id: SR2.10
+      scenario: Tagged Sync Pro is asked for its rows, free and then with an active licence
+      expect: Free -- the status row and Licence key, whose description is the paste sentence plus the money-back promise (alias license), no loose note; Pro -- the status row alone
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the Tagged Sync Pro section > draws the status row and, until Pro is active, the key row with the money-back promise"

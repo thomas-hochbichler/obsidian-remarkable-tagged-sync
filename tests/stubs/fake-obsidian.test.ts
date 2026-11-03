@@ -443,8 +443,91 @@ describe("the declarative settings tab", () => {
 		expect(torn).toEqual(["line", "line"]);
 	});
 
+	// app.js `getControlBinding`: the value comes from `getControlValue`, a change is `await
+	// setControlValue` and then `refreshDomState()`, which hides and shows without drawing anything again.
+	it("binds a control row to the tab, and re-evaluates visible after a change without a redraw", async () => {
+		// The debounce tests above leave fake timers installed.
+		vi.useRealTimers();
+		takeSettings();
+		const stored: Record<string, unknown> = { on: false };
+		const tab = tabOf(() => [
+			{ name: "Switch", control: { type: "toggle", key: "on" } },
+			{ name: "Shown when on", visible: () => stored.on === true },
+		]);
+		tab.getControlValue = (key) => stored[key];
+		tab.setControlValue = async (key, value) => void (stored[key] = value);
+
+		renderSettingTab(tab);
+		const [toggle, shown] = takeSettings();
+		expect(toggle.toggles[0].value).toBe(false);
+		expect(shown.settingEl.visible).toBe(false);
+
+		toggle.toggles[0].toggle(true);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(stored.on).toBe(true);
+		expect(shown.settingEl.visible).toBe(true);
+		expect(takeSettings()).toEqual([]);
+	});
+
+	// app.js `due`/`nue`: a redraw keeps a row whose key it drew before, runs its cleanup, clears its
+	// controls and draws the definition into the same `Setting` -- what the render put into `settingEl`
+	// itself stays.
+	it("redraws a row with the same key into the same element, after its cleanup and without its old controls", () => {
+		takeSettings();
+		const log: string[] = [];
+		const tab = tabOf(() => [
+			{
+				name: "Row",
+				render: (setting) => {
+					setting.settingEl.createDiv({ cls: "drawn" });
+					setting.addButton((button) => button.setButtonText("Go"));
+					return () => void log.push("cleanup");
+				},
+			},
+		]);
+
+		renderSettingTab(tab);
+		const [first] = takeSettings();
+		tab.update();
+		const [again] = takeSettings();
+
+		expect(again).toBe(first);
+		expect(log).toEqual(["cleanup"]);
+		expect(again.buttons.map((button) => button.text)).toEqual(["Go"]);
+		expect(again.settingEl.children.filter((child) => child.classes.has("drawn"))).toHaveLength(2);
+	});
+
+	it("runs the cleanup of a row the redraw no longer has", () => {
+		const log: string[] = [];
+		let rows = ["Kept", "Dropped"];
+		const tab = tabOf(() => rows.map((name) => ({ name, render: () => () => void log.push(name) })));
+
+		renderSettingTab(tab);
+		rows = ["Kept"];
+		tab.update();
+
+		expect(log).toEqual(["Kept", "Dropped"]);
+	});
+
+	it("draws a dropdown control with its options, and a folder control as a field with its placeholder", () => {
+		takeSettings();
+		const tab = tabOf(() => [
+			{ name: "Pick", control: { type: "dropdown", key: "pick", options: { a: "A", b: "B" } } },
+			{ name: "Folder", control: { type: "folder", key: "folder", placeholder: "Here", defaultValue: "There" } },
+		]);
+		tab.getControlValue = (key) => (key === "pick" ? "b" : undefined);
+
+		renderSettingTab(tab);
+		const [pick, folder] = takeSettings();
+
+		expect(pick.dropdowns[0].options).toEqual({ a: "A", b: "B" });
+		expect(pick.dropdowns[0].value).toBe("b");
+		expect(folder.texts[0]).toMatchObject({ placeholder: "Here", value: "There" });
+	});
+
 	it("refuses a definition field it does not model, rather than drawing it as understood", () => {
-		const tab = tabOf(() => [{ name: "Hidden", visible: false } as FakeDefinition]);
+		const tab = tabOf(() => [{ type: "group", visible: false, items: [] } as FakeDefinition]);
 
 		expect(() => renderSettingTab(tab)).toThrow('a definition\'s "visible" is not modelled yet');
 	});
