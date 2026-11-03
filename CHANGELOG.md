@@ -25,8 +25,8 @@ workflow publishes the section as the GitHub release body. See
   your handwriting and page images stay on your machine. Needs a Readwise plan with API access and
   Obsidian 1.11.4 or newer.
 - ***Open in Readwise*** opens the Readwise book of the note you are in.
-- ***Push to Readwise again*** brings back a book you deleted in Readwise: the next sync pushes
-  the note you are in as a new book.
+- ***Push to Readwise again*** brings back a book you deleted in Readwise: it syncs and pushes the
+  note you are in as a new book.
 
 ### Fixed
 

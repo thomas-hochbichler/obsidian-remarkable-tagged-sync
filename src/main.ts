@@ -517,7 +517,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		for (const entry of ocrBackendEntries()) entry.onPluginUnload?.();
 	}
 
-	/** *Push to Readwise again* (ticket 22): the next sync records the document anew and pushes it as a new book. */
+	/** *Push to Readwise again* (ticket 22): starts a sync that records the document anew and pushes it as a new book. */
 	private async pushBookAgain(docId: string): Promise<void> {
 		// A run writes the index and the state back when it ends, over this change (spec §4.1).
 		if (this.isSyncing()) {
@@ -525,8 +525,10 @@ export default class TaggedSyncPlugin extends Plugin {
 			return;
 		}
 		pushBookAgain(this.data, docId);
+		// Saved before the sync: if the run cannot start or fails, the next one still pushes the book.
 		await this.saveData(this.data);
-		new Notice("The next sync pushes this document to Readwise again.");
+		// Recording the document again needs its pages, so the push comes with a whole sync, not alone.
+		await this.syncNow();
 	}
 
 	/**

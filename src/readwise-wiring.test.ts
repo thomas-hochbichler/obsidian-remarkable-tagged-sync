@@ -335,16 +335,20 @@ describe("Push to Readwise again (ticket 22)", () => {
 		return { plugin, command: plugin.commands.find((each) => each.id === "push-to-readwise-again")! };
 	}
 
-	it("forgets the deleted book and makes the note due, saved at once", async () => {
+	it("forgets the deleted book and makes the note due, saved before the sync it starts", async () => {
 		const { plugin, command } = await deleted();
+		let seen: unknown[] = [];
+		engine.during = async () => {
+			// What the run starts from, and what the next run would start from if this one failed.
+			seen = [plugin.data.syncIndex.rows["unit-1"].renderVersion, (plugin as unknown as { saved: typeof plugin.data }).saved.readwiseBooks];
+		};
 
 		expect(command.checkCallback!(true)).toBe(true);
 		command.checkCallback!(false);
 
-		await vi.waitFor(() => expect(takeNotices()).toEqual(["The next sync pushes this document to Readwise again."]));
-		expect(plugin.data.readwiseBooks).toEqual({});
-		expect(plugin.data.syncIndex.rows["unit-1"].renderVersion).toBeUndefined();
-		expect((plugin as unknown as { saved: typeof plugin.data }).saved.readwiseBooks).toEqual({});
+		await vi.waitFor(() => expect(engine.recorders).toHaveLength(1));
+		expect(engine.recorders[0]).toBeDefined();
+		expect(seen).toEqual([undefined, {}]);
 	});
 
 	it("is unavailable for a book still in Readwise, and while recording is off", async () => {

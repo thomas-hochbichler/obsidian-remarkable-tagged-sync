@@ -1834,10 +1834,10 @@
 
     - id: W14.7
       scenario: The plugin's Push to Readwise again on a note whose book was deleted
-      expect: Available; running it drops the book, makes the note due, saves data.json at once and says the next sync pushes it
+      expect: Available; running it drops the book, makes the note due, saves data.json, then starts a sync with a recorder
       layer: vault
       file: src/readwise-wiring.test.ts
-      test: "Push to Readwise again (ticket 22) > forgets the deleted book and makes the note due, saved at once"
+      test: "Push to Readwise again (ticket 22) > forgets the deleted book and makes the note due, saved before the sync it starts"
 
     - id: W14.8
       scenario: The command in a free vault, and on a book still in Readwise
