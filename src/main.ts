@@ -3,7 +3,6 @@ import {
 	Notice,
 	Plugin,
 	ProgressBarComponent,
-	requireApiVersion,
 	setIcon,
 	setTooltip,
 	type TAbstractFile,
@@ -891,10 +890,10 @@ export default class TaggedSyncPlugin extends Plugin {
 		}
 	}
 
-	/** This computer's Readwise token, from Obsidian's Keychain (Readwise spec §2), or null. Obsidian before 1.11.4 has no Keychain. Never logged. */
+	/** This computer's Readwise token, from Obsidian's Keychain (Readwise spec §2), or null. Never logged. */
 	readwiseToken(): string | null {
 		const name = this.data.readwise.tokenSecret;
-		return requireApiVersion("1.11.4") && name !== null ? this.app.secretStorage.getSecret(name) || null : null;
+		return name !== null ? this.app.secretStorage.getSecret(name) || null : null;
 	}
 
 	/**

@@ -103,7 +103,7 @@ async function tabWith(setup: {
  * is a decision -- a cap sentence below the rows it explains is a different screen from one above
  * them -- so both go into one list rather than being asserted separately.
  *
- * The heading and the Scan button are dropped: they are the same two rows in every scenario.
+ * The Scan button is dropped: it is the same row in every scenario. The heading is the group's now.
  */
 function draw(tab: Tab): Drawn[] {
 	takeSettings();
@@ -122,7 +122,7 @@ function draw(tab: Tab): Drawn[] {
 				}
 			: { kind: "note" as const, text: child.text };
 	});
-	return drawn.slice(2);
+	return drawn.slice(1);
 }
 
 /** Lets the `onChange` handler's promise chain finish -- `pick()` cannot await it. */

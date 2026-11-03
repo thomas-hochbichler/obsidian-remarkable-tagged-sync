@@ -335,6 +335,38 @@
       file: tests/stubs/fake-obsidian.test.ts
       test: "the settings controls the plugin reaches past > hides an element the plugin toggles off, and shows it again"
 
+- feature: T20
+  name: The declarative settings tab, drawn from its definitions
+  code: tests/stubs/fake-obsidian.ts
+  scenarios:
+    - id: T20.1
+      scenario: A tab answers a group with a heading and a row, and a page, and is opened on its root and then on the page
+      expect: The root reads heading, row, page entry in that order; the page reads its own rows only
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws a group's heading, then its rows, and a page as one entry on the root"
+
+    - id: T20.2
+      scenario: A render row returns a cleanup; the tab is redrawn, closed, and asked to update while closed
+      expect: The cleanup runs once per teardown, as obsidian.d.ts says, and a closed tab draws nothing
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > runs a render row's cleanup before every redraw and when the tab closes"
+
+    - id: T20.3
+      scenario: A definition carries a field the fake has not modelled yet (visible)
+      expect: Drawing it throws and names the field, instead of drawing a row the user would never see
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > refuses a definition field it does not model, rather than drawing it as understood"
+
+    - id: T20.4
+      scenario: A definition is a list, which the fake does not model
+      expect: Drawing it throws and says so, rather than drawing the list as plain rows
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > refuses a list, which it does not model either"
+
 - feature: T11
   name: A clock a test moves by hand
   code: tests/stubs/fake-clock.ts

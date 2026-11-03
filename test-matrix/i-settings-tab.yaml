@@ -447,13 +447,6 @@
       file: src/settings-tab.test.ts
       test: "the Readwise section > shows a free vault the switch shut, and says pushing is Pro"
 
-    - id: W12.3
-      scenario: Obsidian 1.11.3, which has no Keychain
-      expect: 'The heading alone, with "Needs Obsidian 1.11.4 or newer." -- no rows, no `minAppVersion` bump'
-      layer: vault
-      file: src/settings-tab.test.ts
-      test: "the Readwise section > is one line on an Obsidian without the Keychain"
-
     - id: W12.4
       scenario: The switch is off
       expect: '"Off.", and readwise.io is not asked'
@@ -572,3 +565,64 @@
       layer: vault
       file: src/settings-tab.test.ts
       test: "the Readwise section > two computers on two accounts > offers no start-over while nothing clashes"
+
+- feature: SR1
+  name: The settings tab on the declarative settings API (settings-redesign ticket 10)
+  code: src/settings-tab.ts
+  tier: free
+  scenarios:
+    - id: SR1.1
+      scenario: The tab of a connected vault is asked for its definitions
+      expect: Eight groups in spec §3's order, each with its tagged-sync-group class; Integrations holds the Zotero and Readwise pages
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > answers with the root page's eight groups in order, Zotero and Readwise as pages"
+
+    - id: SR1.2
+      scenario: The tab of a vault with no source connected is asked for its definitions
+      expect: Tag routing is left out of the array, not hidden in it
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > leaves Tag routing out of the definitions until there is a device to sync with"
+
+    - id: SR1.3
+      scenario: One section throws while it is drawn
+      expect: That row says it could not be drawn and the error is logged; every other section draws as before
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > draws a section that throws as one sentence, and every other section as before"
+
+    - id: SR1.4
+      scenario: Building the definitions throws (they also run inside onload)
+      expect: One row, "The settings could not be drawn.", and the error logged -- never a throw
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > answers one row instead of throwing when the definitions cannot be built"
+
+    - id: SR1.5
+      scenario: A control value is read and written by a dot path into data.json
+      expect: The nested object is replaced, not mutated -- the old one a sync may hold keeps its value -- and data.json is saved
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > reads and writes data.json by dot path, replacing the object a running sync may hold"
+
+    - id: SR1.6
+      scenario: A control writes the value that is already stored
+      expect: Nothing is saved
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > saves nothing for the value that is already stored"
+
+    - id: SR1.7
+      scenario: A text key is set and the tab closes before the debounce fires
+      expect: The value is current in memory at once and reaches data.json when the tab closes
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > holds a typed value back from data.json, and writes it when the tab closes"
+
+    - id: SR1.8
+      scenario: A control writes a key data.json does not have (a special form no ticket has built yet, or a typo)
+      expect: Refused with the key named; nothing written, nothing saved -- the file's shape stays
+      layer: vault
+      file: src/settings-tab.test.ts
+      test: "the declarative tab (settings-redesign spec §2, §3) > refuses a key that names nothing in data.json, and saves nothing"

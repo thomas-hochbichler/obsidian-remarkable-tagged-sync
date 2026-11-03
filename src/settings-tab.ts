@@ -5,9 +5,12 @@ import {
 	Notice,
 	Platform,
 	PluginSettingTab,
-	requireApiVersion,
 	SecretComponent,
 	Setting,
+	type SettingDefinitionGroup,
+	type SettingDefinitionItem,
+	type SettingDefinitionPage,
+	type SettingDefinitionRender,
 	TFolder,
 	type ToggleComponent,
 } from "obsidian";
@@ -83,12 +86,20 @@ const PRO_BUY_URL = "https://buy.polar.sh/polar_cl_ri72ZVng24KrtsNUNu8poN2J0rsvT
  */
 const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
 
+/** Settings-redesign spec §2.2: what a row that threw says instead, and what the tab says if it cannot be built. */
+const ROW_FAILED = "This row could not be drawn. Copy diagnostics under Help and report it.";
+
+/** The text keys: saved through one debounce, as their fields always were (spec §2.3). */
+const TYPED_KEYS = new Set(["attachmentsFolder", "zotero.folder", "zotero.sendTag"]);
+
 export class TaggedSyncSettingTab extends PluginSettingTab {
 	private code = "";
 	private discoveredTags: string[] = [];
 	/** What the pairing row holds between keystrokes. The password is dropped the moment it is used. */
 	private deviceHost = "";
 	private devicePassword = "";
+	/** `data.json` is not written on every keystroke; the in-memory value is current at once. */
+	private readonly persistTyped = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
 
 	constructor(
 		app: App,
@@ -97,43 +108,129 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
-	display(): void {
-		this.redraw();
+	/**
+	 * The whole tab, as Obsidian 1.13's declarative settings API asks for it (settings-redesign spec
+	 * §3): eight groups on the root page, Zotero and Readwise as pages under *Integrations*. Asked for
+	 * on every opening and by every `update()`, so it reads the state and does no network I/O.
+	 *
+	 * Each group still holds one row that draws its section with the old code; tickets 11–14 replace
+	 * them with definitions of their own.
+	 *
+	 * It runs inside `onload` too (`addSettingTab`), where a throw would stop the plugin, so a throw
+	 * here becomes one row instead.
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		try {
+			const connected = this.plugin.transport().status().connected;
+			const page = (name: string, draw: (el: HTMLElement) => void): SettingDefinitionPage => ({
+				type: "page",
+				name,
+				items: [{ type: "group", items: [this.hosted(name, draw)] }],
+			});
+			return [
+				this.section("reMarkable connection", "connection", (el) => this.renderSources(el)),
+				...(connected ? [this.section("Tag routing", "tags", (el) => this.renderTagRouting(el))] : []),
+				this.section("Vault output", "vault", (el) => this.renderVaultOutput(el)),
+				this.section("Transcription", "transcription", (el) => this.renderOcrSettings(el)),
+				this.section("Automatic sync", "autosync", (el) => this.renderAutoSyncSettings(el)),
+				{
+					type: "group",
+					heading: "Integrations",
+					cls: "tagged-sync-group-integrations",
+					items: [page("Zotero", (el) => this.renderZotero(el)), page("Readwise", (el) => this.renderReadwise(el))],
+				},
+				this.section("Tagged Sync Pro", "pro", (el) => this.renderPro(el)),
+				this.section("Help", "help", (el) => this.renderActions(el, connected)),
+			];
+		} catch (error) {
+			console.error("Tagged Sync: the settings could not be drawn", error);
+			return [{ name: "The settings could not be drawn.", desc: "Report it with the steps that led here." }];
+		}
+	}
+
+	/** One group holding one {@link hosted} row. */
+	private section(heading: string, slug: string, draw: (el: HTMLElement) => void): SettingDefinitionGroup {
+		return { type: "group", heading, cls: `tagged-sync-group-${slug}`, items: [this.hosted(heading, draw)] };
 	}
 
 	/**
-	 * The whole tab, drawn again in place. Controls call this rather than `display()`: that is
-	 * deprecated since Obsidian 1.13 and the store's lint flags every call to it, while Obsidian itself
-	 * still calls it to open the tab.
+	 * A row whose own name and controls are cleared, so it holds the rows `draw` builds -- a section
+	 * still drawn by its old code. Not searchable: the rows inside are not definitions.
 	 */
-	private redraw(): void {
-		const { containerEl } = this;
-		// Read before the rebuild, restored after it. Nearly every control on this page redraws the
-		// whole tab in place -- choosing a backend, a transport, a tag -- and an emptied element scrolls
-		// back to the top, which threw the reader away from the setting they had just touched. Picking a
-		// backend two thirds down the page was the case that made it obvious.
-		const offset = containerEl.scrollTop;
-		containerEl.empty();
+	private hosted(name: string, draw: (el: HTMLElement) => void): SettingDefinitionRender {
+		return {
+			name,
+			searchable: false,
+			render: this.guarded(name, (setting) => {
+				setting.settingEl.empty();
+				setting.settingEl.removeClass("setting-item");
+				draw(setting.settingEl);
+			}),
+		};
+	}
 
-		const connected = this.plugin.transport().status().connected;
-		this.renderSources(containerEl);
+	/**
+	 * A render callback that cannot blank the tab (spec §2.2): a throw is logged and the row says so,
+	 * and every other row still draws. Tearing the row down writes what is still held for a text key.
+	 */
+	private guarded(name: string, render: SettingDefinitionRender["render"]): SettingDefinitionRender["render"] {
+		return (setting, group) => {
+			let cleanup: void | (() => void);
+			try {
+				cleanup = render(setting, group);
+			} catch (error) {
+				console.error(`Tagged Sync: the settings row "${name}" could not be drawn`, error);
+				setting.settingEl.empty();
+				setting.settingEl.addClass("setting-item");
+				setting.settingEl.appendChild(setting.infoEl);
+				setting.setDesc(ROW_FAILED);
+			}
+			return () => {
+				cleanup?.();
+				this.persistTyped.run();
+			};
+		};
+	}
 
-		// Order follows how often a row is touched, not how it was built: what to sync is the setting a
-		// user comes back to, transcription is chosen roughly once, and the links at the end are read
-		// when something has already gone wrong.
-		if (connected) {
-			this.renderTagRouting(containerEl);
-		}
-		this.renderVaultOutput(containerEl);
-		this.renderOcrSettings(containerEl);
-		this.renderAutoSyncSettings(containerEl);
-		this.renderZotero(containerEl);
-		this.renderReadwise(containerEl);
-		this.renderPro(containerEl);
-		this.renderActions(containerEl, connected);
-		// After the content is back, so there is something to scroll through. A page that got shorter
-		// clamps this itself, which is the right answer -- there is nowhere further to be.
-		containerEl.scrollTop = offset;
+	/** A key into `data.json`, one level deep at most: `marginNotes`, `zotero.useWeb`, `readwise.push`, … (spec §2.3). */
+	getControlValue(key: string): unknown {
+		const [head, sub] = key.split(".");
+		const value = (this.plugin.data as unknown as Record<string, unknown>)[head];
+		return sub === undefined ? value : (value as Record<string, unknown>)[sub];
+	}
+
+	/**
+	 * Stores a control's value (spec §2.3). The value already stored is no change: a toggle's
+	 * `setValue` fires its change again, and a re-render that sets would loop. A nested value replaces
+	 * its object rather than mutating it, as the rows always have: a running sync may hold the old one.
+	 * A key that names nothing in `data.json` is refused: writing it would change the file's shape.
+	 */
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const [head, sub] = key.split(".");
+		const data = this.plugin.data as unknown as Record<string, unknown>;
+		if (!(head in data) || (sub !== undefined && !(sub in (data[head] as object)))) throw new Error(`Tagged Sync: no setting "${key}"`);
+		if (this.getControlValue(key) === value) return;
+		data[head] = sub === undefined ? value : { ...(data[head] as Record<string, unknown>), [sub]: value };
+		if (TYPED_KEYS.has(key)) this.persistTyped();
+		else await this.plugin.saveData(this.plugin.data);
+	}
+
+	/** Settings may close with their own window; what was typed is written before they go. */
+	hide(): void {
+		this.persistTyped.run();
+		super.hide();
+	}
+
+	/**
+	 * The tab drawn again from its definitions. Read before the rebuild, restored after it: nearly
+	 * every control redraws -- choosing a backend, a transport, a tag -- and an emptied element scrolls
+	 * back to the top, which threw the reader away from the setting they had just touched. Ticket 17's
+	 * F1 says whether `update()` still needs this (spec §2.5).
+	 */
+	private refresh(): void {
+		const offset = this.containerEl.scrollTop;
+		this.update();
+		this.containerEl.scrollTop = offset;
 	}
 
 	/**
@@ -147,11 +244,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const data = this.plugin.data;
 		const allowed = allowedTransports(this.plugin.entitlement());
 		const label = (id: TransportId): string => (id === "ssh" ? "Your reMarkable directly (USB or Wi-Fi)" : "reMarkable cloud");
-
-		// A heading, like every other group on this page. Without one these rows read as loose settings
-		// belonging to nothing, and once there are two sources and a fallback that is three or four of
-		// them in a row -- which is exactly where the eye needs somewhere to start.
-		new Setting(containerEl).setName("Where your notes come from").setHeading();
 
 		const source = new Setting(containerEl)
 			.setName("Sync from")
@@ -176,7 +268,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				data.primaryTransport = value as TransportId;
 				if (data.fallbackTransport === data.primaryTransport) data.fallbackTransport = null;
 				await this.plugin.saveData(data);
-				this.redraw();
+				this.refresh();
 			});
 		});
 
@@ -194,7 +286,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					data.fallbackTransport = value === "none" ? null : (value as TransportId);
 					await this.plugin.saveData(data);
-					this.redraw();
+					this.refresh();
 				});
 			});
 
@@ -227,7 +319,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						this.deviceHost = ssh.host === USB_HOST ? "" : ssh.host;
 						this.plugin.data.ssh = { ...ssh, privateKey: null, hostKeyFingerprint: null };
 						await this.plugin.saveData(this.plugin.data);
-						this.redraw();
+						this.refresh();
 					}),
 				)
 				.addButton((button) =>
@@ -238,7 +330,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						this.plugin.data.ssh = { ...DEFAULT_SSH_SETTINGS };
 						this.plugin.data.sshHashes = {};
 						await this.plugin.saveData(this.plugin.data);
-						this.redraw();
+						this.refresh();
 					}),
 				);
 			return;
@@ -337,7 +429,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			// one nobody asked to store, and the redraw is what makes the emptied field visible rather
 			// than leaving the box on screen full of a password the next "Pair" would no longer send.
 			this.devicePassword = "";
-			this.redraw();
+			this.refresh();
 		}
 	}
 
@@ -354,7 +446,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			connectionSetting.addButton((button) =>
 				button.setButtonText("Disconnect").onClick(async () => {
 					await this.plugin.auth.disconnect();
-					this.redraw();
+					this.refresh();
 				}),
 			);
 		} else {
@@ -384,7 +476,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							try {
 								await this.plugin.auth.connect(this.code);
 								new Notice("Connected to reMarkable.");
-								this.redraw();
+								this.refresh();
 							} catch (error) {
 								new Notice(explainError(error, "connect"), 10_000);
 							}
@@ -397,11 +489,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * Pro in one place, low in the tab. The gated features carry a sentence and a pointer down here
 	 * rather than a buy button of their own: a row at the top would ask a free user to pay before
 	 * they have seen the plugin work, which is the one backlash trigger the research actually
-	 * measured. Actions stays last, because those links are read when something has gone wrong.
+	 * measured. Help stays last, because those links are read when something has gone wrong.
 	 */
 	private renderPro(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Tagged Sync Pro").setHeading();
-
 		const entitlement = this.plugin.entitlement();
 		const status = licenceStatusText(entitlement, this.plugin.data.licence);
 		const statusRow = new Setting(containerEl).setName(status.heading).setDesc(status.body);
@@ -435,7 +525,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 							return;
 						}
 						await this.plugin.saveData(this.plugin.data);
-						this.redraw();
+						this.refresh();
 					}),
 			);
 		}
@@ -453,7 +543,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					await deactivateHere(this.plugin.data.licence, this.plugin.licenceApi);
 					this.plugin.data.licence = withoutLicence(this.plugin.data.licence);
 					await this.plugin.saveData(this.plugin.data);
-					this.redraw();
+					this.refresh();
 				}),
 			);
 		} else {
@@ -486,15 +576,13 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.licence = result.state;
 					await this.plugin.saveData(this.plugin.data);
 					new Notice(activationMessage(result.outcome));
-					this.redraw();
+					this.refresh();
 				}),
 			);
 	}
 
 	/** Where a synced notebook lands and what it carries -- the two rows about the vault side. */
 	private renderVaultOutput(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Vault output").setHeading();
-
 		// Existing notes keep embedding the old path until their notebook next changes; moving the
 		// files is the user's call, so the description says when the setting takes effect.
 		new Setting(containerEl)
@@ -575,8 +663,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const pro = zoteroProAllowed(this.plugin.entitlement());
 		const settings = this.plugin.data.zotero;
 
-		new Setting(containerEl).setName("Zotero").setHeading();
-
 		const status = new Setting(containerEl)
 			.setName("Connection")
 			.setDesc(
@@ -589,7 +675,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		// changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading
 		// "Connected via web." until the tab was reopened). Each probe is numbered, so a slow answer
 		// never lands on top of a newer one; a render that has been superseded drops its own answer on
-		// the floor (`redraw()` empties the container and draws a new one).
+		// the floor (`refresh()` draws the tab anew).
 		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		// Coloured like the vision verdict under Model (asked for in the desk test of 2026-09-13): the
 		// theme's own success and error tones, through a variable, so the answer reads at a glance.
@@ -672,7 +758,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
 					await this.plugin.saveData(this.plugin.data);
 					// Redrawn, because the status line above is now about a different set of connections.
-					this.redraw();
+					this.refresh();
 				});
 			});
 
@@ -828,7 +914,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					this.zoteroGroups = found;
 					// Drawn again only when the answer adds a row: the same list twice is not a reason to
 					// pull the screen out from under a person reading it.
-					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.redraw();
+					if (known === null || found.some((group) => !known.some((seen) => seen.id === group.id))) this.refresh();
 				},
 				(error: unknown) => status.setText(`Could not list your groups: ${describeZoteroError(error)}`),
 			);
@@ -859,15 +945,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * and the round-trip hint. Shown to every vault, the switch shut with "(Pro)" to a free one.
 	 *
 	 * The token is a Keychain entry, which this computer has or has not: `data.json` holds only the
-	 * entry's name, and the token is read when the line asks readwise.io. An Obsidian without the
-	 * Keychain (before 1.11.4) gets the heading and one sentence, with no `minAppVersion` bump (ticket 13 #2).
+	 * entry's name, and the token is read when the line asks readwise.io.
 	 */
 	private renderReadwise(containerEl: HTMLElement): void {
-		const heading = new Setting(containerEl).setName("Readwise").setHeading();
-		if (!requireApiVersion("1.11.4")) {
-			heading.setDesc("Needs Obsidian 1.11.4 or newer.");
-			return;
-		}
 		const pro = readwiseProAllowed(this.plugin.entitlement());
 
 		const line = new Setting(containerEl).setName("Connection").descEl.createDiv({ cls: "tagged-sync-verdict" });
@@ -913,15 +993,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				toggle.onChange((push) => save({ push }));
 			});
 
-		// The guard again, where the store's lint can see it: it reads only an enclosing `if`, not the return above.
-		if (requireApiVersion("1.11.4")) {
-			new Setting(containerEl)
-				.setName("Readwise access token")
-				.setDesc("From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.")
-				.addComponent((el) =>
-					new SecretComponent(this.app, el).setValue(this.plugin.data.readwise.tokenSecret ?? "").onChange((name) => save({ tokenSecret: name || null })),
-				);
-		}
+		new Setting(containerEl)
+			.setName("Readwise access token")
+			.setDesc("From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.")
+			.addComponent((el) =>
+				new SecretComponent(this.app, el).setValue(this.plugin.data.readwise.tokenSecret ?? "").onChange((name) => save({ tokenSecret: name || null })),
+			);
 
 		new Setting(containerEl)
 			.setName("Readwise's own Obsidian plugin")
@@ -948,10 +1025,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						}
 						startOverReadwise(this.plugin.data);
 						await this.plugin.saveData(this.plugin.data);
-						this.redraw();
+						this.refresh();
 					});
-					// Destructive, styled like the tag row's Remove: `setDestructive()` needs 1.13.
-					button.buttonEl.addClass("mod-warning");
+					button.setDestructive();
 				});
 		}
 	}
@@ -961,8 +1037,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * reachable only from the command palette, and the plugin registers no ribbon icon.
 	 */
 	private renderActions(containerEl: HTMLElement, connected: boolean): void {
-		new Setting(containerEl).setName("Actions").setHeading();
-
 		if (connected) {
 			new Setting(containerEl)
 				.setName("Sync now")
@@ -1022,8 +1096,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderOcrSettings(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Transcription").setHeading();
-
 		// Null only for a stored id no build registers -- a downgrade, or a hand-edited `data.json`.
 		// The row then says nothing rather than guessing which promise an unknown backend makes.
 		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
@@ -1064,7 +1136,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				dropdown.onChange(async (value) => {
 					this.plugin.data.ocrBackend = value;
 					await this.plugin.saveData(this.plugin.data);
-					this.redraw();
+					this.refresh();
 				});
 			});
 
@@ -1074,7 +1146,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			selectDefaultBackend: async () => {
 				this.plugin.data.ocrBackend = defaultOcrBackend(visionPlatformSupported());
 				await this.plugin.saveData(this.plugin.data);
-				this.redraw();
+				this.refresh();
 			},
 		});
 
@@ -1089,13 +1161,11 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * re-renders so the conditional rows update.
 	 */
 	private renderAutoSyncSettings(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Automatic sync").setHeading();
-
 		const auto = this.plugin.data.autoSync;
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
 			this.plugin.rearmAutoSyncInterval();
-			this.redraw();
+			this.refresh();
 		};
 
 		new Setting(containerEl)
@@ -1166,8 +1236,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderTagRouting(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Tag routing").setHeading();
-
 		new Setting(containerEl)
 			.setName("Discover tags")
 			.setDesc("Scan your reMarkable notebooks and pages for tags.")
@@ -1187,7 +1255,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					} finally {
 						await session?.close();
 					}
-					this.redraw();
+					this.refresh();
 				}),
 			);
 
@@ -1209,7 +1277,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 
 		const persist = async () => {
 			await this.plugin.saveData(this.plugin.data);
-			this.redraw();
+			this.refresh();
 		};
 
 		for (const item of view.items) {
@@ -1236,7 +1304,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 						view.recheckLicenceBeforeAdd &&
 						(await this.plugin.refreshLicence()).tier === "free"
 					) {
-						this.redraw();
+						this.refresh();
 						return;
 					}
 					mapping[item.tag] = value;
@@ -1249,9 +1317,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					delete mapping[item.tag];
 					await persist();
 				});
-				// `setWarning()` is deprecated and `setDestructive()` needs 1.13, while the manifest
-				// floor is 1.5.7 -- the class both of them set predates both.
-				button.buttonEl.addClass("mod-warning");
+				button.setDestructive();
 			});
 		}
 	}

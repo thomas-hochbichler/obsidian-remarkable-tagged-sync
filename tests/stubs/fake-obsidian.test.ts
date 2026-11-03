@@ -8,11 +8,15 @@ import {
 	debounce,
 	DropdownComponent,
 	FakeApp,
+	type FakeDefinition,
 	FakeEl,
 	FakeVault,
 	normalizePath,
 	parseLinktext,
 	Plugin,
+	PluginSettingTab,
+	renderSettingTab,
+	takeSettings,
 	TFile,
 	TFolder,
 } from "./fake-obsidian";
@@ -395,5 +399,59 @@ describe("the settings controls the plugin reaches past", () => {
 
 		el.toggle(true);
 		expect(el.visible).toBe(true);
+	});
+});
+
+describe("the declarative settings tab", () => {
+	/** A tab drawing the definitions a test hands it. */
+	function tabOf(definitions: () => FakeDefinition[]): PluginSettingTab {
+		const tab = new PluginSettingTab(new FakeApp(), new Plugin(new FakeApp()));
+		tab.getSettingDefinitions = definitions;
+		return tab;
+	}
+
+	it("draws a group's heading, then its rows, and a page as one entry on the root", () => {
+		takeSettings();
+		const tab = tabOf(() => [
+			{ type: "group", heading: "Vault output", items: [{ name: "Folder", desc: "Where it goes." }] },
+			{ type: "page", name: "Zotero", items: [{ name: "Connection" }] },
+		]);
+
+		renderSettingTab(tab);
+		expect(takeSettings().map((setting) => [setting.name, setting.heading])).toEqual([
+			["Vault output", true],
+			["Folder", false],
+			["Zotero", false],
+		]);
+
+		renderSettingTab(tab, { page: "Zotero" });
+		expect(takeSettings().map((setting) => setting.name)).toEqual(["Connection"]);
+	});
+
+	// obsidian.d.ts: a render callback "may return a cleanup function, invoked before the row is torn down".
+	it("runs a render row's cleanup before every redraw and when the tab closes", () => {
+		const torn: string[] = [];
+		const tab = tabOf(() => [{ name: "Line", render: () => () => void torn.push("line") }]);
+
+		renderSettingTab(tab);
+		tab.update();
+		expect(torn).toEqual(["line"]);
+
+		tab.hide();
+		expect(torn).toEqual(["line", "line"]);
+		tab.update();
+		expect(torn).toEqual(["line", "line"]);
+	});
+
+	it("refuses a definition field it does not model, rather than drawing it as understood", () => {
+		const tab = tabOf(() => [{ name: "Hidden", visible: false } as FakeDefinition]);
+
+		expect(() => renderSettingTab(tab)).toThrow('a definition\'s "visible" is not modelled yet');
+	});
+
+	it("refuses a list, which it does not model either", () => {
+		const tab = tabOf(() => [{ type: "list", items: [] }]);
+
+		expect(() => renderSettingTab(tab)).toThrow('a definition\'s "list" is not modelled yet');
 	});
 });

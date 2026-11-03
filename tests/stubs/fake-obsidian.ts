@@ -184,30 +184,6 @@ export const Platform = {
 /** The version `main.ts` puts in its diagnostics block. */
 export const apiVersion = READ_FROM_VERSION;
 
-/**
- * What {@link requireApiVersion} compares against: {@link apiVersion} unless a test runs as an older
- * Obsidian. `apiVersion` itself stays put -- only the diagnostics block prints it, and no test that
- * changes this reads it; a test that needs both to agree has to move `apiVersion` too.
- */
-let runningVersion = READ_FROM_VERSION;
-
-/** Not an Obsidian member. How a test runs as another Obsidian; `null` goes back to {@link apiVersion}. */
-export function runAsVersion(version: string | null): void {
-	runningVersion = version ?? READ_FROM_VERSION;
-}
-
-/**
- * Whether the running Obsidian is at least `version`: what guards an API newer than `minAppVersion`.
- * Not read from `app.js`; `obsidian.d.ts` says it "returns `true` if the API version is equal to or
- * higher than the requested version", and this compares the dotted numbers that way.
- */
-export function requireApiVersion(version: string): boolean {
-	const parts = (value: string) => value.split(".").map(Number);
-	const [want, have] = [parts(version), parts(runningVersion)];
-	const differs = want.findIndex((part, index) => part !== (have[index] ?? 0));
-	return differs === -1 || want[differs] < (have[differs] ?? 0);
-}
-
 // --- elements ------------------------------------------------------------------------------------
 
 /**
@@ -1106,6 +1082,12 @@ export class ButtonComponent {
 		this.warning = true;
 		return this;
 	}
+	/** Recording, like {@link setCta}: which buttons asked to be drawn as destructive. */
+	destructive = false;
+	setDestructive(): this {
+		this.destructive = true;
+		return this;
+	}
 	setDisabled(disabled: boolean): this {
 		this.disabled = disabled;
 		return this;
@@ -1153,6 +1135,8 @@ export class Setting {
 	heading = false;
 	disabled = false;
 	readonly settingEl = new FakeEl();
+	/** Where the name and description sit. Detached here, like the three below: nothing reads the tree. */
+	readonly infoEl = new FakeEl();
 	readonly nameEl = new FakeEl();
 	readonly descEl = new FakeEl();
 	readonly controlEl = new FakeEl();
@@ -1292,8 +1276,10 @@ export class Plugin {
 		this.statusBarItems.push(el);
 		return el;
 	}
+	/** `obsidian.d.ts`: `update()` "Called by addSettingTab()" -- so a tab's definitions run inside `onload`. */
 	addSettingTab(tab: PluginSettingTab): void {
 		this.settingTabs.push(tab);
+		tab.update();
 	}
 	registerEvent(ref: EventRef): void {
 		this.eventRefs.push(ref);
@@ -1318,14 +1304,119 @@ export class Plugin {
 	onunload(): void {}
 }
 
+/**
+ * The declarative settings API (Obsidian 1.13): the tab answers `getSettingDefinitions()` and Obsidian
+ * draws what comes back. Read from `obsidian-1.15.0.asar` -> `app.js`, not 1.13.7 (the API is newer
+ * than this file's other readings): `update()` is `this.settingItems = this.getSettingDefinitions()`
+ * followed by `refreshCurrentPage(this)`, so it draws again whatever is open; a render row's `Setting`
+ * gets `setName(def.name)` and `setDesc(def.desc)` before `def.render(setting, group)` runs, and the
+ * cleanup it returns is kept on the row. From `obsidian.d.ts` only: `addSettingTab()` calls `update()`,
+ * and the cleanup runs "before the row is torn down".
+ *
+ * Recorded, not claimed: a group's heading is drawn here as a heading {@link Setting} (Obsidian draws a
+ * group header of its own), and every row lands in draw order in one element, like the imperative
+ * tab's did. The group a render callback gets is an empty object: nothing in the plugin reads it yet.
+ *
+ * Kinds and fields no definition of this plugin uses yet throw, rather than being drawn as though they
+ * were understood: a `visible: false` drawn anyway is a test passing on a row the user never sees.
+ */
+export interface FakeDefinition {
+	type?: "group" | "list" | "page";
+	name?: string;
+	desc?: string | FakeEl;
+	heading?: string;
+	cls?: string;
+	searchable?: boolean;
+	items?: FakeDefinition[];
+	render?: (setting: Setting, group: object) => void | (() => void);
+}
+
+const NOT_MODELLED = ["control", "action", "visible", "disabled", "search", "extraButtons", "displayValue", "status"];
+
+/** How {@link renderSettingTab} was last asked to draw, so `update()` draws the same view again. */
+export interface RenderOptions {
+	/** A page by name, at any depth. Absent: the root, with each page as one entry row. */
+	page?: string;
+	/**
+	 * Not Obsidian: each page drawn right under its entry, as a heading with the page's name and its
+	 * rows -- the one long tab the plugin had before it had pages, which is what its older tests read.
+	 */
+	openPages?: boolean;
+}
+
 export class PluginSettingTab {
 	readonly containerEl = new FakeEl();
+	settingItems: FakeDefinition[] = [];
+	/** Not an Obsidian member. What is on screen, or `null` while the tab is closed. */
+	shown: RenderOptions | null = null;
+	private cleanups: (() => void)[] = [];
 	constructor(
 		readonly app: FakeApp,
 		readonly plugin: Plugin,
 	) {}
-	display(): void {}
-	hide(): void {}
+	getSettingDefinitions(): FakeDefinition[] {
+		return [];
+	}
+	/** Asks for the definitions again, and draws them again if the tab is open. */
+	update(): void {
+		this.settingItems = this.getSettingDefinitions();
+		if (this.shown !== null) this.draw(this.shown);
+	}
+	/** Closing the tab tears its rows down, so their cleanups run. */
+	hide(): void {
+		this.shown = null;
+		this.tearDown();
+	}
+	private tearDown(): void {
+		for (const cleanup of this.cleanups.splice(0, this.cleanups.length)) cleanup();
+	}
+	private draw(options: RenderOptions): void {
+		this.tearDown();
+		this.containerEl.empty();
+		const page = options.page === undefined ? null : findPage(this.settingItems, options.page);
+		if (options.page !== undefined && page === null) throw new Error(`tests/stubs: no settings page named "${options.page}"`);
+		const items = page === null ? this.settingItems : (page.items ?? []);
+		this.drawItems(items, options.openPages === true);
+	}
+	private drawItems(items: FakeDefinition[], openPages: boolean): void {
+		const el = this.containerEl;
+		const group = {};
+		for (const item of items) {
+			const unmodelled = NOT_MODELLED.find((field) => (item as Record<string, unknown>)[field] !== undefined);
+			if (unmodelled !== undefined || item.type === "list") {
+				throw new Error(`tests/stubs: a definition's "${unmodelled ?? "list"}" is not modelled yet. Model it from obsidian.d.ts first.`);
+			}
+			if (item.type === "group") {
+				if (item.heading !== undefined) new Setting(el).setName(item.heading).setHeading();
+				this.drawItems(item.items ?? [], openPages);
+			} else if (item.type === "page") {
+				new Setting(el).setName(item.name ?? "");
+				if (!openPages) continue;
+				new Setting(el).setName(item.name ?? "").setHeading();
+				this.drawItems(item.items ?? [], openPages);
+			} else {
+				const setting = new Setting(el).setName(item.name ?? "");
+				if (item.desc !== undefined) setting.setDesc(item.desc);
+				const cleanup = item.render?.(setting, group);
+				if (cleanup) this.cleanups.push(cleanup);
+			}
+		}
+	}
+}
+
+function findPage(items: FakeDefinition[], name: string): FakeDefinition | null {
+	for (const item of items) {
+		if (item.type === "page" && item.name === name) return item;
+		const inner = findPage(item.items ?? [], name);
+		if (inner !== null) return inner;
+	}
+	return null;
+}
+
+/** Not an Obsidian member. The user opening the tab -- on its root, or on one page. */
+export function renderSettingTab(tab: PluginSettingTab, options: RenderOptions = {}): void {
+	tab.shown = options;
+	tab.update();
 }
 
 // --- deliberately not implemented ----------------------------------------------------------------

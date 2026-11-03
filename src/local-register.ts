@@ -298,9 +298,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 			row.addButton((button) => {
 				button.setButtonText(action.label);
 				if (action.emphasis === "cta") button.setCta();
-				// The class Obsidian styles a destructive button with. `setWarning()` is deprecated and
-				// `setDestructive()` needs 1.13, while the manifest floor is 1.5.7 -- the class predates both.
-				if (action.emphasis === "warning") button.buttonEl.addClass("mod-warning");
+				if (action.emphasis === "warning") button.setDestructive();
 				button.onClick(async () => {
 					switch (action.id) {
 						case "download":
