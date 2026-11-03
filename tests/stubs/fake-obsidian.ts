@@ -331,6 +331,28 @@ export class FakeEl {
 	get isConnected(): boolean {
 		return !this.removed;
 	}
+	/** `Element.querySelector`, for a single class only (`.name`): the first match below this one, depth first. */
+	querySelector(selector: string): FakeEl | null {
+		if (!/^\.[\w-]+$/.test(selector)) throw new Error(`tests/stubs: querySelector("${selector}") is not modelled; only ".class" is.`);
+		for (const child of this.children) {
+			if (child.classes.has(selector.slice(1))) return child;
+			const inner = child.querySelector(selector);
+			if (inner !== null) return inner;
+		}
+		return null;
+	}
+	/** `Element.closest`, for a single class only: this element or the nearest one above it that has it. */
+	closest(selector: string): FakeEl | null {
+		if (!/^\.[\w-]+$/.test(selector)) throw new Error(`tests/stubs: closest("${selector}") is not modelled; only ".class" is.`);
+		let el: FakeEl | null = this;
+		while (el !== null && !el.classes.has(selector.slice(1))) el = el.parentEl;
+		return el;
+	}
+	/** Recording, not modelled: how many times the plugin asked for this element to be scrolled to. */
+	scrolledIntoView = 0;
+	scrollIntoView(): void {
+		this.scrolledIntoView += 1;
+	}
 	/** Every string in this element and below it, in document order. The usual thing to assert. */
 	allText(): string[] {
 		const out = this.text === "" ? [] : [this.text];
@@ -893,6 +915,35 @@ export class Modal {
 	onClose(): void {}
 }
 
+/** `obsidian.d.ts`: a modal with a text field over a list of suggestions. Only the placeholder is read here. */
+export abstract class SuggestModal extends Modal {
+	placeholder = "";
+	setPlaceholder(placeholder: string): void {
+		this.placeholder = placeholder;
+	}
+}
+
+/**
+ * `obsidian.d.ts`: lists `getItems()` by `getItemText(item)`, and calls `onChooseItem` with the item
+ * chosen. The fuzzy matching itself is Obsidian's and not modelled: a test chooses by the text shown.
+ */
+export abstract class FuzzySuggestModal<T> extends SuggestModal {
+	abstract getItems(): T[];
+	abstract getItemText(item: T): string;
+	abstract onChooseItem(item: T, evt: unknown): void;
+	/** Not an Obsidian member. The list before anything is typed: each item's text, in `getItems` order. */
+	get itemTexts(): string[] {
+		return this.getItems().map((item) => this.getItemText(item));
+	}
+	/** Not an Obsidian member. The user picks the item showing `text`; the modal closes, then hears of it. */
+	choose(text: string): void {
+		const item = this.getItems().find((candidate) => this.getItemText(candidate) === text);
+		if (item === undefined) throw new Error(`tests/stubs: the picker lists no "${text}" among ${this.itemTexts.join(", ")}`);
+		this.close();
+		this.onChooseItem(item, {});
+	}
+}
+
 export class ProgressBarComponent {
 	value = 0;
 	constructor(readonly containerEl: FakeEl) {}
@@ -1104,6 +1155,35 @@ export class ButtonComponent {
 	}
 }
 
+/** `obsidian.d.ts`: an icon button for secondary actions -- icon and tooltip, no label. */
+export class ExtraButtonComponent {
+	icon = "";
+	tooltip = "";
+	disabled = false;
+	readonly extraSettingsEl = new FakeEl("div");
+	private clicked: (() => unknown) | null = null;
+	setIcon(icon: string): this {
+		this.icon = icon;
+		return this;
+	}
+	setTooltip(tooltip: string): this {
+		this.tooltip = tooltip;
+		return this;
+	}
+	setDisabled(disabled: boolean): this {
+		this.disabled = disabled;
+		return this;
+	}
+	onClick(cb: () => unknown): this {
+		this.clicked = cb;
+		return this;
+	}
+	/** Not an Obsidian member. How a test presses it. */
+	click(): unknown {
+		return this.clicked?.();
+	}
+}
+
 /**
  * Obsidian's Keychain picker (since 1.11.4): the user picks or creates an entry, and the component
  * hands back the entry's **name**, never the secret. Not read from `app.js`; `obsidian.d.ts` gives
@@ -1146,6 +1226,7 @@ export class Setting {
 	readonly toggles: ToggleComponent[] = [];
 	readonly dropdowns: DropdownComponent[] = [];
 	readonly buttons: ButtonComponent[] = [];
+	readonly extraButtons: ExtraButtonComponent[] = [];
 	/** What `addComponent` built, in order. */
 	readonly components: unknown[] = [];
 
@@ -1211,8 +1292,11 @@ export class Setting {
 		cb(button);
 		return this;
 	}
-	addExtraButton(cb: (button: ButtonComponent) => unknown): this {
-		return this.addButton(cb);
+	addExtraButton(cb: (button: ExtraButtonComponent) => unknown): this {
+		const button = new ExtraButtonComponent();
+		this.extraButtons.push(button);
+		cb(button);
+		return this;
 	}
 	addComponent(cb: (el: FakeEl) => unknown): this {
 		this.components.push(cb(this.controlEl));
@@ -1225,7 +1309,7 @@ export class Setting {
 	/** The controls go, from the element and from the record: a redrawn row starts without them. */
 	clear(): this {
 		this.controlEl.empty();
-		for (const list of [this.texts, this.toggles, this.dropdowns, this.buttons, this.components]) list.length = 0;
+		for (const list of [this.texts, this.toggles, this.dropdowns, this.buttons, this.extraButtons, this.components]) list.length = 0;
 		return this;
 	}
 }
@@ -1335,9 +1419,15 @@ export class Plugin {
  * render put into `settingEl` itself is still there. A row whose key is gone has its cleanup run after
  * the redraw. Not modelled: Obsidian skips redrawing a control row that holds the focused element.
  *
- * Recorded, not claimed: a group's heading is drawn here as a heading {@link Setting} (Obsidian draws a
- * group header of its own), and every row lands in draw order in one element, like the imperative
- * tab's did. The group a render callback gets is an empty object: nothing in the plugin reads it yet.
+ * A group is an element with `setting-group` and its `cls`, holding its heading and its rows (app.js
+ * `HDe`); the heading is drawn here as a heading {@link Setting} carrying the `extraButtons` (Obsidian
+ * draws a header of its own). As in app.js `rue`, a redraw keeps a group with the same path: its
+ * heading is set again and its rows drawn again, but its class, extra buttons and search box -- with
+ * the `match` it was first given -- stay as its first draw made them. The group a render callback
+ * gets is an empty object: app.js passes its own internal record there, not the `SettingGroup` the
+ * d.ts names, so nothing in the plugin may read it. A group's `search` box is typed into with
+ * {@link PluginSettingTab.groupSearch}; `match` runs for each searchable row then and after every
+ * redraw once something was typed (obsidian.d.ts; ticket 17's F6 saw it per keystroke, `""` included).
  * A control is drawn as the component its type names; `folder` as a text field (its suggester is
  * Obsidian's).
  *
@@ -1356,6 +1446,8 @@ export interface FakeDefinition {
 	control?: FakeControl;
 	items?: FakeDefinition[];
 	render?: (setting: Setting, group: object) => void | (() => void);
+	extraButtons?: ((button: ExtraButtonComponent) => unknown)[];
+	search?: { placeholder?: string; match: (def: FakeDefinition, query: string) => boolean };
 }
 
 /** The control types this plugin's definitions use. */
@@ -1369,7 +1461,7 @@ export interface FakeControl {
 	includeRoot?: boolean;
 }
 
-const NOT_MODELLED = ["action", "disabled", "search", "extraButtons", "displayValue", "status"];
+const NOT_MODELLED = ["action", "disabled", "displayValue", "status"];
 
 /** `app.js`'s `el(value, fallback)`: a predicate is a value or a function answering one. */
 function evaluate(value: boolean | (() => boolean) | undefined, fallback: boolean): boolean {
@@ -1381,6 +1473,22 @@ interface DrawnRow {
 	def: FakeDefinition;
 	setting: Setting;
 	cleanup?: () => void;
+	/** What its group's `search.match` last answered; a row outside a filtered group always matches. */
+	matches?: boolean;
+}
+
+/** A group as its first draw built it: the element, the heading row, and the search box, if any. */
+interface DrawnGroup {
+	groupEl: FakeEl;
+	heading: Setting | null;
+	search?: NonNullable<FakeDefinition["search"]>;
+}
+
+/** A group with a search box, as last drawn: its rows are what `match` is asked about. */
+interface DrawnSearch {
+	path: string;
+	search: NonNullable<FakeDefinition["search"]>;
+	rows: DrawnRow[];
 }
 
 /** How {@link renderSettingTab} was last asked to draw, so `update()` draws the same view again. */
@@ -1403,6 +1511,12 @@ export class PluginSettingTab {
 	private drawnFor = "";
 	/** Every row drawn, by its key, with its definition and cleanup: what a redraw reuses and `refreshDomState()` walks. */
 	private rendered = new Map<string, DrawnRow>();
+	/** Every group drawn, by its path: what a redraw keeps the header of. */
+	private groups = new Map<string, DrawnGroup>();
+	/** The groups with a search box on screen, by heading. */
+	private searches = new Map<string, DrawnSearch>();
+	/** What was typed into each search box, by the group's path: kept across redraws. */
+	private readonly queries = new Map<string, string>();
 	constructor(
 		readonly app: FakeApp,
 		readonly plugin: Plugin,
@@ -1422,8 +1536,8 @@ export class PluginSettingTab {
 	}
 	/** Re-evaluates `visible` and `disabled` on what is drawn, and draws nothing again. */
 	refreshDomState(): void {
-		for (const { def, setting } of this.rendered.values()) {
-			setting.settingEl.toggle(evaluate(def.visible, true));
+		for (const { def, setting, matches } of this.rendered.values()) {
+			setting.settingEl.toggle(evaluate(def.visible, true) && matches !== false);
 			if (def.control?.disabled !== undefined) setting.setDisabled(evaluate(def.control.disabled, false));
 		}
 	}
@@ -1447,6 +1561,7 @@ export class PluginSettingTab {
 	private tearDown(): void {
 		for (const row of this.rendered.values()) row.cleanup?.();
 		this.rendered.clear();
+		this.groups.clear();
 	}
 	private draw(options: RenderOptions): void {
 		const view = JSON.stringify(options);
@@ -1454,30 +1569,77 @@ export class PluginSettingTab {
 		this.drawnFor = view;
 		const previous = this.rendered;
 		this.rendered = new Map();
+		const previousGroups = this.groups;
+		this.groups = new Map();
+		this.searches = new Map();
 		this.containerEl.empty();
 		const page = options.page === undefined ? null : findPage(this.settingItems, options.page);
 		if (options.page !== undefined && page === null) throw new Error(`tests/stubs: no settings page named "${options.page}"`);
 		const items = page === null ? this.settingItems : (page.items ?? []);
-		this.drawItems(items, options.openPages === true, "", previous);
+		this.drawItems(this.containerEl, items, options.openPages === true, "", previous, previousGroups);
 		for (const [key, row] of previous) if (!this.rendered.has(key)) row.cleanup?.();
+		for (const entry of this.searches.values()) {
+			const query = this.queries.get(entry.path);
+			if (query !== undefined) this.match(entry, query);
+		}
 		this.refreshDomState();
 	}
-	private drawItems(items: FakeDefinition[], openPages: boolean, path: string, previous: Map<string, DrawnRow>): void {
-		const el = this.containerEl;
+	/** Not an Obsidian member. The search box in the header of the group headed `heading`, to type into. */
+	groupSearch(heading: string): { placeholder: string; type(query: string): void } {
+		const entry = this.searches.get(heading);
+		if (!entry) throw new Error(`tests/stubs: no group "${heading}" with a search box on screen`);
+		return {
+			placeholder: entry.search.placeholder ?? "",
+			type: (query) => {
+				const current = this.searches.get(heading) ?? entry;
+				this.queries.set(current.path, query);
+				this.match(current, query);
+				this.refreshDomState();
+			},
+		};
+	}
+	private match(entry: DrawnSearch, query: string): void {
+		for (const row of entry.rows) row.matches = row.def.searchable === false || entry.search.match(row.def, query);
+	}
+	/** Draws `items` into `el` and answers the rows drawn at this level, not inside a group under it. */
+	private drawItems(
+		el: FakeEl,
+		items: FakeDefinition[],
+		openPages: boolean,
+		path: string,
+		previous: Map<string, DrawnRow>,
+		previousGroups: Map<string, DrawnGroup>,
+	): DrawnRow[] {
 		const group = {};
+		const rows: DrawnRow[] = [];
 		items.forEach((item, index) => {
 			const unmodelled = NOT_MODELLED.find((field) => (item as Record<string, unknown>)[field] !== undefined);
 			if (unmodelled !== undefined || item.type === "list" || (item.type !== undefined && item.visible !== undefined)) {
 				throw new Error(`tests/stubs: a definition's "${unmodelled ?? (item.type === "list" ? "list" : "visible")}" is not modelled yet. Model it from obsidian.d.ts first.`);
 			}
 			if (item.type === "group") {
-				if (item.heading !== undefined) new Setting(el).setName(item.heading).setHeading();
-				this.drawItems(item.items ?? [], openPages, `${path}group:${item.heading ?? item.cls ?? index}/`, previous);
+				if (item.heading === undefined && (item.extraButtons !== undefined || item.search !== undefined)) {
+					throw new Error("tests/stubs: a header without a heading is not modelled yet. Model it from obsidian.d.ts first.");
+				}
+				const groupPath = `${path}group:${item.heading ?? item.cls ?? index}/`;
+				const kept = previousGroups.get(groupPath);
+				const drawn = kept ?? this.newGroup(item);
+				if (kept) {
+					kept.groupEl.empty();
+					if (kept.heading) {
+						kept.groupEl.appendChild(kept.heading.settingEl);
+						settingLog.push(kept.heading.setName(item.heading ?? ""));
+					}
+				}
+				this.groups.set(groupPath, drawn);
+				el.appendChild(drawn.groupEl);
+				const children = this.drawItems(drawn.groupEl, item.items ?? [], openPages, groupPath, previous, previousGroups);
+				if (drawn.search !== undefined && item.heading !== undefined) this.searches.set(item.heading, { path: groupPath, search: drawn.search, rows: children });
 			} else if (item.type === "page") {
 				new Setting(el).setName(item.name ?? "");
 				if (!openPages) return;
 				new Setting(el).setName(item.name ?? "").setHeading();
-				this.drawItems(item.items ?? [], openPages, `${path}page:${item.name}/`, previous);
+				this.drawItems(el, item.items ?? [], openPages, `${path}page:${item.name}/`, previous, previousGroups);
 			} else {
 				const key = path + (item.control ? `ctrl:${item.control.key}` : item.name ? `name:${item.name}` : `item#${index}`);
 				const reused = previous.get(key);
@@ -1493,11 +1655,21 @@ export class PluginSettingTab {
 				setting.setName(item.name ?? "").setDesc(item.desc ?? "");
 				const row: DrawnRow = { def: item, setting };
 				this.rendered.set(key, row);
+				rows.push(row);
 				if (item.control !== undefined) this.drawControl(setting, item.control);
 				const cleanup = item.render?.(setting, group);
 				if (cleanup) row.cleanup = cleanup;
 			}
 		});
+		return rows;
+	}
+	/** A group's element and header, as app.js `HDe` builds them once: the search box only if it starts with rows. */
+	private newGroup(item: FakeDefinition): DrawnGroup {
+		const groupEl = new FakeEl();
+		groupEl.addClass("setting-group", ...(item.cls ?? "").split(/\s+/).filter(Boolean));
+		const heading = item.heading === undefined ? null : new Setting(groupEl).setName(item.heading).setHeading();
+		for (const button of item.extraButtons ?? []) heading?.addExtraButton(button);
+		return { groupEl, heading, search: item.search !== undefined && (item.items ?? []).length > 0 ? item.search : undefined };
 	}
 	private drawControl(setting: Setting, control: FakeControl): void {
 		const value = this.getControlValue(control.key) ?? control.defaultValue;

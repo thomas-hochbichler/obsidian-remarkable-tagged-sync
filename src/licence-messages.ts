@@ -171,12 +171,10 @@ export function gatedBackendMessage(backendLabel: string, fallbackBackend: strin
 }
 
 /**
- * The free tag cap. This edits a message that already ships: the existing sentence must keep saying
- * that an existing mapping is never removed, because the code gates *adding* only.
+ * The free tag cap, the description of the row "One tag in the free version" above the faded pills
+ * (settings-redesign spec §4.2). How to free the slot is the removal note's and the × button's to say.
  */
-export const TAG_CAP_MESSAGE =
-	"The free version syncs one tag. Remove the current mapping to choose a different one, or unlock " +
-	"unlimited tags with Tagged Sync Pro.";
+export const TAG_CAP_MESSAGE = "The free version syncs one tag. Tagged Sync Pro syncs every tag.";
 
 /**
  * The money-back promise, in the fine print under the Pro section and repeated on the product page.

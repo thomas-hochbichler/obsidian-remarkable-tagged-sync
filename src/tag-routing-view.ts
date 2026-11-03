@@ -7,13 +7,11 @@
  * vitest. The cap is half of what Pro sells, so "only reachable by rendering" was not an acceptable
  * place for it.
  *
- * The section's items come back **in draw order**, notices included. That is not tidiness either: an
- * earlier cut returned the two notices as separate fields and let the renderer place them, which put
- * the cap sentence *below* the rows it explains while every test stayed green. Order is a decision,
- * so it is decided here.
+ * The lines come back **in draw order**. That is not tidiness either: an earlier cut returned the two
+ * notices as separate fields and let the renderer place them, which put the cap sentence *below* the
+ * rows it explains while every test stayed green. Order is a decision, so it is decided here.
  */
 
-import { TAG_CAP_MESSAGE } from "./licence-messages";
 import type { Entitlement } from "./licence-state";
 import type { TagFolderMap } from "./tag-router";
 
@@ -38,110 +36,88 @@ export function tagLimitFor(entitlement: Entitlement): number {
 /** Said under the mapped rows, because removal is the one action there whose effect is not obvious. */
 export const REMOVAL_MESSAGE = "Removing a tag stops syncing it. Notes already in your vault stay where they are.";
 
-/** A discovered tag nobody has routed yet. */
-export const MAPPABLE_DESC = "Not synced until mapped to a folder.";
-/** The same tag, once the cap refuses it. A different sentence, because it is a different situation. */
-export const CAPPED_DESC = "Not synced.";
-const CHOOSE_LABEL = "Choose a folder…";
-const ROOT_LABEL = "Vault root";
-
-/** One entry of a row's folder dropdown. */
-export interface FolderOption {
-	readonly value: string;
-	readonly label: string;
+/** A folder as the tab names it: the root by a name, never as "/". */
+export function folderLabel(path: string): string {
+	return path === "/" ? "Vault root" : path;
 }
 
-/** A tag that syncs today. Its folder can be changed, and it can be removed. */
-export interface MappedItem {
-	readonly kind: "mapped";
+/** From this many tags the group offers a filter (settings-redesign 06 #4): fewer fit on one screen. */
+const FILTER_FROM = 12;
+
+/** A tag that syncs today: its folder can be changed, and it can be removed. */
+export interface MappedTag {
 	readonly tag: string;
-	readonly desc: string;
 	readonly folder: string;
-	readonly options: readonly FolderOption[];
+	/** What the folder button says: "Vault root" for `/`, and "(missing)" after a folder that is gone. */
+	readonly label: string;
+	/** The folder was renamed or deleted since. The mapping keeps working, so it is said, not undone. */
+	readonly missing: boolean;
 }
 
-/** A discovered tag the user may map right now. */
-export interface MappableItem {
-	readonly kind: "mappable";
+/** An unmapped tag: found by the scan, no mapping yet. A capped one is shown and refused, not hidden. */
+export interface UnmappedTag {
 	readonly tag: string;
-	readonly desc: string;
-	readonly options: readonly FolderOption[];
+	readonly capped: boolean;
 }
 
-/** A discovered tag the cap refuses. Stated, not silently disabled -- a silent refusal reads as a bug. */
-export interface CappedItem {
-	readonly kind: "capped";
-	readonly tag: string;
-	readonly desc: string;
-}
-
-/** One thing the section draws, in the order it draws it. */
-export type TagRoutingItem = { readonly kind: "notice"; readonly text: string } | MappedItem | MappableItem | CappedItem;
+/** The lines between the mapped rows and the pills, each said only when it is true. */
+export type TagRoutingLine = "scan-first" | "nothing-found" | "cap";
 
 export interface TagRoutingView {
-	readonly items: readonly TagRoutingItem[];
+	/** Alphabetical. */
+	readonly mapped: readonly MappedTag[];
+	/** Alphabetical: found and not mapped. */
+	readonly pills: readonly UnmappedTag[];
+	/** In draw order, above the pills: the cap sentence explains the pills under it. */
+	readonly lines: readonly TagRoutingLine[];
+	readonly removalNote: boolean;
+	readonly filter: boolean;
 	/**
-	 * Whether choosing a folder on a `mappable` row must re-check the licence with Polar first.
+	 * Whether choosing a folder for a pill must re-check the licence with Polar first.
 	 *
-	 * It is only ever true on a render that was *above* the free limit and still offered dropdowns --
+	 * It is only ever true on a render that was *above* the free limit and still offered pills to map --
 	 * which means the user had Pro or a trial when the tab drew. So the case it catches is narrow and
 	 * real: a licence that ended between the tab opening and the folder being picked.
 	 */
 	readonly recheckLicenceBeforeAdd: boolean;
 }
 
-function labelFor(path: string): string {
-	return path === "/" ? ROOT_LABEL : path;
-}
-
 export function planTagRouting(input: {
 	mapping: TagFolderMap;
-	discoveredTags: readonly string[];
+	/** What the last scan of this Obsidian session found, mapped tags included; `null` before the first. */
+	foundTags: readonly string[] | null;
 	/** Every folder the vault holds. The root is always among them, so a new vault has a valid target. */
 	folderPaths: readonly string[];
 	entitlement: Entitlement;
 }): TagRoutingView {
-	const { mapping, discoveredTags, folderPaths, entitlement } = input;
-	const mappedTags = Object.keys(mapping).sort();
-	const folderOptions = folderPaths.map((path) => ({ value: path, label: labelFor(path) }));
-	const items: TagRoutingItem[] = [];
-
-	// Mapped and unmapped tags used to carry a heading each, which put three headings on one list and
-	// read as three sections. Each row already says which it is, so the grouping is carried by the rows.
-	for (const tag of mappedTags) {
-		const folder = mapping[tag];
-		items.push({
-			kind: "mapped",
-			tag,
-			desc: labelFor(folder),
-			folder,
-			// The mapped folder may have been renamed or deleted since. Keep it selectable either way: a
-			// dropdown that cannot show its own value would re-map the tag on the next thing the user did.
-			options: folderPaths.includes(folder)
-				? folderOptions
-				: [...folderOptions, { value: folder, label: `${folder} (missing)` }],
+	const { mapping, foundTags, folderPaths, entitlement } = input;
+	const mapped = Object.keys(mapping)
+		.sort()
+		.map((tag): MappedTag => {
+			const folder = mapping[tag];
+			const missing = !folderPaths.includes(folder);
+			return { tag, folder, label: missing ? `${folderLabel(folder)} (missing)` : folderLabel(folder), missing };
 		});
-	}
-	if (mappedTags.length > 0) items.push({ kind: "notice", text: REMOVAL_MESSAGE });
-
-	const unmappedTags = discoveredTags.filter((tag) => !(tag in mapping));
-	if (unmappedTags.length === 0) return { items, recheckLicenceBeforeAdd: false };
 
 	// The cap only ever blocks *adding*. It must never unmap a tag that is already mapped, and a silent
-	// refusal reads as a bug -- so the reason is stated, above the rows it applies to.
-	if (mappedTags.length >= tagLimitFor(entitlement)) {
-		items.push({ kind: "notice", text: TAG_CAP_MESSAGE });
-		for (const tag of unmappedTags) items.push({ kind: "capped", tag, desc: CAPPED_DESC });
-		return { items, recheckLicenceBeforeAdd: false };
-	}
+	// refusal reads as a bug -- so a capped pill is still drawn, and the reason is stated above it.
+	const capped = mapped.length >= tagLimitFor(entitlement);
+	const pills = (foundTags ?? [])
+		.filter((tag) => !(tag in mapping))
+		.sort()
+		.map((tag) => ({ tag, capped }));
 
-	for (const tag of unmappedTags) {
-		items.push({
-			kind: "mappable",
-			tag,
-			desc: MAPPABLE_DESC,
-			options: [{ value: "", label: CHOOSE_LABEL }, ...folderOptions],
-		});
-	}
-	return { items, recheckLicenceBeforeAdd: mappedTags.length >= FREE_TAG_LIMIT };
+	const lines: TagRoutingLine[] = [];
+	if (foundTags === null) lines.push("scan-first");
+	else if (foundTags.length === 0) lines.push("nothing-found");
+	if (pills.length > 0 && capped) lines.push("cap");
+
+	return {
+		mapped,
+		pills,
+		lines,
+		removalNote: mapped.length > 0,
+		filter: new Set([...Object.keys(mapping), ...(foundTags ?? [])]).size >= FILTER_FROM,
+		recheckLicenceBeforeAdd: pills.length > 0 && !capped && mapped.length >= FREE_TAG_LIMIT,
+	};
 }

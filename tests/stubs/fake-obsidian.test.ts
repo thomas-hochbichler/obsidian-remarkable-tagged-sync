@@ -11,11 +11,13 @@ import {
 	type FakeDefinition,
 	FakeEl,
 	FakeVault,
+	FuzzySuggestModal,
 	normalizePath,
 	parseLinktext,
 	Plugin,
 	PluginSettingTab,
 	renderSettingTab,
+	takeModals,
 	takeSettings,
 	TFile,
 	TFolder,
@@ -536,5 +538,154 @@ describe("the declarative settings tab", () => {
 		const tab = tabOf(() => [{ type: "list", items: [] }]);
 
 		expect(() => renderSettingTab(tab)).toThrow('a definition\'s "list" is not modelled yet');
+	});
+
+	// obsidian.d.ts: `extraButtons` are "for the header", and `cls` goes on the group element, which
+	// holds the header and the rows (app.js `HDe`: `setting-group`, then header, search, items).
+	it("draws a group as an element holding its heading with the extra buttons, and its rows", () => {
+		takeSettings();
+		const clicked: string[] = [];
+		const tab = tabOf(() => [
+			{
+				type: "group",
+				heading: "Tags",
+				cls: "my-group",
+				extraButtons: [(button) => button.setIcon("refresh-cw").setTooltip("Scan").onClick(() => clicked.push("scan"))],
+				items: [{ name: "Row" }],
+			},
+		]);
+
+		renderSettingTab(tab);
+		const [heading, row] = takeSettings();
+		heading.extraButtons[0].click();
+
+		expect(heading.extraButtons.map((button) => [button.icon, button.tooltip])).toEqual([["refresh-cw", "Scan"]]);
+		expect(clicked).toEqual(["scan"]);
+		const groupEl = tab.containerEl.querySelector(".my-group");
+		expect(groupEl?.classes.has("setting-group")).toBe(true);
+		expect(row.settingEl.closest(".my-group")).toBe(groupEl);
+		expect(row.settingEl.closest(".nowhere")).toBeNull();
+	});
+
+	// app.js `rue`: a redraw that finds a group with the same key (`id`, else its heading) sets its
+	// heading and draws its items again -- the class, the extra buttons and the search box, with its
+	// `match`, stay as the group's first draw made them. Only a group drawn anew gets the new ones.
+	it("keeps a group's header from its first draw, however the definition changes", () => {
+		takeSettings();
+		let round = 1;
+		const tab = tabOf(() => [
+			{
+				type: "group",
+				heading: "Tags",
+				cls: `round-${round}`,
+				extraButtons: [(button) => button.setTooltip(`round ${round}`)],
+				search: { placeholder: `round ${round}`, match: () => round === 1 },
+				items: [{ name: "Row" }],
+			},
+		]);
+
+		renderSettingTab(tab);
+		round = 2;
+		tab.update();
+		const [heading] = takeSettings().slice(-2);
+
+		expect(heading.extraButtons.map((button) => button.tooltip)).toEqual(["round 1"]);
+		expect(tab.groupSearch("Tags").placeholder).toBe("round 1");
+		expect(tab.containerEl.querySelector(".round-2")).toBeNull();
+
+		tab.hide();
+		renderSettingTab(tab);
+		expect(tab.groupSearch("Tags").placeholder).toBe("round 2");
+	});
+
+	// app.js `HDe`: the search box is added only `if (o.search && o.items && o.items.length > 0)`.
+	it("draws no search box for a group that starts without rows", () => {
+		const tab = tabOf(() => [{ type: "group", heading: "Empty", search: { match: () => true }, items: [] }]);
+
+		renderSettingTab(tab);
+
+		expect(() => tab.groupSearch("Empty")).toThrow('no group "Empty" with a search box');
+	});
+
+	// obsidian.d.ts `search`: `match(def, query)` is called "for each direct child definition", items with
+	// `searchable: false` "bypass this filter and always show", and "the query is preserved across
+	// re-renders and the filter is reapplied after each render".
+	it("filters a group's searchable rows by its match, keeps the query across a redraw, and leaves the rest shown", () => {
+		takeSettings();
+		const asked: string[] = [];
+		const tab = tabOf(() => [
+			{
+				type: "group",
+				heading: "Fruit",
+				search: {
+					placeholder: "Filter fruit",
+					match: (def, query) => {
+						asked.push(`${def.name}:${query}`);
+						return (def.name ?? "").includes(query);
+					},
+				},
+				items: [{ name: "apple" }, { name: "pear" }, { name: "note", searchable: false }],
+			},
+		]);
+		renderSettingTab(tab);
+		const visibleNames = (): string[] =>
+			takeSettings()
+				.filter((setting) => !setting.heading && setting.settingEl.visible)
+				.map((setting) => setting.name);
+
+		const search = tab.groupSearch("Fruit");
+		expect(search.placeholder).toBe("Filter fruit");
+		search.type("ap");
+		expect(visibleNames()).toEqual(["apple", "note"]);
+		expect(asked).toEqual(["apple:ap", "pear:ap"]);
+
+		tab.update();
+		expect(visibleNames()).toEqual(["apple", "note"]);
+
+		tab.groupSearch("Fruit").type("");
+		tab.update();
+		expect(visibleNames()).toEqual(["apple", "pear", "note"]);
+	});
+
+	it("scrolls an element into view when asked, and finds it by its class", () => {
+		const root = new FakeEl();
+		const target = root.createDiv().createDiv({ cls: "far down" });
+
+		root.querySelector(".down")?.scrollIntoView();
+
+		expect(target.scrolledIntoView).toBe(1);
+		expect(root.querySelector(".nowhere")).toBeNull();
+	});
+});
+
+// obsidian.d.ts: a `FuzzySuggestModal` lists `getItems()` by `getItemText`, and choosing one calls
+// `onChooseItem`.
+describe("the fuzzy picker", () => {
+	class Picker extends FuzzySuggestModal<string> {
+		chosen: string[] = [];
+		getItems(): string[] {
+			return ["/", "Work"];
+		}
+		getItemText(item: string): string {
+			return item === "/" ? "Vault root" : item;
+		}
+		onChooseItem(item: string): void {
+			this.chosen.push(item);
+		}
+	}
+
+	it("lists the items by their text, and hands back the item the user chose", () => {
+		takeModals();
+		const picker = new Picker(new FakeApp());
+		picker.setPlaceholder("Choose a folder");
+		picker.open();
+
+		expect(takeModals()).toEqual([picker]);
+		expect(picker.placeholder).toBe("Choose a folder");
+		expect(picker.itemTexts).toEqual(["Vault root", "Work"]);
+
+		picker.choose("Vault root");
+		expect(picker.chosen).toEqual(["/"]);
+		expect(picker.opened).toBe(false);
 	});
 });

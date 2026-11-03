@@ -63,28 +63,10 @@
 	}
 }
 
-/* Free-standing explanatory text in the settings tab (same look as a setting's description). */
-.tagged-sync-note {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-	padding-top: var(--size-4-1);
-	line-height: var(--line-height-tight);
-	/*
-	 * Obsidian 1.13 draws each setting as a card with its own inset, so text placed straight into the
-	 * tab starts a good 16 px left of every label around it and reads as falling out of the column.
-	 * The inset is the same variable the cards use, and it resolves to nothing on the versions that
-	 * have no cards -- which is where flush-left was right all along.
-	 */
-	padding-inline: var(--setting-items-padding-x, 0);
-}
-
 /*
  * A live verdict about the value in the field beside it -- the vision-capability check under Model.
- *
- * It lives in the setting's own description, so it needs none of the inset `.tagged-sync-note`
- * carries: that inset exists for text placed straight into the tab, between the cards, and applying
- * it again inside a card would indent the line twice. Colour is set on the element by the code that
- * paints it, because the verdict is the thing the colour is about.
+ * Colour is set on the element by the code that paints it, because the verdict is the thing the colour
+ * is about.
  */
 .tagged-sync-verdict {
 	padding-top: var(--size-4-1);
@@ -263,6 +245,99 @@
 
 .tagged-sync-pairing-help p {
 	margin: var(--size-4-2) 0 0;
+}
+
+/*
+ * A tag in Tag routing (settings-redesign spec §4.5), in Obsidian's own tag look and nothing of ours, so
+ * a theme that restyles tags restyles these. Obsidian styles every button (`button:not(.clickable-icon)`),
+ * so a pill takes that back first, with a selector that outranks it.
+ */
+.setting-item .tagged-sync-pill {
+	display: inline-flex;
+	align-items: center;
+	height: auto;
+	border: var(--tag-border-width) solid var(--tag-border-color);
+	box-shadow: none;
+	background: var(--tag-background);
+	color: var(--tag-color);
+	padding: var(--tag-padding-y) var(--tag-padding-x);
+	border-radius: var(--tag-radius);
+	font-size: var(--tag-size);
+	line-height: var(--line-height-tight);
+}
+
+.setting-item button.tagged-sync-pill {
+	cursor: pointer;
+}
+
+.setting-item button.tagged-sync-pill:hover {
+	background: var(--tag-background-hover);
+	color: var(--tag-color-hover);
+}
+
+/*
+ * The filter box, from twelve tags (06 #4). Obsidian builds a group's search box once, at its first draw,
+ * which comes before the first scan, so the box is always there and the rows say on the group when it
+ * shows (`settings-tab.ts` `tagGroup`).
+ */
+.tagged-sync-group-tags:not(.tagged-sync-filter-on) > .setting-group-search {
+	display: none;
+}
+
+/* A pill the free version cannot map: shown, so the reason can be asked for, but faded. */
+.setting-item .tagged-sync-pill.is-capped {
+	opacity: 0.5;
+}
+
+/* The found tags take the whole row: no name, no control column, the pills wrapping under each other. */
+.setting-item.tagged-sync-pill-row {
+	display: block;
+}
+
+.tagged-sync-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+/* "Syncing <tag> needs Tagged Sync Pro." and its button, under the pills; empty until a faded pill is clicked. */
+.tagged-sync-capped-line:not(:empty) {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-3);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+/*
+ * The folder button of a mapping whose folder was renamed or deleted (P13): the mapping still works.
+ * Outranks Obsidian's `button:not(.clickable-icon)` colour, as the pills do.
+ */
+.setting-item button.tagged-sync-folder-missing {
+	color: var(--text-warning);
+}
+
+/*
+ * The removal note under the mapped tags, a footer to them (06 #6): small, muted, and without the
+ * separator and padding of a row of its own. Obsidian 1.15 draws the separator as each row's `::before`
+ * (measured in ticket 12). As specific as Obsidian's padding for every row of a group, and later.
+ */
+.setting-group .setting-item.tagged-sync-row-note {
+	padding-top: 0;
+}
+
+.setting-group .setting-item.tagged-sync-row-note::before {
+	display: none;
+}
+
+.tagged-sync-row-note .setting-item-name {
+	display: none;
+}
+
+.tagged-sync-row-note .setting-item-description {
+	font-size: var(--font-ui-smaller);
+	padding-top: 0;
 }
 
 /*

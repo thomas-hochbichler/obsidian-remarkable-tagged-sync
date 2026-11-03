@@ -12,6 +12,7 @@
 export {
 	apiVersion,
 	debounce,
+	FuzzySuggestModal,
 	MarkdownRenderChild,
 	MarkdownView,
 	Modal,

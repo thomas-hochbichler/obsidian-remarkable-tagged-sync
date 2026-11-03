@@ -128,18 +128,18 @@ const TAG_MAPPING_CAPABILITY: ProCapability = {
 	enforcedAt: {
 		site: "src/tag-routing-view.ts planTagRouting",
 		/**
-		 * Driven, not grepped: one tag already mapped and a second discovered is exactly the state the
-		 * cap exists for, so the plan's own items say whether it closed -- and `capped` is what makes
-		 * the refusal visible in place rather than silent.
+		 * Driven, not grepped: one tag already mapped and a second found is exactly the state the cap
+		 * exists for, so the plan's own pills say whether it closed -- and `capped` is what makes the
+		 * refusal visible in place rather than silent.
 		 */
 		run: (entitlement) => {
 			const view = planTagRouting({
-				mapping: { "#first": "Inbox" },
-				discoveredTags: ["#first", "#second"],
+				mapping: { first: "Inbox" },
+				foundTags: ["first", "second"],
 				folderPaths: ["/", "Inbox", "Archive"],
 				entitlement,
 			});
-			return view.items.some((item) => item.kind === "capped") ? "refused-in-place" : "allowed";
+			return view.pills.some((pill) => pill.capped) ? "refused-in-place" : "allowed";
 		},
 	},
 };

@@ -395,6 +395,48 @@
       file: tests/stubs/fake-obsidian.test.ts
       test: "the declarative settings tab > runs the cleanup of a row the redraw no longer has"
 
+    - id: T20.9
+      scenario: A group carries a class, an extra button and a row
+      expect: The group is an element with setting-group and its class, holding the heading (with the button, its icon, tooltip and click) and the row, which finds the group by closest (app.js HDe)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws a group as an element holding its heading with the extra buttons, and its rows"
+
+    - id: T20.13
+      scenario: A group's class, extra button and search change between two draws of the open tab, then the tab is reopened
+      expect: The redraw keeps the header of the first draw -- button, search box and its match -- as app.js rue does (found on the device in settings-redesign ticket 12); only the reopened tab gets the new header
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > keeps a group's header from its first draw, however the definition changes"
+
+    - id: T20.14
+      scenario: A group declares a search box and starts without rows
+      expect: No search box (app.js HDe adds it only when the group has items)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws no search box for a group that starts without rows"
+
+    - id: T20.10
+      scenario: A group with a search box is typed into, redrawn, and cleared
+      expect: match is asked for each searchable direct child only and hides what it refuses; a row with searchable false stays; the query is applied again after a redraw (obsidian.d.ts search)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > filters a group's searchable rows by its match, keeps the query across a redraw, and leaves the rest shown"
+
+    - id: T20.11
+      scenario: The plugin looks an element up by its class and asks for it to be scrolled to
+      expect: querySelector finds it at any depth, answers null for a class nothing has, and the scroll is counted
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > scrolls an element into view when asked, and finds it by its class"
+
+    - id: T20.12
+      scenario: A FuzzySuggestModal is given a placeholder, opened, and an item chosen
+      expect: It is recorded as opened, lists its items by getItemText in getItems order, closes, and hands onChooseItem the item, not its text
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the fuzzy picker > lists the items by their text, and hands back the item the user chose"
+
 - feature: T11
   name: A clock a test moves by hand
   code: tests/stubs/fake-clock.ts

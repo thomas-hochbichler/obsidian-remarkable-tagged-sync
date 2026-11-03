@@ -114,10 +114,10 @@ describe("the messages that appear once", () => {
 });
 
 describe("the shipped text this edits", () => {
-	// The code gates *adding* a mapping; the sentence must keep saying an existing one is never removed.
-	it("keeps the tag cap's promise that an existing mapping stays", () => {
-		expect(TAG_CAP_MESSAGE).toContain("Remove the current mapping");
-		expect(TAG_CAP_MESSAGE).toContain("unlimited tags with Tagged Sync Pro");
+	// Under the row "One tag in the free version", above the faded pills (settings-redesign spec §4.2):
+	// the pills already show what is refused, so the sentence says only what each version syncs.
+	it("says what the free version syncs and what Pro syncs, in the tag cap's sentence", () => {
+		expect(TAG_CAP_MESSAGE).toBe("The free version syncs one tag. Tagged Sync Pro syncs every tag.");
 	});
 
 	it("states the money-back promise and the device count together", () => {

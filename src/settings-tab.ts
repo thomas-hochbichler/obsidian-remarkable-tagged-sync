@@ -2,6 +2,8 @@ import {
 	type App,
 	apiVersion,
 	debounce,
+	type ExtraButtonComponent,
+	FuzzySuggestModal,
 	Notice,
 	Platform,
 	PluginSettingTab,
@@ -22,7 +24,7 @@ import { confirmDialog } from "./confirm-modal";
 import { explainError } from "./explain-error";
 import { frontmatterAllowed } from "./frontmatter";
 import { activateKey, deactivateHere } from "./licence-check";
-import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, trialDaysLeft, trialStartFailed } from "./licence-messages";
+import { activationMessage, licenceStatusText, MONEY_BACK_MESSAGE, TAG_CAP_MESSAGE, trialDaysLeft, trialStartFailed } from "./licence-messages";
 import { withoutLicence } from "./licence-state";
 import type TaggedSyncPlugin from "./main";
 import { startTrial, TrialStartError } from "./trial-ticket";
@@ -39,7 +41,7 @@ import { createReadwiseClient } from "./readwise-client";
 import { type ReadwiseConnection, readwiseClashed, readwiseConnectionLine, readwiseProAllowed, startOverReadwise, tokenFingerprint } from "./readwise-push";
 import type { ReadwiseSettings } from "./readwise-state";
 import { invalidateRenders, pendingOcrRetries } from "./sync-engine";
-import { planTagRouting } from "./tag-routing-view";
+import { folderLabel, type MappedTag, planTagRouting, REMOVAL_MESSAGE, type UnmappedTag } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
@@ -107,7 +109,20 @@ const INTERVALS: Record<string, string> = {
 
 export class TaggedSyncSettingTab extends PluginSettingTab {
 	private code = "";
-	private discoveredTags: string[] = [];
+	/**
+	 * What the last scan found, kept for the Obsidian session -- the tab is built once, in `onload` --
+	 * and never in `data.json`; `null` before the first scan (settings-redesign spec §4.1).
+	 */
+	private foundTags: string[] | null = null;
+	private scanning = false;
+	/** What the Tag routing filter holds, and the pill row's handle to filter its pills by it (spec §4.3). */
+	private tagFilter = "";
+	private pillRow: { filter(query: string): void } | null = null;
+	/** What the last plan mapped and whether it offers the filter, for {@link matchTag}. */
+	private mappedTags: readonly MappedTag[] = [];
+	private filterShown = false;
+	/** The heading's scan icon, which a redraw does not draw again. */
+	private scanIcon: ExtraButtonComponent | null = null;
 	/** What the pairing row holds between keystrokes. The password is dropped the moment it is used. */
 	private deviceHost = "";
 	private devicePassword = "";
@@ -126,8 +141,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * §3): eight groups on the root page, Zotero and Readwise as pages under *Integrations*. Asked for
 	 * on every opening and by every `update()`, so it reads the state and does no network I/O.
 	 *
-	 * The root groups are definitions of their own (ticket 11); Tag routing and the two pages still hold
-	 * one row that draws them with the old code, until tickets 12–14. A row that changes the page calls
+	 * The root groups are definitions of their own (tickets 11, 12); the two pages still hold one row
+	 * that draws them with the old code, until tickets 13 and 14. A row that changes the page calls
 	 * `update()`, which keeps the reader's place itself (ticket 17's F1, spec §2.5).
 	 *
 	 * It runs inside `onload` too (`addSettingTab`), where a throw would stop the plugin, so a throw
@@ -143,7 +158,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			});
 			return [
 				this.connectionGroup(connected),
-				...(connected ? [this.section("Tag routing", "tags", (el) => this.renderTagRouting(el))] : []),
+				...(connected ? [this.tagGroup()] : []),
 				this.vaultGroup(),
 				this.transcriptionGroup(),
 				this.autoSyncGroup(),
@@ -160,11 +175,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			console.error("Tagged Sync: the settings could not be drawn", error);
 			return [{ name: "The settings could not be drawn.", desc: "Report it with the steps that led here." }];
 		}
-	}
-
-	/** One group holding one {@link hosted} row. */
-	private section(heading: string, slug: string, draw: (el: HTMLElement) => void): SettingDefinitionGroup {
-		return { type: "group", heading, cls: `tagged-sync-group-${slug}`, items: [this.hosted(heading, draw)] };
 	}
 
 	/**
@@ -1335,90 +1345,257 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		};
 	}
 
-	private renderTagRouting(containerEl: HTMLElement): void {
-		new Setting(containerEl)
-			.setName("Discover tags")
-			.setDesc("Scan your reMarkable notebooks and pages for tags.")
-			.addButton((button) =>
-				button.setButtonText("Scan").onClick(async () => {
-					button.setDisabled(true);
-					let session: TransportSession | null = null;
-					try {
-						// Through the same chain a sync uses, so a vault that configured a fallback gets one
-						// here too rather than only on the job this was written for.
-						session = (await this.plugin.openSource()).session;
-						const notebooks = await enumerateNotebookTags(session.api);
-						this.discoveredTags = collectTagNames(notebooks);
-						new Notice(`Found ${this.discoveredTags.length} tag(s).`);
-					} catch (error) {
-						new Notice(`Failed to discover tags: ${(error as Error).message}`);
-					} finally {
-						await session?.close();
-					}
-					this.update();
-				}),
-			);
-
-		const mapping = this.plugin.data.tagFolderMap;
+	/**
+	 * Tag routing (settings-redesign spec §4): the mapped tags as rows, then the found tags as pills to
+	 * click, in one group -- readable with 20–50 tags on the tablet and few mapped (06 #1). What the rows
+	 * show is `planTagRouting`'s to decide; this wires it.
+	 */
+	private tagGroup(): SettingDefinitionGroup {
+		const folders = this.folderPaths();
 		const view = planTagRouting({
-			mapping,
-			discoveredTags: this.discoveredTags,
-			// The root always exists, so even a brand-new empty vault has one valid target.
-			folderPaths: [
-				"/",
-				...this.app.vault
-					.getAllLoadedFiles()
-					.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
-					.map((folder) => folder.path)
-					.sort(),
-			],
+			mapping: this.plugin.data.tagFolderMap,
+			foundTags: this.foundTags,
+			folderPaths: folders,
 			entitlement: this.plugin.entitlement(),
 		});
-
-		const persist = async () => {
-			await this.plugin.saveData(this.plugin.data);
-			this.update();
-		};
-
-		for (const item of view.items) {
-			if (item.kind === "notice") {
-				containerEl.createDiv({ cls: "tagged-sync-note", text: item.text });
-				continue;
-			}
-			const row = new Setting(containerEl).setName(item.tag).setDesc(item.desc);
-			if (item.kind === "capped") continue;
-
-			// A mapped tag used to render read-only, so a wrong first choice could only be undone by
-			// editing data.json by hand. Harmless before the cap; a trap with it, since the one slot
-			// would be stuck.
-			row.addDropdown((dropdown) => {
-				for (const option of item.options) dropdown.addOption(option.value, option.label);
-				if (item.kind === "mapped") dropdown.setValue(item.folder);
-				dropdown.onChange(async (value) => {
-					if (!value) return;
-					// The one gated feature that exists today: a mapping past the free cap. This is the
-					// moment the licence is *used*, so it is the moment it is re-checked -- not on load,
-					// and never for a free user, who cannot reach this branch at all.
-					if (
-						item.kind === "mappable" &&
-						view.recheckLicenceBeforeAdd &&
-						(await this.plugin.refreshLicence()).tier === "free"
-					) {
-						this.update();
-						return;
-					}
-					mapping[item.tag] = value;
-					await persist();
-				});
+		// Read by `matchTag`, which Obsidian keeps from the group's first draw (see the return below).
+		this.mappedTags = view.mapped;
+		this.filterShown = view.filter;
+		// With the filter hidden there is nothing to clear a query, and the pills would stay filtered by it.
+		if (!view.filter) this.tagFilter = "";
+		/**
+		 * Every row of this group is a render row, so each draw can say on the group whether the filter box
+		 * shows (see the return); a group of text rows alone would leave the class as it last was.
+		 */
+		const tagRow = (name: string, render: (setting: Setting) => void | (() => void) = () => undefined): SettingDefinitionRender["render"] =>
+			this.guarded(name, (setting) => {
+				setting.settingEl.closest(".tagged-sync-group-tags")?.toggleClass("tagged-sync-filter-on", view.filter);
+				return render(setting);
 			});
-			if (item.kind !== "mapped") continue;
-			row.addButton((button) => {
-				button.setButtonText("Remove").onClick(async () => {
-					delete mapping[item.tag];
-					await persist();
-				});
-				button.setDestructive();
+
+		/** Opens the folder picker for `tag`; choosing saves at once (06 #2). `adding` is a pill, not a mapped row. */
+		const pick = (tag: string, adding: boolean): void =>
+			new FolderPicker(this.app, tag, folders, async (path) => {
+				// The one gated feature here: a mapping past the free cap. This is the moment the licence is
+				// *used*, so it is the moment it is re-checked -- not on load, and never for a free user, who
+				// cannot reach this branch at all. Re-pointing a mapped tag adds nothing, so it never asks.
+				if (adding && view.recheckLicenceBeforeAdd && (await this.plugin.refreshLicence()).tier === "free") {
+					this.update();
+					return;
+				}
+				this.plugin.data.tagFolderMap[tag] = path;
+				await this.plugin.saveData(this.plugin.data);
+				this.update();
+			}).open();
+
+		const items: SettingDefinition[] = view.mapped.map((mapped) => ({
+			name: mapped.tag,
+			aliases: [mapped.folder],
+			render: tagRow(mapped.tag, (setting) => this.renderMappedTag(setting, mapped, () => pick(mapped.tag, false))),
+		}));
+		if (view.removalNote) {
+			items.push({
+				name: "Removing a tag",
+				desc: REMOVAL_MESSAGE,
+				searchable: false,
+				// A footer to the rows above it rather than a row of its own (06 #6): small, muted, no border.
+				render: tagRow("Removing a tag", (setting) => setting.settingEl.addClass("tagged-sync-row-note")),
 			});
 		}
+		for (const line of view.lines) {
+			if (line === "scan-first") {
+				items.push({
+					name: "Scan for tags",
+					desc: "Scan to see which tags your reMarkable uses.",
+					searchable: false,
+					render: tagRow("Scan for tags", (setting) => {
+						setting.addButton((button) =>
+							button
+								.setButtonText(this.scanning ? "Scanning…" : "Scan")
+								.setDisabled(this.scanning)
+								.onClick(() => this.scanTags()),
+						);
+					}),
+				});
+			} else if (line === "nothing-found") {
+				items.push({
+					name: "No tags found",
+					desc: "Tag a notebook or page on your reMarkable, then scan again.",
+					searchable: false,
+					render: tagRow("No tags found"),
+				});
+			} else {
+				items.push({ name: "One tag in the free version", desc: TAG_CAP_MESSAGE, searchable: false, render: tagRow("One tag in the free version") });
+			}
+		}
+		if (view.pills.length > 0) {
+			// Searchable, unlike the lines: settings search finds a tag the tablet carries, and the group's
+			// filter, which asks only searchable rows, reaches the pills through this row (06 #4, P9).
+			items.push({
+				name: "Found tags",
+				aliases: view.pills.map((found) => found.tag),
+				render: tagRow("Found tags", (setting) => this.renderPills(setting, view.pills, (tag) => pick(tag, true))),
+			});
+		}
+
+		// Obsidian builds a group's header once, when the group is first drawn -- before the first scan --
+		// and `update()` keeps it (read from 1.15.0's app.js, `rue`; seen on the device in ticket 12). So
+		// the search box is always declared and shown by the rows' class from twelve tags, its `match`
+		// reads the tab rather than this call, and the scan icon is disabled through a handle.
+		return {
+			type: "group",
+			heading: "Tag routing",
+			cls: "tagged-sync-group-tags",
+			extraButtons: [
+				(button) => {
+					this.scanIcon = button
+						.setIcon("refresh-cw")
+						.setTooltip("Scan for tags")
+						.setDisabled(this.scanning)
+						.onClick(() => void this.scanTags());
+				},
+			],
+			search: { placeholder: "Filter tags", match: (def, query) => this.matchTag(def, query) },
+			items,
+		};
+	}
+
+	/**
+	 * The filter (spec §4.3, P9), asked for each searchable row on every keystroke (ticket 17's F6): the
+	 * pills follow the query as a side effect, and a mapped row stays when its tag or folder holds it.
+	 */
+	private matchTag(def: SettingDefinition, query: string): boolean {
+		if (!this.filterShown) return true;
+		this.tagFilter = query;
+		this.pillRow?.filter(query);
+		const mapped = this.mappedTags.find((candidate) => candidate.tag === def.name);
+		const needle = query.toLowerCase();
+		return mapped === undefined || mapped.tag.toLowerCase().includes(needle) || mapped.label.toLowerCase().includes(needle);
+	}
+
+	/** `/` and every folder below it, sorted: the root always exists, so even a new vault has a target. */
+	private folderPaths(): string[] {
+		return [
+			"/",
+			...this.app.vault
+				.getAllLoadedFiles()
+				.filter((file): file is TFolder => file instanceof TFolder && !file.isRoot())
+				.map((folder) => folder.path)
+				.sort(),
+		];
+	}
+
+	/** *pill → folder button, ×* (06 #3): the folder can be changed, and the mapping removed without a question. */
+	private renderMappedTag(setting: Setting, mapped: MappedTag, pick: () => void): void {
+		// The tag in Obsidian's tag look in place of its name. Emptied first: Obsidian keeps this row across
+		// a redraw and draws into it again.
+		setting.nameEl.empty();
+		setting.nameEl.createSpan({ cls: "tagged-sync-pill", text: mapped.tag });
+		setting
+			.addButton((button) => {
+				button.setButtonText(mapped.label).onClick(pick);
+				// The mapping keeps working; the colour says the folder it names is not there (P13).
+				if (mapped.missing) button.buttonEl.addClass("tagged-sync-folder-missing");
+			})
+			.addExtraButton((button) =>
+				button
+					.setIcon("x")
+					.setTooltip("Remove mapping")
+					.onClick(async () => {
+						delete this.plugin.data.tagFolderMap[mapped.tag];
+						await this.plugin.saveData(this.plugin.data);
+						this.update();
+					}),
+			);
+	}
+
+	/**
+	 * The found tags as pills, full width, the row's name and controls gone (spec §4.2 row 6). A capped
+	 * pill is shown faded and says why when clicked, under the pills, with the way to Pro (06 #7): a
+	 * refusal nobody explains reads as a bug. Returns the cleanup that drops the filter handle.
+	 */
+	private renderPills(setting: Setting, pills: readonly UnmappedTag[], pick: (tag: string) => void): () => void {
+		// Emptied, not just cleared of its name: Obsidian draws into the same row again on a redraw.
+		setting.settingEl.empty();
+		setting.settingEl.addClass("tagged-sync-pill-row");
+		const wrap = setting.settingEl.createDiv({ cls: "tagged-sync-pills" });
+		const capLine = setting.settingEl.createDiv({ cls: "tagged-sync-capped-line" });
+		const drawn = pills.map(({ tag, capped }) => {
+			// Without "#": a reMarkable tag may hold spaces, and "#Project X" reads as a broken Obsidian tag (06 #8).
+			const el = wrap.createEl("button", { cls: capped ? "tagged-sync-pill is-capped" : "tagged-sync-pill", text: tag });
+			el.addEventListener("click", () => (capped ? this.sayCapped(capLine, tag) : pick(tag)));
+			return { tag: tag.toLowerCase(), el };
+		});
+		const filter = (query: string): void => {
+			for (const { tag, el } of drawn) el.toggle(tag.includes(query.toLowerCase()));
+		};
+		filter(this.tagFilter);
+		this.pillRow = { filter };
+		// Run before the row is drawn again (it keeps its name), or after the redraw that left it out.
+		return () => {
+			this.pillRow = null;
+		};
+	}
+
+	/** Under the pills, until the next redraw: another capped pill replaces it, and nothing is saved. */
+	private sayCapped(line: HTMLElement, tag: string): void {
+		line.empty();
+		line.createSpan({ text: `Syncing ${tag} needs Tagged Sync Pro.` });
+		line.createEl("button", { text: "See Pro" }).addEventListener("click", () =>
+			this.containerEl.querySelector(".tagged-sync-group-pro")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+		);
+	}
+
+	/**
+	 * One scan, from the heading icon or the pre-scan row. Through the same chain a sync uses, so a
+	 * vault that configured a fallback gets one here too. A failed scan keeps what an earlier one found:
+	 * a tablet that did not answer has not lost its tags.
+	 */
+	private async scanTags(): Promise<void> {
+		if (this.scanning) return;
+		this.scanning = true;
+		this.scanIcon?.setDisabled(true);
+		this.update();
+		let session: TransportSession | null = null;
+		try {
+			session = (await this.plugin.openSource()).session;
+			this.foundTags = collectTagNames(await enumerateNotebookTags(session.api));
+			new Notice(`Found ${this.foundTags.length} tag(s).`);
+		} catch (error) {
+			new Notice(`Failed to discover tags: ${(error as Error).message}`);
+		} finally {
+			await session?.close();
+			this.scanning = false;
+			this.scanIcon?.setDisabled(false);
+		}
+		this.update();
+	}
+}
+
+/**
+ * The folder a tag syncs into (spec §4.4): existing folders only (06 #2), the root first and called
+ * by a name. Opens in the window the settings are in (ticket 17's F4).
+ */
+class FolderPicker extends FuzzySuggestModal<string> {
+	constructor(
+		app: App,
+		tag: string,
+		private readonly folders: string[],
+		private readonly chosen: (path: string) => Promise<void>,
+	) {
+		super(app);
+		this.setPlaceholder(`Choose a folder for ${tag}`);
+	}
+
+	getItems(): string[] {
+		return this.folders;
+	}
+
+	getItemText(path: string): string {
+		return folderLabel(path);
+	}
+
+	onChooseItem(path: string): void {
+		void this.chosen(path);
 	}
 }
