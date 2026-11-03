@@ -395,6 +395,13 @@
       file: tests/stubs/fake-obsidian.test.ts
       test: "the declarative settings tab > draws a dropdown control with its options, and a folder control as a field with its placeholder"
 
+    - id: T20.16
+      scenario: A secret control is drawn with nothing stored, then an entry is picked and the choice cleared
+      expect: A SecretComponent showing an empty choice, which hands setControlValue the entry's name, then null (app.js 1.15.0 `case "secret"`)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > draws a secret control as the Keychain picker, handing the picked entry's name to setControlValue"
+
     - id: T20.7
       scenario: The tab is redrawn while a render row with the same name is on screen
       expect: The same Setting is drawn again after its cleanup ran, without its old controls, and what the render put into settingEl itself is still there (app.js due/nue)

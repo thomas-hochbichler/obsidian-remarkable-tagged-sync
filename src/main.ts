@@ -55,7 +55,16 @@ import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
 import { deletedBookOf, HIGHLIGHT_NOTE_GONE_NOTICE, linkedNote, readwiseBookUrl } from "./readwise-links";
-import { pushBookAgain, pushToReadwise, readwiseNotice, readwiseRecorderFor, readwiseRecordingOn, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
+import {
+	pushBookAgain,
+	pushToReadwise,
+	type ReadwiseLastCheck,
+	readwiseNotice,
+	readwiseRecorderFor,
+	readwiseRecordingOn,
+	startReadwiseRecording,
+	tokenFingerprint,
+} from "./readwise-push";
 import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
 import type { TextLayerTally } from "./text-layer";
 import { type Scheduler, windowScheduler } from "./scheduler";
@@ -155,6 +164,12 @@ export default class TaggedSyncPlugin extends Plugin {
 	 * cancelled dialog, a sync with nothing changed -- leaves the last one's figures to be copied.
 	 */
 	lastOcrTally: OcrTally | null = null;
+	/**
+	 * What readwise.io last answered -- the settings line's probe or the push after a sync -- for the
+	 * Readwise entry on the settings root (settings-redesign spec §5). Session state: a token refused a
+	 * week ago says nothing about the one in the Keychain now, and choosing another token forgets it.
+	 */
+	readwiseLastCheck: ReadwiseLastCheck = null;
 	private autoSyncLaunchTimer: number | null = null;
 	private autoSyncIntervalTimer: number | null = null;
 
@@ -882,6 +897,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		if (token === null || !readwiseRecordingOn(this.data.readwise, this.entitlement())) return;
 		try {
 			const failure = await pushToReadwise(this.data, createReadwiseClient(token), await tokenFingerprint(token));
+			this.readwiseLastCheck = failure ?? "ok";
 			await this.saveData(this.data);
 			const notice = speak ? readwiseNotice(failure, this.data.readwiseBooks) : null;
 			if (notice !== null) new Notice(notice);

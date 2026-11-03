@@ -1431,7 +1431,8 @@ export class Plugin {
  * {@link PluginSettingTab.groupSearch}; `match` runs for each searchable row then and after every
  * redraw once something was typed (obsidian.d.ts; ticket 17's F6 saw it per keystroke, `""` included).
  * A control is drawn as the component its type names; `folder` as a text field (its suggester is
- * Obsidian's).
+ * Obsidian's); `secret` as a {@link SecretComponent}, whose change hands `setControlValue` the picked
+ * entry's name or `null`.
  *
  * Kinds and fields no definition of this plugin uses yet throw, rather than being drawn as though they
  * were understood: a group's `visible` (Obsidian hides a group whose rows are all hidden) is one.
@@ -1456,7 +1457,7 @@ export interface FakeDefinition {
 
 /** The control types this plugin's definitions use. */
 export interface FakeControl {
-	type: "toggle" | "dropdown" | "text" | "folder";
+	type: "toggle" | "dropdown" | "text" | "folder" | "secret";
 	key: string;
 	defaultValue?: unknown;
 	disabled?: boolean | (() => boolean);
@@ -1703,6 +1704,8 @@ export class PluginSettingTab {
 		};
 		if (control.type === "toggle") setting.addToggle((toggle) => toggle.setValue(value as boolean).onChange(onChange));
 		else if (control.type === "dropdown") setting.addDropdown((dropdown) => dropdown.addOptions(control.options ?? {}).setValue(value as string).onChange(onChange));
+		// app.js: `addComponent(el => new SecretComponent(app, el).setValue(value || "").onChange(change))` -- the entry's name, as picked.
+		else if (control.type === "secret") setting.addComponent((el) => new SecretComponent(this.app, el).setValue((value as string | null) || "").onChange(onChange));
 		else setting.addText((text) => text.setPlaceholder(control.placeholder ?? "").setValue((value as string | undefined) ?? "").onChange(onChange));
 	}
 }

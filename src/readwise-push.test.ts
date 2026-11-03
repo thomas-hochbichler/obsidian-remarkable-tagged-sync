@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DigestPage } from "./digest-builder";
 import { type ReadwiseClient, ReadwiseError, type ReadwiseItem } from "./readwise-client";
-import { createReadwiseRecorder, pushBookAgain, pushToReadwise, type ReadwiseData, readwiseNotice, type ReadwiseUnit, startOverReadwise, startReadwiseRecording, tokenFingerprint } from "./readwise-push";
+import { entitlementOf, NO_LICENCE } from "./licence-state";
+import {
+	createReadwiseRecorder,
+	pushBookAgain,
+	pushToReadwise,
+	type ReadwiseData,
+	readwiseNotice,
+	readwisePageEntry,
+	type ReadwiseUnit,
+	startOverReadwise,
+	startReadwiseRecording,
+	tokenFingerprint,
+} from "./readwise-push";
 import { type ReadwiseBook, readwiseBook, type ReadwiseHighlight, type StoredReadwiseBooks } from "./readwise-state";
 import { RENDER_VERSION, type SyncIndex, type SyncIndexRow } from "./sync-engine";
 
@@ -734,5 +746,44 @@ describe("startReadwiseRecording (spec §5)", () => {
 describe("tokenFingerprint (spec §11 P4)", () => {
 	it("is the first 12 hex of the token's SHA-256", async () => {
 		expect(await tokenFingerprint("abc")).toBe("ba7816bf8f01");
+	});
+});
+
+// Settings-redesign spec §5: the Readwise page's entry on the root says in one to three words whether
+// this computer pushes, and warns only where the user has to act. First match wins.
+describe("the Readwise page's entry", () => {
+	const PRO = entitlementOf({ ...NO_LICENCE, key: "TS-1", activationId: "act-1", validatedAt: new Date().toISOString() }, new Date());
+	const FREE = entitlementOf(NO_LICENCE, new Date());
+	const ON = { readwise: { push: true, tokenSecret: "readwise" } };
+	const OFF = { readwise: { push: false, tokenSecret: "readwise" } };
+	const CLASH = { ...ON, readwiseAccountClash: true as const };
+
+	it("reads each state as the spec's table says", () => {
+		const table = [
+			[ON, FREE, "ok", "rw-token", "Pro", null],
+			[OFF, PRO, "rejected", "rw-token", "Off", null],
+			// Two computers on two accounts: the state says so, whatever the last answer was.
+			[CLASH, PRO, "ok", "rw-token", "Two accounts", "warning"],
+			[ON, PRO, "ok", null, "No access token", "warning"],
+			[ON, PRO, "rejected", "rw-token", "Token not accepted", "warning"],
+			// Nothing asked yet, or an answer that is not the token's fault: the push goes on.
+			[ON, PRO, null, "rw-token", "Pushing", null],
+			[ON, PRO, "unreachable", "rw-token", "Pushing", null],
+			[ON, PRO, "no-api", "rw-token", "Pushing", null],
+		] as const;
+
+		expect(table.map(([data, entitlement, lastCheck, token]) => readwisePageEntry(data, entitlement, lastCheck, () => token))).toEqual(
+			table.map(([, , , , value, status]) => ({ value, status })),
+		);
+	});
+
+	// Spec §2.1: the Keychain is read only where the answer depends on it.
+	it("reads the Keychain only with Pro and the switch on", () => {
+		const keychain = vi.fn(() => "rw-token");
+
+		readwisePageEntry(ON, FREE, null, keychain);
+		readwisePageEntry(OFF, PRO, null, keychain);
+
+		expect(keychain).not.toHaveBeenCalled();
 	});
 });

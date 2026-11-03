@@ -443,142 +443,206 @@
       test: "the reMarkable connection group > syncs from the button"
 
 - feature: W12
-  name: Readwise settings section
+  name: Readwise settings page
   code: src/settings-tab.ts
   tier: pro
   scenarios:
     - id: W12.1
       scenario: A Pro vault opens the tab
-      expect: Under Readwise, after Zotero -- Connection, the switch, the Keychain token and the round-trip hint, each in Readwise spec §2's words
+      expect: On the Readwise page, after Zotero under Integrations -- Connection, the switch, the Keychain token and the round-trip hint, each in Readwise spec §2's words
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > draws the rows of the spec, in its words"
+      test: "the Readwise page > draws the rows of the spec, in its words"
 
     - id: W12.2
       scenario: A free vault with the switch on and a token in the Keychain
       expect: The switch is shown shut with "(Pro)", the line says pushing is Pro, and readwise.io is not asked
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > shows a free vault the switch shut, and says pushing is Pro"
+      test: "the Readwise page > shows a free vault the switch shut, and says pushing is Pro"
 
     - id: W12.4
       scenario: The switch is off
       expect: '"Off.", and readwise.io is not asked'
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > reads Off. while the switch is off, without asking readwise.io"
+      test: "the Readwise page > reads Off. while the switch is off, without asking readwise.io"
 
     - id: W12.5
       scenario: The switch is on and this computer's Keychain has no entry for it
       expect: The no-token line, as an error, and readwise.io is not asked
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > says so when this computer has no token, without asking readwise.io"
+      test: "the Readwise page > says so when this computer has no token, without asking readwise.io"
 
     - id: W12.6
       scenario: A token readwise.io accepts, with books pushed, a document waiting and a highlight set aside
       expect: '"Checking…" until /auth/ answers, then "Connected — 1 book, 2 highlights pushed." with the waiting and refused counts, all from the state'
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > asks readwise.io and counts what the state says was pushed"
+      test: "the Readwise page > asks readwise.io and counts what the state says was pushed"
 
     - id: W12.7
       scenario: Nothing pushed yet, two highlights set aside
       expect: '"0 books, 0 highlights" -- a set-aside item counts as neither -- and the plural refused sentence'
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > reads 0 books before the first push, and says what Readwise refused"
+      test: "the Readwise page > reads 0 books before the first push, and says what Readwise refused"
 
     - id: W12.8
       scenario: /auth/ answers 401
       expect: The token line of Readwise spec §2.1, as an error, without the waiting count
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > reads a 401 as an error line, with no counts"
+      test: "the Readwise page > reads a 401 as an error line, with no counts"
 
     - id: W12.9
       scenario: /auth/ answers 403
       expect: The plan line, as an error (403 read as a plan without API access until spec §12 F5 is checked)
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > reads a 403 as an error line, with no counts"
+      test: "the Readwise page > reads a 403 as an error line, with no counts"
 
     - id: W12.10
       scenario: /auth/ answers 500
       expect: '"Readwise didn''t answer.", as an error'
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > reads a 500 as an error line, with no counts"
+      test: "the Readwise page > reads a 500 as an error line, with no counts"
 
     - id: W12.11
       scenario: A Keychain entry is picked
       expect: data.json gets the entry's name, never the token, and the line asks readwise.io again
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > saves the Keychain entry's name, never the token, and asks again"
+      test: "the Readwise page > saves the Keychain entry's name, never the token, and asks again"
 
     - id: W12.12
       scenario: The tab opens with an entry chosen, and the choice is cleared
       expect: The picker shows the entry; cleared, the name is null and the line says this computer has no token
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > shows the chosen entry, and forgets it when the choice is cleared"
+      test: "the Readwise page > shows the chosen entry, and forgets it when the choice is cleared"
 
     - id: W12.13
       scenario: The switch is turned on
       expect: Saved once, and the line asks readwise.io; the backfill is the next sync's (W10)
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > saves the switch and asks the line again"
+      test: "the Readwise page > saves the switch and asks the line again"
 
     - id: W12.14
       scenario: An older probe answers after a newer one
       expect: The newer answer stays on the line
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > never lets a slow answer land on top of a newer one"
+      test: "the Readwise page > never lets a slow answer land on top of a newer one"
 
     - id: W12.15
       scenario: Stopped for two accounts, this computer's token the state's account
       expect: The two-accounts line, pointing at start over, and readwise.io is not asked
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > two computers on two accounts > says so for a token that is the readwiseAccount, without asking readwise.io"
+      test: "the Readwise page > two computers on two accounts > says so for a token that is the readwiseAccount, without asking readwise.io"
 
     - id: W12.16
       scenario: Stopped for two accounts, this computer's token the one the state was dropped for
       expect: The same line -- either token keeps the clash (ticket 19's open point)
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > two computers on two accounts > says so for a token that is the readwiseAccountBefore, without asking readwise.io"
+      test: "the Readwise page > two computers on two accounts > says so for a token that is the readwiseAccountBefore, without asking readwise.io"
 
     - id: W12.17
       scenario: Stopped for two accounts, Start over is pressed
       expect: State, fingerprints, clash and backfill flag go, saved once; the row is gone and the line asks readwise.io again
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > two computers on two accounts > starts over with this computer's token: the state goes, the next sync pushes everything"
+      test: "the Readwise page > two computers on two accounts > starts over with this computer's token: the state goes, the next sync pushes everything"
 
     - id: W12.19
       scenario: Stopped for two accounts, on a computer without a token
       expect: The no-token line, and no start-over row -- there is no token of this computer's to start over with
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > two computers on two accounts > offers no start-over on a computer without a token to start over with"
+      test: "the Readwise page > two computers on two accounts > offers no start-over on a computer without a token to start over with"
 
     - id: W12.20
       scenario: Start over is pressed while a sync runs
       expect: A notice to wait; nothing forgotten, nothing saved -- the push would write its state back when it ends
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > two computers on two accounts > does not start over while a sync runs"
+      test: "the Readwise page > two computers on two accounts > does not start over while a sync runs"
 
     - id: W12.18
       scenario: Nothing clashes
       expect: No start-over row
       layer: vault
       file: src/settings-tab.test.ts
-      test: "the Readwise section > two computers on two accounts > offers no start-over while nothing clashes"
+      test: "the Readwise page > two computers on two accounts > offers no start-over while nothing clashes"
+
+    - id: W12.21
+      scenario: The Readwise page's definitions are asked for, stopped for two accounts with a token on this computer
+      expect: 'One group without a heading, tagged-sync-group-readwise (settings-redesign spec §7): the Connection line a render row, the switch a toggle on readwise.push, the token a secret control on readwise.tokenSecret, the round-trip hint a text row, Start over a render row'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > answers one group without a heading on its page, each row bound to its key"
+
+    - id: W12.22
+      scenario: Settings search for "API key"
+      expect: The token row carries the alias (settings-redesign spec §8)
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > finds the token field by the word people search for"
+
+    - id: W12.23
+      tier: free
+      scenario: A free vault with the switch on and a token in the Keychain, and the root is drawn
+      expect: The Readwise entry reads "Pro", no marker, and the Keychain is not read
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > says Pro to a free vault, without reading the Keychain"
+
+    - id: W12.24
+      scenario: The switch is on and this computer's Keychain has no entry, and the root is drawn
+      expect: The Readwise entry reads "No access token" with the warning marker
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > warns for a switch on with no token on this computer"
+
+    - id: W12.25
+      scenario: The Connection line's probe is answered 401, then another Keychain entry is picked whose answer has not come
+      expect: The entry reads "Token not accepted" with the warning marker after the 401; the pick forgets the answer, so the entry reads "Pushing" before readwise.io has said anything about the new token -- also after the old token's late second 401
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > warns once readwise.io did not accept the token, and forgets it when another token is chosen"
+
+    - id: W12.29
+      scenario: The page is left for the root before the Connection line's probe is answered, then readwise.io answers 401
+      expect: The entry reads "Token not accepted" with the warning marker -- the answer is about the token still in the Keychain, though the line that asked is gone
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Readwise page > its entry on the root > warns on an answer that comes after the page was left"
+
+    - id: W12.26
+      scenario: The Readwise page's entry, for each state of settings-redesign spec §5
+      expect: 'First match wins: no Pro "Pro"; switch off "Off"; stopped for two accounts "Two accounts" with a warning; no token on this computer "No access token" with a warning; the last answer a refused token "Token not accepted" with a warning; otherwise "Pushing" -- an unreachable Readwise or a plan without API access is no reason to act on the token'
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise page's entry > reads each state as the spec's table says"
+
+    - id: W12.27
+      scenario: The entry is asked without Pro, or with the switch off
+      expect: The Keychain is not read
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise page's entry > reads the Keychain only with Pro and the switch on"
+
+    - id: W12.28
+      scenario: A sync's push is answered, accepted or refused
+      expect: The plugin keeps "ok" or the failure as the last answer, which the settings entry reads; before any answer it holds nothing
+      layer: vault
+      file: src/readwise-wiring.test.ts
+      test: "the Readwise half of a sync > keeps what the push was answered, for the settings page's entry"
 
 - feature: SR1
   name: The settings tab on the declarative settings API (settings-redesign ticket 10)

@@ -83,6 +83,7 @@ interface Plugin {
 	protocolHandlers: Map<string, (params: Record<string, string>) => unknown>;
 	data: Record<string, unknown> & { readwiseBooks: Record<string, { highlights: Record<string, unknown> }>; syncIndex: { rows: Record<string, { renderVersion?: number }> } };
 	syncNow(): Promise<void>;
+	readwiseLastCheck: string | null;
 	requestStop(): void;
 	refreshLicence(silent?: boolean): Promise<unknown>;
 }
@@ -212,6 +213,19 @@ describe("the Readwise half of a sync", () => {
 		await plugin.syncNow();
 
 		expect(takeNotices()).toContain("Readwise: the access token was not accepted — paste a new one in Settings → Tagged Sync → Readwise.");
+	});
+
+	// Settings-redesign spec §5: the Readwise entry on the settings root reads the last answer, a push's too.
+	it("keeps what the push was answered, for the settings page's entry", async () => {
+		const accepted = await pluginWith();
+		expect(accepted.readwiseLastCheck).toBeNull();
+		await accepted.syncNow();
+		expect(accepted.readwiseLastCheck).toBe("ok");
+
+		readwise.failure = new ReadwiseError("rejected", "Readwise did not accept the access token.");
+		const refused = await pluginWith();
+		await refused.syncNow();
+		expect(refused.readwiseLastCheck).toBe("rejected");
 	});
 
 	it("keeps a push that throws out of the sync's report", async () => {

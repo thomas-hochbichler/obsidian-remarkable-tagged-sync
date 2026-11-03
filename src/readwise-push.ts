@@ -186,6 +186,28 @@ export function pushBookAgain(data: ReadwiseData & { syncIndex: SyncIndex }, doc
 /** Which of the Connection line's states this computer is in (spec §2.1). */
 export type ReadwiseConnection = "free" | "off" | "no-token" | "checking" | "clash" | ReadwiseCheck;
 
+/** What readwise.io last answered this Obsidian session -- the line's probe or a sync's push -- or `null` before either asked. */
+export type ReadwiseLastCheck = ReadwiseCheck | PushFailure | null;
+
+/**
+ * The Readwise page's entry on the settings root (settings-redesign spec §5): whether this computer
+ * pushes, without opening the page. A warning only where the user has to act. The Keychain is read
+ * only with Pro and the switch on, where the answer depends on it.
+ */
+export function readwisePageEntry(
+	data: { readwise: ReadwiseSettings; readwiseAccountClash?: true },
+	entitlement: Entitlement,
+	lastCheck: ReadwiseLastCheck,
+	token: () => string | null,
+): { value: string; status: "warning" | null } {
+	if (!readwiseProAllowed(entitlement)) return { value: "Pro", status: null };
+	if (!data.readwise.push) return { value: "Off", status: null };
+	if (data.readwiseAccountClash) return { value: "Two accounts", status: "warning" };
+	if (token() === null) return { value: "No access token", status: "warning" };
+	if (lastCheck === "rejected") return { value: "Token not accepted", status: "warning" };
+	return { value: "Pushing", status: null };
+}
+
 const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
 
 interface ConnectionLine {

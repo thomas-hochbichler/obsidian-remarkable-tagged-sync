@@ -244,8 +244,8 @@ function draw(tab: Tab): Drawn[] {
 
 /**
  * What the screen holds now, without drawing it again -- so a control that changed the page and lost
- * its re-render reads as the stale page it left behind. An element that holds rows at any depth (a
- * section still drawn by its old code, the backend's host row) is read as the rows it holds.
+ * its re-render reads as the stale page it left behind. An element that holds rows at any depth (the
+ * backend's host row) is read as the rows it holds.
  */
 function onScreen(tab: Tab): Drawn[] {
 	const bySettingEl = new Map(takeSettings().map((setting: Setting) => [setting.settingEl, setting]));
@@ -432,15 +432,16 @@ interface Definition {
 	status?: () => "warning" | null;
 }
 
-/** The Zotero page's groups as definitions: heading, class, and their rows as {@link rowsOf} reads them. */
-function zoteroPageGroups(tab: Tab): { heading?: string; cls?: string; rows: Row[] }[] {
-	return zoteroPage(tab).items?.map((group) => ({ heading: group.heading, cls: group.cls, rows: rowsIn(group.items ?? []) })) ?? [];
+/** A page's groups as definitions: heading, class, and their rows as {@link rowsOf} reads them. */
+function pageGroups(tab: Tab, name: string): { heading?: string; cls?: string; rows: Row[] }[] {
+	return integrationPage(tab, name).items?.map((group) => ({ heading: group.heading, cls: group.cls, rows: rowsIn(group.items ?? []) })) ?? [];
 }
 
-function zoteroPage(tab: Tab): Definition {
+/** The page `name` under *Integrations*, as a definition. */
+function integrationPage(tab: Tab, name: string): Definition {
 	const integrations = (tab.getSettingDefinitions() as unknown as Definition[]).find((item) => item.heading === "Integrations");
-	const page = integrations?.items?.find((item) => item.type === "page" && item.name === "Zotero");
-	if (!page) throw new Error("no Zotero page");
+	const page = integrations?.items?.find((item) => item.type === "page" && item.name === name);
+	if (!page) throw new Error(`no ${name} page`);
 	return page;
 }
 
@@ -1326,7 +1327,7 @@ describe("the Zotero section", () => {
 	it("answers four groups on its page, each row bound to its key", async () => {
 		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" } });
 
-		expect(zoteroPageGroups(tab)).toEqual([
+		expect(pageGroups(tab, "Zotero")).toEqual([
 			{
 				heading: undefined,
 				cls: "tagged-sync-group-zotero-connection",
@@ -1361,7 +1362,7 @@ describe("the Zotero section", () => {
 
 	it("finds the key field by the word people search for", async () => {
 		const { tab } = await tabWith({ zotero: { useWeb: true } });
-		const connection = zoteroPage(tab).items?.[0].items ?? [];
+		const connection = integrationPage(tab, "Zotero").items?.[0].items ?? [];
 
 		expect(connection.find((item) => item.name === "Zotero API key")?.aliases).toEqual(["token"]);
 	});
@@ -1387,7 +1388,7 @@ describe("the Zotero section", () => {
 		it("shows nothing on the entry when its state cannot be read, and says why in the console", async () => {
 			const { plugin, tab } = await tabWith();
 			const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
-			const page = zoteroPage(tab);
+			const page = integrationPage(tab, "Zotero");
 			Object.defineProperty(plugin.data, "zotero", {
 				get: () => {
 					throw new Error("broken");
@@ -1820,7 +1821,7 @@ describe("the Zotero section", () => {
 		await settle();
 		const before = (plugin.data.zotero as { groups: unknown[] }).groups;
 
-		expect(zoteroPageGroups(tab)[1].rows.map((item) => item.key)).toEqual([undefined, "zotero.group:815", "zotero.group:4711"]);
+		expect(pageGroups(tab, "Zotero")[1].rows.map((item) => item.key)).toEqual([undefined, "zotero.group:815", "zotero.group:4711"]);
 		expect([tab.getControlValue("zotero.group:815"), tab.getControlValue("zotero.group:4711")]).toEqual([true, false]);
 		await tab.setControlValue("zotero.group:4711", true);
 		await tab.setControlValue("zotero.group:815", false);
@@ -1835,10 +1836,11 @@ describe("the Zotero section", () => {
 	});
 });
 
-describe("the Readwise section", () => {
+describe("the Readwise page", () => {
 	// Readwise spec §2: shown to every vault, the switch shut with "(Pro)" to a free one; the token is a
 	// Keychain entry's name in data.json, never the token; the Connection line says which of §2.1's
-	// states this computer is in, counts from the state and never from Readwise.
+	// states this computer is in, counts from the state and never from Readwise. Settings-redesign spec
+	// §7: one group without a heading on a page of its own.
 	const PRO = {
 		licence: {
 			...NO_LICENCE,
@@ -1888,6 +1890,102 @@ describe("the Readwise section", () => {
 				"To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book.",
 		);
 		expect(toggle(drawn, "Push highlights to Readwise").disabled).toBe(false);
+	});
+
+	it("answers one group without a heading on its page, each row bound to its key", async () => {
+		const { tab } = await tabWith({ ...PRO, ...ON, readwiseAccountClash: true }, keychainWith("rw-token"));
+
+		expect(pageGroups(tab, "Readwise")).toEqual([
+			{
+				heading: undefined,
+				cls: "tagged-sync-group-readwise",
+				rows: [
+					{ name: "Connection", kind: "render", shown: true },
+					{ name: "Push highlights to Readwise", kind: "toggle", key: "readwise.push", shown: true },
+					{ name: "Readwise access token", kind: "secret", key: "readwise.tokenSecret", shown: true },
+					{ name: "Readwise's own Obsidian plugin", kind: "text", shown: true },
+					{ name: "Start over with this computer's token", kind: "render", shown: true },
+				],
+			},
+		]);
+	});
+
+	it("finds the token field by the word people search for", async () => {
+		const { tab } = await tabWith(PRO);
+		const rows = integrationPage(tab, "Readwise").items?.[0].items ?? [];
+
+		expect(rows.find((item) => item.name === "Readwise access token")?.aliases).toEqual(["API key"]);
+	});
+
+	// Settings-redesign spec §5: the entry on the root says whether this computer pushes, without opening the page.
+	describe("its entry on the root", () => {
+		const entry = (tab: Tab): unknown => {
+			takeSettings();
+			renderSettingTab(tab);
+			return takeSettings().find((setting: Setting) => setting.name === "Readwise")?.components;
+		};
+
+		it("says Pro to a free vault, without reading the Keychain", async () => {
+			const app = keychainWith("rw-token");
+			const keychain = vi.spyOn(app.secretStorage, "getSecret");
+			const { tab } = await tabWith(ON, app);
+
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pro", status: null })]);
+			expect(keychain).not.toHaveBeenCalled();
+		});
+
+		it("warns for a switch on with no token on this computer", async () => {
+			expect(entry((await tabWith({ ...PRO, ...ON })).tab)).toEqual([expect.objectContaining({ value: "No access token", status: "warning" })]);
+		});
+
+		it("warns once readwise.io did not accept the token, and forgets it when another token is chosen", async () => {
+			const app = keychainWith("rw-token");
+			app.secretStorage.secrets.set("readwise-new", "rw-new");
+			// The old token refused, at once and then once more late; the new one's answer never comes, so only
+			// the choice can clear the warning.
+			const asked: (string | null)[] = [];
+			const late: ((response: Response) => void)[] = [];
+			stubNetwork((_input, init) => {
+				const token = new Headers(init?.headers).get("Authorization");
+				asked.push(token);
+				if (token !== "Token rw-token") return new Promise<Response>(() => undefined);
+				return asked.length === 1 ? Promise.resolve(new Response(null, { status: 401 })) : new Promise<Response>((resolve) => late.push(resolve));
+			});
+			const { tab } = await tabWith({ ...PRO, ...ON }, app);
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pushing", status: null })]);
+
+			renderSettingTab(tab, { page: "Readwise" });
+			const first = onScreen(tab);
+			await vi.waitFor(() => expect(verdict(row(first, "Connection")).text).toBe("The access token was not accepted — paste a new one from readwise.io/access_token."));
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Token not accepted", status: "warning" })]);
+
+			renderSettingTab(tab, { page: "Readwise" });
+			const drawn = onScreen(tab);
+			await vi.waitFor(() => expect(late).toHaveLength(1));
+			await secret(drawn).pick("readwise-new");
+			// Asked inside this test, so the probe cannot land in the next one's network.
+			await vi.waitFor(() => expect(asked).toContain("Token rw-new"));
+			// The old token's answer, after the choice: about a token no longer in use.
+			late[0](new Response(null, { status: 401 }));
+			await settle();
+
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pushing", status: null })]);
+		});
+
+		// The reader glanced at the page and went back before readwise.io answered: the answer is still about this token.
+		it("warns on an answer that comes after the page was left", async () => {
+			const answers: ((response: Response) => void)[] = [];
+			stubNetwork(() => new Promise((resolve) => answers.push(resolve)));
+			const { tab } = await tabWith({ ...PRO, ...ON }, keychainWith("rw-token"));
+			renderSettingTab(tab, { page: "Readwise" });
+			await vi.waitFor(() => expect(answers).toHaveLength(1));
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Pushing", status: null })]);
+
+			answers[0](new Response(null, { status: 401 }));
+			await settle();
+
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "Token not accepted", status: "warning" })]);
+		});
 	});
 
 	it("shows a free vault the switch shut, and says pushing is Pro", async () => {
@@ -2025,7 +2123,10 @@ describe("the Readwise section", () => {
 		const drawn = draw(tab);
 		await vi.waitFor(() => expect(answers).toHaveLength(1));
 
-		await secret(drawn).pick("readwise-token");
+		// Off and on again: the line asks again while the first answer is still out.
+		toggle(drawn, "Push highlights to Readwise").toggle(false);
+		await settle();
+		toggle(drawn, "Push highlights to Readwise").toggle(true);
 		await vi.waitFor(() => expect(answers).toHaveLength(2));
 		answers[1](new Response(null, { status: 204 }));
 		await answered(drawn, "Connected — 0 books, 0 highlights pushed.");

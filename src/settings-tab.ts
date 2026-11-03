@@ -7,8 +7,7 @@ import {
 	Notice,
 	Platform,
 	PluginSettingTab,
-	SecretComponent,
-	Setting,
+	type Setting,
 	type SettingDefinition,
 	type SettingDefinitionGroup,
 	type SettingDefinitionItem,
@@ -37,8 +36,15 @@ import { allowedTransports, DEFAULT_SSH_SETTINGS, isPaired } from "./ssh-transpo
 import type { TransportId, TransportSession } from "./transport";
 import { collectTagNames, enumerateNotebookTags } from "./remarkable-tags";
 import { createReadwiseClient } from "./readwise-client";
-import { type ReadwiseConnection, readwiseClashed, readwiseConnectionLine, readwiseProAllowed, startOverReadwise, tokenFingerprint } from "./readwise-push";
-import type { ReadwiseSettings } from "./readwise-state";
+import {
+	type ReadwiseConnection,
+	readwiseClashed,
+	readwiseConnectionLine,
+	readwisePageEntry,
+	readwiseProAllowed,
+	startOverReadwise,
+	tokenFingerprint,
+} from "./readwise-push";
 import { invalidateRenders, pendingOcrRetries } from "./sync-engine";
 import { folderLabel, type MappedTag, planTagRouting, REMOVAL_MESSAGE, type UnmappedTag } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
@@ -94,8 +100,10 @@ const ROW_FAILED = "This row could not be drawn. Copy diagnostics under Help and
 /** The text keys: saved through one debounce, as their fields always were (spec §2.3). */
 const TYPED_KEYS = new Set(["attachmentsFolder", "zotero.apiKey", "zotero.folder", "zotero.sendTag"]);
 
-/** What a typed key stores (spec §6.1, §6.4). */
+/** What a typed or picked key stores (spec §6.1, §6.4, §7). */
 const SET_RULES: Record<string, (typed: string) => unknown> = {
+	// The Keychain picker hands back `null` when the choice is cleared; no entry is no name, not `""`.
+	"readwise.tokenSecret": (picked) => picked || null,
 	// `""` would be a configured connection that answers 401 to every call: a cleared field is no key.
 	"zotero.apiKey": (typed) => (typed === "" ? null : typed),
 	// Blank is the default rather than a folder with no name: a document put at the root of the tablet
@@ -145,6 +153,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private refreshZoteroLine: (() => void) | null = null;
 	/** The key field asks the line again once the typing stops. */
 	private readonly recheckZotero = debounce(() => this.refreshZoteroLine?.(), 600, true);
+	/** The Readwise *Connection* line's probe, while the line is on screen (spec §2.8). */
+	private refreshReadwiseLine: (() => void) | null = null;
 
 	constructor(
 		app: App,
@@ -158,9 +168,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * §3): eight groups on the root page, Zotero and Readwise as pages under *Integrations*. Asked for
 	 * on every opening and by every `update()`, so it reads the state and does no network I/O.
 	 *
-	 * The root groups and the Zotero page are definitions of their own (tickets 11–13); the Readwise
-	 * page still holds one row that draws it with the old code, until ticket 14. A row that changes the page calls
-	 * `update()`, which keeps the reader's place itself (ticket 17's F1, spec §2.5).
+	 * A row that changes the page calls `update()`, which keeps the reader's place itself (ticket 17's
+	 * F1, spec §2.5).
 	 *
 	 * It runs inside `onload` too (`addSettingTab`), where a throw would stop the plugin, so a throw
 	 * here becomes one row instead.
@@ -168,11 +177,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		try {
 			const connected = this.plugin.transport().status().connected;
-			const page = (name: string, draw: (el: HTMLElement) => void): SettingDefinitionPage => ({
-				type: "page",
-				name,
-				items: [{ type: "group", items: [this.hosted(name, draw)] }],
-			});
 			return [
 				this.connectionGroup(connected),
 				...(connected ? [this.tagGroup()] : []),
@@ -183,7 +187,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					type: "group",
 					heading: "Integrations",
 					cls: "tagged-sync-group-integrations",
-					items: [this.zoteroPage(), page("Readwise", (el) => this.renderReadwise(el))],
+					items: [this.zoteroPage(), this.readwisePage()],
 				},
 				this.proGroup(),
 				this.helpGroup(),
@@ -192,22 +196,6 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			console.error("Tagged Sync: the settings could not be drawn", error);
 			return [{ name: "The settings could not be drawn.", desc: "Report it with the steps that led here." }];
 		}
-	}
-
-	/**
-	 * A row whose own name and controls are cleared, so it holds the rows `draw` builds -- a section
-	 * still drawn by its old code. Not searchable: the rows inside are not definitions.
-	 */
-	private hosted(name: string, draw: (el: HTMLElement) => void): SettingDefinitionRender {
-		return {
-			name,
-			searchable: false,
-			render: this.guarded(name, (setting) => {
-				setting.settingEl.empty();
-				setting.settingEl.removeClass("setting-item");
-				draw(setting.settingEl);
-			}),
-		};
 	}
 
 	/**
@@ -274,7 +262,9 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * Then the key's side effect: *Your notes on PDFs* makes every synced note due again, and so do the
 	 * two *Into Zotero* switches for the Zotero-linked documents; an automatic-sync change re-arms the
 	 * timer, so it takes effect now rather than at the next launch; a Zotero connection switch draws the
-	 * page again, which is now about a different set of connections.
+	 * page again, which is now about a different set of connections. The Readwise switch asks the line
+	 * again; another Readwise token forgets what readwise.io said about the old one and draws the page
+	 * again.
 	 */
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		if (key === "autoSync.interval") return this.setControlValue("autoSync.intervalHours", value === "launch" ? null : Number(String(value).slice(1)));
@@ -282,7 +272,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const [head, sub] = key.split(".");
 		const data = this.plugin.data as unknown as Record<string, unknown>;
 		if (!(head in data) || (sub !== undefined && !(sub in (data[head] as object)))) throw new Error(`Tagged Sync: no setting "${key}"`);
-		const stored = key in SET_RULES ? SET_RULES[key](String(value)) : value;
+		const stored = key in SET_RULES ? SET_RULES[key](String(value ?? "")) : value;
 		if (this.getControlValue(key) === stored) return;
 		data[head] = sub === undefined ? stored : { ...(data[head] as Record<string, unknown>), [sub]: stored };
 		// The device has not changed, so nothing would re-run without this: the switch decides what a
@@ -297,6 +287,12 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		else await this.plugin.saveData(this.plugin.data);
 		if (head === "autoSync") this.plugin.rearmAutoSyncInterval();
 		if (key === "zotero.useWeb" || key === "zotero.useLocal") this.update();
+		if (key === "readwise.push") this.refreshReadwiseLine?.();
+		if (key === "readwise.tokenSecret") {
+			// What readwise.io said was about the old token (spec §5); the redraw asks about the new one.
+			this.plugin.readwiseLastCheck = null;
+			this.update();
+		}
 	}
 
 	/** Settings may close with their own window; what was typed is written before they go. */
@@ -1067,95 +1063,114 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Readwise (Readwise spec §2), built like Zotero: a live Connection line, the Pro switch, the token
-	 * and the round-trip hint. Shown to every vault, the switch shut with "(Pro)" to a free one.
+	 * Readwise (Readwise spec §2, settings-redesign spec §7), built like Zotero: a live Connection line,
+	 * the Pro switch, the token and the round-trip hint, in one group without a heading. Shown to every
+	 * vault, the switch shut with "(Pro)" to a free one.
 	 *
 	 * The token is a Keychain entry, which this computer has or has not: `data.json` holds only the
-	 * entry's name, and the token is read when the line asks readwise.io.
+	 * entry's name, and the token is read when the line asks readwise.io. Choosing another entry draws
+	 * the page again ({@link setControlValue}): the line and *Start over* are about that token.
 	 */
-	private renderReadwise(containerEl: HTMLElement): void {
+	private readwisePage(): SettingDefinitionPage {
 		const pro = readwiseProAllowed(this.plugin.entitlement());
+		const entry = () => readwisePageEntry(this.plugin.data, this.plugin.entitlement(), this.plugin.readwiseLastCheck, () => this.plugin.readwiseToken());
+		const items: SettingDefinition[] = [
+			{ name: "Connection", render: this.guarded("Connection", (setting) => this.renderReadwiseLine(setting)) },
+			{
+				name: pro ? "Push highlights to Readwise" : "Push highlights to Readwise (Pro)",
+				desc:
+					"Your highlights and margin notes become highlights in your Readwise library, one book or article per document, and come up in your Daily Review. " +
+					"The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access " +
+					"(Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.",
+				// Switching on needs nothing more here: the next sync starts the backfill (Readwise spec §5).
+				control: { type: "toggle", key: "readwise.push", disabled: !pro },
+			},
+			{
+				name: "Readwise access token",
+				desc: "From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.",
+				aliases: ["API key"],
+				control: { type: "secret", key: "readwise.tokenSecret" },
+			},
+			{
+				name: "Readwise's own Obsidian plugin",
+				desc:
+					"If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, each highlight linking to your note. " +
+					"To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book.",
+			},
+		];
+		// Only while stopped, and on a computer with a token to start over with: it is the one way out once
+		// neither token clears the clash (ticket 20, option C).
+		if (this.plugin.data.readwiseAccountClash && this.plugin.readwiseToken() !== null) {
+			const name = "Start over with this computer's token";
+			items.push({
+				name,
+				desc:
+					"Forgets what was pushed to Readwise; the next sync pushes every document again, into the account of this computer's token. " +
+					"Books you deleted in Readwise come back, and your margin notes go to your transcription backend again.",
+				render: this.guarded(name, (setting) => {
+					setting.addButton((button) =>
+						button
+							.setButtonText("Start over")
+							.setDestructive()
+							.onClick(async () => {
+								// A push in flight writes the state back when it ends (spec §4.1: it holds the run lock).
+								if (this.plugin.isSyncing()) {
+									new Notice("Wait for the sync to finish, then start over.");
+									return;
+								}
+								startOverReadwise(this.plugin.data);
+								await this.plugin.saveData(this.plugin.data);
+								this.update();
+							}),
+					);
+				}),
+			});
+		}
+		return {
+			type: "page",
+			name: "Readwise",
+			displayValue: this.guardedValue("Readwise", "", () => entry().value),
+			status: this.guardedValue<"warning" | null>("Readwise", null, () => entry().status),
+			items: [{ type: "group", cls: "tagged-sync-group-readwise", items }],
+		};
+	}
 
-		const line = new Setting(containerEl).setName("Connection").descEl.createDiv({ cls: "tagged-sync-verdict" });
+	/**
+	 * The line of Readwise spec §2.1, asked again when the switch changes. Numbered like Zotero's probe,
+	 * so a slow answer never lands on top of a newer one; an answer that lands is also what the page's
+	 * entry on the root reads (settings-redesign spec §5).
+	 */
+	private renderReadwiseLine(setting: Setting): () => void {
+		const line = setting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		const paint = (connection: ReadwiseConnection) => {
 			const { text, tone } = readwiseConnectionLine(connection, this.plugin.data.readwiseBooks);
 			line.setText(text);
 			line.style.color = tone === null ? "" : `var(--text-${tone})`;
 		};
-		// Numbered like Zotero's probe: a slow answer never lands on top of a newer one.
 		let probe = 0;
-		const refreshStatus = () => {
+		const refresh = () => {
 			const mine = ++probe;
+			const pro = readwiseProAllowed(this.plugin.entitlement());
 			// The Keychain is read only when the line will ask readwise.io (ticket 20 item 2).
 			const token = pro && this.plugin.data.readwise.push ? this.plugin.readwiseToken() : null;
-			const first = !pro ? "free" : !this.plugin.data.readwise.push ? "off" : token === null ? "no-token" : "checking";
-			paint(first);
+			paint(!pro ? "free" : !this.plugin.data.readwise.push ? "off" : token === null ? "no-token" : "checking");
 			if (token === null) return;
 			void (async () => {
 				// A clash is the state's to say, so readwise.io is not asked (spec §11 P4).
 				const answer = readwiseClashed(this.plugin.data, await tokenFingerprint(token)) ? "clash" : await createReadwiseClient(token).check();
-				if (mine !== probe) return;
-				paint(answer);
+				// Kept for the root's entry while it is about the token in the Keychain, the page left or not;
+				// another token redrew the page, so this line is gone too.
+				if (this.plugin.readwiseToken() !== token) return;
+				this.plugin.readwiseLastCheck = answer;
+				if (mine === probe) paint(answer);
 			})();
 		};
-		refreshStatus();
-
-		const save = async (readwise: Partial<ReadwiseSettings>): Promise<void> => {
-			this.plugin.data.readwise = { ...this.plugin.data.readwise, ...readwise };
-			await this.plugin.saveData(this.plugin.data);
-			refreshStatus();
+		refresh();
+		this.refreshReadwiseLine = refresh;
+		return () => {
+			probe++;
+			this.refreshReadwiseLine = null;
 		};
-
-		new Setting(containerEl)
-			.setName(pro ? "Push highlights to Readwise" : "Push highlights to Readwise (Pro)")
-			.setDesc(
-				"Your highlights and margin notes become highlights in your Readwise library, one book or article per document, and come up in your Daily Review. " +
-					"The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access " +
-					"(Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.",
-			)
-			// Switching on needs nothing more here: the next sync starts the backfill (spec §5).
-			.addToggle((toggle) => {
-				toggle.setValue(this.plugin.data.readwise.push).setDisabled(!pro);
-				toggle.onChange((push) => save({ push }));
-			});
-
-		new Setting(containerEl)
-			.setName("Readwise access token")
-			.setDesc("From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.")
-			.addComponent((el) =>
-				new SecretComponent(this.app, el).setValue(this.plugin.data.readwise.tokenSecret ?? "").onChange((name) => save({ tokenSecret: name || null })),
-			);
-
-		new Setting(containerEl)
-			.setName("Readwise's own Obsidian plugin")
-			.setDesc(
-				"If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, each highlight linking to your note. " +
-					"To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book.",
-			);
-
-		// Only while stopped, and on a computer with a token to start over with: it is the one way out once
-		// neither token clears the clash (ticket 20, option C).
-		if (this.plugin.data.readwiseAccountClash && this.plugin.readwiseToken() !== null) {
-			new Setting(containerEl)
-				.setName("Start over with this computer's token")
-				.setDesc(
-					"Forgets what was pushed to Readwise; the next sync pushes every document again, into the account of this computer's token. " +
-						"Books you deleted in Readwise come back, and your margin notes go to your transcription backend again.",
-				)
-				.addButton((button) => {
-					button.setButtonText("Start over").onClick(async () => {
-						// A push in flight writes the state back when it ends (spec §4.1: it holds the run lock).
-						if (this.plugin.isSyncing()) {
-							new Notice("Wait for the sync to finish, then start over.");
-							return;
-						}
-						startOverReadwise(this.plugin.data);
-						await this.plugin.saveData(this.plugin.data);
-						this.update();
-					});
-					button.setDestructive();
-				});
-		}
 	}
 
 	/**

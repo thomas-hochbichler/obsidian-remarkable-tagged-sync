@@ -17,6 +17,7 @@ import {
 	Plugin,
 	PluginSettingTab,
 	renderSettingTab,
+	type SecretComponent,
 	Setting,
 	takeModals,
 	takeSettings,
@@ -556,6 +557,23 @@ describe("the declarative settings tab", () => {
 		expect(pick.dropdowns[0].options).toEqual({ a: "A", b: "B" });
 		expect(pick.dropdowns[0].value).toBe("b");
 		expect(folder.texts[0]).toMatchObject({ placeholder: "Here", value: "There" });
+	});
+
+	// app.js 1.15.0: `addComponent(c => new SecretComponent(app, c).setValue(value || "").onChange(change))`.
+	it("draws a secret control as the Keychain picker, handing the picked entry's name to setControlValue", async () => {
+		takeSettings();
+		const tab = tabOf(() => [{ name: "Token", control: { type: "secret", key: "token" } }]);
+		const set: unknown[] = [];
+		tab.getControlValue = () => null;
+		tab.setControlValue = (_key, value) => void set.push(value);
+
+		renderSettingTab(tab);
+		const picker = takeSettings()[0].components[0] as SecretComponent;
+		expect(picker.value).toBe("");
+		await picker.pick("entry");
+		await picker.pick(null);
+
+		expect(set).toEqual(["entry", null]);
 	});
 
 	it("refuses a definition field it does not model, rather than drawing it as understood", () => {
