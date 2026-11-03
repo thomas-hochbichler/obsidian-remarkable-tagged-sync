@@ -1,0 +1,705 @@
+<title>Tagged Sync Settings Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  PROTOTYPE, throwaway. Settings-redesign map, ticket 04.
+  Three layouts of the whole tab (#a, #b, #c) x three Tag routing variants (1, 2, 3), switchable from
+  the floating bar; the hash holds both (e.g. #b2). State lives in memory only. Built only from what
+  research ticket 03 says Obsidian 1.13's declarative settings API can draw: groups with headings and
+  heading buttons, sub-pages with a value and a warning state, lists with search/+/delete, and
+  `render` rows of our own (pill cloud, status lines, filtered table).
+-->
+<style>
+/* Layout: an Obsidian settings window (sidebar + content pane) holding the plugin tab; a floating prototype bar below. Colours follow Obsidian's default theme. */
+:root {
+  --page: #dcdbe3; --bg: #ffffff; --bg2: #f6f6f6; --group: #f6f6f6;
+  --border: #e3e3e3; --border-strong: #d0d0d0;
+  --fg: #222222; --muted: #5c5c5c; --faint: #9a9a9a;
+  --accent: #7f6df2; --on-accent: #ffffff;
+  --hover: rgba(0,0,0,.05); --hover-strong: rgba(0,0,0,.08);
+  --btn: #ffffff; --btn-shadow: 0 1px 2px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.06);
+  --input: #ffffff; --tg-off: #d4d4d4; --knob: #ffffff;
+  --tag-bg: rgba(127,109,242,.1); --tag-bg-hover: rgba(127,109,242,.2); --tag-fg: #6550e8;
+  --ok: #08b94e; --err: #e93147; --warn: #d86c00; --on-err: #ffffff;
+  --bar-bg: #18171f; --bar-fg: #f4f3fa; --bar-dim: #9d9aae; --bar-btn: rgba(255,255,255,.1);
+  --notice-bg: #2a2a2a; --notice-fg: #f2f2f2; --scrim: rgba(0,0,0,.35);
+  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0e0e10; --bg: #1e1e1e; --bg2: #262626; --group: #262626;
+  --border: #333333; --border-strong: #454545;
+  --fg: #dadada; --muted: #b3b3b3; --faint: #777777;
+  --hover: rgba(255,255,255,.06); --hover-strong: rgba(255,255,255,.1);
+  --btn: #363636; --btn-shadow: 0 1px 2px rgba(0,0,0,.4);
+  --input: #2a2a2a; --tg-off: #4a4a4a; --knob: #f2f2f2;
+  --tag-bg: rgba(127,109,242,.16); --tag-bg-hover: rgba(127,109,242,.28); --tag-fg: #ab9ff8;
+  --ok: #44cf6e; --err: #fb464c; --warn: #e9973f;
+  --bar-bg: #f4f3fa; --bar-fg: #18171f; --bar-dim: #5d5a6e; --bar-btn: rgba(0,0,0,.08);
+  --notice-bg: #3a3a3a; --notice-fg: #f2f2f2; --scrim: rgba(0,0,0,.55);
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --page: #0e0e10; --bg: #1e1e1e; --bg2: #262626; --group: #262626;
+  --border: #333333; --border-strong: #454545;
+  --fg: #dadada; --muted: #b3b3b3; --faint: #777777;
+  --hover: rgba(255,255,255,.06); --hover-strong: rgba(255,255,255,.1);
+  --btn: #363636; --btn-shadow: 0 1px 2px rgba(0,0,0,.4);
+  --input: #2a2a2a; --tg-off: #4a4a4a; --knob: #f2f2f2;
+  --tag-bg: rgba(127,109,242,.16); --tag-bg-hover: rgba(127,109,242,.28); --tag-fg: #ab9ff8;
+  --ok: #44cf6e; --err: #fb464c; --warn: #e9973f;
+  --bar-bg: #f4f3fa; --bar-fg: #18171f; --bar-dim: #5d5a6e; --bar-btn: rgba(0,0,0,.08);
+  --notice-bg: #3a3a3a; --notice-fg: #f2f2f2; --scrim: rgba(0,0,0,.55);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--page); color: var(--fg); font-family: var(--font); }
+* { box-sizing: border-box; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stage { min-height: 100%; display: flex; justify-content: center; padding-block: 24px 110px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.win { width: 100%; max-width: 1060px; height: min(860px, calc(100vh - 140px)); min-height: 520px; display: flex;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18); }
+.side { width: 220px; flex: none; background: var(--bg2); border-right: 1px solid var(--border); padding: 14px 10px; overflow: auto; }
+.side-search { width: 100%; font: inherit; font-size: 13px; padding: 6px 9px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--input); color: var(--fg); }
+.side-h { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; margin: 18px 8px 6px; font-weight: 600; }
+.side-i { padding: 5px 8px; border-radius: 5px; font-size: 13.5px; color: var(--muted); }
+.side-i.on { background: var(--hover-strong); color: var(--fg); }
+.pane { flex: 1; min-width: 0; overflow: auto; padding: 26px 36px 80px; }
+.pane-inner { max-width: 740px; margin: 0 auto; }
+.crumb { display: flex; align-items: center; gap: 6px; margin-bottom: 22px; min-height: 30px; }
+.crumb h2 { font-size: 20px; font-weight: 600; margin: 0; text-wrap: balance; }
+.crumb .root-link { color: var(--muted); font-size: 20px; font-weight: 600; background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.crumb .sep { color: var(--faint); display: inline-flex; }
+
+.sg { margin-bottom: 26px; }
+.sg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 8px; min-height: 30px; }
+.sg-head h3 { font-size: 15px; font-weight: 600; margin: 0; }
+.sg-extra { display: flex; gap: 8px; }
+.sg-items { background: var(--group); border-radius: 10px; overflow: hidden; }
+.sg-foot { font-size: 12.5px; color: var(--muted); padding: 8px 4px 0; line-height: 1.45; }
+.si { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.sg-items > :first-child { border-top: 0; }
+.si-info { flex: 1 1 auto; min-width: 0; }
+.si-name { font-size: 14.5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.si-desc { font-size: 12.5px; color: var(--muted); line-height: 1.45; margin-top: 3px; max-width: 62ch; }
+.si-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 0 1 auto; }
+.si-block { display: block; }
+.si-note { font-size: 12.5px; color: var(--muted); line-height: 1.45; display: block; }
+.si-note.capline { color: var(--fg); }
+.page-entry { cursor: pointer; }
+.page-entry:hover { background: var(--hover); }
+.pv { color: var(--muted); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.pv.warn { color: var(--warn); }
+.chev { color: var(--faint); display: inline-flex; }
+.verdict { margin-top: 5px; font-size: 12.5px; }
+.ok { color: var(--ok); } .err { color: var(--err); } .warn { color: var(--warn); }
+.count { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 400; }
+.muted { color: var(--muted); font-size: 12.5px; }
+
+.btn { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 6px; border: 0; background: var(--btn); color: var(--fg);
+  box-shadow: var(--btn-shadow); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.btn:hover { filter: brightness(.97); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.mod-cta { background: var(--accent); color: var(--on-accent); }
+.btn.mod-warning { background: var(--err); color: var(--on-err); }
+.icon-btn { border: 0; background: none; color: var(--muted); padding: 5px; border-radius: 5px; cursor: pointer; display: inline-flex; }
+.icon-btn:hover { background: var(--hover-strong); color: var(--fg); }
+.icon-btn:disabled { opacity: .4; cursor: default; }
+.tg { width: 38px; height: 22px; border-radius: 11px; border: 0; background: var(--tg-off); position: relative; cursor: pointer; flex: none; padding: 0; }
+.tg span { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--knob); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.tg.on { background: var(--accent); }
+.tg.on span { transform: translateX(16px); }
+.tg:disabled { opacity: .45; cursor: not-allowed; }
+.dd { font: inherit; font-size: 13px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--input); color: var(--fg); max-width: 250px; }
+.dd:disabled { opacity: .5; }
+.txt, .filter { font: inherit; font-size: 13px; padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--input); color: var(--fg); width: 210px; max-width: 100%; }
+.secret { cursor: pointer; text-align: left; min-width: 160px; }
+
+.tag { display: inline-flex; align-items: center; font: inherit; font-size: 12.5px; line-height: 1; padding: 4px 9px; border-radius: 2em;
+  background: var(--tag-bg); color: var(--tag-fg); border: 1px solid transparent; cursor: pointer; white-space: nowrap; }
+.tag:hover { background: var(--tag-bg-hover); }
+.tag.static { cursor: default; }
+.tag.static:hover { background: var(--tag-bg); }
+.tag.is-active { border-color: var(--tag-fg); }
+.tag.faded, .pills.capped .tag { opacity: .5; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; }
+.block-body { padding-top: 10px; }
+.pop { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; font-size: 13px; }
+.pop-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px 9px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.list-title { font-size: 13px; font-weight: 600; color: var(--muted); }
+.list-tools { display: flex; gap: 6px; align-items: center; }
+.list-head + .si { border-top: 0; }
+.empty { padding: 14px 16px; color: var(--muted); font-size: 13px; }
+
+.t3-tools { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 16px; align-items: center; border-bottom: 1px solid var(--border); }
+.seg { display: inline-flex; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 2px; flex-wrap: wrap; }
+.seg-b { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 5px; cursor: pointer; }
+.seg-b.on { background: var(--btn); color: var(--fg); box-shadow: var(--btn-shadow); }
+.t3-list { max-height: 420px; overflow: auto; }
+.t3-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 12px 6px 16px; border-top: 1px solid var(--border); }
+.t3-list > :first-child { border-top: 0; }
+
+.dlg-bg { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 16px; }
+.dlg { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; width: min(540px, 100%); max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.dlg-head { padding: 16px 14px 6px 18px; font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+.dlg-sub { padding: 0 18px 10px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.dlg-body { padding: 0 18px 18px; overflow: auto; }
+.dlg-body .sg-items .si { padding: 7px 12px; }
+
+.notice { position: fixed; top: calc(16px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); background: var(--notice-bg); color: var(--notice-fg);
+  padding: 10px 14px; border-radius: 8px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.25); z-index: 60; max-width: 320px; line-height: 1.4; }
+
+.pbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px 10px; align-items: center;
+  background: var(--bar-bg); color: var(--bar-fg); padding: 6px 8px 6px 14px; border-radius: 16px; box-shadow: 0 8px 28px rgba(0,0,0,.35);
+  font-size: 12.5px; z-index: 50; flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100vw - 32px); }
+.pbar-tag { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--bar-dim); }
+.pbar-sw { display: inline-flex; align-items: center; gap: 2px; background: var(--bar-btn); border-radius: 10px; padding: 2px; }
+.pbar-sw span { padding: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pbar-sw .k { color: var(--bar-dim); }
+.pbar button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+.pbar button:hover { background: var(--bar-btn); }
+.pbar select { font: inherit; font-size: 12px; background: var(--bar-btn); color: inherit; border: 0; border-radius: 8px; padding: 5px 6px; max-width: 210px; }
+.pbar select option { color: initial; }
+.pinfo { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(80px + env(safe-area-inset-bottom, 0px)); width: min(380px, calc(100vw - 32px));
+  background: var(--bar-bg); color: var(--bar-fg); border-radius: 12px; padding: 14px 16px; font-size: 12.5px; line-height: 1.5; z-index: 49; max-height: 55vh; overflow: auto;
+  box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+.pinfo h4 { margin: 0 0 4px; font-size: 12px; font-family: var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--bar-dim); font-weight: 600; }
+.pinfo p { margin: 0 0 12px; }
+.pinfo code { font-family: var(--mono); font-size: 11.5px; }
+.pinfo .close { float: right; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0 2px; }
+
+@media (max-width: 760px) { .side { display: none; } .pane { padding: 18px 14px 80px; } }
+@media (max-width: 560px) { .si { flex-wrap: wrap; } .si-ctl { justify-content: flex-start; width: 100%; } .win { height: calc(100vh - 170px); } }
+@media (prefers-reduced-motion: reduce) { .tg span { transition: none; } }
+</style>
+
+<div class="stage">
+  <div class="win">
+    <nav class="side" aria-label="Settings sections">
+      <input class="side-search" id="side-search" type="search" placeholder="Search settings" aria-label="Search settings">
+      <div class="side-h">Options</div>
+      <div class="side-i">General</div><div class="side-i">Editor</div><div class="side-i">Files and links</div>
+      <div class="side-i">Appearance</div><div class="side-i">Hotkeys</div><div class="side-i">Core plugins</div><div class="side-i">Community plugins</div>
+      <div class="side-h">Community plugins</div>
+      <div class="side-i">Calendar</div><div class="side-i">Dataview</div><div class="side-i on">Tagged Sync</div><div class="side-i">Templater</div>
+    </nav>
+    <main class="pane" id="pane"><div class="pane-inner" id="content"></div></main>
+  </div>
+</div>
+<div id="dialog"></div>
+<div id="notice"></div>
+
+<div class="pbar" role="toolbar" aria-label="Prototype controls">
+  <span class="pbar-tag">Prototype</span>
+  <div class="pbar-sw"><button data-bar="lay-prev" aria-label="Previous layout">‹</button><span id="lay-label"></span><button data-bar="lay-next" aria-label="Next layout">›</button></div>
+  <div class="pbar-sw"><button data-bar="tr-prev" aria-label="Previous Tag routing variant">‹</button><span id="tr-label"></span><button data-bar="tr-next" aria-label="Next Tag routing variant">›</button></div>
+  <select id="preset" aria-label="Vault state">
+    <option value="pro">Pro · 3 tags synced</option>
+    <option value="pro-many">Pro · 12 tags synced</option>
+    <option value="pro-noscan">Pro · tab just opened, no scan</option>
+    <option value="free">Free · 1 tag synced (cap)</option>
+    <option value="free-empty">Free · nothing synced yet</option>
+  </select>
+  <button data-bar="theme" id="theme-btn">Dark</button>
+  <button data-bar="info" aria-label="About this prototype">?</button>
+</div>
+<aside class="pinfo" id="pinfo"></aside>
+
+<script>
+const ICON = {
+  chevR: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>',
+  chevL: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  x: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  plus: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  refresh: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M3 21v-5h5"/></svg>',
+  warn: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>',
+};
+
+const FOLDERS = ["/", "Inbox", "Journal", "Journal/reMarkable", "Work", "Work/Meetings", "Work/1on1", "Research", "Research/Papers", "Books", "Projects", "Projects/Garden", "Recipes", "Travel"];
+const ALL_TAGS = ["1on1", "book-notes", "bujo", "design", "dev", "draft", "family", "finance", "garden", "german", "health", "ideas", "inbox", "journal", "kids",
+  "lecture", "math", "meeting", "obsidian", "paper", "project-alpha", "quotes", "reading", "recipe", "retro", "sketch", "todo", "travel", "weekly-review", "workshop", "zotero"];
+const THREE = { journal: "Journal/reMarkable", meeting: "Work/Meetings", paper: "Research/Papers" };
+const TWELVE = { ...THREE, "1on1": "Work/1on1", "book-notes": "Books", bujo: "Journal", garden: "Projects/Garden", ideas: "Inbox", "project-alpha": "Projects",
+  recipe: "Recipes", travel: "Travel", "weekly-review": "Journal" };
+const PRESETS = {
+  "pro": { tier: "pro", mapping: THREE, scanned: true },
+  "pro-many": { tier: "pro", mapping: TWELVE, scanned: true },
+  "pro-noscan": { tier: "pro", mapping: THREE, scanned: false },
+  "free": { tier: "free", mapping: { journal: "Journal/reMarkable" }, scanned: true },
+  "free-empty": { tier: "free", mapping: {}, scanned: true },
+};
+const LAYOUTS = { a: "One page", b: "Integrations on pages", c: "Short root page" };
+const TRS = { 1: "Pills", 2: "List + dialog", 3: "Filtered table" };
+const BACKENDS = [
+  { v: "vision", l: "Apple Vision (built into macOS, default)", short: "Apple Vision" },
+  { v: "local", l: "Downloaded model (managed by this plugin)", short: "Downloaded model" },
+  { v: "ollama", l: "Ollama (your own server)", short: "Ollama" },
+  { v: "lmstudio", l: "LM Studio (your own server)", short: "LM Studio" },
+  { v: "custom", l: "Custom (any OpenAI-compatible server)", short: "Custom", pro: true },
+  { v: "off", l: "Off — no transcription", short: "Off" },
+];
+const INTERVALS = [["launch", "Only on launch"], ["2", "Every 2 hours"], ["6", "Every 6 hours"], ["12", "Every 12 hours"], ["24", "Every 24 hours"]];
+const REMOVAL = "Removing a tag stops syncing it. Notes already in your vault stay where they are.";
+const CAP = "The free version syncs one tag. Remove the current mapping to choose a different one, or unlock unlimited tags with Tagged Sync Pro.";
+const ISSUES = "https://github.com/thomas-hochbichler/obsidian-remarkable-tagged-sync/issues";
+
+const S = {
+  layout: "a", tr: 1, preset: "pro", tier: "pro", mapping: { ...THREE }, scanned: true, scanning: false,
+  page: null, pop: null, modal: null, filter: "", listFilter: "", modalFilter: "", mode: "all",
+  primary: "cloud", fallback: "none", attachments: "", marginNotes: true, frontmatter: true,
+  backend: "vision", autoSync: true, interval: "6", metered: false, consent: false,
+  zWeb: true, zKey: true, zLocal: false, zGroups: { "Reading group": true, "Thesis 2026": false },
+  writeText: true, addRender: false, zFolder: "", zTag: "", sendOverSsh: false,
+  rwPush: true, rwToken: false, info: true,
+};
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const pro = () => S.tier === "pro";
+const P = (name) => (pro() ? name : `${name} (Pro)`);
+const cid = (key) => "c-" + key.replace(/[^a-z0-9-]/gi, "_");
+const mappedTags = () => Object.keys(S.mapping).sort();
+const unmapped = () => (S.scanned ? ALL_TAGS.filter((t) => !(t in S.mapping)) : []);
+const capped = () => !pro() && mappedTags().length >= 1;
+const folderLabel = (f) => (f === "/" ? "Vault root" : f);
+const folderOpts = (cur) => {
+  const o = FOLDERS.map((f) => ({ v: f, l: folderLabel(f) }));
+  if (cur && !FOLDERS.includes(cur)) o.push({ v: cur, l: `${cur} (missing)` });
+  return o;
+};
+
+function item(name, desc, ctl = "", o = {}) {
+  return `<div class="si${o.cls ? " " + o.cls : ""}"${o.attrs || ""}><div class="si-info"><div class="si-name">${name}</div>${desc ? `<div class="si-desc">${desc}</div>` : ""}</div>${ctl ? `<div class="si-ctl">${ctl}</div>` : ""}</div>`;
+}
+function group(head, items, o = {}) {
+  const shownHead = head === S.pageTitle ? "" : head;
+  const headRow = shownHead || o.extra ? `<div class="sg-head"><h3>${shownHead}</h3>${o.extra ? `<div class="sg-extra">${o.extra}</div>` : ""}</div>` : "";
+  return `<section class="sg"${o.id ? ` id="${o.id}"` : ""}>${headRow}<div class="sg-items">${items}</div>${o.foot ? `<div class="sg-foot">${o.foot}</div>` : ""}</section>`;
+}
+const toggle = (key, on, dis) => `<button class="tg${on ? " on" : ""}" id="${cid(key)}" role="switch" aria-checked="${!!on}" data-act="toggle" data-key="${key}"${dis ? " disabled" : ""}><span></span></button>`;
+const select = (key, opts, val, dis) => `<select class="dd" id="${cid(key)}" data-key="${esc(key)}"${dis ? " disabled" : ""}>${opts.map((o) => `<option value="${esc(o.v)}"${o.v === val ? " selected" : ""}${o.dis ? " disabled" : ""}>${esc(o.l)}</option>`).join("")}</select>`;
+const btn = (text, act, cls = "", extra = "") => `<button class="btn ${cls}" data-act="${act}" ${extra}>${text}</button>`;
+const iconBtn = (act, tag, label, icon = ICON.x) => `<button class="icon-btn" data-act="${act}" data-tag="${esc(tag)}" aria-label="${esc(label)}" title="${esc(label)}">${icon}</button>`;
+const pill = (tag, cls = "", act = "") => (act ? `<button class="tag ${cls}" data-act="${act}" data-tag="${esc(tag)}">#${esc(tag)}</button>` : `<span class="tag static ${cls}">#${esc(tag)}</span>`);
+const text = (key, val, ph, type = "text") => `<input class="txt" id="${cid(key)}" type="${type}" data-text="${key}" placeholder="${esc(ph)}" value="${esc(val)}">`;
+const filterBox = (key, ph) => `<input class="filter" id="${cid(key)}" type="search" data-filter="${key}" placeholder="${esc(ph)}" value="${esc(S[key])}" aria-label="${esc(ph)}">`;
+function pageEntry(id, name, display, warn) {
+  return item(name, "", `<span class="pv${warn ? " warn" : ""}">${warn ? ICON.warn : ""}${esc(display)}</span><span class="chev">${ICON.chevR}</span>`,
+    { cls: "page-entry", attrs: ` data-act="page" data-page="${id}" tabindex="0" role="button"` });
+}
+
+/* ---------- groups ---------- */
+
+function gConnection(syncInHeading) {
+  const lab = (id) => (id === "ssh" ? "Your reMarkable directly (USB or Wi-Fi)" : "reMarkable cloud");
+  const allowed = (id) => id === "cloud" || pro();
+  let items = item("Sync from", S.primary === "ssh" ? "Read straight off the tablet. No reMarkable account is involved." : "Through your reMarkable account, as before.",
+    select("primary", ["cloud", "ssh"].map((id) => ({ v: id, l: allowed(id) ? lab(id) : `${lab(id)} (Pro)`, dis: !allowed(id) })), S.primary));
+  const other = S.primary === "cloud" ? "ssh" : "cloud";
+  items += item("If that is not reachable", "Both sources hand this plugin the same content, so switching between them costs nothing and re-transcribes nothing.",
+    select("fallback", [{ v: "none", l: "Stop and say so" }, { v: other, l: `Try ${lab(other)}`, dis: !allowed(other) }], S.fallback));
+  if (S.primary === "ssh" || S.fallback === "ssh") items += item("Your reMarkable", "Paired with root@10.11.99.1 · host key pinned", btn("Re-pair", "noop") + btn("Forget device", "noop"));
+  items += item("reMarkable cloud account", "Connected.", btn("Disconnect", "noop"));
+  return group("reMarkable connection", items, { extra: syncInHeading ? btn(`${ICON.refresh}Sync now`, "sync", "mod-cta") : "" });
+}
+
+const scanBtn = () => btn(S.scanning ? "Scanning…" : `${ICON.refresh}Scan for tags`, "scan", "", S.scanning ? "disabled" : "");
+const mappedRow = (t) => item(pill(t), "", select(`map:${t}`, folderOpts(S.mapping[t]), S.mapping[t]) + iconBtn("unmap", t, `Stop syncing #${t}`));
+
+function tr1() {
+  const m = mappedTags(), u = unmapped();
+  let items = m.length ? m.map(mappedRow).join("") : item("No tag is synced yet", "Click a tag below and choose the folder its notebooks go to.");
+  if (!S.scanned) {
+    items += item("Not synced yet", "Scan your reMarkable to see the tags on your notebooks and pages.");
+  } else if (!u.length) {
+    items += item("Not synced yet", "Every tag on your reMarkable is synced.");
+  } else {
+    const f = S.filter.trim().toLowerCase();
+    const shown = u.filter((t) => t.includes(f));
+    const pills = shown.map((t) => pill(t, S.pop === t ? "is-active" : "", "pop")).join("") || '<span class="muted">No tag matches.</span>';
+    items += `<div class="si si-block"><div class="si-info"><div class="si-name">Not synced yet <span class="count">${u.length}</span></div><div class="si-desc">${capped() ? CAP : "Click a tag to choose its folder."}</div></div>
+      <div class="block-body">${u.length > 12 ? filterBox("filter", "Filter tags…") : ""}<div class="pills${capped() ? " capped" : ""}">${pills}</div>${popover()}</div></div>`;
+  }
+  return group("Tag routing", items, { extra: scanBtn(), foot: m.length ? REMOVAL : "", id: "g-tags" });
+}
+function popover() {
+  if (!S.pop) return "";
+  if (capped()) return `<div class="pop"><div class="pop-row">${pill(S.pop)} needs Tagged Sync Pro: the free version syncs one tag.</div><div class="pop-row">${btn("See Pro", "gopro", "mod-cta")}${btn("Cancel", "popclose")}</div></div>`;
+  return `<div class="pop"><div class="pop-row">Sync ${pill(S.pop)} into ${select("popfolder", [{ v: "", l: "Choose a folder…" }, ...folderOpts()], "")}</div><div class="pop-row">${btn("Cancel", "popclose")}</div></div>`;
+}
+
+function tr2() {
+  const m = mappedTags(), u = unmapped();
+  const f = S.listFilter.trim().toLowerCase();
+  const shown = m.filter((t) => t.includes(f) || S.mapping[t].toLowerCase().includes(f));
+  let rows = shown.map(mappedRow).join("");
+  if (!m.length) rows = '<div class="empty">No tag is synced yet. Press + to choose one.</div>';
+  else if (!shown.length) rows = '<div class="empty">No synced tag matches.</div>';
+  const head = `<div class="list-head"><span class="list-title">Synced tags <span class="count">${m.length}</span></span><span class="list-tools">${m.length > 4 ? filterBox("listFilter", "Search…") : ""}<button class="icon-btn" data-act="add" aria-label="Sync another tag" title="Sync another tag">${ICON.plus}</button></span></div>`;
+  const tail = S.scanned
+    ? `<div class="si si-note${capped() ? " capline" : ""}">${capped() ? CAP : `${u.length} more tags on your reMarkable are not synced. Press + to sync one.`}</div>`
+    : '<div class="si si-note">Scan your reMarkable to find its tags, then press + to sync one.</div>';
+  return group("Tag routing", head + rows + tail, { extra: scanBtn(), foot: m.length ? REMOVAL : "", id: "g-tags" });
+}
+function addDialog() {
+  const u = unmapped();
+  let sub, body;
+  if (capped()) {
+    sub = CAP;
+    body = `<div style="display:flex;gap:8px;justify-content:flex-end">${btn("Cancel", "closedlg")}${btn("See Pro", "gopro", "mod-cta")}</div>`;
+  } else if (!S.scanned) {
+    sub = "No tags found yet. Scan your reMarkable to list the tags on your notebooks and pages.";
+    body = `<div style="display:flex;justify-content:flex-end">${scanBtn()}</div>`;
+  } else {
+    sub = "Pick the folder a tag's notebooks go to. The tag syncs from the next sync on.";
+    const f = S.modalFilter.trim().toLowerCase();
+    const shown = u.filter((t) => t.includes(f));
+    body = `<div style="padding-bottom:10px">${filterBox("modalFilter", "Filter tags…")}</div><div class="sg-items">${shown.map((t) => item(pill(t), "", select(`addmap:${t}`, [{ v: "", l: "Choose a folder…" }, ...folderOpts()], ""))).join("") || '<div class="empty">No tag matches.</div>'}</div>`;
+  }
+  return `<div class="dlg-bg" data-act="bgclose"><div class="dlg" role="dialog" aria-modal="true" aria-label="Sync a tag"><div class="dlg-head">Sync a tag ${iconBtn("closedlg", "", "Close")}</div><div class="dlg-sub">${sub}</div><div class="dlg-body">${body}</div></div></div>`;
+}
+
+function tr3() {
+  const m = mappedTags(), u = unmapped(), all = [...m, ...u];
+  const f = S.filter.trim().toLowerCase();
+  const list = all.filter((t) => t.includes(f) || (S.mapping[t] || "").toLowerCase().includes(f)).filter((t) => S.mode === "all" || (S.mode === "synced") === t in S.mapping);
+  const seg = `<div class="seg" role="group" aria-label="Show">${[["all", "All", all.length], ["synced", "Synced", m.length], ["not", "Not synced", u.length]]
+    .map(([k, l, n]) => `<button class="seg-b${S.mode === k ? " on" : ""}" data-act="mode" data-mode="${k}">${l} <span class="count">${n}</span></button>`).join("")}</div>`;
+  const rows = list.map((t) => {
+    const on = t in S.mapping, dis = !on && capped();
+    return `<div class="t3-row">${pill(t, dis ? "faded" : "")}${select(`t3:${t}`, [{ v: "", l: "Not synced" }, ...folderOpts(S.mapping[t])], on ? S.mapping[t] : "", dis)}</div>`;
+  }).join("") || '<div class="empty">No tag matches.</div>';
+  let notes = "";
+  if (capped()) notes += `<div class="si si-note capline">${CAP}</div>`;
+  if (!S.scanned) notes += '<div class="si si-note">Only synced tags are listed. Scan your reMarkable to see the others.</div>';
+  return group("Tag routing", `<div class="t3-tools">${filterBox("filter", "Filter tags or folders…")}${seg}</div>${notes}<div class="t3-list">${rows}</div>`,
+    { extra: scanBtn(), foot: "Choose Not synced to stop syncing a tag. Notes already in your vault stay where they are.", id: "g-tags" });
+}
+const tagRouting = () => [tr1, tr2, tr3][S.tr - 1]();
+
+function gVault() {
+  return group("Vault output",
+    item("Attachments folder", "Vault folder for the rendered PDFs. Applies to notebooks synced from now on; already-synced files stay where they are.", text("attachments", S.attachments, "tagged-sync/attachments")) +
+    item("Your notes on PDFs", "What you wrote or typed on an annotated PDF, beside the text or on a page you added. Handwriting is transcribed where a transcription backend can run.", toggle("marginNotes", S.marginNotes)) +
+    item(P("Frontmatter properties"), pro()
+      ? "Write each note's reMarkable tags and metadata (folder, modified, type, …) into its frontmatter, for Dataview and Bases. Turning this on writes the properties into every synced note; turning it off removes them again. Your own frontmatter lines are never touched."
+      : "Write each note's reMarkable tags and metadata into its frontmatter, for Dataview and Bases. Part of Tagged Sync Pro.",
+      toggle("frontmatter", pro() && S.frontmatter, !pro())));
+}
+
+function gTranscription() {
+  const b = S.backend;
+  const promise = { vision: "Runs on your Mac — no account, no key, no network. Transcripts are flat text, no headings or tables. Choose an LLM backend for structured Markdown.",
+    off: "Notes still sync with their page images. No text is produced.", custom: "Each page is sent to the provider, charged to your own API key." }[b] || "Runs on hardware you own — no account and no key.";
+  let items = item("Backend", promise, select("backend", BACKENDS.map((x) => ({ v: x.v, l: x.pro && !pro() ? `${x.l} (Pro)` : x.l, dis: x.pro && !pro() })), b));
+  if (b === "local") items += item("Model", "Qwen3-VL-8B-Instruct · 6.1 GB · ready on this Mac.", btn("Check for a better model", "noop")) + item("Model files", "~/Library/Application Support/tagged-sync/models", btn("Delete", "noop", "mod-warning"));
+  if (b === "ollama" || b === "lmstudio") items += item("Endpoint (base URL)", "", text("endpoint", b === "ollama" ? "http://localhost:11434/v1" : "http://localhost:1234/v1", "")) + item("Model", "Reads images.", select("model", [{ v: "q", l: "qwen3-vl-8b" }], "q"));
+  if (b === "custom") items += item("Endpoint (base URL)", "", text("endpoint", "https://openrouter.ai/api/v1", "")) + item("API key", "", text("apikey", "sk-or-v1-0000", "", "password")) + item("Model", "Reads images.", select("model", [{ v: "g", l: "google/gemini-3.1-flash-lite" }], "g"));
+  return group("Transcription", items);
+}
+
+function gAutoSync() {
+  let items = item("Enable automatic sync", "Sync on launch and periodically while Obsidian is open.", toggle("autoSync", S.autoSync));
+  if (S.autoSync) {
+    items += item("Sync interval", "How often to re-sync during a long session. On-launch sync always runs.", select("interval", INTERVALS.map(([v, l]) => ({ v, l })), S.interval));
+    if (S.backend === "custom") items += item("Allow automatic sync with this backend", "Each automatic sync sends your new pages to Custom and bills your API key. Off, automatic sync does nothing while this backend is chosen. A sync you start yourself still runs.", toggle("metered", S.metered));
+    if (S.backend === "local") items += item("Allow automatic sync with this backend", "Runs the downloaded model in the background: battery, heat and several GB of RAM. Off, automatic sync does nothing while this backend is chosen.", toggle("consent", S.consent));
+  }
+  return group("Automatic sync", items);
+}
+
+function zStatus() {
+  if (S.zWeb && S.zKey) return ["Connected via web.", "ok"];
+  if (pro() && S.zLocal) return ["Connected to the Zotero desktop app.", "ok"];
+  return ["Not connected.", "err"];
+}
+function zoteroGroups(onPage) {
+  const [line, tone] = zStatus();
+  const h = onPage ? { cloud: "zotero.org", local: "Zotero desktop app", libs: "Group libraries", into: "Into Zotero", tablet: "On the tablet" }
+    : { cloud: "Zotero cloud", local: "Zotero local", libs: "Zotero libraries", into: "Into Zotero", tablet: "Zotero on the tablet" };
+  const out = [];
+  out.push(group("Zotero", item("Connection", (pro()
+    ? "Either connection is enough on its own. The desktop app works offline and knows where your PDFs are; zotero.org works with Zotero closed."
+    : "zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro.")
+    + `<div class="verdict ${tone}">${line}</div>`)));
+  let cloud = item("Use zotero.org", "Your library is read over the internet, at zotero.org, and with write-back your highlights and notes are written there, and the render if you add it. Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.", toggle("zWeb", S.zWeb));
+  if (S.zWeb) cloud += item("Zotero API key", "From zotero.org → Settings → Security → New Key (Applications). Needs read and write access to your personal library. Stored locally in this vault's plugin data.", `<input class="txt" id="c-zkey" type="password" value="${S.zKey ? "abcdefghijklmnopqrstuvwx" : ""}" data-text="zKeyText">`);
+  out.push(group(h.cloud, cloud));
+  out.push(group(h.local, item(P("Use the Zotero desktop app"), 'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). Zotero asks your permission the first time this plugin writes something; choose Always Allow.', toggle("zLocal", pro() && S.zLocal, !pro()))));
+  let libs = item(P("Group libraries"), "A group you switch on is searched, sent from and, with write-back, written into like your own library. Highlights written into a group library are visible to everyone in that group.", pro() ? "" : toggle("x", false, true));
+  if (pro()) libs += Object.entries(S.zGroups).map(([n, on]) => item(esc(n), "", toggle(`zg:${n}`, on))).join("");
+  out.push(group(h.libs, libs));
+  const web = S.zWeb && S.zKey;
+  out.push(group(h.into,
+    item(P("Write text to Zotero"), "Your tablet highlights become Zotero annotations, with your margin notes as their comments, and each page you added to a PDF becomes a note under the paper. Everything carries the tag tagged-sync. Switched off, nothing new is written and what is already in Zotero stays; filter by the tag in Zotero to remove it.", toggle("writeText", pro() && S.writeText, !pro())) +
+    item(P("Add the render to Zotero"), (web ? "" : "Needs a zotero.org connection. ") + 'Uploads the PDF as it looks on your tablet, ink and all and searchable, to Zotero Storage as an attachment "Annotated PDF" under the paper. Your handwriting then leaves this machine for zotero.org and counts against your storage there. Only documents tagged as a whole, in your personal library. If your Zotero files sync over WebDAV, leave this off.', toggle("addRender", pro() && web && S.addRender, !pro() || !web)) +
+    item("What leaves your machine", "Your handwriting never does, unless you switch on Add the render to Zotero. With Write text to Zotero, the text of your highlights, margin notes and added pages is written into your own Zotero library — and to zotero.org, if that is the connection carrying it.")));
+  out.push(group(h.tablet,
+    item("Tablet folder for sent PDFs", "Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.", text("zFolder", S.zFolder, "Zotero")) +
+    item("Send tag in Zotero", "Tag a paper with it in Zotero, then run Send tagged Zotero papers to reMarkable: every paper carrying the tag goes to your tablet, in the folder above, without a sync tag — tag it on the tablet when you want it back. Tag the paper, not the PDF. No sync sends; only that command does.", text("zTag", S.zTag, "to-remarkable")) +
+    item(P("Send over SSH when the cloud is not connected"), "Sending over SSH restarts the reading app on your tablet, which closes the page you have open. The reading app is back in about six seconds.", toggle("sendOverSsh", pro() && S.sendOverSsh, !pro()))));
+  return out;
+}
+
+function rwLine() {
+  if (!pro()) return ["Part of Tagged Sync Pro.", ""];
+  if (!S.rwPush) return ["Off.", ""];
+  if (!S.rwToken) return ["No access token on this computer. Add it below.", "warn"];
+  return ["Connected — 14 books, 212 highlights pushed.", "ok"];
+}
+function gReadwise() {
+  const [line, tone] = rwLine();
+  return group("Readwise",
+    item("Connection", `<div class="verdict ${tone}">${line}</div>`) +
+    item(P("Push highlights to Readwise"), "Your highlights and margin notes become highlights in your Readwise library, one book or article per document, and come up in your Daily Review. The text goes to readwise.io; your handwriting and page images never leave this machine. Needs a Readwise plan with API access (Full or Highlights). Switching on re-reads every note once, and your margin notes go to your transcription backend again.", toggle("rwPush", pro() && S.rwPush, !pro())) +
+    item("Readwise access token", "From readwise.io/access_token. Stored in Obsidian's keychain on this computer, not in the vault — add it on each computer that should push.", `<button class="dd secret" id="c-secret" data-act="secret">${S.rwToken ? "readwise-token" : "Select a secret…"}</button>`) +
+    item("Readwise's own Obsidian plugin", "If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, each highlight linking to your note. To keep them out, turn on 'Select Items to be Exported' in Readwise and uncheck each new Tagged Sync book."));
+}
+
+function gPro() {
+  const items = pro()
+    ? item("Active", "Key ending 7F3A. This vault is activated.", btn("Manage devices", "noop") + btn("Deactivate this vault", "noop"))
+    : item("Not active", "€24, once. Cloud transcription and unlimited tag mappings.", btn("Start free trial", "trial", "mod-cta") + btn("Buy", "noop")) +
+      item("Licence key", "Paste the key from your purchase page.", text("licence", "", "") + btn("Activate", "noop"));
+  return group("Tagged Sync Pro", items, { foot: pro() ? "" : "14 days, no questions asked — just write to me. One person, up to 50 devices.", id: "g-pro" });
+}
+
+function gHelp(withSync) {
+  return group(withSync ? "Actions" : "Help",
+    (withSync ? item("Sync now", "Fetch tagged notebooks and write them into your vault.", btn("Sync", "sync", "mod-cta")) : "") +
+    item("Report a problem", `Copy your setup details, then open an issue at <a href="${ISSUES}" target="_blank" rel="noopener">GitHub</a> and paste them in. Nothing is sent from here.`, btn("Copy diagnostics", "diag")) +
+    item("Request a feature", `Suggest a feature on <a href="${ISSUES}/new" target="_blank" rel="noopener">GitHub</a> or vote on <a href="${ISSUES}" target="_blank" rel="noopener">existing requests</a> with a 👍 reaction.`));
+}
+
+/* ---------- page entries ---------- */
+
+const tagsValue = () => {
+  const m = mappedTags().length;
+  if (!S.scanned) return `${m} synced`;
+  return `${m} of ${ALL_TAGS.length} synced`;
+};
+const backendShort = () => BACKENDS.find((x) => x.v === S.backend).short;
+const autoValue = () => (S.autoSync ? INTERVALS.find(([v]) => v === S.interval)[1] : "Off");
+const zoteroValue = () => {
+  if (S.zWeb && !S.zKey) return ["No API key", true];
+  const [line, tone] = zStatus();
+  return [tone === "ok" ? (S.zWeb ? "zotero.org" : "Desktop app") : "Not set up", false];
+};
+const readwiseValue = () => {
+  if (!pro()) return ["Pro", false];
+  if (!S.rwPush) return ["Off", false];
+  if (!S.rwToken) return ["No access token", true];
+  return ["Pushing", false];
+};
+
+const PAGES = {
+  tags: { title: "Tag routing", groups: () => [tagRouting()] },
+  vault: { title: "Vault output", groups: () => [gVault()] },
+  transcription: { title: "Transcription", groups: () => [gTranscription()] },
+  auto: { title: "Automatic sync", groups: () => [gAutoSync()] },
+  zotero: { title: "Zotero", groups: () => zoteroGroups(true) },
+  readwise: { title: "Readwise", groups: () => [gReadwise()] },
+  pro: { title: "Tagged Sync Pro", groups: () => [gPro()] },
+};
+
+function integrations() {
+  const [zv, zw] = zoteroValue(), [rv, rw] = readwiseValue();
+  return group("Integrations", pageEntry("zotero", "Zotero", zv, zw) + pageEntry("readwise", "Readwise", rv, rw));
+}
+
+function rootGroups() {
+  if (S.layout === "a") return [gConnection(false), tagRouting(), gVault(), gTranscription(), gAutoSync(), ...zoteroGroups(false), gReadwise(), gPro(), gHelp(true)];
+  if (S.layout === "b") return [gConnection(true), tagRouting(), gVault(), gTranscription(), gAutoSync(), integrations(), gPro(), gHelp(false)];
+  return [
+    gConnection(true),
+    group("Your notes", pageEntry("tags", "Tag routing", tagsValue()) + pageEntry("vault", "Vault output", S.attachments || "tagged-sync/attachments") +
+      pageEntry("transcription", "Transcription", backendShort()) + pageEntry("auto", "Automatic sync", autoValue())),
+    integrations(),
+    group("Tagged Sync Pro", pageEntry("pro", "Licence", pro() ? "Active" : "Not active")),
+    gHelp(false),
+  ];
+}
+
+/* ---------- render ---------- */
+
+const pane = document.getElementById("pane");
+function render(keepScroll = true) {
+  const active = document.activeElement;
+  const focusId = active && active.id && active !== document.body ? active.id : null;
+  const caret = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+  const top = pane.scrollTop;
+
+  if (S.page && !PAGES[S.page]) S.page = null;
+  if (S.page === "tags" && S.layout !== "c") S.page = null;
+  const page = S.page ? PAGES[S.page] : null;
+  S.pageTitle = page ? page.title : null;
+  const crumb = page
+    ? `<div class="crumb"><button class="icon-btn" data-act="back" aria-label="Back">${ICON.chevL}</button><button class="root-link" data-act="back">Tagged Sync</button><span class="sep">${ICON.chevR}</span><h2>${page.title}</h2></div>`
+    : '<div class="crumb"><h2>Tagged Sync</h2></div>';
+  document.getElementById("content").innerHTML = crumb + (page ? page.groups() : rootGroups()).join("");
+  document.getElementById("dialog").innerHTML = S.modal === "add" ? addDialog() : "";
+  S.pageTitle = null;
+
+  if (keepScroll) pane.scrollTop = top;
+  if (focusId) {
+    const n = document.getElementById(focusId);
+    if (n) { n.focus(); if (caret !== null && n.setSelectionRange) try { n.setSelectionRange(caret, caret); } catch (e) {} }
+  }
+  renderBar();
+}
+
+function renderBar() {
+  document.getElementById("lay-label").innerHTML = `<span class="k">Layout</span> ${S.layout.toUpperCase()} · ${LAYOUTS[S.layout]}`;
+  document.getElementById("tr-label").innerHTML = `<span class="k">Tag routing</span> ${S.tr} · ${TRS[S.tr]}`;
+  document.getElementById("preset").value = S.preset;
+  const dark = currentTheme() === "dark";
+  document.getElementById("theme-btn").textContent = dark ? "Light" : "Dark";
+  const info = document.getElementById("pinfo");
+  info.hidden = !S.info;
+  if (!S.info) return;
+  const LN = {
+    a: "Today's tab, re-ordered by ground rule 6, everything on one page. Zotero keeps its six headings; Sync now stays under Actions at the end. Global search finds every row; the longest scroll.",
+    b: "Set-up groups stay on the root page. Zotero and Readwise move to sub-pages that show their state on the root (page value and warning, 1.13.1). Sync now moves into the connection heading. Research 03's ranking.",
+    c: "A short root page, as large tabs do it (research 02): the connection inline, everything else a page entry showing its current value. Fewest rows on screen; one more click to reach any setting.",
+  };
+  const TN = {
+    1: "Synced tags as rows (tag → folder, × stops it). Unsynced tags as a cloud of tag pills with a filter; click a pill, pick a folder. The pill cloud is one render row of our own: API lists draw rows, never pills.",
+    2: "Only synced tags show, as an API list (search, + in the header, × per row). + opens a dialog of unsynced tags with a filter, like Templater's folder templates. Unsynced tags stay out of the tab.",
+    3: "All tags in one compact table with a filter and All / Synced / Not synced. Each row has one dropdown whose first entry is Not synced. Today's rows, one line per tag.",
+  };
+  const map = mappedTags().map((t) => `${esc(t)} → ${esc(S.mapping[t])}`).join(", ") || "empty";
+  info.innerHTML = `<button class="close" data-bar="info" aria-label="Close">×</button>
+    <h4>Question</h4><p>How should the redesigned tab look: group order and names (ticket 05), and Tag routing for ~30 tags, few synced (ticket 06)?</p>
+    <h4>Layout ${S.layout.toUpperCase()} · ${LAYOUTS[S.layout]}</h4><p>${LN[S.layout]}</p>
+    <h4>Tag routing ${S.tr} · ${TRS[S.tr]}</h4><p>${TN[S.tr]}</p>
+    <h4>State</h4><p>${S.tier === "pro" ? "Pro" : "Free"} · ${S.scanned ? `scanned, ${ALL_TAGS.length} tags found` : "not scanned (found tags are not stored, so each time the tab opens only synced tags are known)"}<br><code>tagFolderMap</code>: ${map}</p>
+    <h4>Keys</h4><p>← → layout · Shift+← → Tag routing · the menu sets the vault state.</p>`;
+}
+
+/* ---------- actions ---------- */
+
+let noticeTimer;
+function notice(msg) {
+  const el = document.getElementById("notice");
+  el.innerHTML = `<div class="notice" role="status">${esc(msg)}</div>`;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => (el.innerHTML = ""), 2600);
+}
+function mapTag(tag, folder) {
+  if (!(tag in S.mapping) && capped()) return;
+  S.mapping[tag] = folder;
+  notice(`#${tag} syncs into ${folderLabel(folder)} from the next sync on.`);
+}
+function unmapTag(tag) {
+  delete S.mapping[tag];
+  notice(`#${tag} is no longer synced. Its notes stay where they are.`);
+}
+function applyPreset(key) {
+  const p = PRESETS[key];
+  Object.assign(S, { preset: key, tier: p.tier, mapping: { ...p.mapping }, scanned: p.scanned, pop: null, modal: null, filter: "", listFilter: "", modalFilter: "" });
+}
+function setLayout(l) { S.layout = l; S.page = null; S.pop = null; S.modal = null; syncHash(); render(false); pane.scrollTop = 0; }
+function setTr(t) { S.tr = t; S.pop = null; S.modal = null; syncHash(); render(); }
+function syncHash() { const h = "#" + S.layout + S.tr; if (location.hash !== h) history.replaceState(null, "", h); }
+function currentTheme() { return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); }
+function goPro() {
+  S.pop = null; S.modal = null;
+  if (S.layout === "c") { S.page = "pro"; render(false); pane.scrollTop = 0; return; }
+  S.page = null; render();
+  const g = document.getElementById("g-pro"); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act, tag = el.dataset.tag;
+  switch (act) {
+    case "toggle": {
+      const k = el.dataset.key;
+      if (k.startsWith("zg:")) S.zGroups[k.slice(3)] = !S.zGroups[k.slice(3)];
+      else S[k] = !S[k];
+      break;
+    }
+    case "page": S.page = el.dataset.page; S.pop = null; render(false); pane.scrollTop = 0; return;
+    case "back": S.page = null; render(false); pane.scrollTop = 0; return;
+    case "scan":
+      S.scanning = true; render();
+      setTimeout(() => { S.scanning = false; S.scanned = true; if (S.preset === "pro-noscan") S.preset = "pro"; notice(`Found ${ALL_TAGS.length} tags.`); render(); }, 700);
+      return;
+    case "unmap": unmapTag(tag); break;
+    case "pop": S.pop = S.pop === tag ? null : tag; break;
+    case "popclose": S.pop = null; break;
+    case "gopro": goPro(); return;
+    case "add": S.modal = "add"; S.modalFilter = ""; render(); { const f = document.getElementById(cid("modalFilter")); if (f) f.focus(); } return;
+    case "bgclose": if (e.target !== el) return; S.modal = null; break;
+    case "closedlg": S.modal = null; break;
+    case "mode": S.mode = el.dataset.mode; break;
+    case "sync": notice("Synced. 4 notebooks updated."); return;
+    case "diag": notice("Diagnostics copied to the clipboard."); return;
+    case "trial": S.tier = "pro"; notice("Trial started: 14 days of Tagged Sync Pro."); break;
+    case "secret": S.rwToken = !S.rwToken; break;
+    case "noop": notice("Not part of this prototype."); return;
+    default: return;
+  }
+  render();
+});
+document.addEventListener("keydown", (e) => {
+  const el = e.target.closest && e.target.closest('[data-act="page"]');
+  if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); el.click(); return; }
+  if (e.key === "Escape" && S.modal) { S.modal = null; render(); return; }
+  if (e.target.matches && e.target.matches("input, textarea, select, [contenteditable]")) return;
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const d = e.key === "ArrowRight" ? 1 : -1;
+  if (e.shiftKey) setTr(((S.tr - 1 + d + 3) % 3) + 1);
+  else { const ks = Object.keys(LAYOUTS); setLayout(ks[(ks.indexOf(S.layout) + d + ks.length) % ks.length]); }
+});
+document.addEventListener("change", (e) => {
+  const el = e.target;
+  if (el.id === "preset") { applyPreset(el.value); render(); return; }
+  const key = el.dataset && el.dataset.key;
+  if (!key) return;
+  const v = el.value;
+  if (key === "primary") { S.primary = v; if (S.fallback === v) S.fallback = "none"; }
+  else if (key.startsWith("map:")) S.mapping[key.slice(4)] = v;
+  else if (key === "popfolder") { if (!v) return; mapTag(S.pop, v); S.pop = null; }
+  else if (key.startsWith("addmap:")) { if (!v) return; mapTag(key.slice(7), v); }
+  else if (key.startsWith("t3:")) { const t = key.slice(3); if (v) mapTag(t, v); else unmapTag(t); }
+  else S[key] = v;
+  render();
+});
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (el.dataset && el.dataset.filter) { S[el.dataset.filter] = el.value; render(); }
+  else if (el.dataset && el.dataset.text) {
+    if (el.dataset.text === "zKeyText") { const had = S.zKey; S.zKey = el.value !== ""; if (had !== S.zKey) render(); }
+    else S[el.dataset.text] = el.value;
+  }
+});
+document.querySelector(".pbar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-bar]");
+  if (!b) return;
+  const ks = Object.keys(LAYOUTS);
+  switch (b.dataset.bar) {
+    case "lay-prev": setLayout(ks[(ks.indexOf(S.layout) + 2) % 3]); break;
+    case "lay-next": setLayout(ks[(ks.indexOf(S.layout) + 1) % 3]); break;
+    case "tr-prev": setTr(((S.tr + 1) % 3) + 1); break;
+    case "tr-next": setTr((S.tr % 3) + 1); break;
+    case "theme": document.documentElement.dataset.theme = currentTheme() === "dark" ? "light" : "dark"; renderBar(); break;
+    case "info": S.info = !S.info; renderBar(); break;
+  }
+});
+document.getElementById("pinfo").addEventListener("click", (e) => { if (e.target.closest("[data-bar='info']")) { S.info = false; renderBar(); } });
+
+function readHash() {
+  const m = /^#([abc])([123])$/.exec(location.hash);
+  if (m) { S.layout = m[1]; S.tr = Number(m[2]); }
+}
+addEventListener("hashchange", () => { readHash(); S.page = null; render(false); });
+readHash();
+render(false);
+</script>
