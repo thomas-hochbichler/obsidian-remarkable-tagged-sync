@@ -341,15 +341,12 @@ describe("the shape of the settings screen", () => {
 			"Automatic sync",
 			// Between automatic sync and the Pro section: set up once, each on its own page.
 			"Integrations",
+			// The page's title; its first group, the connection, has no heading (settings-redesign 05 #5).
 			"Zotero",
-			// One heading per connection, so a switch says whether anything goes over the internet, and
-			// one for the tablet rows that follow.
-			"Zotero cloud",
-			"Zotero local",
-			"Zotero libraries",
+			"Libraries",
 			// What goes into Zotero, apart from the connections that carry it (Zotero spec §1).
 			"Into Zotero",
-			"Zotero on the tablet",
+			"Send to your tablet",
 			// Built like Zotero and after it (Readwise spec §2): the other place highlights go.
 			"Readwise",
 			"Tagged Sync Pro",
@@ -428,9 +425,23 @@ interface Definition {
 	aliases?: string[];
 	searchable?: boolean;
 	visible?: () => boolean;
-	control?: { type: string; key: string };
+	control?: { type: string; key: string; disabled?: boolean | (() => boolean) };
 	render?: unknown;
 	items?: Definition[];
+	displayValue?: () => string;
+	status?: () => "warning" | null;
+}
+
+/** The Zotero page's groups as definitions: heading, class, and their rows as {@link rowsOf} reads them. */
+function zoteroPageGroups(tab: Tab): { heading?: string; cls?: string; rows: Row[] }[] {
+	return zoteroPage(tab).items?.map((group) => ({ heading: group.heading, cls: group.cls, rows: rowsIn(group.items ?? []) })) ?? [];
+}
+
+function zoteroPage(tab: Tab): Definition {
+	const integrations = (tab.getSettingDefinitions() as unknown as Definition[]).find((item) => item.heading === "Integrations");
+	const page = integrations?.items?.find((item) => item.type === "page" && item.name === "Zotero");
+	if (!page) throw new Error("no Zotero page");
+	return page;
 }
 
 /** One root group's row definitions, as `getSettingDefinitions()` answers them. */
@@ -444,8 +455,14 @@ function itemsOf(tab: Tab, heading: string): Definition[] {
  * One root group's rows as definitions: the name, the kind (a control's type, `render`, or `text`),
  * the control's key, and whether a `visible` predicate shows it right now.
  */
-function rowsOf(tab: Tab, heading: string): { name: string; kind: string; key?: string; shown: boolean }[] {
-	return itemsOf(tab, heading).map((item) => ({
+function rowsOf(tab: Tab, heading: string): Row[] {
+	return rowsIn(itemsOf(tab, heading));
+}
+
+type Row = { name: string; kind: string; key?: string; shown: boolean };
+
+function rowsIn(items: Definition[]): Row[] {
+	return items.map((item) => ({
 		name: item.name ?? "",
 		kind: item.control?.type ?? (item.render ? "render" : "text"),
 		...(item.control ? { key: item.control.key } : {}),
@@ -1261,13 +1278,13 @@ describe("the Zotero section", () => {
 		const { tab } = await tabWith();
 		const drawn = draw(tab);
 
-		const headings = drawn.filter((item) => item.kind === "heading").map((item) => item.name);
-		expect(headings).toContain("Zotero");
-		expect(headings.indexOf("Zotero cloud")).toBeGreaterThan(headings.indexOf("Zotero"));
-		expect(headings.indexOf("Zotero local")).toBeGreaterThan(headings.indexOf("Zotero cloud"));
-		expect(toggle(section(drawn, "Zotero cloud"), "Use zotero.org").disabled).toBe(false);
-		expect(toggle(section(drawn, "Zotero local"), "Use the Zotero desktop app (Pro)").disabled).toBe(true);
-		expect(row(drawn, "Connection").desc).toContain("part of Tagged Sync Pro");
+		const page = section(drawn, "Zotero");
+		expect(toggle(page, "Use zotero.org").disabled).toBe(false);
+		expect(toggle(page, "Use the Zotero desktop app (Pro)").disabled).toBe(true);
+		// The Pro rows are on this page, not below it (settings-redesign P5).
+		expect(row(page, "Connection").desc).toBe(
+			"zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro.",
+		);
 	});
 
 	it("drops the (Pro) and opens both connections for a buyer", async () => {
@@ -1280,29 +1297,107 @@ describe("the Zotero section", () => {
 	});
 
 	// One switch per connection (desk test 2026-09-13): whether anything goes over the internet is
-	// then one visible thing, not "is the key field empty". The key row belongs to the switch.
-	it("shows the key row only while zotero.org is switched on, under its own heading", async () => {
+	// then one visible thing, not "is the key field empty". The key row belongs to the switch, and is
+	// left out rather than hidden while it is off: the switch redraws the page anyway (spec §2.4).
+	it("puts the key row on the page only while zotero.org is switched on", async () => {
 		const off = draw((await tabWith(PRO)).tab);
-		expect(row(off, "Zotero API key").setting.settingEl.visible).toBe(false);
+		expect(rowNames(section(off, "Zotero"))).toEqual(["Connection", "Use zotero.org", "Use the Zotero desktop app"]);
 
 		const on = draw((await tabWith({ ...PRO, zotero: { useWeb: true } })).tab);
-		expect(row(on, "Zotero API key").setting.settingEl.visible).toBe(true);
-		expect(rowNames(section(on, "Zotero cloud"))).toEqual(["Use zotero.org", "Zotero API key"]);
-		expect(rowNames(section(on, "Zotero local"))).toEqual(["Use the Zotero desktop app"]);
-		expect(rowNames(section(on, "Zotero on the tablet"))).toContain("Tablet folder for sent PDFs");
+		expect(rowNames(section(on, "Zotero"))).toEqual(["Connection", "Use zotero.org", "Zotero API key", "Use the Zotero desktop app"]);
+		expect(rowNames(section(on, "Send to your tablet"))).toContain("Tablet folder for sent PDFs");
 	});
 
 	it("saves the cloud switch, shows the key row and asks the status line again", async () => {
 		const { plugin, tab } = await tabWith(PRO);
-		const drawn = draw(tab);
-		toggle(drawn, "Use zotero.org").toggle(true);
+		toggle(draw(tab), "Use zotero.org").toggle(true);
 		await settle();
 
+		const drawn = onScreen(tab);
 		expect((plugin.data.zotero as { useWeb: boolean }).useWeb).toBe(true);
 		expect(plugin.saves).toHaveLength(1);
-		expect(row(drawn, "Zotero API key").setting.settingEl.visible).toBe(true);
+		expect(rowNames(drawn)).toContain("Zotero API key");
 		// On with no key yet is still nothing: the line was asked again and says so.
 		expect(verdict(row(drawn, "Connection")).text).toBe("Not connected.");
+	});
+
+	// Settings-redesign spec §6: four groups, the connection without a heading; every switch and field
+	// is a control row bound to its `data.json` key, and the live lines are drawn by our code.
+	it("answers four groups on its page, each row bound to its key", async () => {
+		const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ" } });
+
+		expect(zoteroPageGroups(tab)).toEqual([
+			{
+				heading: undefined,
+				cls: "tagged-sync-group-zotero-connection",
+				rows: [
+					{ name: "Connection", kind: "render", shown: true },
+					{ name: "Use zotero.org", kind: "toggle", key: "zotero.useWeb", shown: true },
+					{ name: "Zotero API key", kind: "render", shown: true },
+					{ name: "Use the Zotero desktop app", kind: "toggle", key: "zotero.useLocal", shown: true },
+				],
+			},
+			{ heading: "Libraries", cls: "tagged-sync-group-zotero-libraries", rows: [{ name: "Group libraries", kind: "render", shown: true }] },
+			{
+				heading: "Into Zotero",
+				cls: "tagged-sync-group-zotero-into",
+				rows: [
+					{ name: "Write text to Zotero", kind: "toggle", key: "zotero.writeText", shown: true },
+					{ name: "Add the render to Zotero", kind: "toggle", key: "zotero.addRender", shown: true },
+					{ name: "What leaves your machine", kind: "text", shown: true },
+				],
+			},
+			{
+				heading: "Send to your tablet",
+				cls: "tagged-sync-group-zotero-send",
+				rows: [
+					{ name: "Tablet folder for sent PDFs", kind: "text", key: "zotero.folder", shown: true },
+					{ name: "Send tag in Zotero", kind: "text", key: "zotero.sendTag", shown: true },
+					{ name: "Send over SSH when the cloud is not connected", kind: "toggle", key: "zotero.sendOverSsh", shown: true },
+				],
+			},
+		]);
+	});
+
+	it("finds the key field by the word people search for", async () => {
+		const { tab } = await tabWith({ zotero: { useWeb: true } });
+		const connection = zoteroPage(tab).items?.[0].items ?? [];
+
+		expect(connection.find((item) => item.name === "Zotero API key")?.aliases).toEqual(["token"]);
+	});
+
+	// Settings-redesign spec §5: the entry on the root says what is set up, without opening the page.
+	describe("its entry on the root", () => {
+		const entry = (tab: Tab): unknown => {
+			takeSettings();
+			renderSettingTab(tab);
+			return takeSettings().find((setting: Setting) => setting.name === "Zotero")?.components;
+		};
+
+		it("warns for zotero.org switched on with no key behind it", async () => {
+			expect(entry((await tabWith({ zotero: { useWeb: true } })).tab)).toEqual([expect.objectContaining({ value: "No API key", status: "warning" })]);
+		});
+
+		it("names both connections for a buyer who set up both", async () => {
+			const { tab } = await tabWith({ ...PRO, zotero: { useWeb: true, apiKey: "P9c46b0lkV2XzAoUTqPmPuGZ", useLocal: true } });
+			expect(entry(tab)).toEqual([expect.objectContaining({ value: "zotero.org + desktop app", status: null })]);
+		});
+
+		// A predicate that throws must not take the tab with it (spec §2.2): an empty entry shows nothing broken.
+		it("shows nothing on the entry when its state cannot be read, and says why in the console", async () => {
+			const { plugin, tab } = await tabWith();
+			const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+			const page = zoteroPage(tab);
+			Object.defineProperty(plugin.data, "zotero", {
+				get: () => {
+					throw new Error("broken");
+				},
+			});
+
+			expect([page.displayValue?.(), page.status?.()]).toEqual(["", null]);
+			expect(errors).toHaveBeenCalled();
+			errors.mockRestore();
+		});
 	});
 
 	// A key left in place with the switch off is kept, and reaches nothing: the line says so without
@@ -1368,13 +1463,52 @@ describe("the Zotero section", () => {
 			expect(toggle(drawn, "Write text to Zotero").disabled).toBe(false);
 
 			toggle(drawn, "Use zotero.org").toggle(true);
-			field(drawn, "Zotero API key").type("P9c46b0lkV2XzAoUTqPmPuGZ");
+			await settle();
+			const typing = onScreen(tab);
+			const key = field(typing, "Zotero API key");
+			key.type("P9c46b0lkV2XzAoUTqPmPuGZ");
 			await settle();
 
-			// Updated in place, not redrawn: a redraw under a field being typed into takes its focus.
+			// Opened in place while the key is typed, not redrawn: a redraw under a field being typed into
+			// takes its focus. The sentence follows when the field is left (settings-redesign P15).
 			expect(plugin.data.zotero).toMatchObject(WEB);
-			expect(toggle(drawn, "Add the render to Zotero").disabled).toBe(false);
-			expect(row(drawn, "Add the render to Zotero").setting.desc).toMatch(/^Uploads the PDF/);
+			expect(takeSettings()).toEqual([]);
+			expect(toggle(typing, "Add the render to Zotero").disabled).toBe(false);
+			expect(row(typing, "Add the render to Zotero").setting.desc).toMatch(/^Needs a zotero\.org connection\./);
+
+			key.inputEl.dispatch("blur");
+			expect(row(onScreen(tab), "Add the render to Zotero").setting.desc).toMatch(/^Uploads the PDF/);
+		});
+
+		// Settings-redesign spec §2.8: a change that ends in `update()` leaves the probe to the redraw --
+		// one request per change, not one from the redraw and one from the typing's debounce.
+		it("asks zotero.org once when the field is left before the line's own recheck", async () => {
+			vi.useFakeTimers();
+			const asked = vi.fn(async (input: RequestInfo | URL) =>
+				String(input).endsWith("/keys/current") ? new Response(JSON.stringify({ userID: 1597773 }), { status: 200 }) : new Response("[]", { status: 200 }),
+			);
+			stubNetwork(asked);
+			// Free, so no group lookup redraws the page and asks again on its own.
+			const { tab } = await tabWith({ zotero: { useWeb: true } });
+			const key = field(draw(tab), "Zotero API key");
+
+			key.type("P9c46b0lkV2XzAoUTqPmPuGZ");
+			await vi.advanceTimersByTimeAsync(0);
+			key.inputEl.dispatch("blur");
+			await vi.advanceTimersByTimeAsync(700);
+
+			// `/items/top` is the line's probe (`status()`); `/keys/current` comes with every client call.
+			expect(asked.mock.calls.filter(([input]) => String(input).includes("/items/top"))).toHaveLength(1);
+		});
+
+		it("draws nothing again when the field is left with the connection as it was", async () => {
+			const { tab } = await tabWith({ ...PRO, zotero: WEB });
+			const key = field(draw(tab), "Zotero API key");
+
+			key.type("ANOTHERGOODKEYANOTHERGOO");
+			key.inputEl.dispatch("blur");
+
+			expect(takeSettings()).toEqual([]);
 		});
 
 		// Zotero spec §10 P7: nothing changed on the tablet, so without this the switch would wait for a
@@ -1456,7 +1590,7 @@ describe("the Zotero section", () => {
 		draw(tab);
 		await settle();
 
-		const libraries = section(draw(tab), "Zotero libraries");
+		const libraries = section(draw(tab), "Libraries");
 		expect(rowNames(libraries)).toEqual(["Group libraries", "Lab reading group"]);
 		expect(row(libraries, "Group libraries").desc).toContain("visible to everyone in that group");
 		toggle(libraries, "Lab reading group").toggle(true);
@@ -1470,7 +1604,7 @@ describe("the Zotero section", () => {
 		draw(tab);
 		await settle();
 
-		const libraries = section(draw(tab), "Zotero libraries");
+		const libraries = section(draw(tab), "Libraries");
 		expect(row(libraries, "Lab reading group").desc).toContain("Not listed by Zotero right now");
 		toggle(libraries, "Lab reading group").toggle(false);
 		await settle();
@@ -1483,8 +1617,8 @@ describe("the Zotero section", () => {
 		const drawn = draw((await tabWith({ zotero: WEB })).tab);
 		await settle();
 
-		expect(rowNames(section(drawn, "Zotero libraries"))).toEqual(["Group libraries (Pro)"]);
-		expect(toggle(section(drawn, "Zotero libraries"), "Group libraries (Pro)").disabled).toBe(true);
+		expect(rowNames(section(drawn, "Libraries"))).toEqual(["Group libraries (Pro)"]);
+		expect(toggle(section(drawn, "Libraries"), "Group libraries (Pro)").disabled).toBe(true);
 		expect(fetched.mock.calls.map((call) => String(call[0]))).not.toContainEqual(expect.stringContaining("/groups"));
 	});
 
@@ -1562,7 +1696,7 @@ describe("the Zotero section", () => {
 	// writes to `data.json` otherwise.
 	it("takes a typed key immediately and reaches data.json when the typing stops", async () => {
 		vi.useFakeTimers();
-		const { plugin, tab } = await tabWith(PRO);
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { useWeb: true } });
 		const text = field(draw(tab), "Zotero API key");
 
 		text.type("P9c46b0lkV2XzAoUTqPmPuGZ");
@@ -1666,7 +1800,7 @@ describe("the Zotero section", () => {
 		const drawn = draw(tab);
 		await settle();
 
-		expect(verdict(row(section(drawn, "Zotero libraries"), "Group libraries")).text).toContain("Could not list your groups:");
+		expect(verdict(row(section(drawn, "Libraries"), "Group libraries")).text).toContain("Could not list your groups:");
 	});
 
 	// A group the user switched on is theirs to see and to switch off before Zotero has said a word.
@@ -1674,7 +1808,30 @@ describe("the Zotero section", () => {
 		stubNetwork(zoteroAnswering([]));
 		const { tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 4711, name: "Lab reading group" }] } });
 
-		expect(rowNames(section(draw(tab), "Zotero libraries"))).toEqual(["Group libraries", "Lab reading group"]);
+		expect(rowNames(section(draw(tab), "Libraries"))).toEqual(["Group libraries", "Lab reading group"]);
+	});
+
+	// Settings-redesign spec §6.2: one control per group, `zotero.group:<id>`; the stored list is
+	// replaced, never changed in place, and holds the name Zotero gave beside the id.
+	it("binds each group to a key of its own, and refuses a group nobody has named", async () => {
+		stubNetwork(zoteroAnswering([{ id: 4711, data: { id: 4711, name: "Lab reading group" } }]));
+		const { plugin, tab } = await tabWith({ ...PRO, zotero: { ...WEB, groups: [{ id: 815, name: "Old group" }] } });
+		draw(tab);
+		await settle();
+		const before = (plugin.data.zotero as { groups: unknown[] }).groups;
+
+		expect(zoteroPageGroups(tab)[1].rows.map((item) => item.key)).toEqual([undefined, "zotero.group:815", "zotero.group:4711"]);
+		expect([tab.getControlValue("zotero.group:815"), tab.getControlValue("zotero.group:4711")]).toEqual([true, false]);
+		await tab.setControlValue("zotero.group:4711", true);
+		await tab.setControlValue("zotero.group:815", false);
+		const saves = plugin.saves.length;
+		// A toggle's `setValue` fires its change again: the stored value is no change (spec §2.3).
+		await tab.setControlValue("zotero.group:4711", true);
+
+		expect((plugin.data.zotero as { groups: unknown }).groups).toEqual([{ id: 4711, name: "Lab reading group" }]);
+		expect(before).toEqual([{ id: 815, name: "Old group" }]);
+		expect(plugin.saves).toHaveLength(saves);
+		await expect(tab.setControlValue("zotero.group:9", true)).rejects.toThrow('no setting "zotero.group:9"');
 	});
 });
 

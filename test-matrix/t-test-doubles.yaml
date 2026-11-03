@@ -335,6 +335,13 @@
       file: tests/stubs/fake-obsidian.test.ts
       test: "the settings controls the plugin reaches past > hides an element the plugin toggles off, and shows it again"
 
+    - id: T10.4
+      scenario: A row holding a switch and a field is disabled, then enabled
+      expect: The row and each of its components follow, as 1.15.0's app.js Setting.setDisabled does -- which is how a control row's disabled reaches its switch
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the settings controls the plugin reaches past > disables a row's components with the row, and opens them again"
+
 - feature: T20
   name: The declarative settings tab, drawn from its definitions
   code: tests/stubs/fake-obsidian.ts
@@ -345,6 +352,13 @@
       layer: unit
       file: tests/stubs/fake-obsidian.test.ts
       test: "the declarative settings tab > draws a group's heading, then its rows, and a page as one entry on the root"
+
+    - id: T20.15
+      scenario: A page declares displayValue and status as functions, and the root is drawn twice with the state changed between
+      expect: The entry carries a DisplayValueComponent with the value and status asked for on each draw (obsidian.d.ts 1.13.1; ticket 17's F7)
+      layer: unit
+      file: tests/stubs/fake-obsidian.test.ts
+      test: "the declarative settings tab > shows a page entry's value and status, asked again on every draw"
 
     - id: T20.2
       scenario: A render row returns a cleanup; the tab is redrawn, closed, and asked to update while closed

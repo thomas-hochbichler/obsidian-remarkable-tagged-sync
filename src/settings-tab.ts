@@ -15,7 +15,6 @@ import {
 	type SettingDefinitionPage,
 	type SettingDefinitionRender,
 	TFolder,
-	type ToggleComponent,
 } from "obsidian";
 import { DEFAULT_ATTACHMENTS_FOLDER } from "./attachment-writer";
 import { isMeteredProvider } from "./auto-sync";
@@ -45,7 +44,7 @@ import { folderLabel, type MappedTag, planTagRouting, REMOVAL_MESSAGE, type Unma
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
-import { webConfigured, zoteroProAllowed } from "./zotero-settings";
+import { webConfigured, zoteroPageEntry, zoteroProAllowed } from "./zotero-settings";
 import type { ZoteroGroup } from "./zotero-client";
 import { linkedDocumentIds } from "./zotero-links";
 import { visionRunStats } from "./vision-ocr-backend";
@@ -93,7 +92,21 @@ const PRO_PORTAL_URL = "https://polar.sh/hochbichler-com/portal";
 const ROW_FAILED = "This row could not be drawn. Copy diagnostics under Help and report it.";
 
 /** The text keys: saved through one debounce, as their fields always were (spec §2.3). */
-const TYPED_KEYS = new Set(["attachmentsFolder", "zotero.folder", "zotero.sendTag"]);
+const TYPED_KEYS = new Set(["attachmentsFolder", "zotero.apiKey", "zotero.folder", "zotero.sendTag"]);
+
+/** What a typed key stores (spec §6.1, §6.4). */
+const SET_RULES: Record<string, (typed: string) => unknown> = {
+	// `""` would be a configured connection that answers 401 to every call: a cleared field is no key.
+	"zotero.apiKey": (typed) => (typed === "" ? null : typed),
+	// Blank is the default rather than a folder with no name: a document put at the root of the tablet
+	// is one the user has to go looking for.
+	"zotero.folder": (typed) => typed.trim() || DEFAULT_SEND_FOLDER,
+	"zotero.sendTag": (typed) => typed.trim(),
+};
+
+/** A group library's switch, `zotero.group:<id>` (spec §6.2). */
+const GROUP_KEY = "zotero.group:";
+const groupKey = (group: ZoteroGroup): string => `${GROUP_KEY}${group.id}`;
 
 /**
  * *Sync interval*'s options. Not numeric keys: an object lists integer-like keys first, which would put
@@ -128,6 +141,10 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	private devicePassword = "";
 	/** `data.json` is not written on every keystroke; the in-memory value is current at once. */
 	private readonly persistTyped = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
+	/** The Zotero *Connection* line's probe, while the line is on screen (spec §2.8). */
+	private refreshZoteroLine: (() => void) | null = null;
+	/** The key field asks the line again once the typing stops. */
+	private readonly recheckZotero = debounce(() => this.refreshZoteroLine?.(), 600, true);
 
 	constructor(
 		app: App,
@@ -141,8 +158,8 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * §3): eight groups on the root page, Zotero and Readwise as pages under *Integrations*. Asked for
 	 * on every opening and by every `update()`, so it reads the state and does no network I/O.
 	 *
-	 * The root groups are definitions of their own (tickets 11, 12); the two pages still hold one row
-	 * that draws them with the old code, until tickets 13 and 14. A row that changes the page calls
+	 * The root groups and the Zotero page are definitions of their own (tickets 11–13); the Readwise
+	 * page still holds one row that draws it with the old code, until ticket 14. A row that changes the page calls
 	 * `update()`, which keeps the reader's place itself (ticket 17's F1, spec §2.5).
 	 *
 	 * It runs inside `onload` too (`addSettingTab`), where a throw would stop the plugin, so a throw
@@ -166,7 +183,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 					type: "group",
 					heading: "Integrations",
 					cls: "tagged-sync-group-integrations",
-					items: [page("Zotero", (el) => this.renderZotero(el)), page("Readwise", (el) => this.renderReadwise(el))],
+					items: [this.zoteroPage(), page("Readwise", (el) => this.renderReadwise(el))],
 				},
 				this.proGroup(),
 				this.helpGroup(),
@@ -217,25 +234,28 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * A `visible` predicate that cannot blank the tab -- {@link guarded}'s twin for predicates (spec
-	 * §2.2): a throw is logged and hides the row.
+	 * A predicate that cannot blank the tab -- {@link guarded}'s twin for `visible`, `disabled`,
+	 * `displayValue` and `status` (spec §2.2): a throw is logged and answers `safe`, the value that shows
+	 * nothing broken (hidden, disabled, no value, no status).
 	 */
-	private shownWhen(name: string, test: () => boolean): () => boolean {
+	private guardedValue<T>(name: string, safe: T, test: () => T): () => T {
 		return () => {
 			try {
 				return test();
 			} catch (error) {
 				console.error(`Tagged Sync: the settings row "${name}" could not be evaluated`, error);
-				return false;
+				return safe;
 			}
 		};
 	}
 
 	/**
 	 * A key into `data.json`, one level deep at most: `marginNotes`, `zotero.useWeb`, `readwise.push`, …
-	 * (spec §2.3). `autoSync.interval` is *Sync interval*'s option key for `autoSync.intervalHours`.
+	 * (spec §2.3). `autoSync.interval` is *Sync interval*'s option key for `autoSync.intervalHours`, and
+	 * `zotero.group:<id>` whether that group library is switched on.
 	 */
 	getControlValue(key: string): unknown {
+		if (key.startsWith(GROUP_KEY)) return this.plugin.data.zotero.groups.some((group) => groupKey(group) === key);
 		if (key === "autoSync.interval") {
 			const hours = this.plugin.data.autoSync.intervalHours;
 			return hours === null ? "launch" : `h${hours}`;
@@ -251,22 +271,32 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * its object rather than mutating it, as the rows always have: a running sync may hold the old one.
 	 * A key that names nothing in `data.json` is refused: writing it would change the file's shape.
 	 *
-	 * Then the key's side effect: *Your notes on PDFs* makes every synced note due again, and an
-	 * automatic-sync change re-arms the timer, so it takes effect now rather than at the next launch.
+	 * Then the key's side effect: *Your notes on PDFs* makes every synced note due again, and so do the
+	 * two *Into Zotero* switches for the Zotero-linked documents; an automatic-sync change re-arms the
+	 * timer, so it takes effect now rather than at the next launch; a Zotero connection switch draws the
+	 * page again, which is now about a different set of connections.
 	 */
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		if (key === "autoSync.interval") return this.setControlValue("autoSync.intervalHours", value === "launch" ? null : Number(String(value).slice(1)));
+		if (key.startsWith(GROUP_KEY)) return this.setZoteroGroup(key, value === true);
 		const [head, sub] = key.split(".");
 		const data = this.plugin.data as unknown as Record<string, unknown>;
 		if (!(head in data) || (sub !== undefined && !(sub in (data[head] as object)))) throw new Error(`Tagged Sync: no setting "${key}"`);
-		if (this.getControlValue(key) === value) return;
-		data[head] = sub === undefined ? value : { ...(data[head] as Record<string, unknown>), [sub]: value };
+		const stored = key in SET_RULES ? SET_RULES[key](String(value)) : value;
+		if (this.getControlValue(key) === stored) return;
+		data[head] = sub === undefined ? stored : { ...(data[head] as Record<string, unknown>), [sub]: stored };
 		// The device has not changed, so nothing would re-run without this: the switch decides what a
 		// note *contains*, and every already-synced note has to be rewritten to match.
 		if (key === "marginNotes") this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex);
+		// The same for what reaches Zotero (Zotero spec §10 P7): without it the switch would wait for a
+		// change on the tablet before anything reached Zotero. Off leaves every document as it is.
+		if ((key === "zotero.writeText" || key === "zotero.addRender") && stored === true) {
+			this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex, linkedDocumentIds(this.plugin.data.zoteroLinks));
+		}
 		if (TYPED_KEYS.has(key)) this.persistTyped();
 		else await this.plugin.saveData(this.plugin.data);
 		if (head === "autoSync") this.plugin.rearmAutoSyncInterval();
+		if (key === "zotero.useWeb" || key === "zotero.useLocal") this.update();
 	}
 
 	/** Settings may close with their own window; what was typed is written before they go. */
@@ -742,38 +772,78 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Zotero: the two connections, and what is connected right now (spec §2.1).
+	 * Zotero, a page of its own under *Integrations* (settings-redesign spec §6, 05 #5): the connection
+	 * group without a heading, then *Libraries*, *Into Zotero* and *Send to your tablet*. Each connection
+	 * has a switch (asked for in the desk test of 2026-09-13): whether anything goes over the internet is
+	 * then one visible thing, not "is the key field empty". Its entry on the root says what is set up
+	 * (spec §5), read anew each time the root is drawn (ticket 17's F7).
 	 *
-	 * *Zotero* with the connection line, then one heading per connection -- *Zotero cloud* with its
-	 * switch and key, *Zotero local* with its switch -- then *Zotero libraries*, *Into Zotero* (see
-	 * {@link renderIntoZotero}) and *Zotero on the tablet* for the sending rows. Each connection has a
-	 * switch (asked for in the desk test of 2026-09-13): whether anything goes over the internet is then
-	 * one visible thing, not "is the key field empty". The key row is shown only while the cloud switch
-	 * is on.
-	 *
-	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (spec §5). The Pro rows
-	 * -- the desktop app, the two *Into Zotero* switches and Send over SSH -- are shown disabled with
-	 * "(Pro)", the same rule as the transport dropdown and the frontmatter toggle above: a feature a free
-	 * user cannot see is one they cannot decide to buy.
+	 * Shown to every vault: zotero.org, Send and the note's Zotero line are free (Zotero spec §5). The
+	 * Pro rows -- the desktop app, the libraries, the two *Into Zotero* switches and Send over SSH -- are
+	 * shown disabled with "(Pro)", the same rule as the transport dropdown and the frontmatter toggle: a
+	 * feature a free user cannot see is one they cannot decide to buy.
 	 */
-	private renderZotero(containerEl: HTMLElement): void {
+	private zoteroPage(): SettingDefinitionPage {
 		const pro = zoteroProAllowed(this.plugin.entitlement());
-		const settings = this.plugin.data.zotero;
+		const entry = () => zoteroPageEntry(this.plugin.data.zotero, this.plugin.entitlement());
+		return {
+			type: "page",
+			name: "Zotero",
+			displayValue: this.guardedValue("Zotero", "", () => entry().value),
+			status: this.guardedValue<"warning" | null>("Zotero", null, () => entry().status),
+			items: [this.zoteroConnectionGroup(pro), this.zoteroLibrariesGroup(pro), this.intoZoteroGroup(pro), this.zoteroSendGroup(pro)],
+		};
+	}
 
-		const status = new Setting(containerEl)
-			.setName("Connection")
-			.setDesc(
-				pro
+	/**
+	 * The line, the two switches and the key (spec §6.1). Either switch changes what the whole page is
+	 * about, so it ends in `update()` ({@link setControlValue}); the key row is in the page only while
+	 * zotero.org is switched on, and a key pasted earlier stays in `data.json` for the day it is again.
+	 */
+	private zoteroConnectionGroup(pro: boolean): SettingDefinitionGroup {
+		const items: SettingDefinition[] = [
+			{
+				name: "Connection",
+				desc: pro
 					? "Either connection is enough on its own. The desktop app works offline and knows where your PDFs are; zotero.org works with Zotero closed."
-					: "zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro -- see below.",
-			);
-		// The four states of §2.1, and the client is what says which one it is -- it knows what answered,
-		// which is not the same question as what is configured. Asked at draw and again after the key
-		// changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading
-		// "Connected via web." until the tab was reopened). Each probe is numbered, so a slow answer
-		// never lands on top of a newer one; a render that has been superseded drops its own answer on
-		// the floor (`update()` draws the tab anew).
-		const line = status.descEl.createDiv({ cls: "tagged-sync-verdict" });
+					: "zotero.org is enough: send papers to your tablet, and your notes know which paper they are. Writing your highlights into Zotero, and the desktop app connection, are part of Tagged Sync Pro.",
+				render: this.guarded("Connection", (setting) => this.renderZoteroLine(setting)),
+			},
+			{
+				name: "Use zotero.org",
+				desc:
+					"Your library is read over the internet, at zotero.org, and with write-back your highlights and notes are written there, and the render if you add it. " +
+					"Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.",
+				control: { type: "toggle", key: "zotero.useWeb" },
+			},
+		];
+		if (this.plugin.data.zotero.useWeb) {
+			items.push({
+				name: "Zotero API key",
+				desc: "From zotero.org → Settings → Security → New Key (Applications). Needs read and write access to your personal library. Stored locally in this vault's plugin data.",
+				aliases: ["token"],
+				render: this.guarded("Zotero API key", (setting) => this.renderZoteroKey(setting)),
+			});
+		}
+		items.push({
+			name: pro ? "Use the Zotero desktop app" : "Use the Zotero desktop app (Pro)",
+			desc:
+				'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). ' +
+				"Zotero asks your permission the first time this plugin writes something; choose Always Allow.",
+			control: { type: "toggle", key: "zotero.useLocal", disabled: !pro },
+		});
+		return { type: "group", cls: "tagged-sync-group-zotero-connection", items };
+	}
+
+	/**
+	 * The four states of §2.1, and the client is what says which one it is -- it knows what answered,
+	 * which is not the same question as what is configured. Asked at draw and again after the key
+	 * changes (found in the desk test of 2026-09-13: computed once, a wrong key kept reading "Connected
+	 * via web." until the tab was reopened). Each probe is numbered, so a slow answer never lands on top
+	 * of a newer one, and tearing the row down outdates the last one (spec §2.8).
+	 */
+	private renderZoteroLine(setting: Setting): () => void {
+		const line = setting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		// Coloured like the vision verdict under Model (asked for in the desk test of 2026-09-13): the
 		// theme's own success and error tones, through a variable, so the answer reads at a glance.
 		const paint = (text: string, color: string) => {
@@ -781,7 +851,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 			line.style.color = color;
 		};
 		let probe = 0;
-		const refreshStatus = () => {
+		const refresh = () => {
 			const client = this.plugin.zoteroClient();
 			const mine = ++probe;
 			if (client === null) {
@@ -795,117 +865,71 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 				if (mine === probe) paint(reached.summary, reached.web || reached.local ? "var(--text-success)" : "var(--text-error)");
 			});
 		};
-		refreshStatus();
-		const recheck = debounce(refreshStatus, 600, true);
-		// The render switch below needs zotero.org, and the two rows that set it up come first: they
-		// update that row in place, set once it is drawn.
-		let renderNeedsWeb = (): void => {};
+		refresh();
+		this.refreshZoteroLine = refresh;
+		return () => {
+			probe++;
+			// Before the row is drawn again (1.15.0's app.js, as the fake renderer models it), so the next draw sets its own.
+			this.refreshZoteroLine = null;
+		};
+	}
 
-		new Setting(containerEl).setName("Zotero cloud").setHeading();
-
-		const cloud = new Setting(containerEl)
-			.setName("Use zotero.org")
-			.setDesc(
-				"Your library is read over the internet, at zotero.org, and with write-back your highlights and notes are written there, and the render if you add it. " +
-					"Works with Zotero closed; finds the PDFs synced to zotero.org. Off, nothing Zotero-related leaves this machine.",
-			);
-
-		const keyRow = new Setting(containerEl)
-			.setName("Zotero API key")
-			.setDesc("From zotero.org → Settings → Security → New Key (Applications). Needs read and write access to your personal library. Stored locally in this vault's plugin data.")
-			.addText((text) => {
-				text.inputEl.type = "password";
-				// Debounced like the attachments folder: the in-memory value is current immediately, and
-				// `data.json` is not written on every keystroke of a 24-character key.
-				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				text.setValue(settings.apiKey ?? "").onChange((value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, apiKey: value === "" ? null : value };
-					persist();
-					recheck();
-					renderNeedsWeb();
-				});
+	/**
+	 * Typed into without a redraw (spec §6.1, P15): a redraw under the field takes its focus. A key that
+	 * makes zotero.org a connection, or stops it being one, opens or shuts the render switch at once; the
+	 * sentences that depend on it follow when the field is left.
+	 */
+	private renderZoteroKey(setting: Setting): void {
+		const drawnWith = webConfigured(this.plugin.data.zotero);
+		setting.addText((text) => {
+			text.inputEl.type = "password";
+			text.setValue(this.plugin.data.zotero.apiKey ?? "").onChange(async (value) => {
+				const before = webConfigured(this.plugin.data.zotero);
+				await this.setControlValue("zotero.apiKey", value);
+				this.recheckZotero();
+				if (webConfigured(this.plugin.data.zotero) !== before) this.refreshDomState();
 			});
-		// The key row belongs to the switch: shown while it is on, hidden -- not removed -- while it is
-		// off, so a pasted key stays where it was for the day the switch is turned back on.
-		keyRow.settingEl.toggle(settings.useWeb);
-
-		cloud.addToggle((toggle) => {
-			toggle.setValue(settings.useWeb);
-			toggle.onChange(async (value) => {
-				this.plugin.data.zotero = { ...this.plugin.data.zotero, useWeb: value };
-				await this.plugin.saveData(this.plugin.data);
-				keyRow.settingEl.toggle(value);
-				// The status line is now about a different set of connections.
-				refreshStatus();
-				renderNeedsWeb();
+			text.inputEl.addEventListener("blur", () => {
+				if (webConfigured(this.plugin.data.zotero) === drawnWith) return;
+				// The redraw asks the line itself: one probe per change (spec §2.8).
+				this.recheckZotero.cancel();
+				this.update();
 			});
 		});
+	}
 
-		new Setting(containerEl).setName("Zotero local").setHeading();
-
-		new Setting(containerEl)
-			.setName(pro ? "Use the Zotero desktop app" : "Use the Zotero desktop app (Pro)")
-			.setDesc(
-				'Needs Zotero 10 with "Allow other applications on this computer to communicate with Zotero" switched on (Settings → Advanced). ' +
-					"Zotero asks your permission the first time this plugin writes something; choose Always Allow.",
-			)
-			.addToggle((toggle) => {
-				toggle.setValue(settings.useLocal).setDisabled(!pro);
-				toggle.onChange(async (value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, useLocal: value };
-					await this.plugin.saveData(this.plugin.data);
-					// Redrawn, because the status line above is now about a different set of connections.
-					this.update();
-				});
-			});
-
-		this.renderZoteroLibraries(containerEl, pro);
-		renderNeedsWeb = this.renderIntoZotero(containerEl, pro);
-
-		new Setting(containerEl).setName("Zotero on the tablet").setHeading();
-
-		new Setting(containerEl)
-			.setName("Tablet folder for sent PDFs")
-			.setDesc("Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.")
-			.addText((text) => {
-				text.setPlaceholder(DEFAULT_SEND_FOLDER);
-				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				text.setValue(settings.folder).onChange((value) => {
-					// Blank is the default rather than a folder with no name: a document put at the root of
-					// the tablet is one the user has to go looking for.
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, folder: value.trim() === "" ? DEFAULT_SEND_FOLDER : value.trim() };
-					persist();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName("Send tag in Zotero")
-			.setDesc(
-				"Tag a paper with it in Zotero, then run Send tagged Zotero papers to reMarkable: every paper carrying the tag goes to your tablet, " +
-					"in the folder above, without a sync tag -- tag it on the tablet when you want it back. Tag the paper, not the PDF. No sync sends; only that command does.",
-			)
-			.addText((text) => {
-				text.setPlaceholder(DEFAULT_SEND_TAG);
-				const persist = debounce(() => void this.plugin.saveData(this.plugin.data), 500, true);
-				text.setValue(settings.sendTag).onChange((value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendTag: value.trim() };
-					persist();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)")
-			// The spec's own wording, and it is here rather than in a notice afterwards because it is the
-			// one thing about this plugin that interrupts the person holding the tablet. They agree to it
-			// once, in advance, rather than finding out when their page closes.
-			.setDesc(`${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`)
-			.addToggle((toggle) => {
-				toggle.setValue(settings.sendOverSsh).setDisabled(!pro);
-				toggle.onChange(async (value) => {
-					this.plugin.data.zotero = { ...this.plugin.data.zotero, sendOverSsh: value };
-					await this.plugin.saveData(this.plugin.data);
-				});
-			});
+	/**
+	 * *Send to your tablet* (spec §6.4): the rows that put a paper on the tablet. The folder and the tag
+	 * are trimmed when stored ({@link SET_RULES}).
+	 */
+	private zoteroSendGroup(pro: boolean): SettingDefinitionGroup {
+		return {
+			type: "group",
+			heading: "Send to your tablet",
+			cls: "tagged-sync-group-zotero-send",
+			items: [
+				{
+					name: "Tablet folder for sent PDFs",
+					desc: "Looked up by name and created if it is not there. Renaming it on the tablet is yours to do; this plugin never renames a folder.",
+					control: { type: "text", key: "zotero.folder", placeholder: DEFAULT_SEND_FOLDER },
+				},
+				{
+					name: "Send tag in Zotero",
+					desc:
+						"Tag a paper with it in Zotero, then run Send tagged Zotero papers to reMarkable: every paper carrying the tag goes to your tablet, " +
+						"in the folder above, without a sync tag -- tag it on the tablet when you want it back. Tag the paper, not the PDF. No sync sends; only that command does.",
+					control: { type: "text", key: "zotero.sendTag", placeholder: DEFAULT_SEND_TAG },
+				},
+				{
+					name: pro ? "Send over SSH when the cloud is not connected" : "Send over SSH when the cloud is not connected (Pro)",
+					// The spec's own wording, and it is here rather than in a notice afterwards because it is the
+					// one thing about this plugin that interrupts the person holding the tablet. They agree to it
+					// once, in advance, rather than finding out when their page closes.
+					desc: `${SSH_SEND_RESTART_NOTE} The reading app is back in about six seconds.`,
+					control: { type: "toggle", key: "zotero.sendOverSsh", disabled: !pro },
+				},
+			],
+		};
 	}
 
 	/**
@@ -914,88 +938,96 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * The render is not write-back (the glossary's write-back is text), so the heading says neither.
 	 *
 	 * Pro rows shown shut to a free vault, like the desktop-app switch. The render reaches Zotero over
-	 * zotero.org only (ticket 04 #1), so its switch is shut without that connection and says so; the
-	 * returned function re-reads that whenever the cloud rows above change.
+	 * zotero.org only (ticket 04 #1), so its switch is shut without that connection, asked again as the
+	 * key is typed, and says so in a sentence the connection rows' `update()`s choose (spec P15).
 	 *
-	 * Switching either one on makes the Zotero-linked documents due once (§10 P7): nothing changed on
-	 * the tablet, and without it the switch would wait for a change before anything reached Zotero.
+	 * Switching either one on makes the Zotero-linked documents due once ({@link setControlValue}).
 	 */
-	private renderIntoZotero(containerEl: HTMLElement, pro: boolean): () => void {
-		new Setting(containerEl).setName("Into Zotero").setHeading();
-
-		const save = async (key: "writeText" | "addRender", on: boolean): Promise<void> => {
-			this.plugin.data.zotero = { ...this.plugin.data.zotero, [key]: on };
-			if (on) this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex, linkedDocumentIds(this.plugin.data.zoteroLinks));
-			await this.plugin.saveData(this.plugin.data);
-		};
-
-		new Setting(containerEl)
-			.setName(pro ? "Write text to Zotero" : "Write text to Zotero (Pro)")
-			.setDesc(
-				"Your tablet highlights become Zotero annotations, with your margin notes as their comments, and each page you added to a PDF " +
-					"becomes a note under the paper. Everything carries the tag tagged-sync. Switched off, nothing new is written and what is " +
-					"already in Zotero stays; filter by the tag in Zotero to remove it.",
-			)
-			.addToggle((toggle) => {
-				toggle.setValue(this.plugin.data.zotero.writeText).setDisabled(!pro);
-				toggle.onChange((value) => save("writeText", value));
-			});
-
+	private intoZoteroGroup(pro: boolean): SettingDefinitionGroup {
+		const renderName = pro ? "Add the render to Zotero" : "Add the render to Zotero (Pro)";
 		const renderDesc =
 			'Uploads the PDF as it looks on your tablet, ink and all and searchable, to Zotero Storage as an attachment "Annotated PDF" ' +
 			"under the paper. Your handwriting then leaves this machine for zotero.org and counts against your storage there. Only " +
 			"documents tagged as a whole, in your personal library. If your Zotero files sync over WebDAV, leave this off.";
-		let renderToggle: ToggleComponent | undefined;
-		const renderRow = new Setting(containerEl)
-			.setName(pro ? "Add the render to Zotero" : "Add the render to Zotero (Pro)")
-			.addToggle((toggle) => {
-				renderToggle = toggle.setValue(this.plugin.data.zotero.addRender);
-				toggle.onChange((value) => save("addRender", value));
-			});
-		const needsWeb = (): void => {
-			const web = webConfigured(this.plugin.data.zotero);
-			renderRow.setDesc(web ? renderDesc : `Needs a zotero.org connection. ${renderDesc}`);
-			renderToggle?.setDisabled(!pro || !web);
+		return {
+			type: "group",
+			heading: "Into Zotero",
+			cls: "tagged-sync-group-zotero-into",
+			items: [
+				{
+					name: pro ? "Write text to Zotero" : "Write text to Zotero (Pro)",
+					desc:
+						"Your tablet highlights become Zotero annotations, with your margin notes as their comments, and each page you added to a PDF " +
+						"becomes a note under the paper. Everything carries the tag tagged-sync. Switched off, nothing new is written and what is " +
+						"already in Zotero stays; filter by the tag in Zotero to remove it.",
+					control: { type: "toggle", key: "zotero.writeText", disabled: !pro },
+				},
+				{
+					name: renderName,
+					desc: webConfigured(this.plugin.data.zotero) ? renderDesc : `Needs a zotero.org connection. ${renderDesc}`,
+					control: {
+						type: "toggle",
+						key: "zotero.addRender",
+						disabled: this.guardedValue(renderName, true, () => !pro || !webConfigured(this.plugin.data.zotero)),
+					},
+				},
+				{
+					name: "What leaves your machine",
+					desc:
+						"Your handwriting never does, unless you switch on Add the render to Zotero. With Write text to Zotero, the text of your " +
+						"highlights, margin notes and added pages is written into your own Zotero library -- and to zotero.org, if that is the " +
+						"connection carrying it.",
+				},
+			],
 		};
-		needsWeb();
-
-		new Setting(containerEl)
-			.setName("What leaves your machine")
-			.setDesc(
-				"Your handwriting never does, unless you switch on Add the render to Zotero. With Write text to Zotero, the text of your " +
-					"highlights, margin notes and added pages is written into your own Zotero library -- and to zotero.org, if that is the " +
-					"connection carrying it.",
-			);
-		return needsWeb;
 	}
 
-	/** What `client.groups()` last answered while this tab was open, or `null` before it has. See {@link renderZoteroLibraries}. */
+	/** What `client.groups()` last answered while this tab was open, or `null` before it has. See {@link zoteroLibrariesGroup}. */
 	private zoteroGroups: ZoteroGroup[] | null = null;
 
 	/**
-	 * The libraries (ticket 26): one switch per group library, all off until switched on by name
-	 * (the personal library is always read and needs no row) -- a group is other people's work, and what write-back puts
-	 * there is visible to everyone in it, which the row says.
+	 * The libraries (ticket 26, spec §6.2): one switch per group library, all off until switched on by
+	 * name (the personal library is always read and needs no row) -- a group is other people's work, and
+	 * what write-back puts there is visible to everyone in it, which the row says.
 	 *
-	 * The groups are Zotero's to name, so they are asked for when the tab is drawn and the tab is
-	 * drawn again once the answer changes what it would show. Rows are drawn from what is *stored*
-	 * as well as from what was found: a group switched on stays a row while Zotero is closed, so it
-	 * can be switched off again, and the name stored beside its id is what the row and the note
-	 * call it meanwhile. Pro (§5), and shown shut to a free vault like the desktop-app switch.
+	 * The groups are Zotero's to name, so they are asked for when the status row is drawn and the page
+	 * is drawn again once the answer changes what it would show. Rows come from what is *stored* as well
+	 * as from what was found: a group switched on stays a row while Zotero is closed, so it can be
+	 * switched off again, and the name stored beside its id is what the row and the note call it
+	 * meanwhile. Switched-on groups first, in the order they were switched on, then the rest as Zotero
+	 * lists them. Pro (§5), and shown shut to a free vault like the desktop-app switch.
 	 */
-	private renderZoteroLibraries(containerEl: HTMLElement, pro: boolean): void {
-		new Setting(containerEl).setName("Zotero libraries").setHeading();
-
-		const groupsRow = new Setting(containerEl)
-			.setName(pro ? "Group libraries" : "Group libraries (Pro)")
-			.setDesc(
-				"A group you switch on is searched, sent from and, with write-back, written into like your own library. " +
+	private zoteroLibrariesGroup(pro: boolean): SettingDefinitionGroup {
+		const name = pro ? "Group libraries" : "Group libraries (Pro)";
+		const items: SettingDefinition[] = [
+			{
+				name,
+				desc:
+					"A group you switch on is searched, sent from and, with write-back, written into like your own library. " +
 					"Highlights written into a group library are visible to everyone in that group.",
-			);
-		const status = groupsRow.descEl.createDiv({ cls: "tagged-sync-verdict" });
+				render: this.guarded(name, (setting) => this.renderGroupsStatus(setting, pro)),
+			},
+		];
+		if (pro) {
+			const enabled = this.plugin.data.zotero.groups;
+			const found = this.zoteroGroups;
+			for (const group of [...enabled, ...(found ?? []).filter((candidate) => !enabled.some((on) => on.id === candidate.id))]) {
+				items.push({
+					name: group.name,
+					desc: found !== null && !found.some((candidate) => candidate.id === group.id) ? "Not listed by Zotero right now; switched on earlier." : "",
+					control: { type: "toggle", key: groupKey(group) },
+				});
+			}
+		}
+		return { type: "group", heading: "Libraries", cls: "tagged-sync-group-zotero-libraries", items };
+	}
+
+	/** The status under *Group libraries*, and the lookup that fills the rows below it. */
+	private renderGroupsStatus(setting: Setting, pro: boolean): void {
+		const status = setting.descEl.createDiv({ cls: "tagged-sync-verdict" });
 		if (!pro) {
 			// Shut like the desktop-app switch: a free vault sees the row as a Pro row, not as a bare paragraph.
-			groupsRow.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
+			setting.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
 			return;
 		}
 
@@ -1018,23 +1050,20 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		} else if (this.zoteroGroups.length === 0 && enabled.length === 0) {
 			status.setText("You are in no group.");
 		}
+	}
 
-		// Switched-on groups first, in the order they were switched on, then the rest as Zotero lists them.
-		const rows = [...enabled, ...(this.zoteroGroups ?? []).filter((group) => !enabled.some((on) => on.id === group.id))];
-		for (const group of rows) {
-			const on = enabled.some((candidate) => candidate.id === group.id);
-			new Setting(containerEl)
-				.setName(group.name)
-				.setDesc(this.zoteroGroups !== null && !this.zoteroGroups.some((found) => found.id === group.id) ? "Not listed by Zotero right now; switched on earlier." : "")
-				.addToggle((toggle) => {
-					toggle.setValue(on);
-					toggle.onChange(async (value) => {
-						const others = this.plugin.data.zotero.groups.filter((candidate) => candidate.id !== group.id);
-						this.plugin.data.zotero = { ...this.plugin.data.zotero, groups: value ? [...others, group] : others };
-						await this.plugin.saveData(this.plugin.data);
-					});
-				});
-		}
+	/**
+	 * `zotero.group:<id>` switched (spec §6.2): on, the group joins the stored list with the name Zotero
+	 * gave it; off, it leaves. A group neither stored nor listed has no row, so it is no setting.
+	 */
+	private async setZoteroGroup(key: string, on: boolean): Promise<void> {
+		const zotero = this.plugin.data.zotero;
+		const group = [...zotero.groups, ...(this.zoteroGroups ?? [])].find((candidate) => groupKey(candidate) === key);
+		if (group === undefined) throw new Error(`Tagged Sync: no setting "${key}"`);
+		if (this.getControlValue(key) === on) return;
+		const others = zotero.groups.filter((candidate) => candidate.id !== group.id);
+		this.plugin.data.zotero = { ...zotero, groups: on ? [...others, group] : others };
+		await this.plugin.saveData(this.plugin.data);
 	}
 
 	/**
@@ -1280,7 +1309,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * every change re-arms the interval timer ({@link setControlValue}).
 	 */
 	private autoSyncGroup(): SettingDefinitionGroup {
-		const enabled = this.shownWhen("Automatic sync", () => this.plugin.data.autoSync.enabled);
+		const enabled = this.guardedValue("Automatic sync", false, () => this.plugin.data.autoSync.enabled);
 		const selected = ocrBackendEntry(this.plugin.data.ocrBackend);
 		const items: SettingDefinition[] = [
 			{

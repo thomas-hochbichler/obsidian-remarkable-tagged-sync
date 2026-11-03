@@ -837,13 +837,13 @@
       test: "why a Zotero command has nothing to do > tells a vault with only the desktop app that nothing in their library has been touched, and what still works"
 
 - feature: Y10
-  name: The Zotero settings section
+  name: The Zotero settings page
   code: src/settings-tab.ts
   scenarios:
     - id: Y10.1
       tier: free
-      scenario: A free vault opens the settings
-      expect: The section is headed "Zotero" like anyone's, with one heading per connection below it -- "Zotero cloud" then "Zotero local"; the zotero.org switch is open, the desktop-app toggle is shown disabled as "(Pro)", and the Connection row says which half is Pro. Hidden, the Pro half would be a feature nobody could decide to buy -- the same rule the transport dropdown and the frontmatter toggle follow
+      scenario: A free vault opens the Zotero page
+      expect: The connection group comes first, without a heading; the zotero.org switch is open, the desktop-app toggle is shown disabled as "(Pro)", and the Connection row says which half is Pro -- without " -- see below", since the Pro rows are on this page (settings-redesign P5). Hidden, the Pro half would be a feature nobody could decide to buy -- the same rule the transport dropdown and the frontmatter toggle follow
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > opens zotero.org to a free user, shows the desktop app shut, and says which half is Pro"
@@ -915,15 +915,15 @@
     - id: Y10.10
       tier: pro
       scenario: The zotero.org switch is off, then on (desk test 2026-09-13)
-      expect: 'Off, the key row is hidden -- not removed, so a pasted key stays for the day the switch comes back on. On, the "Zotero cloud" heading holds the switch and the key row, "Zotero local" the desktop switch, and "Zotero on the tablet" the sending rows. One switch per connection, so whether anything goes over the internet is one visible thing rather than "is the key field empty"'
+      expect: 'Off, the connection group holds the line, the switch and the desktop switch, and no key row -- left out rather than hidden, as the switch redraws the page anyway (settings-redesign spec §2.4); a pasted key stays in data.json for the day the switch comes back on. On, the key row stands between the two switches, and the sending rows are under "Send to your tablet". One switch per connection, so whether anything goes over the internet is one visible thing rather than "is the key field empty"'
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > shows the key row only while zotero.org is switched on, under its own heading"
+      test: "the Zotero section > puts the key row on the page only while zotero.org is switched on"
 
     - id: Y10.11
       tier: pro
       scenario: The zotero.org switch is flipped on
-      expect: Saved, the key row shown, and the status line asked again -- it is now about a different set of connections. No redraw, unlike the desktop switch, so the page does not jump
+      expect: Saved once, and the page drawn again -- the key row is there and the status line asked again, as it is now about a different set of connections (settings-redesign spec §6.1)
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > saves the cloud switch, shows the key row and asks the status line again"
@@ -935,6 +935,62 @@
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > reads a key with zotero.org switched off as not connected, without asking zotero.org"
+
+    - id: Y10.13
+      tier: pro
+      scenario: The Zotero page's definitions are asked for
+      expect: 'Four groups (settings-redesign spec §6): the connection without a heading (Connection, Use zotero.org, the key, Use the Zotero desktop app), Libraries, Into Zotero, Send to your tablet, each with its tagged-sync-group-zotero class; every switch and field a control row bound to its data.json key, the two live lines render rows'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > answers four groups on its page, each row bound to its key"
+
+    - id: Y10.14
+      tier: free
+      scenario: Settings search for "token"
+      expect: Finds the Zotero API key row, by its alias (settings-redesign spec §8)
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > finds the key field by the word people search for"
+
+    - id: Y10.15
+      tier: free
+      scenario: zotero.org is switched on with no key, and the root is drawn
+      expect: The Zotero entry reads "No API key" with the warning marker (settings-redesign spec §5)
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > its entry on the root > warns for zotero.org switched on with no key behind it"
+
+    - id: Y10.16
+      tier: pro
+      scenario: A buyer set up both connections, and the root is drawn
+      expect: The Zotero entry reads "zotero.org + desktop app", no marker
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > its entry on the root > names both connections for a buyer who set up both"
+
+    - id: Y10.17
+      tier: free
+      scenario: The state the entry reads throws
+      expect: The entry's value is empty and its status none, and the error is logged -- one broken predicate does not blank the tab (settings-redesign spec §2.2)
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > its entry on the root > shows nothing on the entry when its state cannot be read, and says why in the console"
+
+    - id: Y10.18
+      tier: pro
+      scenario: A group library is switched through its key
+      expect: '`zotero.group:<id>` reads whether the group is stored; on appends `{ id, name }` with the name Zotero gave, off filters it out, and the list is replaced rather than changed in place. A group neither stored nor listed is refused as no setting'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > binds each group to a key of its own, and refuses a group nobody has named"
+
+    - id: Y10.19
+      tier: free
+      scenario: The Zotero page's entry, for each state of settings-redesign spec §5
+      expect: 'First match wins: zotero.org on without a key "No API key" with a warning; zotero.org set up and the desktop app on in a Pro vault "zotero.org + desktop app"; zotero.org set up "zotero.org"; the desktop app on in a Pro vault "Desktop app"; otherwise "Not set up". The desktop app counts only where the vault may use it, and a key with the switch off is nothing'
+      layer: unit
+      file: src/zotero-settings.test.ts
+      test: "the Zotero page's entry > reads each state as the spec's table says"
 
 - feature: Y11
   name: Where a digest entry sits on the source page
@@ -3829,7 +3885,7 @@
 
     - id: Y33.35
       scenario: "The settings tab of a Pro vault whose connection names a group"
-      expect: '*Zotero libraries*: the visibility sentence, then one switch per group Zotero names; no row for the personal library, which is always read; switching one on stores `{ id, name }`'
+      expect: '*Libraries* on the Zotero page: the visibility sentence, then one switch per group Zotero names; no row for the personal library, which is always read; switching one on stores `{ id, name }`'
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > lists the groups Zotero names as switches"
@@ -3949,10 +4005,22 @@
       test: "the Zotero section > Into Zotero > shows both switches shut to a free vault, as Pro rows"
     - id: Y36.3
       scenario: "Desktop app only, then zotero.org switched on and a key typed"
-      expect: 'The render switch is shut and its description starts "Needs a zotero.org connection."; it opens in place once zotero.org is configured. The text switch works over the desktop app'
+      expect: 'The render switch is shut and its description starts "Needs a zotero.org connection."; it opens in place, without a redraw, as the key that configures zotero.org is typed, and the sentence loses its prefix when the field is left (settings-redesign P15). The text switch works over the desktop app'
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > Into Zotero > shuts the render switch without a zotero.org connection and says why, and opens it once there is one"
+    - id: Y36.15
+      scenario: "A key typed that makes zotero.org a connection, and the field left within the line's 600 ms recheck"
+      expect: 'The line asks zotero.org once: the redraw on leaving starts the probe and the pending recheck is dropped (settings-redesign spec §2.8)'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > asks zotero.org once when the field is left before the line's own recheck"
+    - id: Y36.14
+      scenario: "A key typed that leaves zotero.org as configured as it was, then the field left"
+      expect: 'Nothing drawn again -- the field keeps its focus and the page its place (settings-redesign spec §6.1)'
+      layer: unit
+      file: src/settings-tab.test.ts
+      test: "the Zotero section > Into Zotero > draws nothing again when the field is left with the connection as it was"
     - id: Y36.4
       scenario: "*Write text to Zotero* or *Add the render to Zotero* switched on"
       expect: 'Saved, and every sync-index row of a Zotero-linked document loses its render version; unlinked documents keep theirs (§10 P7)'

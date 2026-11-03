@@ -17,6 +17,7 @@ import {
 	Plugin,
 	PluginSettingTab,
 	renderSettingTab,
+	Setting,
 	takeModals,
 	takeSettings,
 	TFile,
@@ -402,6 +403,18 @@ describe("the settings controls the plugin reaches past", () => {
 		el.toggle(true);
 		expect(el.visible).toBe(true);
 	});
+
+	// 1.15.0's app.js: `setDisabled(t){this.disabled=t,…;for(let i of components)i.setDisabled(t)}`, which
+	// is how a control row's `disabled` reaches its switch.
+	it("disables a row's components with the row, and opens them again", () => {
+		const setting = new Setting(new FakeEl()).addToggle(() => undefined).addText(() => undefined);
+
+		setting.setDisabled(true);
+		expect([setting.disabled, setting.toggles[0].disabled, setting.texts[0].disabled]).toEqual([true, true, true]);
+
+		setting.setDisabled(false);
+		expect([setting.toggles[0].disabled, setting.texts[0].disabled]).toEqual([false, false]);
+	});
 });
 
 describe("the declarative settings tab", () => {
@@ -443,6 +456,23 @@ describe("the declarative settings tab", () => {
 		expect(torn).toEqual(["line", "line"]);
 		tab.update();
 		expect(torn).toEqual(["line", "line"]);
+	});
+
+	// obsidian.d.ts 1.13.1: a page's `displayValue` and `status` "surface the current value on the entry"
+	// (a `DisplayValueComponent`); ticket 17's F7 saw both asked again on every draw of the root.
+	it("shows a page entry's value and status, asked again on every draw", () => {
+		takeSettings();
+		let count = 1;
+		const tab = tabOf(() => [
+			{ type: "page", name: "Zotero", displayValue: () => `Count ${count}`, status: () => (count % 2 === 0 ? "warning" : null), items: [] },
+		]);
+
+		renderSettingTab(tab);
+		expect(takeSettings()[0].components).toEqual([expect.objectContaining({ value: "Count 1", status: null })]);
+
+		count = 2;
+		renderSettingTab(tab);
+		expect(takeSettings()[0].components).toEqual([expect.objectContaining({ value: "Count 2", status: "warning" })]);
 	});
 
 	// app.js `getControlBinding`: the value comes from `getControlValue`, a change is `await

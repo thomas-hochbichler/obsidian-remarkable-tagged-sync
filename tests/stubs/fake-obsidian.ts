@@ -1257,8 +1257,10 @@ export class Setting {
 		this.settingEl.addClass(cls);
 		return this;
 	}
+	/** 1.15.0's app.js: the row's class, then `setDisabled` on each of its components. */
 	setDisabled(disabled: boolean): this {
 		this.disabled = disabled;
+		for (const list of [this.texts, this.toggles, this.dropdowns, this.buttons, this.extraButtons]) for (const component of list) component.setDisabled(disabled);
 		return this;
 	}
 	setTooltip(tooltip: string): this {
@@ -1446,6 +1448,8 @@ export interface FakeDefinition {
 	control?: FakeControl;
 	items?: FakeDefinition[];
 	render?: (setting: Setting, group: object) => void | (() => void);
+	displayValue?: string | (() => string);
+	status?: "warning" | null | (() => "warning" | null);
 	extraButtons?: ((button: ExtraButtonComponent) => unknown)[];
 	search?: { placeholder?: string; match: (def: FakeDefinition, query: string) => boolean };
 }
@@ -1461,11 +1465,26 @@ export interface FakeControl {
 	includeRoot?: boolean;
 }
 
-const NOT_MODELLED = ["action", "disabled", "displayValue", "status"];
+const NOT_MODELLED = ["action", "disabled"];
 
 /** `app.js`'s `el(value, fallback)`: a predicate is a value or a function answering one. */
-function evaluate(value: boolean | (() => boolean) | undefined, fallback: boolean): boolean {
-	return value === undefined ? fallback : typeof value === "function" ? value() : value;
+function evaluate<T>(value: T | (() => T) | undefined, fallback: T): T {
+	return value === undefined ? fallback : typeof value === "function" ? (value as () => T)() : value;
+}
+
+/** obsidian.d.ts 1.13.1: the value label and status a page's entry shows. Read back, not drawn. */
+export class DisplayValueComponent {
+	value: string | null = null;
+	status: "warning" | null = null;
+	constructor(readonly containerEl: FakeEl) {}
+	setValue(value: string | null): this {
+		this.value = value;
+		return this;
+	}
+	setStatus(status: "warning" | null): this {
+		this.status = status;
+		return this;
+	}
 }
 
 /** A row on screen: what drew it, its `Setting`, and the cleanup its render returned. */
@@ -1636,7 +1655,12 @@ export class PluginSettingTab {
 				const children = this.drawItems(drawn.groupEl, item.items ?? [], openPages, groupPath, previous, previousGroups);
 				if (drawn.search !== undefined && item.heading !== undefined) this.searches.set(item.heading, { path: groupPath, search: drawn.search, rows: children });
 			} else if (item.type === "page") {
-				new Setting(el).setName(item.name ?? "");
+				const entry = new Setting(el).setName(item.name ?? "");
+				if (item.displayValue !== undefined || item.status !== undefined) {
+					entry.addComponent((controlEl) =>
+						new DisplayValueComponent(controlEl).setValue(evaluate(item.displayValue, "")).setStatus(evaluate(item.status, null)),
+					);
+				}
 				if (!openPages) return;
 				new Setting(el).setName(item.name ?? "").setHeading();
 				this.drawItems(el, item.items ?? [], openPages, `${path}page:${item.name}/`, previous, previousGroups);
