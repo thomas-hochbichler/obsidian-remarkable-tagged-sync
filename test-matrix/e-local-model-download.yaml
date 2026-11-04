@@ -672,6 +672,34 @@
       file: src/local-register.test.ts
       test: "a card the settings tab tore down > draws nothing more, while a newer card keeps redrawing"
 
+    - id: E39.14
+      scenario: A first download is running
+      expect: The heading names the model, and a *Model files* row beside Pause gives the directory it lands in (Demo-vault smoke test 2026-11-04)
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > names the model and the directory it lands in"
+
+    - id: E39.15
+      scenario: The offered newer model is downloading while the older one stays in use
+      expect: Heading and directory are the newer model's, though the choice rule still answers with the working one
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > names the model being fetched, not the one still in use"
+
+    - id: E39.16
+      scenario: A download is paused
+      expect: The *Model files* row still gives the directory, beside Resume and Discard
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > still says where the files are once it is paused"
+
+    - id: E39.17
+      scenario: The downloading, verifying and paused cards are drawn for a model
+      expect: Each names it, by the model's own label
+      layer: unit
+      file: src/local-model-card.test.ts
+      test: "the states that carry a decided sentence > names the model while it downloads, while it is checked, and once it is paused"
+
 
 - feature: E41
   name: What the dropdown says on a machine the model is not offered on

@@ -191,7 +191,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 		case "downloading": {
 			const percent = state.totalBytes > 0 ? Math.floor((state.receivedBytes / state.totalBytes) * 100) : 0;
 			return {
-				heading: "Downloading the model",
+				heading: `Downloading ${generation.label}`,
 				paragraphs: [
 					`${formatBytes(state.receivedBytes)} of ${formatBytes(state.totalBytes)}.`,
 					"You can close settings — the download keeps going. Syncing still works while it runs; notes just arrive without a transcript until it is done.",
@@ -205,7 +205,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 			// Its own visible step, never a hash streamed alongside the download: a streamed hash cannot
 			// survive a restart mid-download, and this is minutes of disk on 5.5 GB.
 			return {
-				heading: "Verifying the download",
+				heading: `Verifying ${generation.label}`,
 				paragraphs: ["Checking the downloaded files against the SHA-256 this plugin was published with."],
 				actions: [],
 				percent: null,
@@ -214,7 +214,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 		case "paused":
 			return {
 				heading: "Download paused",
-				paragraphs: [`${formatBytes(state.onDiskBytes)} is already on disk and will not be downloaded again.`],
+				paragraphs: [`${generation.label}: ${formatBytes(state.onDiskBytes)} is already on disk and will not be downloaded again.`],
 				actions: [
 					{ id: "resume", label: "Resume", emphasis: "cta" },
 					// The button says how much it throws away, because that is the fact the answer turns on.

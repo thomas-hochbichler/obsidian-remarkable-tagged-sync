@@ -267,6 +267,14 @@ describe("the states that carry a decided sentence", () => {
 		expect(copy.actions.find((a) => a.id === "discard")?.emphasis).toBe("warning");
 	});
 
+	it("names the model while it downloads, while it is checked, and once it is paused", () => {
+		const { label } = MODEL_GENERATIONS[0];
+
+		expect(copyFor({ kind: "downloading", receivedBytes: 1, totalBytes: 2 }).heading).toBe(`Downloading ${label}`);
+		expect(copyFor({ kind: "verifying" }).heading).toBe(`Verifying ${label}`);
+		expect(copyFor({ kind: "paused", onDiskBytes: 2_000_000_000 }).paragraphs[0]).toBe(`${label}: 2.0 GB is already on disk and will not be downloaded again.`);
+	});
+
 	it("names the shortfall when the disk is full", () => {
 		expect(copyFor({ kind: "out-of-disk", shortfallBytes: 2_100_000_000 }).paragraphs[0]).toBe("Free 2.1 GB and press Resume.");
 	});

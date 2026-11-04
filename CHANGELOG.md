@@ -38,6 +38,7 @@ Obsidian to get this release.
   transcription and automatic sync; Zotero and Readwise each have their own page under
   *Integrations*, which shows whether they are set up. Unmapped tags show as compact tags you click
   to choose a folder, and most settings can now be found from Obsidian's settings search.
+- While the local model downloads, its card says which model it is and which folder it goes to.
 - The first sync after switching Readwise on re-renders every note once, and reads your margin notes
   and added pages again with your transcription backend; handwritten notebook transcripts are kept.
 

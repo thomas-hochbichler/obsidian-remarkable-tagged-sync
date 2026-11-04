@@ -52,6 +52,12 @@ export const LOCAL_NOTE_CONTRACT = "Transcripts keep headings and lists as writt
 
 /** The download in flight for this Obsidian session, if any. Never persisted; §5.5 forbids it. */
 let download: DownloadHandle | null = null;
+/**
+ * What that download fetches and where it writes. Not always the model in use: taking the offer of a
+ * newer one fetches it beside the working one, and the choice rule keeps naming the working one until
+ * the new one is complete.
+ */
+let downloadTarget: { paths: LocalModelPaths; generation: ModelGeneration } | null = null;
 /** A runtime that failed to start this session (§5.5: session-scoped, not a property of the directory). */
 let runtimeFailure: string | null = null;
 
@@ -209,6 +215,7 @@ function beginDownload(paths: LocalModelPaths, rerender: () => void, generation:
 		return;
 	}
 	runtimeFailure = null;
+	downloadTarget = { paths, generation };
 	download = startLocalModelDownload(paths, platform, rerender, generation);
 	void download.finished.then(() => rerender());
 	rerender();
@@ -232,7 +239,9 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// Where the offered model would land, resolved once so the update button does not have to.
 	const newer = offeredGeneration(generation, readModelDirectories(paths), context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
-	const copy = cardCopy(state, platform, ctx.settings, generation);
+	// The states only this instance's own download reaches name what it fetches, not the model in use.
+	const shown = download && downloadTarget && ["downloading", "verifying", "out-of-disk", "network-lost"].includes(state.kind) ? downloadTarget : resolved;
+	const copy = cardCopy(state, platform, ctx.settings, shown.generation);
 
 	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
 	card.createEl("h4", { text: copy.heading });
@@ -292,8 +301,9 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 		const row = new Setting(card);
 		// A delete button on a nameless row asks the user to take on trust what it removes. Naming the
 		// directory beside it is the whole answer, and it is also where to look when the model is gone
-		// from outside the plugin.
-		if (copy.actions.some((action) => action.id === "delete")) row.setName("Model files").setDesc(paths.modelDir);
+		// from outside the plugin. A download gets it too: gigabytes are arriving somewhere, and a full
+		// disk is no help without knowing which one.
+		if (copy.actions.some((action) => ["delete", "cancel", "resume", "discard"].includes(action.id))) row.setName("Model files").setDesc(shown.paths.modelDir);
 		for (const action of copy.actions) {
 			row.addButton((button) => {
 				button.setButtonText(action.label);

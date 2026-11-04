@@ -127,6 +127,18 @@ interface Rendered {
 	button(prefix: string): ButtonComponent | undefined;
 	dropdown(): DropdownComponent | undefined;
 	row(name: string): Setting | undefined;
+	/** The card's heading. */
+	heading(): string | undefined;
+}
+
+/** The first element with this tag, depth first. */
+function firstOf(el: FakeEl, tag: string): FakeEl | undefined {
+	if (el.tag === tag) return el;
+	for (const child of el.children) {
+		const found = firstOf(child, tag);
+		if (found) return found;
+	}
+	return undefined;
 }
 
 /** Renders the backend's settings into a fresh page, as the settings tab does. */
@@ -157,6 +169,7 @@ function render(blob: BackendSettings = {}): Rendered {
 		button: (prefix) => rows.flatMap((setting) => setting.buttons).find((candidate) => candidate.text.startsWith(prefix)),
 		dropdown: () => rows.flatMap((setting) => setting.dropdowns)[0],
 		row: (name) => rows.find((setting) => setting.name === name),
+		heading: () => firstOf(page, "h4")?.text,
 	};
 }
 
@@ -212,6 +225,42 @@ describe("the model the first download fetches", () => {
 		page.button("Download the model")?.click();
 
 		expect(fetcher.started).toEqual([{ root: `/vault/${SMALL.dir}`, dir: SMALL.dir }]);
+	});
+});
+
+describe("a download in flight", () => {
+	// A download lasts a long time and the card said only "Downloading the model · 2.5 GB of 6.2 GB":
+	// which model, and where 6.2 GB of the reader's disk was going, took a look into the file system.
+	it("names the model and the directory it lands in", () => {
+		render().button("Download the model")?.click();
+
+		const during = render();
+
+		expect(during.heading()).toBe(`Downloading ${BEST.label}`);
+		expect(during.row("Model files")?.desc).toBe(`/vault/${BEST.dir}/model`);
+		expect(during.button("Pause")).toBeDefined();
+	});
+
+	// The rule keeps answering with the working model until the new one is complete, so reading the
+	// name from the rule would announce the wrong model and point at a directory nothing writes into.
+	it("names the model being fetched, not the one still in use", () => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+
+		const during = render({ preferredModelDir: OLDER.dir });
+
+		expect(during.heading()).toBe(`Downloading ${BEST.label}`);
+		expect(during.row("Model files")?.desc).toBe(`/vault/${BEST.dir}/model`);
+	});
+
+	it("still says where the files are once it is paused", () => {
+		machine.snapshot = { ...machine.snapshot, partPresent: true };
+
+		const paused = render();
+
+		expect(paused.heading()).toBe("Download paused");
+		expect(paused.row("Model files")?.desc).toBe(`/vault/${BEST.dir}/model`);
 	});
 });
 
