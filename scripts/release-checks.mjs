@@ -12,7 +12,7 @@
 //   node scripts/release-checks.mjs disabled
 //   node scripts/release-checks.mjs nightly [--if-release]   # ci.yml: only on a release commit
 //   node scripts/release-checks.mjs tag <version>           # before `git tag`: every gate the tag will meet
-//   node scripts/release-checks.mjs latest <version> [<current Latest>]   # release.yml: true or false
+//   node scripts/release-checks.mjs latest <version> <current Latest>   # release.yml: true or false
 //   node scripts/release-checks.mjs ocr-baseline [--write] [--accept <key> --because "<why>"]
 //   node scripts/release-checks.mjs perf-baseline [--write] [--accept <metric> --because "<why>"]
 //
@@ -147,8 +147,8 @@ function versionGate(tag) {
 	// never be frozen there, because no tag points at `main` for it. Counted, two of them would push
 	// the 1.11.0 state out of the window; one before 1.11.0 would do the same to its release PR.
 	const legacyState = readJson("test-fixtures/legacy-state/meta.json");
-	// Insertion order is release order, and `v` is `main`'s last key by the time the gate runs -- the
-	// check above fails first if the key for this version is missing altogether.
+	// Insertion order is release order, and a version from `main` is the last of these by the time the
+	// gate runs -- the check above fails first if the key for this version is missing altogether.
 	const releases = Object.keys(versions).filter((key) => !isMaintenance(key));
 	const accepted = releases.slice(-2);
 	if (accepted.includes(legacyState.version)) ok(`test-fixtures/legacy-state produced by ${legacyState.version}`);
@@ -522,13 +522,21 @@ function fetchBranch(branch) {
 	return git("rev-parse", "FETCH_HEAD");
 }
 
-function verdictOnMain() {
-	const tip = fetchBranch("main");
+/** The verdict file a version answers to, or `null` when it is not there: what the rules call missing. */
+function readVerdictText(version) {
+	if (isMaintenance(version)) {
+		const tip = fetchBranch("main");
+		try {
+			return execFileSync("git", ["show", `${tip}:${NIGHTLY_VERDICT}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+		} catch {
+			return null;
+		}
+	}
 	try {
-		return execFileSync("git", ["show", `${tip}:${NIGHTLY_VERDICT}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-	} catch {
-		// Not there. `null` is what the rules call a missing verdict.
-		return null;
+		return readFileSync(NIGHTLY_VERDICT, "utf8");
+	} catch (e) {
+		if (e.code === "ENOENT") return null;
+		throw e;
 	}
 }
 
@@ -538,12 +546,11 @@ function nightlyGate() {
 
 	let verdict = null;
 	try {
-		verdict = isMaintenance(version) ? JSON.parse(verdictOnMain() ?? "null") : readJson(NIGHTLY_VERDICT);
+		const text = readVerdictText(version);
+		if (text !== null) verdict = JSON.parse(text);
 	} catch (e) {
-		if (e.code !== "ENOENT") {
-			console.error(`${source} will not parse: ${e.message}`);
-			process.exit(1);
-		}
+		console.error(`${source} could not be read or will not parse: ${e.message}`);
+		process.exit(1);
 	}
 
 	const { problems: found, notes } = judgeVerdict(verdict, new Date());
@@ -617,8 +624,12 @@ function tagPrecheck(version) {
 // 1.10.1 before it moves the page as any release does. The store never reads the flag.
 
 function latestFlag(version, current) {
+	if (!version || !current) {
+		console.error("latest: pass the version and the current Latest, e.g. `latest 1.10.2 1.11.0`");
+		process.exit(2);
+	}
 	const parse = (v) => v.split(".").map(Number);
-	const [a, b] = [parse(version), parse(current || "0.0.0")];
+	const [a, b] = [parse(version), parse(current)];
 	const first = a.findIndex((n, i) => n !== b[i]);
 	console.log(String(first !== -1 && a[first] > b[first]));
 }

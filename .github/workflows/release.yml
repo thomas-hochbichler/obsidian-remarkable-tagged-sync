@@ -157,15 +157,17 @@ jobs:
       #
       # `--latest` is said out loud because a 1.10.x published after 1.11.0 must not take over the
       # repository page, and the automatic rule weighs the date as well as the version. The store
-      # ignores the flag.
+      # ignores the flag. Not being able to ask stops the run: no release exists yet, so re-tagging
+      # the same version repairs it.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES: ${{ runner.temp }}/release-notes.md
         run: |
-          current="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          current="$(gh release view --json tagName --jq .tagName)"
+          latest="$(node scripts/release-checks.mjs latest "${GITHUB_REF_NAME}" "$current")"
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file "$NOTES" \
-            --latest="$(node scripts/release-checks.mjs latest "${GITHUB_REF_NAME}" "$current")" \
+            --latest="$latest" \
             main.js manifest.json styles.css

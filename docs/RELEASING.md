@@ -146,10 +146,16 @@ this repo's ESLint config and its rule set is not published.
 **Why the line exists.** 1.11.0 raises `minAppVersion` to 1.13.4. An Obsidian below that silently
 stays on the newest 1.10.x: the store tells it nothing, so a bug there can only be fixed from a
 1.10.x release. The line lives on the branch `release/1.10.x`, cut from tag `1.10.0`, and stays for
-six months after 1.11.0 ships; then it is decided again.
+six months after 1.11.0 ships; then it is decided again. It starts at 1.10.1: 1.10.0 itself is
+`main`'s release, and "1.10.x" below always means a version after it.
 
-**Which fixes qualify.** On demand, per bug: reported by a user below 1.13, or severe (data loss,
+**Which fixes qualify.** On demand, per bug: reported by a user below 1.13.4, or severe (data loss,
 security, wrong rendering). Not every fix.
+
+**Cutting the branch, once.** A tree at tag `1.10.0` has none of these gates, and the tag's tree is
+what `release.yml` runs, so the pipeline comes first:
+`git switch -c release/1.10.x 1.10.0`, then cherry-pick `82698ed` (#263, the tag pre-check) and the
+pull request that added this section, in that order, and push.
 
 **How the store finds it.** Obsidian (read in 1.15.0's `app.js`) reads `manifest.json` from the
 default branch and offers that version whenever its `minAppVersion` fits the app. Only when it does
@@ -157,10 +163,10 @@ not fit does it read `versions.json`, where it takes the highest key that fits; 
 matter. So **a release on the branch is invisible until `main` says so**, and what `main` has to say
 depends on whether 1.11.0 is there yet:
 
-| `main`'s manifest | An Obsidian below 1.13.4 gets | `main` needs |
+| `main`'s manifest | What the store offers | `main` needs |
 |---|---|---|
-| still 1.10.x (before 1.11.0) | the manifest's version, `versions.json` is never read | all four version files at 1.10.N |
-| 1.11.0 or later | the highest fitting `versions.json` key | only the key `"1.10.N": "1.5.7"` |
+| still 1.10.x (before 1.11.0) | every Obsidian the manifest's version; `versions.json` is never read | all four version files at 1.10.N |
+| 1.11.0 or later | an Obsidian below 1.13.4 the highest fitting `versions.json` key | only the key `"1.10.N": "1.5.7"` |
 
 The steps:
 
@@ -170,7 +176,7 @@ The steps:
 | 2 | Cherry-pick it onto the branch | `git switch release/1.10.x && git pull --ff-only && git cherry-pick <sha>` |
 | 3 | Bump the four files to 1.10.N (`"1.10.N": "1.5.7"`, the floor stays), rename the changelog heading, commit | as in the eight steps; no pull request, the branch has no ruleset |
 | 4 | Push and wait for the branch's CI to go green | `git push && gh run watch` |
-| 5 | Pre-check, tag, push the tag | `node scripts/release-checks.mjs tag 1.10.N && git tag 1.10.N && git push origin 1.10.N` |
+| 5 | Audit, pre-check, tag, push the tag | `npm audit --audit-level=moderate && node scripts/release-checks.mjs tag 1.10.N && git tag 1.10.N && git push origin 1.10.N` |
 | 6 | Wait for the release workflow | the same `release.yml` |
 | 7 | **After** the release exists: a pull request on `main` | the table above, plus `CHANGELOG.md` |
 
@@ -182,7 +188,9 @@ Details that matter:
   gate leaves 1.10.x keys out of the last two it accepts; a state frozen at 1.10.N would be refused.
   The branch keeps the state its tag carried.
 - **The branch needs the pipeline.** `release.yml` and `release-checks.mjs` run from the tag's tree,
-  so a change to them on `main` has to be cherry-picked too before it can apply to a 1.10.x tag.
+  so a change to them on `main` has to be cherry-picked too before it can apply to a 1.10.x tag. The
+  same goes for a dependency fix: the audit reads the tag's lockfile, and an advisory published after
+  the branch's last pick fails the tag even when `main` is clean.
 - **The nightly verdict is `main`'s.** The nightly commits to `main` only and its secrets are limited
   to `main`, so the file on the branch is always stale; a 1.10.x version reads `origin/main`'s, by the
   same rules, and still fails by default. It says the outside world is fine. It says nothing about
@@ -196,8 +204,6 @@ Details that matter:
 - **GitHub's Latest moves only upward.** `release.yml` asks `release-checks.mjs latest`: 1.10.N
   published after 1.11.0 is `--latest=false`, so the repository page stays on 1.11.x. The store does
   not read the flag.
-- **The website's FAQ stamp** names the release most users have, so a 1.10.N after 1.11.0 leaves it
-  alone.
 
 ## Writing the changelog
 

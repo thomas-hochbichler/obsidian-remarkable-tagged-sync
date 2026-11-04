@@ -35,7 +35,7 @@ const verdict = (ageHours) =>
 const FRESH = verdict(9);
 const STALE = verdict(24 * 30);
 
-function write(dir, { version, minApp = "1.5.7", versions, frozen = "1.10.0", section = version, nightly = FRESH }) {
+function write(dir, { version, minApp = "1.5.7", versions, frozen = "1.10.0", nightly = FRESH }) {
 	const json = (name, value) => writeFileSync(join(dir, name), `${JSON.stringify(value, null, "\t")}\n`);
 	json("manifest.json", { id: "fixture", version, minAppVersion: minApp });
 	json("package.json", { name: "fixture", version, license: LICENSE });
@@ -43,7 +43,7 @@ function write(dir, { version, minApp = "1.5.7", versions, frozen = "1.10.0", se
 	json("versions.json", versions);
 	mkdirSync(join(dir, "test-fixtures/legacy-state"), { recursive: true });
 	json("test-fixtures/legacy-state/meta.json", { version: frozen });
-	writeFileSync(join(dir, "CHANGELOG.md"), `## [Unreleased]\n\n## [${section}] - 2026-11-04\n\n### Fixed\n\n- A fix.\n`);
+	writeFileSync(join(dir, "CHANGELOG.md"), `## [Unreleased]\n\n## [${version}] - 2026-11-04\n\n### Fixed\n\n- A fix.\n`);
 	writeFileSync(join(dir, ".nightly-verdict.json"), nightly);
 }
 
@@ -221,11 +221,22 @@ describe("nightly gate: a maintenance release reads main's verdict", () => {
 		const { git, origin, root } = repository({ main: MAIN_1_11, branch: stale, head: MAINTENANCE });
 		git("tag", "1.10.1");
 		git("push", "--quiet", "origin", "1.10.1");
+		git("switch", "--quiet", "main");
+		git("commit", "--quiet", "--allow-empty", "-m", "More of main's history");
+		git("push", "--quiet", "origin", "main");
 		const checkout = join(root, "checkout");
 		execFileSync("git", ["clone", "--quiet", "--depth=1", "--branch=1.10.1", `file://${origin}`, checkout], { stdio: "ignore" });
 		expect(run(checkout, "nightly").status).toBe(0);
-		const depth = execFileSync("git", ["rev-list", "--count", "--all"], { cwd: checkout, encoding: "utf8" }).trim();
-		expect(depth).toBe("1");
+		const fetched = execFileSync("git", ["rev-list", "--count", "FETCH_HEAD"], { cwd: checkout, encoding: "utf8" }).trim();
+		expect(fetched).toBe("1");
+	});
+
+	it("says it could not read main's verdict when origin is out of reach", () => {
+		const { dir, git } = repository({ main: MAIN_1_11, branch: BRANCH_1_10_1, head: MAINTENANCE });
+		git("remote", "remove", "origin");
+		const { status, out } = run(dir, "nightly");
+		expect(out).toContain("could not be read or will not parse");
+		expect(status).toBe(1);
 	});
 
 	it("keeps reading the tree's own verdict for a release from main", () => {
@@ -254,7 +265,9 @@ describe("latest: whether GitHub's Latest moves to this release", () => {
 		expect(latest(version, current)).toBe(expected);
 	});
 
-	it("takes the Latest when the repository has none yet", () => {
-		expect(latest("1.10.1", "")).toBe("true");
+	it("refuses to guess when it is not told the current Latest", () => {
+		const dir = mkdtempSync(join(tmpdir(), "tagged-sync-latest-"));
+		roots.push(dir);
+		expect(run(dir, "latest", "1.10.1", "").status).toBe(2);
 	});
 });
