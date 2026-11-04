@@ -96,6 +96,7 @@ jobs:
       # `catastrophe`, or on one that has been `unknown` for 72 hours -- the default is fail, and
       # "pass" has to be written by a night that measured. Stable only: betas are usually the repair
       # for whatever turned the nightly red, so beta-release.yml deliberately does not run this.
+      # A 1.10.x tag reads `main`'s verdict: the nightly writes it nowhere else.
       - name: Nightly verdict
         run: node scripts/release-checks.mjs nightly
 
@@ -153,12 +154,20 @@ jobs:
       # published release is never missing an asset. Holds under immutable releases too.
       #
       # Title is the bare version: no `v`, no name.
+      #
+      # `--latest` is said out loud because a 1.10.x published after 1.11.0 must not take over the
+      # repository page, and the automatic rule weighs the date as well as the version. The store
+      # ignores the flag. Not being able to ask stops the run: no release exists yet, so re-tagging
+      # the same version repairs it.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           NOTES: ${{ runner.temp }}/release-notes.md
         run: |
+          current="$(gh release view --json tagName --jq .tagName)"
+          latest="$(node scripts/release-checks.mjs latest "${GITHUB_REF_NAME}" "$current")"
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file "$NOTES" \
+            --latest="$latest" \
             main.js manifest.json styles.css
