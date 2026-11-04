@@ -23,8 +23,9 @@ Settings → Rules.
 Details that matter:
 
 - **No version bump on a branch.** The version gate checks consistency across the four files,
-  not that a bump happened — bumping stays part of the release steps, on `main`. Exception: a
-  branch that raises `minAppVersion` sets the release's version with it, because the gate needs
+  not that a bump happened — bumping stays part of the release steps, on `main` (on `release/1.10.x`
+  for a maintenance release, see `docs/RELEASING.md`). Exception: a branch that raises
+  `minAppVersion` sets the release's version with it, because the gate needs
   `versions.json[version] == minAppVersion` and the old version's entry must keep its old floor.
 - **Changelog lines ride with the change**, under `## [Unreleased]`, in the same commit — exactly
   as on `main`. Exception: a feature built over several tickets on one branch gets its line from
@@ -148,6 +149,11 @@ report step above it prints the full picture without failing. `npm audit` has no
 unfixable runtime finding is answered with an `overrides` entry in `package.json` or by swapping
 the dependency. A red audit step is read, not retried: an advisory-endpoint outage exits with the
 same code as a finding.
+
+`minimatch` sits in `overrides` at 11.0.1 for this reason: GHSA-g3hv-75wg-m249 (moderate, dev tooling
+only) names everything below it, and ESLint's plugins ask for versions 3 to 10, so no update could
+clear it and no release could pass the gate. With the override ESLint reported the same findings over
+the same files as without it. Drop the entry once the tree asks for 11 on its own.
 
 Locally, the same two commands run on demand. There is no pre-push hook for them on purpose.
 

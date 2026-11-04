@@ -30,14 +30,6 @@ Obsidian to get this release.
 - ***Push to Readwise again*** brings back a book you deleted in Readwise: it syncs and pushes the
   note you are in as a new book.
 
-### Fixed
-
-- **Blue, orange and grey highlights on a reMarkable Paper Pro no longer black out the text.** A
-  line marked in one of these three colours came through in the PDF as a solid black bar, and in the
-  note and in Zotero as grey. They now keep their colour everywhere. A highlight in a colour the
-  plugin does not know yet is drawn yellow instead of black. Documents already synced pick up the fix
-  the next time you change them on the tablet.
-
 ### Changed
 
 - **The settings are reorganised:** the reMarkable connection first, then tag routing, vault output,
@@ -46,6 +38,16 @@ Obsidian to get this release.
   to choose a folder, and most settings can now be found from Obsidian's settings search.
 - The first sync after switching Readwise on re-renders every note once, and reads your margin notes
   and added pages again with your transcription backend; handwritten notebook transcripts are kept.
+
+## [1.10.1] - 2026-11-04
+
+### Fixed
+
+- **Blue, orange and grey highlights on a reMarkable Paper Pro no longer black out the text.** A
+  line marked in one of these three colours came through in the PDF as a solid black bar, and in the
+  note and in Zotero as grey. They now keep their colour everywhere. A highlight in a colour the
+  plugin does not know yet is drawn yellow instead of black. Documents already synced pick up the fix
+  the next time you change them on the tablet.
 
 ## [1.10.0] - 2026-10-30
 
