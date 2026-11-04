@@ -12,6 +12,7 @@
 //   node scripts/release-checks.mjs disabled
 //   node scripts/release-checks.mjs nightly [--if-release]   # ci.yml: only on a release commit
 //   node scripts/release-checks.mjs tag <version>           # before `git tag`: every gate the tag will meet
+//   node scripts/release-checks.mjs latest <version> [<current Latest>]   # release.yml: true or false
 //   node scripts/release-checks.mjs ocr-baseline [--write] [--accept <key> --because "<why>"]
 //   node scripts/release-checks.mjs perf-baseline [--write] [--accept <metric> --because "<why>"]
 //
@@ -48,7 +49,15 @@ const COVERAGE_BASELINE = ".coverage-baseline.json";
 const COVERAGE_SUMMARY = "coverage/coverage-summary.json";
 const NIGHTLY_VERDICT = ".nightly-verdict.json";
 
+// The maintenance line: 1.11.0 raises `minAppVersion` to 1.13.4, an older Obsidian stays on the
+// newest 1.10.x, and those releases ship from their own branch. 1.10.0 itself is `main`'s; the line
+// starts after it. See "Maintenance releases" in docs/RELEASING.md.
+const MAINTENANCE_LINE = /^1\.10\.[1-9]\d*$/;
+const MAINTENANCE_BRANCH = "release/1.10.x";
+const isMaintenance = (version) => MAINTENANCE_LINE.test(version);
+
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 
 const problems = [];
 const fail = (msg) => problems.push(msg);
@@ -133,10 +142,14 @@ function versionGate(tag) {
 	// It sits here rather than in a job of its own because `ci.yml` and `release.yml` both already run
 	// this gate: no new step, no new file to remember, and the failure shows up on the release PR in
 	// under a minute.
+	//
+	// Only `main`'s own releases count. A maintenance key lands on `main` after 1.11.0, and it can
+	// never be frozen there, because no tag points at `main` for it. Counted, two of them would push
+	// the 1.11.0 state out of the window; one before 1.11.0 would do the same to its release PR.
 	const legacyState = readJson("test-fixtures/legacy-state/meta.json");
-	// Insertion order is release order, and `v` is always the last key by the time the gate runs --
-	// the check above fails first if the key for this version is missing altogether.
-	const releases = Object.keys(versions);
+	// Insertion order is release order, and `v` is `main`'s last key by the time the gate runs -- the
+	// check above fails first if the key for this version is missing altogether.
+	const releases = Object.keys(versions).filter((key) => !isMaintenance(key));
 	const accepted = releases.slice(-2);
 	if (accepted.includes(legacyState.version)) ok(`test-fixtures/legacy-state produced by ${legacyState.version}`);
 	else
@@ -494,20 +507,47 @@ function disabledTests() {
 // turn `main` red for a reason no commit caused, but a release PR that is going to fail on the tag
 // should fail on the PR -- 1.10.0 spent two tags finding out. Never on a beta, because a beta is
 // very often the fix for whatever made the nightly red.
+//
+// A maintenance release reads `main`'s verdict, under the same rules. The nightly commits to `main`
+// only and its secrets are limited to `main`, so the file on the branch goes stale the day the
+// branch is cut. Measuring the branch instead would pay for a night of cloud OCR per bugfix, and the
+// question that matters here is the outside world's: are the providers still there. What `main`'s
+// night cannot say is anything about the branch's own speed or Vision result, and a catastrophe that
+// only `main`'s newer code caused blocks the branch too; that is the price of a default that fails.
+
+/** Fetches a branch of `origin` and returns its tip. A release.yml checkout is one commit deep and stays that way. */
+function fetchBranch(branch) {
+	const shallow = git("rev-parse", "--is-shallow-repository") === "true";
+	git("fetch", "--quiet", "--no-tags", ...(shallow ? ["--depth=1"] : []), "origin", branch);
+	return git("rev-parse", "FETCH_HEAD");
+}
+
+function verdictOnMain() {
+	const tip = fetchBranch("main");
+	try {
+		return execFileSync("git", ["show", `${tip}:${NIGHTLY_VERDICT}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+	} catch {
+		// Not there. `null` is what the rules call a missing verdict.
+		return null;
+	}
+}
 
 function nightlyGate() {
+	const version = readJson("manifest.json").version;
+	const source = isMaintenance(version) ? `origin/main's ${NIGHTLY_VERDICT}, for maintenance release ${version}` : NIGHTLY_VERDICT;
+
 	let verdict = null;
 	try {
-		verdict = readJson(NIGHTLY_VERDICT);
+		verdict = isMaintenance(version) ? JSON.parse(verdictOnMain() ?? "null") : readJson(NIGHTLY_VERDICT);
 	} catch (e) {
 		if (e.code !== "ENOENT") {
-			console.error(`${NIGHTLY_VERDICT} will not parse: ${e.message}`);
+			console.error(`${source} will not parse: ${e.message}`);
 			process.exit(1);
 		}
 	}
 
 	const { problems: found, notes } = judgeVerdict(verdict, new Date());
-	console.log(`nightly verdict: ${NIGHTLY_VERDICT}, ${STALE_HOURS} h window\n`);
+	console.log(`nightly verdict: ${source}, ${STALE_HOURS} h window\n`);
 	for (const n of notes) ok(n);
 	for (const f of found) fail(f);
 	finish("nightly verdict");
@@ -529,11 +569,12 @@ function isReleaseCommit() {
 // Step 6 of docs/RELEASING.md, before `git tag`: every gate release.yml will run on the tag's tree,
 // plus the two things only the tag can get wrong and no workflow can report. A tag on a commit whose
 // message carries a skip marker starts no workflow at all -- GitHub skips every one for that push,
-// and the nightly's verdict commit carries one -- and a tag on a commit that is not `origin/main`
-// points at something that is not on `main`. 1.10.0 needed three tags for exactly these reasons.
+// and the nightly's verdict commit carries one -- and a tag on a commit that is not the tip of the
+// version's branch points at something that is not on it. 1.10.0 needed three tags for exactly these
+// reasons. A version has one branch: `main`, or for the maintenance line its own, so 1.10.1 on `main`
+// and 1.11.0 on the maintenance branch are both refused.
 
 const SKIP_MARKERS = ["[skip ci]", "[ci skip]", "[no ci]", "[skip actions]", "[actions skip]"];
-const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 
 function tagPrecheck(version) {
 	if (!version) {
@@ -550,17 +591,36 @@ function tagPrecheck(version) {
 	if (marker) fail(`HEAD's commit message carries \`${marker}\` -- GitHub starts no workflow for a tag pushed on it; merge one ordinary commit and tag that`);
 	else ok("HEAD's commit message carries no skip marker");
 
-	git("fetch", "--quiet", "origin", "main");
+	const branch = isMaintenance(version) ? MAINTENANCE_BRANCH : "main";
+	let tip = null;
+	try {
+		tip = fetchBranch(branch);
+	} catch {
+		fail(`could not fetch origin/${branch} -- ${version} ships from that branch; does it exist?`);
+	}
 	const head = git("rev-parse", "HEAD");
-	const main = git("rev-parse", "FETCH_HEAD");
-	if (head === main) ok(`HEAD is origin/main (${head.slice(0, 7)})`);
-	else fail(`HEAD ${head.slice(0, 7)} is not origin/main ${main.slice(0, 7)} -- \`git switch main && git pull --ff-only\``);
+	if (head === tip) ok(`HEAD is origin/${branch} (${head.slice(0, 7)})`);
+	else if (tip !== null) fail(`HEAD ${head.slice(0, 7)} is not origin/${branch} ${tip.slice(0, 7)} -- \`git switch ${branch} && git pull --ff-only\``);
 
 	if (git("tag", "-l", version)) fail(`tag ${version} already exists locally -- a failed run's tag? see "When a release run fails" in docs/RELEASING.md`);
 	else ok(`no local tag ${version}`);
 
 	finish("tag pre-check");
 	console.log(`\nready: git tag ${version} && git push origin ${version}`);
+	if (isMaintenance(version)) console.log(`then: the pull request on main, without it the store does not offer ${version} -- see "Maintenance releases" in docs/RELEASING.md`);
+}
+
+// --- whether GitHub's Latest moves ------------------------------------------------------------------
+//
+// Prints `true` or `false` for `gh release create --latest=`. A release is Latest only when it is
+// higher than the current one, so 1.10.2 after 1.11.0 leaves the repository page on 1.11.0, and
+// 1.10.1 before it moves the page as any release does. The store never reads the flag.
+
+function latestFlag(version, current) {
+	const parse = (v) => v.split(".").map(Number);
+	const [a, b] = [parse(version), parse(current || "0.0.0")];
+	const first = a.findIndex((n, i) => n !== b[i]);
+	console.log(String(first !== -1 && a[first] > b[first]));
 }
 
 // --- the OCR baseline ---------------------------------------------------------------------------
@@ -729,6 +789,9 @@ switch (command) {
 	case "tag":
 		tagPrecheck(rest[0]);
 		break;
+	case "latest":
+		latestFlag(rest[0], rest[1]);
+		break;
 	case "ocr-baseline":
 		ocrBaseline(rest.includes("--write"), flag("--accept") === undefined ? [] : [flag("--accept")], flag("--because") ?? "");
 		break;
@@ -736,6 +799,6 @@ switch (command) {
 		perfBaseline(rest.includes("--write"), flag("--accept") === undefined ? [] : [flag("--accept")], flag("--because") ?? "");
 		break;
 	default:
-		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly|tag|ocr-baseline|perf-baseline> [...]");
+		console.error("usage: release-checks.mjs <version|changelog|lint|coverage|badges|disabled|nightly|tag|latest|ocr-baseline|perf-baseline> [...]");
 		process.exit(2);
 }

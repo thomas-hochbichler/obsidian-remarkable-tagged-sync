@@ -31,9 +31,10 @@ Details that matter:
 - **The pre-check is step 6, not optional.** `release-checks.mjs tag` runs the version, changelog
   and nightly gates on the tree the tag will carry, and refuses two commits no workflow can
   report on: one whose message carries a skip marker (the nightly's verdict commit — GitHub then
-  starts *no* workflow for the tag push, silently) and one that is not `origin/main`. If the
-  nightly landed after your release commit, merge one ordinary commit and tag that. 1.10.0 spent
-  three tags on these before the check existed.
+  starts *no* workflow for the tag push, silently) and one that is not `origin/main` (for a 1.10.x
+  version: `origin/release/1.10.x`, see *Maintenance releases*). If the nightly landed after your
+  release commit, merge one ordinary commit and tag that. 1.10.0 spent three tags on these before
+  the check existed.
 
 - **Bump `package-lock.json` by running `npm install`** (or `npm i --package-lock-only`) after
   editing `package.json` — never by hand-editing it. Two version fields and the license must all
@@ -139,6 +140,64 @@ The same applies after regenerating `src/kaitai/rmv6-generated.js`, which is lin
 
 ⚠️ A green local lint does **not** guarantee a green store review. The store's scanner ignores
 this repo's ESLint config and its rule set is not published.
+
+## Maintenance releases (1.10.x)
+
+**Why the line exists.** 1.11.0 raises `minAppVersion` to 1.13.4. An Obsidian below that silently
+stays on the newest 1.10.x: the store tells it nothing, so a bug there can only be fixed from a
+1.10.x release. The line lives on the branch `release/1.10.x`, cut from tag `1.10.0`, and stays for
+six months after 1.11.0 ships; then it is decided again.
+
+**Which fixes qualify.** On demand, per bug: reported by a user below 1.13, or severe (data loss,
+security, wrong rendering). Not every fix.
+
+**How the store finds it.** Obsidian (read in 1.15.0's `app.js`) reads `manifest.json` from the
+default branch and offers that version whenever its `minAppVersion` fits the app. Only when it does
+not fit does it read `versions.json`, where it takes the highest key that fits; key order does not
+matter. So **a release on the branch is invisible until `main` says so**, and what `main` has to say
+depends on whether 1.11.0 is there yet:
+
+| `main`'s manifest | An Obsidian below 1.13.4 gets | `main` needs |
+|---|---|---|
+| still 1.10.x (before 1.11.0) | the manifest's version, `versions.json` is never read | all four version files at 1.10.N |
+| 1.11.0 or later | the highest fitting `versions.json` key | only the key `"1.10.N": "1.5.7"` |
+
+The steps:
+
+| # | Step | Command / file |
+|---|---|---|
+| 1 | The fix lands on `main` first, changelog line under `## [Unreleased]`. Directly on the branch only when the code no longer exists on `main` | the usual pull request |
+| 2 | Cherry-pick it onto the branch | `git switch release/1.10.x && git pull --ff-only && git cherry-pick <sha>` |
+| 3 | Bump the four files to 1.10.N (`"1.10.N": "1.5.7"`, the floor stays), rename the changelog heading, commit | as in the eight steps; no pull request, the branch has no ruleset |
+| 4 | Push and wait for the branch's CI to go green | `git push && gh run watch` |
+| 5 | Pre-check, tag, push the tag | `node scripts/release-checks.mjs tag 1.10.N && git tag 1.10.N && git push origin 1.10.N` |
+| 6 | Wait for the release workflow | the same `release.yml` |
+| 7 | **After** the release exists: a pull request on `main` | the table above, plus `CHANGELOG.md` |
+
+Details that matter:
+
+- **Step 7 comes last.** The store downloads from `releases/download/<version>/`, so `main` naming a
+  version with no release yet breaks installing and updating for everyone it is offered to.
+- **Skip `npm run freeze-state`.** `main`'s fixture is frozen from `main`'s releases, and the version
+  gate leaves 1.10.x keys out of the last two it accepts; a state frozen at 1.10.N would be refused.
+  The branch keeps the state its tag carried.
+- **The branch needs the pipeline.** `release.yml` and `release-checks.mjs` run from the tag's tree,
+  so a change to them on `main` has to be cherry-picked too before it can apply to a 1.10.x tag.
+- **The nightly verdict is `main`'s.** The nightly commits to `main` only and its secrets are limited
+  to `main`, so the file on the branch is always stale; a 1.10.x version reads `origin/main`'s, by the
+  same rules, and still fails by default. It says the outside world is fine. It says nothing about
+  the branch's own speed or Vision result, which is one more reason for main first: the fix has been
+  through a night there if it has waited for one. A catastrophe on `main` blocks the branch too, even
+  one only `main`'s newer code caused: repair `main`, re-run the nightly, then tag.
+- **`CHANGELOG.md` on `main` records every 1.10.N.** The section on the branch is the release body,
+  and `main`'s file is the one people read. In the pull request of step 7, move the line from
+  `## [Unreleased]` into a `## [1.10.N] - <date>` section in version order (below 1.11.0's); left
+  where it is, it would also be published as part of the next release from `main`.
+- **GitHub's Latest moves only upward.** `release.yml` asks `release-checks.mjs latest`: 1.10.N
+  published after 1.11.0 is `--latest=false`, so the repository page stays on 1.11.x. The store does
+  not read the flag.
+- **The website's FAQ stamp** names the release most users have, so a 1.10.N after 1.11.0 leaves it
+  alone.
 
 ## Writing the changelog
 

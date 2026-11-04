@@ -316,3 +316,175 @@
       layer: unit
       file: scripts/bundled-scripts.test.mjs
       test: "the scripts that bundle > resolves every import of check:text-layer"
+
+- feature: R12
+  name: A 1.10.x maintenance release ships from its own branch, through the same gates
+  code: scripts/release-checks.mjs
+  scenarios:
+    - id: R12.1
+      scenario: The 1.11.0 release PR, with state 1.10.0 frozen and a 1.10.1 key already on `main` before 1.11.0
+      expect: The version gate passes. Counted as a release, the maintenance key would push the only legitimate state out of the last two keys, and no freeze could repair it because no tag on `main` names 1.10.1
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "version gate: a 1.10.x key on main > does not push the frozen state out of the 1.11.0 release PR"
+
+    - id: R12.2
+      scenario: '`main` after the 1.11.0 freeze, with two maintenance keys landed behind 1.11.0'
+      expect: The version gate passes. The ticket asked whether the newest-key assumption survives keys out of version order, and it did not
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "version gate: a 1.10.x key on main > does not push the 1.11.0 freeze out when two keys land after 1.11.0"
+
+    - id: R12.3
+      scenario: 1.12.0 with a state frozen at 1.10.0, a maintenance key in between
+      expect: Refused, naming 1.11.0 or 1.12.0. Leaving maintenance keys out must not turn into a way to skip a freeze
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "version gate: a 1.10.x key on main > does not buy a state two main releases old any extra time"
+
+    - id: R12.4
+      scenario: The release commit on `release/1.10.x`, whose state is the one the 1.10.0 tag carried
+      expect: The version gate passes; the branch never freezes, so `main`'s rule has to hold there as it stands
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "version gate: a 1.10.x key on main > passes on the maintenance branch, whose state stays where main froze it"
+
+    - id: R12.5
+      scenario: Tag pre-check for 1.10.1 with HEAD on the tip of `release/1.10.x`
+      expect: Passes and says which branch it compared
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "tag pre-check: where a version may be tagged > lets 1.10.1 through on the tip of release/1.10.x"
+
+    - id: R12.6
+      scenario: Tag pre-check for 1.10.1 with HEAD on `main`
+      expect: Refused. Before 1.11.0 the files on `main` could look exactly right for it, and a tag there would ship everything `main` has collected since 1.10.0
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "tag pre-check: where a version may be tagged > refuses 1.10.1 on main, because it ships from its own branch"
+
+    - id: R12.7
+      scenario: Tag pre-check for 1.10.1 before `release/1.10.x` exists on `origin`
+      expect: Refused with a sentence that names the branch, not a stack trace from git
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "tag pre-check: where a version may be tagged > says what is wrong when release/1.10.x does not exist yet"
+
+    - id: R12.8
+      scenario: Tag pre-check for 1.10.1 on a local commit not yet pushed to the branch
+      expect: Refused. A tag there would point at something the branch does not hold
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "tag pre-check: where a version may be tagged > refuses 1.10.1 on a commit release/1.10.x does not have yet"
+
+    - id: R12.9
+      scenario: Tag pre-check for 1.11.0 with HEAD on the maintenance branch
+      expect: Refused. Every other version still ships from `main` and only from there
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "tag pre-check: where a version may be tagged > refuses 1.11.0 on the maintenance branch, because anything else still ships from main"
+
+    - id: R12.10
+      scenario: Tag pre-check for 1.11.0 on the tip of `main`
+      expect: Passes, as it always did
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "tag pre-check: where a version may be tagged > still lets 1.11.0 through on the tip of main"
+
+    - id: R12.11
+      scenario: Tag pre-check for 1.10.0 itself on `main`
+      expect: Passes. The line starts after 1.10.0, whose own release and state belong to `main`
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "tag pre-check: where a version may be tagged > still ships 1.10.0 itself from main: the line starts after it"
+
+    - id: R12.12
+      scenario: A 1.10.x release whose own verdict file is a month old, with last night's verdict on `main`
+      expect: Passes. The nightly writes to `main` only, so the branch's file is always stale and would block every maintenance release
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "nightly gate: a maintenance release reads main's verdict > passes on main's fresh verdict although the branch's own file is old"
+
+    - id: R12.13
+      scenario: A 1.10.x release with a fresh file on its branch and a stale verdict on `main`
+      expect: Blocked. The rules are the same ones, only the source differs
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "nightly gate: a maintenance release reads main's verdict > fails on main's stale verdict although the branch's own file is fresh"
+
+    - id: R12.14
+      scenario: '`main` carries no verdict file at all'
+      expect: Blocked. "Pass" still has to be written by a night that measured
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "nightly gate: a maintenance release reads main's verdict > fails when main has no verdict at all: the default is still fail"
+
+    - id: R12.15
+      scenario: CI's `--if-release` on the branch's release commit, before the tag
+      expect: The gate runs against `main`'s verdict, so a bad night stops the branch in a minute rather than on the tag
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "nightly gate: a maintenance release reads main's verdict > runs on the branch's release commit in CI, against main's verdict"
+
+    - id: R12.16
+      scenario: release.yml's one-commit checkout of the tag
+      expect: Reads `main`'s verdict, and fetching it does not drag `main`'s history into the checkout
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "nightly gate: a maintenance release reads main's verdict > reads main's verdict from release.yml's one-commit checkout of the tag, and leaves it shallow"
+
+    - id: R12.17
+      scenario: A release from `main` with a stale verdict in its own tree and a fresh one on `origin`
+      expect: Blocked on its own tree, as before. The nightly gate reads the tag's tree for everything but the maintenance line
+      layer: integration
+      file: scripts/release-checks.test.mjs
+      test: "nightly gate: a maintenance release reads main's verdict > keeps reading the tree's own verdict for a release from main"
+
+    - id: R12.18
+      scenario: 1.10.2 published while 1.11.0 is Latest
+      expect: '`--latest=false`. The repository page stays on the release most people should read about'
+      layer: unit
+      file: scripts/release-checks.test.mjs
+      test: "latest: whether GitHub's Latest moves to this release > 1.10.2 over a Latest of 1.11.0 is false"
+
+    - id: R12.19
+      scenario: 1.10.1 published while 1.10.0 is Latest
+      expect: '`--latest=true`. Until 1.11.0 exists it is simply the newest release'
+      layer: unit
+      file: scripts/release-checks.test.mjs
+      test: "latest: whether GitHub's Latest moves to this release > 1.10.1 over a Latest of 1.10.0 is true"
+
+    - id: R12.20
+      scenario: 1.11.0 published while a 1.10.x is Latest
+      expect: '`--latest=true`'
+      layer: unit
+      file: scripts/release-checks.test.mjs
+      test: "latest: whether GitHub's Latest moves to this release > 1.11.0 over a Latest of 1.10.2 is true"
+
+    - id: R12.21
+      scenario: 1.10.10 over 1.10.9
+      expect: 'Compared as numbers: a string comparison would call 1.10.10 the older one'
+      layer: unit
+      file: scripts/release-checks.test.mjs
+      test: "latest: whether GitHub's Latest moves to this release > 1.10.10 over a Latest of 1.10.9 is true"
+
+    - id: R12.22
+      scenario: 1.10.9 over 1.10.10
+      expect: The same comparison, the other way round
+      layer: unit
+      file: scripts/release-checks.test.mjs
+      test: "latest: whether GitHub's Latest moves to this release > 1.10.9 over a Latest of 1.10.10 is false"
+
+    - id: R12.23
+      scenario: 2.0.0 over 1.99.99
+      expect: The first differing part decides
+      layer: unit
+      file: scripts/release-checks.test.mjs
+      test: "latest: whether GitHub's Latest moves to this release > 2.0.0 over a Latest of 1.99.99 is true"
+
+    - id: R12.24
+      scenario: '`gh release view` found no release, so the current Latest is empty'
+      expect: '`--latest=true`. The workflow must not fail on the question'
+      layer: unit
+      file: scripts/release-checks.test.mjs
+      test: "latest: whether GitHub's Latest moves to this release > takes the Latest when the repository has none yet"
