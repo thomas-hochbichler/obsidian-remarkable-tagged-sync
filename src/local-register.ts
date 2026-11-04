@@ -28,7 +28,7 @@ import {
 	pathsForGeneration,
 	resolveLocalModel,
 } from "./local-model-runtime";
-import { keepTimingsOf, readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir } from "./local-model-settings";
+import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir, timingsFor } from "./local-model-settings";
 import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
 import { type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, offeredGeneration, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
@@ -50,6 +50,9 @@ const PLUGIN_ID = "remarkable-tagged-sync";
 /** What the note-contract hint says while this backend is selected (§7.6). */
 export const LOCAL_NOTE_CONTRACT = "Transcripts keep headings and lists as written on the page; tables come out as plain lines.";
 
+/** One model and where its files are. */
+type ModelOnDisk = NonNullable<ReturnType<typeof resolveLocalModel>>;
+
 /** The download in flight for this Obsidian session, if any. Never persisted; §5.5 forbids it. */
 let download: DownloadHandle | null = null;
 /**
@@ -57,9 +60,9 @@ let download: DownloadHandle | null = null;
  * newer one fetches it beside the working one, and the choice rule keeps naming the working one until
  * the new one is complete.
  */
-let downloadTarget: { paths: LocalModelPaths; generation: ModelGeneration } | null = null;
+let downloadTarget: ModelOnDisk | null = null;
 /** What the card is about while it shows this instance's download rather than what is on disk; null otherwise. */
-function downloadOnCard(): { paths: LocalModelPaths; generation: ModelGeneration } | null {
+function downloadOnCard(): ModelOnDisk | null {
 	const progress = download?.progress();
 	if (!progress || progress.phase === "done") return null;
 	if (progress.phase === "failed" && (progress.failure.kind === "cancelled" || progress.failure.kind === "busy")) return null;
@@ -242,7 +245,6 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	const platform = localModelPlatform();
 	if (!resolved || !platform || !context) return;
 	const { paths, generation } = resolved;
-	keepTimingsOf(ctx.settings, generation.dir);
 	// A partial of a model no build can finish any more is provably useless; anything complete is left
 	// exactly where it is, whether it is the model in use or the one to fall back to.
 	sweepUnfinishedDirectories(paths);
@@ -255,7 +257,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	const newer = offeredGeneration(generation, readModelDirectories(paths), context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
 	const shown = downloadOnCard() ?? resolved;
-	const copy = cardCopy(state, platform, ctx.settings, shown.generation);
+	const copy = cardCopy(state, platform, timingsFor(ctx.settings, generation.dir), shown.generation);
 
 	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
 	card.createEl("h4", { text: copy.heading });
@@ -485,8 +487,7 @@ if (offeredOnThisPlatform()) {
 
 		reTranscribeCaveat: (settings, unitCount) => {
 			const inUse = resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir);
-			if (inUse) keepTimingsOf(settings, inUse.generation.dir);
-			return reTranscribeCaveat(settings, unitCount);
+			return reTranscribeCaveat(inUse ? timingsFor(settings, inUse.generation.dir) : settings, unitCount);
 		},
 
 		backgroundConsent: {

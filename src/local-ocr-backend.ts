@@ -5,7 +5,7 @@
 
 import { splitAtTypedText, transcriptionPrompt } from "./llm-transcript";
 import type { ModelGeneration } from "./local-model-artefacts";
-import { keepTimingsOf, recordPageDuration } from "./local-model-settings";
+import { recordPageDuration, startTimingsFor } from "./local-model-settings";
 import type { BackendSettings } from "./ocr-registry";
 import { type OcrBackend, type OcrFraming, ocrImage, type OcrPageResult, type OcrResult, unitStatus } from "./ocr-backend";
 import type { RmPage } from "./rm-parser";
@@ -176,7 +176,7 @@ export class LocalOcrBackend implements OcrBackend {
 				// Pages only: the window estimates what a page costs, and a margin note is a few words that
 				// take a thirtieth of that -- thirty of them made a long re-transcribe look like minutes.
 				if (framing !== "note") {
-					keepTimingsOf(this.settings, this.generation.dir);
+					startTimingsFor(this.settings, this.generation.dir);
 					recordPageDuration(this.settings, outcome.durationMs);
 				}
 				if (outcome.text.trim() !== "") read.push(outcome.text.trim());

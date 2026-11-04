@@ -640,10 +640,10 @@
   scenarios:
     - id: C27.1
       scenario: Re-transcribe this note on a PDF with a digest, on a free backend
-      expect: No dialog; that document's rows are made due, other documents are not, and a sync starts. The old "kept as a digest" refusal is gone
+      expect: No dialog; that note's row is made due, a sibling of the same PDF and other documents are not, and a sync starts. The old "kept as a digest" refusal is gone
       layer: vault
       file: src/re-transcribe.test.ts
-      test: "reading a PDF's margin notes again > makes that document due and syncs, without asking on a free backend"
+      test: "reading a PDF's margin notes again > makes that note due and syncs, without asking on a free backend"
     - id: C27.2
       scenario: The same on a paid backend, answered no
       expect: The dialog names the note and the quota; a no starts no sync and leaves the rows as they were
@@ -664,16 +664,34 @@
       test: "reading a PDF's margin notes again > says there is nothing to read while the switch is off"
     - id: C27.5
       scenario: Re-transcribe all synced notes hands back PDFs with a digest
-      expect: Those documents are made due and a sync starts after the run, others stay
+      expect: Those notes are made due and a sync starts after the run, others stay, and no notice says "Re-transcribed 0"
       layer: vault
       file: src/re-transcribe.test.ts
-      test: "reading a PDF's margin notes again > for the whole vault > makes the documents it was handed due, and syncs"
+      test: "reading a PDF's margin notes again > for the whole vault > makes the notes it was handed due, and syncs, with no notice about nothing re-transcribed"
     - id: C27.6
       scenario: The whole-vault question, with margin notes on
-      expect: It says margin notes on PDFs are read again too
+      expect: It says margin notes on PDFs are read again too, except in notes edited by hand
       layer: vault
       file: src/re-transcribe.test.ts
-      test: "reading a PDF's margin notes again > for the whole vault > says so in the question"
+      test: "reading a PDF's margin notes again > for the whole vault > says so in the question, and names the notes it leaves out"
+    - id: C27.13
+      scenario: A whole-vault run with margin notes off
+      expect: The question does not promise them, and no sync starts for them
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "reading a PDF's margin notes again > for the whole vault > neither promises nor reads them while the switch is off"
+    - id: C27.15
+      scenario: The whole-vault pre-scan meets a note gone from the vault
+      expect: No digest to keep, so its pages count toward the bar like any other
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "the text layer (searchable PDF) > re-transcribe > a PDF whose margin notes are kept as a digest > counts the pages of a note gone from the vault"
+    - id: C27.14
+      scenario: Making named notes due
+      expect: Only those rows lose their render version, not the rest of their document; a key that is gone adds nothing
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "invalidateRows > makes only the named rows due, not the rest of their document"
     - id: C27.7
       scenario: A whole-vault run the user stopped
       expect: No sync starts behind the user's back, and nothing is made due

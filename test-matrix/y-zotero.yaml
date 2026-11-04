@@ -4023,22 +4023,58 @@
       test: "the Zotero section > Into Zotero > draws nothing again when the field is left with the connection as it was"
     - id: Y36.4
       scenario: "*Write text to Zotero* or *Add the render to Zotero* switched on"
-      expect: 'Saved, and every sync-index row of a Zotero-linked document loses its render version; unlinked documents keep theirs (§10 P7)'
+      expect: 'Saved, with the old values recorded on a vault without them; no document is due yet, the next sync decides (Y36.16, Readwise ticket 24 smoke test)'
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > Into Zotero > makes the Zotero-linked documents due once when Write text to Zotero is switched on"
+      test: "the Zotero section > Into Zotero > records the old values and makes no document due yet when Write text to Zotero is switched on"
     - id: Y36.5
       scenario: "*Add the render to Zotero* switched on"
       expect: 'Same as Y36.4'
       layer: unit
       file: src/settings-tab.test.ts
-      test: "the Zotero section > Into Zotero > makes the Zotero-linked documents due once when Add the render to Zotero is switched on"
+      test: "the Zotero section > Into Zotero > records the old values and makes no document due yet when Add the render to Zotero is switched on"
     - id: Y36.6
       scenario: "A Zotero switch turned off"
       expect: 'Saved; no document made due -- nothing is written while it is off'
       layer: unit
       file: src/settings-tab.test.ts
       test: "the Zotero section > Into Zotero > leaves every document as it is when a switch goes off"
+    - id: Y36.16
+      scenario: "A sync starts with a Zotero switch on that was off at the last one"
+      expect: 'Every row of a Zotero-linked document is made due, unlinked documents are not, and the new values are recorded (§10 P7)'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "settleZoteroSwitches > makes the linked documents due when a switch went on since the last sync"
+    - id: Y36.17
+      scenario: "A sync starts with *Add the render to Zotero* newly on"
+      expect: 'Same as Y36.16'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "settleZoteroSwitches > does the same when the render switch went on"
+    - id: Y36.18
+      scenario: "A Zotero switch was knocked off and straight back on before a sync"
+      expect: 'Nothing is due, so no margin note is read and nothing uploaded again'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "settleZoteroSwitches > does nothing when the switches are back where the last sync left them"
+    - id: Y36.19
+      scenario: "A sync starts with a Zotero switch off that was on at the last one"
+      expect: 'No document is due, and the new value is recorded, so switching on later counts'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "settleZoteroSwitches > only records a switch that went off"
+    - id: Y36.20
+      scenario: "A vault from before the values were recorded reaches its first sync"
+      expect: 'The values are recorded and no document is due'
+      layer: unit
+      file: src/sync-engine.test.ts
+      test: "settleZoteroSwitches > only remembers the switches on a vault that never recorded them"
+    - id: Y36.21
+      scenario: "The plugin starts a sync after a Zotero switch went on"
+      expect: 'The linked document is made due before the source opens'
+      layer: vault
+      file: src/re-transcribe.test.ts
+      test: "the switch for margin notes, at the start of a sync > makes the Zotero-linked documents due when a Zotero switch went on"
     - id: Y36.7
       scenario: "Invalidating renders for named documents"
       expect: 'Every active row of those documents (page rows too) loses its render version; other rows keep theirs'

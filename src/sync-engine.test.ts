@@ -23,6 +23,7 @@ import {
 	collectHighlights,
 	EMPTY_SYNC_INDEX,
 	invalidateRenders,
+	invalidateRows,
 	LEGACY_OCR_RETRY,
 	markLegacyOcrLosses,
 	pendingOcrRetries,
@@ -34,6 +35,7 @@ import {
 	reTranscribeNote,
 	runSync,
 	settleMarginNotesChoice,
+	settleZoteroSwitches,
 	type SyncApi,
 	type SyncIndex,
 	type SyncIndexRow,
@@ -3814,12 +3816,27 @@ describe("the text layer (searchable PDF)", () => {
 			it("sends no page in a whole-vault run, and hands the document back to be read by a sync", async () => {
 				const { noteStore, index } = await syncedBook();
 				const { deps, ocrBackend } = await rerun(noteStore);
+				const totals: number[] = [];
 
-				const result = await reTranscribeAll(deps, index);
+				const result = await reTranscribeAll({ ...deps, onProgress: (progress) => progress.phase === "working" && totals.push(progress.total) }, index);
 
 				expect(vi.mocked(ocrBackend.recognize)).not.toHaveBeenCalled();
 				expect(result.updated).toBe(0);
-				expect(result.digestDocIds).toEqual(["doc-1"]);
+				expect(result.digestRowKeys).toEqual([PDF_KEY]);
+				// The bar counts what the run will do, and it will not read this PDF's pages.
+				expect(totals).toEqual([]);
+			});
+
+			// No note to read means no digest to keep, so it is read like any other.
+			it("counts the pages of a note gone from the vault", async () => {
+				const { noteStore, index } = await syncedBook();
+				const { deps } = await rerun(noteStore);
+				vi.mocked(noteStore.read).mockResolvedValue(null);
+				const totals: number[] = [];
+
+				await reTranscribeAll({ ...deps, onProgress: (progress) => progress.phase === "working" && totals.push(progress.total) }, index);
+
+				expect(totals.length).toBeGreaterThan(0);
 			});
 
 			// A sync never overwrites a note edited by hand, so reading its margin notes would pay for nothing.
@@ -3828,7 +3845,7 @@ describe("the text layer (searchable PDF)", () => {
 				await noteStore.write(path, (await noteStore.read(path))!.replace("## Digest", "## Digest\ncorrected by hand"));
 				const { deps } = await rerun(noteStore);
 
-				expect((await reTranscribeAll(deps, index)).digestDocIds).toEqual([]);
+				expect((await reTranscribeAll(deps, index)).digestRowKeys).toEqual([]);
 			});
 
 			it("says so for one note, untouched or edited by hand", async () => {
@@ -3866,6 +3883,26 @@ describe("the text layer (searchable PDF)", () => {
 	});
 });
 
+describe("invalidateRows", () => {
+	// A whole document would take a hand-edited sibling with it: a sync skips that row and never restores
+	// its version, so the document would reopen, and its other notes be read again, on every sync.
+	it("makes only the named rows due, not the rest of their document", () => {
+		const index = {
+			...EMPTY_SYNC_INDEX,
+			rows: {
+				mine: { status: "active", docId: "d", renderVersion: 7 } as SyncIndexRow,
+				sibling: { status: "active", docId: "d", renderVersion: 7 } as SyncIndexRow,
+			},
+		};
+
+		const { rows } = invalidateRows(index, ["mine", "gone"]);
+
+		expect(rows.mine.renderVersion).toBeUndefined();
+		expect(rows.sibling.renderVersion).toBe(7);
+		expect(Object.keys(rows)).toEqual(["mine", "sibling"]);
+	});
+});
+
 describe("settleMarginNotesChoice", () => {
 	const rows = (): SyncIndex => ({ ...EMPTY_SYNC_INDEX, rows: { a: { status: "active", docId: "d", renderVersion: 7 } as SyncIndexRow } });
 
@@ -3895,6 +3932,61 @@ describe("settleMarginNotesChoice", () => {
 
 		expect(data.syncIndex.rows.a.renderVersion).toBe(7);
 		expect(data.marginNotesSynced).toBe(true);
+	});
+});
+
+describe("settleZoteroSwitches", () => {
+	const rows = (): SyncIndex => ({
+		...EMPTY_SYNC_INDEX,
+		rows: {
+			linked: { status: "active", docId: "linked-doc", renderVersion: 7 } as SyncIndexRow,
+			other: { status: "active", docId: "other-doc", renderVersion: 7 } as SyncIndexRow,
+		},
+	});
+	const LINKED = ["linked-doc"];
+
+	it("makes the linked documents due when a switch went on since the last sync", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: true, addRender: false }, zoteroSwitchesSynced: { writeText: false, addRender: false } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(true);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBeUndefined();
+		expect(data.syncIndex.rows.other.renderVersion).toBe(7);
+		expect(data.zoteroSwitchesSynced).toEqual({ writeText: true, addRender: false });
+	});
+
+	it("does the same when the render switch went on", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: true, addRender: true }, zoteroSwitchesSynced: { writeText: true, addRender: false } };
+
+		settleZoteroSwitches(data, LINKED);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBeUndefined();
+	});
+
+	it("does nothing when the switches are back where the last sync left them", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: true, addRender: false }, zoteroSwitchesSynced: { writeText: true, addRender: false } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(false);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBe(7);
+	});
+
+	it("only records a switch that went off", () => {
+		const data = { syncIndex: rows(), zotero: { writeText: false, addRender: false }, zoteroSwitchesSynced: { writeText: true, addRender: false } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(true);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBe(7);
+		expect(data.zoteroSwitchesSynced).toEqual({ writeText: false, addRender: false });
+	});
+
+	it("only remembers the switches on a vault that never recorded them", () => {
+		const data: Parameters<typeof settleZoteroSwitches>[0] = { syncIndex: rows(), zotero: { writeText: true, addRender: true } };
+
+		expect(settleZoteroSwitches(data, LINKED)).toBe(true);
+
+		expect(data.syncIndex.rows.linked.renderVersion).toBe(7);
+		expect(data.zoteroSwitchesSynced).toEqual({ writeText: true, addRender: true });
 	});
 });
 

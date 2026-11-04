@@ -197,8 +197,8 @@ export interface SyncIndexRow {
 	 * note of a PDF that had none read (`DigestBuild.ocrRetryable`), `at` when the digest failed (ISO),
 	 * which a failure that repeats moves forward.
 	 *
-	 * Without it nothing ever did: the device is unchanged, so every gate skips the document, and
-	 * re-transcribe refuses a digest. Not retried unconditionally, because the failures that repeat
+	 * Without it nothing did on its own: the device is unchanged, so every gate skips the document. Not
+	 * retried unconditionally, because the failures that repeat
 	 * with the same model -- a truncation, a refusal -- would bill a metered backend for every note of
 	 * the PDF on every sync. Cleared by the next write that read everything; kept by one that read
 	 * nothing -- under Off, or a digest build that threw (`buildUnitDigest`).
@@ -1656,6 +1656,21 @@ export function invalidateRenders(index: SyncIndex, docIds?: readonly string[]):
 }
 
 /**
+ * Makes exactly these notes due, by their sync key. For a command that asked about one note: its whole
+ * document would take a hand-edited sibling with it, and a sync skips that row without restoring its
+ * version, so the document would reopen, and its other notes be read again, on every sync.
+ */
+export function invalidateRows(index: SyncIndex, keys: readonly string[]): SyncIndex {
+	const rows = { ...index.rows };
+	for (const key of keys) {
+		if (rows[key] === undefined) continue;
+		const { renderVersion: _dropped, ...withoutVersion } = rows[key];
+		rows[key] = withoutVersion;
+	}
+	return { ...index, rows };
+}
+
+/**
  * The start of every sync: makes every note due when *Your notes on PDFs* differs from what the last
  * sync ran with, and only then. Moved here from the switch itself, which invalidated on every change:
  * knocked off and straight back on, it read every margin note in the vault again -- on a paid backend,
@@ -1671,6 +1686,23 @@ export function settleMarginNotesChoice(data: { syncIndex: SyncIndex; marginNote
 }
 
 /**
+ * The same for the two *Into Zotero* switches: nothing changed on the tablet, so without this a switch
+ * would wait for a change before anything reached Zotero (Zotero spec §10 P7). Only a switch that went
+ * on makes the linked documents due; off stops new writes and leaves every document as it is.
+ */
+export function settleZoteroSwitches(
+	data: { syncIndex: SyncIndex; zotero: { writeText: boolean; addRender: boolean }; zoteroSwitchesSynced?: { writeText: boolean; addRender: boolean } },
+	linkedDocIds: readonly string[],
+): boolean {
+	const { writeText, addRender } = data.zotero;
+	const last = data.zoteroSwitchesSynced;
+	if (last?.writeText === writeText && last.addRender === addRender) return false;
+	if (last && ((writeText && !last.writeText) || (addRender && !last.addRender))) data.syncIndex = invalidateRenders(data.syncIndex, linkedDocIds);
+	data.zoteroSwitchesSynced = { writeText, addRender };
+	return true;
+}
+
+/**
  * The `ocrRetry.with` of a row marked by `markLegacyOcrLosses`. No backend's fingerprint is ever this,
  * so the first sync under a backend that reads anything finds the retry due at once (`ocrRetryDue`).
  */
@@ -1678,8 +1710,8 @@ export const LEGACY_OCR_RETRY = "legacy";
 
 /**
  * Marks for one retry every note that a version before `ocrRetry` existed wrote with handwriting it
- * could not read. Such a row carries no `ocrRetry`, so nothing ever read its PDF again: the device is
- * unchanged, and re-transcribe refuses a digest. A user on 1.8.3 still saw the notes 1.8.2 had lost,
+ * could not read. Such a row carries no `ocrRetry`, so no sync read its PDF again: the device is
+ * unchanged. A user on 1.8.3 still saw the notes 1.8.2 had lost,
  * and only switching "Handwritten notes" off and on read them -- a step nobody finds on their own.
  *
  * Run once per vault (`TaggedSyncData.legacyOcrLossesMarked`), not on every sync: a note can keep the
@@ -2883,8 +2915,14 @@ async function scanReTranscribe(
 				return 0;
 			}
 			const { pages: pageHashes } = await getDocumentFiles(deps.api, entry.id, entry.hash);
-			const docPages = orderedPages(content, new Set(pageHashes.keys()), isPdfBacked(content));
-			return (rowsByDoc.get(docId) ?? []).reduce((sum, row) => sum + reTranscribeSteps(row, docPages), 0);
+			const pdfBacked = isPdfBacked(content);
+			const docPages = orderedPages(content, new Set(pageHashes.keys()), pdfBacked);
+			let steps = 0;
+			for (const row of rowsByDoc.get(docId)!) {
+				// The run skips these, so the bar must not count them.
+				if (!keepsDigest(pdfBacked, (await deps.noteStore.read(row.notePath)) ?? "")) steps += reTranscribeSteps(row, docPages);
+			}
+			return steps;
 		} catch (error) {
 			// See `scanWorkload`: measuring must never be the thing that breaks a run.
 			console.warn(`Tagged Sync: could not measure "${entry.visibleName}" up front`, error);
@@ -3077,20 +3115,20 @@ function keepEarlierText(pages: TranscriptPage[], noteContent: string, folded: H
 
 /**
  * `unreadPages`: pages that failed and kept what their note had for them (see `reTranscribeRow`).
- * `digestDocIds`: PDFs whose margin notes only a sync can read again, because only a sync writes a
- * digest. Left out: a note edited by hand, which a sync would not write.
+ * `digestRowKeys`: PDF notes whose margin notes only a sync can read again, because only a sync writes
+ * a digest. Left out: a note edited by hand, which a sync would not write.
  */
 export interface ReTranscribeAllResult {
 	updated: number;
 	unreadPages: number;
 	index: SyncIndex;
 	stopped: boolean;
-	digestDocIds: string[];
+	digestRowKeys: string[];
 }
 
 /** A PDF note carrying a digest, whose transcript region refuses to grow (see `updateTranscript`). */
-function keepsDigest(pdfBacked: boolean, noteContent: string | null): boolean {
-	return pdfBacked && noteContent !== null && extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
+function keepsDigest(pdfBacked: boolean, noteContent: string): boolean {
+	return pdfBacked && extractManagedBlock(noteContent)?.includes("\n## Digest\n") === true;
 }
 
 /**
@@ -3117,12 +3155,12 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 
 	let updated = 0;
 	let unreadPages = 0;
-	const digestDocIds = new Set<string>();
+	const digestRowKeys: string[] = [];
 	const docIds = [...rowsByDoc.keys()];
 	const checkpoint = deps.saveIndex ? () => deps.saveIndex!({ ...index, rows: { ...rows } }) : async () => {};
 	// A stopped run still hands back every `blockHash` it refreshed: those notes were rewritten, and a
 	// caller that drops them would leave the next sync reading the plugin's own work as a hand edit.
-	const stopHere = (): ReTranscribeAllResult => ({ updated, unreadPages, index: { ...index, rows }, stopped: true, digestDocIds: [...digestDocIds] });
+	const stopHere = (): ReTranscribeAllResult => ({ updated, unreadPages, index: { ...index, rows }, stopped: true, digestRowKeys });
 
 	const workload = await scanReTranscribe(deps, rowsByDoc, entryById, report, shouldStop);
 	if (workload.stopped) return stopHere();
@@ -3154,7 +3192,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			const noteContent = (await noteStore.read(row.notePath)) ?? "";
 			// Before any page is sent: `updateTranscript` refuses this pair, so sending them paid for a no.
 			if (keepsDigest(pdfBacked, noteContent)) {
-				if (!blockEditedIn(noteContent, row)) digestDocIds.add(docId);
+				if (!blockEditedIn(noteContent, row)) digestRowKeys.push(row.syncKey);
 				continue;
 			}
 			const outcome = await reTranscribeRow(deps, row, { entry, pdfBacked, docPages, pageHashes, images }, noteContent, bar);
@@ -3167,7 +3205,7 @@ export async function reTranscribeAll(deps: ReTranscribeDeps, index: SyncIndex):
 			await checkpoint();
 		}
 	}
-	return { updated, unreadPages, index: { ...index, rows }, stopped: false, digestDocIds: [...digestDocIds] };
+	return { updated, unreadPages, index: { ...index, rows }, stopped: false, digestRowKeys };
 }
 
 /**
@@ -3249,9 +3287,9 @@ export async function reTranscribeNote(deps: ReTranscribeNoteDeps, row: SyncInde
 	// the note already carries decides whether a transcript may grow beside a digest at all.
 	const noteContent = (await noteStore.read(row.notePath)) ?? "";
 
-	// The free bail (spec §5.4). `updateTranscript` refuses this pair anyway, but only after every
-	// page has been rendered and sent -- so on a metered backend the user would pay for a guaranteed
-	// no. Both facts are already known here, so the refusal is moved in front of the money.
+	// The free bail (spec §5.4). `updateTranscript` refuses this pair, but only after every page has
+	// been rendered and sent -- so on a metered backend the user would pay for a guaranteed no. Both
+	// facts are already known here, so the caller hears before the money: only a sync can write a digest.
 	if (keepsDigest(pdfBacked, noteContent)) return unchanged(blockEditedIn(noteContent, row) ? "pdf-digest-edited" : "pdf-digest");
 
 	// The pages this run will actually send, which is both what the bar counts and what the dialog

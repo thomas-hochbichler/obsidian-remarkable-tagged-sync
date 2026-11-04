@@ -694,7 +694,7 @@ describe("reporting pages dropped for truncation", () => {
 		]);
 	});
 
-	it("does not send a margin note to a command that refuses it", async () => {
+	it("does not send a margin note to a command it does not need", async () => {
 		fetchMock.mockResolvedValueOnce(truncated());
 		const backend = new OpenAiCompatOcrBackend({ id: "ollama", baseURL: "http://localhost:11434/v1", model: "qwen3-vl:4b", fetchFn: fetchMock });
 

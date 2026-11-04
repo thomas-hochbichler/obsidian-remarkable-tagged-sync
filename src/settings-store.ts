@@ -126,6 +126,8 @@ export interface TaggedSyncData {
 	readwiseRecording?: true;
 	/** What *Your notes on PDFs* said at the last sync; absent until one recorded it (`settleMarginNotesChoice`). */
 	marginNotesSynced?: boolean;
+	/** What the two *Into Zotero* switches said at the last sync; absent until one recorded it (`settleZoteroSwitches`). */
+	zoteroSwitchesSynced?: { writeText: boolean; addRender: boolean };
 }
 
 /** Read field by field, never handed out whole -- see the `syncIndex` note in `migrateSettings`. */
@@ -274,5 +276,6 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		...(stored?.readwiseAccountClash === true ? { readwiseAccountClash: true as const } : {}),
 		...(stored?.readwiseRecording === true ? { readwiseRecording: true as const } : {}),
 		...(typeof stored?.marginNotesSynced === "boolean" ? { marginNotesSynced: stored.marginNotesSynced } : {}),
+		...(typeof stored?.zoteroSwitchesSynced?.writeText === "boolean" && typeof stored.zoteroSwitchesSynced.addRender === "boolean" ? { zoteroSwitchesSynced: stored.zoteroSwitchesSynced } : {}),
 	};
 }

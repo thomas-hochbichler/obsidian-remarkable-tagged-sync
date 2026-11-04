@@ -52,8 +52,9 @@ Obsidian to get this release.
   to choose a folder, and most settings can now be found from Obsidian's settings search.
 - While the local model downloads, its card says which model it is and which folder it goes to, and,
   when a working model stays in use meanwhile, that this one keeps transcribing.
-- **Switching *Your notes on PDFs* off and straight back on no longer reads every margin note again.**
-  The notes are rewritten at the next sync, and only if the switch then differs from the last one.
+- **A switch knocked off and straight back on no longer reads margin notes again.** *Your notes on PDFs*,
+  *Write text to Zotero* and *Add the render to Zotero* now take effect at the next sync, and only if they
+  then differ from the last one.
 - The first sync after switching Readwise on re-renders every note once, and reads your margin notes
   and added pages again with your transcription backend; handwritten notebook transcripts are kept.
 

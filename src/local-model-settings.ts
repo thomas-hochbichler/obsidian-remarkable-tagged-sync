@@ -60,12 +60,17 @@ export function recordPageDuration(blob: BackendSettings, durationMs: number): v
 }
 
 /**
- * Empties the window when it was measured on another model, or on one nobody wrote down.
- *
- * The window says what a page costs *this model*, and they differ by a factor of three: without this,
- * a card for a model that has never read a page quoted the last model's figure as this machine's.
+ * The settings as this model's figure should read them: without the window when that was measured on
+ * another model, or on one nobody wrote down. The window says what a page costs *one* model, and they
+ * differ by a factor of three: a card for a model that has never read a page quoted the last model's
+ * figure as this machine's. Only reads, so that looking at another model does not cost the figure.
  */
-export function keepTimingsOf(blob: BackendSettings, modelDir: string): void {
+export function timingsFor(blob: BackendSettings, modelDir: string): BackendSettings {
+	return blob.recentPageModel === modelDir ? blob : { ...blob, recentPageMs: [] };
+}
+
+/** Empties the window when this model is about to record into one measured on another. */
+export function startTimingsFor(blob: BackendSettings, modelDir: string): void {
 	if (blob.recentPageModel === modelDir) return;
 	blob.recentPageModel = modelDir;
 	blob.recentPageMs = [];

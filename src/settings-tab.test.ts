@@ -1514,9 +1514,9 @@ describe("the Zotero section", () => {
 			expect(takeSettings()).toEqual([]);
 		});
 
-		// Zotero spec §10 P7: nothing changed on the tablet, so without this the switch would wait for a
-		// change before anything reached Zotero -- and then only for that one document.
-		it.each(["Write text to Zotero", "Add the render to Zotero"])("makes the Zotero-linked documents due once when %s is switched on", async (name) => {
+		// Decided at the next sync (`settleZoteroSwitches`), so a switch knocked off and back on reads
+		// nothing again. What it needs from here is what the last sync ran with, on a vault without it.
+		it.each(["Write text to Zotero", "Add the render to Zotero"])("records the old values and makes no document due yet when %s is switched on", async (name) => {
 			const index = {
 				rows: {
 					"doc-1::sync": { docId: "doc-1", notePath: "a.md", status: "active", renderVersion: 33 },
@@ -1530,9 +1530,10 @@ describe("the Zotero section", () => {
 			toggle(drawn, name).toggle(true);
 			await settle();
 
-			const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> }; zotero: Record<string, boolean> };
-			expect([saved.syncIndex.rows["doc-1::sync"].renderVersion, saved.syncIndex.rows["doc-2::sync"].renderVersion]).toEqual([undefined, 33]);
+			const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> }; zotero: Record<string, boolean>; zoteroSwitchesSynced?: unknown };
+			expect([saved.syncIndex.rows["doc-1::sync"].renderVersion, saved.syncIndex.rows["doc-2::sync"].renderVersion]).toEqual([33, 33]);
 			expect(saved.zotero[name === "Write text to Zotero" ? "writeText" : "addRender"]).toBe(true);
+			expect(saved.zoteroSwitchesSynced).toEqual({ writeText: false, addRender: false });
 		});
 
 		it("leaves every document as it is when a switch goes off", async () => {

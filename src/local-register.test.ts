@@ -297,6 +297,20 @@ describe("a newer model's download that failed", () => {
 		return render({ preferredModelDir: OLDER.dir });
 	}
 
+	it.each([
+		["paused by the reader", { phase: "failed", failure: { kind: "cancelled" } }],
+		["refused because another run was busy", { phase: "failed", failure: { kind: "busy" } }],
+		["finished", { phase: "done" }],
+	])("draws what is on disk once the download was %s", (_name, progress) => {
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+		fetcher.progress = progress;
+
+		const page = render({ preferredModelDir: OLDER.dir });
+
+		expect(page.heading()).toBe("Local model — ready");
+		expect(page.row("Model files")?.desc).toBe(`/vault/${OLDER.dir}/model`);
+	});
+
 	it("resumes the newer model, not the one in use", () => {
 		const page = failWith({ kind: "network", message: "offline" });
 		expect(page.heading()).toBe("Download interrupted");
@@ -323,25 +337,29 @@ describe("a newer model's download that failed", () => {
 });
 
 describe("the speed figure, across a change of model", () => {
-	it("drops timings measured on another model", () => {
+	beforeEach(() => {
 		machine.directories = [complete(OLDER)];
 		machine.snapshot = readySnapshot(OLDER);
+	});
+
+	// Quoted as this machine's it would be false, and looking at another model must not cost the figure:
+	// going back to the first one would have to measure ten pages again.
+	it("does not quote timings measured on another model, and keeps them", () => {
 		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageModel: BEST.dir, recentPageMs: Array.from({ length: 10 }, () => 1_000) };
 
 		expect(render(blob).paragraphs().join(" ")).not.toContain("on this machine");
+
+		expect(blob.recentPageMs).toHaveLength(10);
+		expect(blob.recentPageModel).toBe(BEST.dir);
 	});
 
 	it("keeps timings measured on this model", () => {
-		machine.directories = [complete(OLDER)];
-		machine.snapshot = readySnapshot(OLDER);
 		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageModel: OLDER.dir, recentPageMs: Array.from({ length: 10 }, () => 9_000) };
 
 		expect(render(blob).paragraphs().join(" ")).toContain("9 seconds a page on this machine");
 	});
 
 	it("does not trust timings from before they named a model", () => {
-		machine.directories = [complete(OLDER)];
-		machine.snapshot = readySnapshot(OLDER);
 		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageMs: Array.from({ length: 10 }, () => 1_000) };
 
 		expect(render(blob).paragraphs().join(" ")).not.toContain("on this machine");

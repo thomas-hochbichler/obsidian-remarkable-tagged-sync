@@ -452,10 +452,10 @@
 
     - id: E25.20
       scenario: "A margin note's answer is cut off on an OpenAI-compatible server"
-      expect: "The warning starts \"Margin notes were left out\" and says to switch to a model that does not reason, then the next sync reads them again -- never Re-transcribe, which refuses a PDF note with a digest"
+      expect: "The warning starts \"Margin notes were left out\" and says to switch to a model that does not reason, then the next sync reads them again -- never Re-transcribe, which that does not need"
       layer: unit
       file: src/openai-compat-ocr-backend.test.ts
-      test: "reporting pages dropped for truncation > does not send a margin note to a command that refuses it"
+      test: "reporting pages dropped for truncation > does not send a margin note to a command it does not need"
 
     - id: E25.21
       scenario: "Anthropic rejects the key while reading a margin note"
@@ -512,7 +512,7 @@
 
     - id: E25.28
       scenario: "A model backend's warning says how the lost text is read again"
-      expect: "For a page, run \"Re-transcribe all synced notes\" -- the command's real name. For a margin note or a page added to a PDF, \"the next sync reads them again\" and never Re-transcribe, which refuses a PDF note with a digest"
+      expect: "For a page, run \"Re-transcribe all synced notes\" -- the command's real name. For a margin note or a page added to a PDF, \"the next sync reads them again\" and never Re-transcribe, which that does not need"
       layer: unit
       file: src/llm-transcript.test.ts
       test: "the words a model backend's warning is made of > names the re-transcribe command for a page and never for a margin note or an added page"
@@ -665,7 +665,7 @@
 
     - id: E27.3
       scenario: An OpenAI-compatible server never answers for a margin note
-      expect: After ten minutes the note fails with only the advice that applies to it -- a later sync will not pick it up on its own, try a different model, then the next sync reads it again. Not Re-transcribe, which refuses a PDF note with a digest, and not the tall-page hint, since a note is never a tall page
+      expect: After ten minutes the note fails with only the advice that applies to it -- a later sync will not pick it up on its own, try a different model, then the next sync reads it again. Not Re-transcribe, which that does not need, and not the tall-page hint, since a note is never a tall page
       layer: unit
       file: src/openai-compat-ocr-backend.test.ts
       test: "OpenAiCompatOcrBackend > gives a margin note that timed out only the advice that applies to it"

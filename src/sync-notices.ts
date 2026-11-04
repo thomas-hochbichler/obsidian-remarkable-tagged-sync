@@ -163,9 +163,8 @@ export interface PlatformGap {
  * whose Mac was fine, and it was shown once and never again, while this gap closes the moment the
  * download does. Said on every sync the user is watching until then.
  *
- * The way back differs by note: re-transcribe refuses an annotated PDF's digest, so sending every note
- * there left a PDF's margin notes unread -- the sync reads those again itself once the model is ready
- * (`SyncIndexRow.ocrRetry`).
+ * The way back differs by note: a PDF's margin notes need no command -- the sync reads those again
+ * itself once the model is ready (`SyncIndexRow.ocrRetry`).
  */
 export function modelNotReadyNotice(unavailableUnits: number): string | null {
 	if (unavailableUnits === 0) return null;

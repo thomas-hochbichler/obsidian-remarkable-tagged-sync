@@ -728,12 +728,33 @@
       file: src/local-register.test.ts
       test: "a newer model's download that failed > deletes only what it fetched, and leaves the working model, its engine and the backend alone"
 
-    - id: E39.22
-      scenario: The window of page times was measured on another model
-      expect: The card shows the derived figure, not the other model's as this machine's
+    - id: E39.27
+      scenario: A newer model's download was paused by the reader
+      expect: The card goes back to what is on disk, the working model and its directory
       layer: vault
       file: src/local-register.test.ts
-      test: "the speed figure, across a change of model > drops timings measured on another model"
+      test: "a newer model's download that failed > draws what is on disk once the download was paused by the reader"
+
+    - id: E39.28
+      scenario: A newer model's download was refused because another run was busy
+      expect: The same
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > draws what is on disk once the download was refused because another run was busy"
+
+    - id: E39.29
+      scenario: A newer model's download finished, seen before the rule picked it
+      expect: The same
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > draws what is on disk once the download was finished"
+
+    - id: E39.22
+      scenario: The window of page times was measured on another model
+      expect: The card shows the derived figure, not the other model's as this machine's, and the window stays for going back to that model
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the speed figure, across a change of model > does not quote timings measured on another model, and keeps them"
 
     - id: E39.23
       scenario: The window was measured on this model

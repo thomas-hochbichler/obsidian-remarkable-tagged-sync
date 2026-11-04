@@ -45,14 +45,13 @@ import {
 	startOverReadwise,
 	tokenFingerprint,
 } from "./readwise-push";
-import { invalidateRenders, pendingOcrRetries } from "./sync-engine";
+import { pendingOcrRetries } from "./sync-engine";
 import { folderLabel, type MappedTag, planTagRouting, REMOVAL_MESSAGE, type UnmappedTag } from "./tag-routing-view";
 import { DEFAULT_SEND_FOLDER } from "./zotero-send";
 import { describeZoteroError } from "./zotero-writeback";
 import { visionPlatformSupported, visionUnavailableReason } from "./vision-ocr-runtime";
 import { webConfigured, zoteroPageEntry, zoteroProAllowed } from "./zotero-settings";
 import type { ZoteroGroup } from "./zotero-client";
-import { linkedDocumentIds } from "./zotero-links";
 import { visionRunStats } from "./vision-ocr-backend";
 
 /**
@@ -259,7 +258,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * its object rather than mutating it, as the rows always have: a running sync may hold the old one.
 	 * A key that names nothing in `data.json` is refused: writing it would change the file's shape.
 	 *
-	 * Then the key's side effect: the two *Into Zotero* switches make the Zotero-linked documents due again; an automatic-sync change re-arms the
+	 * Then the key's side effect: an automatic-sync change re-arms the
 	 * timer, so it takes effect now rather than at the next launch; a Zotero connection switch draws the
 	 * page again, which is now about a different set of connections. The Readwise switch asks the line
 	 * again; another Readwise token forgets what readwise.io said about the old one and draws the page
@@ -273,15 +272,15 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		if (!(head in data) || (sub !== undefined && !(sub in (data[head] as object)))) throw new Error(`Tagged Sync: no setting "${key}"`);
 		const stored = key in SET_RULES ? SET_RULES[key](String(value ?? "")) : value;
 		if (this.getControlValue(key) === stored) return;
-		data[head] = sub === undefined ? stored : { ...(data[head] as Record<string, unknown>), [sub]: stored };
-		// The next sync rewrites the notes if the switch still differs then (`settleMarginNotesChoice`). A
-		// vault that has not recorded a value yet has the old one until then.
-		if (key === "marginNotes" && this.plugin.data.marginNotesSynced === undefined) this.plugin.data.marginNotesSynced = stored !== true;
-		// The device has not changed, so nothing would re-run without this, for what reaches Zotero (Zotero spec §10 P7): without it the switch would wait for a
-		// change on the tablet before anything reached Zotero. Off leaves every document as it is.
-		if ((key === "zotero.writeText" || key === "zotero.addRender") && stored === true) {
-			this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex, linkedDocumentIds(this.plugin.data.zoteroLinks));
+		// The next sync makes notes due if a switch still differs then (`settleMarginNotesChoice`,
+		// `settleZoteroSwitches`), so a switch knocked off and back on reads nothing again. A vault that
+		// has not recorded a value yet has the old one until then.
+		if (key === "marginNotes") this.plugin.data.marginNotesSynced ??= this.plugin.data.marginNotes;
+		if (key === "zotero.writeText" || key === "zotero.addRender") {
+			const { writeText, addRender } = this.plugin.data.zotero;
+			this.plugin.data.zoteroSwitchesSynced ??= { writeText, addRender };
 		}
+		data[head] = sub === undefined ? stored : { ...(data[head] as Record<string, unknown>), [sub]: stored };
 		if (TYPED_KEYS.has(key)) this.persistTyped();
 		else await this.plugin.saveData(this.plugin.data);
 		if (head === "autoSync") this.plugin.rearmAutoSyncInterval();

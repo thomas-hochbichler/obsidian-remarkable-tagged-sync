@@ -69,7 +69,7 @@ export function reTranscribeConfirmation(cost: ReTranscribeCost): string {
 		"Transcripts are now split by page, so you can tell which page a line came from. " +
 		"Handwriting is also read more accurately than it used to be, and typed text is transcribed too. " +
 		`This re-fetches each notebook from reMarkable${costCaveat}${cost.timeCaveat}. ` +
-		(cost.marginNotes ? "Margin notes on PDFs are read again too. " : "") +
+		(cost.marginNotes ? "Margin notes on PDFs are read again too, except in notes you edited by hand. " : "") +
 		// Last, after everything the decision is made on. The user this sentence is for is standing in
 		// front of a dialog about to spend a whole vault's worth of pages to repair one note -- which
 		// is exactly the moment the cheaper route is worth naming (selective-re-transcribe spec §9.1).

@@ -578,7 +578,7 @@
 
     - id: E15.15
       scenario: Two notes were synced while the downloaded model was selected and not yet on disk
-      expect: The sentence sends only the notebooks synced meanwhile to Re-transcribe all synced notes, and says the annotated PDFs are read again by the next sync on their own. Re-transcribe refuses a PDF's digest, so a reader sent there would wait for margin notes the command never reads
+      expect: The sentence sends only the notebooks synced meanwhile to Re-transcribe all synced notes, and says the annotated PDFs are read again by the next sync on their own, so a reader need not run anything for them
       layer: unit
       file: src/sync-notices.test.ts
       test: "modelNotReadyNotice > sends only the notebooks to re-transcribe, and says the PDFs need nothing"

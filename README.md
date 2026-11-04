@@ -211,8 +211,8 @@ edited that note by hand, because a sync leaves such a note alone, and when *You
 What the new reading changes also reaches [Zotero](#zotero) and [Readwise](#readwise), if you use them.
 
 **Tagged Sync for reMarkable: Re-transcribe all synced notes** does the same for every synced note in
-the vault, margin notes on PDFs included. That is the one to run after switching backends. It asks for
-confirmation first.
+the vault, margin notes on PDFs included, except in notes you edited by hand. That is the one to run
+after switching backends. It asks for confirmation first.
 
 Both re-fetch the notebook and rewrite the transcript region, leaving your own notes untouched. They
 also write the embedded PDF again, with the same name and the same pages, so that on a Mac its
