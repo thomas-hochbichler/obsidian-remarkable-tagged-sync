@@ -876,9 +876,10 @@ describe("vault output", () => {
 		expect((plugin.saves[0] as { attachmentsFolder: string }).attachmentsFolder).toBe("Notes/PDF");
 	});
 
-	it("re-renders every synced note when the handwriting switch moves", async () => {
-		// The device has not changed, so nothing would re-run without this: the switch decides what a
-		// note *contains*, and every already-synced note has to be rewritten to match.
+	it("records the old value when the handwriting switch moves, and rewrites no note yet", async () => {
+		// Decided at the next sync (`settleMarginNotesChoice`), not here: a switch knocked off and back on
+		// must not read every margin note again. What it needs from here is what the last sync ran with,
+		// on a vault that has not recorded that yet.
 		const { plugin, tab } = await tabWith({
 			syncIndex: { rows: { a: { notePath: "a.md", status: "active", renderVersion: 7 } } },
 		});
@@ -889,8 +890,9 @@ describe("vault output", () => {
 		await settle();
 
 		expect(plugin.data.marginNotes).toBe(true);
-		const saved = plugin.saves.at(-1) as { syncIndex: { rows: Record<string, { renderVersion?: number }> } };
-		expect(saved.syncIndex.rows.a.renderVersion).toBeUndefined();
+		const saved = plugin.saves.at(-1) as { marginNotesSynced?: boolean; syncIndex: { rows: Record<string, { renderVersion?: number }> } };
+		expect(saved.syncIndex.rows.a.renderVersion).toBe(7);
+		expect(saved.marginNotesSynced).toBe(false);
 	});
 
 	// An active trial -- the cheapest entitlement that unlocks Pro, with no key to fake.

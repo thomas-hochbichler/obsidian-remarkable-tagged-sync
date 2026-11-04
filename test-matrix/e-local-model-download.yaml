@@ -700,6 +700,69 @@
       file: src/local-model-card.test.ts
       test: "the states that carry a decided sentence > names the model while it downloads, while it is checked, and once it is paused"
 
+    - id: E39.18
+      scenario: A newer model downloads while a complete one stays in use
+      expect: The card says the working model keeps transcribing, not that notes arrive without a transcript
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > says the working model keeps transcribing while a newer one arrives"
+
+    - id: E39.19
+      scenario: A first download, with no model yet
+      expect: The card still says notes arrive without a transcript until it is done
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a download in flight > says notes arrive without a transcript while there is no model yet"
+
+    - id: E39.20
+      scenario: A newer model's download was interrupted, and Resume is pressed
+      expect: The newer model's download resumes, not one for the model in use
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > resumes the newer model, not the one in use"
+
+    - id: E39.21
+      scenario: A newer model's download failed verification, and Delete and start over is pressed
+      expect: Only its directory goes. The working model, the engine it needs, its pick and the selected backend stay
+      layer: vault
+      file: src/local-register.test.ts
+      test: "a newer model's download that failed > deletes only what it fetched, and leaves the working model, its engine and the backend alone"
+
+    - id: E39.22
+      scenario: The window of page times was measured on another model
+      expect: The card shows the derived figure, not the other model's as this machine's
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the speed figure, across a change of model > drops timings measured on another model"
+
+    - id: E39.23
+      scenario: The window was measured on this model
+      expect: The card quotes this machine's figure
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the speed figure, across a change of model > keeps timings measured on this model"
+
+    - id: E39.24
+      scenario: The window comes from a version that did not name a model
+      expect: It is not trusted, and the derived figure stands until ten pages are measured
+      layer: vault
+      file: src/local-register.test.ts
+      test: "the speed figure, across a change of model > does not trust timings from before they named a model"
+
+    - id: E39.25
+      scenario: The backend reads a page under a window of another model
+      expect: The window starts over, even if no card was ever drawn for this model
+      layer: unit
+      file: src/local-ocr-backend.test.ts
+      test: "timing > starts a new window on a model the window was not measured on"
+
+    - id: E39.26
+      scenario: This machine's figure is one second
+      expect: The Speed line says "1 second", not "1 seconds"
+      layer: unit
+      file: src/local-model-settings.test.ts
+      test: "estimateLine > says one second, not one seconds"
+
 
 - feature: E41
   name: What the dropdown says on a machine the model is not offered on

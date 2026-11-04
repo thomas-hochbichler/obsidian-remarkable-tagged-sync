@@ -124,6 +124,8 @@ export interface TaggedSyncData {
 	readwiseAccountClash?: true;
 	/** The backfill for the current recording has been started (Readwise spec §5). */
 	readwiseRecording?: true;
+	/** What *Your notes on PDFs* said at the last sync; absent until one recorded it (`settleMarginNotesChoice`). */
+	marginNotesSynced?: boolean;
 }
 
 /** Read field by field, never handed out whole -- see the `syncIndex` note in `migrateSettings`. */
@@ -271,5 +273,6 @@ export function migrateSettings(saved: unknown, env: SettingsEnv): TaggedSyncDat
 		...(typeof stored?.readwiseAccountBefore === "string" && stored.readwiseAccountBefore !== "" ? { readwiseAccountBefore: stored.readwiseAccountBefore } : {}),
 		...(stored?.readwiseAccountClash === true ? { readwiseAccountClash: true as const } : {}),
 		...(stored?.readwiseRecording === true ? { readwiseRecording: true as const } : {}),
+		...(typeof stored?.marginNotesSynced === "boolean" ? { marginNotesSynced: stored.marginNotesSynced } : {}),
 	};
 }

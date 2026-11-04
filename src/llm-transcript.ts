@@ -73,10 +73,9 @@ export function upperFirst(text: string): string {
  * What gets the scenes a sync left out read again once the settings changed, as the clause that ends
  * a warning.
  *
- * A page: the re-transcribe command. A margin note or a page added to a PDF: not that command -- it
- * refuses a PDF note with a digest (`reTranscribeNote`'s `pdf-digest`), so naming it sent the user to
- * a refusal. The sync itself tries a digest's lost scenes again once a different backend or model is
- * set (`SyncIndexRow.ocrRetry`).
+ * A page: the re-transcribe command. A margin note or a page added to a PDF needs no command: the sync
+ * itself tries a digest's lost scenes again once a different backend or model is set
+ * (`SyncIndexRow.ocrRetry`).
  */
 export function readAgain(framing: OcrFraming): string {
 	return framing === "page" ? `run "Re-transcribe all synced notes"` : "the next sync reads them again";

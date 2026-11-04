@@ -102,8 +102,8 @@ describe("the words a model backend's warning is made of", () => {
 		expect(upperFirst(pageCount(1, "note"))).toBe("Margin notes were");
 	});
 
-	// Re-transcribe refuses a PDF note with a digest, so naming it for a margin note sent the user to a
-	// refusal -- and for a page added to the PDF, which the digest reads too.
+	// A digest's lost scenes are the sync's to try again, so a margin note and a page added to the PDF
+	// need no command.
 	it("names the re-transcribe command for a page and never for a margin note or an added page", () => {
 		expect(readAgain("page")).toBe('run "Re-transcribe all synced notes"');
 		expect(readAgain("note")).not.toContain("Re-transcribe");

@@ -133,6 +133,13 @@ describe("estimateLine", () => {
 		expect(estimateLine("darwin", blob)).not.toContain(FIRST_PAGES_CAVEAT);
 	});
 
+	it("says one second, not one seconds", () => {
+		const blob = {};
+		for (let i = 0; i < ENOUGH_PAGES_TO_MEASURE; i++) recordPageDuration(blob, 1_000);
+
+		expect(estimateLine("darwin", blob)).toMatch(/^1 second a page on this machine/);
+	});
+
 	// What makes the derived figure honest is that it is provisional by construction, not by
 	// disclaimer: this machine overwrites it.
 	it("replaces the derived figure with this machine's own once it has one", () => {

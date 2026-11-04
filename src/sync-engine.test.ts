@@ -33,6 +33,7 @@ import {
 	reTranscribeAll,
 	reTranscribeNote,
 	runSync,
+	settleMarginNotesChoice,
 	type SyncApi,
 	type SyncIndex,
 	type SyncIndexRow,
@@ -3786,6 +3787,63 @@ describe("the text layer (searchable PDF)", () => {
 			expect(await invisibleWords(deps.attachmentStore, "tagged-sync/attachments/doc-1-page-a.pdf")).toEqual(["Rapoldeck ", "Hütte "]);
 		});
 
+		describe("a PDF whose margin notes are kept as a digest", () => {
+			const PDF_KEY = notebookSyncKey("doc-1", "sync");
+			const book = async () =>
+				fakeApi({
+					rootHash: "root-20-digest",
+					entries: [documentEntry({ fileType: "pdf", visibleName: "Book", tags: [{ name: "sync", timestamp: 0 }] })],
+					contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]) }) },
+					sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+					pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+				});
+
+			async function syncedBook() {
+				const first = { ...baseDeps(await book(), { sync: "Target" }), ocrBackend: fakeOcrBackend({ status: "ok", text: "my note", confidence: 88 }) };
+				const { index } = await runSync(first, EMPTY_SYNC_INDEX);
+				expect(await first.noteStore.read(index.rows[PDF_KEY].notePath)).toContain("## Digest");
+				return { noteStore: first.noteStore, index, path: index.rows[PDF_KEY].notePath };
+			}
+
+			const rerun = async (noteStore: NoteStore) => {
+				const ocrBackend = fakeOcrBackend({ status: "ok", text: "read again", confidence: 88 });
+				return { deps: { api: await book(), noteStore, attachmentStore: fakeAttachmentStore(), ocrBackend }, ocrBackend };
+			};
+
+			// The transcript region refuses a PDF's digest, so reading its pages first paid for a certain no.
+			it("sends no page in a whole-vault run, and hands the document back to be read by a sync", async () => {
+				const { noteStore, index } = await syncedBook();
+				const { deps, ocrBackend } = await rerun(noteStore);
+
+				const result = await reTranscribeAll(deps, index);
+
+				expect(vi.mocked(ocrBackend.recognize)).not.toHaveBeenCalled();
+				expect(result.updated).toBe(0);
+				expect(result.digestDocIds).toEqual(["doc-1"]);
+			});
+
+			// A sync never overwrites a note edited by hand, so reading its margin notes would pay for nothing.
+			it("does not hand back a note edited by hand", async () => {
+				const { noteStore, index, path } = await syncedBook();
+				await noteStore.write(path, (await noteStore.read(path))!.replace("## Digest", "## Digest\ncorrected by hand"));
+				const { deps } = await rerun(noteStore);
+
+				expect((await reTranscribeAll(deps, index)).digestDocIds).toEqual([]);
+			});
+
+			it("says so for one note, untouched or edited by hand", async () => {
+				const { noteStore, index, path } = await syncedBook();
+				const { deps, ocrBackend } = await rerun(noteStore);
+
+				expect((await reTranscribeNote(deps, index.rows[PDF_KEY], index)).outcome).toBe("pdf-digest");
+
+				await noteStore.write(path, (await noteStore.read(path))!.replace("## Digest", "## Digest\ncorrected by hand"));
+
+				expect((await reTranscribeNote(deps, index.rows[PDF_KEY], index)).outcome).toBe("pdf-digest-edited");
+				expect(vi.mocked(ocrBackend.recognize)).not.toHaveBeenCalled();
+			});
+		});
+
 		// An annotated PDF or a book gets no layer in 1.9.0 (spec §2.3), so there is nothing to write again.
 		it("writes no render for an annotated PDF", async () => {
 			const book = async () =>
@@ -3805,6 +3863,38 @@ describe("the text layer (searchable PDF)", () => {
 			expect(updated).toBe(1);
 			expect(vi.mocked(deps.attachmentStore.writeBinary)).not.toHaveBeenCalled();
 		});
+	});
+});
+
+describe("settleMarginNotesChoice", () => {
+	const rows = (): SyncIndex => ({ ...EMPTY_SYNC_INDEX, rows: { a: { status: "active", docId: "d", renderVersion: 7 } as SyncIndexRow } });
+
+	it("makes every note due when the switch differs from what the last sync ran with", () => {
+		const data = { syncIndex: rows(), marginNotes: true, marginNotesSynced: false };
+
+		expect(settleMarginNotesChoice(data)).toBe(true);
+
+		expect(data.syncIndex.rows.a.renderVersion).toBeUndefined();
+		expect(data.marginNotesSynced).toBe(true);
+	});
+
+	// The switch knocked off and straight back on: the notes already say what the switch says, and on a
+	// paid backend reading every margin note again would be a bill for a slip of the finger.
+	it("does nothing when the switch is back where the last sync left it", () => {
+		const data = { syncIndex: rows(), marginNotes: true, marginNotesSynced: true };
+
+		expect(settleMarginNotesChoice(data)).toBe(false);
+
+		expect(data.syncIndex.rows.a.renderVersion).toBe(7);
+	});
+
+	it("only remembers the switch on a vault that never recorded it", () => {
+		const data: { syncIndex: SyncIndex; marginNotes: boolean; marginNotesSynced?: boolean } = { syncIndex: rows(), marginNotes: true };
+
+		expect(settleMarginNotesChoice(data)).toBe(true);
+
+		expect(data.syncIndex.rows.a.renderVersion).toBe(7);
+		expect(data.marginNotesSynced).toBe(true);
 	});
 });
 

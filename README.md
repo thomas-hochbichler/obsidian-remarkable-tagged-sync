@@ -201,13 +201,18 @@ Two commands, depending on how much you want re-read.
 **Tagged Sync for reMarkable: Re-transcribe this note** re-reads just the note you have open. Use it
 to repair a single garbled transcript: on a paid backend it tells you how many pages that notebook
 is before it sends any of them, and if you have corrected that note by hand it asks first, because
-re-transcribing replaces what you wrote there. It says no in four cases — the open note was never
-synced from reMarkable, its notebook is no longer on your tablet, it is a PDF whose margin notes
-are [kept as a digest](#annotated-pdfs) rather than as a transcript, or the note has no transcript
+re-transcribing replaces what you wrote there. It says no in three cases — the open note was never
+synced from reMarkable, its notebook is no longer on your tablet, or the note has no transcript
 section to write into.
 
+On a PDF, your margin notes and added pages are [kept as a digest](#annotated-pdfs), so the command
+reads them again and starts a sync to write them; on a paid backend it asks first. It says no when you
+edited that note by hand, because a sync leaves such a note alone, and when *Your notes on PDFs* is off.
+What the new reading changes also reaches [Zotero](#zotero) and [Readwise](#readwise), if you use them.
+
 **Tagged Sync for reMarkable: Re-transcribe all synced notes** does the same for every synced note in
-the vault. That is the one to run after switching backends. It asks for confirmation first.
+the vault, margin notes on PDFs included. That is the one to run after switching backends. It asks for
+confirmation first.
 
 Both re-fetch the notebook and rewrite the transcript region, leaving your own notes untouched. They
 also write the embedded PDF again, with the same name and the same pages, so that on a Mac its

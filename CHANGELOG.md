@@ -32,13 +32,28 @@ Obsidian to get this release.
 - ***Push to Readwise again*** brings back a book you deleted in Readwise: it syncs and pushes the
   note you are in as a new book.
 
+### Fixed
+
+- ***Re-transcribe this note* now reads a PDF's margin notes again.** It used to refuse, and *Re-transcribe
+  all synced notes* did not reach them either, so a margin note misread by one backend stayed misread
+  after switching to a better one. Both now read them again through a sync; on a paid backend *Re-transcribe
+  this note* asks first. *Re-transcribe all synced notes* also no longer sends those PDFs' pages to the
+  backend for a transcript it could not write.
+- After a failed download of a newer local model, *Resume* and *Delete and start over* act on that model.
+  They used to act on the one in use, and deleting it took the working model and its engine with it.
+- The local model's speed figure belongs to the model it was measured on: it is measured anew after a
+  change of model, and says "1 second", not "1 seconds".
+
 ### Changed
 
 - **The settings are reorganised:** the reMarkable connection first, then tag routing, vault output,
   transcription and automatic sync; Zotero and Readwise each have their own page under
   *Integrations*, which shows whether they are set up. Unmapped tags show as compact tags you click
   to choose a folder, and most settings can now be found from Obsidian's settings search.
-- While the local model downloads, its card says which model it is and which folder it goes to.
+- While the local model downloads, its card says which model it is and which folder it goes to, and,
+  when a working model stays in use meanwhile, that this one keeps transcribing.
+- **Switching *Your notes on PDFs* off and straight back on no longer reads every margin note again.**
+  The notes are rewritten at the next sync, and only if the switch then differs from the last one.
 - The first sync after switching Readwise on re-renders every note once, and reads your margin notes
   and added pages again with your transcription backend; handwritten notebook transcripts are kept.
 

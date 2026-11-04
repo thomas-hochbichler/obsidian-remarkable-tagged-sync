@@ -59,6 +59,18 @@ export function recordPageDuration(blob: BackendSettings, durationMs: number): v
 	blob.recentPageMs = recent.slice(-ENOUGH_PAGES_TO_MEASURE);
 }
 
+/**
+ * Empties the window when it was measured on another model, or on one nobody wrote down.
+ *
+ * The window says what a page costs *this model*, and they differ by a factor of three: without this,
+ * a card for a model that has never read a page quoted the last model's figure as this machine's.
+ */
+export function keepTimingsOf(blob: BackendSettings, modelDir: string): void {
+	if (blob.recentPageModel === modelDir) return;
+	blob.recentPageModel = modelDir;
+	blob.recentPageMs = [];
+}
+
 export function setBackgroundConsent(blob: BackendSettings, consented: boolean): void {
 	blob.backgroundConsent = consented;
 }
@@ -140,7 +152,7 @@ export const FIRST_PAGES_CAVEAT =
 export function estimateLine(platform: LocalModelPlatform, blob: BackendSettings): string {
 	const measured = typicalPageSeconds(blob);
 	if (measured !== null) {
-		return `${measured} seconds a page on this machine — ${humanDuration(measured * NOTEBOOK_PAGES)} for a ${NOTEBOOK_PAGES}-page notebook.`;
+		return `${measured} ${measured === 1 ? "second" : "seconds"} a page on this machine — ${humanDuration(measured * NOTEBOOK_PAGES)} for a ${NOTEBOOK_PAGES}-page notebook.`;
 	}
 	if (platform === "darwin") {
 		return `About 15 seconds a page on a fast Mac — roughly 10 minutes for a ${NOTEBOOK_PAGES}-page notebook. ${FIRST_PAGES_CAVEAT}`;

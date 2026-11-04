@@ -259,8 +259,7 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 	 * its object rather than mutating it, as the rows always have: a running sync may hold the old one.
 	 * A key that names nothing in `data.json` is refused: writing it would change the file's shape.
 	 *
-	 * Then the key's side effect: *Your notes on PDFs* makes every synced note due again, and so do the
-	 * two *Into Zotero* switches for the Zotero-linked documents; an automatic-sync change re-arms the
+	 * Then the key's side effect: the two *Into Zotero* switches make the Zotero-linked documents due again; an automatic-sync change re-arms the
 	 * timer, so it takes effect now rather than at the next launch; a Zotero connection switch draws the
 	 * page again, which is now about a different set of connections. The Readwise switch asks the line
 	 * again; another Readwise token forgets what readwise.io said about the old one and draws the page
@@ -275,10 +274,10 @@ export class TaggedSyncSettingTab extends PluginSettingTab {
 		const stored = key in SET_RULES ? SET_RULES[key](String(value ?? "")) : value;
 		if (this.getControlValue(key) === stored) return;
 		data[head] = sub === undefined ? stored : { ...(data[head] as Record<string, unknown>), [sub]: stored };
-		// The device has not changed, so nothing would re-run without this: the switch decides what a
-		// note *contains*, and every already-synced note has to be rewritten to match.
-		if (key === "marginNotes") this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex);
-		// The same for what reaches Zotero (Zotero spec §10 P7): without it the switch would wait for a
+		// The next sync rewrites the notes if the switch still differs then (`settleMarginNotesChoice`). A
+		// vault that has not recorded a value yet has the old one until then.
+		if (key === "marginNotes" && this.plugin.data.marginNotesSynced === undefined) this.plugin.data.marginNotesSynced = stored !== true;
+		// The device has not changed, so nothing would re-run without this, for what reaches Zotero (Zotero spec §10 P7): without it the switch would wait for a
 		// change on the tablet before anything reached Zotero. Off leaves every document as it is.
 		if ((key === "zotero.writeText" || key === "zotero.addRender") && stored === true) {
 			this.plugin.data.syncIndex = invalidateRenders(this.plugin.data.syncIndex, linkedDocumentIds(this.plugin.data.zoteroLinks));

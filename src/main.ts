@@ -25,6 +25,8 @@ import { type OcrTally, tallyOcr } from "./ocr-tally";
 import {
 	NOTE_NOT_SYNCED_NOTICE,
 	NOTEBOOK_GONE_NOTICE,
+	MARGIN_NOTES_OFF_NOTICE,
+	reReadDigestConfirmation,
 	reTranscribeConfirmation,
 	reTranscribeIsUseful,
 	reTranscribeNoteConfirmation,
@@ -65,7 +67,7 @@ import {
 	startReadwiseRecording,
 	tokenFingerprint,
 } from "./readwise-push";
-import { isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, type SyncDeps, type SyncProgress } from "./sync-engine";
+import { invalidateRenders, isStaleFrontmatter, markLegacyOcrLosses, reTranscribeAll, reTranscribeNote, runSync, settleMarginNotesChoice, type SyncDeps, type SyncProgress } from "./sync-engine";
 import type { TextLayerTally } from "./text-layer";
 import { type Scheduler, windowScheduler } from "./scheduler";
 import { TaggedSyncSettingTab } from "./settings-tab";
@@ -763,6 +765,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			}
 			// Readwise's backfill, before opening the source for the same reason (Readwise spec §5).
 			if (startReadwiseRecording(this.data, readwiseRecordingOn(this.data.readwise, this.entitlement()))) await this.saveData(this.data);
+			if (settleMarginNotesChoice(this.data)) await this.saveData(this.data);
 			const opened = await this.openSource(!auto);
 			transport = opened.transport;
 			session = opened.session;
@@ -1079,6 +1082,7 @@ export default class TaggedSyncPlugin extends Plugin {
 				// one spends nothing, and would otherwise be warned about anyway.
 				metered: backend.metered,
 				timeCaveat: entry?.reTranscribeCaveat?.(this.data.llmProviders[entry.id] ?? {}, unitCount) ?? "",
+				marginNotes: this.data.marginNotes,
 			}),
 			"Re-transcribe",
 		);
@@ -1096,11 +1100,12 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
+		let readDigests = false;
 		try {
 			const opened = await this.openSource();
 			transport = opened.transport;
 			session = opened.session;
-			const { updated, unreadPages, index, stopped } = await reTranscribeAll(
+			const { updated, unreadPages, index, stopped, digestDocIds } = await reTranscribeAll(
 				{
 					api: session.api,
 					noteStore: createNoteStore(this.app),
@@ -1121,6 +1126,10 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Carries the refreshed block hashes -- without saving, the next sync would read this
 			// re-transcribe as a hand edit and refuse to update every note it touched.
 			this.data.syncIndex = index;
+			// Margin notes live in the digest, which only a sync writes. Saved before it: if it cannot
+			// start, the next one reads them.
+			readDigests = !stopped && this.data.marginNotes && digestDocIds.length > 0;
+			if (readDigests) this.data.syncIndex = invalidateRenders(index, digestDocIds);
 			await this.saveData(this.data);
 			if (stopped) {
 				// The notes it did reach keep their fresh transcripts; the rest keep the old ones, and
@@ -1145,6 +1154,23 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.syncing = false;
 			this.stopRequested = false;
 		}
+		if (readDigests) await this.syncNow();
+	}
+
+	/**
+	 * Makes a PDF's margin notes due to be read again, after asking where that costs money. True when
+	 * a sync should now read them. Saved first: if the sync cannot start, the next one does it.
+	 */
+	private async readDigestAgain(noteName: string, docId: string, backend: { id: string; metered: boolean }): Promise<boolean> {
+		if (!this.data.marginNotes) {
+			new Notice(MARGIN_NOTES_OFF_NOTICE);
+			return false;
+		}
+		const question = reReadDigestConfirmation({ noteName, backendId: backend.id, metered: backend.metered });
+		if (question !== null && !(await confirmDialog(this.app, "Re-transcribe this note", question, "Re-transcribe"))) return false;
+		this.data.syncIndex = invalidateRenders(this.data.syncIndex, [docId]);
+		await this.saveData(this.data);
+		return true;
 	}
 
 	/**
@@ -1183,6 +1209,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		this.setStatus("busy", "Tagged Sync: re-transcribing…");
 		let transport = this.transportChain().primary;
 		let session: TransportSession | null = null;
+		let readDigest = false;
 		try {
 			if (claim.refreshLicence) await this.refreshLicence(false);
 			const backend = this.resolveOcrBackend();
@@ -1227,6 +1254,7 @@ export default class TaggedSyncPlugin extends Plugin {
 			// Current here: a page that went unread was sent, and the tally starts over on the first send.
 			const notice = reTranscribeNoteNotice(outcome, file.basename, unreadPages, this.lastOcrTally?.warnings[0]);
 			if (notice !== null) new Notice(notice);
+			if (outcome === "pdf-digest") readDigest = await this.readDigestAgain(file.basename, row.docId, backend);
 			// Every outcome leaves a final status: the bar was set to busy above, and a refusal that
 			// left it there would spin over a run that is long over.
 			if (outcome === "stopped") this.setStatus("stopped", "Tagged Sync: stopped · nothing changed");
@@ -1241,6 +1269,8 @@ export default class TaggedSyncPlugin extends Plugin {
 			this.syncing = false;
 			this.stopRequested = false;
 		}
+		// Out here because it takes the lock this run has just let go of.
+		if (readDigest) await this.syncNow();
 	}
 
 	/**

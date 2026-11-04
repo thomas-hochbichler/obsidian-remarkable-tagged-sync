@@ -80,7 +80,8 @@ export interface CardCopy {
  */
 export type LocalCardState =
 	| { kind: "absent" }
-	| { kind: "downloading"; receivedBytes: number; totalBytes: number }
+	/** `modelInUse`: a complete model keeps transcribing beside this download; absent on a first download. */
+	| { kind: "downloading"; receivedBytes: number; totalBytes: number; modelInUse?: string }
 	| { kind: "verifying" }
 	| { kind: "paused"; onDiskBytes: number }
 	| { kind: "out-of-disk"; shortfallBytes: number }
@@ -194,7 +195,9 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				heading: `Downloading ${generation.label}`,
 				paragraphs: [
 					`${formatBytes(state.receivedBytes)} of ${formatBytes(state.totalBytes)}.`,
-					"You can close settings — the download keeps going. Syncing still works while it runs; notes just arrive without a transcript until it is done.",
+					state.modelInUse
+						? `You can close settings — the download keeps going. Transcription keeps using ${state.modelInUse} until it is done.`
+						: "You can close settings — the download keeps going. Syncing still works while it runs; notes just arrive without a transcript until it is done.",
 				],
 				actions: [{ id: "cancel", label: "Pause", emphasis: "normal" }],
 				percent,

@@ -28,7 +28,7 @@ import {
 	pathsForGeneration,
 	resolveLocalModel,
 } from "./local-model-runtime";
-import { readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir } from "./local-model-settings";
+import { keepTimingsOf, readLocalModelSettings, reTranscribeCaveat, setBackgroundConsent, setPreferredModelDir } from "./local-model-settings";
 import { deriveLocalModelState, type LocalModelPaths } from "./local-model-store";
 import { type ChoiceContext, type ModelGeneration, MODEL_GENERATIONS, offeredGeneration, runnableGenerations } from "./local-model-artefacts";
 import { createLocalOcrBackend, isLocalModelBusy } from "./local-ocr-runtime";
@@ -58,6 +58,14 @@ let download: DownloadHandle | null = null;
  * the new one is complete.
  */
 let downloadTarget: { paths: LocalModelPaths; generation: ModelGeneration } | null = null;
+/** What the card is about while it shows this instance's download rather than what is on disk; null otherwise. */
+function downloadOnCard(): { paths: LocalModelPaths; generation: ModelGeneration } | null {
+	const progress = download?.progress();
+	if (!progress || progress.phase === "done") return null;
+	if (progress.phase === "failed" && (progress.failure.kind === "cancelled" || progress.failure.kind === "busy")) return null;
+	return downloadTarget;
+}
+
 /** A runtime that failed to start this session (§5.5: session-scoped, not a property of the directory). */
 let runtimeFailure: string | null = null;
 
@@ -120,7 +128,13 @@ function currentCardState(paths: LocalModelPaths, generation: ModelGeneration, c
 		switch (inFlight.phase) {
 			case "checking":
 			case "downloading":
-				return { kind: "downloading", receivedBytes: inFlight.phase === "downloading" ? inFlight.receivedBytes : 0, totalBytes: inFlight.phase === "downloading" ? inFlight.totalBytes : 1 };
+				return {
+					kind: "downloading",
+					receivedBytes: inFlight.phase === "downloading" ? inFlight.receivedBytes : 0,
+					totalBytes: inFlight.phase === "downloading" ? inFlight.totalBytes : 1,
+					// The rule answers with another model only when that one is complete, so it is what transcribes.
+					...(downloadTarget && downloadTarget.generation !== generation ? { modelInUse: generation.label } : {}),
+				};
 			case "verifying":
 			case "extracting":
 				return { kind: "verifying" };
@@ -228,6 +242,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	const platform = localModelPlatform();
 	if (!resolved || !platform || !context) return;
 	const { paths, generation } = resolved;
+	keepTimingsOf(ctx.settings, generation.dir);
 	// A partial of a model no build can finish any more is provably useless; anything complete is left
 	// exactly where it is, whether it is the model in use or the one to fall back to.
 	sweepUnfinishedDirectories(paths);
@@ -239,8 +254,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 	// Where the offered model would land, resolved once so the update button does not have to.
 	const newer = offeredGeneration(generation, readModelDirectories(paths), context);
 	const newerPaths = newer ? pathsForGeneration(PLUGIN_ID, newer) : null;
-	// The states only this instance's own download reaches name what it fetches, not the model in use.
-	const shown = download && downloadTarget && ["downloading", "verifying", "out-of-disk", "network-lost"].includes(state.kind) ? downloadTarget : resolved;
+	const shown = downloadOnCard() ?? resolved;
 	const copy = cardCopy(state, platform, ctx.settings, shown.generation);
 
 	const card = containerEl.createDiv({ cls: "tagged-sync-card" });
@@ -314,7 +328,7 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 						case "download":
 						case "resume":
 						case "retry-runtime":
-							beginDownload(paths, rerender, generation, paths);
+							beginDownload(shown.paths, rerender, shown.generation, paths);
 							break;
 						// The one action that writes into a *different* directory than the one in use: the
 						// newer model installs beside the working one, which is what makes it an offer.
@@ -336,6 +350,14 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 							rerender();
 							break;
 						case "delete": {
+							// A failed download of a newer model: only that goes. `removeLocalModel` would take
+							// the engine the working model needs, and the backend would fall back past it.
+							if (shown.generation !== generation) {
+								removeModelDirectory(paths, shown.generation.dir);
+								download = null;
+								rerender();
+								break;
+							}
 							// The pick goes with the model: a name in `data.json` for a directory that is gone
 							// would be silently ignored, and then honoured again the day it reappears.
 							setPreferredModelDir(ctx.settings, null);
@@ -461,7 +483,11 @@ if (offeredOnThisPlatform()) {
 		 */
 		noteContract: LOCAL_NOTE_CONTRACT,
 
-		reTranscribeCaveat: (settings, unitCount) => reTranscribeCaveat(settings, unitCount),
+		reTranscribeCaveat: (settings, unitCount) => {
+			const inUse = resolveLocalModel(PLUGIN_ID, readLocalModelSettings(settings).preferredModelDir);
+			if (inUse) keepTimingsOf(settings, inUse.generation.dir);
+			return reTranscribeCaveat(settings, unitCount);
+		},
 
 		backgroundConsent: {
 			get: (settings) => readLocalModelSettings(settings).backgroundConsent,

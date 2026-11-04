@@ -70,13 +70,14 @@ const fetcher = vi.hoisted(() => ({
 	started: [] as { root: string; dir: string }[],
 	removedModel: null as string | null,
 	discarded: null as string | null,
+	progress: { phase: "downloading", receivedBytes: 1, totalBytes: 2 } as unknown,
 }));
 
 vi.mock("./local-model-fetch", async (importOriginal) => ({
 	...(await importOriginal<typeof import("./local-model-fetch")>()),
 	startLocalModelDownload: (paths: LocalModelPaths, _platform: string, _onTick: () => void, generation: { dir: string }) => {
 		fetcher.started.push({ root: paths.root, dir: generation.dir });
-		return { progress: () => ({ phase: "downloading", receivedBytes: 1, totalBytes: 2 }), cancel: () => undefined, finished: Promise.resolve() };
+		return { progress: () => fetcher.progress, cancel: () => undefined, finished: Promise.resolve() };
 	},
 	removeLocalModel: (paths: LocalModelPaths) => {
 		fetcher.removedModel = paths.root;
@@ -129,16 +130,13 @@ interface Rendered {
 	row(name: string): Setting | undefined;
 	/** The card's heading. */
 	heading(): string | undefined;
+	/** The card's sentences. */
+	paragraphs(): string[];
 }
 
-/** The first element with this tag, depth first. */
-function firstOf(el: FakeEl, tag: string): FakeEl | undefined {
-	if (el.tag === tag) return el;
-	for (const child of el.children) {
-		const found = firstOf(child, tag);
-		if (found) return found;
-	}
-	return undefined;
+/** Every element with this tag, depth first. */
+function allOf(el: FakeEl, tag: string): FakeEl[] {
+	return [...(el.tag === tag ? [el] : []), ...el.children.flatMap((child) => allOf(child, tag))];
 }
 
 /** Renders the backend's settings into a fresh page, as the settings tab does. */
@@ -169,7 +167,8 @@ function render(blob: BackendSettings = {}): Rendered {
 		button: (prefix) => rows.flatMap((setting) => setting.buttons).find((candidate) => candidate.text.startsWith(prefix)),
 		dropdown: () => rows.flatMap((setting) => setting.dropdowns)[0],
 		row: (name) => rows.find((setting) => setting.name === name),
-		heading: () => firstOf(page, "h4")?.text,
+		heading: () => allOf(page, "h4")[0]?.text,
+		paragraphs: () => allOf(page, "p").map((paragraph) => paragraph.text),
 	};
 }
 
@@ -199,6 +198,7 @@ beforeEach(() => {
 	fetcher.started = [];
 	fetcher.removedModel = null;
 	fetcher.discarded = null;
+	fetcher.progress = { phase: "downloading", receivedBytes: 1, totalBytes: 2 };
 	busy.transcribing = false;
 	// The download in flight is module state, deliberately: it outlives the page that started it. The
 	// plugin's own unload is what clears it, and a test that skipped this would find the next card
@@ -261,6 +261,90 @@ describe("a download in flight", () => {
 
 		expect(paused.heading()).toBe("Download paused");
 		expect(paused.row("Model files")?.desc).toBe(`/vault/${BEST.dir}/model`);
+	});
+
+	it("says the working model keeps transcribing while a newer one arrives", () => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+
+		const words = render({ preferredModelDir: OLDER.dir }).paragraphs().join(" ");
+
+		expect(words).toContain(`Transcription keeps using ${OLDER.label}`);
+		expect(words).not.toContain("without a transcript");
+	});
+
+	it("says notes arrive without a transcript while there is no model yet", () => {
+		render().button("Download the model")?.click();
+
+		expect(render().paragraphs().join(" ")).toContain("notes just arrive without a transcript");
+	});
+});
+
+/**
+ * A newer model's download that failed, with the older model still working. The rule keeps answering
+ * with the older one, so a button wired to the rule's answer acts on the model that works.
+ */
+describe("a newer model's download that failed", () => {
+	beforeEach(() => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+	});
+
+	function failWith(failure: unknown): Rendered {
+		fetcher.progress = { phase: "failed", failure };
+		render({ preferredModelDir: OLDER.dir }).button(`Get ${BEST.label}`)?.click();
+		return render({ preferredModelDir: OLDER.dir });
+	}
+
+	it("resumes the newer model, not the one in use", () => {
+		const page = failWith({ kind: "network", message: "offline" });
+		expect(page.heading()).toBe("Download interrupted");
+		fetcher.started = [];
+
+		page.button("Resume")?.click();
+
+		expect(fetcher.started).toEqual([{ root: `/vault/${BEST.dir}`, dir: BEST.dir }]);
+	});
+
+	// `removeLocalModel` takes the engine with it, which the working model needs as well, and the
+	// backend selection would fall back to Vision with a good model still on disk.
+	it("deletes only what it fetched, and leaves the working model, its engine and the backend alone", async () => {
+		const page = failWith({ kind: "corrupt" });
+		expect(page.heading()).toBe("The download could not be verified");
+
+		await page.button("Delete and start over")?.click();
+
+		expect(machine.removed).toEqual([BEST.dir]);
+		expect(fetcher.removedModel).toBeNull();
+		expect(page.defaultSelected).toBe(0);
+		expect(preferred(page.blob)).toBe(OLDER.dir);
+	});
+});
+
+describe("the speed figure, across a change of model", () => {
+	it("drops timings measured on another model", () => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageModel: BEST.dir, recentPageMs: Array.from({ length: 10 }, () => 1_000) };
+
+		expect(render(blob).paragraphs().join(" ")).not.toContain("on this machine");
+	});
+
+	it("keeps timings measured on this model", () => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageModel: OLDER.dir, recentPageMs: Array.from({ length: 10 }, () => 9_000) };
+
+		expect(render(blob).paragraphs().join(" ")).toContain("9 seconds a page on this machine");
+	});
+
+	it("does not trust timings from before they named a model", () => {
+		machine.directories = [complete(OLDER)];
+		machine.snapshot = readySnapshot(OLDER);
+		const blob: BackendSettings = { preferredModelDir: OLDER.dir, recentPageMs: Array.from({ length: 10 }, () => 1_000) };
+
+		expect(render(blob).paragraphs().join(" ")).not.toContain("on this machine");
 	});
 });
 

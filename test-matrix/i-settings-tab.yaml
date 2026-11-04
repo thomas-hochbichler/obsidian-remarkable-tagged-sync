@@ -100,11 +100,11 @@
   tier: free
   scenarios:
     - id: D17.10
-      scenario: The Handwritten notes switch is flipped on a vault that already has synced notes
-      expect: Every active row loses its render version, so the notes are rewritten -- nothing changed on the device, and without this the switch would take effect only for notebooks edited later
+      scenario: The Your notes on PDFs switch is flipped on a vault that has not recorded a value yet
+      expect: No row loses its render version at the switch; the old value is recorded, so the next sync sees the change and rewrites the notes (C28)
       layer: vault
       file: src/settings-tab.test.ts
-      test: "vault output > re-renders every synced note when the handwriting switch moves"
+      test: "vault output > records the old value when the handwriting switch moves, and rewrites no note yet"
 
 - feature: E1
   name: Backend dropdown

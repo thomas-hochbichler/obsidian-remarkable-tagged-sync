@@ -50,6 +50,8 @@ export interface ReTranscribeCost {
 	 * the user's own pages inside the backend's opaque blob.
 	 */
 	readonly timeCaveat: string;
+	/** *Your notes on PDFs* is on, so a sync after the run reads the margin notes again as well. */
+	readonly marginNotes?: boolean;
 }
 
 /**
@@ -67,6 +69,7 @@ export function reTranscribeConfirmation(cost: ReTranscribeCost): string {
 		"Transcripts are now split by page, so you can tell which page a line came from. " +
 		"Handwriting is also read more accurately than it used to be, and typed text is transcribed too. " +
 		`This re-fetches each notebook from reMarkable${costCaveat}${cost.timeCaveat}. ` +
+		(cost.marginNotes ? "Margin notes on PDFs are read again too. " : "") +
 		// Last, after everything the decision is made on. The user this sentence is for is standing in
 		// front of a dialog about to spend a whole vault's worth of pages to repair one note -- which
 		// is exactly the moment the cheaper route is worth naming (selective-re-transcribe spec §9.1).
@@ -119,11 +122,25 @@ export function reTranscribeNoteConfirmation(question: ReTranscribeNoteQuestion)
 	return clauses.length === 0 ? null : clauses.join(" ");
 }
 
+/** Said instead of starting a sync that would read nothing: with the switch off, a digest has no margin notes. */
+export const MARGIN_NOTES_OFF_NOTICE = '"Your notes on PDFs" is off, so there are no margin notes to read again. Nothing was changed.';
+
+/**
+ * What reading a PDF's margin notes again asks before it starts, and `null` where it asks nothing, for
+ * the reason {@link reTranscribeNoteConfirmation} gives. No page count: a digest sends clippings of the
+ * pages that carry notes, and how many is known only once it is built.
+ */
+export function reReadDigestConfirmation(question: { noteName: string; backendId: string; metered: boolean }): string | null {
+	if (!question.metered) return null;
+	return `This reads the margin notes and added pages of "${question.noteName}" again and sends them to the "${question.backendId}" backend, using your API quota.`;
+}
+
 /**
  * The one sentence each outcome earns, written here rather than in the engine because every other
  * user-facing string of this feature lives in this file (spec §5.5).
  *
  * `cancelled` has none: the user has just said no themselves, and reading it back to them is noise.
+ * `pdf-digest` has none either: it is not an ending, the sync it starts reports what it did.
  * `unread` and a `written` with unread pages say what a failed page became: nothing was lost, so the
  * user needs to know only that the run fell short, and where to find out why.
  *
@@ -147,7 +164,9 @@ export function reTranscribeNoteNotice(outcome: ReTranscribeNoteOutcome, noteNam
 		case "not-on-device":
 			return NOTEBOOK_GONE_NOTICE;
 		case "pdf-digest":
-			return "Margin notes on a PDF are kept as a digest, not as a transcript. Nothing was changed.";
+			return null;
+		case "pdf-digest-edited":
+			return `You changed "${noteName}" by hand, so a sync leaves it as it is and cannot read its margin notes again. Nothing was changed.`;
 		case "no-transcript-section":
 			return "This note has no transcript section to write into.";
 		case "stopped":
