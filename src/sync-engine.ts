@@ -1935,12 +1935,24 @@ async function planUnits(
 	const notebookDiff = diffUnitTags(previousNotebookRows, mapped.notebook);
 	plan.orphan.push(...notebookDiff.orphan);
 
-	// Notebook-tag notes always reassemble every live page once the notebook is opened: rows for
-	// these carry no per-page hash (spec §7's row schema), so there's no cheaper way to know which
-	// of a reopened notebook's pages are safe to skip -- only page-tag rows track that.
+	// Notebook-tag notes reassemble every live page once the notebook has changed: rows for these
+	// carry no per-page hash (spec §7's row schema), so there's no cheaper way to know which of its
+	// pages are safe to skip -- only page-tag rows track that. A note that is current is left alone,
+	// though: a document also opens for another note's sake, and one edited by hand keeps it open on
+	// every sync, which re-read this note's margin notes each time.
 	for (const tag of mapped.notebook) {
 		const rename = notebookDiff.rename?.newTag === tag ? notebookDiff.rename : null;
 		const existingRow = rows[notebookSyncKey(entry.id, tag)];
+		if (
+			!rename &&
+			existingRow?.status === "active" &&
+			existingRow.entryHash === entry.hash &&
+			!isRetargeted(existingRow, tagRouter) &&
+			!rerenderDue(existingRow) &&
+			(await noteStore.read(existingRow.notePath)) !== null
+		) {
+			continue;
+		}
 		// Checked before rendering and before OCR: a note we will not write must not cost a download,
 		// a render, or -- on a metered backend -- money. On a rename the note about to be rewritten is
 		// the *old* row's, which has no row at this tag's key yet.
@@ -2502,6 +2514,27 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 		// exactly when the document does.
 		const pageContentHash = (pageId: string): string => (pdfBacked ? entry.hash : (pageHashes.get(pageId) ?? entry.hash));
 
+		/**
+		 * Whether writing this digest would trade readings the note has for "could not be transcribed",
+		 * with nothing changed on the tablet: a server that is off, or a refusal. A re-read is asked to
+		 * make a note better, as `reTranscribeRow` is, so the note stays. Only for a failure: under Off a
+		 * note is meant to say what it says, and a changed tablet leaves the old note describing a page
+		 * that is gone.
+		 */
+		const digestWouldLose = async (row: SyncIndexRow, rename: TagRename | null, digest: Awaited<ReturnType<typeof buildUnitDigest>> | { failed?: undefined; ocr: null; markdown: string }): Promise<boolean> => {
+			if (rename !== null || row.entryHash !== entry.hash || isRetargeted(row, tagRouter)) return false;
+			if (digest.failed !== true && digest.ocr !== "failed" && digest.ocr !== "unavailable") return false;
+			const block = extractManagedBlock((await deps.noteStore.read(row.notePath)) ?? "");
+			if (block?.includes("\n## Digest\n") !== true) return false;
+			return digest.failed === true || digest.markdown.split(NOT_TRANSCRIBED).length > block.split(NOT_TRANSCRIBED).length;
+		};
+		/** The row of a note kept that way: current, so it is not read again until its retry says so. */
+		const keepNote = (row: SyncIndexRow, ocrRetry: SyncIndexRow["ocrRetry"]): void => {
+			rows[row.syncKey] = withOcrRetry({ ...row, renderVersion: RENDER_VERSION }, ocrRetry);
+			untouchedKeys.add(row.syncKey);
+			bar.finish();
+		};
+
 		const plan = await planUnits(deps.noteStore, rows, tagRouter, entry, mapped, docPages, pageContentHash, rerenderDue);
 		for (const row of plan.orphan) orphanRow(rows, row);
 
@@ -2567,6 +2600,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 			const unitName = `"${entry.visibleName}" for tag "${tag}"`;
 			const digest = digestPages ? await buildUnitDigest(null, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			if (unit.writtenRow && (await digestWouldLose(unit.writtenRow, rename, digest))) {
+				keepNote(unit.writtenRow, digest.ocrRetry);
+				continue;
+			}
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 			// Only for a notebook: a PDF-backed unit's pages carry no id, and its transcript is the
 			// digest's business (issue #117 is scoped to the notebook transcription path). `considered`
@@ -2716,6 +2753,10 @@ export async function runSync(deps: SyncDeps, previousIndex: SyncIndex): Promise
 
 			const unitName = `page ${pageIndex} of "${entry.visibleName}" for tag "${tag}"`;
 			const digest = digestPages ? await buildUnitDigest(unit.pageId, digestPages, unitName, unit.writtenRow?.ocrRetry) : { markdown: "", ocr: null, covered: [], pages: [] };
+			if (unit.writtenRow && (await digestWouldLose(unit.writtenRow, rename, digest))) {
+				keepNote(unit.writtenRow, digest.ocrRetry);
+				continue;
+			}
 			const split = splitForTranscript(ocrPages, digestPages, digest, pdfBacked);
 
 			const { written, emptyBlock, textLayer: unitLayerTally } = await writeUnit(

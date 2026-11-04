@@ -352,9 +352,14 @@ function renderCard(containerEl: HTMLElement, ctx: BackendSettingsContext, reren
 							rerender();
 							break;
 						case "delete": {
-							// A failed download of a newer model: only that goes. `removeLocalModel` would take
-							// the engine the working model needs, and the backend would fall back past it.
-							if (shown.generation !== generation) {
+							// Another complete model stays: only this one goes. `removeLocalModel` would take the
+							// engine that one needs, and the backend would fall back past it. Covers a failed
+							// download of a newer model too.
+							if (readModelDirectories(paths).some((entry) => entry.complete && entry.name !== shown.generation.dir)) {
+								if (readLocalModelSettings(ctx.settings).preferredModelDir === shown.generation.dir) {
+									setPreferredModelDir(ctx.settings, null);
+									await ctx.save();
+								}
 								removeModelDirectory(paths, shown.generation.dir);
 								download = null;
 								rerender();

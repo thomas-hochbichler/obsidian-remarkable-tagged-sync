@@ -749,6 +749,20 @@
       file: src/local-register.test.ts
       test: "a newer model's download that failed > draws what is on disk once the download was finished"
 
+    - id: E39.30
+      scenario: Two complete models, the less accurate one picked
+      expect: No button and no sentence offers to download the one already on disk; the dropdown is the way back
+      layer: vault
+      file: src/local-register.test.ts
+      test: "two complete models, the smaller one picked > offers no download of the model already on disk"
+
+    - id: E39.31
+      scenario: Delete the model on the picked one, with another complete model on disk
+      expect: Only its directory goes and the pick is forgotten; the engine and the backend selection stay for the other model
+      layer: vault
+      file: src/local-register.test.ts
+      test: "two complete models, the smaller one picked > deletes only the one on the card, and goes back to the other"
+
     - id: E39.22
       scenario: The window of page times was measured on another model
       expect: The card shows the derived figure, not the other model's as this machine's, and the window stays for going back to that model

@@ -336,6 +336,37 @@ describe("a newer model's download that failed", () => {
 	});
 });
 
+/**
+ * Two complete models, with the less accurate one picked. Found in the 1.11.0 smoke test: the card
+ * offered a 6.2 GB download of a model already on disk, and Delete took the engine and the backend
+ * selection from the one that stays.
+ */
+describe("two complete models, the smaller one picked", () => {
+	beforeEach(() => {
+		machine.directories = [complete(BEST), complete(SMALL)];
+		machine.snapshot = readySnapshot(SMALL);
+	});
+
+	it("offers no download of the model already on disk", () => {
+		const page = render({ preferredModelDir: SMALL.dir });
+
+		expect(page.button(`Get ${BEST.label}`)).toBeUndefined();
+		expect(page.paragraphs().join(" ")).not.toContain(BEST.label);
+	});
+
+	it("deletes only the one on the card, and goes back to the other", async () => {
+		const page = render({ preferredModelDir: SMALL.dir });
+
+		await page.button("Delete the model")?.click();
+		await settle();
+
+		expect(machine.removed).toEqual([SMALL.dir]);
+		expect(fetcher.removedModel).toBeNull();
+		expect(page.defaultSelected).toBe(0);
+		expect(preferred(page.blob)).toBeUndefined();
+	});
+});
+
 describe("the speed figure, across a change of model", () => {
 	beforeEach(() => {
 		machine.directories = [complete(OLDER)];

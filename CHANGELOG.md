@@ -39,8 +39,15 @@ Obsidian to get this release.
   after switching to a better one. Both now read them again through a sync; on a paid backend *Re-transcribe
   this note* asks first. *Re-transcribe all synced notes* also no longer sends those PDFs' pages to the
   backend for a transcript it could not write.
+- **Reading margin notes again can no longer cost you a good reading.** If the backend is off or refuses
+  and nothing changed on the tablet, the note stays as it was instead of saying "could not be
+  transcribed", and a later sync tries again.
+- **A hand-edited note no longer makes its PDF's other notes read again on every sync.** A note that is
+  up to date is now left alone when its document opens for another note's sake.
 - After a failed download of a newer local model, *Resume* and *Delete and start over* act on that model.
   They used to act on the one in use, and deleting it took the working model and its engine with it.
+- With two local models on disk, the card no longer offers to download the one you have, and *Delete the
+  model* removes only the one shown, keeping the engine and the backend for the other.
 - The local model's speed figure belongs to the model it was measured on: it is measured anew after a
   change of model, and says "1 second", not "1 seconds".
 

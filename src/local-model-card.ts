@@ -276,7 +276,7 @@ export function cardCopy(state: LocalCardState, platform: LocalModelPlatform, se
 				paragraphs.push(
 					`${state.newer.label} reads the same pages at ${percent(state.newer.medianCer)} character error against your ${percent(state.newer.currentMedianCer)}. ` +
 						`A ${formatBytes(state.newer.downloadBytes)} download, installed beside the model you have, which keeps working until you delete it.`,
-					"Notes already transcribed are not redone; 'Re-transcribe everything' does that.",
+					"Notes already transcribed are not redone; 'Re-transcribe all synced notes' does that.",
 				);
 				actions.unshift({ id: "update", label: `Get ${state.newer.label}`, emphasis: "cta" });
 			}

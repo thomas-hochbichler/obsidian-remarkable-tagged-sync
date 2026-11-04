@@ -729,6 +729,72 @@
       file: src/re-transcribe-prompt.test.ts
       test: "reTranscribeNoteNotice > says nothing for a digest about to be read again"
 
+- feature: C29
+  name: A digest read again with nothing changed on the tablet
+  code: src/sync-engine.ts
+  tier: free
+  scenarios:
+    - id: C29.1
+      scenario: The reading comes back failed
+      expect: The note stays exactly as it was, nothing is counted as written, the row is current and carries a retry
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > keeps the note as it was when the reading comes back failed"
+    - id: C29.2
+      scenario: The reading comes back unavailable
+      expect: The same
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > keeps the note as it was when the reading comes back unavailable"
+    - id: C29.8
+      scenario: The digest build throws
+      expect: The note stays as it was, nothing is counted as written
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > keeps the note when the digest build throws"
+    - id: C29.9
+      scenario: The note was deleted from the vault and the reading fails
+      expect: The note is written anyway, because there is nothing to keep
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > brings back a note deleted from the vault, whatever the reading"
+    - id: C29.10
+      scenario: A page-tagged note, and the reading fails
+      expect: The note stays as it was and its row is current
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > keeps a page-tagged note the same way"
+    - id: C29.3
+      scenario: The next sync, with the same backend and a failure that does not pass on its own
+      expect: No page is sent, so a refusal bills once and not on every sync
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > does not try again with the same backend"
+    - id: C29.4
+      scenario: A later sync under another backend
+      expect: It reads the note and writes the new reading
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > reads it again under another backend, and writes that"
+    - id: C29.5
+      scenario: The tablet changed and the reading failed
+      expect: The note is written, because the old one describes a page that is gone
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > writes the note when the tablet did change"
+    - id: C29.6
+      scenario: The note was unread before as well
+      expect: It is written, because it has nothing to lose
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > writes the note when it was unread before as well"
+    - id: C29.7
+      scenario: A hand-edited note keeps its document open on every sync
+      expect: A current notebook-tag sibling is not rewritten or read again, so no sync after the first sends a page
+      layer: vault
+      file: src/sync-engine.test.ts
+      test: "a digest read again with nothing changed on the tablet > does not read a sibling again on every sync because a hand-edited note keeps the document open"
+
 - feature: C28
   name: The switch for margin notes costs nothing until a sync sees it moved
   code: src/sync-engine.ts

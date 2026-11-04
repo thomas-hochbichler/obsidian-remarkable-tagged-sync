@@ -333,7 +333,9 @@ export function betterGeneration(inUse: ModelGeneration, context: ChoiceContext)
 export function offeredGeneration(inUse: ModelGeneration, present: readonly ModelDirectoryFacts[], context: ChoiceContext): ModelGeneration | null {
 	const picked = runnableGenerations(context).find((generation) => generation.dir === context.preferred);
 	if (picked && picked !== inUse && !present.some((entry) => holdsGeneration(entry, picked))) return picked;
-	return betterGeneration(inUse, context);
+	// Not one already on disk: the reader picked this model over it, and the dropdown is the way back.
+	const better = betterGeneration(inUse, context);
+	return better !== null && !present.some((entry) => holdsGeneration(entry, better)) ? better : null;
 }
 
 /** llama.cpp release b10295 (2026-08-06T12:56:29Z). */

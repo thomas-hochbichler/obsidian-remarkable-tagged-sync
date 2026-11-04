@@ -3883,6 +3883,147 @@ describe("the text layer (searchable PDF)", () => {
 	});
 });
 
+describe("a digest read again with nothing changed on the tablet", () => {
+	const KEY = notebookSyncKey("doc-1", "sync");
+	const OTHER_KEY = notebookSyncKey("doc-1", "other");
+	const READ = { status: "ok", text: "my good reading", confidence: 88 } as const;
+	const DEAD = { status: "failed", text: "", confidence: null } as const;
+
+	const book = async (hash = "hash-1", tags = [{ name: "sync", timestamp: 0 }]) =>
+		fakeApi({
+			rootHash: `root-${hash}`,
+			entries: [documentEntry({ fileType: "pdf", visibleName: "Book", hash, tags })],
+			contentById: { "doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]) }) },
+			sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+			pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+		});
+
+	async function synced() {
+		const deps = { ...baseDeps(await book(), { sync: "Target" }), ocrBackend: fakeOcrBackend(READ) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const path = index.rows[KEY].notePath;
+		const before = (await deps.noteStore.read(path))!;
+		expect(before).toContain("my good reading");
+		return { deps, index, path, before };
+	}
+
+	// The backend was off, or refused: nothing about the note is better for trying, and a sync must not
+	// trade a good reading for "could not be transcribed".
+	it.each(["failed", "unavailable"] as const)("keeps the note as it was when the reading comes back %s", async (status) => {
+		const { deps, index, path, before } = await synced();
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend({ ...DEAD, status }) }, invalidateRows(index, [KEY]));
+
+		expect(await deps.noteStore.read(path)).toBe(before);
+		expect(again.notesWritten).toBe(0);
+		expect(again.index.rows[KEY].renderVersion).toBe(RENDER_VERSION);
+		expect(again.index.rows[KEY].ocrRetry?.with).toBeDefined();
+	});
+
+	// A refusal repeats with the same backend, and on a paid one it would bill every sync.
+	it("does not try again with the same backend", async () => {
+		const { deps, index } = await synced();
+		const dead = fakeOcrBackend(DEAD);
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: dead }, invalidateRows(index, [KEY]));
+		vi.mocked(dead.recognize).mockClear();
+
+		await runSync({ ...deps, api: await book(), ocrBackend: dead }, again.index);
+
+		expect(vi.mocked(dead.recognize)).not.toHaveBeenCalled();
+	});
+
+	it("reads it again under another backend, and writes that", async () => {
+		const { deps, index, path } = await synced();
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		await runSync({ ...deps, api: await book(), ocrBackend: { ...fakeOcrBackend({ ...READ, text: "a better reading" }), fingerprint: "better" } }, again.index);
+
+		expect(await deps.noteStore.read(path)).toContain("a better reading");
+	});
+
+	// The tablet changed, so the old note describes a page that is gone: it has to be written.
+	it("writes the note when the tablet did change", async () => {
+		const { deps, index, path } = await synced();
+
+		await runSync({ ...deps, api: await book("hash-2"), ocrBackend: fakeOcrBackend(DEAD) }, index);
+
+		expect(await deps.noteStore.read(path)).toContain(NOT_TRANSCRIBED);
+	});
+
+	it("keeps the note when the digest build throws", async () => {
+		const { deps, index, path, before } = await synced();
+		vi.mocked(buildDigest).mockRejectedValueOnce(new Error("digest blew up"));
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(READ) }, invalidateRows(index, [KEY]));
+
+		expect(await deps.noteStore.read(path)).toBe(before);
+		expect(again.notesWritten).toBe(0);
+	});
+
+	it("brings back a note deleted from the vault, whatever the reading", async () => {
+		const { deps, index } = await synced();
+		vi.mocked(deps.noteStore.read).mockResolvedValue(null);
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		expect(again.notesWritten).toBe(1);
+	});
+
+	it("keeps a page-tagged note the same way", async () => {
+		const tagged = async () =>
+			fakeApi({
+				rootHash: "root-page",
+				entries: [documentEntry({ fileType: "pdf", visibleName: "Book", hash: "hash-1", tags: [] })],
+				contentById: {
+					"doc-1": documentContent({ fileType: "pdf", pageCount: 2, cPages: cPagesWith([{ id: "p0", redir: 0 }, { id: "p1", redir: 1 }]), pageTags: [{ name: "todo", timestamp: 0, pageId: "p1" }] }),
+				},
+				sourcePdfByDoc: { "doc-1": await makeSourcePdf([[100, 100], [200, 200]]) },
+				pageHashesByDoc: { "doc-1": { p1: "anno-hash" } },
+			});
+		const PAGE_KEY = pageSyncKey("doc-1", "p1", "todo");
+		const deps = { ...baseDeps(await tagged(), { todo: "Target" }), ocrBackend: fakeOcrBackend(READ) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const path = index.rows[PAGE_KEY].notePath;
+		const before = await deps.noteStore.read(path);
+		expect(before).toContain("my good reading");
+
+		const again = await runSync({ ...deps, api: await tagged(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [PAGE_KEY]));
+
+		expect(await deps.noteStore.read(path)).toBe(before);
+		expect(again.index.rows[PAGE_KEY].renderVersion).toBe(RENDER_VERSION);
+	});
+
+	// The note that loses nothing by being written: an earlier failure read better this time, or the same.
+	it("writes the note when it was unread before as well", async () => {
+		const deps = { ...baseDeps(await book(), { sync: "Target" }), ocrBackend: fakeOcrBackend(DEAD) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+
+		const again = await runSync({ ...deps, api: await book(), ocrBackend: fakeOcrBackend(DEAD) }, invalidateRows(index, [KEY]));
+
+		expect(again.notesWritten).toBe(1);
+	});
+
+	// A hand-edited note keeps its row stale for good, so the document reopens on every sync. That must
+	// not rewrite its other notes each time: on a paid backend, a bill on every sync.
+	it("does not read a sibling again on every sync because a hand-edited note keeps the document open", async () => {
+		const tags = [{ name: "sync", timestamp: 0 }, { name: "other", timestamp: 0 }];
+		const deps = { ...baseDeps(await book("hash-1", tags), { sync: "Target", other: "Other" }), ocrBackend: fakeOcrBackend(READ) };
+		const { index } = await runSync(deps, EMPTY_SYNC_INDEX);
+		const path = index.rows[KEY].notePath;
+		await deps.noteStore.write(path, (await deps.noteStore.read(path))!.replace("## Digest", "## Digest\ncorrected by hand"));
+		const counting = fakeOcrBackend(READ);
+
+		const first = await runSync({ ...deps, api: await book("hash-1", tags), ocrBackend: counting }, invalidateRenders(index));
+		expect(first.index.rows[OTHER_KEY].renderVersion).toBe(RENDER_VERSION);
+		vi.mocked(counting.recognize).mockClear();
+
+		const second = await runSync({ ...deps, api: await book("hash-1", tags), ocrBackend: counting }, first.index);
+
+		expect(vi.mocked(counting.recognize)).not.toHaveBeenCalled();
+		expect(second.notesWritten).toBe(0);
+	});
+});
+
 describe("invalidateRows", () => {
 	// A whole document would take a hand-edited sibling with it: a sync skips that row and never restores
 	// its version, so the document would reopen, and its other notes be read again, on every sync.
