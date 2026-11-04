@@ -6755,6 +6755,7 @@ describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
 		expect(seen).toHaveLength(1);
 		expect(seen[0].unit).toMatchObject({ docId: "doc-1", scope: "document", pageOrder: null, marginNotes: true });
 		expect(seen[0].unit.pages.map((page) => page.embedPage)).toEqual([1, 2]);
+		expect(seen[0].unit.embedPath).toMatch(/\/doc-1\.pdf$/);
 		expect(seen[0].onDisk).toContain("## Digest");
 	});
 
@@ -6768,6 +6769,7 @@ describe("the Readwise record (Readwise spec §4.1, §4.2)", () => {
 			["doc-1", "document"],
 			["doc-1", { pageId: "p1" }],
 		]);
+		expect(seen[1].unit.embedPath).toMatch(/\/doc-1-p1\.pdf$/);
 	});
 
 	it("records nothing a failed digest build could speak for", async () => {

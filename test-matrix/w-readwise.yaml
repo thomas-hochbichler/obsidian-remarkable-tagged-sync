@@ -504,7 +504,7 @@
   scenarios:
     - id: W6.1
       scenario: A marked sentence on a page printed as 12
-      expect: 'The sentence with the marked words in `**…**`, location 12, `highlight_url` = `obsidian://tagged-sync?highlight=<docId>/<pageId:crdtId>`, unencoded'
+      expect: 'The sentence with the marked words in `**…**`, location 12, `highlight_url` = `obsidian://open?vault=<vault>&file=<render>#page=<embedPage>&highlight=<docId>/<pageId:crdtId>`, each value encoded'
       layer: unit
       file: src/readwise-highlights.test.ts
       test: "readwiseHighlights > a highlight > becomes its sentence with the marked words in bold, on the page it is printed on, linking back to its entry"
@@ -1599,122 +1599,10 @@
       test: "the push when a background sync finds the tablet asleep (spec §11 P22) > does not push while a run holds the lock"
 
 - feature: W13
-  name: Link back from Readwise and Open in Readwise (spec §7)
+  name: Open in Readwise and Push to Readwise again (spec §7)
   code: src/readwise-links.ts
   tier: free
   scenarios:
-    - id: W13.1
-      scenario: A link to a highlight of a document with a whole-document note
-      expect: That note opens at the highlight's `hl-` block
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens the whole-document note at the highlight's block"
-
-    - id: W13.2
-      scenario: A link to a margin note of a document synced only through page tags
-      expect: The page note of the key's page opens at the `nt-` block; another page's note is not taken
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens the page note at a margin note's block when the document has no whole-document note"
-
-    - id: W13.3
-      scenario: The document has a whole-document note and a page note, both carrying the block
-      expect: The whole-document note opens
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > prefers the whole-document note when the page has a note of its own too"
-
-    - id: W13.4
-      scenario: Only the page note still carries the block
-      expect: The page note opens at it
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > falls through to the page note when only that one still carries the block"
-
-    - id: W13.5
-      scenario: The note no longer carries the entry's block (erased, hand-edited)
-      expect: The note opens at its top
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens the note at its top when no note carries the block any more"
-
-    - id: W13.6
-      scenario: The whole-document note was deleted by hand, the page note is still there; then the only note is gone
-      expect: The page note opens; with no note in the vault, nothing opens (no empty note is created)
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > passes over a note deleted by hand"
-
-    - id: W13.7
-      scenario: The document's rows are all deleted or belong to other documents
-      expect: Nothing opens; the caller shows the §7 notice
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing when the document has no active note left"
-
-    - id: W13.8
-      scenario: An empty value
-      expect: Nothing opens
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing for the malformed value \"\""
-
-    - id: W13.9
-      scenario: A document id without a key
-      expect: Nothing opens
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing for the malformed value \"0f1e2d3c-doc\""
-
-    - id: W13.10
-      scenario: A document id and a slash, no key
-      expect: Nothing opens
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing for the malformed value \"0f1e2d3c-doc/\""
-
-    - id: W13.11
-      scenario: A key without a colon
-      expect: Nothing opens
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing for the malformed value \"0f1e2d3c-doc/6a7b8c9d-page\""
-
-    - id: W13.12
-      scenario: A key with an empty CRDT id
-      expect: Nothing opens
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing for the malformed value \"0f1e2d3c-doc/6a7b8c9d-page:\""
-
-    - id: W13.13
-      scenario: A key with an empty page id
-      expect: Nothing opens, also when a row has an empty page id
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing for the malformed value \"0f1e2d3c-doc/:1a2b\""
-
-    - id: W13.14
-      scenario: An empty document id
-      expect: Nothing opens, also when a row has an empty document id
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens nothing for the malformed value \"/6a7b8c9d-page:1a2b\""
-
-    - id: W13.15
-      scenario: A CRDT id that contains a colon (robustness, spec §1.3)
-      expect: The page id ends at the key's first colon; the block is found
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > takes the page id before the key's first colon, so a CRDT id with a colon still finds its block"
-
-    - id: W13.16
-      scenario: A link to a page added on the tablet (`<pageId>:page`)
-      expect: The note opens at the added page's `nt-` block
-      layer: unit
-      file: src/readwise-links.test.ts
-      test: "linkedNote > opens a page added on the tablet at its page block"
-
     - id: W13.17
       scenario: Open in Readwise on a note whose document's book has an id
       expect: https://readwise.io/bookreview/<bookId>
@@ -1749,34 +1637,6 @@
       layer: unit
       file: src/readwise-links.test.ts
       test: "readwiseBookUrl > is none for a book deleted in Readwise"
-
-    - id: W13.22
-      scenario: The plugin's `tagged-sync` handler gets a highlight link, in a free vault
-      expect: The note opens at `#^<block>`, read from the metadata cache; no notice
-      layer: vault
-      file: src/readwise-wiring.test.ts
-      test: "the link back from Readwise and Open in Readwise (spec §7) > opens the note at the highlight's block, in a free vault too (spec §11 P19)"
-
-    - id: W13.23
-      scenario: The handler gets a link whose note is not in the vault, then a `tagged-sync` link with no `highlight`
-      expect: The §7 notice both times; nothing opened, so no empty note created at the stale path
-      layer: vault
-      file: src/readwise-wiring.test.ts
-      test: "the link back from Readwise and Open in Readwise (spec §7) > says the note is gone rather than opening a path no note is at, and for a link without a highlight"
-
-    - id: W13.26
-      scenario: The handler gets a link to a note named "C# Primer"
-      expect: That file opens at `#^<block>`; no note "C" is created (the file is opened, not a link text cut at the `#`)
-      layer: vault
-      file: src/readwise-wiring.test.ts
-      test: "the link back from Readwise and Open in Readwise (spec §7) > opens a note whose name holds a # as that note, not as a link cut at the #"
-
-    - id: W13.25
-      scenario: The handler gets a link to a note Obsidian has no block cache for
-      expect: The note opens at its top
-      layer: vault
-      file: src/readwise-wiring.test.ts
-      test: "the link back from Readwise and Open in Readwise (spec §7) > opens the note at its top when Obsidian knows no block in it"
 
     - id: W13.24
       scenario: The plugin's Open in Readwise command, with no note open, on a note whose book has no id yet, then once the id is known
@@ -1852,3 +1712,102 @@
       layer: vault
       file: src/readwise-wiring.test.ts
       test: "Push to Readwise again (ticket 22) > waits for a sync in flight, which would write its own state over the change"
+
+# Ticket 27: on a phone the plugin does not run, so the link is one Obsidian answers by itself. W15.5 and
+# W15.9 are the load-bearing rows: a link that changes after the first record makes Readwise file a second
+# highlight, and nothing in Obsidian would show it.
+- feature: W15
+  name: The link back from Readwise (ticket 27)
+  code: src/readwise-highlights.ts
+  tier: pro
+  scenarios:
+    - id: W15.1
+      scenario: A highlight on the third page of the render, printed as page 12
+      expect: The link opens page 3 of the render; Readwise still shows page 12
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > opens the page of the render it sits on, which is not the page printed on it"
+
+    - id: W15.2
+      scenario: A highlight of a page-tag unit
+      expect: The link opens that unit's own render at its one page
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > opens a page-tag unit's own render, whose one page is page 1"
+
+    - id: W15.3
+      scenario: A vault whose name holds spaces, an umlaut, `&`, `#` and `?`
+      expect: The link carries the name in one piece
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > carries a vault name of any characters in one piece"
+
+    - id: W15.4
+      scenario: Two highlights on one page
+      expect: Two different links, because Readwise files a highlight by its link
+      layer: unit
+      file: src/readwise-highlights.test.ts
+      test: "readwiseHighlights > a highlight > its link > differs for two highlights on one page"
+
+    - id: W15.5
+      scenario: A page added in front moves a highlight that already has its link
+      expect: The new page number is pushed; the link stays what it was, a page early
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > is frozen at the first record: the page moving changes the text, never the link"
+
+    - id: W15.6
+      scenario: A pushed highlight changes on the tablet and changes back
+      expect: The link stays through both
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > stays through a push and a change after it"
+
+    - id: W15.7
+      scenario: The push asks a record for its link
+      expect: The one stored on the record
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > is what Readwise knows the record by"
+
+    - id: W15.8
+      scenario: A stored link that is not a string
+      expect: Read as no link
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > is left out when what is stored is not one"
+
+    - id: W15.9
+      scenario: A record 1.11.0-beta.1 pushed, which stored no link, changes on the tablet
+      expect: It keeps the link it was pushed under, so Readwise updates it rather than filing it twice
+      layer: unit
+      file: src/readwise-state.test.ts
+      test: "recordUnit > a record's link > stays the old one on a record that has none of its own, however it changes"
+
+    - id: W15.10
+      scenario: A new record of a unit whose render sits deep in the attachments folder
+      expect: The link names the vault and the render's file name, not its folder
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise recorder > links a new record to the page of the unit's render, by file name, in this vault"
+
+    - id: W15.11
+      scenario: A render at the top of the vault
+      expect: The file name as it is
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "the Readwise recorder > takes the file name as it is when the render lies at the top of the vault"
+
+    - id: W15.12
+      scenario: A push of changed records, one with a frozen link, one from the beta
+      expect: Each updates the highlight Readwise holds under its link; no second highlight
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > sends a record's frozen link, and the old link for a record of the beta"
+
+    - id: W15.13
+      scenario: An erased highlight whose id was never learnt
+      expect: Found in the book's listing by its frozen link and deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > deletes > looks a highlight up by its frozen link"

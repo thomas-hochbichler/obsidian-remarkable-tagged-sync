@@ -12,7 +12,7 @@ interface EntryPlace {
 	 */
 	readonly margin?: true;
 	readonly location: number;
-	/** Readwise's `highlight_url`: its update key, and the link back into the vault (spec §7). */
+	/** What a new record's `highlight_url` is: its update key in Readwise, and the link back to the page in the vault. */
 	readonly url: string;
 }
 
@@ -106,8 +106,24 @@ function nestedNote({ notes }: DigestHighlight): { note?: string; noteUnread?: t
 	return { ...(note === "" ? {} : { note }), ...(notes.some((nested) => nested.text === "") ? { noteUnread: true as const } : {}) };
 }
 
-/** Readwise's `highlight_url` for a record: its update key, written unencoded as ticket 10 live-checked it (spec §1.3). */
-export function highlightUrl(docId: string, key: string): string {
+/** Where a unit's links lead: the vault, and the unit's render by its file name. */
+export interface LinkTarget {
+	readonly vault: string;
+	readonly pdf: string;
+}
+
+/**
+ * Readwise's `highlight_url` for a new record: the update key, so frozen at the first record, and the
+ * link back (ticket 27). Obsidian's own `open`, because a phone has no plugin to answer anything else.
+ * The render, not the note: its name holds only ids, so a `#` in a document's name and a renamed note
+ * cannot break the link. `highlight` is for Readwise, which needs one link per highlight on a page.
+ */
+export function highlightUrl({ vault, pdf }: LinkTarget, docId: string, key: string, embedPage: number): string {
+	return `obsidian://open?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(`${pdf}#page=${embedPage}`)}&highlight=${encodeURIComponent(`${docId}/${key}`)}`;
+}
+
+/** The key of a record 1.11.0-beta.1 pushed, which stored none: a new one would make Readwise file the highlight twice. */
+export function betaHighlightUrl(docId: string, key: string): string {
 	return `obsidian://tagged-sync?highlight=${docId}/${key}`;
 }
 
@@ -141,9 +157,9 @@ function location(page: DigestPage, key: string, pageOrder: readonly string[] | 
  * `pageOrder` is the document's page order for a typed document or a notebook's typed pages, whose
  * pages are numbered by it; null for a PDF or an EPUB, whose pages carry their own numbers.
  */
-export function readwiseHighlights(pages: readonly DigestPage[], docId: string, pageOrder: readonly string[] | null): ReadwiseEntry[] {
+export function readwiseHighlights(pages: readonly DigestPage[], docId: string, pageOrder: readonly string[] | null, target: LinkTarget): ReadwiseEntry[] {
 	return pages.flatMap((page) => {
-		const place = (key: string): EntryPlace => ({ key, location: location(page, key, pageOrder), url: highlightUrl(docId, key) });
+		const place = (key: string): EntryPlace => ({ key, location: location(page, key, pageOrder), url: highlightUrl(target, docId, key, page.embedPage) });
 		const highlights = page.highlights.map((highlight): ReadwiseEntry =>
 			highlight.sentence === "" ? { ...place(highlight.key), unread: true } : { ...place(highlight.key), text: boldText(highlight), ...nestedNote(highlight) },
 		);

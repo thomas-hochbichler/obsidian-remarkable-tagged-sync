@@ -20,6 +20,8 @@ import { RENDER_VERSION, type SyncIndex, type SyncIndexRow } from "./sync-engine
 const DOC = "0f1e2d3c-doc";
 const PAGE = "6a7b8c9d-page";
 const KEY = `${PAGE}:1a2b`;
+/** The link a new record of `unit()` gets. */
+const NEW_URL = `obsidian://open?vault=My%20Vault&file=${DOC}.pdf%23page%3D1&highlight=${DOC}%2F${PAGE}%3A1a2b`;
 
 function page(sentence = "The weather station at Cape Marrow was built in the spring."): DigestPage {
 	return {
@@ -32,12 +34,12 @@ function page(sentence = "The weather station at Cape Marrow was built in the sp
 }
 
 function unit(overrides: Partial<ReadwiseUnit> = {}): ReadwiseUnit {
-	return { docId: DOC, pages: [page()], scope: "document", pageOrder: null, marginNotes: true, category: "articles", sources: async () => ({ visibleName: "cape-marrow_final" }), ...overrides };
+	return { docId: DOC, embedPath: `Attachments/${DOC}.pdf`, pages: [page()], scope: "document", pageOrder: null, marginNotes: true, category: "articles", sources: async () => ({ visibleName: "cape-marrow_final" }), ...overrides };
 }
 
 /** A vault's `readwiseBooks`, as the recorder reads and writes it. */
 function vault(books: StoredReadwiseBooks = {}) {
-	const host = { books: () => books, setBooks: (next: StoredReadwiseBooks) => void (books = next) };
+	const host = { books: () => books, setBooks: (next: StoredReadwiseBooks) => void (books = next), vaultName: () => "My Vault" };
 	return { host, books: () => books };
 }
 
@@ -51,8 +53,25 @@ describe("the Readwise recorder", () => {
 			title: "Cape Marrow",
 			author: "Ada Byrne",
 			category: "articles",
-			highlights: { [KEY]: { want: { text: "The weather station at **Cape Marrow** was built in the spring.", location: 12 } } },
+			highlights: { [KEY]: { url: NEW_URL, want: { text: "The weather station at **Cape Marrow** was built in the spring.", location: 12 } } },
 		});
+	});
+
+	// Ticket 27: the render by its file name, so a phone finds it wherever the vault keeps its attachments.
+	it("links a new record to the page of the unit's render, by file name, in this vault", async () => {
+		const { host, books } = vault();
+
+		await createReadwiseRecorder(host).record(unit({ embedPath: `Some/Deep/Folder/${DOC}-${PAGE}.pdf` }));
+
+		expect(readwiseBook(books(), DOC)!.highlights[KEY].url).toBe(`obsidian://open?vault=My%20Vault&file=${DOC}-${PAGE}.pdf%23page%3D1&highlight=${DOC}%2F${PAGE}%3A1a2b`);
+	});
+
+	it("takes the file name as it is when the render lies at the top of the vault", async () => {
+		const { host, books } = vault();
+
+		await createReadwiseRecorder(host).record(unit({ embedPath: `${DOC}.pdf` }));
+
+		expect(readwiseBook(books(), DOC)!.highlights[KEY].url).toBe(NEW_URL);
 	});
 
 	// Spec §11 P21: the name is frozen at the first record, and an EPUB's costs a download.
@@ -215,6 +234,23 @@ describe("pushToReadwise", () => {
 	});
 
 	// Ticket 14 #4: never blank, never a placeholder. Readwise answers `null` for it.
+	// Ticket 27: Readwise knows a highlight by this link, so the same one goes out however often it changes.
+	it("sends a record's frozen link, and the old link for a record of the beta", async () => {
+		const readwise = fakeReadwise();
+		const betaUrl = `obsidian://tagged-sync?highlight=${DOC}/${KEY}0`;
+		const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [NEW_URL]: { id: 7, text: TEXT.text }, [betaUrl]: { id: 8, text: TEXT.text } });
+		const state = data({
+			[DOC]: book({ [KEY]: { url: NEW_URL, pushed: TEXT, id: 7, want: CHANGED }, [`${KEY}0`]: { pushed: TEXT, id: 8, want: CHANGED } }, { bookId: landed.id }),
+		});
+
+		await pushToReadwise(state, readwise.client, FINGERPRINT);
+
+		expect([...landed.highlights].map(([url, { text }]) => [url, text])).toEqual([
+			[NEW_URL, CHANGED.text],
+			[betaUrl, CHANGED.text],
+		]);
+	});
+
 	it("omits the author of a book nobody named, sends the book's category, and still learns the book's id", async () => {
 		const readwise = fakeReadwise();
 		const sent: ReadwiseItem[] = [];
@@ -365,6 +401,16 @@ describe("pushToReadwise", () => {
 			expect(after(state)!.highlights).toEqual({});
 		});
 
+		it("looks a highlight up by its frozen link", async () => {
+			const readwise = fakeReadwise();
+			const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [NEW_URL]: { id: 7, text: TEXT.text } });
+			const state = data({ [DOC]: book({ [KEY]: { url: NEW_URL, pushed: TEXT, want: null } }, { bookId: landed.id }) });
+
+			await pushToReadwise(state, readwise.client, FINGERPRINT);
+
+			expect(readwise.calls).toEqual(["books", `highlights of ${landed.id}`, "delete 7"]);
+		});
+
 		it("drops a delete its book's listing does not find: it is already gone", async () => {
 			const readwise = fakeReadwise();
 			const landed = readwise.seed("Cape Marrow", "Ada Byrne");
@@ -431,7 +477,7 @@ describe("pushToReadwise", () => {
 			expect(state.syncIndex.rows.b.renderVersion).toBe(RENDER_VERSION);
 			expect(state.readwiseBooks).toEqual({ "doc-b": other });
 			// The next sync re-renders the document, and the recorder starts its book afresh.
-			await createReadwiseRecorder({ books: () => state.readwiseBooks, setBooks: (next) => void (state.readwiseBooks = next) }).record(unit());
+			await createReadwiseRecorder({ books: () => state.readwiseBooks, setBooks: (next) => void (state.readwiseBooks = next), vaultName: () => "My Vault" }).record(unit());
 			expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
 			expect(readwise.texts()).toEqual([TEXT.text]);
 			expect(after(state)!.deleted).toBeUndefined();

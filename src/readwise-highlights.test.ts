@@ -4,6 +4,10 @@ import { readwiseHighlights, type ReadableEntry, type ReadwiseEntry } from "./re
 
 const DOC = "0f1e2d3c-doc";
 const PAGE = "6a7b8c9d-page";
+const TARGET = { vault: "My Vault", pdf: `${DOC}.pdf` };
+
+/** The link as Obsidian and Readwise read it, written out rather than borrowed from the code it checks. */
+const link = (key: string, embedPage = 12) => `obsidian://open?vault=My%20Vault&file=${DOC}.pdf%23page%3D${embedPage}&highlight=${DOC}%2F${key.replace(":", "%3A")}`;
 
 /** The entry as one that was read, failing the test where it is not. */
 function read(entry: ReadwiseEntry | undefined): ReadableEntry {
@@ -38,17 +42,45 @@ function page(overrides: Partial<DigestPage> = {}): DigestPage {
 describe("readwiseHighlights", () => {
 	describe("a highlight", () => {
 		it("becomes its sentence with the marked words in bold, on the page it is printed on, linking back to its entry", () => {
-			expect(readwiseHighlights([page({ highlights: [highlight()] })], DOC, null)).toEqual([
+			expect(readwiseHighlights([page({ highlights: [highlight()] })], DOC, null, TARGET)).toEqual([
 				{
 					key: `${PAGE}:1a2b`,
 					text: "The weather station at **Cape Marrow** was built in the spring.",
 					location: 12,
-					url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:1a2b`,
+					url: link(`${PAGE}:1a2b`),
 				},
 			]);
 		});
 
-		const entryOf = (overrides: Partial<DigestHighlight>) => readwiseHighlights([page({ highlights: [highlight(overrides)] })], DOC, null)[0];
+		// Ticket 27: Obsidian's own `open`, because a phone has no plugin to answer anything else.
+		describe("its link", () => {
+			const urlOf = (pages: DigestPage[], target = TARGET) => readwiseHighlights(pages, DOC, null, target)[0].url;
+
+			it("opens the page of the render it sits on, which is not the page printed on it", () => {
+				expect(urlOf([page({ pageLabel: "12", embedPage: 3, highlights: [highlight()] })])).toBe(link(`${PAGE}:1a2b`, 3));
+			});
+
+			it("opens a page-tag unit's own render, whose one page is page 1", () => {
+				const url = urlOf([page({ embedPage: 1, highlights: [highlight()] })], { vault: "My Vault", pdf: `${DOC}-${PAGE}.pdf` });
+
+				expect(url).toBe(`obsidian://open?vault=My%20Vault&file=${DOC}-${PAGE}.pdf%23page%3D1&highlight=${DOC}%2F${PAGE}%3A1a2b`);
+			});
+
+			it("carries a vault name of any characters in one piece", () => {
+				const url = urlOf([page({ highlights: [highlight()] })], { vault: "Ü & #1?", pdf: `${DOC}.pdf` });
+
+				expect(new globalThis.URL(url).searchParams.get("vault")).toBe("Ü & #1?");
+			});
+
+			// Readwise files highlights by this link: two on one page must not share one.
+			it("differs for two highlights on one page", () => {
+				const entries = readwiseHighlights([page({ highlights: [highlight(), highlight({ key: `${PAGE}:9f9f` })] })], DOC, null, TARGET);
+
+				expect(entries[0].url).not.toBe(entries[1].url);
+			});
+		});
+
+		const entryOf = (overrides: Partial<DigestHighlight>) => readwiseHighlights([page({ highlights: [highlight(overrides)] })], DOC, null, TARGET)[0];
 		const textOf = (overrides: Partial<DigestHighlight>) => read(entryOf(overrides)).text;
 
 		it("bolds two runs apart", () => {
@@ -98,25 +130,25 @@ describe("readwiseHighlights", () => {
 
 		// No text layer and no text recorded on the device this sync: nothing says the mark is gone.
 		it("is unread, with no text, when its sentence is empty", () => {
-			expect(entryOf({ sentence: "", marked: [] })).toEqual({ key: `${PAGE}:1a2b`, unread: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:1a2b` });
+			expect(entryOf({ sentence: "", marked: [] })).toEqual({ key: `${PAGE}:1a2b`, unread: true, location: 12, url: link(`${PAGE}:1a2b`) });
 		});
 	});
 
 	describe("a margin note of its own", () => {
 		it("becomes its transcript, with no note", () => {
-			expect(readwiseHighlights([page({ notes: [note()] })], DOC, null)).toEqual([
-				{ key: `${PAGE}:3c4d`, text: "check the date", margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
+			expect(readwiseHighlights([page({ notes: [note()] })], DOC, null, TARGET)).toEqual([
+				{ key: `${PAGE}:3c4d`, text: "check the date", margin: true, location: 12, url: link(`${PAGE}:3c4d`) },
 			]);
 		});
 
 		// Spec §11 P12: the exemption is per item, never per page -- the readable note beside it is
 		// pushed as usual.
 		it("is unread when it could not be transcribed, and the readable note beside it is not", () => {
-			const entries = readwiseHighlights([page({ notes: [note({ text: "" }), note({ key: `${PAGE}:5e6f`, text: "1962?" })] })], DOC, null);
+			const entries = readwiseHighlights([page({ notes: [note({ text: "" }), note({ key: `${PAGE}:5e6f`, text: "1962?" })] })], DOC, null, TARGET);
 
 			expect(entries).toEqual([
-				{ key: `${PAGE}:3c4d`, unread: true, margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:3c4d` },
-				{ key: `${PAGE}:5e6f`, text: "1962?", margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${PAGE}:5e6f` },
+				{ key: `${PAGE}:3c4d`, unread: true, margin: true, location: 12, url: link(`${PAGE}:3c4d`) },
+				{ key: `${PAGE}:5e6f`, text: "1962?", margin: true, location: 12, url: link(`${PAGE}:5e6f`) },
 			]);
 		});
 	});
@@ -136,28 +168,28 @@ describe("readwiseHighlights", () => {
 		}
 
 		it("becomes its transcript, line breaks kept, on the page it follows", () => {
-			expect(readwiseHighlights([added("first line\nsecond line")], DOC, null)).toEqual([
-				{ key: `${ADDED}:page`, text: "first line\nsecond line", margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${ADDED}:page` },
+			expect(readwiseHighlights([added("first line\nsecond line")], DOC, null, TARGET)).toEqual([
+				{ key: `${ADDED}:page`, text: "first line\nsecond line", margin: true, location: 12, url: link(`${ADDED}:page`, 13) },
 			]);
 		});
 
 		// Typed text may stand in for handwriting that was not read (#247): the entry is then less than the page.
 		it("is unread when its handwriting could not be read, whatever text stands in for it", () => {
-			const entries = readwiseHighlights([added("typed text", { added: { relation: "after", label: "12", sourceIndex: 11, nth: null, unread: true } })], DOC, null);
+			const entries = readwiseHighlights([added("typed text", { added: { relation: "after", label: "12", sourceIndex: 11, nth: null, unread: true } })], DOC, null, TARGET);
 
-			expect(entries).toEqual([{ key: `${ADDED}:page`, unread: true, margin: true, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${ADDED}:page` }]);
+			expect(entries).toEqual([{ key: `${ADDED}:page`, unread: true, margin: true, location: 12, url: link(`${ADDED}:page`, 13) }]);
 		});
 
 		// Read, and nothing legible on it: there is nothing to push, and nothing says to keep an older reading.
 		it("gives nothing when it was read and holds no text", () => {
-			expect(readwiseHighlights([added("")], DOC, null)).toEqual([]);
+			expect(readwiseHighlights([added("")], DOC, null, TARGET)).toEqual([]);
 		});
 	});
 
 	// Spec §11 P8: from the document, never from the unit. A page-tag unit embeds its one page as page 1,
 	// so anything unit-relative would flip between the two units of one document and re-push forever.
 	describe("the page number", () => {
-		const locationOf = (pages: DigestPage[], pageOrder: readonly string[] | null = null) => readwiseHighlights(pages, DOC, pageOrder).map((entry) => entry.location);
+		const locationOf = (pages: DigestPage[], pageOrder: readonly string[] | null = null) => readwiseHighlights(pages, DOC, pageOrder, TARGET).map((entry) => entry.location);
 
 		it("is the printed label where that is a number", () => {
 			// Source index 2: a label that were ignored would give 3.
@@ -220,7 +252,7 @@ describe("readwiseHighlights", () => {
 		const words = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => `w${from + i}`).join(" ");
 
 		it("is cut to the limit, ending in an ellipsis", () => {
-			const text = read(readwiseHighlights([page({ highlights: [highlight({ sentence: LONG, marked: [] })] })], DOC, null)[0]).text;
+			const text = read(readwiseHighlights([page({ highlights: [highlight({ sentence: LONG, marked: [] })] })], DOC, null, TARGET)[0]).text;
 
 			// At the limit, less a space the cut may have landed after.
 			expect(text.length).toBeLessThanOrEqual(LIMIT);
@@ -233,7 +265,7 @@ describe("readwiseHighlights", () => {
 			// w10–w12 well before the cut, w1540–w1560 across it (w1550 sits at about 8,190), w1700 past it.
 			const marked = [words(10, 12), words(1540, 1560), "w1700"];
 
-			const text = read(readwiseHighlights([page({ highlights: [highlight({ sentence: LONG, marked })] })], DOC, null)[0]).text;
+			const text = read(readwiseHighlights([page({ highlights: [highlight({ sentence: LONG, marked })] })], DOC, null, TARGET)[0]).text;
 
 			expect(text.length).toBeLessThanOrEqual(LIMIT);
 			expect(text.startsWith(`w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 **${words(10, 12)}** w13`)).toBe(true);
@@ -251,6 +283,7 @@ describe("readwiseHighlights", () => {
 				],
 				DOC,
 				null,
+				TARGET,
 			).map(read);
 
 			// The highlight's note, the margin note's text, the added page's text.
@@ -264,7 +297,7 @@ describe("readwiseHighlights", () => {
 		it("is left whole at exactly the limit", () => {
 			const text = "y".repeat(LIMIT);
 
-			expect(read(readwiseHighlights([page({ notes: [note({ text })] })], DOC, null)[0]).text).toBe(text);
+			expect(read(readwiseHighlights([page({ notes: [note({ text })] })], DOC, null, TARGET)[0]).text).toBe(text);
 		});
 	});
 });

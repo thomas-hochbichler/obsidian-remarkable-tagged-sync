@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeClock } from "../tests/stubs/fake-clock";
 import { type Command, FakeApp, takeNotices } from "../tests/stubs/fake-obsidian";
-import { digestId, type DigestPage } from "./digest-builder";
+import type { DigestPage } from "./digest-builder";
 import { NO_LICENCE } from "./licence-state";
 import type { ReadwiseClient } from "./readwise-client";
 import type { ReadwiseRecorder } from "./readwise-push";
@@ -80,7 +80,6 @@ const { ReadwiseError } = await import("./readwise-client");
 interface Plugin {
 	app: FakeApp;
 	commands: Command[];
-	protocolHandlers: Map<string, (params: Record<string, string>) => unknown>;
 	data: Record<string, unknown> & { readwiseBooks: Record<string, { highlights: Record<string, unknown> }>; syncIndex: { rows: Record<string, { renderVersion?: number }> } };
 	syncNow(): Promise<void>;
 	readwiseLastCheck: string | null;
@@ -144,13 +143,13 @@ describe("the Readwise half of a sync", () => {
 		const plugin = await pluginWith();
 		const page: DigestPage = { pageLabel: "3", embedPage: 1, source: null, highlights: [{ id: "hl-1", key: "p0:9f", sentence: "A new mark.", rects: [], tool: "marker", marked: [], color: null, notes: [], section: null, top: 0 }], notes: [] };
 		engine.during = async () => {
-			await engine.recorders[0]!.record({ docId: "doc-2", pages: [page], scope: "document", pageOrder: null, marginNotes: true, category: "articles", sources: async () => ({ visibleName: "Second" }) });
+			await engine.recorders[0]!.record({ docId: "doc-2", embedPath: "Attachments/doc-2.pdf", pages: [page], scope: "document", pageOrder: null, marginNotes: true, category: "articles", sources: async () => ({ visibleName: "Second" }) });
 		};
 		readwise.failure = new ReadwiseError("unreachable", "Could not reach readwise.io.");
 
 		await plugin.syncNow();
 
-		expect(plugin.data.readwiseBooks["doc-2"]).toEqual({ title: "Second", category: "articles", highlights: { "p0:9f": { want: { text: "A new mark.", location: 3 } } } });
+		expect(plugin.data.readwiseBooks["doc-2"]).toEqual({ title: "Second", category: "articles", highlights: { "p0:9f": { url: `obsidian://open?vault=${encodeURIComponent(plugin.app.vault.getName())}&file=doc-2.pdf%23page%3D1&highlight=doc-2%2Fp0%3A9f`, want: { text: "A new mark.", location: 3 } } } });
 	});
 
 	it("records nothing and pushes nothing without Pro", async () => {
@@ -279,46 +278,6 @@ describe("the push when a background sync finds the tablet asleep (spec §11 P22
 });
 
 describe("the link back from Readwise and Open in Readwise (spec §7)", () => {
-	const BLOCK = digestId("hl", "6a7b8c9d-page", "1a2b");
-
-	it("opens the note at the highlight's block, in a free vault too (spec §11 P19)", async () => {
-		const plugin = await pluginWith({ pro: false });
-		await plugin.app.vault.create("Notes/1.md", "");
-		plugin.app.metadataCache.blocks.set("Notes/1.md", [BLOCK]);
-
-		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
-		await vi.waitFor(() => expect(plugin.app.workspace.openedFiles).toEqual([`Notes/1.md#^${BLOCK}`]));
-		expect(takeNotices()).toEqual([]);
-	});
-
-	it("opens a note whose name holds a # as that note, not as a link cut at the #", async () => {
-		const plugin = await pluginWith();
-		plugin.data.syncIndex.rows["unit-1"] = { ...plugin.data.syncIndex.rows["unit-1"], notePath: "Papers/C# Primer.md" } as never;
-		await plugin.app.vault.create("Papers/C# Primer.md", "");
-		plugin.app.metadataCache.blocks.set("Papers/C# Primer.md", [BLOCK]);
-
-		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
-		await vi.waitFor(() => expect(plugin.app.workspace.openedFiles).toEqual([`Papers/C# Primer.md#^${BLOCK}`]));
-		expect(plugin.app.vault.getFileByPath("Papers/C.md")).toBeNull();
-	});
-
-	it("opens the note at its top when Obsidian knows no block in it", async () => {
-		const plugin = await pluginWith();
-		await plugin.app.vault.create("Notes/1.md", "");
-
-		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
-		await vi.waitFor(() => expect(plugin.app.workspace.openedFiles).toEqual(["Notes/1.md"]));
-	});
-
-	it("says the note is gone rather than opening a path no note is at, and for a link without a highlight", async () => {
-		const plugin = await pluginWith();
-
-		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync", highlight: `doc-1/${KEY}` });
-		await plugin.protocolHandlers.get("tagged-sync")!({ action: "tagged-sync" });
-		await vi.waitFor(() => expect(takeNotices()).toEqual(["This highlight's note is no longer in this vault.", "This highlight's note is no longer in this vault."]));
-		expect(plugin.app.workspace.openedFiles).toEqual([]);
-	});
-
 	it("opens the note's book in Readwise once its id is known, and is unavailable before", async () => {
 		const open = vi.fn();
 		vi.stubGlobal("window", { open });

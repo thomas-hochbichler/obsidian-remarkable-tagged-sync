@@ -117,7 +117,7 @@ system.
   leaves it only to that same backend, and — with Zotero write-back — into your own Zotero
   library, or a group library you switched on: margin notes as annotation comments, pages you
   added as notes; and — with *Push highlights to Readwise* — into your own Readwise library: the
-  highlighted sentences, margin notes and pages you added, as text. The render carries its text layer, so the transcript goes along with it. See the
+  highlighted sentences, margin notes and pages you added, as text, each with a link back to its page that names your vault. The render carries its text layer, so the transcript goes along with it. See the
   README.
 
 *Last updated: 2026-11-04.*

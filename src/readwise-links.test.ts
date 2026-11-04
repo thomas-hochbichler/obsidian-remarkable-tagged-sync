@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { digestId } from "./digest-builder";
-import { deletedBookOf, type FoundNote, linkedNote, readwiseBookUrl } from "./readwise-links";
+import { deletedBookOf, readwiseBookUrl } from "./readwise-links";
 
 const DOC = "0f1e2d3c-doc";
 const PAGE = "6a7b8c9d-page";
@@ -15,76 +14,6 @@ interface Row {
 function row(overrides: Partial<Row> = {}): Row {
 	return { docId: DOC, pageId: null, notePath: "Papers/Cape Marrow.md", status: "active", ...overrides };
 }
-
-/** A vault holding exactly the notes listed, each carrying exactly the blocks listed for it. A note is its path. */
-function carrying(blocks: Record<string, readonly string[]>): (notePath: string) => FoundNote<string> | null {
-	return (notePath) => (blocks[notePath] === undefined ? null : { note: notePath, blocks: blocks[notePath] });
-}
-
-describe("linkedNote", () => {
-	it("opens the whole-document note at the highlight's block", () => {
-		const block = digestId("hl", PAGE, "1a2b");
-		expect(linkedNote({ a: row() }, `${DOC}/${PAGE}:1a2b`, carrying({ "Papers/Cape Marrow.md": [block] }))).toEqual({
-			note:"Papers/Cape Marrow.md",
-			block,
-		});
-	});
-
-	it("opens the page note at a margin note's block when the document has no whole-document note", () => {
-		const block = digestId("nt", PAGE, "3c4d");
-		const rows = { a: row({ pageId: PAGE, notePath: "Notes/Page 3.md" }), b: row({ pageId: "other-page", notePath: "Notes/Page 4.md" }) };
-		expect(linkedNote(rows, `${DOC}/${PAGE}:3c4d`, carrying({ "Notes/Page 3.md": [block] }))).toEqual({ note:"Notes/Page 3.md", block });
-	});
-
-	it("prefers the whole-document note when the page has a note of its own too", () => {
-		const block = digestId("hl", PAGE, "1a2b");
-		const rows = { a: row({ pageId: PAGE, notePath: "Notes/Page 3.md" }), b: row() };
-		const vault = carrying({ "Notes/Page 3.md": [block], "Papers/Cape Marrow.md": [block] });
-		expect(linkedNote(rows, `${DOC}/${PAGE}:1a2b`, vault)).toEqual({ note:"Papers/Cape Marrow.md", block });
-	});
-
-	it("falls through to the page note when only that one still carries the block", () => {
-		const block = digestId("hl", PAGE, "1a2b");
-		const rows = { a: row(), b: row({ pageId: PAGE, notePath: "Notes/Page 3.md" }) };
-		expect(linkedNote(rows, `${DOC}/${PAGE}:1a2b`, carrying({ "Notes/Page 3.md": [block] }))).toEqual({ note:"Notes/Page 3.md", block });
-	});
-
-	it("opens the note at its top when no note carries the block any more", () => {
-		expect(linkedNote({ a: row() }, `${DOC}/${PAGE}:1a2b`, carrying({ "Papers/Cape Marrow.md": [] }))).toEqual({
-			note:"Papers/Cape Marrow.md",
-			block: null,
-		});
-	});
-
-	it("passes over a note deleted by hand", () => {
-		const rows = { a: row(), b: row({ pageId: PAGE, notePath: "Notes/Page 3.md" }) };
-		expect(linkedNote(rows, `${DOC}/${PAGE}:1a2b`, carrying({ "Notes/Page 3.md": [] }))).toEqual({ note:"Notes/Page 3.md", block: null });
-		expect(linkedNote({ a: row() }, `${DOC}/${PAGE}:1a2b`, carrying({}))).toBeNull();
-	});
-
-	it("opens nothing when the document has no active note left", () => {
-		const rows = { a: row({ status: "deleted" }), b: row({ docId: "another-doc", notePath: "Other.md" }) };
-		expect(linkedNote(rows, `${DOC}/${PAGE}:1a2b`, carrying({ "Papers/Cape Marrow.md": [], "Other.md": [] }))).toBeNull();
-	});
-
-	it.each(["", DOC, `${DOC}/`, `${DOC}/${PAGE}`, `${DOC}/${PAGE}:`, `${DOC}/:1a2b`, `/${PAGE}:1a2b`])("opens nothing for the malformed value %j", (value) => {
-		expect(linkedNote({ a: row({ docId: "", pageId: "" }), b: row() }, value, (notePath) => ({ note: notePath, blocks: [] }))).toBeNull();
-	});
-
-	it("takes the page id before the key's first colon, so a CRDT id with a colon still finds its block", () => {
-		const block = digestId("hl", PAGE, "1a:2b");
-		const rows = { a: row({ pageId: PAGE, notePath: "Notes/Page 3.md" }) };
-		expect(linkedNote(rows, `${DOC}/${PAGE}:1a:2b`, carrying({ "Notes/Page 3.md": [block] }))).toEqual({ note:"Notes/Page 3.md", block });
-	});
-
-	it("opens a page added on the tablet at its page block", () => {
-		const block = digestId("nt", PAGE, "page");
-		expect(linkedNote({ a: row() }, `${DOC}/${PAGE}:page`, carrying({ "Papers/Cape Marrow.md": [block] }))).toEqual({
-			note:"Papers/Cape Marrow.md",
-			block,
-		});
-	});
-});
 
 describe("readwiseBookUrl", () => {
 	const book = { title: "Cape Marrow", category: "articles", highlights: {} };

@@ -10,7 +10,7 @@
 
 import type { BookIdentity } from "./readwise-book";
 import type { ReadwiseCategory } from "./readwise-client";
-import { pageIdOf, type ReadwiseEntry } from "./readwise-highlights";
+import { betaHighlightUrl, pageIdOf, type ReadwiseEntry } from "./readwise-highlights";
 
 /** The settings rows of spec §2. */
 export interface ReadwiseSettings {
@@ -34,6 +34,11 @@ export interface ReadwiseText {
 }
 
 export interface ReadwiseHighlight {
+	/**
+	 * Its `highlight_url`, frozen at the first record: Readwise files a changed one as a second highlight,
+	 * so a page added in front leaves the link a page early. Absent on a record of 1.11.0-beta.1.
+	 */
+	readonly url?: string;
 	/** What Readwise holds from us; absent = never landed. */
 	readonly pushed?: ReadwiseText;
 	/** Readwise's highlight id, once known (spec §11 P5, best effort). */
@@ -104,6 +109,7 @@ function readHighlight(value: unknown): ReadwiseHighlight | null {
 	const want = stored.want === null ? null : readText(stored.want);
 	const rejected = readText(stored.rejected);
 	return {
+		...(typeof stored.url === "string" ? { url: stored.url } : {}),
 		...(pushed === undefined ? {} : { pushed }),
 		...(typeof stored.id === "number" ? { id: stored.id } : {}),
 		...(want === undefined ? {} : { want }),
@@ -146,14 +152,19 @@ function sameText(a: ReadwiseText | null | undefined, b: ReadwiseText | null | u
 	return a != null && b != null && a.text === b.text && a.note === b.note && a.location === b.location;
 }
 
-/** The record holding `text` from now on (spec §4.2). */
-function wanting(record: ReadwiseHighlight | undefined, text: ReadwiseText): ReadwiseHighlight {
+/** The record holding `text` from now on (spec §4.2); `url` is a new record's link. */
+function wanting(record: ReadwiseHighlight | undefined, text: ReadwiseText, url: string): ReadwiseHighlight {
 	// The tablet is back to what Readwise holds: whatever was pending is void, a delete included.
 	if (record?.pushed && sameText(record.pushed, text)) {
 		const { want: _void, rejected: _cleared, ...rest } = record;
 		return rest;
 	}
-	return { ...record, want: text };
+	return { ...(record ?? { url }), want: text };
+}
+
+/** A record's `highlight_url`: what Readwise knows it by. */
+export function recordUrl(docId: string, key: string, record: ReadwiseHighlight): string {
+	return record.url ?? betaHighlightUrl(docId, key);
 }
 
 /** Does the unit speak for this record? With margin notes off, never for a note or an added page (spec §11 P20). */
@@ -229,7 +240,7 @@ export function recordUnit(books: StoredReadwiseBooks, docId: string, unit: Reco
 		if (item.unread || (item.margin && !unit.marginNotes)) continue;
 		const record = highlights[item.key];
 		const note = unit.marginNotes && !item.noteUnread ? item.note : storedNote(record);
-		const wanted = wanting(record, { text: item.text, ...(note === undefined ? {} : { note }), location: item.location });
+		const wanted = wanting(record, { text: item.text, ...(note === undefined ? {} : { note }), location: item.location }, item.url);
 		highlights[item.key] = item.margin ? { ...wanted, margin: true } : wanted;
 	}
 	for (const [key, record] of Object.entries(highlights)) {

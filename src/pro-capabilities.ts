@@ -232,7 +232,7 @@ const READWISE_CAPABILITY: ProCapability = {
 	enforcedAt: {
 		site: "src/readwise-push.ts readwiseRecorderFor and readwiseRecordingOn, called from src/main.ts runSyncNow and pushReadwise",
 		run: (entitlement) =>
-			readwiseRecorderFor({ push: true, tokenSecret: "readwise" }, entitlement, { books: () => ({}), setBooks: () => {} }) === undefined
+			readwiseRecorderFor({ push: true, tokenSecret: "readwise" }, entitlement, { books: () => ({}), setBooks: () => {}, vaultName: () => "" }) === undefined
 				? "refused-in-place"
 				: "allowed",
 	},

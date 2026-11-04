@@ -624,7 +624,13 @@ highlight: the sentence it sits in, with the words you marked in bold, and its p
 margin note anchored to the passage becomes that highlight's note; a margin note on its own, and a
 page you added on the tablet, become highlights of their own. The typed pages of a notebook go too;
 handwritten notebook pages are never pushed. In Readwise, each highlight's *(Page 12)* is a link:
-click it and Obsidian opens the note at that quote.
+click it and Obsidian opens the PDF in your vault at that page. It works from the Readwise app on
+your phone too, as long as the vault and its PDFs are on the phone, and Obsidian switches to the right
+vault by itself.
+
+Each link is fixed when the highlight is first pushed, because Readwise recognises a highlight by it.
+So if you later add a page in front of a highlight, its link opens a page too early, and if you rename
+the vault, the links already in Readwise stop working. Renaming or moving a note changes nothing.
 
 The highlights stay in page order. One limit: a mark you make later, above marks already sent on the
 same page, shows last on that page in Readwise.
@@ -674,7 +680,7 @@ it changes on the tablet, and *Connection* counts it.
 ### Readwise's own Obsidian plugin
 
 If you also use Readwise's own Obsidian plugin, it copies these books back into your vault, one file
-per book, each highlight linking to your note. To keep them out, turn on *Select Items to be
+per book, each highlight linking to its page in the PDF. To keep them out, turn on *Select Items to be
 Exported* in Readwise and uncheck each Tagged Sync book. Every new book arrives checked, so each new
 document has to be unchecked by hand.
 
@@ -1053,7 +1059,8 @@ This plugin makes network requests to exactly one place by default:
   of your annotated PDFs, EPUBs and typed pages into your Readwise library: the sentence each
   mark sits in, with the marked words in bold; the transcribed text of your margin notes and of
   pages you added on the tablet; the page number; the document's title and author; and a link back
-  to the note, which carries the reMarkable document's id but not its name or folder. It reads back
+  to the page in the PDF, which carries **your vault's name** and the reMarkable document's id, but
+  not the document's name or any folder. It reads back
   only the list of books it pushed itself and, when it has to, the ids of its own highlights — to
   notice a book you deleted, to delete a highlight you erased, and to tell whether a new token
   belongs to a different account. Handwritten notebook pages are never pushed, and your handwriting

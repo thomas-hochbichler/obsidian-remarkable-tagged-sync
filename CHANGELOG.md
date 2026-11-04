@@ -23,8 +23,9 @@ Obsidian to get this release.
   Readwise access token, and every sync puts the highlights of your annotated PDFs, EPUBs and typed
   pages into your Readwise library: one entry per document (an EPUB under Books, anything else under
   Articles), the sentence each mark sits in with your marked words in bold, your margin notes as
-  highlight notes, and a link from each highlight back to the note. They come up in your Daily
-  Review. Erase a mark on the tablet and it goes from Readwise too; an edit you make in Readwise
+  highlight notes, and a link from each highlight to its page in the PDF in your vault, which works
+  from the Readwise app on your phone too. The link carries your vault's name. They come up in your
+  Daily Review. Erase a mark on the tablet and it goes from Readwise too; an edit you make in Readwise
   stays until that highlight, or the reading of its margin note, changes. A name or category you
   give a book in Readwise is kept, and a book you delete there stays deleted. Only text is sent;
   your handwriting and page images stay on your machine. Needs a Readwise plan with API access.

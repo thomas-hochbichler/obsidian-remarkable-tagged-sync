@@ -1417,6 +1417,7 @@ async function writeUnit(
 		await deps.readwise.record({
 			...unit,
 			docId: params.docId,
+			embedPath,
 			sources: async () => {
 				// A book that cannot be fetched is still recorded, under the name the tablet gives it.
 				const book = await epub?.().catch(() => null);

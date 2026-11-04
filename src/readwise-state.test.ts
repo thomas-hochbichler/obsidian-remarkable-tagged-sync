@@ -11,6 +11,7 @@ import {
 	type ReadwiseHighlight,
 	type ReadwiseText,
 	recordUnit,
+	recordUrl,
 	type RecordedUnit,
 	type StoredReadwiseBooks,
 	withBook,
@@ -23,8 +24,11 @@ const DOC = "0f1e2d3c-doc";
 const PAGE = "6a7b8c9d-page";
 const OTHER_PAGE = "9e8d7c6b-page";
 
+/** What the tablet's entry links to right now; the page in it is what moves. */
+const link = (key: string, embedPage = 12) => `obsidian://open?file=${DOC}.pdf%23page%3D${embedPage}&highlight=${key}`;
+
 function entry(key: string, text: string, overrides: Partial<ReadwiseEntry> = {}): ReadwiseEntry {
-	return { key, text, location: 12, url: `obsidian://tagged-sync?highlight=${DOC}/${key}`, ...overrides } as ReadwiseEntry;
+	return { key, text, location: 12, url: link(key), ...overrides } as ReadwiseEntry;
 }
 
 function unit(items: readonly ReadwiseEntry[], overrides: Partial<RecordedUnit> = {}): RecordedUnit {
@@ -127,7 +131,44 @@ describe("recordUnit", () => {
 	it("deletes a passage re-selected under a new key and creates it under that key", () => {
 		const books = recordUnit(storedBook({ [KEY]: { pushed: PUSHED, id: 901 } }), DOC, unit([entry(`${PAGE}:3c4d`, SENTENCE)]));
 
-		expect(bookAfter(books).highlights).toEqual({ [KEY]: { pushed: PUSHED, id: 901, want: null }, [`${PAGE}:3c4d`]: { want: PUSHED } });
+		expect(bookAfter(books).highlights).toEqual({ [KEY]: { pushed: PUSHED, id: 901, want: null }, [`${PAGE}:3c4d`]: { url: link(`${PAGE}:3c4d`), want: PUSHED } });
+	});
+
+	// Ticket 27: the link is the update key, so a new one would make Readwise file the highlight twice.
+	describe("a record's link", () => {
+		it("is frozen at the first record: the page moving changes the text, never the link", () => {
+			const first = recordUnit({}, DOC, unit([entry(KEY, SENTENCE)]));
+			const moved = recordUnit(first, DOC, unit([entry(KEY, SENTENCE, { location: 13, url: link(KEY, 13) })]));
+
+			expect(bookAfter(moved).highlights[KEY]).toEqual({ url: link(KEY), want: { text: SENTENCE, location: 13 } });
+		});
+
+		it("stays through a push and a change after it", () => {
+			const stored = storedBook({ [KEY]: { url: link(KEY), pushed: PUSHED, id: 901 } });
+
+			const changed = recordUnit(stored, DOC, unit([entry(KEY, "The **station** moved.", { url: link(KEY, 13) })]));
+			const back = recordUnit(changed, DOC, unit([entry(KEY, SENTENCE, { url: link(KEY, 13) })]));
+
+			expect(bookAfter(changed).highlights[KEY].url).toBe(link(KEY));
+			expect(bookAfter(back).highlights[KEY]).toEqual({ url: link(KEY), pushed: PUSHED, id: 901 });
+		});
+
+		it("is what Readwise knows the record by", () => {
+			expect(recordUrl(DOC, KEY, { url: link(KEY) })).toBe(link(KEY));
+		});
+
+		// Pushed by 1.11.0-beta.1 under the link it wrote then: moving it to the new one would open a second highlight.
+		it("stays the old one on a record that has none of its own, however it changes", () => {
+			const books = recordUnit(storedBook({ [KEY]: { pushed: PUSHED, id: 901 } }), DOC, unit([entry(KEY, "The **station** moved.")]));
+
+			const record = bookAfter(books).highlights[KEY];
+			expect(record).not.toHaveProperty("url");
+			expect(recordUrl(DOC, KEY, record)).toBe(`obsidian://tagged-sync?highlight=${DOC}/${KEY}`);
+		});
+
+		it("is left out when what is stored is not one", () => {
+			expect(bookAfter(storedBook({ [KEY]: { url: 7, want: PUSHED } as never })).highlights[KEY]).toEqual({ want: PUSHED });
+		});
 	});
 
 	// Research 03 §3.3: an EPUB re-laid out keeps the key and moves other words under it.
@@ -145,7 +186,7 @@ describe("recordUnit", () => {
 			const stored = storedBook({ [NOTE_KEY]: { pushed: { text: "check the date", location: 12 }, margin: true } });
 			const books = recordUnit(stored, DOC, unit([{ key: NOTE_KEY, unread: true, margin: true, location: 12, url: "" }, entry(KEY, SENTENCE)]));
 
-			expect(bookAfter(books).highlights).toEqual({ [NOTE_KEY]: { pushed: { text: "check the date", location: 12 }, margin: true }, [KEY]: { want: PUSHED } });
+			expect(bookAfter(books).highlights).toEqual({ [NOTE_KEY]: { pushed: { text: "check the date", location: 12 }, margin: true }, [KEY]: { url: link(KEY), want: PUSHED } });
 		});
 
 		it("creates nothing for an entry never read", () => {
@@ -366,7 +407,7 @@ describe("recordUnit", () => {
 			title: "Cape Marrow",
 			author: "Ada Byrne",
 			category: "books",
-			highlights: { [`${PAGE}:1a2b`]: { want: { text: "The **weather station** was built in the spring.", location: 12 } } },
+			highlights: { [`${PAGE}:1a2b`]: { url: link(`${PAGE}:1a2b`), want: { text: "The **weather station** was built in the spring.", location: 12 } } },
 		});
 	});
 });

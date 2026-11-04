@@ -20,7 +20,7 @@ import {
 	type ReadwiseItem,
 	type ReadwisePushResult,
 } from "./readwise-client";
-import { highlightUrl, readwiseHighlights } from "./readwise-highlights";
+import { readwiseHighlights } from "./readwise-highlights";
 import {
 	liveBooks,
 	pendingDocuments,
@@ -31,6 +31,7 @@ import {
 	type ReadwiseText,
 	readwiseCounts,
 	recordUnit,
+	recordUrl,
 	type RecordScope,
 	type ReadwiseSettings,
 	type StoredReadwiseBooks,
@@ -41,6 +42,8 @@ import { invalidateRenders, type SyncIndex } from "./sync-engine";
 /** One written unit with a digest, as the engine hands it to the recorder (spec §4.2). */
 export interface ReadwiseUnit {
 	readonly docId: string;
+	/** The unit's render in the vault, which a new record's link opens (ticket 27). */
+	readonly embedPath: string;
 	/** The unit's digest entries. */
 	readonly pages: readonly DigestPage[];
 	readonly scope: RecordScope;
@@ -66,6 +69,8 @@ export interface ReadwiseRecorder {
 export interface RecorderHost {
 	books(): StoredReadwiseBooks;
 	setBooks(books: StoredReadwiseBooks): void;
+	/** The vault's name, which a new record's link carries: without it a phone looks in whichever vault is open (ticket 27). */
+	vaultName(): string;
 }
 
 /** The gate: pushing to Readwise is Pro (ticket 06 #4). */
@@ -88,9 +93,10 @@ const NAME_NOT_READ: BookIdentity = { title: "" };
 
 export function createReadwiseRecorder(host: RecorderHost): ReadwiseRecorder {
 	return {
-		async record({ docId, pages, scope, pageOrder, marginNotes, category, sources }) {
+		async record({ docId, embedPath, pages, scope, pageOrder, marginNotes, category, sources }) {
 			const identity = host.books()[docId] === undefined ? bookIdentity(await sources()) : NAME_NOT_READ;
-			const items = readwiseHighlights(pages, docId, pageOrder);
+			const pdf = embedPath.slice(embedPath.lastIndexOf("/") + 1);
+			const items = readwiseHighlights(pages, docId, pageOrder, { vault: host.vaultName(), pdf });
 			host.setBooks(recordUnit(host.books(), docId, { items, scope, identity, category, marginNotes }));
 		},
 	};
@@ -358,7 +364,7 @@ async function sendDeletes(data: ReadwiseData, client: ReadwiseClient): Promise<
 			let id = record.id;
 			if (id === undefined && book.bookId !== undefined) {
 				ids ??= new Map((await client.bookHighlights(book.bookId)).map((entry) => [entry.url, entry.id]));
-				id = ids.get(highlightUrl(docId, key));
+				id = ids.get(recordUrl(docId, key, record));
 			}
 			if (id !== undefined) await client.remove(id);
 			delete highlights[key];
@@ -378,8 +384,9 @@ interface Outgoing {
 function outgoing(data: ReadwiseData): Outgoing[] {
 	return liveBooks(data.readwiseBooks).flatMap(([docId, book]) =>
 		pendingItems(book)
-			.filter((entry): entry is [string, { want: ReadwiseText }] => entry[1].want != null)
-			.map(([key, { want }]) => {
+			.filter((entry): entry is [string, ReadwiseHighlight & { want: ReadwiseText }] => entry[1].want != null)
+			.map(([key, record]) => {
+				const { want } = record;
 				const item: ReadwiseItem = {
 					title: book.title,
 					...(book.author === undefined ? {} : { author: book.author }),
@@ -387,7 +394,7 @@ function outgoing(data: ReadwiseData): Outgoing[] {
 					text: want.text,
 					...(want.note === undefined ? {} : { note: want.note }),
 					location: want.location,
-					url: highlightUrl(docId, key),
+					url: recordUrl(docId, key, record),
 				};
 				return { docId, key, want, item };
 			}),

@@ -56,7 +56,7 @@ import { registerZoteroCommands, zoteroPassFor, type ZoteroHost } from "./zotero
 import { markListed } from "./zotero-send";
 import { backfillFrontmatter, cleanupFrontmatter } from "./frontmatter-pass";
 import { createReadwiseClient } from "./readwise-client";
-import { deletedBookOf, HIGHLIGHT_NOTE_GONE_NOTICE, linkedNote, readwiseBookUrl } from "./readwise-links";
+import { deletedBookOf, readwiseBookUrl } from "./readwise-links";
 import {
 	pushBookAgain,
 	pushToReadwise,
@@ -482,9 +482,7 @@ export default class TaggedSyncPlugin extends Plugin {
 		// runs, not here.
 		registerZoteroCommands(this.zoteroHost());
 
-		// Free, both (spec §11 P19): a link from Readwise only opens a note, and a lapsed licence must
-		// not break the links already sitting in someone's library.
-		this.registerObsidianProtocolHandler("tagged-sync", (params) => void this.openHighlightLink(params.highlight ?? ""));
+		// Free: it only opens a book, and a lapsed licence must not take the way there from someone's library.
 		this.addCommand({
 			id: "open-in-readwise",
 			name: "Open in Readwise",
@@ -546,23 +544,6 @@ export default class TaggedSyncPlugin extends Plugin {
 		await this.saveData(this.data);
 		// Recording the document again needs its pages, so the push comes with a whole sync, not alone.
 		await this.syncNow();
-	}
-
-	/**
-	 * Opens the note behind a Readwise highlight's link, `obsidian://tagged-sync?highlight=…` (spec §7),
-	 * at its block. The file itself is opened, not a link text: `openLinkText` would cut a note named
-	 * "C# Primer" at its `#` and create an empty note "C".
-	 */
-	private async openHighlightLink(value: string): Promise<void> {
-		const target = linkedNote(this.data.syncIndex.rows, value, (notePath) => {
-			const note = this.app.vault.getFileByPath(notePath);
-			return note === null ? null : { note, blocks: Object.keys(this.app.metadataCache.getFileCache(note)?.blocks ?? {}) };
-		});
-		if (target === null) {
-			new Notice(HIGHLIGHT_NOTE_GONE_NOTICE);
-			return;
-		}
-		await this.app.workspace.getLeaf(false).openFile(target.note, target.block === null ? {} : { eState: { subpath: `#^${target.block}` } });
 	}
 
 	/**
@@ -798,6 +779,7 @@ export default class TaggedSyncPlugin extends Plugin {
 						setBooks: (books) => {
 							this.data.readwiseBooks = books;
 						},
+						vaultName: () => this.app.vault.getName(),
 					}),
 					now: () => this.nowIso(),
 					onProgress: (progress) => this.showProgress(progress),
