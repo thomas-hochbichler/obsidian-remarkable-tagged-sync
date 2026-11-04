@@ -662,9 +662,9 @@ book in Readwise, edit its author or move it to another category, and your choic
 show the document's own title for a moment before putting yours back.
 
 **A book you delete in Readwise stays deleted.** The plugin never sends it again by itself — not
-after switching off and on, and not when it re-reads every note. If you deleted one by mistake, open
-its note and run **Push to Readwise again**: it starts a sync that pushes the document as a new
-book, and reads its margin notes once more for that. Deleting a large book in Readwise's web app takes several clicks,
+after switching off and on, and not when it re-reads every note. If you deleted one by mistake, sync
+once so the plugin notices, then open its note and run **Push to Readwise again**: it starts a sync
+that pushes the document as a new book, and reads its margin notes once more for that. Deleting a large book in Readwise's web app takes several clicks,
 each removing a part of it; until it is all gone, a highlight you change on the tablet can come back
 into it.
 

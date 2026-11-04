@@ -1713,6 +1713,34 @@
       file: src/readwise-wiring.test.ts
       test: "Push to Readwise again (ticket 22) > waits for a sync in flight, which would write its own state over the change"
 
+    - id: W14.10
+      scenario: A book deleted in Readwise, a sync with nothing to send
+      expect: The listing is read and the book marked deleted, so *Push to Readwise again* is offered after that sync
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > notices a book deleted in Readwise with nothing to send"
+
+    - id: W14.11
+      scenario: A sync with nothing to send and no book with an id
+      expect: Nothing is asked of readwise.io
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > asks nothing when no book has an id to look for"
+
+    - id: W14.12
+      scenario: The listing fails on a sync with nothing to send
+      expect: The failure is reported and no book is marked deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > says so when the listing fails with nothing to send, and marks nothing deleted"
+
+    - id: W14.13
+      scenario: A token stored for the first time, on a sync with nothing to send
+      expect: No listing and no book marked deleted, because its account has not been compared; a listing of another account would read as every book deleted
+      layer: unit
+      file: src/readwise-push.test.ts
+      test: "pushToReadwise > does not take another account's listing for every book deleted, when a token is just stored with nothing to send"
+
 # Ticket 27: on a phone the plugin does not run, so the link is one Obsidian answers by itself. W15.5 and
 # W15.9 are the load-bearing rows: a link that changes after the first record makes Readwise file a second
 # highlight, and nothing in Obsidian would show it.

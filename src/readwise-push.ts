@@ -257,6 +257,14 @@ function hasWork(books: StoredReadwiseBooks): boolean {
 }
 
 /**
+ * Is there a book whose deletion in Readwise a sync could notice? Asked even with nothing to send: the
+ * way back, *Push to Readwise again*, is only offered once the deletion is known (user, 2026-11-04).
+ */
+function hasBookToCheck(books: StoredReadwiseBooks): boolean {
+	return liveBooks(books).some(([, book]) => book.bookId !== undefined);
+}
+
+/**
  * Sends what is pending (spec §4.3): the account check, books deleted in Readwise and the user's names
  * for a book, deletes, then creates and updates, then the names put back. Stops at the first error;
  * whatever landed is recorded in `data`, the rest stays pending for the next sync.
@@ -266,7 +274,8 @@ function hasWork(books: StoredReadwiseBooks): boolean {
 export async function pushToReadwise(data: ReadwiseData, client: ReadwiseClient, fingerprint: string): Promise<PushFailure | null> {
 	if (readwiseClashed(data, fingerprint)) return "clash";
 	delete data.readwiseAccountClash;
-	if (fingerprint === data.readwiseAccount && !hasWork(data.readwiseBooks)) return null;
+	const accountKnown = fingerprint === data.readwiseAccount;
+	if (accountKnown && !hasWork(data.readwiseBooks) && !hasBookToCheck(data.readwiseBooks)) return null;
 	try {
 		let listing: ReadwiseBookEntry[] | null = null;
 		if (fingerprint !== data.readwiseAccount) {
@@ -283,7 +292,9 @@ export async function pushToReadwise(data: ReadwiseData, client: ReadwiseClient,
 			}
 			data.readwiseAccount = fingerprint;
 		}
-		if (!hasWork(data.readwiseBooks)) return null;
+		// A token just stored, with nothing to send, waits for the next sync: its account has not been compared, and
+		// a listing of another account would read as every book deleted.
+		if (!hasWork(data.readwiseBooks) && listing === null && !accountKnown) return null;
 		// Without the listing a push would recreate a book the user deleted (spec §11 P24).
 		readListing(data, listing ?? (await client.ourBooks()));
 		await sendDeletes(data, client);

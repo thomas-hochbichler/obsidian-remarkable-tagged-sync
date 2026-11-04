@@ -197,10 +197,48 @@ const after = (state: ReadwiseData, docId = DOC) => readwiseBook(state.readwiseB
 describe("pushToReadwise", () => {
 	it("sends nothing while nothing is pending and the token is the one the state belongs to", async () => {
 		const readwise = fakeReadwise();
-		const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: 3 }) });
+		const landed = readwise.seed("Cape Marrow", "Ada Byrne", { [URL]: { id: 7, text: TEXT.text } });
+		const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: landed.id }) });
+
+		expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
+		expect(readwise.calls).toEqual(["books"]);
+	});
+
+	it("asks nothing when no book has an id to look for", async () => {
+		const readwise = fakeReadwise();
+		const state = data({ [DOC]: book({}) });
 
 		expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
 		expect(readwise.calls).toEqual([]);
+	});
+
+	// Found in the 1.11.0 smoke test: *Push to Readwise again* is offered only once the deletion is known, and
+	// with nothing to send the push never looked, so the way back the README promises was not there.
+	it("notices a book deleted in Readwise with nothing to send", async () => {
+		const readwise = fakeReadwise();
+		const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: 4711 }) });
+
+		expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
+		expect(after(state)!.deleted).toBe(true);
+		expect(readwise.calls).toEqual(["books"]);
+	});
+
+	it("says so when the listing fails with nothing to send, and marks nothing deleted", async () => {
+		const readwise = fakeReadwise();
+		readwise.fail.set("ourBooks", new ReadwiseError("rejected", "no"));
+		const state = data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: 4711 }) });
+
+		expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBe("rejected");
+		expect(after(state)!.deleted).toBeUndefined();
+	});
+
+	it("does not take another account's listing for every book deleted, when a token is just stored with nothing to send", async () => {
+		const readwise = fakeReadwise();
+		const state: ReadwiseData = { ...data({ [DOC]: book({ [KEY]: { pushed: TEXT, id: 7 } }, { bookId: 4711 }) }), readwiseAccount: undefined };
+
+		expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
+		expect(after(state)!.deleted).toBeUndefined();
+		expect(state.readwiseAccount).toBe(FINGERPRINT);
 	});
 
 	it("pushes a document for the first time, and keeps the book id and highlight ids it learns", async () => {
@@ -339,7 +377,7 @@ describe("pushToReadwise", () => {
 		// Set aside until it changes on the tablet: the next push leaves it alone.
 		readwise.calls.length = 0;
 		expect(await pushToReadwise(state, readwise.client, FINGERPRINT)).toBeNull();
-		expect(readwise.calls).toEqual([]);
+		expect(readwise.calls).toEqual(["books"]);
 	});
 
 	it("stops when Readwise refuses the re-send too", async () => {
